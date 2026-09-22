@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -154,4 +156,142 @@ func TestCheckPermissionTeamInheritedScopeIsStrict(t *testing.T) {
 		"org-wide team grant must satisfy an unscoped check")
 	require.True(t, checkScope(t, orgID, principalID, "unscoped-res", "module-a"),
 		"org-wide team grant must subsume a module-a check")
+}
+
+func grantingScopes(t *testing.T, orgID, principalID, resource string) []string {
+	t.Helper()
+	var scopes []string
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var err error
+		scopes, err = testStore.ScopesGrantingPermission(
+			ctx, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			resource, "read", orgID,
+		)
+		return err
+	}))
+	return scopes
+}
+
+// The denial an unscoped check returns for a scope-scoped grant is
+// indistinguishable from the denial for no grant at all, so the scopes have to
+// be reportable beside it. Without this an administrator reads "no matching
+// permission found" and concludes the subject cannot act, while the subject
+// acts in module-a every day.
+func TestScopesGrantingPermissionNamesWhatAnUnscopedCheckHides(t *testing.T) {
+	principalID := seedUser(t)
+	orgID := seedOrg(t, principalID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, principalID, "owner",
+	))
+	seedScopedRole(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "reports", "read", "module-a")
+	seedScopedRole(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "reports", "read", "module-b")
+
+	require.False(t, checkScope(t, orgID, principalID, "reports", ""),
+		"the scoped grants must still not satisfy an unscoped check")
+	require.Equal(t, []string{"module-a", "module-b"}, grantingScopes(t, orgID, principalID, "reports"),
+		"both scopes must be reportable beside that denial")
+}
+
+// A permission the subject does not hold anywhere reports no scopes, so an
+// empty list is the honest "there is nothing here" the UI can rely on.
+func TestScopesGrantingPermissionIsEmptyWithoutAGrant(t *testing.T) {
+	principalID := seedUser(t)
+	orgID := seedOrg(t, principalID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, principalID, "owner",
+	))
+	seedScopedRole(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "reports", "read", "module-a")
+
+	require.Empty(t, grantingScopes(t, orgID, principalID, "invoices"),
+		"a permission held at no scope must report no scopes")
+}
+
+// An organization-wide assignment already answers every question through the
+// decision itself, so listing it as a scope would offer an administrator a
+// scope that does not exist.
+func TestScopesGrantingPermissionOmitsOrganizationWideGrants(t *testing.T) {
+	principalID := seedUser(t)
+	orgID := seedOrg(t, principalID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, principalID, "owner",
+	))
+	seedScopedRole(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "reports", "read", "")
+
+	require.True(t, checkScope(t, orgID, principalID, "reports", ""))
+	require.Empty(t, grantingScopes(t, orgID, principalID, "reports"))
+}
+
+// The survey resolves a subject exactly as the decision does — a scope reached
+// only through a team must be reported, or the explanation would contradict a
+// check for that same scope.
+func TestScopesGrantingPermissionFollowsTeamInheritance(t *testing.T) {
+	principalID := seedUser(t)
+	orgID := seedOrg(t, principalID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, principalID, "owner",
+	))
+
+	teamID := business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		if err := testStore.CreateTeam(ctx, &gen.Team{
+			Id: teamID, OrgId: orgID, Name: "Survey Team",
+			Slug: "survey-" + teamID, Path: "survey-" + teamID,
+		}); err != nil {
+			return err
+		}
+		return testStore.AddTeamMember(ctx, teamID, principalID, "member")
+	}))
+	seedScopedRole(t, orgID, teamID, gen.SubjectKind_SUBJECT_KIND_TEAM, "reports", "read", "module-c")
+
+	require.True(t, checkScope(t, orgID, principalID, "reports", "module-c"),
+		"the team's scoped grant must satisfy a module-c check for its member")
+	require.Equal(t, []string{"module-c"}, grantingScopes(t, orgID, principalID, "reports"),
+		"and the survey must name the same scope the check honoured")
+}
+
+// A role assigned with no organization is effective inside every tenant:
+// role_assignments_polymorphic makes the row readable under any tenant
+// transaction and the decision matches it with `ra.org_id IS NULL`. So the
+// explanation an administrator reads includes it, and names the role granting
+// it — which ListRoleAssignments, filtered to the organization's own rows,
+// never shows. That disclosure is deliberate: the grant is real inside their
+// tenant, and an administrator verifying access has to be able to see it.
+func TestCheckPermissionHonoursAGloballyAssignedRole(t *testing.T) {
+	principalID := seedUser(t)
+	orgID := seedOrg(t, principalID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, principalID, "owner",
+	))
+
+	roleID := business.NewIDString()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		if err := testStore.CreateRole(ctx, &gen.Role{
+			Id:          roleID,
+			Name:        "global role " + roleID,
+			Description: "assigned with no organization",
+			Permissions: []*gen.Permission{{Resource: "reports", Action: "read"}},
+		}); err != nil {
+			return err
+		}
+		return testStore.AssignRole(ctx, &gen.RoleAssignment{
+			Id:          business.NewIDString(),
+			SubjectId:   principalID,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			RoleId:      roleID,
+		})
+	}))
+
+	var allowed bool
+	var reason string
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var err error
+		allowed, reason, err = testStore.CheckPermission(
+			ctx, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			"reports", "read", orgID, "",
+		)
+		return err
+	}))
+	require.True(t, allowed, "a globally assigned role must grant inside the tenant")
+	require.Contains(t, reason, "global role "+roleID,
+		"and the explanation must name the role the grant came from")
 }

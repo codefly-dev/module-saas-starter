@@ -1,3 +1,4 @@
+import { assertAuditScopeContract } from "@codefly-dev/saas-sdk";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import type { Client } from "@connectrpc/connect";
@@ -7,9 +8,16 @@ import type {
 	AggregateAuditLogResponse,
 	AuditService,
 } from "@/gen/saas/accounts/v1/audit_pb";
-import { useAuditService } from "@/lib/hooks/use-api-client";
+import {
+	useAuditService,
+	usePrincipalService,
+} from "@/lib/hooks/use-api-client";
 import { toAuditEvent } from "../model/transforms";
-import type { AuditEventTypeInfo, AuditLogFilters } from "../model/types";
+import type {
+	AuditEventTypeInfo,
+	AuditLogFilters,
+	PrincipalDirectory,
+} from "../model/types";
 
 export function useAuditLog(
 	params: AuditLogFilters,
@@ -23,7 +31,10 @@ export function useAuditLog(
 				orgId: params.orgId ?? "",
 				eventType: params.eventType ?? "",
 				category: params.category ?? "",
+				namespace: params.namespace ?? "",
 				actorId: params.actorId ?? "",
+				from: params.from ? timestampFromDate(params.from) : undefined,
+				to: params.to ? timestampFromDate(params.to) : undefined,
 				pageSize: params.pageSize ?? 50,
 			}),
 		enabled: options.enabled,
@@ -32,6 +43,62 @@ export function useAuditLog(
 			totalCount: data.totalCount,
 		}),
 	});
+}
+
+// ListPrincipals has no id filter, so a name lookup walks the org's principals
+// newest-first until every actor it was asked about is named. Pages are capped
+// at 200 server-side; the walk stops at PRINCIPAL_PAGE_LIMIT pages, so an actor
+// outside the 1000 most recently created principals stays unresolved and falls
+// back to its truncated id. In practice an audit page's actors are recent and
+// page one answers it, which is what keeps this off the dashboard's hot path.
+const PRINCIPAL_PAGE_SIZE = 200;
+const PRINCIPAL_PAGE_LIMIT = 5;
+
+const EMPTY_DIRECTORY: PrincipalDirectory = new Map();
+
+export interface PrincipalDirectoryResult {
+	directory: PrincipalDirectory;
+	// A failed walk is not an org with no names: without this the surface
+	// renders every actor as an id and gives the reader nothing to act on.
+	failed: boolean;
+}
+
+// usePrincipalDirectory names the actors in `actorIds` for the audit surfaces.
+// The directory is empty until the walk lands, because every consumer already
+// renders a fallback for an id it cannot resolve — an in-flight directory is
+// just one more unresolved actor.
+export function usePrincipalDirectory(
+	orgId: string,
+	actorIds: readonly string[],
+): PrincipalDirectoryResult {
+	const svc = usePrincipalService();
+	// Sorted and deduped so the query key is stable across renders that pass an
+	// equal-but-new array, and so it identifies the question being asked.
+	const wanted = Array.from(new Set(actorIds.filter(Boolean))).sort();
+	const { data, isError } = useQuery({
+		queryKey: ["principal-directory", orgId, wanted.join(",")],
+		queryFn: async (): Promise<PrincipalDirectory> => {
+			const directory = new Map<string, string>();
+			let pageToken = "";
+			for (let page = 0; page < PRINCIPAL_PAGE_LIMIT; page++) {
+				const res = await svc.listPrincipals({
+					orgId,
+					pageSize: PRINCIPAL_PAGE_SIZE,
+					pageToken,
+				});
+				for (const p of res.principals) {
+					directory.set(p.id, p.displayName);
+				}
+				if (!res.nextPageToken) break;
+				if (wanted.every((id) => directory.has(id))) break;
+				pageToken = res.nextPageToken;
+			}
+			return directory;
+		},
+		enabled: orgId !== "" && wanted.length > 0,
+		staleTime: 5 * 60 * 1000,
+	});
+	return { directory: data ?? EMPTY_DIRECTORY, failed: isError };
 }
 
 // auditEventTypesQuery is the single react-query descriptor for the server-owned
@@ -49,6 +116,7 @@ export const auditEventTypesQuery = (
 		const data = await svc.listAuditEventTypes({});
 		return data.types.map((t) => ({
 			name: t.name,
+			namespace: t.namespace,
 			version: t.version,
 			category: t.category,
 			owner: t.owner,
@@ -101,9 +169,14 @@ export interface AuditDerivedSpec {
 }
 
 export interface AuditAggregateParams {
+	resource?: string;
+	resourceId?: string;
+	collectionId?: string;
+	payloadContains?: Record<string, string>;
 	orgId?: string;
 	eventType?: string;
 	category?: string;
+	namespace?: string;
 	// groupBy is the sole dimension; groupBys supersedes it for multi-dim
 	// grouping. One of the two should be set.
 	groupBy?: AuditGroupDimension;
@@ -124,6 +197,7 @@ export interface AuditAggregateBucket {
 	count: number;
 	keys: string[];
 	metrics: Record<string, number>;
+	samples?: Record<string, number>;
 }
 
 // Bind the client-side aggregate params to the wire request: fill defaults,
@@ -137,6 +211,11 @@ export function toAggregateRequest(
 		orgId: params.orgId ?? "",
 		eventType: params.eventType ?? "",
 		category: params.category ?? "",
+		namespace: params.namespace ?? "",
+		resource: params.resource ?? "",
+		resourceId: params.resourceId ?? "",
+		collectionId: params.collectionId ?? "",
+		payloadContains: params.payloadContains ?? {},
 		groupBy: params.groupBy ?? "",
 		groupBys: params.groupBys ?? [],
 		bucket: params.bucket ?? "",
@@ -160,10 +239,15 @@ export function toAggregateRequest(
 // double metric values become numbers. Shared with the hook's `select`.
 export function toAggregateBuckets(
 	response: AggregateAuditLogResponse,
+	params: AuditAggregateParams,
 ): AuditAggregateBucket[] {
+	assertAuditScopeContract(params, response);
 	return response.buckets.map((b) => ({
 		key: b.key,
 		count: Number(b.count),
+		samples: Object.fromEntries(
+			Object.entries(b.samples ?? {}).map(([k, v]) => [k, Number(v)]),
+		),
 		keys: b.keys,
 		metrics: Object.fromEntries(
 			Object.entries(b.metrics).map(([k, v]) => [k, Number(v)]),
@@ -180,6 +264,6 @@ export function useAuditAggregate(
 		queryKey: ["audit-aggregate", params],
 		queryFn: () => svc.aggregateAuditLog(toAggregateRequest(params)),
 		enabled: options.enabled,
-		select: toAggregateBuckets,
+		select: (response) => toAggregateBuckets(response, params),
 	});
 }

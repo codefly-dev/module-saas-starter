@@ -9,11 +9,12 @@ import (
 // and Connect listeners. DelegationServer's in-memory mint cache must survive a
 // decision on one protocol followed by a wait on the other.
 var (
-	principalSingleton    = &PrincipalServer{}
-	delegationSingleton   = &DelegationServer{}
-	workContextSingleton  = &WorkContextAuthorityServer{}
-	usageSingleton        = &UsageServer{}
-	installationSingleton = &InstallationServer{}
+	principalSingleton       = &PrincipalServer{}
+	delegationSingleton      = &DelegationServer{}
+	workContextSingleton     = &WorkContextAuthorityServer{}
+	usageSingleton           = &UsageServer{}
+	installationSingleton    = &InstallationServer{}
+	accessibleScopeSingleton = &AccessibleScopeServer{}
 )
 
 func PrincipalSingleton() *PrincipalServer { return principalSingleton }
@@ -25,6 +26,8 @@ func WorkContextSingleton() *WorkContextAuthorityServer { return workContextSing
 func UsageSingleton() *UsageServer { return usageSingleton }
 
 func InstallationSingleton() *InstallationServer { return installationSingleton }
+
+func AccessibleScopeSingleton() *AccessibleScopeServer { return accessibleScopeSingleton }
 
 func configurePermissionServerKeys() {
 	plugin := permissionsplugin.Default()

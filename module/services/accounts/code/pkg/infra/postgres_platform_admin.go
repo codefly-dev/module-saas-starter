@@ -101,7 +101,8 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, p
 	}
 
 	rows, err := executor.Query(ctx, `
-		SELECT id, user_id, refresh_token_hash, family_id, COALESCE(ip_address, ''), device_info,
+		SELECT id, user_id, COALESCE(acting_as_user_id::text, ''),
+		       COALESCE(refresh_token_hash, ''), family_id, COALESCE(ip_address, ''), device_info,
 		       created_at, last_active_at, idle_expires_at, expires_at
 		FROM sessions
 		WHERE (NULLIF($1, '')::uuid IS NULL OR user_id = NULLIF($1, '')::uuid)
@@ -122,7 +123,7 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, p
 		var sess business.Session
 		var deviceInfo []byte
 		if err := rows.Scan(
-			&sess.ID, &sess.UserID, &sess.RefreshTokenHash, &sess.FamilyID,
+			&sess.ID, &sess.UserID, &sess.ActingAsUserID, &sess.RefreshTokenHash, &sess.FamilyID,
 			&sess.IPAddress, &deviceInfo,
 			&sess.CreatedAt, &sess.LastActiveAt, &sess.IdleExpiresAt, &sess.ExpiresAt,
 		); err != nil {

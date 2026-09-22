@@ -15,8 +15,10 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 )
 
@@ -156,6 +158,9 @@ func connectCodeFromGRPC(c codes.Code) connect.Code {
 // callerID extracts the authenticated user id from request headers/context.
 // Returns a gRPC Unauthenticated error if not present.
 func callerID(ctx context.Context) (string, error) {
+	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok {
+		return identity.EffectiveSubjectID(), nil
+	}
 	w := wool.Get(ctx).In("callerID")
 	w.GRPC().Inject()
 	// GRPC().Inject() copies forwarded metadata over the stamped identity, and a
@@ -169,6 +174,57 @@ func callerID(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "caller identity not found")
 	}
 	return id, nil
+}
+
+// verifiedActor resolves the audit identity of an already-authenticated caller.
+// actorID is the verified caller id the handler authorized; the credential kind
+// is the one the auth perimeter reports it authenticated (see
+// credentialKindFromContext), and the delegation chain comes from the trusted
+// `act` claim or gateway-forwarded X-Act header, never from a caller-controlled
+// one.
+//
+// It returns an error rather than a default when the perimeter reported no
+// credential kind. A record naming the wrong kind of credential is worse than
+// no record: the mutation fails loudly and leaves nothing behind, which is the
+// same fail-closed contract emitTx enforces for a failed audit write.
+func verifiedActor(ctx context.Context, actorID string) (business.AuditActor, error) {
+	actor := business.AuditActor{ID: actorID}
+	switch kind := credentialKindFromContext(ctx); kind {
+	case credentialKindSession:
+		actor.Type = business.ActorTypeUser
+	case credentialKindAPIKey:
+		actor.Type = business.ActorTypeAPIKey
+	default:
+		return business.AuditActor{}, status.Error(codes.Internal,
+			"cannot attribute the caller: the auth perimeter reported no credential kind")
+	}
+	actor.DelegationChain = verifiedDelegationChain(ctx)
+	return actor, nil
+}
+
+// verifiedDelegationChain flattens the RFC 8693 `act` chain into the parties
+// that acted on the subject's behalf, immediate delegate first. Every hop is
+// recorded: the chain exists only in the token, so a hop dropped here is
+// unrecoverable — the audit trail could no longer answer which systems touched
+// the mutation, only which one touched it last.
+//
+// The walk is bounded by MaxActorChainDepth. Both the mint and the verify paths
+// already enforce that bound (see auth.ValidateActorChain), so this cannot
+// truncate a legitimate chain; it fails closed against an in-memory cycle
+// rather than looping forever.
+func verifiedDelegationChain(ctx context.Context) []string {
+	delegate, ok := auth.VerifiedActorFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	var chain []string
+	for hop := delegate; hop != nil && len(chain) < auth.MaxActorChainDepth; hop = hop.Act {
+		if hop.Subject == "" {
+			continue
+		}
+		chain = append(chain, hop.Subject)
+	}
+	return chain
 }
 
 // callerOrg extracts the caller's org id from context, empty string if absent.
@@ -293,6 +349,9 @@ func (h *permConnectHandler) CreateRole(ctx context.Context, req *connect.Reques
 func (h *permConnectHandler) ListRoles(ctx context.Context, req *connect.Request[gen.ListRolesRequest]) (*connect.Response[gen.ListRolesResponse], error) {
 	return unary(ctx, req, h.inner.ListRoles)
 }
+func (h *permConnectHandler) UpdateRole(ctx context.Context, req *connect.Request[gen.UpdateRoleRequest]) (*connect.Response[gen.UpdateRoleResponse], error) {
+	return unary(ctx, req, h.inner.UpdateRole)
+}
 func (h *permConnectHandler) DeleteRole(ctx context.Context, req *connect.Request[gen.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.DeleteRole)
 }
@@ -316,9 +375,6 @@ func (h *permConnectHandler) CheckAccess(ctx context.Context, req *connect.Reque
 }
 func (h *permConnectHandler) ListAccessibleScopes(ctx context.Context, req *connect.Request[gen.ListAccessibleScopesRequest]) (*connect.Response[gen.ListAccessibleScopesResponse], error) {
 	return unary(ctx, req, h.inner.ListAccessibleScopes)
-}
-func (h *permConnectHandler) ListMyAccessibleScopes(ctx context.Context, req *connect.Request[gen.ListMyAccessibleScopesRequest]) (*connect.Response[gen.ListAccessibleScopesResponse], error) {
-	return unary(ctx, req, h.inner.ListMyAccessibleScopes)
 }
 func (h *permConnectHandler) RegisterScopeNode(ctx context.Context, req *connect.Request[gen.RegisterScopeNodeRequest]) (*connect.Response[gen.RegisterScopeNodeResponse], error) {
 	return unary(ctx, req, h.inner.RegisterScopeNode)
@@ -444,6 +500,15 @@ func (h *authConnectHandler) SwitchOrganization(ctx context.Context, req *connec
 func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.Logout)
 }
+func (h *authConnectHandler) ValidateClientAuthorization(ctx context.Context, req *connect.Request[gen.ValidateClientAuthorizationRequest]) (*connect.Response[gen.ValidateClientAuthorizationResponse], error) {
+	return unary(ctx, req, h.inner.ValidateClientAuthorization)
+}
+func (h *authConnectHandler) IssueClientAuthorizationCode(ctx context.Context, req *connect.Request[gen.IssueClientAuthorizationCodeRequest]) (*connect.Response[gen.IssueClientAuthorizationCodeResponse], error) {
+	return unary(ctx, req, h.inner.IssueClientAuthorizationCode)
+}
+func (h *authConnectHandler) ExchangeClientToken(ctx context.Context, req *connect.Request[gen.ExchangeClientTokenRequest]) (*connect.Response[gen.ExchangeClientTokenResponse], error) {
+	return unary(ctx, req, h.inner.ExchangeClientToken)
+}
 func (h *authConnectHandler) GetJWKS(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[gen.JWKSResponse], error) {
 	return unary(ctx, req, h.inner.GetJWKS)
 }
@@ -513,6 +578,9 @@ func (h *platformAdminConnectHandler) UnsuspendUser(ctx context.Context, req *co
 func (h *platformAdminConnectHandler) ImpersonateUser(ctx context.Context, req *connect.Request[gen.ImpersonateUserRequest]) (*connect.Response[gen.ImpersonateUserResponse], error) {
 	return unary(ctx, req, h.inner.ImpersonateUser)
 }
+func (h *platformAdminConnectHandler) StopImpersonation(ctx context.Context, req *connect.Request[gen.StopImpersonationRequest]) (*connect.Response[gen.StopImpersonationResponse], error) {
+	return unary(ctx, req, h.inner.StopImpersonation)
+}
 func (h *platformAdminConnectHandler) ListActiveSessions(ctx context.Context, req *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error) {
 	return unary(ctx, req, h.inner.ListActiveSessions)
 }
@@ -542,6 +610,14 @@ func (h *platformAdminConnectHandler) UpsertFeatureFlag(ctx context.Context, req
 }
 func (h *platformAdminConnectHandler) GetJobOperations(ctx context.Context, req *connect.Request[jobsv1.GetJobOperationsRequest]) (*connect.Response[jobsv1.GetJobOperationsResponse], error) {
 	return unary(ctx, req, h.inner.GetJobOperations)
+}
+
+func (h *platformAdminConnectHandler) GetEventOperations(ctx context.Context, req *connect.Request[eventsv1.GetEventOperationsRequest]) (*connect.Response[eventsv1.GetEventOperationsResponse], error) {
+	return unary(ctx, req, h.inner.GetEventOperations)
+}
+
+func (h *platformAdminConnectHandler) ListEventSubscriptions(ctx context.Context, req *connect.Request[eventsv1.ListEventSubscriptionsRequest]) (*connect.Response[eventsv1.ListEventSubscriptionsResponse], error) {
+	return unary(ctx, req, h.inner.ListEventSubscriptions)
 }
 func (h *platformAdminConnectHandler) ListJobs(ctx context.Context, req *connect.Request[jobsv1.ListJobsRequest]) (*connect.Response[jobsv1.ListJobsResponse], error) {
 	return unary(ctx, req, h.inner.ListJobs)
@@ -595,7 +671,11 @@ func (h *webhookConnectHandler) CreateSubscription(ctx context.Context, req *con
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	sub, err := h.svc.CreateSubscription(ctx, req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	sub, err := h.svc.CreateSubscription(ctx, actor, req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +695,11 @@ func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *con
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if err := h.svc.DeleteSubscription(ctx, orgID, req.Msg.Id); err != nil {
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.DeleteSubscription(ctx, actor, orgID, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -733,7 +817,11 @@ func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.ReplayWebhookDelivery(ctx, orgID, req.Msg.Id)
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	d, err := h.svc.ReplayWebhookDelivery(ctx, actor, orgID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -764,7 +852,11 @@ func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.R
 		return nil, translateGRPCError(err)
 	}
 	gracePeriod := time.Duration(req.Msg.GracePeriodSeconds) * time.Second
-	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, orgID, req.Msg.Id, gracePeriod)
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, actor, orgID, req.Msg.Id, gracePeriod)
 	if err != nil {
 		return nil, err
 	}
@@ -792,7 +884,10 @@ func (h *notificationConnectHandler) ListNotifications(ctx context.Context, req 
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	notes, nextToken, err := h.svc.ListNotifications(ctx, userID, pageSize, req.Msg.PageToken)
+	notes, nextToken, err := h.svc.ListNotifications(ctx, userID, pageSize, req.Msg.PageToken, business.NotificationFilter{OrgID: req.Msg.OrgId, UnreadOnly: req.Msg.UnreadOnly})
+	if errors.Is(err, business.ErrInvalidNotificationPageToken) || errors.Is(err, business.ErrInvalidNotificationFilter) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -823,7 +918,10 @@ func (h *notificationConnectHandler) MarkRead(ctx context.Context, req *connect.
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.MarkRead(ctx, userID, req.Msg.Id); err != nil {
-		return nil, err
+		if errors.Is(err, business.ErrNotificationNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
@@ -847,6 +945,68 @@ func (h *notificationConnectHandler) DeleteNotification(ctx context.Context, req
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.DeleteNotification(ctx, userID, req.Msg.Id); err != nil {
+		if errors.Is(err, business.ErrNotificationNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&emptypb.Empty{}), nil
+}
+
+// ResolveNotificationAction re-authorizes a deep link as it is followed. A
+// notification the caller may no longer reach is NOT_FOUND, never denied, so an
+// id substitution and a revoked resource look the same from outside.
+func (h *notificationConnectHandler) ResolveNotificationAction(ctx context.Context, req *connect.Request[gen.ResolveNotificationActionRequest]) (*connect.Response[gen.ResolveNotificationActionResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	actionURL, err := h.svc.ResolveNotificationAction(ctx, userID, req.Msg.Id)
+	if err != nil {
+		if errors.Is(err, business.ErrNotificationNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.ResolveNotificationActionResponse{ActionUrl: actionURL}), nil
+}
+
+// ============================================================================
+// ResourceFollowService — backed by business.Service.
+// Caller identity comes from auth headers; neither request carries a subject.
+// ============================================================================
+
+type resourceFollowConnectHandler struct{ svc *business.Service }
+
+func (h *resourceFollowConnectHandler) Follow(ctx context.Context, req *connect.Request[gen.FollowResourceRequest]) (*connect.Response[gen.FollowResourceResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgMember(ctx, userID, orgID); err != nil {
+		return nil, err
+	}
+	follow, err := h.svc.Follow(ctx, userID, orgID, req.Msg.ResourceType, req.Msg.ResourceId)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&gen.FollowResourceResponse{Id: follow.ID}), nil
+}
+
+func (h *resourceFollowConnectHandler) Unfollow(ctx context.Context, req *connect.Request[gen.UnfollowResourceRequest]) (*connect.Response[emptypb.Empty], error) {
+	ctx = connectCtx(ctx, req.Header())
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgID := callerOrg(ctx)
+	if err := requireOrgMember(ctx, userID, orgID); err != nil {
+		return nil, err
+	}
+	if err := h.svc.Unfollow(ctx, userID, req.Msg.ResourceType, req.Msg.ResourceId); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -1167,7 +1327,7 @@ func notificationToProto(n *business.Notification) *gen.Notification {
 		Title:     n.Title,
 		Body:      n.Body,
 		Type:      n.Type,
-		ActionUrl: n.ActionURL,
+		HasAction: n.ActionURL != "",
 	}
 	if !n.CreatedAt.IsZero() {
 		out.CreatedAt = timestamppb.New(n.CreatedAt)
@@ -1296,7 +1456,9 @@ func gdprStatusToProto(s business.GDPRRequestStatus) gen.GDPRRequestStatus {
 	switch string(s) {
 	case "pending":
 		return gen.GDPRRequestStatus_GDPR_REQUEST_STATUS_PENDING
-	case "processing":
+	// A retryable failure is still in flight for the subject: the durable job
+	// is scheduled for another attempt, so the request has not failed.
+	case "processing", "retrying":
 		return gen.GDPRRequestStatus_GDPR_REQUEST_STATUS_PROCESSING
 	case "completed":
 		return gen.GDPRRequestStatus_GDPR_REQUEST_STATUS_COMPLETED
@@ -1336,4 +1498,12 @@ func mfaDeviceTypeToProto(s string) gen.MFADeviceType {
 		return gen.MFADeviceType_MFA_DEVICE_TYPE_WEBAUTHN
 	}
 	return gen.MFADeviceType_MFA_DEVICE_TYPE_UNSPECIFIED
+}
+
+func (h *permConnectHandler) ListCollectionAccess(ctx context.Context, req *connect.Request[gen.ListCollectionAccessRequest]) (*connect.Response[gen.ListCollectionAccessResponse], error) {
+	return unary(ctx, req, h.inner.ListCollectionAccess)
+}
+
+func (h *permConnectHandler) ExplainPermission(ctx context.Context, req *connect.Request[gen.ExplainPermissionRequest]) (*connect.Response[gen.ExplainPermissionResponse], error) {
+	return unary(ctx, req, h.inner.ExplainPermission)
 }

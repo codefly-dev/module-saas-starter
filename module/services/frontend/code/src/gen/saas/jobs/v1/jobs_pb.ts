@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/jobs/v1/jobs.proto.
  */
 export const file_saas_jobs_v1_jobs: GenFile = /*@__PURE__*/
-  fileDesc("ChdzYWFzL2pvYnMvdjEvam9icy5wcm90bxIMc2Fhcy5qb2JzLnYxInoKCEpvYlNjb3BlEiMKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQFIABIeCgpzdWJqZWN0X2lkGAIgASgJQgi6SAVyA7ABAUgAEhkKBmdsb2JhbBgDIAEoCEIHukgEagIIAUgAQg4KBXZhbHVlEgW6SAIIASKgAQoISm9iTGVhc2USGQoFb3duZXIYASABKAlCCrpIB3IFEAEY/wESFwoFdG9rZW4YAiABKAlCCLpIBXIDsAEBEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGhlYXJ0YmVhdF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiVgoKSm9iRmFpbHVyZRItCgRjb2RlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEhkKB21lc3NhZ2UYAiABKAlCCLpIBXIDGIAgIqkJCgtKb2JFbnZlbG9wZRIUCgJpZBgBIAEoCUIIukgFcgOwAQESNQoJZGlyZWN0aW9uGAIgASgOMhouc2Fhcy5qb2JzLnYxLkpvYkRpcmVjdGlvbkIGukgDyAEBEi0KBXNjb3BlGAMgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYlNjb3BlQga6SAPIAQESLgoFcXVldWUYBCABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSLgoFdG9waWMYBSABKAlCH7pIHHIaEAEY/wEyE15bYS16XVthLXowLTlfLi1dKiQSMQoGc291cmNlGAYgASgJQiG6SB5yHBABGP8BMhVeW2Etel1bYS16MC05Xy46Ly1dKiQSIwoPaWRlbXBvdGVuY3lfa2V5GAcgASgJQgq6SAdyBRABGP8BEh4KDG9yZGVyaW5nX2tleRgIIAEoCUIIukgFcgMY/wESHwoOc2NoZW1hX3ZlcnNpb24YCSABKA1CB7pIBCoCIAASGgoHcGF5bG9hZBgKIAEoDEIJukgGegQYgIBAEiAKDGNvbnRlbnRfdHlwZRgLIAEoCUIKukgHcgUQARj/ARJsCgphdHRyaWJ1dGVzGAwgAygLMikuc2Fhcy5qb2JzLnYxLkpvYkVudmVsb3BlLkF0dHJpYnV0ZXNFbnRyeUItukgqmgEnEEAiHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQqBXIDGIAIEi0KBXN0YXRlGA0gASgOMhYuc2Fhcy5qb2JzLnYxLkpvYlN0YXRlQga6SAPIAQESJAoIcHJpb3JpdHkYDiABKAVCErpIDxoNGGQonP//////////ARIVCg1hdHRlbXB0X2NvdW50GA8gASgNEh0KDG1heF9hdHRlbXB0cxgQIAEoDUIHukgEKgIgABIlCgVsZWFzZRgRIAEoCzIWLnNhYXMuam9icy52MS5Kb2JMZWFzZRIuCgxsYXN0X2ZhaWx1cmUYEiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZRIwCgxhdmFpbGFibGVfYXQYEyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2xhc3RfYXR0ZW1wdF9hdBgUIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMY29tcGxldGVkX2F0GBUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0ChBkZWFkX2xldHRlcmVkX2F0GBYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GBcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GBggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIVCg1zdGF0ZV92ZXJzaW9uGBkgASgEEh4KCXJlcGxheV9vZhgaIAEoCUILukgI2AEBcgOwAQEaMQoPQXR0cmlidXRlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEibAoOSm9iT3JkZXJpbmdLZXkSMQoJbmFtZXNwYWNlGAEgASgJQh66SBtyGRABGEAyE15bYS16XVthLXowLTlfLi1dKiQSJwoKY29tcG9uZW50cxgCIAMoCUITukgQkgENCAEQCCIHcgUQARiAASLKBQoGTmV3Sm9iEjUKCWRpcmVjdGlvbhgBIAEoDjIaLnNhYXMuam9icy52MS5Kb2JEaXJlY3Rpb25CBrpIA8gBARItCgVzY29wZRgCIAEoCzIWLnNhYXMuam9icy52MS5Kb2JTY29wZUIGukgDyAEBEi4KBXF1ZXVlGAMgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEi4KBXRvcGljGAQgASgJQh+6SBxyGhABGP8BMhNeW2Etel1bYS16MC05Xy4tXSokEjEKBnNvdXJjZRgFIAEoCUIhukgechwQARj/ATIVXlthLXpdW2EtejAtOV8uOi8tXSokEiMKD2lkZW1wb3RlbmN5X2tleRgGIAEoCUIKukgHcgUQARj/ARIuCghvcmRlcmluZxgHIAEoCzIcLnNhYXMuam9icy52MS5Kb2JPcmRlcmluZ0tleRIfCg5zY2hlbWFfdmVyc2lvbhgIIAEoDUIHukgEKgIgABIaCgdwYXlsb2FkGAkgASgMQgm6SAZ6BBiAgEASIAoMY29udGVudF90eXBlGAogASgJQgq6SAdyBRABGP8BEmcKCmF0dHJpYnV0ZXMYCyADKAsyJC5zYWFzLmpvYnMudjEuTmV3Sm9iLkF0dHJpYnV0ZXNFbnRyeUItukgqmgEnEEAiHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQqBXIDGIAIEiQKCHByaW9yaXR5GAwgASgFQhK6SA8aDRhkKJz//////////wESHwoMbWF4X2F0dGVtcHRzGA0gASgNQgm6SAYqBBhkKAESMAoMYXZhaWxhYmxlX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASI+ChFFbnF1ZXVlSm9iUmVxdWVzdBIpCgNqb2IYASABKAsyFC5zYWFzLmpvYnMudjEuTmV3Sm9iQga6SAPIAQEicAoSRW5xdWV1ZUpvYlJlc3BvbnNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESQAoLZGlzcG9zaXRpb24YAiABKA4yIy5zYWFzLmpvYnMudjEuSm9iRW5xdWV1ZURpc3Bvc2l0aW9uQga6SAPIAQEisQYKCkpvYlN1bW1hcnkSFAoCaWQYASABKAlCCLpIBXIDsAEBEjUKCWRpcmVjdGlvbhgCIAEoDjIaLnNhYXMuam9icy52MS5Kb2JEaXJlY3Rpb25CBrpIA8gBARItCgVzY29wZRgDIAEoCzIWLnNhYXMuam9icy52MS5Kb2JTY29wZUIGukgDyAEBEg0KBXF1ZXVlGAQgASgJEg0KBXRvcGljGAUgASgJEg4KBnNvdXJjZRgGIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYByABKAkSFAoMb3JkZXJpbmdfa2V5GAggASgJEhYKDnNjaGVtYV92ZXJzaW9uGAkgASgNEhQKDGNvbnRlbnRfdHlwZRgKIAEoCRItCgVzdGF0ZRgLIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZUIGukgDyAEBEhAKCHByaW9yaXR5GAwgASgFEhUKDWF0dGVtcHRfY291bnQYDSABKA0SFAoMbWF4X2F0dGVtcHRzGA4gASgNEiUKBWxlYXNlGA8gASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlEi4KDGxhc3RfZmFpbHVyZRgQIAEoCzIYLnNhYXMuam9icy52MS5Kb2JGYWlsdXJlEjAKDGF2YWlsYWJsZV9hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPbGFzdF9hdHRlbXB0X2F0GBIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxjb21wbGV0ZWRfYXQYEyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjQKEGRlYWRfbGV0dGVyZWRfYXQYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYFSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYFiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhUKDXN0YXRlX3ZlcnNpb24YFyABKAQSEQoJcmVwbGF5X29mGBggASgJIoECChBKb2JRdWV1ZVNuYXBzaG90Eg0KBXF1ZXVlGAEgASgJEg8KB3BlbmRpbmcYAiABKAQSEgoKcHJvY2Vzc2luZxgDIAEoBBIQCghyZXRyeWluZxgEIAEoBBIRCglzdWNjZWVkZWQYBSABKAQSEwoLZGVhZF9sZXR0ZXIYBiABKAQSEAoIY2FuY2VsZWQYByABKAQSDQoFcmVhZHkYCCABKAQSEQoJc2NoZWR1bGVkGAkgASgEEhYKDmV4cGlyZWRfbGVhc2VzGAogASgEEjMKD29sZGVzdF9yZWFkeV9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSgoXR2V0Sm9iT3BlcmF0aW9uc1JlcXVlc3QSLwoFcXVldWUYASABKAlCILpIHdgBAXIYGIABMhNeW2Etel1bYS16MC05Xy4tXSokIoMBChhHZXRKb2JPcGVyYXRpb25zUmVzcG9uc2USLgoGcXVldWVzGAEgAygLMh4uc2Fhcy5qb2JzLnYxLkpvYlF1ZXVlU25hcHNob3QSNwoLb2JzZXJ2ZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQga6SAPIAQEijAIKD0xpc3RKb2JzUmVxdWVzdBIvCgVxdWV1ZRgBIAEoCUIgukgd2AEBchgYgAEyE15bYS16XVthLXowLTlfLi1dKiQSOwoGc3RhdGVzGAIgAygOMhYuc2Fhcy5qb2JzLnYxLkpvYlN0YXRlQhO6SBCSAQ0QBhgBIgeCAQQQASAAEiMKD29yZ2FuaXphdGlvbl9pZBgDIAEoCUIIukgFcgOwAQFIABIeCgpzdWJqZWN0X2lkGAQgASgJQgi6SAVyA7ABAUgAEh8KCXBhZ2Vfc2l6ZRgFIAEoDUIMukgJ2AEBKgQYZCgBEhwKCnBhZ2VfdG9rZW4YBiABKAlCCLpIBXIDGIAEQgcKBXNjb3BlIlMKEExpc3RKb2JzUmVzcG9uc2USJgoEam9icxgBIAMoCzIYLnNhYXMuam9icy52MS5Kb2JTdW1tYXJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIpCg1HZXRKb2JSZXF1ZXN0EhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQEiogEKDkdldEpvYlJlc3BvbnNlEi0KA2pvYhgBIAEoCzIYLnNhYXMuam9icy52MS5Kb2JTdW1tYXJ5Qga6SAPIAQESKgoIYXR0ZW1wdHMYAiADKAsyGC5zYWFzLmpvYnMudjEuSm9iQXR0ZW1wdBI1Cgt0cmFuc2l0aW9ucxgDIAMoCzIgLnNhYXMuam9icy52MS5Kb2JTdGF0ZVRyYW5zaXRpb24iigEKEFJlcGxheUpvYlJlcXVlc3QSHwoNc291cmNlX2pvYl9pZBgBIAEoCUIIukgFcgOwAQESIwoPaWRlbXBvdGVuY3lfa2V5GAIgASgJQgq6SAdyBRABGP8BEjAKDGF2YWlsYWJsZV9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAibwoRUmVwbGF5Sm9iUmVzcG9uc2USGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARJACgtkaXNwb3NpdGlvbhgCIAEoDjIjLnNhYXMuam9icy52MS5Kb2JFbnF1ZXVlRGlzcG9zaXRpb25CBrpIA8gBASLTAQoQSm9iV29ya2VyTWV0cmljcxINCgVxdWV1ZRgBIAEoCRISCgppdGVyYXRpb25zGAIgASgEEhQKDGNsYWltX2Vycm9ycxgDIAEoBBIPCgdjbGFpbWVkGAQgASgEEhEKCXN1Y2NlZWRlZBgFIAEoBBIPCgdyZXRyaWVkGAYgASgEEhUKDWRlYWRfbGV0dGVyZWQYByABKAQSFgoOaGFuZGxlcl9wYW5pY3MYCCABKAQSEgoKbGVhc2VfbG9zdBgJIAEoBBIOCgZhY3RpdmUYCiABKAMigwMKCkpvYkF0dGVtcHQSFAoCaWQYASABKAlCCLpIBXIDsAEBEhgKBmpvYl9pZBgCIAEoCUIIukgFcgOwAQESFwoGbnVtYmVyGAMgASgNQge6SAQqAiAAEh0KCXdvcmtlcl9pZBgEIAEoCUIKukgHcgUQARj/ARIdCgtsZWFzZV90b2tlbhgFIAEoCUIIukgFcgOwAQESMAoHb3V0Y29tZRgGIAEoDjIfLnNhYXMuam9icy52MS5Kb2JBdHRlbXB0T3V0Y29tZRIpCgdmYWlsdXJlGAcgASgLMhguc2Fhcy5qb2JzLnYxLkpvYkZhaWx1cmUSLgoKc3RhcnRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMaGVhcnRiZWF0X2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtmaW5pc2hlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiyQIKEkpvYlN0YXRlVHJhbnNpdGlvbhIZCghzZXF1ZW5jZRgBIAEoA0IHukgEIgIgABIYCgZqb2JfaWQYAiABKAlCCLpIBXIDsAEBEioKCmZyb21fc3RhdGUYAyABKA4yFi5zYWFzLmpvYnMudjEuSm9iU3RhdGUSMAoIdG9fc3RhdGUYBCABKA4yFi5zYWFzLmpvYnMudjEuSm9iU3RhdGVCBrpIA8gBARIVCg1zdGF0ZV92ZXJzaW9uGAUgASgEEhUKDWF0dGVtcHRfY291bnQYBiABKA0SFgoFYWN0b3IYByABKAlCB7pIBHICEAESKQoHZmFpbHVyZRgIIAEoCzIYLnNhYXMuam9icy52MS5Kb2JGYWlsdXJlEi8KC29jY3VycmVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLEAQoQQ2xhaW1Kb2JzUmVxdWVzdBIuCgVxdWV1ZRgBIAEoCUIfukgcchoQARiAATITXlthLXpdW2EtejAtOV8uLV0qJBIdCgl3b3JrZXJfaWQYAiABKAlCCrpIB3IFEAEY/wESGAoFbGltaXQYAyABKA1CCbpIBioEGGQoARJHCg5sZWFzZV9kdXJhdGlvbhgEIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbkIUukgRyAEBqgELIgMIkBwyBBDAhD0iPAoRQ2xhaW1Kb2JzUmVzcG9uc2USJwoEam9icxgBIAMoCzIZLnNhYXMuam9icy52MS5Kb2JFbnZlbG9wZSJrChFKb2JMZWFzZVJlZmVyZW5jZRIYCgZqb2JfaWQYASABKAlCCLpIBXIDsAEBEh0KCXdvcmtlcl9pZBgCIAEoCUIKukgHcgUQARj/ARIdCgtsZWFzZV90b2tlbhgDIAEoCUIIukgFcgOwAQEikQEKE0hlYXJ0YmVhdEpvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARJCCglleHRlbnNpb24YAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IkUKFEhlYXJ0YmVhdEpvYlJlc3BvbnNlEi0KBWxlYXNlGAEgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlQga6SAPIAQEiTAoSQ29tcGxldGVKb2JSZXF1ZXN0EjYKBWxlYXNlGAEgASgLMh8uc2Fhcy5qb2JzLnYxLkpvYkxlYXNlUmVmZXJlbmNlQga6SAPIAQEisgEKD1JldHJ5Sm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEjEKB2ZhaWx1cmUYAiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZUIGukgDyAEBEjQKCHJldHJ5X2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIGukgDyAEBIkEKEFJldHJ5Sm9iUmVzcG9uc2USLQoFc3RhdGUYASABKA4yFi5zYWFzLmpvYnMudjEuSm9iU3RhdGVCBrpIA8gBASKBAQoURGVhZExldHRlckpvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARIxCgdmYWlsdXJlGAIgASgLMhguc2Fhcy5qb2JzLnYxLkpvYkZhaWx1cmVCBrpIA8gBASpgCgxKb2JEaXJlY3Rpb24SHQoZSk9CX0RJUkVDVElPTl9VTlNQRUNJRklFRBAAEhcKE0pPQl9ESVJFQ1RJT05fSU5CT1gQARIYChRKT0JfRElSRUNUSU9OX09VVEJPWBACKroBCghKb2JTdGF0ZRIZChVKT0JfU1RBVEVfVU5TUEVDSUZJRUQQABIVChFKT0JfU1RBVEVfUEVORElORxABEhgKFEpPQl9TVEFURV9QUk9DRVNTSU5HEAISFgoSSk9CX1NUQVRFX1JFVFJZSU5HEAMSFwoTSk9CX1NUQVRFX1NVQ0NFRURFRBAEEhkKFUpPQl9TVEFURV9ERUFEX0xFVFRFUhAFEhYKEkpPQl9TVEFURV9DQU5DRUxFRBAGKvoBChFKb2JBdHRlbXB0T3V0Y29tZRIjCh9KT0JfQVRURU1QVF9PVVRDT01FX1VOU1BFQ0lGSUVEEAASIQodSk9CX0FUVEVNUFRfT1VUQ09NRV9TVUNDRUVERUQQARIpCiVKT0JfQVRURU1QVF9PVVRDT01FX1JFVFJZQUJMRV9GQUlMVVJFEAISKQolSk9CX0FUVEVNUFRfT1VUQ09NRV9QRVJNQU5FTlRfRkFJTFVSRRADEiUKIUpPQl9BVFRFTVBUX09VVENPTUVfTEVBU0VfRVhQSVJFRBAEEiAKHEpPQl9BVFRFTVBUX09VVENPTUVfQ0FOQ0VMRUQQBSqNAQoVSm9iRW5xdWV1ZURpc3Bvc2l0aW9uEicKI0pPQl9FTlFVRVVFX0RJU1BPU0lUSU9OX1VOU1BFQ0lGSUVEEAASJAogSk9CX0VOUVVFVUVfRElTUE9TSVRJT05fSU5TRVJURUQQARIlCiFKT0JfRU5RVUVVRV9ESVNQT1NJVElPTl9EVVBMSUNBVEUQAkKVAQoQY29tLnNhYXMuam9icy52MUIJSm9ic1Byb3RvUAFaJGFjY291bnRzL3BrZy9nZW4vc2Fhcy9qb2JzL3YxO2pvYnN2MaICA1NKWKoCDFNhYXMuSm9icy5WMcoCDFNhYXNcSm9ic1xWMeICGFNhYXNcSm9ic1xWMVxHUEJNZXRhZGF0YeoCDlNhYXM6OkpvYnM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_duration, file_google_protobuf_timestamp]);
+  fileDesc("ChdzYWFzL2pvYnMvdjEvam9icy5wcm90bxIMc2Fhcy5qb2JzLnYxInoKCEpvYlNjb3BlEiMKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQFIABIeCgpzdWJqZWN0X2lkGAIgASgJQgi6SAVyA7ABAUgAEhkKBmdsb2JhbBgDIAEoCEIHukgEagIIAUgAQg4KBXZhbHVlEgW6SAIIASKgAQoISm9iTGVhc2USGQoFb3duZXIYASABKAlCCrpIB3IFEAEY/wESFwoFdG9rZW4YAiABKAlCCLpIBXIDsAEBEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGhlYXJ0YmVhdF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiVgoKSm9iRmFpbHVyZRItCgRjb2RlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEhkKB21lc3NhZ2UYAiABKAlCCLpIBXIDGIAgIooBChVKb2JFeGVjdXRpb25SZWZlcmVuY2USKwoFb3duZXIYASABKAlCHLpIGXIXEAEYPzIRXlthLXpdW2EtejAtOS1dKiQSLAoEa2luZBgCIAEoCUIeukgbchkQARhAMhNeW2Etel1bYS16MC05Xy4tXSokEhYKAmlkGAMgASgJQgq6SAdyBRABGP8BIqkJCgtKb2JFbnZlbG9wZRIUCgJpZBgBIAEoCUIIukgFcgOwAQESNQoJZGlyZWN0aW9uGAIgASgOMhouc2Fhcy5qb2JzLnYxLkpvYkRpcmVjdGlvbkIGukgDyAEBEi0KBXNjb3BlGAMgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYlNjb3BlQga6SAPIAQESLgoFcXVldWUYBCABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSLgoFdG9waWMYBSABKAlCH7pIHHIaEAEY/wEyE15bYS16XVthLXowLTlfLi1dKiQSMQoGc291cmNlGAYgASgJQiG6SB5yHBABGP8BMhVeW2Etel1bYS16MC05Xy46Ly1dKiQSIwoPaWRlbXBvdGVuY3lfa2V5GAcgASgJQgq6SAdyBRABGP8BEh4KDG9yZGVyaW5nX2tleRgIIAEoCUIIukgFcgMY/wESHwoOc2NoZW1hX3ZlcnNpb24YCSABKA1CB7pIBCoCIAASGgoHcGF5bG9hZBgKIAEoDEIJukgGegQYgIBAEiAKDGNvbnRlbnRfdHlwZRgLIAEoCUIKukgHcgUQARj/ARJsCgphdHRyaWJ1dGVzGAwgAygLMikuc2Fhcy5qb2JzLnYxLkpvYkVudmVsb3BlLkF0dHJpYnV0ZXNFbnRyeUItukgqmgEnEEAiHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQqBXIDGIAIEi0KBXN0YXRlGA0gASgOMhYuc2Fhcy5qb2JzLnYxLkpvYlN0YXRlQga6SAPIAQESJAoIcHJpb3JpdHkYDiABKAVCErpIDxoNGGQonP//////////ARIVCg1hdHRlbXB0X2NvdW50GA8gASgNEh0KDG1heF9hdHRlbXB0cxgQIAEoDUIHukgEKgIgABIlCgVsZWFzZRgRIAEoCzIWLnNhYXMuam9icy52MS5Kb2JMZWFzZRIuCgxsYXN0X2ZhaWx1cmUYEiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZRIwCgxhdmFpbGFibGVfYXQYEyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2xhc3RfYXR0ZW1wdF9hdBgUIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMY29tcGxldGVkX2F0GBUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0ChBkZWFkX2xldHRlcmVkX2F0GBYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GBcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GBggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIVCg1zdGF0ZV92ZXJzaW9uGBkgASgEEh4KCXJlcGxheV9vZhgaIAEoCUILukgI2AEBcgOwAQEaMQoPQXR0cmlidXRlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEibAoOSm9iT3JkZXJpbmdLZXkSMQoJbmFtZXNwYWNlGAEgASgJQh66SBtyGRABGEAyE15bYS16XVthLXowLTlfLi1dKiQSJwoKY29tcG9uZW50cxgCIAMoCUITukgQkgENCAEQCCIHcgUQARiAASLKBQoGTmV3Sm9iEjUKCWRpcmVjdGlvbhgBIAEoDjIaLnNhYXMuam9icy52MS5Kb2JEaXJlY3Rpb25CBrpIA8gBARItCgVzY29wZRgCIAEoCzIWLnNhYXMuam9icy52MS5Kb2JTY29wZUIGukgDyAEBEi4KBXF1ZXVlGAMgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEi4KBXRvcGljGAQgASgJQh+6SBxyGhABGP8BMhNeW2Etel1bYS16MC05Xy4tXSokEjEKBnNvdXJjZRgFIAEoCUIhukgechwQARj/ATIVXlthLXpdW2EtejAtOV8uOi8tXSokEiMKD2lkZW1wb3RlbmN5X2tleRgGIAEoCUIKukgHcgUQARj/ARIuCghvcmRlcmluZxgHIAEoCzIcLnNhYXMuam9icy52MS5Kb2JPcmRlcmluZ0tleRIfCg5zY2hlbWFfdmVyc2lvbhgIIAEoDUIHukgEKgIgABIaCgdwYXlsb2FkGAkgASgMQgm6SAZ6BBiAgEASIAoMY29udGVudF90eXBlGAogASgJQgq6SAdyBRABGP8BEmcKCmF0dHJpYnV0ZXMYCyADKAsyJC5zYWFzLmpvYnMudjEuTmV3Sm9iLkF0dHJpYnV0ZXNFbnRyeUItukgqmgEnEEAiHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQqBXIDGIAIEiQKCHByaW9yaXR5GAwgASgFQhK6SA8aDRhkKJz//////////wESHwoMbWF4X2F0dGVtcHRzGA0gASgNQgm6SAYqBBhkKAESMAoMYXZhaWxhYmxlX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASI+ChFFbnF1ZXVlSm9iUmVxdWVzdBIpCgNqb2IYASABKAsyFC5zYWFzLmpvYnMudjEuTmV3Sm9iQga6SAPIAQEicAoSRW5xdWV1ZUpvYlJlc3BvbnNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESQAoLZGlzcG9zaXRpb24YAiABKA4yIy5zYWFzLmpvYnMudjEuSm9iRW5xdWV1ZURpc3Bvc2l0aW9uQga6SAPIAQEi6QYKCkpvYlN1bW1hcnkSFAoCaWQYASABKAlCCLpIBXIDsAEBEjUKCWRpcmVjdGlvbhgCIAEoDjIaLnNhYXMuam9icy52MS5Kb2JEaXJlY3Rpb25CBrpIA8gBARItCgVzY29wZRgDIAEoCzIWLnNhYXMuam9icy52MS5Kb2JTY29wZUIGukgDyAEBEg0KBXF1ZXVlGAQgASgJEg0KBXRvcGljGAUgASgJEg4KBnNvdXJjZRgGIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYByABKAkSFAoMb3JkZXJpbmdfa2V5GAggASgJEhYKDnNjaGVtYV92ZXJzaW9uGAkgASgNEhQKDGNvbnRlbnRfdHlwZRgKIAEoCRItCgVzdGF0ZRgLIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZUIGukgDyAEBEhAKCHByaW9yaXR5GAwgASgFEhUKDWF0dGVtcHRfY291bnQYDSABKA0SFAoMbWF4X2F0dGVtcHRzGA4gASgNEiUKBWxlYXNlGA8gASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlEi4KDGxhc3RfZmFpbHVyZRgQIAEoCzIYLnNhYXMuam9icy52MS5Kb2JGYWlsdXJlEjAKDGF2YWlsYWJsZV9hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPbGFzdF9hdHRlbXB0X2F0GBIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxjb21wbGV0ZWRfYXQYEyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjQKEGRlYWRfbGV0dGVyZWRfYXQYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYFSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYFiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhUKDXN0YXRlX3ZlcnNpb24YFyABKAQSEQoJcmVwbGF5X29mGBggASgJEjYKCWV4ZWN1dGlvbhgZIAEoCzIjLnNhYXMuam9icy52MS5Kb2JFeGVjdXRpb25SZWZlcmVuY2UigQIKEEpvYlF1ZXVlU25hcHNob3QSDQoFcXVldWUYASABKAkSDwoHcGVuZGluZxgCIAEoBBISCgpwcm9jZXNzaW5nGAMgASgEEhAKCHJldHJ5aW5nGAQgASgEEhEKCXN1Y2NlZWRlZBgFIAEoBBITCgtkZWFkX2xldHRlchgGIAEoBBIQCghjYW5jZWxlZBgHIAEoBBINCgVyZWFkeRgIIAEoBBIRCglzY2hlZHVsZWQYCSABKAQSFgoOZXhwaXJlZF9sZWFzZXMYCiABKAQSMwoPb2xkZXN0X3JlYWR5X2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJKChdHZXRKb2JPcGVyYXRpb25zUmVxdWVzdBIvCgVxdWV1ZRgBIAEoCUIgukgd2AEBchgYgAEyE15bYS16XVthLXowLTlfLi1dKiQigwEKGEdldEpvYk9wZXJhdGlvbnNSZXNwb25zZRIuCgZxdWV1ZXMYASADKAsyHi5zYWFzLmpvYnMudjEuSm9iUXVldWVTbmFwc2hvdBI3CgtvYnNlcnZlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCBrpIA8gBASKMAgoPTGlzdEpvYnNSZXF1ZXN0Ei8KBXF1ZXVlGAEgASgJQiC6SB3YAQFyGBiAATITXlthLXpdW2EtejAtOV8uLV0qJBI7CgZzdGF0ZXMYAiADKA4yFi5zYWFzLmpvYnMudjEuSm9iU3RhdGVCE7pIEJIBDRAGGAEiB4IBBBABIAASIwoPb3JnYW5pemF0aW9uX2lkGAMgASgJQgi6SAVyA7ABAUgAEh4KCnN1YmplY3RfaWQYBCABKAlCCLpIBXIDsAEBSAASHwoJcGFnZV9zaXplGAUgASgNQgy6SAnYAQEqBBhkKAESHAoKcGFnZV90b2tlbhgGIAEoCUIIukgFcgMYgARCBwoFc2NvcGUiUwoQTGlzdEpvYnNSZXNwb25zZRImCgRqb2JzGAEgAygLMhguc2Fhcy5qb2JzLnYxLkpvYlN1bW1hcnkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIikKDUdldEpvYlJlcXVlc3QSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABASKiAQoOR2V0Sm9iUmVzcG9uc2USLQoDam9iGAEgASgLMhguc2Fhcy5qb2JzLnYxLkpvYlN1bW1hcnlCBrpIA8gBARIqCghhdHRlbXB0cxgCIAMoCzIYLnNhYXMuam9icy52MS5Kb2JBdHRlbXB0EjUKC3RyYW5zaXRpb25zGAMgAygLMiAuc2Fhcy5qb2JzLnYxLkpvYlN0YXRlVHJhbnNpdGlvbiKKAQoQUmVwbGF5Sm9iUmVxdWVzdBIfCg1zb3VyY2Vfam9iX2lkGAEgASgJQgi6SAVyA7ABARIjCg9pZGVtcG90ZW5jeV9rZXkYAiABKAlCCrpIB3IFEAEY/wESMAoMYXZhaWxhYmxlX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJvChFSZXBsYXlKb2JSZXNwb25zZRIYCgZqb2JfaWQYASABKAlCCLpIBXIDsAEBEkAKC2Rpc3Bvc2l0aW9uGAIgASgOMiMuc2Fhcy5qb2JzLnYxLkpvYkVucXVldWVEaXNwb3NpdGlvbkIGukgDyAEBItMBChBKb2JXb3JrZXJNZXRyaWNzEg0KBXF1ZXVlGAEgASgJEhIKCml0ZXJhdGlvbnMYAiABKAQSFAoMY2xhaW1fZXJyb3JzGAMgASgEEg8KB2NsYWltZWQYBCABKAQSEQoJc3VjY2VlZGVkGAUgASgEEg8KB3JldHJpZWQYBiABKAQSFQoNZGVhZF9sZXR0ZXJlZBgHIAEoBBIWCg5oYW5kbGVyX3BhbmljcxgIIAEoBBISCgpsZWFzZV9sb3N0GAkgASgEEg4KBmFjdGl2ZRgKIAEoAyKDAwoKSm9iQXR0ZW1wdBIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGam9iX2lkGAIgASgJQgi6SAVyA7ABARIXCgZudW1iZXIYAyABKA1CB7pIBCoCIAASHQoJd29ya2VyX2lkGAQgASgJQgq6SAdyBRABGP8BEh0KC2xlYXNlX3Rva2VuGAUgASgJQgi6SAVyA7ABARIwCgdvdXRjb21lGAYgASgOMh8uc2Fhcy5qb2JzLnYxLkpvYkF0dGVtcHRPdXRjb21lEikKB2ZhaWx1cmUYByABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZRIuCgpzdGFydGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxoZWFydGJlYXRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2ZpbmlzaGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLJAgoSSm9iU3RhdGVUcmFuc2l0aW9uEhkKCHNlcXVlbmNlGAEgASgDQge6SAQiAiAAEhgKBmpvYl9pZBgCIAEoCUIIukgFcgOwAQESKgoKZnJvbV9zdGF0ZRgDIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZRIwCgh0b19zdGF0ZRgEIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZUIGukgDyAEBEhUKDXN0YXRlX3ZlcnNpb24YBSABKAQSFQoNYXR0ZW1wdF9jb3VudBgGIAEoDRIWCgVhY3RvchgHIAEoCUIHukgEcgIQARIpCgdmYWlsdXJlGAggASgLMhguc2Fhcy5qb2JzLnYxLkpvYkZhaWx1cmUSLwoLb2NjdXJyZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIsQBChBDbGFpbUpvYnNSZXF1ZXN0Ei4KBXF1ZXVlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEh0KCXdvcmtlcl9pZBgCIAEoCUIKukgHcgUQARj/ARIYCgVsaW1pdBgDIAEoDUIJukgGKgQYZCgBEkcKDmxlYXNlX2R1cmF0aW9uGAQgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uQhS6SBHIAQGqAQsiAwiQHDIEEMCEPSI8ChFDbGFpbUpvYnNSZXNwb25zZRInCgRqb2JzGAEgAygLMhkuc2Fhcy5qb2JzLnYxLkpvYkVudmVsb3BlImsKEUpvYkxlYXNlUmVmZXJlbmNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESHQoJd29ya2VyX2lkGAIgASgJQgq6SAdyBRABGP8BEh0KC2xlYXNlX3Rva2VuGAMgASgJQgi6SAVyA7ABASKRAQoTSGVhcnRiZWF0Sm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEkIKCWV4dGVuc2lvbhgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbkIUukgRyAEBqgELIgMIkBwyBBDAhD0iRQoUSGVhcnRiZWF0Sm9iUmVzcG9uc2USLQoFbGVhc2UYASABKAsyFi5zYWFzLmpvYnMudjEuSm9iTGVhc2VCBrpIA8gBASKEAQoSQ29tcGxldGVKb2JSZXF1ZXN0EjYKBWxlYXNlGAEgASgLMh8uc2Fhcy5qb2JzLnYxLkpvYkxlYXNlUmVmZXJlbmNlQga6SAPIAQESNgoJZXhlY3V0aW9uGAIgASgLMiMuc2Fhcy5qb2JzLnYxLkpvYkV4ZWN1dGlvblJlZmVyZW5jZSKyAQoPUmV0cnlKb2JSZXF1ZXN0EjYKBWxlYXNlGAEgASgLMh8uc2Fhcy5qb2JzLnYxLkpvYkxlYXNlUmVmZXJlbmNlQga6SAPIAQESMQoHZmFpbHVyZRgCIAEoCzIYLnNhYXMuam9icy52MS5Kb2JGYWlsdXJlQga6SAPIAQESNAoIcmV0cnlfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQga6SAPIAQEiQQoQUmV0cnlKb2JSZXNwb25zZRItCgVzdGF0ZRgBIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZUIGukgDyAEBIoEBChREZWFkTGV0dGVySm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEjEKB2ZhaWx1cmUYAiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZUIGukgDyAEBKmAKDEpvYkRpcmVjdGlvbhIdChlKT0JfRElSRUNUSU9OX1VOU1BFQ0lGSUVEEAASFwoTSk9CX0RJUkVDVElPTl9JTkJPWBABEhgKFEpPQl9ESVJFQ1RJT05fT1VUQk9YEAIqugEKCEpvYlN0YXRlEhkKFUpPQl9TVEFURV9VTlNQRUNJRklFRBAAEhUKEUpPQl9TVEFURV9QRU5ESU5HEAESGAoUSk9CX1NUQVRFX1BST0NFU1NJTkcQAhIWChJKT0JfU1RBVEVfUkVUUllJTkcQAxIXChNKT0JfU1RBVEVfU1VDQ0VFREVEEAQSGQoVSk9CX1NUQVRFX0RFQURfTEVUVEVSEAUSFgoSSk9CX1NUQVRFX0NBTkNFTEVEEAYq+gEKEUpvYkF0dGVtcHRPdXRjb21lEiMKH0pPQl9BVFRFTVBUX09VVENPTUVfVU5TUEVDSUZJRUQQABIhCh1KT0JfQVRURU1QVF9PVVRDT01FX1NVQ0NFRURFRBABEikKJUpPQl9BVFRFTVBUX09VVENPTUVfUkVUUllBQkxFX0ZBSUxVUkUQAhIpCiVKT0JfQVRURU1QVF9PVVRDT01FX1BFUk1BTkVOVF9GQUlMVVJFEAMSJQohSk9CX0FUVEVNUFRfT1VUQ09NRV9MRUFTRV9FWFBJUkVEEAQSIAocSk9CX0FUVEVNUFRfT1VUQ09NRV9DQU5DRUxFRBAFKo0BChVKb2JFbnF1ZXVlRGlzcG9zaXRpb24SJwojSk9CX0VOUVVFVUVfRElTUE9TSVRJT05fVU5TUEVDSUZJRUQQABIkCiBKT0JfRU5RVUVVRV9ESVNQT1NJVElPTl9JTlNFUlRFRBABEiUKIUpPQl9FTlFVRVVFX0RJU1BPU0lUSU9OX0RVUExJQ0FURRACQpUBChBjb20uc2Fhcy5qb2JzLnYxQglKb2JzUHJvdG9QAVokYWNjb3VudHMvcGtnL2dlbi9zYWFzL2pvYnMvdjE7am9ic3YxogIDU0pYqgIMU2Fhcy5Kb2JzLlYxygIMU2Fhc1xKb2JzXFYx4gIYU2Fhc1xKb2JzXFYxXEdQQk1ldGFkYXRh6gIOU2Fhczo6Sm9iczo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_duration, file_google_protobuf_timestamp]);
 
 /**
  * JobScope carries the tenant or subject binding enforced when request traffic
@@ -112,6 +112,38 @@ export type JobFailure = Message<"saas.jobs.v1.JobFailure"> & {
  */
 export const JobFailureSchema: GenMessage<JobFailure> = /*@__PURE__*/
   messageDesc(file_saas_jobs_v1_jobs, 2);
+
+/**
+ * JobExecutionReference correlates Host work with an external execution. Owner
+ * is the authenticated module reporting completion; kind and id are that
+ * module's assertion and require independent verification against the external
+ * execution owner's public read.
+ *
+ * @generated from message saas.jobs.v1.JobExecutionReference
+ */
+export type JobExecutionReference = Message<"saas.jobs.v1.JobExecutionReference"> & {
+  /**
+   * @generated from field: string owner = 1;
+   */
+  owner: string;
+
+  /**
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string id = 3;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message saas.jobs.v1.JobExecutionReference.
+ * Use `create(JobExecutionReferenceSchema)` to create a new message.
+ */
+export const JobExecutionReferenceSchema: GenMessage<JobExecutionReference> = /*@__PURE__*/
+  messageDesc(file_saas_jobs_v1_jobs, 3);
 
 /**
  * JobEnvelope is the product-neutral durable inbox/outbox record. payload is
@@ -258,7 +290,7 @@ export type JobEnvelope = Message<"saas.jobs.v1.JobEnvelope"> & {
  * Use `create(JobEnvelopeSchema)` to create a new message.
  */
 export const JobEnvelopeSchema: GenMessage<JobEnvelope> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 3);
+  messageDesc(file_saas_jobs_v1_jobs, 4);
 
 /**
  * JobOrderingKey is the portable source for one strict FIFO key. The runtime
@@ -284,7 +316,7 @@ export type JobOrderingKey = Message<"saas.jobs.v1.JobOrderingKey"> & {
  * Use `create(JobOrderingKeySchema)` to create a new message.
  */
 export const JobOrderingKeySchema: GenMessage<JobOrderingKey> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 4);
+  messageDesc(file_saas_jobs_v1_jobs, 5);
 
 /**
  * NewJob contains only producer-owned immutable fields. Database-owned ids,
@@ -370,7 +402,7 @@ export type NewJob = Message<"saas.jobs.v1.NewJob"> & {
  * Use `create(NewJobSchema)` to create a new message.
  */
 export const NewJobSchema: GenMessage<NewJob> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 5);
+  messageDesc(file_saas_jobs_v1_jobs, 6);
 
 /**
  * EnqueueJobRequest is safe to fingerprint deterministically. Exact retries
@@ -391,7 +423,7 @@ export type EnqueueJobRequest = Message<"saas.jobs.v1.EnqueueJobRequest"> & {
  * Use `create(EnqueueJobRequestSchema)` to create a new message.
  */
 export const EnqueueJobRequestSchema: GenMessage<EnqueueJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 6);
+  messageDesc(file_saas_jobs_v1_jobs, 7);
 
 /**
  * @generated from message saas.jobs.v1.EnqueueJobResponse
@@ -413,7 +445,7 @@ export type EnqueueJobResponse = Message<"saas.jobs.v1.EnqueueJobResponse"> & {
  * Use `create(EnqueueJobResponseSchema)` to create a new message.
  */
 export const EnqueueJobResponseSchema: GenMessage<EnqueueJobResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 7);
+  messageDesc(file_saas_jobs_v1_jobs, 8);
 
 /**
  * JobSummary is the payload-free operations view. Payload bytes and attributes
@@ -541,6 +573,11 @@ export type JobSummary = Message<"saas.jobs.v1.JobSummary"> & {
    * @generated from field: string replay_of = 24;
    */
   replayOf: string;
+
+  /**
+   * @generated from field: saas.jobs.v1.JobExecutionReference execution = 25;
+   */
+  execution?: JobExecutionReference;
 };
 
 /**
@@ -548,7 +585,7 @@ export type JobSummary = Message<"saas.jobs.v1.JobSummary"> & {
  * Use `create(JobSummarySchema)` to create a new message.
  */
 export const JobSummarySchema: GenMessage<JobSummary> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 8);
+  messageDesc(file_saas_jobs_v1_jobs, 9);
 
 /**
  * JobQueueSnapshot is database-derived operational state and is therefore
@@ -619,7 +656,7 @@ export type JobQueueSnapshot = Message<"saas.jobs.v1.JobQueueSnapshot"> & {
  * Use `create(JobQueueSnapshotSchema)` to create a new message.
  */
 export const JobQueueSnapshotSchema: GenMessage<JobQueueSnapshot> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 9);
+  messageDesc(file_saas_jobs_v1_jobs, 10);
 
 /**
  * @generated from message saas.jobs.v1.GetJobOperationsRequest
@@ -636,7 +673,7 @@ export type GetJobOperationsRequest = Message<"saas.jobs.v1.GetJobOperationsRequ
  * Use `create(GetJobOperationsRequestSchema)` to create a new message.
  */
 export const GetJobOperationsRequestSchema: GenMessage<GetJobOperationsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 10);
+  messageDesc(file_saas_jobs_v1_jobs, 11);
 
 /**
  * @generated from message saas.jobs.v1.GetJobOperationsResponse
@@ -658,7 +695,7 @@ export type GetJobOperationsResponse = Message<"saas.jobs.v1.GetJobOperationsRes
  * Use `create(GetJobOperationsResponseSchema)` to create a new message.
  */
 export const GetJobOperationsResponseSchema: GenMessage<GetJobOperationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 11);
+  messageDesc(file_saas_jobs_v1_jobs, 12);
 
 /**
  * @generated from message saas.jobs.v1.ListJobsRequest
@@ -707,7 +744,7 @@ export type ListJobsRequest = Message<"saas.jobs.v1.ListJobsRequest"> & {
  * Use `create(ListJobsRequestSchema)` to create a new message.
  */
 export const ListJobsRequestSchema: GenMessage<ListJobsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 12);
+  messageDesc(file_saas_jobs_v1_jobs, 13);
 
 /**
  * @generated from message saas.jobs.v1.ListJobsResponse
@@ -729,7 +766,7 @@ export type ListJobsResponse = Message<"saas.jobs.v1.ListJobsResponse"> & {
  * Use `create(ListJobsResponseSchema)` to create a new message.
  */
 export const ListJobsResponseSchema: GenMessage<ListJobsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 13);
+  messageDesc(file_saas_jobs_v1_jobs, 14);
 
 /**
  * @generated from message saas.jobs.v1.GetJobRequest
@@ -746,7 +783,7 @@ export type GetJobRequest = Message<"saas.jobs.v1.GetJobRequest"> & {
  * Use `create(GetJobRequestSchema)` to create a new message.
  */
 export const GetJobRequestSchema: GenMessage<GetJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 14);
+  messageDesc(file_saas_jobs_v1_jobs, 15);
 
 /**
  * @generated from message saas.jobs.v1.GetJobResponse
@@ -773,7 +810,7 @@ export type GetJobResponse = Message<"saas.jobs.v1.GetJobResponse"> & {
  * Use `create(GetJobResponseSchema)` to create a new message.
  */
 export const GetJobResponseSchema: GenMessage<GetJobResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 15);
+  messageDesc(file_saas_jobs_v1_jobs, 16);
 
 /**
  * ReplayJobRequest creates a new pending copy of one dead-lettered job. The
@@ -804,7 +841,7 @@ export type ReplayJobRequest = Message<"saas.jobs.v1.ReplayJobRequest"> & {
  * Use `create(ReplayJobRequestSchema)` to create a new message.
  */
 export const ReplayJobRequestSchema: GenMessage<ReplayJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 16);
+  messageDesc(file_saas_jobs_v1_jobs, 17);
 
 /**
  * @generated from message saas.jobs.v1.ReplayJobResponse
@@ -826,7 +863,7 @@ export type ReplayJobResponse = Message<"saas.jobs.v1.ReplayJobResponse"> & {
  * Use `create(ReplayJobResponseSchema)` to create a new message.
  */
 export const ReplayJobResponseSchema: GenMessage<ReplayJobResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 17);
+  messageDesc(file_saas_jobs_v1_jobs, 18);
 
 /**
  * JobWorkerMetrics is a low-cardinality process-local snapshot for one queue.
@@ -891,7 +928,7 @@ export type JobWorkerMetrics = Message<"saas.jobs.v1.JobWorkerMetrics"> & {
  * Use `create(JobWorkerMetricsSchema)` to create a new message.
  */
 export const JobWorkerMetricsSchema: GenMessage<JobWorkerMetrics> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 18);
+  messageDesc(file_saas_jobs_v1_jobs, 19);
 
 /**
  * JobAttempt is the immutable result of one lease. The attempt row is opened
@@ -957,7 +994,7 @@ export type JobAttempt = Message<"saas.jobs.v1.JobAttempt"> & {
  * Use `create(JobAttemptSchema)` to create a new message.
  */
 export const JobAttemptSchema: GenMessage<JobAttempt> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 19);
+  messageDesc(file_saas_jobs_v1_jobs, 20);
 
 /**
  * JobStateTransition is the append-only audit record produced by the database
@@ -1017,7 +1054,7 @@ export type JobStateTransition = Message<"saas.jobs.v1.JobStateTransition"> & {
  * Use `create(JobStateTransitionSchema)` to create a new message.
  */
 export const JobStateTransitionSchema: GenMessage<JobStateTransition> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 20);
+  messageDesc(file_saas_jobs_v1_jobs, 21);
 
 /**
  * ClaimJobsRequest selects one queue and acquires a bounded batch with a fresh
@@ -1052,7 +1089,7 @@ export type ClaimJobsRequest = Message<"saas.jobs.v1.ClaimJobsRequest"> & {
  * Use `create(ClaimJobsRequestSchema)` to create a new message.
  */
 export const ClaimJobsRequestSchema: GenMessage<ClaimJobsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 21);
+  messageDesc(file_saas_jobs_v1_jobs, 22);
 
 /**
  * ClaimJobsResponse contains only jobs whose attempt rows committed in the
@@ -1072,7 +1109,7 @@ export type ClaimJobsResponse = Message<"saas.jobs.v1.ClaimJobsResponse"> & {
  * Use `create(ClaimJobsResponseSchema)` to create a new message.
  */
 export const ClaimJobsResponseSchema: GenMessage<ClaimJobsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 22);
+  messageDesc(file_saas_jobs_v1_jobs, 23);
 
 /**
  * JobLeaseReference fences every heartbeat and finalization by the job, worker,
@@ -1102,7 +1139,7 @@ export type JobLeaseReference = Message<"saas.jobs.v1.JobLeaseReference"> & {
  * Use `create(JobLeaseReferenceSchema)` to create a new message.
  */
 export const JobLeaseReferenceSchema: GenMessage<JobLeaseReference> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 23);
+  messageDesc(file_saas_jobs_v1_jobs, 24);
 
 /**
  * HeartbeatJobRequest renews a live lease from the database clock. An expired
@@ -1127,7 +1164,7 @@ export type HeartbeatJobRequest = Message<"saas.jobs.v1.HeartbeatJobRequest"> & 
  * Use `create(HeartbeatJobRequestSchema)` to create a new message.
  */
 export const HeartbeatJobRequestSchema: GenMessage<HeartbeatJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 24);
+  messageDesc(file_saas_jobs_v1_jobs, 25);
 
 /**
  * @generated from message saas.jobs.v1.HeartbeatJobResponse
@@ -1144,7 +1181,7 @@ export type HeartbeatJobResponse = Message<"saas.jobs.v1.HeartbeatJobResponse"> 
  * Use `create(HeartbeatJobResponseSchema)` to create a new message.
  */
 export const HeartbeatJobResponseSchema: GenMessage<HeartbeatJobResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 25);
+  messageDesc(file_saas_jobs_v1_jobs, 26);
 
 /**
  * CompleteJobRequest commits a successful attempt and terminal job transition.
@@ -1156,6 +1193,11 @@ export type CompleteJobRequest = Message<"saas.jobs.v1.CompleteJobRequest"> & {
    * @generated from field: saas.jobs.v1.JobLeaseReference lease = 1;
    */
   lease?: JobLeaseReference;
+
+  /**
+   * @generated from field: saas.jobs.v1.JobExecutionReference execution = 2;
+   */
+  execution?: JobExecutionReference;
 };
 
 /**
@@ -1163,7 +1205,7 @@ export type CompleteJobRequest = Message<"saas.jobs.v1.CompleteJobRequest"> & {
  * Use `create(CompleteJobRequestSchema)` to create a new message.
  */
 export const CompleteJobRequestSchema: GenMessage<CompleteJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 26);
+  messageDesc(file_saas_jobs_v1_jobs, 27);
 
 /**
  * RetryJobRequest commits a retryable failed attempt. When the attempt budget
@@ -1193,7 +1235,7 @@ export type RetryJobRequest = Message<"saas.jobs.v1.RetryJobRequest"> & {
  * Use `create(RetryJobRequestSchema)` to create a new message.
  */
 export const RetryJobRequestSchema: GenMessage<RetryJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 27);
+  messageDesc(file_saas_jobs_v1_jobs, 28);
 
 /**
  * @generated from message saas.jobs.v1.RetryJobResponse
@@ -1210,7 +1252,7 @@ export type RetryJobResponse = Message<"saas.jobs.v1.RetryJobResponse"> & {
  * Use `create(RetryJobResponseSchema)` to create a new message.
  */
 export const RetryJobResponseSchema: GenMessage<RetryJobResponse> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 28);
+  messageDesc(file_saas_jobs_v1_jobs, 29);
 
 /**
  * DeadLetterJobRequest commits a permanent failed attempt and immediately
@@ -1235,7 +1277,7 @@ export type DeadLetterJobRequest = Message<"saas.jobs.v1.DeadLetterJobRequest"> 
  * Use `create(DeadLetterJobRequestSchema)` to create a new message.
  */
 export const DeadLetterJobRequestSchema: GenMessage<DeadLetterJobRequest> = /*@__PURE__*/
-  messageDesc(file_saas_jobs_v1_jobs, 29);
+  messageDesc(file_saas_jobs_v1_jobs, 30);
 
 /**
  * JobDirection distinguishes work accepted from an external producer from work

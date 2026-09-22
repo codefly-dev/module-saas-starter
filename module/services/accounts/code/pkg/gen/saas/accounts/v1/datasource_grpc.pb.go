@@ -20,13 +20,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DatasourceService_AddGitHubSource_FullMethodName      = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
-	DatasourceService_AddSource_FullMethodName            = "/saas.accounts.v1.DatasourceService/AddSource"
-	DatasourceService_GetDatasourceCatalog_FullMethodName = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
-	DatasourceService_ListSources_FullMethodName          = "/saas.accounts.v1.DatasourceService/ListSources"
-	DatasourceService_GetSource_FullMethodName            = "/saas.accounts.v1.DatasourceService/GetSource"
-	DatasourceService_SyncSource_FullMethodName           = "/saas.accounts.v1.DatasourceService/SyncSource"
-	DatasourceService_DeleteSource_FullMethodName         = "/saas.accounts.v1.DatasourceService/DeleteSource"
+	DatasourceService_AddGitHubSource_FullMethodName          = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
+	DatasourceService_AddSource_FullMethodName                = "/saas.accounts.v1.DatasourceService/AddSource"
+	DatasourceService_GetDatasourceCatalog_FullMethodName     = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
+	DatasourceService_ListSources_FullMethodName              = "/saas.accounts.v1.DatasourceService/ListSources"
+	DatasourceService_GetSource_FullMethodName                = "/saas.accounts.v1.DatasourceService/GetSource"
+	DatasourceService_SyncSource_FullMethodName               = "/saas.accounts.v1.DatasourceService/SyncSource"
+	DatasourceService_GetSourceSync_FullMethodName            = "/saas.accounts.v1.DatasourceService/GetSourceSync"
+	DatasourceService_DeleteSource_FullMethodName             = "/saas.accounts.v1.DatasourceService/DeleteSource"
+	DatasourceService_BeginGitHubAppSetup_FullMethodName      = "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup"
+	DatasourceService_CompleteGitHubAppSetup_FullMethodName   = "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup"
+	DatasourceService_MigrateGitHubSourceToApp_FullMethodName = "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp"
 )
 
 // DatasourceServiceClient is the client API for DatasourceService service.
@@ -56,8 +60,28 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(ctx context.Context, in *SyncSourceRequest, opts ...grpc.CallOption) (*SyncSourceResponse, error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(ctx context.Context, in *GetSourceSyncRequest, opts ...grpc.CallOption) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error)
+	// BeginGitHubAppSetup mints a one-time setup state, bound to this
+	// organization and to the calling user, and returns the URL that installs the
+	// deployment's GitHub App on repositories the tenant picks. No credential is
+	// stored: the App's signing key is deployment custody.
+	BeginGitHubAppSetup(ctx context.Context, in *BeginGitHubAppSetupRequest, opts ...grpc.CallOption) (*BeginGitHubAppSetupResponse, error)
+	// CompleteGitHubAppSetup redeems that state exactly once and verifies the
+	// returned installation against GitHub as the App before binding it to the
+	// organization, so an installation id arriving from a browser redirect never
+	// claims a tenant on its own. It returns the repositories the installation
+	// grants.
+	CompleteGitHubAppSetup(ctx context.Context, in *CompleteGitHubAppSetupRequest, opts ...grpc.CallOption) (*CompleteGitHubAppSetupResponse, error)
+	// MigrateGitHubSourceToApp re-points a PAT-backed source at the deployment's
+	// GitHub App in place, keeping the source's identity, path scope, boundary,
+	// grants, delivery cursor and audit history. The installation is resolved
+	// server-side from the repository the source already names, and the stored
+	// PAT is retired only once App access has been proven.
+	MigrateGitHubSourceToApp(ctx context.Context, in *MigrateGitHubSourceToAppRequest, opts ...grpc.CallOption) (*MigrateGitHubSourceToAppResponse, error)
 }
 
 type datasourceServiceClient struct {
@@ -128,10 +152,50 @@ func (c *datasourceServiceClient) SyncSource(ctx context.Context, in *SyncSource
 	return out, nil
 }
 
+func (c *datasourceServiceClient) GetSourceSync(ctx context.Context, in *GetSourceSyncRequest, opts ...grpc.CallOption) (*GetSourceSyncResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSourceSyncResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_GetSourceSync_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *datasourceServiceClient) DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSourceResponse)
 	err := c.cc.Invoke(ctx, DatasourceService_DeleteSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) BeginGitHubAppSetup(ctx context.Context, in *BeginGitHubAppSetupRequest, opts ...grpc.CallOption) (*BeginGitHubAppSetupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginGitHubAppSetupResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_BeginGitHubAppSetup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) CompleteGitHubAppSetup(ctx context.Context, in *CompleteGitHubAppSetupRequest, opts ...grpc.CallOption) (*CompleteGitHubAppSetupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteGitHubAppSetupResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_CompleteGitHubAppSetup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) MigrateGitHubSourceToApp(ctx context.Context, in *MigrateGitHubSourceToAppRequest, opts ...grpc.CallOption) (*MigrateGitHubSourceToAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MigrateGitHubSourceToAppResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_MigrateGitHubSourceToApp_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +229,28 @@ type DatasourceServiceServer interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *SyncSourceRequest) (*SyncSourceResponse, error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(context.Context, *GetSourceSyncRequest) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error)
+	// BeginGitHubAppSetup mints a one-time setup state, bound to this
+	// organization and to the calling user, and returns the URL that installs the
+	// deployment's GitHub App on repositories the tenant picks. No credential is
+	// stored: the App's signing key is deployment custody.
+	BeginGitHubAppSetup(context.Context, *BeginGitHubAppSetupRequest) (*BeginGitHubAppSetupResponse, error)
+	// CompleteGitHubAppSetup redeems that state exactly once and verifies the
+	// returned installation against GitHub as the App before binding it to the
+	// organization, so an installation id arriving from a browser redirect never
+	// claims a tenant on its own. It returns the repositories the installation
+	// grants.
+	CompleteGitHubAppSetup(context.Context, *CompleteGitHubAppSetupRequest) (*CompleteGitHubAppSetupResponse, error)
+	// MigrateGitHubSourceToApp re-points a PAT-backed source at the deployment's
+	// GitHub App in place, keeping the source's identity, path scope, boundary,
+	// grants, delivery cursor and audit history. The installation is resolved
+	// server-side from the repository the source already names, and the stored
+	// PAT is retired only once App access has been proven.
+	MigrateGitHubSourceToApp(context.Context, *MigrateGitHubSourceToAppRequest) (*MigrateGitHubSourceToAppResponse, error)
 	mustEmbedUnimplementedDatasourceServiceServer()
 }
 
@@ -195,8 +279,20 @@ func (UnimplementedDatasourceServiceServer) GetSource(context.Context, *GetSourc
 func (UnimplementedDatasourceServiceServer) SyncSource(context.Context, *SyncSourceRequest) (*SyncSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SyncSource not implemented")
 }
+func (UnimplementedDatasourceServiceServer) GetSourceSync(context.Context, *GetSourceSyncRequest) (*GetSourceSyncResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSourceSync not implemented")
+}
 func (UnimplementedDatasourceServiceServer) DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) BeginGitHubAppSetup(context.Context, *BeginGitHubAppSetupRequest) (*BeginGitHubAppSetupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginGitHubAppSetup not implemented")
+}
+func (UnimplementedDatasourceServiceServer) CompleteGitHubAppSetup(context.Context, *CompleteGitHubAppSetupRequest) (*CompleteGitHubAppSetupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteGitHubAppSetup not implemented")
+}
+func (UnimplementedDatasourceServiceServer) MigrateGitHubSourceToApp(context.Context, *MigrateGitHubSourceToAppRequest) (*MigrateGitHubSourceToAppResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MigrateGitHubSourceToApp not implemented")
 }
 func (UnimplementedDatasourceServiceServer) mustEmbedUnimplementedDatasourceServiceServer() {}
 func (UnimplementedDatasourceServiceServer) testEmbeddedByValue()                           {}
@@ -327,6 +423,24 @@ func _DatasourceService_SyncSource_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatasourceService_GetSourceSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSourceSyncRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).GetSourceSync(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_GetSourceSync_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).GetSourceSync(ctx, req.(*GetSourceSyncRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DatasourceService_DeleteSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteSourceRequest)
 	if err := dec(in); err != nil {
@@ -341,6 +455,60 @@ func _DatasourceService_DeleteSource_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatasourceServiceServer).DeleteSource(ctx, req.(*DeleteSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_BeginGitHubAppSetup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginGitHubAppSetupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).BeginGitHubAppSetup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_BeginGitHubAppSetup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).BeginGitHubAppSetup(ctx, req.(*BeginGitHubAppSetupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_CompleteGitHubAppSetup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteGitHubAppSetupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).CompleteGitHubAppSetup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_CompleteGitHubAppSetup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).CompleteGitHubAppSetup(ctx, req.(*CompleteGitHubAppSetupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_MigrateGitHubSourceToApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MigrateGitHubSourceToAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).MigrateGitHubSourceToApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_MigrateGitHubSourceToApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).MigrateGitHubSourceToApp(ctx, req.(*MigrateGitHubSourceToAppRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -377,8 +545,24 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DatasourceService_SyncSource_Handler,
 		},
 		{
+			MethodName: "GetSourceSync",
+			Handler:    _DatasourceService_GetSourceSync_Handler,
+		},
+		{
 			MethodName: "DeleteSource",
 			Handler:    _DatasourceService_DeleteSource_Handler,
+		},
+		{
+			MethodName: "BeginGitHubAppSetup",
+			Handler:    _DatasourceService_BeginGitHubAppSetup_Handler,
+		},
+		{
+			MethodName: "CompleteGitHubAppSetup",
+			Handler:    _DatasourceService_CompleteGitHubAppSetup_Handler,
+		},
+		{
+			MethodName: "MigrateGitHubSourceToApp",
+			Handler:    _DatasourceService_MigrateGitHubSourceToApp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

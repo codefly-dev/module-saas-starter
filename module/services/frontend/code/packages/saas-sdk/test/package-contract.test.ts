@@ -25,19 +25,19 @@ function saasSdkManifest(): Manifest {
 	for (const path of ["package.json", "packages/saas-sdk/package.json"]) {
 		try {
 			const manifest = JSON.parse(readFileSync(path, "utf8")) as Manifest;
-			if (manifest.name === "@codefly/saas-sdk") return manifest;
+			if (manifest.name === "@codefly-dev/saas-sdk") return manifest;
 		} catch {
 			// Not this cwd — try the next candidate.
 		}
 	}
-	throw new Error("could not locate the @codefly/saas-sdk package.json");
+	throw new Error("could not locate the @codefly-dev/saas-sdk package.json");
 }
 
 function saasSdkSrcDir(): string {
 	for (const path of ["src", "packages/saas-sdk/src"]) {
 		if (existsSync(join(path, "index.ts"))) return path;
 	}
-	throw new Error("could not locate the @codefly/saas-sdk src directory");
+	throw new Error("could not locate the @codefly-dev/saas-sdk src directory");
 }
 
 function sourceFiles(dir: string): string[] {
@@ -56,7 +56,7 @@ const peers = manifest.peerDependencies ?? {};
 const peersMeta = manifest.peerDependenciesMeta ?? {};
 const exportsMap = manifest.exports ?? {};
 
-describe("@codefly/saas-sdk public subpaths", () => {
+describe("@codefly-dev/saas-sdk public subpaths", () => {
 	for (const subpath of [".", "./chat"]) {
 		it(`exports ${subpath} to a typed dist entry`, () => {
 			const entry = exportsMap[subpath];
@@ -70,7 +70,7 @@ describe("@codefly/saas-sdk public subpaths", () => {
 // The chat hook is the SDK's only React consumer, so `react` is an *optional*
 // peer: a consumer of the `.` entry (Connect facades, data-graph tooling) can
 // install and build the SDK with no React in its tree.
-describe("@codefly/saas-sdk react dependency contract", () => {
+describe("@codefly-dev/saas-sdk react dependency contract", () => {
 	it("declares react as an optional peer, not a bundled dependency", () => {
 		expect(peers).toHaveProperty("react");
 		expect(peersMeta.react?.optional).toBe(true);
@@ -78,13 +78,13 @@ describe("@codefly/saas-sdk react dependency contract", () => {
 	});
 });
 
-// The `.` entry promises to be React-free so importing `@codefly/saas-sdk` never
+// The `.` entry promises to be React-free so importing `@codefly-dev/saas-sdk` never
 // pulls React into a transport-only consumer. `src/index.ts` doesn't import from
 // `./chat`, so the guarantee holds exactly as long as React stays quarantined in
 // `src/chat/`. If a `react` import lands anywhere else, an accidental re-export
 // from `index.ts` could leak it into every consumer's main import — a regression
 // the exports map cannot see. Guard the source directly.
-describe("@codefly/saas-sdk main entry stays react-free", () => {
+describe("@codefly-dev/saas-sdk main entry stays react-free", () => {
 	const srcDir = saasSdkSrcDir();
 	const chatDir = join(srcDir, "chat");
 	it("no source outside src/chat imports react", () => {

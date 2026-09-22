@@ -7,9 +7,12 @@
  * authenticated page picks it up.
  *
  * Design choices:
- *   - cmdk + shadcn primitives we already have. Zero new deps.
+ *   - The kit's Command primitives (Base UI Autocomplete). Zero new deps.
  *   - Static command list = navigation. Dynamic = users (debounced
  *     async query). Future: orgs, audit events, settings — same shape.
+ *   - Filtering the static entries is ours, via the kit's useCommandFilter
+ *     (Base UI's own matcher). The user list is already filtered server-side
+ *     by the query, so it is passed through untouched.
  *   - Visibility gating mirrors the sidebar's RoleGate. We don't show
  *     "Platform Users" search to non-super-admins; they'd hit an
  *     authz error anyway, but better not to dangle the link.
@@ -17,7 +20,7 @@
 
 import { LogOut, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
 	Command,
 	CommandEmpty,
@@ -25,6 +28,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
+	useCommandFilter,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
@@ -67,6 +71,25 @@ export function CommandPalette() {
 	const userSearchEnabled = open && superAdmin && query.length >= 2;
 	const userResults = useUsersSearch(query, userSearchEnabled);
 
+	// Static entries are filtered here: the kit's Command leaves its items
+	// alone so callers that already filter server-side (the user list below)
+	// are not filtered twice. `contains` is Base UI's own Intl.Collator
+	// matcher, so typing accents or case behaves the way the rest of the
+	// kit's search surfaces do.
+	const { contains } = useCommandFilter();
+	const filteredNav = useMemo(
+		() =>
+			visibleNav.filter((item) =>
+				contains(`${item.label} ${item.href}`, query),
+			),
+		[visibleNav, query, contains],
+	);
+	const signOutVisible = contains("sign out logout", query);
+	const hasResults =
+		filteredNav.length > 0 ||
+		(superAdmin && userResults.length > 0) ||
+		signOutVisible;
+
 	function navigate(href: string) {
 		setOpen(false);
 		setQuery("");
@@ -79,30 +102,28 @@ export function CommandPalette() {
 		<Dialog open={open} onOpenChange={setOpen}>
 			<DialogContent className="overflow-hidden p-0 max-w-xl">
 				<DialogTitle className="sr-only">Command palette</DialogTitle>
-				<Command shouldFilter={true}>
-					<CommandInput
-						placeholder="Search or jump to..."
-						value={query}
-						onValueChange={setQuery}
-					/>
+				<Command value={query} onValueChange={setQuery}>
+					<CommandInput placeholder="Search or jump to..." />
 					<CommandList>
-						<CommandEmpty>No results.</CommandEmpty>
+						{!hasResults && <CommandEmpty>No results.</CommandEmpty>}
 
-						<CommandGroup heading="Navigate">
-							{visibleNav.map((item) => {
-								const Icon = getNavigationIcon(item.icon);
-								return (
-									<CommandItem
-										key={item.href}
-										value={`${item.label} ${item.href}`}
-										onSelect={() => navigate(item.href)}
-									>
-										<Icon className="mr-2 h-4 w-4" />
-										{item.label}
-									</CommandItem>
-								);
-							})}
-						</CommandGroup>
+						{filteredNav.length > 0 && (
+							<CommandGroup heading="Navigate">
+								{filteredNav.map((item) => {
+									const Icon = getNavigationIcon(item.icon);
+									return (
+										<CommandItem
+											key={item.href}
+											value={`${item.label} ${item.href}`}
+											onSelect={() => navigate(item.href)}
+										>
+											<Icon className="mr-2 h-4 w-4" />
+											{item.label}
+										</CommandItem>
+									);
+								})}
+							</CommandGroup>
+						)}
 
 						{superAdmin && userResults.length > 0 && (
 							<CommandGroup heading="Users">
@@ -122,18 +143,20 @@ export function CommandPalette() {
 							</CommandGroup>
 						)}
 
-						<CommandGroup heading="Actions">
-							<CommandItem
-								value="sign out logout"
-								onSelect={async () => {
-									setOpen(false);
-									await logout();
-								}}
-							>
-								<LogOut className="mr-2 h-4 w-4" />
-								Sign out
-							</CommandItem>
-						</CommandGroup>
+						{signOutVisible && (
+							<CommandGroup heading="Actions">
+								<CommandItem
+									value="sign out logout"
+									onSelect={async () => {
+										setOpen(false);
+										await logout();
+									}}
+								>
+									<LogOut className="mr-2 h-4 w-4" />
+									Sign out
+								</CommandItem>
+							</CommandGroup>
+						)}
 					</CommandList>
 				</Command>
 			</DialogContent>

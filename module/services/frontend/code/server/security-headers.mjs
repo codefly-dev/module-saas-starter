@@ -1,7 +1,11 @@
 // Response security headers for the product frontend, mirroring the marketing
 // site's baseline (frame-ancestors 'none' / X-Frame-Options DENY, nosniff,
 // Referrer-Policy, COOP, Permissions-Policy) and extending the CSP with the
-// cross-origin subresources this app actually loads.
+// cross-origin subresources this app actually loads. Only that hardening
+// baseline mirrors; the CSPs deliberately differ and are NOT kept in sync by
+// any gate — marketing keeps an independent hand-rolled copy in its own
+// next.config.mjs (no nonce, no strict-dynamic, no solution origins), so a
+// directive changed here does not change it there.
 //
 // Next bakes `headers()` into the routes manifest at BUILD time, so this reads
 // build-time env only. Every widening below is keyed off the same build-time
@@ -11,18 +15,21 @@
 //
 // Module Federation is the exception: solutions self-register at RUNTIME (see
 // src/solutions/registry.ts), so their origins are not knowable when the
-// manifest is built. Solution pages therefore get their CSP from the Node
-// proxy (src/proxy.ts), which builds it from a build-time snapshot of the
-// inputs below (so it stays in lockstep with every other route's CSP) plus the
-// registered manifest origin for that page — so a freshly-registered
+// manifest is built. The Node proxy (src/proxy.ts) therefore owns the CSP on
+// EVERY route — next.config emits only the constant hardening headers below —
+// building it from a build-time snapshot of the inputs here (so it stays in
+// lockstep with the analytics/allowlist hosts the client bundle was built to
+// call) plus every registered manifest origin, so a freshly-registered
 // cross-origin remote loads without a rebuild and without a
-// FRONTEND_SOLUTION_ORIGINS entry. Today the runtime registers the solution's
-// own origin (cross-origin), which this covers. Serving a solution's assets
-// same-origin through the host proxy — so `'self'` alone covers it — is the
-// intended direction but depends on the gateway serving them unauthenticated
-// (tracked separately) and is not yet the default. FRONTEND_SOLUTION_ORIGINS
-// remains a build-time escape hatch for origins the host must trust before any
-// registration.
+// FRONTEND_SOLUTION_ORIGINS entry. Every DOCUMENT gets the full registered set,
+// not just /s/:id: a CSP is document-scoped and the sidebar reaches a solution
+// by client-side navigation, which keeps the starting document's policy (#545).
+// Today the runtime registers the solution's own origin (cross-origin), which
+// this covers. Serving a solution's assets same-origin through the host proxy —
+// so `'self'` alone covers it — is the intended direction but depends on the
+// gateway serving them unauthenticated (tracked separately) and is not yet the
+// default. FRONTEND_SOLUTION_ORIGINS remains a build-time escape hatch for
+// origins the host must trust before any registration.
 
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
@@ -77,10 +84,10 @@ function turnstileEnabled(env) {
  * Resolve the env-derived inputs the CSP is built from. Split out from assembly
  * so the build-time config and the runtime proxy compose the policy from the
  * SAME values: next.config snapshots these once at build (its `env` block) and
- * the proxy reads that snapshot, adding only the runtime solution origin.
- * Re-resolving from `process.env` at request time would let a solution page's
- * CSP drift from the build-inlined analytics/allowlist hosts the browser
- * actually calls, silently blocking them on solution pages alone.
+ * the proxy reads that snapshot, adding only the runtime solution origins.
+ * Re-resolving from `process.env` at request time would let the served CSP
+ * drift from the build-inlined analytics/allowlist hosts the browser actually
+ * calls, silently blocking them.
  * @param {Record<string, string | undefined>} [env]
  */
 export function resolveCspInputs(env = process.env) {
@@ -142,6 +149,38 @@ export function contentSecurityPolicyFromInputs(
 		connectSrc.push(TURNSTILE_ORIGIN);
 	}
 
+	// A remote's CSS chunk is fetched by the MF runtime as a cross-origin
+	// <link>, which 'unsafe-inline' does not cover — it admits inline <style>
+	// and style attributes, never an external stylesheet URL. Without the origin
+	// here the chunk is refused and the whole remote fails to mount, since the
+	// rejected load throws rather than degrading to unstyled. script-src has no
+	// equivalent gap: 'strict-dynamic' already extends trust to whatever the
+	// nonced framework scripts pull in, whatever its origin.
+	//
+	// That asymmetry cuts the other way too, and is the thing to remember when
+	// this is next debugged: only the origin of the remote's MANIFEST is
+	// admitted (src/proxy.ts derives it from frontend.manifestUrl and nothing
+	// else). A remote whose publicPath serves chunks from a different origin —
+	// a CDN — still has its stylesheet refused, while its SCRIPT loads anyway
+	// because 'strict-dynamic' ignores origin entirely. So that topology looks
+	// healthy right up to the stylesheet. Admitting an asset origin would mean
+	// widening the registration contract, which is deliberately not done here.
+	//
+	// On the size of the grant, stated accurately because it is what the next
+	// widening will be argued from: this is NOT merely a restatement of trust
+	// script-src already gives. Under CSP3 a browser that honours
+	// 'strict-dynamic' IGNORES host-source expressions in script-src, and the
+	// proxy always mints a nonce, so in production those origins are inert
+	// there — the remote's JS loads by strict-dynamic propagation, not because
+	// the origin is listed. style-src has no strict-dynamic, so naming an origin
+	// here is a net-new ENFORCED grant. It is still not an escalation: a remote
+	// that already executes script in this origin can do strictly more than one
+	// that ships CSS, and it could always inject an inline <style> under
+	// 'unsafe-inline' regardless. The CSP is therefore not, and never was, the
+	// enforcement point for ADR-0002's "no arbitrary CSS from remotes" — see
+	// CLAIM_INVENTORY.md.
+	const styleSrc = ["'self'", "'unsafe-inline'", ...solutionOrigins];
+
 	// The /docs viewer is now self-hosted (same-origin), so 'self' covers it;
 	// Turnstile renders its challenge in a Cloudflare-hosted iframe when enabled.
 	const frameSrc = ["'self'"];
@@ -162,7 +201,7 @@ export function contentSecurityPolicyFromInputs(
 		"img-src 'self' data: https:",
 		"object-src 'none'",
 		`script-src ${scriptSrc.join(" ")}`,
-		"style-src 'self' 'unsafe-inline'",
+		`style-src ${styleSrc.join(" ")}`,
 		"upgrade-insecure-requests",
 	].join("; ");
 }
@@ -184,10 +223,11 @@ export function contentSecurityPolicy(
 	);
 }
 
-// The constant hardening headers, minus the CSP. Solution pages (/s/:id) omit
-// the CSP here and receive it from the Node proxy instead, so the build-time
-// manifest never emits a second, narrower CSP that would intersect with (and
-// defeat) the runtime-derived one.
+// The constant hardening headers, minus the CSP. EVERY route omits the CSP here
+// and receives it from the Node proxy instead: a build-time manifest cannot mint
+// a per-request nonce, and a static CSP here would ship a second, nonce-less
+// policy the browser intersects with the proxy's — defeating both the nonce and
+// the runtime-derived solution origins.
 export function baselineSecurityHeaders() {
 	return [
 		{ key: "Cross-Origin-Opener-Policy", value: "same-origin" },

@@ -25,8 +25,11 @@ workspace-configuration-dependencies:
     - application
     - billing
     - email
+    - federation
+    - github-app
     - identity
     - internal-auth
+    - module-capabilities
     - observability
     - product-analytics
     - security

@@ -121,13 +121,26 @@ func (*fixedAccessMinter) VerifyRefresh(context.Context, string) (*auth.TokenPai
 	return nil, nil
 }
 
-func (*fixedAccessMinter) SwitchOrganization(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (string, error) {
-	return "", nil
+func (*fixedAccessMinter) VerifyClientRefresh(context.Context, string, string) (*auth.TokenPair, error) {
+	return nil, nil
+}
+
+func (*fixedAccessMinter) MintForClient(
+	context.Context, uuid.UUID, uuid.UUID, string,
+) (*auth.TokenPair, error) {
+	return nil, nil
+}
+
+func (*fixedAccessMinter) SwitchOrganization(
+	context.Context, uuid.UUID, uuid.UUID, uuid.UUID,
+) (string, time.Time, error) {
+	return "", time.Time{}, nil
 }
 
 func (*fixedAccessMinter) Revoke(context.Context, string) error              { return nil }
 func (*fixedAccessMinter) RevokeAccess(context.Context, string) error        { return nil }
 func (*fixedAccessMinter) RevokeSessionAccess(context.Context, string) error { return nil }
+func (*fixedAccessMinter) AccessRevocationEnabled() bool                     { return true }
 func (*fixedAccessMinter) JWKS() (string, error)                             { return `{}`, nil }
 
 func recentBillingIdentity() *auth.Identity {

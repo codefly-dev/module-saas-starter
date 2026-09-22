@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (
@@ -34,6 +36,9 @@ func TestService_AddTeamMember_UsesCachedOrgID(t *testing.T) {
 		"alice-cache@rls-test.com", "alice-cache-rls", "Acme Cache A")
 	other, _ := mustUserAndOrg(t, ctx,
 		"bob-cache@rls-test.com", "bob-cache-rls", "Acme Cache B")
+	require.NoError(t, testService.AddOrgMember(ctx, owner, &gen.AddOrgMemberRequest{
+		OrgId: orgID, UserId: other, Role: gen.OrgRole_ORG_ROLE_MEMBER,
+	}))
 
 	team, err := testService.CreateTeam(ctx, owner, &gen.CreateTeamRequest{
 		OrgId: orgID, Name: "engineering",

@@ -15,7 +15,7 @@ import "saas/policy/v1/options.proto";
 //
 // Module-level view: a module is a collection of services. To
 // answer "what can the saas-starter module do?", an aggregator
-// (CLI command, gateway endpoint, Mind, etc.) walks every service
+// (CLI command, gateway endpoint, aggregating tools, etc.) walks every service
 // in the module and merges each one's GetServiceInfo response.
 // The aggregator is OUT OF SCOPE for this proto — keep cross-
 // service concerns out of per-service definitions.

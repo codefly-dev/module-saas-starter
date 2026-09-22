@@ -154,7 +154,7 @@ service UserService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.registered"
+        events: "saas.user.registered"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -211,7 +211,7 @@ service UserService {
       scopes: "users:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.updated"
+        events: "saas.user.updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -219,6 +219,7 @@ service UserService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       patch: "/v1/users/{uuid}"
@@ -233,7 +234,7 @@ service UserService {
       scopes: "users:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.deleted"
+        events: "saas.user.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -241,6 +242,7 @@ service UserService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/users/{uuid}"};
   }
@@ -251,7 +253,7 @@ service UserService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.identity_added"
+        events: "saas.user.identity_added"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -259,6 +261,7 @@ service UserService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/users/{user_uuid}/identities"

@@ -34,18 +34,18 @@ func TestGenerateBundleGoldenShapes(t *testing.T) {
 		golden    string
 	}{
 		{
-			name:      "warden",
-			workspace: "warden-control",
+			name:      "acme",
+			workspace: "acme-control",
 			module:    "identity",
 			services:  []string{"accounts", "auth-gateway", "cache", "frontend", "object-storage", "store", "vault"},
-			golden:    "testdata/warden-bundle.golden.json",
+			golden:    "testdata/acme-bundle.golden.json",
 		},
 		{
-			name:      "mind",
-			workspace: "mind-control",
+			name:      "example",
+			workspace: "example-control",
 			module:    "users",
 			services:  []string{"store", "vault", "accounts", "cache", "frontend", "forge-edge", "object-storage"},
-			golden:    "testdata/mind-bundle.golden.json",
+			golden:    "testdata/example-bundle.golden.json",
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestGenerateBundleGoldenShapes(t *testing.T) {
 
 func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
 	t.Parallel()
-	root, moduleDir := writeModuleFixture(t, "warden-control", "identity", []string{"accounts", "frontend"})
+	root, moduleDir := writeModuleFixture(t, "acme-control", "identity", []string{"accounts", "frontend"})
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -411,7 +411,7 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 		{
 			name: "unsupported cluster kind",
 			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
-				workspace.Environments[0].Cluster.Kind = "gke"
+				workspace.Environments[0].Cluster.Kind = "openshift"
 			},
 			want: "is not supported",
 		},
@@ -465,6 +465,69 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 				workspace.Environments[1].ManagedServices["store"] = config
 			},
 			want: "secret reference",
+		},
+		{
+			name: "cloud sql without an explicit auth mode",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.Kind = "cloud-sql-postgres"
+				config.InstanceConnectionName = "identity-prod:us-central1:store"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "requires an explicit auth-mode",
+		},
+		{
+			name: "cloud sql without an instance connection name",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.Kind = "cloud-sql-postgres"
+				config.AuthMode = "external-identity"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "is not a project:region:instance name",
+		},
+		{
+			name: "malformed instance connection name",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.Kind = "cloud-sql-postgres"
+				config.AuthMode = "external-identity"
+				config.InstanceConnectionName = "identity-prod:us-central1"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "is not a project:region:instance name",
+		},
+		{
+			name: "instance connection name on a non cloud sql kind",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.InstanceConnectionName = "identity-prod:us-central1:store"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "does not take an instance-connection-name",
+		},
+		{
+			name: "unsupported managed auth mode",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.AuthMode = "kerberos"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "auth-mode",
+		},
+		{
+			name: "external identity with a connection secret",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.AuthMode = "external-identity"
+				config.SecretReferences = []managedSecretReference{{
+					Name:        "store-runtime",
+					RemoteKey:   "products/identity/store",
+					SecretStore: secretStoreRef{Name: "gcp", Kind: "ClusterSecretStore"},
+				}}
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "declares secret references",
 		},
 		{
 			name: "missing service path",
@@ -1006,8 +1069,15 @@ services:
 	if spec["action"] != "ALLOW" {
 		t.Errorf("internal-authority policy action = %v, want ALLOW", spec["action"])
 	}
-	if app := spec["selector"].(map[string]any)["matchLabels"].(map[string]any)["app"]; app != "accounts" {
-		t.Errorf("internal-authority policy selects app %v, want accounts", app)
+	// A selector sends the policy to ztunnel, which cannot evaluate L7 rules and
+	// fails safe by turning the whole policy into a blanket DENY on the selected
+	// workload. L7 must be attached to the waypoint, by targetRef to the Service.
+	if _, scoped := spec["selector"]; scoped {
+		t.Error("L7 internal-authority policy uses a workload selector; ztunnel would turn it into a blanket deny")
+	}
+	targetRef := spec["targetRefs"].([]any)[0].(map[string]any)
+	if targetRef["kind"] != "Service" || targetRef["name"] != "accounts" {
+		t.Errorf("internal-authority targetRef = %v, want the accounts Service", targetRef)
 	}
 	rule := spec["rules"].([]any)[0].(map[string]any)
 	principals := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
@@ -1036,8 +1106,159 @@ services:
 		t.Fatalf("istio bundle is missing the accounts port allow:\n%s", mustReadFile(t, istioPath))
 	}
 	portPrincipals := anyToStrings(portAllow["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
-	if !slices.Equal(portPrincipals, []string{callerSA}) {
-		t.Errorf("accounts port-allow principals = %v, want only the caller SA [%s]", portPrincipals, callerSA)
+	// With a waypoint fronting the namespace, the destination ztunnel sees the
+	// waypoint's identity rather than the caller's, so the L4 allowlist must
+	// admit it or every east-west request is dropped before the L7 gate runs.
+	waypointSA := "cluster.local/ns/identity-local/sa/" + meshWaypointName
+	if !slices.Contains(portPrincipals, waypointSA) {
+		t.Errorf("port-allow principals = %v, missing the waypoint identity %s that relays east-west traffic", portPrincipals, waypointSA)
+	}
+	if !slices.Equal(portPrincipals, []string{callerSA, waypointSA}) {
+		t.Errorf("accounts port-allow principals = %v, want only the caller SA [%s] and the waypoint", portPrincipals, callerSA)
+	}
+}
+
+// TestGeneratedMeshPolicyDeniesInternalHTTPRoutesToUndeclaredCallers covers the
+// half of the internal surface no service catalog describes: HTTP routes that
+// carry cluster-internal authority on the same port the ingress gateway is
+// allowed to reach for every browser-facing page. The port-wide ALLOW cannot
+// exclude them, so only a DENY can, and it must survive the caller having an
+// identity (the publisher edge) and not having one (the internet).
+func TestGeneratedMeshPolicyDeniesInternalHTTPRoutesToUndeclaredCallers(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "internal-http", "identity", []string{"frontend", "telemetry"})
+	// frontend publishes an internal HTTP surface on its public port; telemetry is
+	// its one declared in-mesh caller, so it is the only exempt principal. The
+	// fixture ships no authorization catalog, so the DENY is the only L7 policy
+	// and must pull in the waypoint on its own.
+	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
+module:
+  name: identity
+  namespace: identity
+  service_entry: frontend
+  description: test
+interface:
+  - service: frontend
+    endpoint: http
+    visibility: public
+services:
+  - name: frontend
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: public
+        port: 3000
+    internal_http_routes:
+      - path: /api/solutions/register
+        methods:
+          - DELETE
+          - POST
+    public_egress_ports:
+      - 443
+  - name: telemetry
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8080
+    dependencies:
+      - service: frontend
+        endpoints:
+          - http
+    spec:
+      service-account:
+        name: telemetry
+`)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	istioPath := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "base", "istio-mtls.yaml")
+	objects, err := decodeYAMLDocuments(istioPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var deny, ingressAllow, waypoint map[string]any
+	for _, object := range objects {
+		name := object["metadata"].(map[string]any)["name"]
+		switch object["kind"] {
+		case "AuthorizationPolicy":
+			switch name {
+			case "deny-frontend-internal-http":
+				deny = object
+			case "allow-istio-ingress-to-frontend":
+				ingressAllow = object
+			}
+		case "Gateway":
+			waypoint = object
+		}
+	}
+	if deny == nil {
+		t.Fatalf("istio bundle is missing the internal-HTTP deny policy:\n%s", mustReadFile(t, istioPath))
+	}
+	if ingressAllow == nil {
+		t.Fatal("fixture no longer grants the ingress gateway the port-wide allow this deny subtracts from")
+	}
+	if waypoint == nil {
+		t.Fatalf("an L7 deny with no waypoint to enforce it is inert:\n%s", mustReadFile(t, istioPath))
+	}
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nsLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if nsLabels["istio.io/use-waypoint"] != waypoint["metadata"].(map[string]any)["name"] {
+		t.Errorf("namespace use-waypoint = %v, want %v", nsLabels["istio.io/use-waypoint"], waypoint["metadata"].(map[string]any)["name"])
+	}
+
+	spec := deny["spec"].(map[string]any)
+	if spec["action"] != "DENY" {
+		t.Errorf("internal-HTTP policy action = %v, want DENY (an ALLOW cannot subtract from another ALLOW)", spec["action"])
+	}
+	// A selector sends an L7 policy to ztunnel, which cannot evaluate paths and
+	// fails safe by denying everything to the selected workload — here, every
+	// page the product serves. L7 belongs on the waypoint, via targetRef.
+	if _, scoped := spec["selector"]; scoped {
+		t.Error("L7 internal-HTTP policy uses a workload selector; ztunnel would turn it into a blanket deny on the frontend")
+	}
+	targetRef := spec["targetRefs"].([]any)[0].(map[string]any)
+	if targetRef["kind"] != "Service" || targetRef["name"] != "frontend" {
+		t.Errorf("internal-HTTP targetRef = %v, want the frontend Service", targetRef)
+	}
+	rules := spec["rules"].([]any)
+	if len(rules) != 1 {
+		t.Fatalf("internal-HTTP policy has %d rules, want one per declared route", len(rules))
+	}
+	rule := rules[0].(map[string]any)
+	exempt := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["notPrincipals"].([]any))
+	// The waypoint never sees ingress-originated traffic, so the ingress gateway
+	// is exempt by construction rather than by omission: a rule that named it
+	// would read as a north-south boundary and enforce nothing.
+	if !slices.Equal(exempt, []string{
+		"cluster.local/ns/identity-local/sa/telemetry",
+		"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account",
+	}) {
+		t.Errorf("internal-HTTP exempt principals = %v, want the declared caller and the ingress gateway", exempt)
+	}
+	operation := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
+	paths := anyToStrings(operation["paths"].([]any))
+	// Istio does not merge duplicate slashes by default, so an exact match alone
+	// lets //api/solutions/register through to a handler that still serves it.
+	if !slices.Equal(paths, []string{"*/api/solutions/register", "/api/solutions/register"}) {
+		t.Errorf("internal-HTTP denied paths = %v, want the suffix form alongside the exact route", paths)
+	}
+	methods := anyToStrings(operation["methods"].([]any))
+	if !slices.Equal(methods, []string{"DELETE", "POST"}) {
+		t.Errorf("internal-HTTP denied methods = %v, want only the declared mutations", methods)
+	}
+	if slices.Contains(methods, "GET") {
+		t.Error("denying GET on the same path would break the unauthenticated nav listing")
 	}
 }
 
@@ -1241,29 +1462,29 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	}
 }
 
-func TestMindRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
+func TestExampleRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
 	t.Parallel()
 	services := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
-	root, moduleDir := writeModuleFixture(t, "mind-control", "users", services)
-	writeMindTopology(t, moduleDir)
+	root, moduleDir := writeModuleFixture(t, "example-control", "users", services)
+	writeExampleTopology(t, moduleDir)
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	workspace.Environments[0].Ingress = []environmentIngressRoute{{
 		Name: "product", Service: "forge-edge", Endpoint: "rest",
-		Hosts: []string{"app.mind.localhost"},
+		Hosts: []string{"app.example.localhost"},
 	}}
 	workspace.Environments[1].Ingress = []environmentIngressRoute{{
 		Name: "product", Service: "forge-edge", Endpoint: "rest",
-		Hosts: []string{"app.mind.example.com"},
+		Hosts: []string{"app.example.com"},
 	}}
 
 	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
 		t.Fatal(err)
 	}
-	assertMindRouteAndPolicies(t, moduleDir, "local", "app.mind.localhost", false)
-	assertMindRouteAndPolicies(t, moduleDir, "aws", "app.mind.example.com", true)
+	assertExampleRouteAndPolicies(t, moduleDir, "local", "app.example.localhost", false)
+	assertExampleRouteAndPolicies(t, moduleDir, "aws", "app.example.com", true)
 }
 
 func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
@@ -1364,6 +1585,210 @@ func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
 	}
 	if !strings.Contains(string(handoff), "externalName: store.postgres.database.azure.com") {
 		t.Fatalf("azure handoff is missing its ExternalName Service:\n%s", handoff)
+	}
+}
+
+func TestGKEEnvironmentRendersPasswordlessCloudSQLHandoff(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "handoff-control", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Name = "gke"
+	workspace.Environments[1].Cluster.Kind = "gke"
+	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+		Kind:                   "cloud-sql-postgres",
+		ExternalName:           "store.identity.internal.example.com",
+		AuthMode:               "external-identity",
+		InstanceConnectionName: "identity-prod:us-central1:store",
+		EgressCIDRs:            []string{"10.42.0.0/24"},
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	var bundle moduleBundle
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	gke := bundle.Environments[1]
+	if gke.Name != "gke" || gke.Cluster != "gke" {
+		t.Fatalf("gke bundle environment = %q/%q, want gke/gke", gke.Name, gke.Cluster)
+	}
+	if len(gke.ManagedServiceHandoffs) != 1 {
+		t.Fatalf("gke managed handoffs = %#v", gke.ManagedServiceHandoffs)
+	}
+	handoff := gke.ManagedServiceHandoffs[0]
+	if handoff.Kind != "cloud-sql-postgres" ||
+		handoff.AuthMode != "external-identity" ||
+		handoff.InstanceConnectionName != "identity-prod:us-central1:store" {
+		t.Fatalf("gke managed handoff = %#v", handoff)
+	}
+	if len(handoff.SecretReferences) != 0 {
+		t.Fatalf("passwordless handoff carries secret references: %#v", handoff.SecretReferences)
+	}
+	if slices.Contains(gke.Services, "store") {
+		t.Fatalf("managed store must not appear as an in-cluster workload: %v", gke.Services)
+	}
+
+	rendered, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/gke/base/handoffs/store.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rendered), "externalName: store.identity.internal.example.com") {
+		t.Fatalf("cloud sql handoff is missing its ExternalName Service:\n%s", rendered)
+	}
+	// The instance authenticates the pod as its own workload identity, so the
+	// overlay must project no connection secret of any shape.
+	for _, forbidden := range []string{"ExternalSecret", "secretKeyRef", "stringData:"} {
+		if strings.Contains(string(rendered), forbidden) {
+			t.Errorf("passwordless cloud sql handoff rendered %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
+func passwordlessGKEFixture(t *testing.T, name, instanceConnection string) (string, *workspaceManifest) {
+	t.Helper()
+	root, moduleDir := writeModuleFixture(t, name, "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Name = "gke"
+	workspace.Environments[1].Cluster.Kind = "gke"
+	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+		Kind:                   "cloud-sql-postgres",
+		ExternalName:           "store.identity.internal.example.com",
+		AuthMode:               "external-identity",
+		InstanceConnectionName: instanceConnection,
+		EgressCIDRs:            []string{"10.42.0.0/24"},
+	}
+	return moduleDir, workspace
+}
+
+// External identity means the token IS the credential, so a caller that cannot
+// reach the metadata endpoint cannot authenticate at all — and the baseline
+// denies egress while the public-egress policy excepts link-local.
+func TestPasswordlessManagedServiceRendersWorkloadIdentityTokenEgress(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "token-egress", "identity-prod:us-central1:store")
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/gke/base/network-policy.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, expected := range []string{
+		"name: allow-accounts-workload-identity-token",
+		"cidr: 169.254.169.254/32",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Errorf("passwordless caller has no token egress %q:\n%s", expected, rendered)
+		}
+	}
+}
+
+// The password-backed shape mints nothing, so it must not be granted reach to
+// the metadata endpoint it has no use for.
+func TestPasswordManagedServiceRendersNoWorkloadIdentityTokenEgress(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "no-token-egress", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/aws/base/network-policy.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "workload-identity-token") || strings.Contains(string(data), "169.254.169.254") {
+		t.Errorf("password-backed caller was granted metadata endpoint reach:\n%s", data)
+	}
+}
+
+// The value that was validated is the value that must travel: validating a
+// trimmed spelling while storing the raw one ships a coordinate no driver can
+// resolve.
+func TestPasswordlessHandoffCanonicalizesInstanceConnectionName(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "token-trim", "  identity-prod:us-central1:store  ")
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle moduleBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	handoff := bundle.Environments[1].ManagedServiceHandoffs[0]
+	if handoff.InstanceConnectionName != "identity-prod:us-central1:store" {
+		t.Errorf("instance connection name = %q, want the canonical spelling", handoff.InstanceConnectionName)
+	}
+}
+
+// An absent authMode already means password to every existing consumer, so the
+// default must not rewrite handoffs on clouds this feature never touched.
+func TestPasswordDefaultOmitsAuthModeFromBundle(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "authmode-default", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "authMode") {
+		t.Errorf("password-backed handoff emitted an authMode key:\n%s", data)
+	}
+}
+
+func TestInstanceConnectionNameAcceptsDomainScopedProject(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "domain-scoped", "example.com:identity-prod:us-central1:store")
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatalf("legacy domain-scoped project was refused: %v", err)
+	}
+}
+
+func TestUnresolvedPlaceholderErrorNamesTheToken(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "unresolved-token", "saas-starter:us-central1:store")
+	err := generateDeploymentBundle(moduleDir, workspace)
+	if err == nil {
+		t.Fatal("a starter identity in the bundle was accepted")
+	}
+	if !strings.Contains(err.Error(), "saas-starter") {
+		t.Errorf("error does not name the offending token: %v", err)
 	}
 }
 
@@ -1892,14 +2317,14 @@ func appendWorkspace(t *testing.T, root, extra string) {
 	}
 }
 
-func writeMindTopology(t *testing.T, moduleDir string) {
+func writeExampleTopology(t *testing.T, moduleDir string) {
 	t.Helper()
 	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
 module:
   name: users
   namespace: users
   service_entry: forge-edge
-  description: Mind users boundary
+  description: Example users boundary
 interface:
   - service: forge-edge
     endpoint: rest
@@ -1966,7 +2391,7 @@ services:
 `)
 }
 
-func assertMindRouteAndPolicies(
+func assertExampleRouteAndPolicies(
 	t *testing.T,
 	moduleDir,
 	environment,
@@ -2008,7 +2433,7 @@ func assertMindRouteAndPolicies(
 		destinationRuleHosts = append(destinationRuleHosts, ruleHost)
 	}
 	if route == nil {
-		t.Fatal("Mind bootstrap has no VirtualService")
+		t.Fatal("example bootstrap has no VirtualService")
 	}
 	expectedServices := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
 	if aws {

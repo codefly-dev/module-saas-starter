@@ -9,7 +9,45 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+
+	"github.com/jackc/pgx/v5"
 )
+
+// auditIdempotencySystemOrg is the sentinel org id for system-scoped audit emits
+// (empty tenant) in the audit_event_idempotency guard. The guard's primary key is
+// NOT NULL and a UNIQUE index treats NULLs as distinct, so a system emit needs a
+// concrete, non-colliding org id to dedup against; the all-zero UUID is never a
+// generated organization id. See migration 118.
+const auditIdempotencySystemOrg = "00000000-0000-0000-0000-000000000000"
+
+// ReserveAuditIdempotency records a (org_id, event_type, idempotency_key) guard
+// row so a retried audit emit collapses to a single event. It returns true when
+// the row was newly inserted — the caller should write the event — and false when
+// the row already existed (a duplicate emit; the caller must skip the write). The
+// INSERT runs in the caller's ambient transaction, so the guard row and the audit
+// row commit or roll back together. An empty orgID (system-scoped emit) maps to
+// the all-zero sentinel org so system events still dedup under the NOT NULL key.
+func (s *PostgresStore) ReserveAuditIdempotency(ctx context.Context, orgID, eventType, idempotencyKey string) (bool, error) {
+	org := orgID
+	if org == "" {
+		org = auditIdempotencySystemOrg
+	}
+	var reserved bool
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		INSERT INTO audit_event_idempotency (org_id, event_type, idempotency_key)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id, event_type, idempotency_key) DO NOTHING
+		RETURNING true`, org, eventType, idempotencyKey).Scan(&reserved)
+	if err == pgx.ErrNoRows {
+		// ON CONFLICT DO NOTHING inserted no row: the guard already exists, so an
+		// earlier emit of this key already wrote the event. Report the duplicate.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return reserved, nil
+}
 
 func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.AuditEntry) error {
 	q := s.getQueryExecutor(ctx)
@@ -31,12 +69,15 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 	_, err = q.Exec(ctx, `
 		INSERT INTO audit_events (
 			id, event_type, schema_version, actor_id, actor_type,
-			resource, resource_id, org_id, payload, ip_address, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			resource, resource_id, org_id, payload, ip_address, created_at,
+			impersonated_by, is_impersonated, client_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		entry.ID, string(entry.EventType), entry.SchemaVersion,
 		nilIfNotUUID(entry.ActorID), entry.ActorType,
 		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
-		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt)
+		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt,
+		nilIfNotUUID(entry.ImpersonatedBy), entry.IsImpersonated,
+		nilIfEmpty(entry.ClientID))
 	return err
 }
 
@@ -65,7 +106,7 @@ func decodeAuditCursor(token string) (time.Time, string, error) {
 
 // auditWhere builds the shared WHERE clause for the search and aggregate paths
 // from an AuditQuery, returning the SQL fragment and its ordered args.
-func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
+func auditWhere(q business.AuditQuery, startArg int) (string, []any, error) {
 	var conditions []string
 	var args []any
 	argN := startArg
@@ -87,16 +128,28 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 	if q.Category != "" {
 		add("event_type IN (SELECT name FROM audit_event_types WHERE category = $%d)", q.Category)
 	}
+	if q.Namespace != "" {
+		add("event_type IN (SELECT name FROM audit_event_types WHERE namespace = $%d)", q.Namespace)
+	}
 	if q.Resource != "" {
 		add("resource = $%d", q.Resource)
 	}
 	if q.ResourceID != "" {
 		add("resource_id = $%d", q.ResourceID)
 	}
+	if q.ClientID != "" {
+		add("client_id = $%d", q.ClientID)
+	}
 	if len(q.PayloadContains) > 0 {
-		if raw, err := json.Marshal(q.PayloadContains); err == nil {
-			add("payload @> $%d::jsonb", string(raw))
+		raw, err := json.Marshal(q.PayloadContains)
+		if err != nil {
+			// Dropping the predicate would WIDEN the result set, and this is the
+			// predicate an authorized collection read was narrowed to — a silent
+			// drop hands org-wide rows to a caller cleared for one collection.
+			// Refuse the query; a filter that cannot be bound is never "no filter".
+			return "", nil, fmt.Errorf("audit: cannot bind payload filter: %w", err)
 		}
+		add("payload @> $%d::jsonb", string(raw))
 	}
 	if q.From != nil {
 		add("created_at >= $%d", *q.From)
@@ -109,13 +162,19 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	return where, args
+	return where, args, nil
 }
 
 func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery) ([]business.AuditEntry, string, int32, error) {
+	if q.CollectionID != "" {
+		return nil, "", 0, fmt.Errorf("uncompiled collection filter: reader authorization required")
+	}
 	exec := s.getQueryExecutor(ctx)
 
-	where, args := auditWhere(q, 1)
+	where, args, err := auditWhere(q, 1)
+	if err != nil {
+		return nil, "", 0, err
+	}
 	argN := len(args) + 1
 
 	pageSize := q.PageSize
@@ -142,7 +201,7 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 	}
 
 	// Fetch one extra row to detect whether a further page exists.
-	query := fmt.Sprintf(`SELECT id, event_type, schema_version, actor_id, actor_type, resource, resource_id, org_id, payload, ip_address, created_at
+	query := fmt.Sprintf(`SELECT id, event_type, schema_version, actor_id, actor_type, resource, resource_id, org_id, payload, ip_address, created_at, impersonated_by, is_impersonated, client_id
 		FROM audit_events %s ORDER BY created_at DESC, id DESC LIMIT $%d`, where, argN)
 	args = append(args, pageSize+1)
 
@@ -157,12 +216,19 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 		var e business.AuditEntry
 		var eventType string
 		var payloadJSON []byte
-		var actorID, resourceID, orgID, ipAddress *string
+		var actorID, resourceID, orgID, ipAddress, impersonatedBy, clientID *string
 
 		err := rows.Scan(&e.ID, &eventType, &e.SchemaVersion, &actorID, &e.ActorType, &e.Resource,
-			&resourceID, &orgID, &payloadJSON, &ipAddress, &e.CreatedAt)
+			&resourceID, &orgID, &payloadJSON, &ipAddress, &e.CreatedAt,
+			&impersonatedBy, &e.IsImpersonated, &clientID)
 		if err != nil {
 			return nil, "", 0, err
+		}
+		if impersonatedBy != nil {
+			e.ImpersonatedBy = *impersonatedBy
+		}
+		if clientID != nil {
+			e.ClientID = *clientID
 		}
 		e.EventType = business.EventType(eventType)
 		if actorID != nil {
@@ -207,6 +273,9 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 // (Service) has already validated the spec; the builder still guards its own
 // switches so an unhandled shape fails loud rather than emitting wrong SQL.
 func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQuery, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
+	if q.CollectionID != "" {
+		return nil, fmt.Errorf("uncompiled collection filter: reader authorization required")
+	}
 	exec := s.getQueryExecutor(ctx)
 
 	aq, err := buildAggregateQuery(q, spec)
@@ -229,6 +298,7 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 		// Column layout is [dim0..dimN, cnt, metric0..metricM].
 		b := business.AuditAggregateBucket{
 			Keys:    make([]string, len(aq.dims)),
+			Samples: make(map[string]int64, len(aq.aliases)),
 			Metrics: make(map[string]float64, len(aq.aliases)+len(spec.Derived)),
 		}
 		for i := range aq.dims {
@@ -239,9 +309,10 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 			b.Count = c
 		}
 		for i, alias := range aq.aliases {
+			b.Samples[alias], _ = vals[len(aq.dims)+1+len(aq.aliases)+i].(int64)
 			// A NULL aggregate (min/avg/max/percentile over zero numeric rows)
 			// means "no data" — leave the alias absent rather than reporting 0.
-			if v := vals[len(aq.dims)+1+i]; v != nil {
+			if v := vals[len(aq.dims)+1+i]; v != nil && b.Samples[alias] > 0 {
 				b.Metrics[alias] = toFloat(v)
 			}
 		}
@@ -275,7 +346,10 @@ type aggregateQuery struct {
 // (payload keys, percentiles) is bound as a parameter, never interpolated, so
 // the query is injection-safe.
 func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSpec) (aggregateQuery, error) {
-	where, args := auditWhere(q, 1)
+	where, args, err := auditWhere(q, 1)
+	if err != nil {
+		return aggregateQuery{}, err
+	}
 	argN := len(args) + 1
 	addArg := func(v any) int {
 		args = append(args, v)
@@ -315,6 +389,24 @@ func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSp
 		}
 		selectParts = append(selectParts, fmt.Sprintf("%s AS m%d", expr, i))
 		aliases[i] = m.ResolvedAlias()
+	}
+
+	// Track observations independently of aggregate values, including duplicate
+	// logical ids: distinct reduction is not evidence of missing telemetry.
+	for i, m := range spec.Metrics {
+		expr := "*"
+		var err error
+		switch m.Op {
+		case "", "count":
+		case "count_distinct":
+			expr, err = auditValueExpr(m.Field, addArg)
+		default:
+			expr = auditNumericExpr(m.Field, addArg)
+		}
+		if err != nil {
+			return aggregateQuery{}, err
+		}
+		selectParts = append(selectParts, fmt.Sprintf("COUNT(%s) AS s%d", expr, i))
 	}
 
 	orderBy := "cnt DESC, " + strings.Join(orderDims, ", ")
@@ -364,10 +456,9 @@ func auditMetricExpr(m business.AuditMetric, addArg func(any) int) (string, erro
 		}
 		return "COUNT(DISTINCT " + expr + ")", nil
 	case "sum":
-		// An empty sum is 0 (additive identity); the others are undefined over
-		// zero numeric rows and stay NULL so scanning omits them — coercing them
-		// to 0 would be indistinguishable from a real 0 datum.
-		return "COALESCE(SUM(" + auditNumericExpr(m.Field, addArg) + "), 0)", nil
+		// Missing numeric telemetry is unknown, including for sum. A real
+		// emitted zero remains zero; an absent field remains SQL NULL.
+		return "SUM(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "avg":
 		return "AVG(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "min":

@@ -48,13 +48,13 @@ describe("toDisplayName", () => {
 		expect(
 			toDisplayName(
 				{
-					name: "Antoine Toussaint",
+					name: "Jane Doe",
 					first_name: "Stale",
 					last_name: "Value",
 				},
 				"antoine@example.com",
 			),
-		).toBe("Antoine Toussaint");
+		).toBe("Jane Doe");
 	});
 
 	it("returns full name when first and last are present", () => {
@@ -86,14 +86,11 @@ describe("toDisplayName", () => {
 describe("withDisplayName", () => {
 	it("trims the name and preserves unrelated profile attributes", () => {
 		expect(
-			withDisplayName(
-				{ locale: "fr", first_name: "Antoine" },
-				"  Antoine Toussaint  ",
-			),
+			withDisplayName({ locale: "fr", first_name: "Antoine" }, "  Jane Doe  "),
 		).toEqual({
 			locale: "fr",
 			first_name: "Antoine",
-			name: "Antoine Toussaint",
+			name: "Jane Doe",
 		});
 	});
 });

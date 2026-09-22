@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (
@@ -31,7 +33,7 @@ func insertDatasourceSource(t *testing.T, ctx context.Context, orgID, repo strin
 			Id:        nodeID,
 			OrgId:     orgID,
 			Kind:      business.ScopeNodeKindCollection,
-			Label:     "wiki",
+			Label:     "guides",
 			ScopePath: strings.ReplaceAll(nodeID, "-", "_"),
 		}); err != nil {
 			return err
@@ -133,13 +135,13 @@ func TestGetOrCreateCollectionNode_ReusesByLabelPerOrg(t *testing.T) {
 		return id
 	}
 
-	a1 := create(orgA, "wiki")
-	a2 := create(orgA, "wiki")
+	a1 := create(orgA, "guides")
+	a2 := create(orgA, "guides")
 	require.Equal(t, a1, a2, "the same label in one org must reuse the node")
 
 	aDocs := create(orgA, "docs")
 	require.NotEqual(t, a1, aDocs, "a different label must be a different node")
 
-	b1 := create(orgB, "wiki")
+	b1 := create(orgB, "guides")
 	require.NotEqual(t, a1, b1, "the same label in another org must be a distinct, tenant-isolated node")
 }

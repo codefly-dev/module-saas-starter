@@ -22,12 +22,13 @@ which rejects every non-internal RPC. Unknown methods fail closed everywhere.
 
 Reach and identity are split. Even though the internal RPCs stay multiplexed on
 the shared HTTP port, the mesh gates *reach* by caller workload identity: an
-Istio `AuthorizationPolicy` (`deny-accounts-internal-authority`, generated from
-the `EXPOSURE_INTERNAL` methods in `authz-methods.json`) **denies the internal
-method paths from every source principal except the allowlisted in-mesh caller
-identity** — the ingress-gateway service account included. Combined with
-namespace `PeerAuthentication: STRICT`, a request to an internal method path
-from a non-allowlisted principal is rejected at the mesh before the handler.
+Istio `AuthorizationPolicy` (`allow-accounts-internal-authority`, generated from
+the `EXPOSURE_INTERNAL` methods in the service catalog) **allows the internal
+method paths only from the service accounts of the callers the workspace
+topology declares**, so every other source principal — the ingress gateway's
+included — is denied by default. Combined with namespace
+`PeerAuthentication: STRICT`, a request to an internal method path from a
+principal the policy does not name is rejected at the mesh before the handler.
 Istio matches by request path, so this holds without a dedicated port.
 
 mTLS authenticates the *workload*, not the end user or tenant: it is the reach
@@ -38,13 +39,15 @@ The mixed private listener is an in-module implementation detail, not a product
 integration endpoint. It is intentionally absent from the module interface.
 Cross-module installed product services must wait for the generated named
 internal gRPC endpoint in `P1-NET-007`; the public auth-gateway never exposes
-internal methods such as `ConsumeUsage`.
+internal methods such as `ConsumeUsage`. The outward-facing half of this
+listener — what a composed module's client must resolve and must not require —
+is [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).
 
 ## Forwarded identity
 
 The frontend removes caller-supplied origin trust headers, stamps the actual
 browser origin with `CODEFLY_INTERNAL_TOKEN`, and forwards only API routes to
-auth-gateway. Auth-sidecar accepts that origin only after constant-time token
+auth-gateway. The auth-gateway ext_authz check accepts that origin only after constant-time token
 validation.
 
 The gateway removes all caller-supplied identity, organization, role, scope,
@@ -79,7 +82,7 @@ cookies are always `Secure`, including local development.
 
 ## Gateway rate-limit storage
 
-Auth-sidecar resolves the Codefly `cache/write` endpoint directly. `REDIS_URL`
+Auth-gateway resolves the Codefly `cache/write` endpoint directly. `REDIS_URL`
 can override it for hosted Redis and supports both `redis://` and `rediss://`
 URLs, authentication, and database selection. The client uses a bounded pool,
 connection/read/write/pool timeouts, TLS 1.2 or newer for `rediss://`, and an

@@ -22,8 +22,8 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "accounts", catalog.GetOwner().GetService())
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
-	require.Len(t, catalog.GetServices(), 29)
-	require.Len(t, catalog.GetMethods(), 183)
+	require.Len(t, catalog.GetServices(), 33)
+	require.Len(t, catalog.GetMethods(), 217)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -40,6 +40,36 @@ func TestServiceCatalogCompilation(t *testing.T) {
 		require.NotNil(t, method.GetPolicy())
 	}
 
+	readableSources := methods["/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"]
+	require.NotNil(t, readableSources)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_INTERNAL, readableSources.GetPolicy().GetExposure())
+	require.Empty(t, readableSources.GetHttpBindings())
+	require.Equal(t, []catalogv1.Protocol{catalogv1.Protocol_PROTOCOL_GRPC, catalogv1.Protocol_PROTOCOL_CONNECT}, readableSources.GetProtocols())
+	require.Equal(t, "saas.accounts.v1.ListReadableSourceCollectionsRequest", readableSources.GetInputType())
+	require.Equal(t, "saas.accounts.v1.ListReadableSourceCollectionsResponse", readableSources.GetOutputType())
+
+	operationExchange := methods["/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"]
+	require.NotNil(t, operationExchange)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_INTERNAL, operationExchange.GetPolicy().GetExposure())
+	require.Empty(t, operationExchange.GetHttpBindings())
+	require.Equal(t, []catalogv1.Protocol{catalogv1.Protocol_PROTOCOL_GRPC, catalogv1.Protocol_PROTOCOL_CONNECT}, operationExchange.GetProtocols())
+	require.Equal(t, "saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest", operationExchange.GetInputType())
+	require.Equal(t, "saas.accounts.v1.IssuedWorkContext", operationExchange.GetOutputType())
+	require.Equal(t, []string{"saas.module.delegated_audience_exchange"}, operationExchange.GetPolicy().GetAudit().GetEvents())
+
+	explain := methods["/saas.accounts.v1.PermissionService/ExplainPermission"]
+	require.NotNil(t, explain)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, explain.GetPolicy().GetExposure())
+	require.Equal(t, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, explain.GetPolicy().GetTenant())
+	require.Equal(t, "org_id", explain.GetPolicy().GetResourceBindings()[0].GetRequestField())
+	require.Empty(t, explain.GetHttpBindings(), "the decision read is Connect-only; it adds no REST surface")
+
+	collectionAccess := methods["/saas.accounts.v1.PermissionService/ListCollectionAccess"]
+	require.NotNil(t, collectionAccess)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, collectionAccess.GetPolicy().GetExposure())
+	require.Equal(t, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, collectionAccess.GetPolicy().GetTenant())
+	require.Equal(t, "/v1/collection-access", collectionAccess.GetHttpBindings()[0].GetPath())
+
 	authenticate := methods["/saas.accounts.v1.AuthService/Authenticate"]
 	require.NotNil(t, authenticate)
 	require.Equal(t, "saas.accounts.v1.AuthenticateRequest", authenticate.GetInputType())
@@ -54,7 +84,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "/v1/auth/authenticate", authenticate.GetHttpBindings()[0].GetPath())
 	require.Equal(t, "*", authenticate.GetHttpBindings()[0].GetBody())
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, authenticate.GetPolicy().GetExposure())
-	require.ElementsMatch(t, []string{"auth.login", "auth.mfa_challenge_started"}, authenticate.GetPolicy().GetAudit().GetEvents())
+	require.ElementsMatch(t, []string{"saas.auth.login", "saas.auth.mfa_challenge_started"}, authenticate.GetPolicy().GetAudit().GetEvents())
 
 	wait := methods["/saas.accounts.v1.DelegationService/WaitForDelegation"]
 	require.NotNil(t, wait)

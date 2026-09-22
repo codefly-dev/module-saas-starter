@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -74,10 +76,23 @@ func TestStripeWebhookRunsThroughGenericPostgresJobLifecycle(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	require.JSONEq(t, `{"status":"queued"}`, response.Body.String())
 
-	processed, err := worker.RunOnce(testCtx)
-	require.NoError(t, err)
-	require.Equal(t, 1, processed)
-	require.NotNil(t, recorder.event)
+	// The Stripe queue name is part of the job's routing contract — the worker
+	// rejects an envelope carrying any other queue — so unlike the neighbouring
+	// queue tests this one cannot enqueue onto a uuid-unique queue. It shares
+	// "billing" with whatever an earlier aborted run left claimable, and a claim
+	// takes the oldest claimable row, so keep claiming until this run's own event
+	// comes back instead of assuming it went first. Each claim resolves its row
+	// terminally — a Stripe-shaped payload succeeds, anything else on the queue
+	// is a permanent routing failure — so the drain always makes progress.
+	const maxClaims = 50
+	for range maxClaims {
+		processed, err := worker.RunOnce(testCtx)
+		require.NoError(t, err)
+		require.Equal(t, 1, processed, "this run's queued webhook is still claimable")
+		if recorder.event.GetEventId() == eventID {
+			break
+		}
+	}
 	require.Equal(t, eventID, recorder.event.GetEventId())
 	require.Equal(t, body, recorder.event.GetRawBody())
 

@@ -1,0 +1,104 @@
+{
+  "events": [
+    {
+      "name": "sync_done",
+      "type": "saas.datasource.sync.completed"
+    },
+    {
+      "name": "sync_failed",
+      "type": "saas.datasource.sync.failed"
+    },
+    {
+      "name": "ingested",
+      "type": "saas.document.ingested"
+    },
+    {
+      "name": "read",
+      "type": "saas.document.read"
+    },
+    {
+      "name": "search",
+      "type": "saas.document.search"
+    }
+  ],
+  "metrics": [
+    {
+      "id": "completed_jobs",
+      "kind": "source",
+      "filter": {
+        "event": "sync_done",
+        "resource": "datasource",
+        "resourceId": "connected-source-id"
+      },
+      "groupBy": "event_type",
+      "aggregation": "count_distinct",
+      "field": "payload:job_id"
+    },
+    {
+      "id": "failed_jobs",
+      "kind": "source",
+      "filter": {
+        "event": "sync_failed",
+        "resource": "datasource",
+        "resourceId": "connected-source-id"
+      },
+      "groupBy": "event_type",
+      "aggregation": "count_distinct",
+      "field": "payload:job_id"
+    },
+    {
+      "id": "reads",
+      "kind": "source",
+      "filter": {
+        "event": "read",
+        "collectionId": "collection-node-id"
+      },
+      "groupBy": "event_type",
+      "aggregation": "count_distinct",
+      "field": "payload:correlation_id"
+    },
+    {
+      "id": "search_results",
+      "kind": "source",
+      "filter": {
+        "event": "search",
+        "collectionId": "collection-node-id",
+        "payloadContains": {
+          "outcome": "returned"
+        }
+      },
+      "groupBy": "event_type",
+      "aggregation": "sum",
+      "field": "payload:result_count"
+    }
+  ],
+  "dashboards": [
+    {
+      "id": "operations",
+      "title": "Observed activity",
+      "layout": "grid",
+      "widgets": [
+        {
+          "id": "completed_jobs",
+          "metric": "completed_jobs",
+          "visualization": "number"
+        },
+        {
+          "id": "failed_jobs",
+          "metric": "failed_jobs",
+          "visualization": "number"
+        },
+        {
+          "id": "reads",
+          "metric": "reads",
+          "visualization": "number"
+        },
+        {
+          "id": "search_results",
+          "metric": "search_results",
+          "visualization": "number"
+        }
+      ]
+    }
+  ]
+}

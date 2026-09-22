@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -248,6 +250,11 @@ func (r *recordingEmitter) Emit(_ context.Context, e business.AuditEntry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.entries = append(r.entries, e)
+}
+
+func (r *recordingEmitter) EmitTx(ctx context.Context, e business.AuditEntry) error {
+	r.Emit(ctx, e)
+	return nil
 }
 
 // TestApprovals_AuditFailureRollsBackCreate proves the approval.asked audit event

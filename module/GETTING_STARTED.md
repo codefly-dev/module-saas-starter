@@ -8,7 +8,7 @@ This module provides a complete SaaS foundation.
 - **vault**: Vault for JWT signing keys and API key hashing (vault agent)
 - **accounts**: generated gRPC + Connect + opt-in REST APIs for tenant,
   permission, entitlement, billing, and usage operations (go-grpc agent)
-- **auth-gateway**: Envoy ext_authz sidecar for JWT/API-key validation and canonical identity stamping (go-grpc agent)
+- **auth-gateway**: HTTP gateway with an in-process Envoy-compatible ext_authz check for JWT/API-key validation and canonical identity stamping (go-grpc agent)
 - **cache**: Redis cache (redis agent)
 - **frontend**: Next.js app with plugin-extensible admin dashboard (nextjs agent)
 

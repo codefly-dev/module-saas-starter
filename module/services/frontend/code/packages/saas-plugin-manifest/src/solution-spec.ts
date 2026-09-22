@@ -10,14 +10,19 @@ import type {
 } from "./contracts.js";
 
 /**
- * The subset of obin's lodestar `SolutionSpec` that the unified plugin manifest
- * shares (lodestar `docs/design/solution-anatomy.md`, obin-ai/lodestar#13, #15):
- * identity, services, api exposes/consumes, events, ui extensions, needs,
- * permissions, and lifecycle. This declaration is the contract the projection
+ * The subset of a consuming platform's `SolutionSpec` that the unified plugin
+ * manifest shares: identity, services, api exposes/consumes, events, ui
+ * extensions, needs, permissions, and lifecycle. This declaration is the contract the projection
  * targets; it is intentionally the shared shape only, never a second copy of
  * the starter's manifest.
+ *
+ * This string is emitted into every projected manifest and validated by the
+ * consuming platform, so it is a wire format, not an implementation detail:
+ * changing it breaks projection until that platform accepts the new value, and
+ * nothing in this repository can detect that break. `example.test.ts` pins the
+ * literal so a change fails here first and has to be coordinated deliberately.
  */
-export const SOLUTION_SPEC_API_VERSION = "solution.obin.dev/v1" as const;
+export const SOLUTION_SPEC_API_VERSION = "solution.codefly.dev/v1" as const;
 
 export interface SolutionIdentity {
 	name: string;
@@ -39,10 +44,10 @@ export interface SolutionLifecycle {
 }
 
 /**
- * Starter-only manifest sections that lodestar's `SolutionSpec` does not model
- * one-to-one. They ride through the projection under a documented namespace so
- * the mapping is lossless and obin can adopt them deliberately rather than by
- * accident. See `plugin-manifest-schema.md`.
+ * Starter-only manifest sections that a consuming platform's `SolutionSpec`
+ * does not model one-to-one. They ride through the projection under a documented
+ * namespace so the mapping is lossless and a consumer can adopt them
+ * deliberately rather than by accident. See `plugin-manifest-schema.md`.
  */
 export interface SolutionCodeflyExtensions {
 	dashboard?: PluginManifest["dashboard"];
@@ -75,7 +80,7 @@ function nonEmpty<T>(value: readonly T[] | undefined): value is readonly T[] {
 }
 
 /**
- * Projects a unified plugin manifest onto obin's `SolutionSpec`. Shared facts
+ * Projects a unified plugin manifest onto a consuming platform's `SolutionSpec`. Shared facts
  * map directly; starter-only sections carry through `extensions['x-codefly']`.
  * The projection is total and side-effect free — it is the single point where
  * the two manifests meet, so they can converge without forking either schema.

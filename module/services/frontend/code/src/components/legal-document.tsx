@@ -19,7 +19,7 @@ export function LegalDocument({ kind }: { kind: "terms" | "privacy" }) {
 			>
 				← Back
 			</Link>
-			<h1 className="mt-8 text-4xl font-bold tracking-tight">
+			<h1 data-slot="page-title" className="type-page-title mt-8">
 				{kind === "terms" ? "Terms of Service" : "Privacy Policy"}
 			</h1>
 			<p className="mt-3 text-sm text-muted-foreground">

@@ -36,7 +36,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
-  `@codefly/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
+  `@codefly-dev/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
 
 ## Entry points
@@ -51,6 +51,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
+| `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
@@ -72,7 +73,7 @@ from the public registry with no extra config.
 A solution fe-remote imports `@codefly-dev/ui/layout` + `@codefly-dev/ui/dashboard` and
 shares them as Module-Federation singletons served by the host. Because the
 plugin peers are optional, the solution only needs an `.npmrc` pointing the
-`@codefly` scope at the GitHub Packages registry (with a read token) plus a
+`@codefly-dev` scope at the GitHub Packages registry (with a read token) plus a
 `react` peer it already has:
 
 ```
@@ -82,6 +83,24 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 
 `npm ci` then resolves `@codefly-dev/ui` with no reference to the unpublished
 `@codefly/saas-plugin-*` packages.
+
+**Styling.** The kit's components name their type slots and control rungs as
+classes (`type-card-title`, `control-sm`) that the kit defines, not Tailwind. A
+consumer that compiles the kit's source with its own Tailwind build imports the
+generated stylesheet into its entry alongside its `@source` for the kit:
+
+```css
+@import "tailwindcss";
+@import "@codefly-dev/ui/type-slots.css";
+@source "../node_modules/@codefly-dev/ui/src";
+```
+
+Those utilities read custom properties (`--type-card-title-size`, …) that the
+host projects onto `<html>` from the resolved skin. A remote renders inside the
+host's document, so it inherits them; nothing else has to be set up. Every
+utility sits at zero specificity, so a raw Tailwind class on the same element
+(`text-lg`, `h-11`) overrides that one property and leaves the rest of the slot
+standing — see [TOKENS.md](./TOKENS.md).
 
 **Sealed downward.** A solution composes the kit but must not shadow it: the
 host shares each layer package (React + kit + each module UI) as a
@@ -95,16 +114,26 @@ sealing is that there is a single shared instance at all. See invariant 5 in
 **Version discipline.** The kit is a Module-Federation singleton: at runtime the
 solution shares the host's single instance. A solution must therefore pin an
 `@codefly-dev/ui` that is semver-compatible with the version this host ships.
-`@codefly-dev/ui`'s own `version` is the coupling point — it bumps when the kit's
-public surface changes, and CI publishes that exact version from the release
-commit, so the published bytes are the bytes the host serves. Pin the version
-the host module release ships (the two move together on every release tag).
+`@codefly-dev/ui`'s own `version` is the coupling point — it bumps whenever the
+kit's published content changes, and CI publishes that exact version from the
+release commit, so the published bytes are the bytes the host serves. Pin the
+version the host module release ships (the two move together on every release
+tag).
 
-The release publish enforces this rather than trusting it: it compares the
-freshly built tarball's integrity against the version already on the registry. A
-release that didn't touch the kit re-publishes nothing (same bytes → skip); a
-release that changed the kit *without* bumping `version` fails the publish, so a
-stale `@codefly-dev/ui` can never silently ship to solutions.
+CI enforces this rather than trusting it, in two places. On every pull request,
+`scripts/ci/kit-version.mjs` compares the kit's content against the newest
+release tag — the baseline of what the registry serves — and fails when it
+changed under an unchanged `version`. At release time the publish compares the
+freshly built tarball's integrity against the version already on the registry: a
+release that didn't touch the kit re-publishes nothing (same bytes → skip), and a
+release that changed the kit *without* bumping `version` fails rather than
+overwrite an immutable version, so a stale `@codefly-dev/ui` can never silently
+ship to solutions.
+
+The version is co-versioned with `@codefly-dev/saas-ui` and with the host's
+`CODEFLY_KIT_VERSION` (`src/solutions/SolutionOutlet.tsx`); the
+`kit-shared-version` test pins all three together, so one bump means three
+edits.
 
 ## Skin resolution
 
@@ -120,3 +149,6 @@ const skin = await resolveSkin({
 
 The first source returning a valid descriptor wins; an invalid one is logged
 and skipped so the compiled default always renders.
+
+`Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
+optional actions and dismissal. The caller owns data, authorization and read state.

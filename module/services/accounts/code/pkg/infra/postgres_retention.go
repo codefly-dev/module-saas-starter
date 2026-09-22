@@ -56,15 +56,25 @@ func (s *PostgresStore) DeleteOldNotifications(ctx context.Context, before time.
 	return tag.RowsAffected(), nil
 }
 
-func (s *PostgresStore) DeleteExpiredAuthenticationCeremonies(ctx context.Context, before time.Time) (webauthn, mfaLogin int64, err error) {
+func (s *PostgresStore) DeleteExpiredAuthenticationCeremonies(
+	ctx context.Context, before time.Time,
+) (webauthn, mfaLogin, clientCodes int64, err error) {
 	q := s.getQueryExecutor(ctx)
 	webauthnTag, err := q.Exec(ctx, `DELETE FROM webauthn_ceremonies WHERE expires_at < $1`, before)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	loginTag, err := q.Exec(ctx, `DELETE FROM mfa_login_transactions WHERE expires_at < $1`, before)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
-	return webauthnTag.RowsAffected(), loginTag.RowsAffected(), nil
+	// A client authorization code is the same kind of hand-off: dead a minute
+	// after it is issued, whether or not it was redeemed, and nothing else
+	// deletes it. Without this the table grows by one row per client sign-in
+	// forever, each pinning a sessions row through its foreign key.
+	codeTag, err := q.Exec(ctx, `DELETE FROM client_authorization_codes WHERE expires_at < $1`, before)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return webauthnTag.RowsAffected(), loginTag.RowsAffected(), codeTag.RowsAffected(), nil
 }

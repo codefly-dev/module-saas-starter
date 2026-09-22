@@ -1,13 +1,14 @@
 import { getEndpoints } from "codefly";
 
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
+import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
+const MAX_RESUME_BYTES = 1024;
 
 interface RouteContext {
 	params: Promise<{ id: string; path?: string[] }>;
@@ -49,7 +50,16 @@ function sameOrigin(request: Request): boolean {
 	return !fetchSite || fetchSite === "same-origin" || fetchSite === "none";
 }
 
-/** Resolve the auth-gateway API gateway base from the Codefly SDK. */
+/**
+ * Resolve the auth-gateway API gateway base from the Codefly SDK.
+ *
+ * Normalised the same way `server/accounts-bindings.mjs` normalises it for
+ * `src/proxy.ts` — the whole address minus a trailing slash, NOT its origin.
+ * A base path on the endpoint is load-bearing: `proxy.ts` forwards a host
+ * page's own product API call to `${rest}${pathname}`, so discarding the path
+ * here would send a solution's platform procedure to a different URL than the
+ * byte-identical call issued from a host page, against the same composition.
+ */
 function gatewayBase(): string | null {
 	const endpoint = getEndpoints().find(
 		(candidate) =>
@@ -59,7 +69,7 @@ function gatewayBase(): string | null {
 		return null;
 	}
 	try {
-		return new URL(endpoint.address).origin;
+		return new URL(endpoint.address).toString().replace(/\/$/, "");
 	} catch {
 		return null;
 	}
@@ -67,7 +77,8 @@ function gatewayBase(): string | null {
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's
- * runtime solution passthrough (/solutions/{alias}/…), attaching the first-party
+ * root for platform Connect procedures or its runtime solution passthrough
+ * (/solutions/{alias}/…) for other paths, attaching the first-party
  * trust headers and carrying the caller's identity (bearer and/or session
  * cookie). The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
@@ -82,7 +93,25 @@ async function handler(
 		return new Response("cross-origin request rejected", { status: 403 });
 	}
 
-	const solution = findSolution(id);
+	// A cursor is only an observation hint. It never supplies identity or
+	// authorizes a retry. Keep its carrier bounded before contacting the gateway.
+	const resume =
+		request.method === "GET" ? request.headers.get("last-event-id") : null;
+	if (
+		resume !== null &&
+		(new TextEncoder().encode(resume).length > MAX_RESUME_BYTES ||
+			/[\u0000-\u001f\u007f]/.test(resume))
+	) {
+		return new Response("invalid event cursor", { status: 400 });
+	}
+
+	const solution = await findSolution(id);
+	// Distinguish a solution that is not registered from a registry this
+	// replica cannot read: the first is permanent for the caller, the second is
+	// worth retrying.
+	if (solution === "unavailable") {
+		return new Response("solution registry unavailable", { status: 503 });
+	}
 	if (!solution) {
 		return new Response("solution not registered", { status: 404 });
 	}
@@ -93,7 +122,13 @@ async function handler(
 
 	const suffix = (path ?? []).map(encodeURIComponent).join("/");
 	const search = new URL(request.url).search;
-	const target = `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
+	const platformProcedure =
+		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
+			suffix,
+		);
+	const target = platformProcedure
+		? `${base}/${suffix}${search}`
+		: `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
 
 	const headers = new Headers();
 	// First-party trust headers, resolved server-side from Codefly config — the
@@ -121,7 +156,17 @@ async function handler(
 	}
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 
-	const init: RequestInit = { method: request.method, headers };
+	if (resume !== null) headers.set("last-event-id", resume);
+
+	// Preserve the browser connection lifetime and avoid cached observations or
+	// forwarding its credentials through a gateway redirect. Never retry here.
+	const init: RequestInit = {
+		method: request.method,
+		headers,
+		signal: request.signal,
+		cache: "no-store",
+		redirect: "error",
+	};
 	if (request.method !== "GET" && request.method !== "HEAD") {
 		init.body = await request.arrayBuffer();
 	}
@@ -130,6 +175,9 @@ async function handler(
 	try {
 		upstream = await fetch(target, init);
 	} catch (err) {
+		if (request.signal?.aborted) {
+			return new Response(null, { status: 499 });
+		}
 		// The gateway resolved but is unreachable (DNS, refused, reset). Distinct
 		// from an unresolvable endpoint above so an operator can tell "no gateway
 		// configured" from "gateway down".
@@ -144,6 +192,15 @@ async function handler(
 	const upstreamContentType = upstream.headers.get("content-type");
 	if (upstreamContentType) {
 		responseHeaders.set("content-type", upstreamContentType);
+	}
+	if (
+		upstreamContentType?.split(";")[0].trim().toLowerCase() ===
+		"text/event-stream"
+	) {
+		// This authenticated stream must stay incremental. Preserve its bytes and
+		// EOF; the solution decides whether an event is terminal or needs a reset.
+		responseHeaders.set("cache-control", "no-store, no-transform");
+		responseHeaders.set("x-accel-buffering", "no");
 	}
 	const upstreamRequestID = upstream.headers.get("x-request-id");
 	if (upstreamRequestID) {

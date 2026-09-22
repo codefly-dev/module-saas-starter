@@ -1,0 +1,78 @@
+# Source collection projection SDK
+
+Generated Go client for the Accounts module-facing capability service. Import
+`github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go` at the
+reviewed commit. The standalone Go module has no consumer-local replacement.
+
+```go
+client, err := accounts.NewInternal(internalURL, authenticatedOptions...)
+// Handle err before using client.
+result, err := client.ModuleCapabilities().
+    ListReadableSourceCollections(ctx, &accountsv1.ListReadableSourceCollectionsRequest{
+        PageSize: 1000, PageToken: cursor,
+    })
+```
+
+`NewInternal` selects HTTP/2 gRPC for the Accounts internal endpoint (h2c for
+`http://`, certificate-verified TLS for `https://`). Credentials are supplied
+through Connect interceptors. `New(gateway, options...)` also enforces gRPC;
+a custom gateway must provide an HTTP/2-capable client.
+Source projection calls must carry one original signed viewer Work Context in
+`x-codefly-work-context`, audience the calling module's registration prefix and
+kind-wide `read` on a resource type that module declares its content under, plus
+the cluster-internal perimeter credential. Only the declared types are honoured;
+a module that declares none reads nothing. Installation/module credentials
+are not a viewer. Never put either credential or a minting secret in a browser.
+The empty request contains no tenant, subject, scopes, or boundary authority.
+
+Drain `next_page_token` until empty. Each collection has `source_id`,
+`boundary_id`, `origin`, `container`, `ref`, and literal `paths`. Empty means
+no current readable sources; any error invalidates a partial enumeration.
+Changed source/grant or authorization revisions invalidate existing cursors;
+standing-grant expiration also requires a restart. Source pages are joined and
+limited in the database, under the same snapshot as authority verification. Current owner and
+all delegated actor grants are intersected in the authenticated tenant.
+Unsupported providers fail explicitly; the initial projection supports GitHub.
+
+A server adapter deriving the active session organization from authenticated
+identity and exchanging a bearer for a viewer Work Context remains a separate
+runtime seam. Never choose the first membership or trust browser scopes.
+
+Regenerate from the repository root after exporting contracts:
+
+```sh
+codefly generate contracts saas-starter
+(cd libraries/source-read-sdk/go && go run ./cmd/generate --root ../../..)
+```
+
+The generated client imports policy, jobs and Work Context descriptors from
+`github.com/codefly-dev/saas-sdk-go`; it does not vendor duplicates. It can be
+composed with consumers of that SDK in one Go binary. Applications embedding
+private Accounts module-capability descriptors must still use one binding set
+for those owner types.
+
+The generator trims the descriptor set to the selected service’s transitive
+imports before invoking Codefly, then pins the facade to the internal gRPC
+protocol. Unrelated Accounts services are not generated.
+
+## Delegated read-only audience exchange
+
+The same public client exposes:
+
+```go
+child, err := client.ModuleCapabilities().ExchangeDelegatedReadAudience(ctx,
+    &accountsv1.ModuleExchangeDelegatedReadAudienceRequest{
+        BindingId: "installed-read",
+        ParentWorkContextToken: originalViewerToken,
+    })
+```
+
+For this method, the interceptor sends the **calling module's own** signed Work
+Context in `x-codefly-work-context` and the internal perimeter credential in
+`x-codefly-internal-token`. The viewer parent is exclusively in the request body.
+Do not substitute the viewer for the module credential or the module for the
+viewer parent. Installation fixes the incoming audience, target audience and
+read scopes; the parent must already admit them. Before using `child.token`, the
+consumer must verify its signature, target audience and preserved viewer lineage.
+Do not log request/response bodies or credentials. This read-only exchange does
+not grant mutation scopes or provide durable bearer custody.

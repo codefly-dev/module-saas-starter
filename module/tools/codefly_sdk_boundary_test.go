@@ -2,29 +2,38 @@ package tools
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestShellToolsDoNotReadCodeflyCarriers extends the SDK boundary to operational
 // scripts. A shell tool may invoke the Codefly CLI or accept an explicit,
 // purpose-named input; it must never couple itself to the runtime's generated
-// environment representation.
+// environment representation. It shares the production walkers' composed scope:
+// one tree must not be in scope for one walker and out of scope for another.
 func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
-	root := findRepositoryRoot(t)
+	root, _, nonComposed := findProductionScanRoots(t)
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if entry.IsDir() {
+			if nonComposed[path] {
+				return filepath.SkipDir
+			}
 			switch entry.Name() {
 			case ".git", ".next", "node_modules", "target", "vendor":
 				return filepath.SkipDir
@@ -67,7 +76,7 @@ func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
 // canonical module and composed workspaces. Runtime carriers belong to sdk-go;
 // production services consume typed SDK methods.
 func TestProductionGoUsesCodeflySDK(t *testing.T) {
-	repositoryRoot, roots := findProductionScanRoots(t)
+	repositoryRoot, roots, nonComposed := findProductionScanRoots(t)
 	fset := token.NewFileSet()
 
 	for _, root := range roots {
@@ -76,6 +85,9 @@ func TestProductionGoUsesCodeflySDK(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
+				if nonComposed[path] {
+					return filepath.SkipDir
+				}
 				if entry.Name() == "vendor" || entry.Name() == "node_modules" || entry.Name() == ".git" {
 					return filepath.SkipDir
 				}
@@ -137,7 +149,7 @@ var loopbackPortLiteral = regexp.MustCompile(`(?i)(?:https?://)?(?:localhost|127
 // allocates and injects runtime endpoints; production code consumes the typed
 // SDK, while shell setup tools use `codefly endpoint`.
 func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
-	repositoryRoot, roots := findProductionScanRoots(t)
+	repositoryRoot, roots, nonComposed := findProductionScanRoots(t)
 	fset := token.NewFileSet()
 	scriptExtensions := map[string]bool{
 		".cjs": true, ".js": true, ".jsx": true, ".mjs": true,
@@ -150,6 +162,9 @@ func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
+				if nonComposed[path] {
+					return filepath.SkipDir
+				}
 				switch entry.Name() {
 				case ".git", ".next", "node_modules", "target", "vendor":
 					return filepath.SkipDir
@@ -206,7 +221,7 @@ func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
 // a private carrier, but executable product code may only reach it through the
 // language SDK.
 func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
-	repositoryRoot, roots := findProductionScanRoots(t)
+	repositoryRoot, roots, nonComposed := findProductionScanRoots(t)
 	extensions := map[string]bool{
 		".rs":  true,
 		".ts":  true,
@@ -223,6 +238,9 @@ func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
+				if nonComposed[path] {
+					return filepath.SkipDir
+				}
 				switch entry.Name() {
 				case ".git", ".next", "node_modules", "target", "vendor":
 					return filepath.SkipDir
@@ -432,7 +450,7 @@ func scanRuntimeConfigurationsForPinnedPorts(t *testing.T, repositoryRoot string
 	}
 }
 
-func findProductionScanRoots(t *testing.T) (string, []string) {
+func findProductionScanRoots(t *testing.T) (string, []string, map[string]bool) {
 	t.Helper()
 	root := findRepositoryRoot(t)
 	candidates := []string{
@@ -451,7 +469,296 @@ func findProductionScanRoots(t *testing.T) (string, []string) {
 	if len(roots) == 0 {
 		t.Fatal("no Codefly production module roots found")
 	}
-	return root, roots
+	return root, roots, nonComposedServiceDirectories(t, roots)
+}
+
+// TestComposedSubsetIsNarrowedAndDisclosed pins the contract a consuming
+// workspace depends on: `codefly sync module` lands every service of a base
+// module on disk, only the composed ones are in this gate's reach, and the
+// narrowing is announced rather than silent.
+func TestComposedSubsetIsNarrowedAndDisclosed(t *testing.T) {
+	workspace := t.TempDir()
+	writeComposedModule(t, filepath.Join(workspace, "module"),
+		"services:\n    - name: accounts\n    - name: store\n",
+		"accounts", "store")
+	writeComposedModule(t, filepath.Join(workspace, "modules", "documents"),
+		"services:\n    - name: documents\n    - name: store\n",
+		"documents", "store", "runtime-worker")
+	writeComposedModule(t, filepath.Join(workspace, "modules", "inventoryless"),
+		"", "anything")
+
+	scan := scanWorkspace(t, workspace)
+
+	expected := map[string]bool{
+		filepath.Join(workspace, "modules", "documents", "services", "runtime-worker"): true,
+	}
+	if !maps.Equal(scan.skipped, expected) {
+		t.Fatalf("skipped = %v, want %v", scan.skipped, expected)
+	}
+	if len(scan.violations) != 0 {
+		t.Fatalf("unexpected violations: %v", scan.violations)
+	}
+	if len(scan.notices) != 1 || !strings.Contains(scan.notices[0], "runtime-worker") {
+		t.Fatalf("narrowing was not disclosed: %v", scan.notices)
+	}
+}
+
+// TestOwnedModuleCannotShrinkTheGateByOmittingAService covers the seam this gate
+// would otherwise hand out for free: module.codefly.yaml carries no integrity
+// protection, so dropping a service from the inventory of a module this
+// repository owns must fail loudly instead of silently exempting its code.
+func TestOwnedModuleCannotShrinkTheGateByOmittingAService(t *testing.T) {
+	workspace := t.TempDir()
+	writeComposedModule(t, filepath.Join(workspace, "module"),
+		"services:\n    - name: accounts\n",
+		"accounts", "store")
+
+	scan := scanWorkspace(t, workspace)
+
+	if len(scan.skipped) != 0 {
+		t.Fatalf("an owned module exempted %v; it must keep enforcing every service it ships", scan.skipped)
+	}
+	if len(scan.violations) != 1 || !strings.Contains(scan.violations[0], "store") {
+		t.Fatalf("omission was not reported: %v", scan.violations)
+	}
+}
+
+// TestMisspelledInventoryEnforcesEveryService covers the other half: an
+// inventory naming a service that is not on disk has misspelled or renamed one
+// that is, and the service it misspells must not fall out of the gate.
+func TestMisspelledInventoryEnforcesEveryService(t *testing.T) {
+	workspace := t.TempDir()
+	writeComposedModule(t, filepath.Join(workspace, "modules", "documents"),
+		"services:\n    - name: acounts\n    - name: store\n",
+		"accounts", "store")
+
+	scan := scanWorkspace(t, workspace)
+
+	if len(scan.skipped) != 0 {
+		t.Fatalf("a typo exempted %v; a malformed inventory must enforce everything", scan.skipped)
+	}
+	if len(scan.notices) != 1 || !strings.Contains(scan.notices[0], "acounts") {
+		t.Fatalf("malformed inventory was not disclosed: %v", scan.notices)
+	}
+}
+
+// scanWorkspace scans a fixture workspace through the same root filtering
+// findProductionScanRoots applies, so the fixtures exercise the production path
+// rather than a laxer one.
+func scanWorkspace(t *testing.T, workspace string) compositionScan {
+	t.Helper()
+	var roots []string
+	for _, candidate := range []string{filepath.Join(workspace, "module"), filepath.Join(workspace, "modules")} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			roots = append(roots, candidate)
+		}
+	}
+	scan, err := scanModuleComposition(roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scan
+}
+
+func writeComposedModule(t *testing.T, moduleRoot, servicesBlock string, serviceDirectories ...string) {
+	t.Helper()
+	for _, service := range serviceDirectories {
+		if err := os.MkdirAll(filepath.Join(moduleRoot, "services", service), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := "kind: module\nname: " + filepath.Base(moduleRoot) + "\n" + servicesBlock
+	if err := os.WriteFile(filepath.Join(moduleRoot, "module.codefly.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// composedModuleDocument is the minimal view of module.codefly.yaml this gate
+// needs: the service inventory a workspace actually composes.
+type composedModuleDocument struct {
+	Services []struct {
+		Name string `yaml:"name"`
+	} `yaml:"services"`
+}
+
+// moduleComposition is a module root plus whether this repository owns it. An
+// owned module — the canonical `module/`, or a module repository's own root —
+// publishes its inventory; a module found under a workspace's `modules/` is a
+// synced copy whose inventory is the consumer's composition choice.
+type moduleComposition struct {
+	root  string
+	owned bool
+}
+
+// compositionScan is the decided scope of the production walkers: the subtrees
+// to skip, the disclosure owed for skipping them, and the inventories that are
+// themselves wrong. It is a value rather than inline *testing.T reporting so the
+// disclosure can be asserted.
+type compositionScan struct {
+	skipped    map[string]bool
+	notices    []string
+	violations []string
+}
+
+// scanModuleComposition decides which `services/<name>/` subtrees sit outside
+// this gate. A consumer may compose a subset of a base module's services, but
+// `codefly sync module` copies the module whole, so the omitted services' code
+// is never built, run, or given a runtime endpoint to resolve.
+//
+// module.codefly.yaml carries no integrity protection — base-integrity.mjs
+// excludes it as consumer identity — so reading it unchecked would turn this
+// gate into a silent, self-service waiver. The narrowing is therefore bounded:
+//
+//   - every skip is disclosed, the way base-integrity.mjs announces its own;
+//   - an owned module must compose exactly what it ships, so canonical cannot
+//     shrink the gate by editing generated YAML;
+//   - an inventory naming a service with no directory does not describe this
+//     tree — a typo silently exempts the service it misspells — so it is refused
+//     whole and every service stays enforced.
+func scanModuleComposition(roots []string) (compositionScan, error) {
+	scan := compositionScan{skipped: map[string]bool{}}
+	modules, err := moduleCompositions(roots)
+	if err != nil {
+		return scan, err
+	}
+	for _, module := range modules {
+		composed, err := composedServices(module.root)
+		if err != nil {
+			return scan, err
+		}
+		if composed == nil {
+			continue
+		}
+		onDisk, err := serviceDirectories(module.root)
+		if err != nil {
+			return scan, err
+		}
+		if phantom := namesMissingFrom(composed, onDisk); len(phantom) > 0 {
+			scan.record(module, fmt.Sprintf("%s composes %s, which have no services/<name> directory; its inventory does not describe this tree, so every service stays enforced",
+				module.root, strings.Join(phantom, ", ")))
+			continue
+		}
+		skipped := namesMissingFrom(onDisk, composed)
+		if len(skipped) == 0 {
+			continue
+		}
+		if module.owned {
+			scan.violations = append(scan.violations, fmt.Sprintf("%s ships %s without composing them; a module must compose every service it publishes, or this gate stops covering them",
+				module.root, strings.Join(skipped, ", ")))
+			continue
+		}
+		scan.notices = append(scan.notices, fmt.Sprintf("composed subset: %s skipped %d non-composed service(s): %s",
+			module.root, len(skipped), strings.Join(skipped, ", ")))
+		for _, service := range skipped {
+			scan.skipped[filepath.Join(module.root, "services", service)] = true
+		}
+	}
+	return scan, nil
+}
+
+// record routes a malformed inventory: the owning repository must fix it, while
+// a consumer's copy falls back to enforcing everything and says so.
+func (scan *compositionScan) record(module moduleComposition, message string) {
+	if module.owned {
+		scan.violations = append(scan.violations, message)
+		return
+	}
+	scan.notices = append(scan.notices, message)
+}
+
+func nonComposedServiceDirectories(t *testing.T, roots []string) map[string]bool {
+	t.Helper()
+	scan, err := scanModuleComposition(roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, notice := range scan.notices {
+		t.Log(notice)
+	}
+	for _, violation := range scan.violations {
+		t.Error(violation)
+	}
+	return scan.skipped
+}
+
+// moduleCompositions resolves scan roots to module roots: a root either holds a
+// module.codefly.yaml itself or contains one module per child directory.
+func moduleCompositions(roots []string) ([]moduleComposition, error) {
+	var modules []moduleComposition
+	for _, root := range roots {
+		if _, err := os.Stat(filepath.Join(root, "module.codefly.yaml")); err == nil {
+			modules = append(modules, moduleComposition{root: root, owned: true})
+			continue
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			return nil, fmt.Errorf("read module roots under %s: %w", root, err)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			candidate := filepath.Join(root, entry.Name())
+			if _, err := os.Stat(filepath.Join(candidate, "module.codefly.yaml")); err == nil {
+				modules = append(modules, moduleComposition{root: candidate})
+			}
+		}
+	}
+	return modules, nil
+}
+
+// composedServices reads a module's declared service inventory, or nil when it
+// declares none — which enforces every service on disk.
+func composedServices(moduleRoot string) (map[string]bool, error) {
+	manifest := filepath.Join(moduleRoot, "module.codefly.yaml")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		return nil, err
+	}
+	var document composedModuleDocument
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", manifest, err)
+	}
+	if len(document.Services) == 0 {
+		return nil, nil
+	}
+	composed := make(map[string]bool, len(document.Services))
+	for _, service := range document.Services {
+		composed[service.Name] = true
+	}
+	return composed, nil
+}
+
+// serviceDirectories lists the service subtrees a module ships. A module without
+// a services/ directory ships none; any other read failure is reported, never
+// mistaken for an empty tree.
+func serviceDirectories(moduleRoot string) (map[string]bool, error) {
+	servicesRoot := filepath.Join(moduleRoot, "services")
+	entries, err := os.ReadDir(servicesRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", servicesRoot, err)
+	}
+	directories := map[string]bool{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			directories[entry.Name()] = true
+		}
+	}
+	return directories, nil
+}
+
+func namesMissingFrom(subject, reference map[string]bool) []string {
+	var missing []string
+	for name := range subject {
+		if !reference[name] {
+			missing = append(missing, name)
+		}
+	}
+	slices.Sort(missing)
+	return missing
 }
 
 func findRepositoryRoot(t *testing.T) string {

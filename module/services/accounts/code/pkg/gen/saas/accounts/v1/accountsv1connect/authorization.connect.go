@@ -43,6 +43,9 @@ const (
 	// PermissionServiceListRolesProcedure is the fully-qualified name of the PermissionService's
 	// ListRoles RPC.
 	PermissionServiceListRolesProcedure = "/saas.accounts.v1.PermissionService/ListRoles"
+	// PermissionServiceUpdateRoleProcedure is the fully-qualified name of the PermissionService's
+	// UpdateRole RPC.
+	PermissionServiceUpdateRoleProcedure = "/saas.accounts.v1.PermissionService/UpdateRole"
 	// PermissionServiceDeleteRoleProcedure is the fully-qualified name of the PermissionService's
 	// DeleteRole RPC.
 	PermissionServiceDeleteRoleProcedure = "/saas.accounts.v1.PermissionService/DeleteRole"
@@ -58,6 +61,9 @@ const (
 	// PermissionServiceCheckPermissionProcedure is the fully-qualified name of the PermissionService's
 	// CheckPermission RPC.
 	PermissionServiceCheckPermissionProcedure = "/saas.accounts.v1.PermissionService/CheckPermission"
+	// PermissionServiceExplainPermissionProcedure is the fully-qualified name of the
+	// PermissionService's ExplainPermission RPC.
+	PermissionServiceExplainPermissionProcedure = "/saas.accounts.v1.PermissionService/ExplainPermission"
 	// PermissionServiceDecideProcedure is the fully-qualified name of the PermissionService's Decide
 	// RPC.
 	PermissionServiceDecideProcedure = "/saas.accounts.v1.PermissionService/Decide"
@@ -67,12 +73,12 @@ const (
 	// PermissionServiceListAccessibleScopesProcedure is the fully-qualified name of the
 	// PermissionService's ListAccessibleScopes RPC.
 	PermissionServiceListAccessibleScopesProcedure = "/saas.accounts.v1.PermissionService/ListAccessibleScopes"
-	// PermissionServiceListMyAccessibleScopesProcedure is the fully-qualified name of the
-	// PermissionService's ListMyAccessibleScopes RPC.
-	PermissionServiceListMyAccessibleScopesProcedure = "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes"
 	// PermissionServiceRegisterScopeNodeProcedure is the fully-qualified name of the
 	// PermissionService's RegisterScopeNode RPC.
 	PermissionServiceRegisterScopeNodeProcedure = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	// PermissionServiceListCollectionAccessProcedure is the fully-qualified name of the
+	// PermissionService's ListCollectionAccess RPC.
+	PermissionServiceListCollectionAccessProcedure = "/saas.accounts.v1.PermissionService/ListCollectionAccess"
 	// PermissionServiceGrantScopeProcedure is the fully-qualified name of the PermissionService's
 	// GrantScope RPC.
 	PermissionServiceGrantScopeProcedure = "/saas.accounts.v1.PermissionService/GrantScope"
@@ -115,11 +121,29 @@ const (
 type PermissionServiceClient interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
+	UpdateRole(context.Context, *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error)
 	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.AssignRoleResponse], error)
 	RevokeRole(context.Context, *connect.Request[v1.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	ListRoleAssignments(context.Context, *connect.Request[v1.ListRoleAssignmentsRequest]) (*connect.Response[v1.ListRoleAssignmentsResponse], error)
 	CheckPermission(context.Context, *connect.Request[v1.CheckPermissionRequest]) (*connect.Response[v1.CheckPermissionResponse], error)
+	// ExplainPermission is the authenticated, organization-scoped companion to
+	// CheckPermission: an administrator asks the decision point whether a
+	// subject in their own organization may act, and reads the same answer the
+	// decision returns to a service. Read-only, and it evaluates the RBAC layer
+	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
+	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+	// have no administrator to supply them.
+	//
+	// The answer includes what a role assigned globally (with no organization)
+	// grants the subject, because that grant is effective in this organization
+	// and an administrator verifying access has to see it — ListRoleAssignments,
+	// which filters to the organization's own rows, does not show it.
+	//
+	// One question per call, resolved live against the tenant: it is a control an
+	// administrator points at a case, not a primitive for filling a matrix of
+	// every subject against every permission.
+	ExplainPermission(context.Context, *connect.Request[v1.ExplainPermissionRequest]) (*connect.Response[v1.ExplainPermissionResponse], error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
 	// compatibility while existing clients migrate. Both RPCs route
@@ -131,18 +155,14 @@ type PermissionServiceClient interface {
 	CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(context.Context, *connect.Request[v1.ListAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error)
-	// ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
-	// internal ListAccessibleScopes: a signed-in org member enumerates the scope
-	// nodes THEY may act on with (resource_type, action) through the gateway with a
-	// normal bearer. The subject is the bearer's own principal — no subject_id in
-	// the request — so it can never be an oracle about other principals. Same grant
-	// + share union and same pagination as the internal RPC.
-	ListMyAccessibleScopes(context.Context, *connect.Request[v1.ListMyAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error)
+	ListCollectionAccess(context.Context, *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error)
@@ -183,6 +203,12 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(permissionServiceMethods.ByName("ListRoles")),
 			connect.WithClientOptions(opts...),
 		),
+		updateRole: connect.NewClient[v1.UpdateRoleRequest, v1.UpdateRoleResponse](
+			httpClient,
+			baseURL+PermissionServiceUpdateRoleProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("UpdateRole")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteRole: connect.NewClient[v1.DeleteRoleRequest, emptypb.Empty](
 			httpClient,
 			baseURL+PermissionServiceDeleteRoleProcedure,
@@ -213,6 +239,12 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(permissionServiceMethods.ByName("CheckPermission")),
 			connect.WithClientOptions(opts...),
 		),
+		explainPermission: connect.NewClient[v1.ExplainPermissionRequest, v1.ExplainPermissionResponse](
+			httpClient,
+			baseURL+PermissionServiceExplainPermissionProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("ExplainPermission")),
+			connect.WithClientOptions(opts...),
+		),
 		decide: connect.NewClient[v1.DecideRequest, v1.DecideResponse](
 			httpClient,
 			baseURL+PermissionServiceDecideProcedure,
@@ -231,16 +263,16 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(permissionServiceMethods.ByName("ListAccessibleScopes")),
 			connect.WithClientOptions(opts...),
 		),
-		listMyAccessibleScopes: connect.NewClient[v1.ListMyAccessibleScopesRequest, v1.ListAccessibleScopesResponse](
-			httpClient,
-			baseURL+PermissionServiceListMyAccessibleScopesProcedure,
-			connect.WithSchema(permissionServiceMethods.ByName("ListMyAccessibleScopes")),
-			connect.WithClientOptions(opts...),
-		),
 		registerScopeNode: connect.NewClient[v1.RegisterScopeNodeRequest, v1.RegisterScopeNodeResponse](
 			httpClient,
 			baseURL+PermissionServiceRegisterScopeNodeProcedure,
 			connect.WithSchema(permissionServiceMethods.ByName("RegisterScopeNode")),
+			connect.WithClientOptions(opts...),
+		),
+		listCollectionAccess: connect.NewClient[v1.ListCollectionAccessRequest, v1.ListCollectionAccessResponse](
+			httpClient,
+			baseURL+PermissionServiceListCollectionAccessProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("ListCollectionAccess")),
 			connect.WithClientOptions(opts...),
 		),
 		grantScope: connect.NewClient[v1.GrantScopeRequest, v1.GrantScopeResponse](
@@ -278,23 +310,25 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // permissionServiceClient implements PermissionServiceClient.
 type permissionServiceClient struct {
-	createRole             *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
-	listRoles              *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
-	deleteRole             *connect.Client[v1.DeleteRoleRequest, emptypb.Empty]
-	assignRole             *connect.Client[v1.AssignRoleRequest, v1.AssignRoleResponse]
-	revokeRole             *connect.Client[v1.RevokeRoleRequest, emptypb.Empty]
-	listRoleAssignments    *connect.Client[v1.ListRoleAssignmentsRequest, v1.ListRoleAssignmentsResponse]
-	checkPermission        *connect.Client[v1.CheckPermissionRequest, v1.CheckPermissionResponse]
-	decide                 *connect.Client[v1.DecideRequest, v1.DecideResponse]
-	checkAccess            *connect.Client[v1.CheckAccessRequest, v1.CheckAccessResponse]
-	listAccessibleScopes   *connect.Client[v1.ListAccessibleScopesRequest, v1.ListAccessibleScopesResponse]
-	listMyAccessibleScopes *connect.Client[v1.ListMyAccessibleScopesRequest, v1.ListAccessibleScopesResponse]
-	registerScopeNode      *connect.Client[v1.RegisterScopeNodeRequest, v1.RegisterScopeNodeResponse]
-	grantScope             *connect.Client[v1.GrantScopeRequest, v1.GrantScopeResponse]
-	revokeScope            *connect.Client[v1.RevokeScopeRequest, emptypb.Empty]
-	shareRecord            *connect.Client[v1.ShareRecordRequest, v1.ShareRecordResponse]
-	revokeShare            *connect.Client[v1.RevokeShareRequest, emptypb.Empty]
-	listShares             *connect.Client[v1.ListSharesRequest, v1.ListSharesResponse]
+	createRole           *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
+	listRoles            *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
+	updateRole           *connect.Client[v1.UpdateRoleRequest, v1.UpdateRoleResponse]
+	deleteRole           *connect.Client[v1.DeleteRoleRequest, emptypb.Empty]
+	assignRole           *connect.Client[v1.AssignRoleRequest, v1.AssignRoleResponse]
+	revokeRole           *connect.Client[v1.RevokeRoleRequest, emptypb.Empty]
+	listRoleAssignments  *connect.Client[v1.ListRoleAssignmentsRequest, v1.ListRoleAssignmentsResponse]
+	checkPermission      *connect.Client[v1.CheckPermissionRequest, v1.CheckPermissionResponse]
+	explainPermission    *connect.Client[v1.ExplainPermissionRequest, v1.ExplainPermissionResponse]
+	decide               *connect.Client[v1.DecideRequest, v1.DecideResponse]
+	checkAccess          *connect.Client[v1.CheckAccessRequest, v1.CheckAccessResponse]
+	listAccessibleScopes *connect.Client[v1.ListAccessibleScopesRequest, v1.ListAccessibleScopesResponse]
+	registerScopeNode    *connect.Client[v1.RegisterScopeNodeRequest, v1.RegisterScopeNodeResponse]
+	listCollectionAccess *connect.Client[v1.ListCollectionAccessRequest, v1.ListCollectionAccessResponse]
+	grantScope           *connect.Client[v1.GrantScopeRequest, v1.GrantScopeResponse]
+	revokeScope          *connect.Client[v1.RevokeScopeRequest, emptypb.Empty]
+	shareRecord          *connect.Client[v1.ShareRecordRequest, v1.ShareRecordResponse]
+	revokeShare          *connect.Client[v1.RevokeShareRequest, emptypb.Empty]
+	listShares           *connect.Client[v1.ListSharesRequest, v1.ListSharesResponse]
 }
 
 // CreateRole calls saas.accounts.v1.PermissionService.CreateRole.
@@ -305,6 +339,11 @@ func (c *permissionServiceClient) CreateRole(ctx context.Context, req *connect.R
 // ListRoles calls saas.accounts.v1.PermissionService.ListRoles.
 func (c *permissionServiceClient) ListRoles(ctx context.Context, req *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
 	return c.listRoles.CallUnary(ctx, req)
+}
+
+// UpdateRole calls saas.accounts.v1.PermissionService.UpdateRole.
+func (c *permissionServiceClient) UpdateRole(ctx context.Context, req *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error) {
+	return c.updateRole.CallUnary(ctx, req)
 }
 
 // DeleteRole calls saas.accounts.v1.PermissionService.DeleteRole.
@@ -332,6 +371,11 @@ func (c *permissionServiceClient) CheckPermission(ctx context.Context, req *conn
 	return c.checkPermission.CallUnary(ctx, req)
 }
 
+// ExplainPermission calls saas.accounts.v1.PermissionService.ExplainPermission.
+func (c *permissionServiceClient) ExplainPermission(ctx context.Context, req *connect.Request[v1.ExplainPermissionRequest]) (*connect.Response[v1.ExplainPermissionResponse], error) {
+	return c.explainPermission.CallUnary(ctx, req)
+}
+
 // Decide calls saas.accounts.v1.PermissionService.Decide.
 func (c *permissionServiceClient) Decide(ctx context.Context, req *connect.Request[v1.DecideRequest]) (*connect.Response[v1.DecideResponse], error) {
 	return c.decide.CallUnary(ctx, req)
@@ -347,14 +391,14 @@ func (c *permissionServiceClient) ListAccessibleScopes(ctx context.Context, req 
 	return c.listAccessibleScopes.CallUnary(ctx, req)
 }
 
-// ListMyAccessibleScopes calls saas.accounts.v1.PermissionService.ListMyAccessibleScopes.
-func (c *permissionServiceClient) ListMyAccessibleScopes(ctx context.Context, req *connect.Request[v1.ListMyAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error) {
-	return c.listMyAccessibleScopes.CallUnary(ctx, req)
-}
-
 // RegisterScopeNode calls saas.accounts.v1.PermissionService.RegisterScopeNode.
 func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, req *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error) {
 	return c.registerScopeNode.CallUnary(ctx, req)
+}
+
+// ListCollectionAccess calls saas.accounts.v1.PermissionService.ListCollectionAccess.
+func (c *permissionServiceClient) ListCollectionAccess(ctx context.Context, req *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error) {
+	return c.listCollectionAccess.CallUnary(ctx, req)
 }
 
 // GrantScope calls saas.accounts.v1.PermissionService.GrantScope.
@@ -386,11 +430,29 @@ func (c *permissionServiceClient) ListShares(ctx context.Context, req *connect.R
 type PermissionServiceHandler interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
+	UpdateRole(context.Context, *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error)
 	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.AssignRoleResponse], error)
 	RevokeRole(context.Context, *connect.Request[v1.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	ListRoleAssignments(context.Context, *connect.Request[v1.ListRoleAssignmentsRequest]) (*connect.Response[v1.ListRoleAssignmentsResponse], error)
 	CheckPermission(context.Context, *connect.Request[v1.CheckPermissionRequest]) (*connect.Response[v1.CheckPermissionResponse], error)
+	// ExplainPermission is the authenticated, organization-scoped companion to
+	// CheckPermission: an administrator asks the decision point whether a
+	// subject in their own organization may act, and reads the same answer the
+	// decision returns to a service. Read-only, and it evaluates the RBAC layer
+	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
+	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+	// have no administrator to supply them.
+	//
+	// The answer includes what a role assigned globally (with no organization)
+	// grants the subject, because that grant is effective in this organization
+	// and an administrator verifying access has to see it — ListRoleAssignments,
+	// which filters to the organization's own rows, does not show it.
+	//
+	// One question per call, resolved live against the tenant: it is a control an
+	// administrator points at a case, not a primitive for filling a matrix of
+	// every subject against every permission.
+	ExplainPermission(context.Context, *connect.Request[v1.ExplainPermissionRequest]) (*connect.Response[v1.ExplainPermissionResponse], error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
 	// compatibility while existing clients migrate. Both RPCs route
@@ -402,18 +464,14 @@ type PermissionServiceHandler interface {
 	CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(context.Context, *connect.Request[v1.ListAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error)
-	// ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
-	// internal ListAccessibleScopes: a signed-in org member enumerates the scope
-	// nodes THEY may act on with (resource_type, action) through the gateway with a
-	// normal bearer. The subject is the bearer's own principal — no subject_id in
-	// the request — so it can never be an oracle about other principals. Same grant
-	// + share union and same pagination as the internal RPC.
-	ListMyAccessibleScopes(context.Context, *connect.Request[v1.ListMyAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error)
+	ListCollectionAccess(context.Context, *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error)
@@ -450,6 +508,12 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		connect.WithSchema(permissionServiceMethods.ByName("ListRoles")),
 		connect.WithHandlerOptions(opts...),
 	)
+	permissionServiceUpdateRoleHandler := connect.NewUnaryHandler(
+		PermissionServiceUpdateRoleProcedure,
+		svc.UpdateRole,
+		connect.WithSchema(permissionServiceMethods.ByName("UpdateRole")),
+		connect.WithHandlerOptions(opts...),
+	)
 	permissionServiceDeleteRoleHandler := connect.NewUnaryHandler(
 		PermissionServiceDeleteRoleProcedure,
 		svc.DeleteRole,
@@ -480,6 +544,12 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		connect.WithSchema(permissionServiceMethods.ByName("CheckPermission")),
 		connect.WithHandlerOptions(opts...),
 	)
+	permissionServiceExplainPermissionHandler := connect.NewUnaryHandler(
+		PermissionServiceExplainPermissionProcedure,
+		svc.ExplainPermission,
+		connect.WithSchema(permissionServiceMethods.ByName("ExplainPermission")),
+		connect.WithHandlerOptions(opts...),
+	)
 	permissionServiceDecideHandler := connect.NewUnaryHandler(
 		PermissionServiceDecideProcedure,
 		svc.Decide,
@@ -498,16 +568,16 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		connect.WithSchema(permissionServiceMethods.ByName("ListAccessibleScopes")),
 		connect.WithHandlerOptions(opts...),
 	)
-	permissionServiceListMyAccessibleScopesHandler := connect.NewUnaryHandler(
-		PermissionServiceListMyAccessibleScopesProcedure,
-		svc.ListMyAccessibleScopes,
-		connect.WithSchema(permissionServiceMethods.ByName("ListMyAccessibleScopes")),
-		connect.WithHandlerOptions(opts...),
-	)
 	permissionServiceRegisterScopeNodeHandler := connect.NewUnaryHandler(
 		PermissionServiceRegisterScopeNodeProcedure,
 		svc.RegisterScopeNode,
 		connect.WithSchema(permissionServiceMethods.ByName("RegisterScopeNode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceListCollectionAccessHandler := connect.NewUnaryHandler(
+		PermissionServiceListCollectionAccessProcedure,
+		svc.ListCollectionAccess,
+		connect.WithSchema(permissionServiceMethods.ByName("ListCollectionAccess")),
 		connect.WithHandlerOptions(opts...),
 	)
 	permissionServiceGrantScopeHandler := connect.NewUnaryHandler(
@@ -546,6 +616,8 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 			permissionServiceCreateRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceListRolesProcedure:
 			permissionServiceListRolesHandler.ServeHTTP(w, r)
+		case PermissionServiceUpdateRoleProcedure:
+			permissionServiceUpdateRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceDeleteRoleProcedure:
 			permissionServiceDeleteRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceAssignRoleProcedure:
@@ -556,16 +628,18 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 			permissionServiceListRoleAssignmentsHandler.ServeHTTP(w, r)
 		case PermissionServiceCheckPermissionProcedure:
 			permissionServiceCheckPermissionHandler.ServeHTTP(w, r)
+		case PermissionServiceExplainPermissionProcedure:
+			permissionServiceExplainPermissionHandler.ServeHTTP(w, r)
 		case PermissionServiceDecideProcedure:
 			permissionServiceDecideHandler.ServeHTTP(w, r)
 		case PermissionServiceCheckAccessProcedure:
 			permissionServiceCheckAccessHandler.ServeHTTP(w, r)
 		case PermissionServiceListAccessibleScopesProcedure:
 			permissionServiceListAccessibleScopesHandler.ServeHTTP(w, r)
-		case PermissionServiceListMyAccessibleScopesProcedure:
-			permissionServiceListMyAccessibleScopesHandler.ServeHTTP(w, r)
 		case PermissionServiceRegisterScopeNodeProcedure:
 			permissionServiceRegisterScopeNodeHandler.ServeHTTP(w, r)
+		case PermissionServiceListCollectionAccessProcedure:
+			permissionServiceListCollectionAccessHandler.ServeHTTP(w, r)
 		case PermissionServiceGrantScopeProcedure:
 			permissionServiceGrantScopeHandler.ServeHTTP(w, r)
 		case PermissionServiceRevokeScopeProcedure:
@@ -593,6 +667,10 @@ func (UnimplementedPermissionServiceHandler) ListRoles(context.Context, *connect
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListRoles is not implemented"))
 }
 
+func (UnimplementedPermissionServiceHandler) UpdateRole(context.Context, *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.UpdateRole is not implemented"))
+}
+
 func (UnimplementedPermissionServiceHandler) DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.DeleteRole is not implemented"))
 }
@@ -613,6 +691,10 @@ func (UnimplementedPermissionServiceHandler) CheckPermission(context.Context, *c
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.CheckPermission is not implemented"))
 }
 
+func (UnimplementedPermissionServiceHandler) ExplainPermission(context.Context, *connect.Request[v1.ExplainPermissionRequest]) (*connect.Response[v1.ExplainPermissionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ExplainPermission is not implemented"))
+}
+
 func (UnimplementedPermissionServiceHandler) Decide(context.Context, *connect.Request[v1.DecideRequest]) (*connect.Response[v1.DecideResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.Decide is not implemented"))
 }
@@ -625,12 +707,12 @@ func (UnimplementedPermissionServiceHandler) ListAccessibleScopes(context.Contex
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListAccessibleScopes is not implemented"))
 }
 
-func (UnimplementedPermissionServiceHandler) ListMyAccessibleScopes(context.Context, *connect.Request[v1.ListMyAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListMyAccessibleScopes is not implemented"))
-}
-
 func (UnimplementedPermissionServiceHandler) RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.RegisterScopeNode is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) ListCollectionAccess(context.Context, *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListCollectionAccess is not implemented"))
 }
 
 func (UnimplementedPermissionServiceHandler) GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error) {

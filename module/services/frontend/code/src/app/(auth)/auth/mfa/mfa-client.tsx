@@ -77,7 +77,7 @@ export default function MFAClient() {
 					<p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary-foreground/70">
 						Protected sign-in
 					</p>
-					<h1 className="mt-2 text-2xl font-semibold tracking-tight">
+					<h1 data-slot="page-title" className="type-page-title mt-2">
 						One more check
 					</h1>
 					<p className="mt-2 max-w-sm text-sm leading-6 text-primary-foreground/75">

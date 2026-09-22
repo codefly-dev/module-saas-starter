@@ -1,18 +1,51 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ReactNode, useMemo, useState } from "react";
+import {
+	Badge,
+	Button,
+	Input,
+	Label,
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@codefly-dev/ui/layout";
+
+import { ConnectError } from "@connectrpc/connect";
+
+import {
+	QueryClient,
+	QueryClientProvider,
+	useQuery,
+} from "@tanstack/react-query";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
+	useAccessibleScopes,
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
-import type { DatasourceClient, DatasourceView } from "./types.js";
-import { cn, formatSyncedAt, parsePaths } from "./util.js";
+import type {
+	AccessibleScopeView,
+	DatasourceClient,
+	DatasourceStatusName,
+	DatasourceView,
+} from "./types.js";
+import {
+	cn,
+	formatGrants,
+	formatIngest,
+	formatSyncedAt,
+	parsePaths,
+	shortBoundaryId,
+} from "./util.js";
 
 interface DatasourcesPanelBaseProps {
 	orgId: string;
@@ -24,7 +57,7 @@ interface DatasourcesPanelBaseProps {
 /**
  * Either drive the panel with an injected `client` (the portal adapts its own
  * transport, keeping its ambient `QueryClientProvider`), or hand it a `gateway`
- * binding and it self-wires: it builds the `@codefly/saas-sdk` client and a
+ * binding and it self-wires: it builds the `@codefly-dev/saas-sdk` client and a
  * scoped React-Query provider from that binding, so a solution remote drops it
  * in with only `{ apiBase, getAccessToken }` and no query/auth context.
  */
@@ -49,11 +82,17 @@ function GatewayBoundPanel({
 }: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
 	// The interceptor reads the token at request time, so the client only needs
 	// rebuilding when the binding itself changes — not on every render.
-	const { apiBase, getAccessToken, refreshAccessToken } = gateway;
+	const { apiBase, getAccessToken, refreshAccessToken, contentResource } =
+		gateway;
 	const client = useMemo(
 		() =>
-			createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken }),
-		[apiBase, getAccessToken, refreshAccessToken],
+			createDatasourceClient({
+				apiBase,
+				getAccessToken,
+				refreshAccessToken,
+				contentResource,
+			}),
+		[apiBase, getAccessToken, refreshAccessToken, contentResource],
 	);
 	const [queryClient] = useState(
 		() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
@@ -69,19 +108,47 @@ interface DatasourcesPanelViewProps extends DatasourcesPanelBaseProps {
 	client: DatasourceClient;
 }
 
-const buttonClass =
-	"inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50";
-
-const rowActionClass =
-	"inline-flex h-8 items-center rounded-md border px-3 text-sm font-medium shadow-sm hover:bg-accent disabled:opacity-50";
-
 function DatasourcesPanelView({
 	client,
 	orgId,
 	onSyncEnqueued,
 	className,
 }: DatasourcesPanelViewProps) {
-	const [showConnect, setShowConnect] = useState(false);
+	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
+		null,
+	);
+	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
+	const [reconnectPending, setReconnectPending] = useState(false);
+	const [reconnectError, setReconnectError] = useState<string>();
+	const beginAppSetup = client.beginGitHubAppSetup?.bind(client);
+	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
+	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
+
+	// The return leg, captured once during the first render: the redirect's
+	// parameters are a property of the URL the page loaded with, so the value has
+	// to survive the scrub below rather than be re-read from an address that no
+	// longer carries them.
+	//
+	// Claimed only when this client can actually redeem them, and only for the
+	// organization on screen when they landed. A consumer adapting its own client
+	// may implement none of the App calls and handle the redirect itself, and must
+	// keep both its parameters and its address bar; and the state is redeemable
+	// only by the organization that began it, so re-firing it after an org switch
+	// would report a rejection for a setup that in fact succeeded.
+	const [appSetupReturn] = useState(() => {
+		if (!completeAppSetup) return null;
+		const params = readAppSetupReturn();
+		return params && { ...params, orgId };
+	});
+	const [showConnect, setShowConnect] = useState(!!appSetupReturn);
+	const [beginPending, setBeginPending] = useState(false);
+	const [beginError, setBeginError] = useState<string>();
+	// Repositories connected while this panel has been mounted, whatever the
+	// method used. The completed setup's answer predates them and cannot be
+	// re-asked, so this is the only record that they are now taken.
+	const [connectedRepos, setConnectedRepos] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and
 	// re-enabling a button whose request is still in flight (double-enqueue).
@@ -91,11 +158,30 @@ function DatasourcesPanelView({
 	const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
 		() => new Set(),
 	);
+	const [migratingIds, setMigratingIds] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
 	// Row action errors have no other surface (no toast dependency, no global
 	// mutation handler), so they would vanish silently without this.
+	const [syncNotice, setSyncNotice] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
+	const scopes = useAccessibleScopes(client, orgId);
+	const collections = useQuery({
+		queryKey: ["collection-access", orgId],
+		queryFn: () => client.listCollections!(orgId),
+		enabled: !!client.listCollections,
+		retry: false,
+		refetchInterval: 5000,
+	});
+	const [editingCollection, setEditingCollection] = useState<string>();
+	const listedCollections = collections.isError ? undefined : collections.data;
+	const selectedCollection = collections.isError
+		? undefined
+		: collections.data?.find(
+				(collection) => collection.nodeId === editingCollection,
+			);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -106,27 +192,128 @@ function DatasourcesPanelView({
 				orgId,
 				repo: values.repo,
 				paths: parsePaths(values.paths),
+				fileExtensions: parsePaths(values.fileExtensions).map((value) =>
+					value.toLowerCase(),
+				),
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
-				accessToken: values.accessToken,
+				boundaryNodeId: values.boundaryNodeId || undefined,
+				accessToken: values.method === "app" ? undefined : values.accessToken,
 				webhookSecret: values.webhookSecret ?? "",
 			},
-			{ onSuccess: () => setShowConnect(false) },
+			{
+				onSuccess: () => {
+					setConnectedRepos((prev) => new Set(prev).add(values.repo));
+					setShowConnect(false);
+				},
+			},
 		);
 	};
 
-	const handleSync = (source: DatasourceView) => {
+	const appSetupActive = !!appSetupReturn && appSetupReturn.orgId === orgId;
+	const appSetup = useQuery({
+		queryKey: [
+			"github-app-setup",
+			appSetupReturn?.orgId,
+			appSetupReturn?.state,
+		],
+		queryFn: () =>
+			completeAppSetup!(
+				appSetupReturn!.orgId,
+				appSetupReturn!.state,
+				appSetupReturn!.installationId,
+				appSetupReturn!.code,
+			),
+		enabled: appSetupActive,
+		// The state is redeemable exactly once, so a retry or a background refetch
+		// would report a rejection for a setup that in fact succeeded.
+		retry: false,
+		staleTime: Number.POSITIVE_INFINITY,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
+	});
+	// Burn the state out of the address bar for the same reason, and to keep it out
+	// of browser history and same-origin referrers.
+	useEffect(() => {
+		if (appSetupReturn) scrubAppSetupReturn();
+	}, [appSetupReturn]);
+
+	// `alreadyConnected` is answered once, when the setup completes, and that
+	// answer can never be refreshed: the state behind it is redeemable exactly
+	// once, so refetching would report a rejection for a setup that succeeded.
+	// A repository connected since therefore has to be folded in here, or the
+	// picker keeps offering one this organization already holds.
+	const appRepositories = useMemo(() => {
+		const granted = appSetupActive ? appSetup.data?.repositories : undefined;
+		return granted?.map((candidate) =>
+			candidate.alreadyConnected || !connectedRepos.has(candidate.repo)
+				? candidate
+				: { ...candidate, alreadyConnected: true },
+		);
+	}, [appSetupActive, appSetup.data, connectedRepos]);
+	const appSetupPhase = beginPending
+		? "beginning"
+		: appSetupActive && appSetup.isFetching
+			? "completing"
+			: undefined;
+	const appSetupError = beginError
+		? beginError
+		: appSetupActive && appSetup.isError
+			? messageOf(appSetup.error)
+			: undefined;
+
+	const handleBeginAppSetup = async () => {
+		if (!beginAppSetup) return;
+		setBeginError(undefined);
+		setBeginPending(true);
+		try {
+			const handle = await beginAppSetup(orgId);
+			// Navigating away, so the pending flag is deliberately left set: the
+			// button must not re-enable under a browser that is already unloading.
+			window.location.assign(handle.installUrl);
+		} catch (error) {
+			setBeginError(messageOf(error));
+			setBeginPending(false);
+		}
+	};
+
+	const handleMigrateToApp = async (source: DatasourceView) => {
+		if (!migrateToApp) return;
+		setSyncNotice(null);
+		setActionError(null);
+		setMigratingIds((prev) => new Set(prev).add(source.id));
+		try {
+			await migrateToApp(orgId, source.id);
+			setSyncNotice(
+				`${source.repo} now authenticates through the GitHub App. Its stored token is no longer used.`,
+			);
+			await list.refetch();
+		} catch (error) {
+			setActionError(
+				`Couldn't move ${source.repo} onto the GitHub App: ${messageOf(error)}`,
+			);
+		} finally {
+			setMigratingIds((prev) => without(prev, source.id));
+		}
+	};
+
+	const handleSync = async (source: DatasourceView) => {
+		setSyncNotice(null);
 		setActionError(null);
 		setSyncingIds((prev) => new Set(prev).add(source.id));
-		syncMutation.mutate(
-			{ orgId, id: source.id },
-			{
-				onSuccess: (jobId) => onSyncEnqueued?.(jobId),
-				onError: (error) =>
-					setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`),
-				onSettled: () => setSyncingIds((prev) => without(prev, source.id)),
-			},
-		);
+		// Per-call callbacks on a shared mutation only observe the latest call.
+		// Await each request so every row reports its result and clears pending.
+		try {
+			const jobId = await syncMutation.mutateAsync({ orgId, id: source.id });
+			setSyncNotice(
+				`Sync queued for ${source.repo}. Ingestion runs in the background; content will appear in the collection when ready.`,
+			);
+			onSyncEnqueued?.(jobId);
+		} catch (error) {
+			setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`);
+		} finally {
+			setSyncingIds((prev) => without(prev, source.id));
+		}
 	};
 
 	const handleDelete = (source: DatasourceView) => {
@@ -148,59 +335,270 @@ function DatasourcesPanelView({
 	};
 
 	const sources = list.data ?? [];
+	const boundaries = useMemo(() => {
+		const byNode = new Map<string, AccessibleScopeView>();
+		for (const scope of (scopes.isError ? [] : scopes.data) ?? [])
+			byNode.set(scope.nodeId, scope);
+		return byNode;
+	}, [scopes.data, scopes.isError]);
+	// The scope lookup answers for every node kind, so a grant on a solution node
+	// or on a placed record would silence a headline that speaks about
+	// collections. With collections listed the question can be asked exactly; with
+	// none listed — not yet loaded, or an organization that has none — there is no
+	// collection to be refused, so the scope set is all there is to go on.
+	const readableCollection = listedCollections?.length
+		? listedCollections.some((collection) => boundaries.has(collection.nodeId))
+		: boundaries.size > 0;
 
 	return (
-		<div className={cn("space-y-4", className)}>
-			<div className="flex items-center justify-end">
-				<button
-					type="button"
-					className={buttonClass}
-					onClick={() => setShowConnect(true)}
-				>
-					Connect GitHub
-				</button>
-			</div>
-
-			{actionError && (
-				<div
-					role="alert"
-					className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
-				>
-					<span>{actionError}</span>
-					<button
-						type="button"
-						className="text-xs underline"
-						onClick={() => setActionError(null)}
-					>
-						Dismiss
-					</button>
+		<div className={cn("space-y-6", className)}>
+			<section aria-label="Sources" className="space-y-3">
+				<div className="flex items-start justify-between gap-4">
+					<div>
+						<h3 className="type-section-title">Sources</h3>
+						<p className="type-body text-muted-foreground">
+							Repositories this organization ingests from.
+						</p>
+					</div>
+					<Button type="button" onClick={() => setShowConnect(true)}>
+						Connect GitHub
+					</Button>
 				</div>
+
+				{scopes.isError ? (
+					<p role="alert" className="type-body text-destructive">
+						Couldn’t verify collection permissions. This does not mean there is
+						no indexed content.
+					</p>
+				) : scopes.isSuccess && !readableCollection ? (
+					<p role="status" className="type-body text-muted-foreground">
+						No readable collection. Ask an organization administrator for read
+						access. Connecting or syncing a source does not grant access.
+					</p>
+				) : null}
+				{selectedCollection && (
+					<CollectionGrants
+						client={client}
+						orgId={orgId}
+						collection={selectedCollection}
+					/>
+				)}
+				{activitySource && (
+					<SourceHistory
+						client={client}
+						orgId={orgId}
+						source={activitySource}
+						onClose={() => setActivitySource(null)}
+					/>
+				)}
+
+				{syncNotice && (
+					<p role="status" className="text-sm text-muted-foreground">
+						{syncNotice}
+					</p>
+				)}
+				{actionError && (
+					<div
+						role="alert"
+						className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+					>
+						<span>{actionError}</span>
+						<Button
+							type="button"
+							className="text-xs underline"
+							onClick={() => setActionError(null)}
+						>
+							Dismiss
+						</Button>
+					</div>
+				)}
+
+				{list.isLoading ? (
+					<PanelMessage>Loading data sources…</PanelMessage>
+				) : list.isError ? (
+					<PanelMessage tone="error">
+						Couldn&apos;t load data sources. Retry shortly or check the service
+						status.
+					</PanelMessage>
+				) : sources.length === 0 ? (
+					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
+						<p className="type-emphasis">No data sources connected.</p>
+						<p className="type-body text-muted-foreground">
+							Connect a GitHub repository to start ingesting.
+						</p>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setShowConnect(true)}
+						>
+							Connect a repository
+						</Button>
+					</div>
+				) : (
+					<SourcesTable
+						onActivity={client.listActivity ? setActivitySource : undefined}
+						onReconnect={(source) => {
+							setReconnectError(undefined);
+							setReconnecting(source);
+						}}
+						sources={sources}
+						boundaries={boundaries}
+						onMigrateToApp={migrateToApp ? handleMigrateToApp : undefined}
+						migratingIds={migratingIds}
+						permissionsResolved={scopes.isSuccess && !scopes.isError}
+						syncingIds={syncingIds}
+						deletingIds={deletingIds}
+						onSync={handleSync}
+						onDelete={handleDelete}
+					/>
+				)}
+			</section>
+
+			{client.listCollections ? (
+				<section aria-label="Collection access" className="space-y-3">
+					<div>
+						<h3 className="type-section-title">Collection access</h3>
+						<p className="type-body text-muted-foreground">
+							Who can read what a source ingests. Connecting or syncing a source
+							never grants access; a grant does.
+						</p>
+					</div>
+					{collections.isError ? (
+						<p role="alert" className="type-body text-destructive">
+							Couldn’t inspect collection grants. Organization administrator
+							access is required.
+						</p>
+					) : (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Collection</TableHead>
+									<TableHead>Your access</TableHead>
+									<TableHead>Readers</TableHead>
+									<TableHead className="w-0" />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{(collections.data ?? []).map((collection) => {
+									const readable =
+										scopes.isSuccess && !scopes.isError
+											? boundaries.has(collection.nodeId)
+											: undefined;
+									const readers = collection.grants
+										.map((grant) => grant.subjectLabel)
+										.join(", ");
+									return (
+										<TableRow key={collection.nodeId}>
+											<TableCell className="type-emphasis">
+												{collection.label}
+											</TableCell>
+											<TableCell>
+												{readable === undefined ? (
+													<span className="text-muted-foreground">
+														Read permission unresolved
+													</span>
+												) : readable ? (
+													<Badge variant="secondary">
+														You can read this collection
+													</Badge>
+												) : (
+													<Badge variant="outline">
+														You do not have read access
+													</Badge>
+												)}
+											</TableCell>
+											<TableCell className="text-muted-foreground">
+												<span className="sr-only">Readers: </span>
+												{readers || "No collection read grants"}
+											</TableCell>
+											<TableCell className="text-right">
+												{client.grantCollectionRead &&
+													client.revokeCollectionRead &&
+													client.listGrantSubjects && (
+														<Button
+															type="button"
+															variant="ghost"
+															size="sm"
+															onClick={() =>
+																setEditingCollection(collection.nodeId)
+															}
+														>
+															Manage read grants
+															<span className="sr-only">
+																{" "}
+																for {collection.label}
+															</span>
+														</Button>
+													)}
+											</TableCell>
+										</TableRow>
+									);
+								})}
+							</TableBody>
+						</Table>
+					)}
+				</section>
+			) : (
+				<Button
+					type="button"
+					variant="link"
+					size="sm"
+					onClick={() => window.location.assign("/admin/datasources")}
+				>
+					Manage collection read grants in the host (organization
+					administrators)
+				</Button>
 			)}
 
-			{list.isLoading ? (
-				<PanelMessage>Loading data sources…</PanelMessage>
-			) : list.isError ? (
-				<PanelMessage tone="error">
-					Couldn&apos;t load data sources. Retry shortly or check the service
-					status.
-				</PanelMessage>
-			) : sources.length === 0 ? (
-				<PanelMessage>
-					No data sources connected. Connect a GitHub repository to start
-					ingesting.
-				</PanelMessage>
-			) : (
-				<SourcesTable
-					sources={sources}
-					syncingIds={syncingIds}
-					deletingIds={deletingIds}
-					onSync={handleSync}
-					onDelete={handleDelete}
+			{reconnecting && (
+				<ReconnectSource
+					source={reconnecting}
+					pending={reconnectPending}
+					error={reconnectError}
+					onCancel={() => {
+						if (!reconnectPending) setReconnecting(null);
+					}}
+					onSubmit={async (token) => {
+						setReconnectPending(true);
+						setReconnectError(undefined);
+						try {
+							const jobId = await client.syncSource(
+								orgId,
+								reconnecting.id,
+								token,
+							);
+							setSyncNotice(
+								`Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
+							);
+							setReconnecting(null);
+							onSyncEnqueued?.(jobId);
+							await list.refetch();
+						} catch (error) {
+							setReconnectError(messageOf(error));
+						} finally {
+							setReconnectPending(false);
+						}
+					}}
 				/>
 			)}
-
 			{showConnect && (
 				<ConnectGitHubForm
+					// Both legs or neither: an install the panel cannot redeem on the
+					// way back strands the tenant on a completed GitHub install with
+					// nothing to show for it.
+					onBeginAppSetup={
+						beginAppSetup && completeAppSetup ? handleBeginAppSetup : undefined
+					}
+					appRepositories={appRepositories}
+					appSetupPhase={appSetupPhase}
+					appSetupError={appSetupError}
+					collections={collections.isError ? [] : collections.data}
+					readableNodeIds={
+						scopes.isSuccess && !scopes.isError
+							? [...boundaries.keys()]
+							: undefined
+					}
+					collectionError={collections.isError}
 					onSubmit={handleConnect}
 					onCancel={() => setShowConnect(false)}
 					isPending={addMutation.isPending}
@@ -232,6 +630,45 @@ function PanelMessage({
 	);
 }
 
+/**
+ * The parameters GitHub appends to the App's configured setup URL when it sends
+ * the browser back: the installation it claims was installed, and the state we
+ * minted. Both are required — `setup_action` is deliberately not consulted, so
+ * an existing installation gaining repositories (`update`) lands here exactly as
+ * a first install does.
+ *
+ * Returns null under SSR, where the panel renders before any address exists.
+ */
+function readAppSetupReturn(): {
+	state: string;
+	installationId: string;
+	code: string;
+} | null {
+	if (typeof window === "undefined") return null;
+	const params = new URLSearchParams(window.location.search);
+	const state = params.get("state");
+	const installationId = params.get("installation_id");
+	// `code` is deliberately not part of the trigger. It is absent when the App
+	// was registered without "Request user authorization (OAuth) during
+	// installation", and the host answers that with the error naming the setting
+	// — which an operator can act on, where ignoring the return says nothing.
+	return state && installationId
+		? { state, installationId, code: params.get("code") ?? "" }
+		: null;
+}
+
+function scrubAppSetupReturn(): void {
+	const params = new URLSearchParams(window.location.search);
+	for (const key of ["state", "installation_id", "setup_action", "code"])
+		params.delete(key);
+	const query = params.toString();
+	window.history.replaceState(
+		null,
+		"",
+		`${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+	);
+}
+
 function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
 	const next = new Set(set);
 	next.delete(id);
@@ -239,9 +676,83 @@ function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
 }
 
 function messageOf(error: unknown): string {
-	return error instanceof Error && error.message
-		? error.message
-		: "unexpected error";
+	const message =
+		error instanceof ConnectError
+			? error.rawMessage
+			: error instanceof Error
+				? error.message
+				: "unexpected error";
+	return message.replace(/^rpc error: code = \w+ desc = /, "");
+}
+
+/**
+ * A row's clocks. At most one of them ticks for a given source: a github
+ * source's ingest is advanced by the change-set compiler and never sets
+ * `lastSyncedAt`, while the pulled providers advance `lastSyncedAt` alone. So
+ * the "Never" is dropped whenever there is an ingest to show — left in, it
+ * would sit above live provenance telling the reader a healthy source has
+ * never synced.
+ */
+function LastSyncCell({ source }: { source: DatasourceView }) {
+	const ingest = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
+	return (
+		<>
+			{(source.lastSyncedAt || !ingest) && (
+				<div>{formatSyncedAt(source.lastSyncedAt)}</div>
+			)}
+			{ingest && <div className="text-xs">{ingest}</div>}
+		</>
+	);
+}
+
+/**
+ * How each status that is not `active` presents. Active is deliberately absent:
+ * it is the state of nearly every row, so badging it too would bury the states
+ * that need a reader under a column of noise — and it and `unknown` would then
+ * differ by their label alone.
+ */
+const statusPresentation: Record<
+	Exclude<DatasourceStatusName, "active">,
+	{ label: string; variant: "outline" | "secondary" | "destructive" }
+> = {
+	paused: { label: "Paused", variant: "secondary" },
+	degraded: { label: "Degraded", variant: "destructive" },
+	unknown: { label: "Unknown", variant: "outline" },
+};
+
+/**
+ * A source's lifecycle state and, once it has left active, the reason the host
+ * published. Shown in the row rather than behind History because the tenant
+ * never caused this state and so has no reason to go looking for it.
+ *
+ * The reason renders for whatever status carries one. The wire scopes it to
+ * "why the source left active" rather than to one particular way of leaving,
+ * so keying it to `degraded` would drop a paused source's explanation exactly
+ * as this panel used to drop a degraded one.
+ *
+ * Degrading clears the source's reconcile schedule and an incremental delivery
+ * never lifts it, so nothing resumes on its own: the line has to name Sync, or
+ * a reader who fixes the cause waits for a pull that cannot come. It also says
+ * what stopped, since a red badge alone reads as "your content is gone" and
+ * would send them to re-ingest content that is still there.
+ */
+function StatusCell({ source }: { source: DatasourceView }) {
+	const presentation =
+		source.status === "active" ? undefined : statusPresentation[source.status];
+	return (
+		<div className="space-y-0.5">
+			{presentation && (
+				<Badge variant={presentation.variant}>{presentation.label}</Badge>
+			)}
+			{source.statusReason && <p className="text-xs">{source.statusReason}</p>}
+			{source.status === "degraded" && (
+				<p className="text-xs text-muted-foreground">
+					Scheduled pulls have stopped; use Sync to retry once the cause is
+					fixed. Content already ingested stays readable.
+				</p>
+			)}
+		</div>
+	);
 }
 
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
@@ -249,72 +760,314 @@ const cellClass = "px-3 py-2 align-middle";
 
 function SourcesTable({
 	sources,
+	boundaries,
+	permissionsResolved,
 	syncingIds,
 	deletingIds,
+	migratingIds,
 	onSync,
 	onDelete,
+	onActivity,
+	onReconnect,
+	onMigrateToApp,
 }: {
 	sources: DatasourceView[];
+	boundaries: ReadonlyMap<string, AccessibleScopeView>;
+	permissionsResolved: boolean;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
+	migratingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
+	onActivity?: (source: DatasourceView) => void;
+	onReconnect: (source: DatasourceView) => void;
+	onMigrateToApp?: (source: DatasourceView) => void;
 }) {
 	return (
 		<div className="overflow-x-auto rounded-lg border">
-			<table className="w-full text-sm">
-				<thead className="border-b bg-muted/40">
-					<tr>
-						<th className={headerClass}>Repository</th>
-						<th className={headerClass}>Paths</th>
-						<th className={headerClass}>Branch</th>
-						<th className={headerClass}>Webhook</th>
-						<th className={headerClass}>Last sync</th>
-						<th className={cn(headerClass, "text-right")}>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
+			<Table className="w-full text-sm">
+				<TableHeader className="border-b bg-muted/40">
+					<TableRow>
+						<TableHead className={headerClass}>Repository</TableHead>
+						<TableHead className={headerClass}>Status</TableHead>
+						<TableHead className={headerClass}>Paths</TableHead>
+						<TableHead className={headerClass}>Branch</TableHead>
+						<TableHead className={headerClass}>Boundary</TableHead>
+						<TableHead className={headerClass}>Webhook</TableHead>
+						<TableHead className={headerClass}>Last sync dispatch</TableHead>
+						<TableHead className={cn(headerClass, "text-right")}>
+							Actions
+						</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{sources.map((source) => (
-						<tr key={source.id} className="border-b last:border-0">
-							<td className={cn(cellClass, "font-mono")}>{source.repo}</td>
-							<td className={cellClass}>
+						<TableRow key={source.id} className="border-b last:border-0">
+							<TableCell className={cn(cellClass, "font-mono")}>
+								{source.repo}
+							</TableCell>
+							<TableCell className={cellClass}>
+								<StatusCell source={source} />
+							</TableCell>
+							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (
 									<span className="text-muted-foreground">All</span>
 								) : (
 									source.paths.join(", ")
 								)}
-							</td>
-							<td className={cellClass}>{source.branch || "default"}</td>
-							<td className={cellClass}>
-								{source.webhookConfigured ? "Configured" : "None"}
-							</td>
-							<td className={cn(cellClass, "text-muted-foreground")}>
-								{formatSyncedAt(source.lastSyncedAt)}
-							</td>
-							<td className={cn(cellClass, "text-right")}>
+								{!!source.fileExtensions?.length && (
+									<div className="text-xs text-muted-foreground">
+										Only {source.fileExtensions.join(", ")}
+									</div>
+								)}
+							</TableCell>
+							<TableCell className={cellClass}>
+								{source.branch || "default"}
+							</TableCell>
+							<TableCell className={cellClass}>
+								<BoundaryCell
+									nodeId={source.boundaryNodeId}
+									permissionsResolved={permissionsResolved}
+									scope={boundaries.get(source.boundaryNodeId)}
+								/>
+							</TableCell>
+							<TableCell className={cellClass}>
+								{source.webhookConfigured
+									? "Signing secret configured"
+									: "Not configured"}
+							</TableCell>
+							<TableCell className={cn(cellClass, "text-muted-foreground")}>
+								<LastSyncCell source={source} />
+							</TableCell>
+							<TableCell className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">
-									<button
+									{source.provider === "github" && (
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onClick={() => onReconnect(source)}
+										>
+											Reconnect
+										</Button>
+									)}
+									{onMigrateToApp && source.provider === "github" && (
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											disabled={migratingIds.has(source.id)}
+											onClick={() => onMigrateToApp(source)}
+										>
+											{migratingIds.has(source.id)
+												? "Moving to the App…"
+												: "Use GitHub App"}
+										</Button>
+									)}
+									{onActivity && (
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => onActivity(source)}
+										>
+											History
+										</Button>
+									)}
+									<Button
 										type="button"
-										className={rowActionClass}
+										variant="outline"
+										size="sm"
 										disabled={syncingIds.has(source.id)}
 										onClick={() => onSync(source)}
 									>
 										{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
-									</button>
-									<button
+									</Button>
+									<Button
 										type="button"
-										className={cn(rowActionClass, "text-destructive")}
+										variant="outline"
+										size="sm"
+										className="text-destructive"
 										disabled={deletingIds.has(source.id)}
 										onClick={() => onDelete(source)}
 									>
 										{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
-									</button>
+									</Button>
 								</div>
-							</td>
-						</tr>
+							</TableCell>
+						</TableRow>
 					))}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</div>
+	);
+}
+
+function BoundaryCell({
+	permissionsResolved,
+	nodeId,
+	scope,
+}: {
+	nodeId: string;
+	scope: AccessibleScopeView | undefined;
+	permissionsResolved: boolean;
+}) {
+	if (scope) {
+		return (
+			<div className="space-y-0.5">
+				<div>{scope.label || shortBoundaryId(nodeId)}</div>
+				<div className="text-xs text-muted-foreground">
+					{formatGrants(scope.actions)}
+				</div>
+			</div>
+		);
+	}
+	return (
+		<div>
+			<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			<p className="text-xs">
+				{permissionsResolved ? "No read access" : "Read permission unresolved"}
+			</p>
+		</div>
+	);
+}
+
+function SourceHistory({
+	client,
+	orgId,
+	source,
+	onClose,
+}: {
+	client: DatasourceClient;
+	orgId: string;
+	source: DatasourceView;
+	onClose: () => void;
+}) {
+	const history = useQuery({
+		queryKey: ["source-history", orgId, source.id],
+		queryFn: () => client.listActivity!(orgId, source.id),
+		refetchInterval: 15000,
+	});
+	const names: Record<string, string> = {
+		"saas.datasource.source.synced": "Sync requested",
+		"saas.datasource.source.added": "Source connected",
+		"saas.datasource.credential.updated": "Credential replaced",
+		"saas.datasource.change_set_compiled": "Files queued for ingestion",
+		"saas.datasource.sync.completed": "Ingestion completed",
+		"saas.datasource.sync.failed": "Sync attempt failed",
+	};
+	return (
+		<section
+			aria-label="Sync history"
+			className="rounded-lg border p-4 space-y-3"
+		>
+			<div className="flex items-center justify-between">
+				<h3 className="font-medium">Sync history · {source.repo}</h3>
+				<Button variant="outline" size="sm" onClick={onClose}>
+					Close history
+				</Button>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				Sync requests, dispatched files, and ingestion results. History
+				refreshes automatically.
+			</p>
+			{history.isPending ? (
+				<p>Loading history…</p>
+			) : history.error ? (
+				<p role="alert">Could not load history: {messageOf(history.error)}</p>
+			) : !history.data?.length ? (
+				<p>No recorded activity yet.</p>
+			) : (
+				<ol className="space-y-3" style={{ maxHeight: 360, overflowY: "auto" }}>
+					{history.data.map((e) => (
+						<li key={e.id} className="border-t pt-3 text-sm">
+							<div className="flex justify-between gap-3">
+								<strong>{names[e.type] ?? e.type}</strong>
+								<time className="text-xs text-muted-foreground">
+									{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
+								</time>
+							</div>
+							<p className="text-xs text-muted-foreground">
+								Actor: {e.actor === source.id ? "Source sync worker" : e.actor}
+							</p>
+							<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+								{Object.entries(e.fields)
+									.filter(([k]) => k !== "solution")
+									.map(([k, v]) => (
+										<div key={k}>
+											<dt className="inline text-muted-foreground">
+												{k.replaceAll("_", " ")}:{" "}
+											</dt>
+											<dd className="inline break-all">{String(v)}</dd>
+										</div>
+									))}
+							</dl>
+						</li>
+					))}
+				</ol>
+			)}
+		</section>
+	);
+}
+
+function ReconnectSource({
+	source,
+	pending,
+	error,
+	onSubmit,
+	onCancel,
+}: {
+	source: DatasourceView;
+	pending: boolean;
+	error?: string;
+	onSubmit: (token: string) => Promise<void>;
+	onCancel: () => void;
+}) {
+	const [token, setToken] = useState("");
+	return (
+		<form
+			aria-label="Reconnect GitHub source"
+			className="space-y-3 rounded-lg border p-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				if (!pending && token.trim()) {
+					const replacement = token.trim();
+					setToken("");
+					void onSubmit(replacement);
+				}
+			}}
+		>
+			<h3 className="font-medium">Reconnect {source.repo}</h3>
+			<p className="text-sm text-muted-foreground">
+				Replace the saved PAT and start a sync. Your source, collection,
+				content, and history are preserved.
+			</p>
+			<Label className="block text-sm">
+				New GitHub PAT
+				<Input
+					type="password"
+					autoComplete="new-password"
+					required
+					maxLength={4096}
+					value={token}
+					disabled={pending}
+					onChange={(event) => setToken(event.target.value)}
+				/>
+			</Label>
+			{error && <p role="alert">{error}</p>}
+			<div className="flex gap-2">
+				<Button type="submit" disabled={pending || !token.trim()}>
+					{pending ? "Validating and reconnecting…" : "Reconnect and sync"}
+				</Button>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={pending}
+					onClick={onCancel}
+				>
+					Cancel
+				</Button>
+			</div>
+		</form>
 	);
 }

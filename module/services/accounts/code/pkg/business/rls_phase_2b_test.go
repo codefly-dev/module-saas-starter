@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 // Phase 2B cross-tenant tests. The migration in 29_rls_direct_org

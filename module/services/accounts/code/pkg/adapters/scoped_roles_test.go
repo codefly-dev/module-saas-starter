@@ -84,7 +84,10 @@ func TestStampForwardedHTTPIdentityCarriesScopedRoles(t *testing.T) {
 	headers.Set("X-Org-Id", "22222222-2222-2222-2222-222222222222")
 	headers.Set("X-Scoped-Roles", `{"module-a":["analyst"]}`)
 
-	ctx := stampForwardedHTTPIdentity(context.Background(), headers)
+	ctx, err := stampForwardedHTTPIdentity(context.Background(), headers)
+	if err != nil {
+		t.Fatalf("stamp forwarded identity: %v", err)
+	}
 
 	if granted, conclusive := HasScopedRole(ctx, "module-a", "analyst"); !granted || !conclusive {
 		t.Fatalf("expected conclusive scoped role from header, got (%v,%v) from %v",
@@ -105,7 +108,10 @@ func TestStampForwardedHTTPIdentityCarriesTruncationSignal(t *testing.T) {
 	headers.Set("X-Scoped-Roles", `{"module-a":["analyst"]}`)
 	headers.Set("X-Scoped-Roles-Truncated", "true")
 
-	ctx := stampForwardedHTTPIdentity(context.Background(), headers)
+	ctx, err := stampForwardedHTTPIdentity(context.Background(), headers)
+	if err != nil {
+		t.Fatalf("stamp forwarded identity: %v", err)
+	}
 
 	if !ScopedRolesTruncatedFromContext(ctx) {
 		t.Fatal("expected truncation signal from header")

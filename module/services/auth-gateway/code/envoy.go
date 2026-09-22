@@ -272,7 +272,7 @@ func clusterNameForService(service string, isConnect bool) string {
 //   - config: parsed RouteConfig from routes.codefly.yaml
 //   - upstreams: map of service name to Upstream (address + port) for REST endpoints
 //   - connectUpstreams: map of service name to Upstream for Connect endpoints (may be nil)
-//   - extAuthz: Upstream for the ext_authz gRPC cluster (the sidecar itself)
+//   - extAuthz: Upstream for the ext_authz gRPC cluster (the ext_authz check itself)
 //   - listenPort: the port for the main listener
 func GenerateEnvoyConfig(
 	config *EnvoyRouteConfig,

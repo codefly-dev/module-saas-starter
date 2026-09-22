@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,16 @@ type datasourceFakeStore struct {
 	sources     map[string]*business.DatasourceSource
 	nodes       map[string]bool
 	collections map[string]string // label -> node id
+	ordinals    map[string]int64  // source id -> next ordinal to hand out
+
+	// beforeInstallationMark, when set, runs just before a park is applied.
+	beforeInstallationMark func(sourceID string)
+
+	// GitHub App onboarding: setups keyed by state hash, and the one
+	// organization each installation is claimed by.
+	setups        map[string]*business.GitHubAppSetup
+	setupConsumed map[string]bool
+	installations map[string]string // installation id -> owning org id
 }
 
 func newDatasourceFakeStore() *datasourceFakeStore {
@@ -34,7 +45,50 @@ func newDatasourceFakeStore() *datasourceFakeStore {
 		sources:     map[string]*business.DatasourceSource{},
 		nodes:       map[string]bool{},
 		collections: map[string]string{},
+		ordinals:    map[string]int64{},
+
+		setups:        map[string]*business.GitHubAppSetup{},
+		setupConsumed: map[string]bool{},
+		installations: map[string]string{},
 	}
+}
+
+func (f *datasourceFakeStore) InsertGitHubAppSetup(_ context.Context, setup *business.GitHubAppSetup) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cp := *setup
+	f.setups[setup.StateHash] = &cp
+	return nil
+}
+
+// ConsumeGitHubAppSetup mirrors the store's compare-and-set: every rejection
+// cause collapses to one error, and a state already consumed loses.
+func (f *datasourceFakeStore) ConsumeGitHubAppSetup(_ context.Context, orgID, stateHash, initiatedBy string, now time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	setup, ok := f.setups[stateHash]
+	if !ok || setup.OrgID != orgID || setup.InitiatedBy != initiatedBy ||
+		f.setupConsumed[stateHash] || !now.Before(setup.ExpiresAt) {
+		return business.ErrGitHubAppSetupRejected
+	}
+	f.setupConsumed[stateHash] = true
+	return nil
+}
+
+func (f *datasourceFakeStore) ClaimGitHubAppInstallation(_ context.Context, installationID, orgID, _ string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if owner, ok := f.installations[installationID]; ok {
+		return owner == orgID, nil
+	}
+	f.installations[installationID] = orgID
+	return true, nil
+}
+
+func (f *datasourceFakeStore) GitHubAppInstallationClaimedBy(_ context.Context, installationID, orgID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.installations[installationID] == orgID, nil
 }
 
 func (f *datasourceFakeStore) RegisterScopeNode(_ context.Context, node *gen.ScopeNode) error {
@@ -167,6 +221,20 @@ func (f *datasourceFakeStore) AdvanceDatasourceCursor(_ context.Context, sourceI
 	return nil
 }
 
+func (f *datasourceFakeStore) AllocateDatasourceOrdinal(_ context.Context, sourceID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.sources[sourceID]; !ok {
+		return 0, errors.New("not found")
+	}
+	next := f.ordinals[sourceID]
+	if next == 0 {
+		next = 1 // matches the column DEFAULT 1
+	}
+	f.ordinals[sourceID] = next + 1
+	return next, nil
+}
+
 func (f *datasourceFakeStore) BumpDatasourceReconcile(_ context.Context, sourceID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -183,7 +251,7 @@ func (f *datasourceFakeStore) BumpDatasourceReconcile(_ context.Context, sourceI
 	return nil
 }
 
-func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, sourceID, reason string) error {
+func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, sourceID string, reason business.DatasourceDegradeReason) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sources[sourceID]
@@ -191,12 +259,163 @@ func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, so
 		return errors.New("not found")
 	}
 	s.Status = business.DatasourceStatusDegraded
-	s.StatusReason = reason
+	s.StatusReason = reason.String()
 	s.NextReconcileAt = nil
 	return nil
 }
 
-func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, sourceID string) error {
+func (f *datasourceFakeStore) ListDatasourceSourcesByGitHubInstallation(_ context.Context, installationID, afterID string, limit int) ([]*business.DatasourceSource, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*business.DatasourceSource
+	for _, s := range f.sources {
+		// Mirror the query's provider filter: the column is only ever stamped by
+		// a GitHub path, and another provider must never be parked for a GitHub
+		// reason.
+		if s.GitHubInstallationID != installationID || s.Provider != business.DatasourceProviderGitHub {
+			continue
+		}
+		if afterID != "" && s.ID <= afterID {
+			continue
+		}
+		cp := *s
+		out = append(out, &cp)
+	}
+	// The real store orders and pages; map iteration does neither, and a caller
+	// that reconciles sources in a different order each run is untestable.
+	slices.SortFunc(out, func(a, b *business.DatasourceSource) int { return strings.Compare(a.ID, b.ID) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *datasourceFakeStore) ListActiveDatasourceSourcesByGitHubInstallationRepo(_ context.Context, installationID, repo, afterID string, limit int) ([]*business.DatasourceSource, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*business.DatasourceSource
+	for _, s := range f.sources {
+		// Mirror every clause of the real query, including the case-insensitive
+		// repository match and the active-only predicate that is what revokes a
+		// parked or paused source's eligibility.
+		if s.GitHubInstallationID != installationID || s.Provider != business.DatasourceProviderGitHub {
+			continue
+		}
+		if !strings.EqualFold(s.Repo, repo) || s.Status != business.DatasourceStatusActive {
+			continue
+		}
+		if afterID != "" && s.ID <= afterID {
+			continue
+		}
+		cp := *s
+		out = append(out, &cp)
+	}
+	slices.SortFunc(out, func(a, b *business.DatasourceSource) int { return strings.Compare(a.ID, b.ID) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *datasourceFakeStore) pendingRecheck(reasons []string) []string {
+	var out []string
+	for _, s := range f.sources {
+		if s.Status != business.DatasourceStatusDegraded || s.GitHubInstallationID == "" {
+			continue
+		}
+		if !slices.Contains(reasons, s.StatusReason) || slices.Contains(out, s.GitHubInstallationID) {
+			continue
+		}
+		out = append(out, s.GitHubInstallationID)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func (f *datasourceFakeStore) CountGitHubInstallationsPendingRecheck(_ context.Context, reasons []string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.pendingRecheck(reasons)), nil
+}
+
+func (f *datasourceFakeStore) ListGitHubInstallationsPendingRecheck(_ context.Context, reasons []string, offset, limit int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.pendingRecheck(reasons)
+	if offset >= len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *datasourceFakeStore) SetDatasourceSourceGitHubInstallation(_ context.Context, orgID, id, installationID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
+		s.GitHubInstallationID = installationID
+	}
+	return nil
+}
+
+// Mirrors the store's predicate: writes over 'active' or over one of the App
+// path's own reasons, never over an operator pause or another path's degrade,
+// and only when the reason actually changes.
+//
+// beforeInstallationMark runs immediately before the write, holding no lock, so
+// a test can stand in for the operator pause or compiler degrade that can land
+// between the reconciler's page read and its write.
+func (f *datasourceFakeStore) MarkDatasourceSourceInstallationDegraded(_ context.Context, sourceID, reason string, reasons []string) (bool, error) {
+	if f.beforeInstallationMark != nil {
+		f.beforeInstallationMark(sourceID)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return false, errors.New("not found")
+	}
+	if s.StatusReason == reason {
+		return false, nil
+	}
+	owned := s.Status == business.DatasourceStatusDegraded && slices.Contains(reasons, s.StatusReason)
+	if s.Status != business.DatasourceStatusActive && !owned {
+		return false, nil
+	}
+	s.Status = business.DatasourceStatusDegraded
+	s.StatusReason = reason
+	s.NextReconcileAt = nil
+	return true, nil
+}
+
+func (f *datasourceFakeStore) ClearDatasourceSourceInstallationDegraded(_ context.Context, sourceID string, reasons []string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return "", errors.New("not found")
+	}
+	// Mirror the store's status+reason guard: a source degraded for a reason
+	// this path did not write keeps both its status and its reason.
+	if s.Status != business.DatasourceStatusDegraded || !slices.Contains(reasons, s.StatusReason) {
+		return "", nil
+	}
+	cleared := s.StatusReason
+	s.Status = business.DatasourceStatusActive
+	s.StatusReason = ""
+	if s.ReconcileInterval > 0 {
+		next := time.Now().UTC().Add(s.ReconcileInterval)
+		s.NextReconcileAt = &next
+	} else {
+		s.NextReconcileAt = nil
+	}
+	return cleared, nil
+}
+
+func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, sourceID string, excludeReasons []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sources[sourceID]
@@ -206,6 +425,11 @@ func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, s
 	// Mirror the store's status='degraded' guard: only a degraded row is revived,
 	// so a paused source is left untouched.
 	if s.Status != business.DatasourceStatusDegraded {
+		return nil
+	}
+	// Mirror the store's exclusion: a degrade another path owns is not this
+	// path's to lift.
+	if slices.Contains(excludeReasons, s.StatusReason) {
 		return nil
 	}
 	s.Status = business.DatasourceStatusActive
@@ -263,6 +487,16 @@ type recordingProducer struct {
 }
 
 func (p *recordingProducer) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
+	// Enforce the same command contract the real producer does — PostgresJobStore
+	// validates through jobs.EnqueueFingerprint before a statement is ever sent —
+	// so a job this package builds that violates saas.jobs.v1 fails the test
+	// instead of silently "queuing". Without this, a producer missing a field the
+	// platform requires passes every test here and is refused in production; that
+	// is exactly how the sync and reconcile requests shipped with no content type.
+	// Matches fakeJobProducer in pkg/datasource and pkg/billing.
+	if err := jobs.ValidateCommand(req); err != nil {
+		return nil, err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.jobs = append(p.jobs, req.GetJob())
@@ -283,6 +517,9 @@ type fakeGitHub struct {
 	compareFn     func(base, head string) (*github.Comparison, error)
 	blobs         map[string][]byte
 	blobErrs      map[string]error
+
+	mu      sync.Mutex
+	fetched []string
 }
 
 func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
@@ -291,10 +528,42 @@ func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
 func (f *fakeGitHub) ResolveCommit(context.Context, string, string) (string, error) {
 	return f.commit, nil
 }
-func (f *fakeGitHub) ListFiles(context.Context, string, string, []string) ([]github.File, error) {
-	return f.files, nil
+
+// ListFiles applies the same prefix rule the real client applies server-side
+// (github.pathMatches): a tree entry is in scope when it equals a prefix or sits
+// under one at a segment boundary. A fake that returned every file regardless
+// would make any test that sets Paths and reaches a snapshot assert a behavior
+// the real client does not have.
+func (f *fakeGitHub) ListFiles(_ context.Context, _, _ string, prefixes []string) ([]github.File, error) {
+	if len(prefixes) == 0 {
+		return f.files, nil
+	}
+	var out []github.File
+	for _, file := range f.files {
+		for _, prefix := range prefixes {
+			prefix = strings.Trim(prefix, "/")
+			if prefix == "" || file.Path == prefix || strings.HasPrefix(file.Path, prefix+"/") {
+				out = append(out, file)
+				break
+			}
+		}
+	}
+	return out, nil
 }
+
+// fetchedPaths reports every path a compiler asked for content for, so a test
+// can assert that a filtered-out file was never fetched — the proto documents
+// the suffix filter as applied *before* content is fetched.
+func (f *fakeGitHub) fetchedPaths() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.fetched)
+}
+
 func (f *fakeGitHub) GetFileContent(_ context.Context, _, _, path string) ([]byte, error) {
+	f.mu.Lock()
+	f.fetched = append(f.fetched, path)
+	f.mu.Unlock()
 	if err, ok := f.errs[path]; ok {
 		return nil, err
 	}
@@ -332,6 +601,28 @@ func (a *recordingAudit) Emit(_ context.Context, entry business.AuditEntry) {
 	a.entries = append(a.entries, entry)
 }
 
+// EmitTx satisfies business.TxAuditEmitter: a double that only implemented the
+// fire-and-forget half would make every security write it is wired behind fail
+// closed instead of exercising the path under test.
+func (a *recordingAudit) EmitTx(ctx context.Context, entry business.AuditEntry) error {
+	a.Emit(ctx, entry)
+	return nil
+}
+
+// entriesOf returns every recorded entry of one type, so a test can assert the
+// payload a producer wrote and not merely that it emitted something.
+func (a *recordingAudit) entriesOf(event business.EventType) []business.AuditEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []business.AuditEntry
+	for _, e := range a.entries {
+		if e.EventType == event {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (a *recordingAudit) types() []business.EventType {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -347,6 +638,9 @@ func newDatasourceService(store business.Store, producer *recordingProducer, gh 
 	svc.SetDatasourceConnector(purposeCipher{}, producer, "")
 	audit := &recordingAudit{}
 	svc.SetAuditEmitter(audit)
+	if gh == nil {
+		gh = &fakeGitHub{defaultBranch: "main", commit: "abc"}
+	}
 	if gh != nil {
 		svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return gh })
 	}
@@ -371,7 +665,7 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 		OrgID:           testOrg,
 		Repo:            "acme/docs",
 		Paths:           []string{"docs", "docs"}, // duplicate is normalized away
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		AccessToken:     "ghp_secret",
 		WebhookSecret:   "whsec",
 	})
@@ -398,9 +692,9 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 
 func TestAddGitHubSource_Validation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	base := business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t"}
+	base := business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "t"}
 	cases := map[string]business.AddGitHubSourceInput{
-		"missing repo":       {OrgID: testOrg, CollectionLabel: "wiki", AccessToken: "t"},
+		"missing repo":       {OrgID: testOrg, CollectionLabel: "guides", AccessToken: "t"},
 		"bad repo":           mut(base, func(i *business.AddGitHubSourceInput) { i.Repo = "not-a-repo" }),
 		"missing collection": mut(base, func(i *business.AddGitHubSourceInput) { i.CollectionLabel = "" }),
 		"missing token":      mut(base, func(i *business.AddGitHubSourceInput) { i.AccessToken = "" }),
@@ -416,7 +710,7 @@ func TestResolveWebhookSource_ResolvesPerSource(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	withHook := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t", WebhookSecret: "whsec",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "t", WebhookSecret: "whsec",
 	})
 	resolved, err := svc.ResolveWebhookSource(context.Background(), withHook.ID)
 	if err != nil || resolved.SigningSecret != "whsec" {
@@ -428,7 +722,7 @@ func TestResolveWebhookSource_ResolvesPerSource(t *testing.T) {
 	}
 
 	noHook := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/other", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/other", CollectionLabel: "guides", AccessToken: "t",
 	})
 	if _, err := svc.ResolveWebhookSource(context.Background(), noHook.ID); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
 		t.Fatalf("unconfigured source: err = %v, want ErrDatasourceSourceNotFound", err)
@@ -446,7 +740,7 @@ func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), producer, &fakeGitHub{})
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "t",
 	})
 
 	jobID, err := svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID)
@@ -465,6 +759,22 @@ func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	}
 	if job.GetAttributes()["datasource.reconcile_mode"] != "force" {
 		t.Fatalf("reconcile mode = %q, want force", job.GetAttributes()["datasource.reconcile_mode"])
+	}
+	if _, disclosed := job.GetAttributes()["datasource.requested_by"]; disclosed {
+		t.Fatal("sync request disclosed audit-classified actor provenance in job attributes")
+	}
+	// The job platform validates content_type (min_len 1) on every enqueue; a
+	// request job that carries only attributes still has to declare one, or
+	// Sync now is refused by the platform before the reconcile is ever scheduled.
+	if job.GetContentType() != "application/json" || string(job.GetPayload()) != "{}" {
+		t.Fatalf("sync request body = %q/%q, want an empty JSON object; the platform refuses an undeclared content type and job_messages.payload is NOT NULL",
+			job.GetContentType(), job.GetPayload())
+	}
+	// A reconcile request is a control message, not a change set. Advertising the
+	// change-set version over an empty body would describe `{}` as a v2 per-file
+	// payload to anything that decodes on (schema_version, content_type).
+	if job.GetSchemaVersion() != 1 {
+		t.Fatalf("schema version = %d, want the reconcile request's (1), not the change set's (2)", job.GetSchemaVersion())
 	}
 	if job.GetOrdering().GetNamespace() != "datasource.delivery" ||
 		len(job.GetOrdering().GetComponents()) != 1 || job.GetOrdering().GetComponents()[0] != source.ID {
@@ -507,7 +817,7 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderAPI,
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		Credential:      "sekret",
 		API:             apiConfig(),
 	})
@@ -539,7 +849,7 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	_, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "sekret", API: apiConfig(), WebhookSecret: "whsec",
 	})
 	if err == nil {
@@ -549,13 +859,13 @@ func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 
 func TestAddSource_Validation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", Credential: "c", API: apiConfig()}
+	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", Credential: "c", API: apiConfig()}
 	cases := map[string]business.AddSourceInput{
-		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", API: apiConfig()},
+		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", API: apiConfig()},
 		"missing collection":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, Credential: "c", API: apiConfig()},
-		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", CollectionLabel: "wiki", Credential: "c"},
-		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", Credential: "c"},
-		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "wiki", Credential: "c"},
+		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", CollectionLabel: "guides", Credential: "c"},
+		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", Credential: "c"},
+		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "guides", Credential: "c"},
 	}
 	cases["bad base url"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.BaseURL = "ftp://x" })
 	cases["bad credential kind"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.CredentialKind = "oauth" })
@@ -593,7 +903,7 @@ func withAPI(in business.AddSourceInput, f func(*business.APIDatasourceConfig)) 
 func TestAddSource_GitHubBranchThroughGenericCall(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "guides",
 		Credential: "ghp", Repo: "acme/docs", Branch: "main",
 	})
 	if err != nil {
@@ -685,7 +995,7 @@ func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderCrawler,
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		Crawler:         crawlerConfig(),
 	})
 	if err != nil {
@@ -712,7 +1022,7 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderUpload,
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		Credential:      "secretkey",
 		Upload:          uploadConfig(),
 	})
@@ -731,21 +1041,21 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 func TestAddSource_NewProviderValidation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	cases := map[string]business.AddSourceInput{
-		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki"},
-		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
+		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides"},
+		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides",
 			Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "ftp://x"}},
-		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
+		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides",
 			Credential: "nope", Crawler: crawlerConfig()},
-		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
+		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides",
 			WebhookSecret: "whsec", Crawler: crawlerConfig()},
-		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c"},
-		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki",
+		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c"},
+		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
 			Upload: uploadConfig()},
-		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
+		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c",
 			Upload: &business.UploadDatasourceConfig{Endpoint: "ftp://x", Region: "us-east-1", Bucket: "b", AccessKeyID: "k"}},
-		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
+		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c",
 			Upload: &business.UploadDatasourceConfig{Endpoint: "https://s3.example.com", Bucket: "b", AccessKeyID: "k"}},
-		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
+		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c",
 			WebhookSecret: "whsec", Upload: uploadConfig()},
 	}
 	for name, in := range cases {
@@ -758,7 +1068,7 @@ func TestAddSource_NewProviderValidation(t *testing.T) {
 func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki", Crawler: crawlerConfig(),
+		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides", Crawler: crawlerConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -769,7 +1079,7 @@ func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceS
 func newUploadSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
 		Credential: "secretkey", Upload: uploadConfig(),
 	})
 	if err != nil {
@@ -956,7 +1266,7 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 	svc.SetDatasourceAPIClientFactory(func(business.APIDatasourceConfig, string) business.APIContentClient { return fake })
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "sekret", API: apiConfig(),
 	})
 	if err != nil {
@@ -1007,7 +1317,7 @@ func TestAddSource_OAuth2StoresTokenSet(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:              testOrg,
 		Provider:           business.DatasourceProviderAPI,
-		CollectionLabel:    "wiki",
+		CollectionLabel:    "guides",
 		Credential:         "refresh-tok",
 		OAuth2ClientSecret: "client-sekret",
 		API:                oauthConfig(),
@@ -1067,7 +1377,7 @@ func TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", OAuth2ClientSecret: "client-sekret", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1137,7 +1447,7 @@ func TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock(t *testing.T)
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1184,7 +1494,7 @@ func TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1214,7 +1524,7 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1231,6 +1541,13 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	reqJob := producer.jobs[len(producer.jobs)-1]
+	// The non-GitHub branch builds its own request job; it is a message on the
+	// same terms as the GitHub one and must declare a body the platform accepts.
+	if reqJob.GetQueue() != business.DatasourceSyncRequestQueue ||
+		reqJob.GetContentType() != "application/json" || string(reqJob.GetPayload()) != "{}" {
+		t.Fatalf("generic sync request = %s %q/%q, want an empty JSON object on the sync queue",
+			reqJob.GetQueue(), reqJob.GetContentType(), reqJob.GetPayload())
+	}
 	env := &jobsv1.JobEnvelope{
 		Queue:      reqJob.GetQueue(),
 		Topic:      reqJob.GetTopic(),
@@ -1253,10 +1570,10 @@ func TestAddSource_ReusesCollectionNodeByLabel(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	a := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/a", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/a", CollectionLabel: "guides", AccessToken: "t",
 	})
 	b := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/b", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/b", CollectionLabel: "guides", AccessToken: "t",
 	})
 	c := addSource(t, svc, business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/c", CollectionLabel: "docs", AccessToken: "t",
@@ -1289,5 +1606,28 @@ func TestAddSource_BoundaryNodeIDMustExist(t *testing.T) {
 	})
 	if src.BoundaryNodeID != nodeID {
 		t.Fatalf("boundary node id = %q, want %q", src.BoundaryNodeID, nodeID)
+	}
+}
+
+// The provider-agnostic create path normalizes the file-suffix allowlist the
+// same way the GitHub-specific one does; a source connected through it must not
+// reach the compiler carrying raw operator input.
+func TestAddSourceNormalizesFileExtensions(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/docs",
+		CollectionLabel: "guides", Credential: "t", FileExtensions: []string{" .MD ", ".md", ".mdx"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(source.FileExtensions, []string{".md", ".mdx"}) {
+		t.Fatalf("file extensions = %v", source.FileExtensions)
+	}
+	if _, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/docs",
+		CollectionLabel: "guides", Credential: "t", FileExtensions: []string{"**/*.md"},
+	}); err == nil {
+		t.Fatal("accepted a glob as a file extension")
 	}
 }

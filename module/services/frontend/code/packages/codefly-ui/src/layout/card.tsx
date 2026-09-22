@@ -4,8 +4,9 @@
 // pages from one shared package instance. No state or effects here, so these stay
 // server-safe (no `"use client"`); only Tabs needs the client boundary.
 
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "./cn.js";
+import { CardRoot } from "./card-root.js";
 
 export interface CardProps {
 	title?: ReactNode;
@@ -18,53 +19,18 @@ export interface CardProps {
 /** A bordered surface with an optional title row and trailing actions. */
 export function Card({ title, actions, children, className }: CardProps) {
 	return (
-		<div
-			className={cn(
-				"rounded-lg border bg-card p-4 text-card-foreground shadow-sm",
-				className,
-			)}
+		<CardRoot
+			className={cn("gap-0 rounded-lg border p-4 shadow-sm ring-0", className)}
 		>
 			{(title || actions) && (
 				<div className="mb-3 flex items-center justify-between gap-4">
-					{title && <h3 className="text-base font-medium">{title}</h3>}
+					{title && <h3 data-slot="card-heading" className="type-card-heading">
+							{title}
+						</h3>}
 					{actions && <div className="flex items-center gap-2">{actions}</div>}
 				</div>
 			)}
 			{children}
-		</div>
-	);
-}
-
-export interface SectionProps {
-	title?: ReactNode;
-	description?: ReactNode;
-	children?: ReactNode;
-	className?: string;
-	/** Inline style on the section root, e.g. to scope a CSS-variable override. */
-	style?: CSSProperties;
-}
-
-/** A titled block of page content with an optional description. */
-export function Section({
-	title,
-	description,
-	children,
-	className,
-	style,
-}: SectionProps) {
-	return (
-		<section className={cn("space-y-4", className)} style={style}>
-			{(title || description) && (
-				<div className="space-y-1">
-					{title && (
-						<h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-					)}
-					{description && (
-						<p className="text-sm text-muted-foreground">{description}</p>
-					)}
-				</div>
-			)}
-			{children}
-		</section>
+		</CardRoot>
 	);
 }

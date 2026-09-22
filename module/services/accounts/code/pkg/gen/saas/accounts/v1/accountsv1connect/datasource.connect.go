@@ -52,9 +52,21 @@ const (
 	// DatasourceServiceSyncSourceProcedure is the fully-qualified name of the DatasourceService's
 	// SyncSource RPC.
 	DatasourceServiceSyncSourceProcedure = "/saas.accounts.v1.DatasourceService/SyncSource"
+	// DatasourceServiceGetSourceSyncProcedure is the fully-qualified name of the DatasourceService's
+	// GetSourceSync RPC.
+	DatasourceServiceGetSourceSyncProcedure = "/saas.accounts.v1.DatasourceService/GetSourceSync"
 	// DatasourceServiceDeleteSourceProcedure is the fully-qualified name of the DatasourceService's
 	// DeleteSource RPC.
 	DatasourceServiceDeleteSourceProcedure = "/saas.accounts.v1.DatasourceService/DeleteSource"
+	// DatasourceServiceBeginGitHubAppSetupProcedure is the fully-qualified name of the
+	// DatasourceService's BeginGitHubAppSetup RPC.
+	DatasourceServiceBeginGitHubAppSetupProcedure = "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup"
+	// DatasourceServiceCompleteGitHubAppSetupProcedure is the fully-qualified name of the
+	// DatasourceService's CompleteGitHubAppSetup RPC.
+	DatasourceServiceCompleteGitHubAppSetupProcedure = "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup"
+	// DatasourceServiceMigrateGitHubSourceToAppProcedure is the fully-qualified name of the
+	// DatasourceService's MigrateGitHubSourceToApp RPC.
+	DatasourceServiceMigrateGitHubSourceToAppProcedure = "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp"
 )
 
 // DatasourceServiceClient is a client for the saas.accounts.v1.DatasourceService service.
@@ -79,8 +91,28 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error)
+	// BeginGitHubAppSetup mints a one-time setup state, bound to this
+	// organization and to the calling user, and returns the URL that installs the
+	// deployment's GitHub App on repositories the tenant picks. No credential is
+	// stored: the App's signing key is deployment custody.
+	BeginGitHubAppSetup(context.Context, *connect.Request[v1.BeginGitHubAppSetupRequest]) (*connect.Response[v1.BeginGitHubAppSetupResponse], error)
+	// CompleteGitHubAppSetup redeems that state exactly once and verifies the
+	// returned installation against GitHub as the App before binding it to the
+	// organization, so an installation id arriving from a browser redirect never
+	// claims a tenant on its own. It returns the repositories the installation
+	// grants.
+	CompleteGitHubAppSetup(context.Context, *connect.Request[v1.CompleteGitHubAppSetupRequest]) (*connect.Response[v1.CompleteGitHubAppSetupResponse], error)
+	// MigrateGitHubSourceToApp re-points a PAT-backed source at the deployment's
+	// GitHub App in place, keeping the source's identity, path scope, boundary,
+	// grants, delivery cursor and audit history. The installation is resolved
+	// server-side from the repository the source already names, and the stored
+	// PAT is retired only once App access has been proven.
+	MigrateGitHubSourceToApp(context.Context, *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error)
 }
 
 // NewDatasourceServiceClient constructs a client for the saas.accounts.v1.DatasourceService
@@ -130,10 +162,34 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(datasourceServiceMethods.ByName("SyncSource")),
 			connect.WithClientOptions(opts...),
 		),
+		getSourceSync: connect.NewClient[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse](
+			httpClient,
+			baseURL+DatasourceServiceGetSourceSyncProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("GetSourceSync")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteSource: connect.NewClient[v1.DeleteSourceRequest, v1.DeleteSourceResponse](
 			httpClient,
 			baseURL+DatasourceServiceDeleteSourceProcedure,
 			connect.WithSchema(datasourceServiceMethods.ByName("DeleteSource")),
+			connect.WithClientOptions(opts...),
+		),
+		beginGitHubAppSetup: connect.NewClient[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse](
+			httpClient,
+			baseURL+DatasourceServiceBeginGitHubAppSetupProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("BeginGitHubAppSetup")),
+			connect.WithClientOptions(opts...),
+		),
+		completeGitHubAppSetup: connect.NewClient[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse](
+			httpClient,
+			baseURL+DatasourceServiceCompleteGitHubAppSetupProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("CompleteGitHubAppSetup")),
+			connect.WithClientOptions(opts...),
+		),
+		migrateGitHubSourceToApp: connect.NewClient[v1.MigrateGitHubSourceToAppRequest, v1.MigrateGitHubSourceToAppResponse](
+			httpClient,
+			baseURL+DatasourceServiceMigrateGitHubSourceToAppProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("MigrateGitHubSourceToApp")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -141,13 +197,17 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // datasourceServiceClient implements DatasourceServiceClient.
 type datasourceServiceClient struct {
-	addGitHubSource      *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
-	addSource            *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
-	getDatasourceCatalog *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
-	listSources          *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
-	getSource            *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
-	syncSource           *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
-	deleteSource         *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
+	addGitHubSource          *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
+	addSource                *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
+	getDatasourceCatalog     *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
+	listSources              *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
+	getSource                *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
+	syncSource               *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
+	getSourceSync            *connect.Client[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse]
+	deleteSource             *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
+	beginGitHubAppSetup      *connect.Client[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse]
+	completeGitHubAppSetup   *connect.Client[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse]
+	migrateGitHubSourceToApp *connect.Client[v1.MigrateGitHubSourceToAppRequest, v1.MigrateGitHubSourceToAppResponse]
 }
 
 // AddGitHubSource calls saas.accounts.v1.DatasourceService.AddGitHubSource.
@@ -180,9 +240,29 @@ func (c *datasourceServiceClient) SyncSource(ctx context.Context, req *connect.R
 	return c.syncSource.CallUnary(ctx, req)
 }
 
+// GetSourceSync calls saas.accounts.v1.DatasourceService.GetSourceSync.
+func (c *datasourceServiceClient) GetSourceSync(ctx context.Context, req *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error) {
+	return c.getSourceSync.CallUnary(ctx, req)
+}
+
 // DeleteSource calls saas.accounts.v1.DatasourceService.DeleteSource.
 func (c *datasourceServiceClient) DeleteSource(ctx context.Context, req *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error) {
 	return c.deleteSource.CallUnary(ctx, req)
+}
+
+// BeginGitHubAppSetup calls saas.accounts.v1.DatasourceService.BeginGitHubAppSetup.
+func (c *datasourceServiceClient) BeginGitHubAppSetup(ctx context.Context, req *connect.Request[v1.BeginGitHubAppSetupRequest]) (*connect.Response[v1.BeginGitHubAppSetupResponse], error) {
+	return c.beginGitHubAppSetup.CallUnary(ctx, req)
+}
+
+// CompleteGitHubAppSetup calls saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup.
+func (c *datasourceServiceClient) CompleteGitHubAppSetup(ctx context.Context, req *connect.Request[v1.CompleteGitHubAppSetupRequest]) (*connect.Response[v1.CompleteGitHubAppSetupResponse], error) {
+	return c.completeGitHubAppSetup.CallUnary(ctx, req)
+}
+
+// MigrateGitHubSourceToApp calls saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp.
+func (c *datasourceServiceClient) MigrateGitHubSourceToApp(ctx context.Context, req *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error) {
+	return c.migrateGitHubSourceToApp.CallUnary(ctx, req)
 }
 
 // DatasourceServiceHandler is an implementation of the saas.accounts.v1.DatasourceService service.
@@ -207,8 +287,28 @@ type DatasourceServiceHandler interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error)
+	// BeginGitHubAppSetup mints a one-time setup state, bound to this
+	// organization and to the calling user, and returns the URL that installs the
+	// deployment's GitHub App on repositories the tenant picks. No credential is
+	// stored: the App's signing key is deployment custody.
+	BeginGitHubAppSetup(context.Context, *connect.Request[v1.BeginGitHubAppSetupRequest]) (*connect.Response[v1.BeginGitHubAppSetupResponse], error)
+	// CompleteGitHubAppSetup redeems that state exactly once and verifies the
+	// returned installation against GitHub as the App before binding it to the
+	// organization, so an installation id arriving from a browser redirect never
+	// claims a tenant on its own. It returns the repositories the installation
+	// grants.
+	CompleteGitHubAppSetup(context.Context, *connect.Request[v1.CompleteGitHubAppSetupRequest]) (*connect.Response[v1.CompleteGitHubAppSetupResponse], error)
+	// MigrateGitHubSourceToApp re-points a PAT-backed source at the deployment's
+	// GitHub App in place, keeping the source's identity, path scope, boundary,
+	// grants, delivery cursor and audit history. The installation is resolved
+	// server-side from the repository the source already names, and the stored
+	// PAT is retired only once App access has been proven.
+	MigrateGitHubSourceToApp(context.Context, *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error)
 }
 
 // NewDatasourceServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -254,10 +354,34 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		connect.WithSchema(datasourceServiceMethods.ByName("SyncSource")),
 		connect.WithHandlerOptions(opts...),
 	)
+	datasourceServiceGetSourceSyncHandler := connect.NewUnaryHandler(
+		DatasourceServiceGetSourceSyncProcedure,
+		svc.GetSourceSync,
+		connect.WithSchema(datasourceServiceMethods.ByName("GetSourceSync")),
+		connect.WithHandlerOptions(opts...),
+	)
 	datasourceServiceDeleteSourceHandler := connect.NewUnaryHandler(
 		DatasourceServiceDeleteSourceProcedure,
 		svc.DeleteSource,
 		connect.WithSchema(datasourceServiceMethods.ByName("DeleteSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceBeginGitHubAppSetupHandler := connect.NewUnaryHandler(
+		DatasourceServiceBeginGitHubAppSetupProcedure,
+		svc.BeginGitHubAppSetup,
+		connect.WithSchema(datasourceServiceMethods.ByName("BeginGitHubAppSetup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceCompleteGitHubAppSetupHandler := connect.NewUnaryHandler(
+		DatasourceServiceCompleteGitHubAppSetupProcedure,
+		svc.CompleteGitHubAppSetup,
+		connect.WithSchema(datasourceServiceMethods.ByName("CompleteGitHubAppSetup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceMigrateGitHubSourceToAppHandler := connect.NewUnaryHandler(
+		DatasourceServiceMigrateGitHubSourceToAppProcedure,
+		svc.MigrateGitHubSourceToApp,
+		connect.WithSchema(datasourceServiceMethods.ByName("MigrateGitHubSourceToApp")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/saas.accounts.v1.DatasourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -274,8 +398,16 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceGetSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceSyncSourceProcedure:
 			datasourceServiceSyncSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceGetSourceSyncProcedure:
+			datasourceServiceGetSourceSyncHandler.ServeHTTP(w, r)
 		case DatasourceServiceDeleteSourceProcedure:
 			datasourceServiceDeleteSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceBeginGitHubAppSetupProcedure:
+			datasourceServiceBeginGitHubAppSetupHandler.ServeHTTP(w, r)
+		case DatasourceServiceCompleteGitHubAppSetupProcedure:
+			datasourceServiceCompleteGitHubAppSetupHandler.ServeHTTP(w, r)
+		case DatasourceServiceMigrateGitHubSourceToAppProcedure:
+			datasourceServiceMigrateGitHubSourceToAppHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -309,6 +441,22 @@ func (UnimplementedDatasourceServiceHandler) SyncSource(context.Context, *connec
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.SyncSource is not implemented"))
 }
 
+func (UnimplementedDatasourceServiceHandler) GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.GetSourceSync is not implemented"))
+}
+
 func (UnimplementedDatasourceServiceHandler) DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.DeleteSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) BeginGitHubAppSetup(context.Context, *connect.Request[v1.BeginGitHubAppSetupRequest]) (*connect.Response[v1.BeginGitHubAppSetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.BeginGitHubAppSetup is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) CompleteGitHubAppSetup(context.Context, *connect.Request[v1.CompleteGitHubAppSetupRequest]) (*connect.Response[v1.CompleteGitHubAppSetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) MigrateGitHubSourceToApp(context.Context, *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp is not implemented"))
 }

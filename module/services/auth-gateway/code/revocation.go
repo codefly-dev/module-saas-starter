@@ -14,9 +14,9 @@ import (
 )
 
 // revocationKeyPrefix mirrors accounts' cache.TokenRevoker key layout
-// ("revoked-jti:<jti>"). The sidecar and accounts share one Redis keyspace,
+// ("revoked-jti:<jti>"). The ext_authz check and accounts share one Redis keyspace,
 // so this MUST stay byte-for-byte identical to the writer's prefix — accounts
-// writes a jti marker on logout, the sidecar reads it here.
+// writes a jti marker on logout, the ext_authz check reads it here.
 const revocationKeyPrefix = "revoked-jti:"
 
 // sessionRevocationKeyPrefix mirrors accounts' cache.TokenRevoker
@@ -27,8 +27,8 @@ const revocationKeyPrefix = "revoked-jti:"
 const sessionRevocationKeyPrefix = "revoked-session:"
 
 // defaultRevocationCacheTTL bounds how long a revocation answer is served from
-// the local cache before the sidecar re-consults Redis. It is the documented
-// worst-case window between a token being revoked and every sidecar replica
+// the local cache before the ext_authz check re-consults Redis. It is the documented
+// worst-case window between a token being revoked and every auth-gateway replica
 // rejecting it. Kept short so "kill this session now" is near-immediate.
 const defaultRevocationCacheTTL = 3 * time.Second
 
@@ -51,7 +51,7 @@ const revocationCacheEvictBatch = revocationCacheMaxEntries / 10
 // authoritative "not revoked".
 //
 // Forget drops any locally cached answer for jti so the next Revoked call
-// consults the store. The sidecar calls it when it authorizes a logout
+// consults the store. The ext_authz check calls it when it authorizes a logout
 // request: that request would otherwise cache "not revoked" for the very
 // token accounts is about to revoke, shielding an immediate replay for a
 // full cache window.
@@ -63,7 +63,7 @@ type revoker interface {
 
 // noopRevoker is the dev / no-Redis fallback: nothing is ever revoked. Mirrors
 // accounts' auth.NoopTokenRevoker so a local stack without Redis behaves
-// identically on both the sidecar and direct-to-accounts paths.
+// identically on both the auth-gateway and direct-to-accounts paths.
 type noopRevoker struct{}
 
 func (noopRevoker) Revoked(context.Context, string) (bool, error)        { return false, nil }
@@ -71,7 +71,7 @@ func (noopRevoker) RevokedSession(context.Context, string) (bool, error) { retur
 
 func (noopRevoker) Forget(string) {}
 
-// redisRevocationStore reads the shared revocation set. It reuses the sidecar's
+// redisRevocationStore reads the shared revocation set. It reuses the ext_authz check's
 // pooled/timeout-bounded Redis option builder so a hung Redis surfaces as a
 // bounded error (ReadTimeout) rather than stalling the request.
 type redisRevocationStore struct {
@@ -247,7 +247,7 @@ func (c *cachedRevoker) evictOldest(n int) {
 	}
 }
 
-// newRevoker builds the revoker wired into the sidecar. No Redis configured
+// newRevoker builds the revoker wired into the ext_authz check. No Redis configured
 // falls back to noopRevoker (dev parity, loudly logged); a Redis URL that
 // doesn't parse is a config error, not a reason to silently run without
 // revocation — the caller must treat it as fatal.

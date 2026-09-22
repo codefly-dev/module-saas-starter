@@ -1,3 +1,5 @@
+//go:build !pure
+
 package pgauth_test
 
 import (
@@ -33,7 +35,7 @@ func ssoJitAuditCount(t *testing.T, orgID uuid.UUID) int {
 	t.Helper()
 	var count int
 	scanControlPlane(t, &count,
-		`SELECT COUNT(*) FROM audit_events WHERE event_type = 'auth.sso_jit_provisioned' AND org_id = $1`,
+		`SELECT COUNT(*) FROM audit_events WHERE event_type = 'saas.auth.sso_jit_provisioned' AND org_id = $1`,
 		orgID)
 	return count
 }

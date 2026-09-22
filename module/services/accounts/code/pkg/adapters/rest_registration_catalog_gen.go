@@ -19,6 +19,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterAPIKeyServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service APIKeyService: %w", err)
 	}
+	if err := gen.RegisterAccessibleScopeServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service AccessibleScopeService: %w", err)
+	}
 	if err := gen.RegisterAuditServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service AuditService: %w", err)
 	}
@@ -57,6 +60,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	}
 	if err := gen.RegisterPlatformAdminServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service PlatformAdminService: %w", err)
+	}
+	if err := gen.RegisterResourceFollowServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service ResourceFollowService: %w", err)
 	}
 	if err := gen.RegisterSSOAdminServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service SSOAdminService: %w", err)
@@ -110,6 +116,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/audit-log":                        {},
 	"GET /v1/audit-log:aggregate":              {},
 	"GET /v1/auth/.well-known/jwks.json":       {},
+	"GET /v1/collection-access":                {},
 	"GET /v1/consent/status":                   {},
 	"GET /v1/delegations:pending":              {},
 	"GET /v1/invitations":                      {},
@@ -118,6 +125,8 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/notifications/unread-count":       {},
 	"GET /v1/organizations":                    {},
 	"GET /v1/platform/admins":                  {},
+	"GET /v1/platform/events/operations":       {},
+	"GET /v1/platform/events/subscriptions":    {},
 	"GET /v1/platform/feature-flags":           {},
 	"GET /v1/platform/jobs":                    {},
 	"GET /v1/platform/jobs/operations":         {},
@@ -139,6 +148,8 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/api-keys":                        {},
 	"POST /v1/audit-log:export":                {},
 	"POST /v1/auth/authenticate":               {},
+	"POST /v1/auth/clients/authorize":          {},
+	"POST /v1/auth/clients/validate":           {},
 	"POST /v1/auth/logout":                     {},
 	"POST /v1/auth/mfa/complete":               {},
 	"POST /v1/auth/mfa/webauthn/begin":         {},
@@ -146,6 +157,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/auth/oauth/begin":                {},
 	"POST /v1/auth/refresh":                    {},
 	"POST /v1/auth/switch-organization":        {},
+	"POST /v1/auth/token":                      {},
 	"POST /v1/billing/connect/portal":          {},
 	"POST /v1/consent/terms":                   {},
 	"POST /v1/delegations":                     {},
@@ -164,8 +176,11 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/notifications:read-all":          {},
 	"POST /v1/organizations":                   {},
 	"POST /v1/platform/admins":                 {},
+	"POST /v1/platform/impersonation:stop":     {},
 	"POST /v1/principals:agent":                {},
 	"POST /v1/record-shares":                   {},
+	"POST /v1/resource-follows":                {},
+	"POST /v1/resource-follows:unfollow":       {},
 	"POST /v1/role-assignments":                {},
 	"POST /v1/roles":                           {},
 	"POST /v1/scope-grants":                    {},
@@ -225,6 +240,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/webhooks/deliveries/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/webhooks/[^/]+/deliveries$")},
+	{method: "PATCH", path: regexp.MustCompile("^/v1/roles/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},

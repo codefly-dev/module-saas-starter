@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
 	createContext,
@@ -12,7 +12,9 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { completePendingClientAuthorization } from "@/features/auth/model/client-authorization";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
+import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { authErrorFromResponse } from "@/lib/auth-errors";
 import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
@@ -34,6 +36,7 @@ import {
 import { apiTransport } from "./connect/transport";
 
 const authClient = createClient(AuthService, apiTransport);
+const platformAdminClient = createClient(PlatformAdminService, apiTransport);
 
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
@@ -345,8 +348,10 @@ interface AuthContextType extends AuthState {
 	// Dev / fixture path — caller supplies an already-trusted identity.
 	// Used by the dev-admin fixture and local-only tooling. In production
 	// the OAuth redirect flow (signInWith) is the only path.
-	// Resolves true when a normal session was issued, false when the browser was
-	// moved into the MFA challenge continuation.
+	// Resolves true when a normal session was issued and the caller should
+	// navigate, false when the browser has been moved elsewhere instead — into
+	// the MFA challenge continuation, or back to a registered client waiting on
+	// an authorization code.
 	login: (
 		provider: string,
 		providerId: string,
@@ -354,8 +359,9 @@ interface AuthContextType extends AuthState {
 	) => Promise<boolean>;
 	// Header-injected identity path. POSTs to /v1/auth/authenticate with no
 	// credential in the body — the accounts login route reads the gateway-injected
-	// JWT header server-side. Resolves true when a session was issued, false when
-	// the browser was moved into the MFA challenge continuation.
+	// JWT header server-side. Resolves true when a session was issued and the
+	// caller should navigate, false when the browser has been moved elsewhere
+	// instead — the MFA challenge, or a registered client's redirect.
 	loginWithHeaderInjected: () => Promise<boolean>;
 	// Kicks off the OAuth authorization-code flow by redirecting the
 	// browser to the provider's hosted login. The callback page completes
@@ -382,10 +388,37 @@ interface AuthContextType extends AuthState {
 	) => boolean;
 	logout: () => Promise<void>;
 	switchOrganization: (organizationId: string) => Promise<void>;
+	// Installs an impersonation access token as the active session. The admin's
+	// own refresh cookie is untouched, so it remains the way back out.
+	enterImpersonation: (accessToken: string) => void;
+	// Leaves an impersonated session by re-exchanging the admin's refresh cookie.
+	// The restored session is minted from that cookie alone, so it carries no
+	// trace of the target; a cookie that no longer works logs out rather than
+	// leaving the impersonation token installed.
+	exitImpersonation: () => Promise<void>;
 	getToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+// finishSignIn sends the browser wherever this sign-in was for. A registered
+// client waiting on an authorization code takes precedence over the in-app
+// destination: the person started on the client's behalf, and the host's own
+// session — just established above — is what authorizes the code it receives.
+async function finishSignIn(accessToken: string | null) {
+	// Deliberately not caught: a client that asked for this sign-in and did not
+	// get its code has to be told. Swallowing the failure navigates the person
+	// into the product as though nothing happened while the client waits on a
+	// redirect that never arrives. The session is already established, so the
+	// caller surfaces the error and the request stays pending.
+	const handedOff = await completePendingClientAuthorization(accessToken);
+	const dest = safePostLoginDestination(
+		sessionStorage.getItem("post_login_destination") ?? "/",
+	);
+	sessionStorage.removeItem("post_login_destination");
+	if (handedOff || typeof window === "undefined") return;
+	window.location.replace(dest);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
 	const [state, setState] = useState<AuthState>({
@@ -412,8 +445,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				// Secure omitted over plaintext http so local dev (http://localhost)
 				// can still set the cookie; a Secure cookie is dropped on http.
 				const secure =
-					typeof window !== "undefined" &&
-					window.location.protocol === "https:"
+					typeof window !== "undefined" && window.location.protocol === "https:"
 						? "; Secure"
 						: "";
 				document.cookie = `codefly_session=1; path=/; SameSite=Lax${secure}`;
@@ -529,7 +561,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.uuid,
 				data.user?.primaryEmail ?? email,
 			);
-			return true;
+			return !(await completePendingClientAuthorization(
+				data.accessToken ?? null,
+			));
 		},
 		[beginMFA, setTokens],
 	);
@@ -566,7 +600,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			data.user?.uuid,
 			data.user?.primaryEmail,
 		);
-		return true;
+		return !(await completePendingClientAuthorization(
+			data.accessToken ?? null,
+		));
 	}, [beginMFA, setTokens]);
 
 	// OAuth redirect kickoff. Asks the backend for a server-signed state,
@@ -684,13 +720,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.primaryEmail,
 			);
 
-			const dest = safePostLoginDestination(
-				sessionStorage.getItem("post_login_destination") ?? "/",
-			);
-			sessionStorage.removeItem("post_login_destination");
-			if (typeof window !== "undefined") {
-				window.location.replace(dest);
-			}
+			await finishSignIn(data.accessToken ?? null);
 		},
 		[beginMFA, setTokens],
 	);
@@ -717,11 +747,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.primaryEmail,
 			);
 
-			const dest = safePostLoginDestination(
-				sessionStorage.getItem("post_login_destination") ?? "/",
-			);
-			sessionStorage.removeItem("post_login_destination");
-			window.location.replace(dest);
+			await finishSignIn(data.accessToken ?? null);
 		},
 		[setTokens],
 	);
@@ -783,11 +809,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			data.user?.primaryEmail,
 		);
 
-		const dest = safePostLoginDestination(
-			sessionStorage.getItem("post_login_destination") ?? "/",
-		);
-		sessionStorage.removeItem("post_login_destination");
-		window.location.replace(dest);
+		await finishSignIn(data.accessToken ?? null);
 	}, [setTokens]);
 
 	const cancelMFA = useCallback(() => {
@@ -826,6 +848,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			isAuthenticated: false,
 		});
 	}, [state.accessToken]);
+
+	const enterImpersonation = useCallback(
+		(accessToken: string) => {
+			if (!accessToken)
+				throw new Error("Impersonation returned no access token");
+			applyAccessToken(accessToken);
+		},
+		[applyAccessToken],
+	);
+
+	const exitImpersonation = useCallback(async () => {
+		// Ending the window server-side is what makes the impersonation bearer
+		// stop working. The exchange below only changes which token this browser
+		// holds, so it cannot be the whole of "stop": anything that captured the
+		// bearer would keep acting as the target for the rest of its TTL.
+		//
+		// The call is bounded and never blocks the way out. A hung backend must
+		// not hold the operator inside the target's session, which is the state
+		// this whole flow exists to leave.
+		let stopped = false;
+		let stopFailed = false;
+		try {
+			await platformAdminClient.stopImpersonation({}, { timeoutMs: 5000 });
+			stopped = true;
+		} catch (error) {
+			// Unauthenticated or PermissionDenied means the server no longer
+			// accepts this session — an expired or already-revoked window. There
+			// was nothing left to close, so reporting a failed stop would be
+			// crying wolf on the one message that has to be trusted.
+			const code = ConnectError.from(error).code;
+			stopFailed =
+				code !== Code.Unauthenticated && code !== Code.PermissionDenied;
+		}
+
+		const outcome = await exchangeRefreshCookie();
+		if (outcome.status === "ok") {
+			setTokens(outcome.accessToken, outcome.refreshToken);
+			if (stopFailed) {
+				throw new Error(
+					"Returned to your admin session, but the impersonation session could not be ended on the server — it stays valid until it expires.",
+				);
+			}
+			return;
+		}
+		// Leaving the impersonated session installed is only safe while it still
+		// works. Once the stop succeeded the browser is holding a token the
+		// server has revoked, so keeping it would strand the operator behind a
+		// banner that says "Impersonation Active" while every call 401s. Tear the
+		// credentials down instead and let them sign in again.
+		//
+		// A transient failure with no server-side stop is the opposite case: the
+		// httpOnly refresh cookie is untouched and almost certainly still valid,
+		// so turning a hiccup into a re-authentication would be the worse
+		// outcome. Surface it and leave the session intact to retry.
+		if (outcome.status === "unavailable" && !stopped) {
+			throw new Error("Could not restore your session — please try again.");
+		}
+		await logout();
+		if (outcome.status === "unavailable") {
+			throw new Error(
+				"Your impersonation session was ended, but your admin session could not be restored — please sign in again.",
+			);
+		}
+	}, [logout, setTokens]);
+
+	// The 401 handler below must know whether the session it is repairing is an
+	// impersonated one. A ref keeps that current without re-registering the
+	// handler on every token change.
+	const impersonatingRef = useRef(false);
+	useEffect(() => {
+		impersonatingRef.current = state.impersonation.isImpersonating;
+	}, [state.impersonation.isImpersonating]);
 
 	useEffect(() => {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
@@ -882,9 +976,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// access token expired (or was revoked) while the page stayed open. This
 		// single handler is where every dead-session 401 converges.
 		setRefreshHandler(async () => {
+			const wasImpersonating = impersonatingRef.current;
 			const outcome = await exchangeRefreshCookie();
 			if (outcome.status === "ok") {
 				setTokens(outcome.accessToken, outcome.refreshToken);
+				// An impersonation token carries no refresh half of its own, so
+				// this cookie is the admin's and the session just restored is the
+				// admin's too. The request that triggered the refresh was issued
+				// as the target; replaying it with the token we just installed
+				// would execute it with the admin's authority — including the
+				// platform grants impersonation deliberately withholds — and audit
+				// it as an ordinary, un-impersonated action. Fail that one request
+				// instead; the operator is now back in their own session.
+				if (wasImpersonating) return null;
 				return outcome.accessToken;
 			}
 			if (outcome.status === "unavailable") {
@@ -949,6 +1053,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
+			enterImpersonation,
+			exitImpersonation,
 			getToken,
 		}),
 		[
@@ -963,6 +1069,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
+			enterImpersonation,
+			exitImpersonation,
 			getToken,
 		],
 	);

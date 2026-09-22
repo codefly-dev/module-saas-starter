@@ -135,17 +135,20 @@ type CacheInvalidator struct{}
 // the call will just be a no-op.
 func NewCacheInvalidator() *CacheInvalidator { return &CacheInvalidator{} }
 
-func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID string) {
+func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID string) error {
 	if orgMembershipCache == nil {
-		return
+		return nil
 	}
-	_ = orgMembershipCache.Invalidate(ctx, orgID, userID)
+	return orgMembershipCache.Invalidate(ctx, orgID, userID)
 }
 
 // requireAuth extracts and validates the caller's user id from gRPC
 // metadata (populated by the auth sidecar). Returns codes.Unauthenticated
 // if the caller is anonymous.
 func requireAuth(ctx context.Context) (string, error) {
+	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok {
+		return identity.EffectiveSubjectID(), nil
+	}
 	w := wool.Get(ctx)
 	w.GRPC().Inject()
 	// The authenticated gateway identity is carried as X-User-Id/user.id.
@@ -160,6 +163,18 @@ func requireAuth(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "authentication required")
 	}
 	return actorID, nil
+}
+
+// platformRole resolves the platform role an authorization decision may use.
+// An impersonated request has none. The effective subject's platform grants are
+// not the actor's to borrow, and the actor's own grants are deliberately left
+// behind when they step into someone else's session — so both directions of
+// that leak close here, at the one lookup every platform gate shares.
+func platformRole(ctx context.Context, actorID string) (string, error) {
+	if auth.ImpersonatedRequest(ctx) {
+		return "", nil
+	}
+	return service.Store().GetPlatformRole(ctx, actorID)
 }
 
 // requireOrgMember verifies that actorID is a member of orgID. Returns
@@ -208,7 +223,7 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 // Platform super_admin bypasses the check. Cache-backed same as above.
 func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	// Platform super_admin always passes.
-	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		return nil
 	}
 	if orgID == "" {
@@ -228,6 +243,73 @@ func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	return status.Error(codes.PermissionDenied, "requires org admin or owner role")
 }
 
+// subjectOutsideOrg is the one answer every way a subject can fail to belong
+// to the organization gets: an administrator learns their own tenant's roster
+// from the surfaces that list it, never by probing this one.
+const subjectOutsideOrg = "subject does not belong to this organization"
+
+// requireSubjectInOrg verifies that the subject an administrator is asking
+// about belongs to orgID, so an organization-scoped read about another subject
+// can never become an oracle about a principal or a team in another tenant. A
+// human principal belongs through organization_members; a service or agent
+// principal is not a member but carries its organization on its own row
+// (principals_org_scope); a team belongs through the organization that owns it.
+//
+// It screens tenancy and nothing else. A revoked principal that still holds a
+// membership row passes here, because the decision point it guards also ignores
+// revocation — role_assignments outlive it — and an explanation that refused to
+// answer would disagree with the access the subject actually has. The principal
+// branch denies a revoked non-member only because there is no other way to
+// learn which organization that row belonged to.
+//
+// The membership read runs under the control plane for the same reason
+// Service.requireTenantMember's does: organization_members is RLS-scoped and
+// the pair being checked is not the caller's own, which is exactly what
+// lookupMembership refuses to answer.
+func requireSubjectInOrg(ctx context.Context, orgID, subjectID string, kind gen.SubjectKind) error {
+	switch kind {
+	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
+		var member bool
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var e error
+			member, e = service.Store().OrgMemberExists(ctx, orgID, subjectID)
+			return e
+		}); err != nil {
+			return status.Errorf(codes.Internal, "cannot verify subject membership: %v", err)
+		}
+		if member {
+			return nil
+		}
+		principal, err := service.GetPrincipal(ctx, subjectID)
+		if err != nil {
+			var storeErr *business.StoreError
+			if errors.As(err, &storeErr) && storeErr.StoreErrorType == business.ErrTypeNotFound {
+				return status.Error(codes.PermissionDenied, subjectOutsideOrg)
+			}
+			return status.Errorf(codes.Internal, "cannot resolve subject principal: %v", err)
+		}
+		if principal.OrgID != orgID {
+			return status.Error(codes.PermissionDenied, subjectOutsideOrg)
+		}
+		return nil
+	case gen.SubjectKind_SUBJECT_KIND_TEAM:
+		var teamOrgID string
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			o, err := service.Store().GetTeamOrgID(ctx, subjectID)
+			teamOrgID = o
+			return err
+		}); err != nil {
+			return status.Errorf(codes.Internal, "cannot verify subject team organization: %v", err)
+		}
+		if teamOrgID != orgID {
+			return status.Error(codes.PermissionDenied, subjectOutsideOrg)
+		}
+		return nil
+	default:
+		return status.Error(codes.InvalidArgument, "subject_kind must name a principal or a team")
+	}
+}
+
 // requireBillingAdmin authorizes money-moving organization operations. Owners
 // and organization admins retain their expected access; a member can also be
 // delegated the narrower billing:write permission through a custom role.
@@ -235,7 +317,7 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}
-	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		return nil
 	}
 
@@ -278,7 +360,7 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 // Service methods (AddTeamMember etc.) skip a redundant WithControlPlane
 // → 3 transactions per request instead of 4.
 func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
-	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		// Even for super_admin we still need to resolve the org so
 		// the downstream WithOrgTx is correctly scoped.
 		var orgID string
@@ -315,6 +397,14 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 	}
 	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
 		return orgID, nil
+	}
+	// An empty role is a verified answer — "not a member of this organization" —
+	// not a missing one. Team authority is derived from organization membership,
+	// so a nonmember is denied here rather than being tested against a team row
+	// that should no longer exist. That keeps a legacy orphan inert instead of
+	// making it sufficient on its own.
+	if role == "" {
+		return "", status.Error(codes.PermissionDenied, "not a member of this organization")
 	}
 	membership, err := service.Store().GetTeamMembership(ctx, orgID, teamID, actorID)
 	if err != nil {
@@ -357,7 +447,7 @@ func requireTeamMember(ctx context.Context, actorID, teamID string) (string, err
 // billing, or super_admin). Used for endpoints that should only be
 // reachable from the admin console.
 func requirePlatformAdmin(ctx context.Context, actorID string) error {
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}
@@ -373,7 +463,7 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 // same minimum their business method enforces, so dropping the business check
 // alone cannot re-expose an endpoint.
 func requirePlatformRole(ctx context.Context, actorID, minRole string) error {
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}
@@ -470,6 +560,50 @@ func withScopes(ctx context.Context, scopes []string) context.Context {
 func scopesFromContext(ctx context.Context) []string {
 	v, _ := ctx.Value(scopesCtxKey).([]string)
 	return v
+}
+
+// Credential kinds the perimeter reports in X-Credential-Kind. They name the
+// credential a request actually presented, which is knowledge only the
+// authenticating perimeter has: a handler sees the resulting identity, never
+// the credential behind it.
+const (
+	credentialKindSession = "session"
+	credentialKindAPIKey  = "api_key"
+)
+
+// credentialKindCtxKey holds the credential kind the auth perimeter
+// authenticated this request with — the gateway-forwarded `X-Credential-Kind`
+// header, or `session` stamped locally when this service verified an access
+// token itself (an API key never reaches VerifyAccess; the gateway exchanges it
+// through ValidateAPIKey).
+//
+// It is deliberately NOT derived from the scope set: scopes are an API key's
+// authorization ceiling, and a key created with none — which CreateAPIKey
+// permits — carries no scopes at all, so scope presence answers "was this
+// constrained", never "was this a machine credential".
+type credentialKindCtxKeyType struct{}
+
+var credentialKindCtxKey = credentialKindCtxKeyType{}
+
+// withCredentialKind stamps the authenticated credential kind on the context.
+// An unrecognized or empty value is not stamped, so a consumer sees "unknown"
+// rather than a wrong-but-plausible kind.
+func withCredentialKind(ctx context.Context, kind string) context.Context {
+	switch kind {
+	case credentialKindSession, credentialKindAPIKey:
+		return context.WithValue(ctx, credentialKindCtxKey, kind)
+	default:
+		return ctx
+	}
+}
+
+// credentialKindFromContext returns the authenticated credential kind, or ""
+// when the perimeter did not report one. Callers that record the kind must
+// treat "" as unattributable rather than assuming a default — see
+// verifiedActor.
+func credentialKindFromContext(ctx context.Context) string {
+	kind, _ := ctx.Value(credentialKindCtxKey).(string)
+	return kind
 }
 
 // scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the

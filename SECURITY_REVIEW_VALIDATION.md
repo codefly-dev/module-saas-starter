@@ -59,7 +59,7 @@ environmental, not a regression.
 | M4 (#208) | Generic Authenticate errors | 28-sentinel `authenticateOracleErrors` set collapses to `Unauthenticated`/"invalid credentials" (`rpcs.go:853-927`); `ErrGroupNotAllowed`→`PermissionDenied`, JWKS→`Unavailable` with generic messages; dev detail-reveal keeps the gRPC code identical. Byte-identical-error tests pass. | **FIXED** |
 | M5 (#209) | Subsumed by Istio STRICT | Channel still plaintext at app layer by design (`main.go:112-117`); mesh-wide `PeerAuthentication` STRICT + namespace default-deny + ambient generated (`gitops.go:960-971,798`) and asserted incl. a raw `PERMISSIVE` scan (`gitops_test.go:659-755`). | **HOLDS** |
 | M6 (#214) | Strip set ⊇ stamp set | `untrustedAuthHeaders` includes `x-scoped-roles*`; lockstep guard test passes. | **FIXED** |
-| M7 (#210) | Frontend CSP + anti-clickjacking | Full header set incl. `frame-ancestors 'none'` + `X-Frame-Options: DENY` via `server/security-headers.mjs`, MF-origin allowlist limited to `script-src`/`connect-src`, unit + e2e tests. | **FIXED** |
+| M7 (#210) | Frontend CSP + anti-clickjacking | Full header set incl. `frame-ancestors 'none'` + `X-Frame-Options: DENY` via `server/security-headers.mjs`, MF-origin allowlist limited to `script-src`/`connect-src`/`style-src` (`style-src` added by #778 — a remote's CSS chunk is an external stylesheet URL, which `'unsafe-inline'` does not admit), unit + e2e tests. | **FIXED** |
 | M8 (#211) | Anonymous throttling, Turnstile, magic-link, atomic limiter | Anonymous requests fall through to a per-IP key with trusted-proxy XFF handling; limiter is atomic Lua INCR with a concurrency test; `SendMagicLink`/`RegisterUser`/`JoinWaitlist` abuse-gated; edge limiter has a dedicated per-IP MFA budget and fail-closed auth-class routes. Turnstile remains default-off, promoted to a loud boot warning + fail-closed misconfig checks. | **FIXED** |
 | M9 (#212) | Handler-layer platform-role gates | All 14 `PlatformAdminService` handlers call `requirePlatformRole` (support/super_admin per method); `ImpersonateUser` role check precedes the MFA probe (test asserts MFA is never probed for non-admins); nil-store test design makes gate fall-through panic. | **FIXED** |
 
@@ -104,8 +104,8 @@ All seven groups **HOLD**; no weakenings found.
 
 - **Charter status column stale**: every ⏳ HIGH/MEDIUM item has merged
   (#216–#231); only this validation issue remains open from the epic.
-- **`Decide` gate stricter than documented**: the charter and
-  `SECURITY_HARDENING_PLAN.md` (§B.3, pass-1 table) describe
+- **`Decide` gate stricter than documented**: the charter and the consuming
+  platform's hardening plan (§B.3, pass-1 table) describe
   `requireInternalOrOrgMember` / "org-bound"; the shipped gate is
   `requireInternalCredential` only (`principal_rpcs.go:167`), and
   `requireInternalOrOrgMember` does not exist. Stricter is fine — but the plan

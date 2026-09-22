@@ -116,6 +116,10 @@ type accessClaims struct {
 	ScopedRoles          map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated bool                `json:"srt,omitempty"`
 	SessionID            string              `json:"sid"`
+	// AuthorizedParty is the registered client the token was issued to (OIDC
+	// `azp`). Absent on the host's own web session, so a consumer reads "no azp"
+	// as a first-party web session rather than as a missing value.
+	AuthorizedParty string `json:"azp,omitempty"`
 	// Email and Name are presentational identity for the client to render the
 	// signed-in person. They are never consulted for authorization; the sidecar
 	// authorizes on sub/org/roles alone.
@@ -202,6 +206,15 @@ func (m *Minter) SetRevoker(r auth.TokenRevoker) {
 	}
 }
 
+// AccessRevocationEnabled implements auth.JWTMinter. The no-op revoker is the
+// default, and it accepts every Revoke while reporting nothing as revoked, so
+// "the revoke returned nil" is not evidence a token died. Callers that report a
+// kill to an operator or an audit record ask this first.
+func (m *Minter) AccessRevocationEnabled() bool {
+	_, noop := m.revoker.(auth.NoopTokenRevoker)
+	return m.revoker != nil && !noop
+}
+
 // KeyID returns the deterministic kid header. Sidecar caches verifiers by this
 // value to support key rotation.
 func (m *Minter) KeyID() string { return m.keyID }
@@ -246,8 +259,74 @@ func (m *Minter) JWKS() (string, error) {
 	return string(buf), nil
 }
 
+// ModuleRegistrationAudience scopes a module-registration token to that single
+// purpose. Access tokens carry Config.Audience; registration tokens carry this,
+// so even though both are signed with the same key neither can stand in for the
+// other: a stolen access token cannot register a route prefix, and a
+// registration token cannot authenticate a user.
+const ModuleRegistrationAudience = "module-registration"
+
+// SolutionRegistrationAudience is the same separation for the solution
+// credential: it authorizes registering a gateway upstream and a host-origin
+// Module-Federation remote, which is strictly more authority than federating a
+// REST prefix, so a module-registration token must not be usable for it.
+const SolutionRegistrationAudience = "solution-registration"
+
+// registrationTTL keeps a registration credential alive just long enough for a
+// registrant to finish its startup handshake. It is presented once, to one
+// endpoint, immediately after it is issued.
+const registrationTTL = 5 * time.Minute
+
+// moduleRegistrationClaims binds a module identity (`sub`) to the single
+// catalog-identity segment it may claim at the gateway. The verifier reads
+// Prefix, not `sub`, when enforcing the binding; `sub` names the same module in
+// the conventional subject position.
+type moduleRegistrationClaims struct {
+	jwt.RegisteredClaims
+	Prefix string `json:"prefix"`
+}
+
+// MintModuleRegistration issues the short-lived credential a composed module
+// presents to federate its REST prefix with the gateway. The caller has already
+// authenticated the module; this signs the authorization decision so the
+// gateway can verify it without sharing a secret with every registrant.
+//
+// The token is signed with the access-token key, which the gateway already
+// holds through JWKS, and separated from access tokens by audience alone.
+func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error) {
+	if prefix == "" {
+		return "", time.Time{}, fmt.Errorf("ed25519minter: module registration prefix required")
+	}
+	now := m.now()
+	expiresAt := now.Add(registrationTTL)
+	jti, err := randHex(16)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	claims := moduleRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.cfg.Issuer,
+			Subject:   "module:" + prefix,
+			Audience:  jwt.ClaimStrings{ModuleRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        jti,
+		},
+		Prefix: prefix,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = m.keyID
+	signed, err := token.SignedString(m.privateKey)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, expiresAt, nil
+}
+
 // Mint implements auth.JWTMinter.Mint. It issues a fresh access token and
-// refresh token, persisting the session row with a new family_id.
+// refresh token, persisting the session row with a new family_id. An identity
+// naming an impersonated user gets the access half only — see prepareMint.
 //
 // For refresh rotation (issuing a new refresh within an existing family),
 // callers go through VerifyRefresh first, which mints a rotated token.
@@ -293,21 +372,41 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 	}
 
 	// Access token
-	access, err := m.signAccess(identity, sessionID, now)
+	access, accessExpiresAt, err := m.signAccess(identity, sessionID, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ed25519minter: sign access: %w", err)
 	}
 
-	// Refresh token
-	plain, hash, err := newRefreshToken()
-	if err != nil {
-		return nil, nil, fmt.Errorf("ed25519minter: generate refresh: %w", err)
-	}
-
-	idleExpiresAt := now.Add(m.cfg.SessionPolicy.IdleTimeout)
-	absoluteExpiresAt := now.Add(m.cfg.SessionPolicy.AbsoluteLifetime)
-	if idleExpiresAt.After(absoluteExpiresAt) {
+	// An impersonation window is access-only. Generating a refresh token for it
+	// would persist a live rotatable credential nobody holds the plaintext of,
+	// sized to a session policy that does not apply — and would defeat the point
+	// of capping the impersonation token separately. Branching here rather than
+	// at the ImpersonateUser call site makes it an invariant of minting: no
+	// caller can produce a refreshable impersonation session.
+	var (
+		plain             string
+		hash              []byte
+		idleExpiresAt     time.Time
+		absoluteExpiresAt time.Time
+	)
+	if identity.ActingAsUserID != uuid.Nil {
+		// The row's lifetime is the token's acceptance window, extended past exp
+		// by the verifier leeway for the same reason RevokeAccess extends a
+		// revocation marker: the token is admitted until exp+ClockSkew, so a row
+		// retired at exp would drop out of the open-window queries while its
+		// token still authenticates — the window would be live and undiscoverable.
+		absoluteExpiresAt = accessExpiresAt.Add(m.cfg.ClockSkew)
 		idleExpiresAt = absoluteExpiresAt
+	} else {
+		plain, hash, err = newRefreshToken()
+		if err != nil {
+			return nil, nil, fmt.Errorf("ed25519minter: generate refresh: %w", err)
+		}
+		idleExpiresAt = now.Add(m.cfg.SessionPolicy.IdleTimeout)
+		absoluteExpiresAt = now.Add(m.cfg.SessionPolicy.AbsoluteLifetime)
+		if idleExpiresAt.After(absoluteExpiresAt) {
+			idleExpiresAt = absoluteExpiresAt
+		}
 	}
 	rec := &auth.SessionRecord{
 		// The sid claim and persisted session primary key must identify the
@@ -327,13 +426,19 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		DeviceInfo:            maps.Clone(identity.DeviceInfo),
 		IPAddress:             identity.IPAddress,
 		FamilyID:              familyID,
+		ClientID:              identity.ClientID,
+		ActingAsUserID:        identity.ActingAsUserID,
 		RefreshHash:           hash,
 		IssuedAt:              now,
 		LastActiveAt:          now,
 		IdleExpiresAt:         idleExpiresAt,
 		ExpiresAt:             absoluteExpiresAt,
 	}
-	return &auth.TokenPair{AccessToken: access, RefreshToken: plain}, rec, nil
+	return &auth.TokenPair{
+		AccessToken:          access,
+		RefreshToken:         plain,
+		AccessTokenExpiresAt: accessExpiresAt,
+	}, rec, nil
 }
 
 // VerifyRefresh implements auth.JWTMinter.VerifyRefresh with OWASP rotation.
@@ -349,6 +454,23 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 //     unknown tokens return the same ErrRefreshRevoked sentinel to avoid an
 //     existence oracle.
 func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
+	return m.rotateRefresh(ctx, refreshToken, "")
+}
+
+// VerifyClientRefresh implements auth.JWTMinter.VerifyClientRefresh. The client
+// check happens inside the locked rotation, on the stored row, so it cannot be
+// raced by a concurrent rotation that changes which session the hash resolves
+// to. A mismatch is not a terminal rejection: the token is a legitimate one
+// held by its own client, and revoking its family because a different client
+// named it would make one client able to sign another out.
+func (m *Minter) VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*auth.TokenPair, error) {
+	if clientID == "" {
+		return nil, errors.New("ed25519minter: client refresh names no client")
+	}
+	return m.rotateRefresh(ctx, refreshToken, clientID)
+}
+
+func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClientID string) (*auth.TokenPair, error) {
 	if m.configErr != nil {
 		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
 	}
@@ -362,6 +484,9 @@ func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.
 		// whose lookup implementation is not the indexed Postgres operation.
 		if subtle.ConstantTimeCompare(rec.RefreshHash, hash) != 1 {
 			return nil, auth.RejectRefresh(auth.RefreshRejectionHashMismatch)
+		}
+		if requiredClientID != "" && rec.ClientID != requiredClientID {
+			return nil, auth.ErrRefreshRevoked
 		}
 		now := m.now()
 		if !now.Before(rec.ExpiresAt) {
@@ -413,15 +538,16 @@ func (m *Minter) SwitchOrganization(
 	userID uuid.UUID,
 	sessionID uuid.UUID,
 	organizationID uuid.UUID,
-) (string, error) {
+) (string, time.Time, error) {
 	if m.configErr != nil {
-		return "", fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+		return "", time.Time{}, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
 	}
 	if userID == uuid.Nil || sessionID == uuid.Nil || organizationID == uuid.Nil {
-		return "", auth.ErrSessionUnavailable
+		return "", time.Time{}, auth.ErrSessionUnavailable
 	}
 
 	var accessToken string
+	var accessExpiresAt time.Time
 	err := m.store.ExchangeOrganization(ctx, userID, sessionID, organizationID, func(
 		current *auth.SessionRecord,
 		authorization auth.RefreshAuthorization,
@@ -431,19 +557,19 @@ func (m *Minter) SwitchOrganization(
 		if err != nil {
 			return err
 		}
-		accessToken, err = m.signAccess(identity, current.ID, now)
+		accessToken, accessExpiresAt, err = m.signAccess(identity, current.ID, now)
 		return err
 	})
 	if err != nil {
 		if errors.Is(err, auth.ErrSessionUnavailable) || errors.Is(err, auth.ErrOrganizationAccessDenied) {
-			return "", err
+			return "", time.Time{}, err
 		}
-		return "", fmt.Errorf("ed25519minter: switch organization: %w", err)
+		return "", time.Time{}, fmt.Errorf("ed25519minter: switch organization: %w", err)
 	}
 	if accessToken == "" {
-		return "", errors.New("ed25519minter: organization exchange returned no access token")
+		return "", time.Time{}, errors.New("ed25519minter: organization exchange returned no access token")
 	}
-	return accessToken, nil
+	return accessToken, accessExpiresAt, nil
 }
 
 func identityFromCurrentAuthorization(
@@ -487,6 +613,7 @@ func identityFromCurrentAuthorization(
 		ScopedRoles:           authorization.ScopedRoles,
 		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		ClientID:              rec.ClientID,
 		Email:                 rec.Email,
 		DisplayName:           rec.DisplayName,
 		MFASatisfied:          mfaSatisfied,
@@ -638,6 +765,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRoles:           claims.ScopedRoles,
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		ClientID:              claims.AuthorizedParty,
 		Email:                 claims.Email,
 		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
@@ -705,22 +833,33 @@ func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) erro
 	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL+m.cfg.ClockSkew)
 }
 
-func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now time.Time) (string, error) {
-	jti, err := randHex(16)
-	if err != nil {
-		return "", err
-	}
-	// Impersonation sessions are capped at min(ImpersonationTokenTTL,
-	// AccessTokenTTL) so an admin walking away from a "viewing as customer"
-	// session can't leave a long-lived token behind even if normal-session
-	// TTL is raised. The impersonation banner makes the state visible; this
-	// is belt-and-suspenders.
+// accessTTL is the lifetime of an access token minted for identity.
+//
+// Impersonation sessions are capped at min(ImpersonationTokenTTL,
+// AccessTokenTTL) so an admin walking away from a "viewing as customer"
+// session can't leave a long-lived token behind even if normal-session TTL is
+// raised. The impersonation banner makes the state visible; this is
+// belt-and-suspenders.
+func (m *Minter) accessTTL(identity *auth.Identity) time.Duration {
 	ttl := m.cfg.AccessTokenTTL
 	if identity.ActingAsUserID != uuid.Nil {
 		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
 			ttl = impTTL
 		}
 	}
+	return ttl
+}
+
+func (m *Minter) signAccess(
+	identity *auth.Identity,
+	sessionID uuid.UUID,
+	now time.Time,
+) (string, time.Time, error) {
+	jti, err := randHex(16)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	expiresAt := now.Add(m.accessTTL(identity))
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.cfg.Issuer,
@@ -728,12 +867,13 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 			Audience:  jwt.ClaimStrings{m.cfg.Audience},
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			ID:        jti,
 		},
-		SessionID: sessionID.String(),
-		Email:     identity.Email,
-		Name:      identity.DisplayName,
+		SessionID:       sessionID.String(),
+		AuthorizedParty: identity.ClientID,
+		Email:           identity.Email,
+		Name:            identity.DisplayName,
 	}
 	if identity.OrgID != uuid.Nil {
 		claims.OrgID = identity.OrgID.String()
@@ -748,7 +888,7 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 		claims.ActingAsUserID = identity.ActingAsUserID.String()
 	}
 	if err := auth.ValidateActorChain(identity.Actor); err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	claims.Act = identity.Actor
 	claims.MFASatisfied = identity.MFASatisfied
@@ -763,7 +903,11 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	token.Header["kid"] = m.keyID
-	return token.SignedString(m.privateKey)
+	signed, err := token.SignedString(m.privateKey)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, expiresAt, nil
 }
 
 func numericDateTime(value *jwt.NumericDate) time.Time {
@@ -807,3 +951,97 @@ func GenerateKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 
 // Compile-time assertion that Minter satisfies the interface.
 var _ auth.JWTMinter = (*Minter)(nil)
+
+// solutionRegistrationClaims binds a solution identity (`sub`) to the single
+// solution id it may register, update, or delete at the gateway and at the
+// frontend. Both verifiers read Solution, not `sub`, when enforcing the binding;
+// `sub` names the same solution in the conventional subject position.
+type solutionRegistrationClaims struct {
+	jwt.RegisteredClaims
+	Solution string `json:"solution"`
+}
+
+// MintSolutionRegistration issues the short-lived credential a solution presents
+// to register, update, or delete its gateway upstream and its frontend
+// Module-Federation remote. The caller has already authenticated the solution;
+// this signs the authorization decision so both consumers can verify it without
+// sharing a secret with every registrant.
+//
+// It is signed with the access-token key, which the gateway already holds
+// through JWKS and the frontend fetches from the same published set, and
+// separated from access tokens — and from module-registration tokens — by
+// audience.
+func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time, error) {
+	if solutionID == "" {
+		return "", time.Time{}, fmt.Errorf("ed25519minter: solution registration id required")
+	}
+	now := m.now()
+	expiresAt := now.Add(registrationTTL)
+	jti, err := randHex(16)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	claims := solutionRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.cfg.Issuer,
+			Subject:   "solution:" + solutionID,
+			Audience:  jwt.ClaimStrings{SolutionRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        jti,
+		},
+		Solution: solutionID,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = m.keyID
+	signed, err := token.SignedString(m.privateKey)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, expiresAt, nil
+}
+
+// MintForClient implements auth.JWTMinter.MintForClient. The authorizing host
+// session is resolved and locked by the store, which also decides whether it is
+// still entitled to hand a client anything; this method owns only the
+// cryptographic half and the shape of the session the client gets.
+func (m *Minter) MintForClient(
+	ctx context.Context,
+	userID, authorizingSessionID uuid.UUID,
+	clientID string,
+) (*auth.TokenPair, error) {
+	if m.configErr != nil {
+		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+	}
+	if clientID == "" {
+		return nil, errors.New("ed25519minter: client session names no client")
+	}
+	var pair *auth.TokenPair
+	err := m.store.AuthorizeClientSession(ctx, userID, authorizingSessionID, func(
+		current *auth.SessionRecord,
+		authorization auth.RefreshAuthorization,
+	) (*auth.SessionRecord, error) {
+		identity, err := identityFromCurrentAuthorization(current, authorization, m.now(), business.NewID())
+		if err != nil {
+			return nil, err
+		}
+		identity.ClientID = clientID
+		// The browser's device description belongs to the browser. A client runs
+		// somewhere else entirely, so carrying it over would label the new
+		// session with a device that is not the one holding its token.
+		identity.DeviceInfo = nil
+		identity.IPAddress = ""
+
+		var next *auth.SessionRecord
+		pair, next, err = m.prepareMint(identity, uuid.UUID{} /* new family */)
+		return next, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pair == nil {
+		return nil, errors.New("ed25519minter: client authorization returned no token pair")
+	}
+	return pair, nil
+}

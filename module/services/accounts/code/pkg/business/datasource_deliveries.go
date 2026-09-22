@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -31,12 +30,12 @@ const (
 	// datasourcePushTopic must equal the receiver's GitHubWebhookTopic; the
 	// compiler dispatches on it.
 	datasourcePushTopic       = "datasource.github.push"
-	datasourceReconcileTopic  = "datasource.github.reconcile"
-	datasourceReconcileSource = "github.reconcile"
+	DatasourceReconcileTopic  = "datasource.github.reconcile"
+	DatasourceReconcileSource = "github.reconcile"
 
-	// datasourceSnapshotTopic carries a full-tree manifest (paths + blob shas +
+	// DatasourceSnapshotTopic carries a full-tree manifest (paths + blob shas +
 	// sizes, no content) the module diffs against its own bindings.
-	datasourceSnapshotTopic = "datasource.github.snapshot"
+	DatasourceSnapshotTopic = "datasource.github.snapshot"
 
 	// datasourceDeliveryOrderingNamespace scopes the per-source FIFO ordering key
 	// so the job platform keeps exactly one in-flight delivery per source: the
@@ -49,7 +48,16 @@ const (
 	// content ticket); v1 was raw bytes with routing only in attributes.
 	datasourceChangeSetSchemaVersion = 2
 
+	// datasourceReconcileSchemaVersion versions the reconcile *request* message,
+	// which is a control message and not a change set: its attributes name the
+	// source and the mode and its body is empty. It must not advertise
+	// datasourceChangeSetSchemaVersion — that versions the per-file payload a
+	// consumer decodes, so reusing it would describe an empty body as a v2
+	// change-set file.
+	datasourceReconcileSchemaVersion = 1
+
 	attrDeliveryID    = "datasource.delivery_id"
+	attrSourceRef     = "datasource.source_ref"
 	attrChangeSet     = "datasource.change_set"
 	attrReconcileMode = "datasource.reconcile_mode"
 
@@ -122,14 +130,27 @@ type changeSetFile struct {
 	ChangeType    string  `json:"change_type"`
 	Content       *[]byte `json:"content,omitempty"`
 	ContentTicket string  `json:"content_ticket,omitempty"`
+	// Ordinal is the strictly-increasing per-source delivery ordinal (issue #511),
+	// allocated in the compiler's delivery transaction and stamped on every emitted
+	// payload so a consumer can order deliveries per source and reject a stale or
+	// out-of-order replay, without trusting wall-clock timestamps or commit
+	// topology. Ordinals are strictly increasing but not contiguous — a redelivery
+	// or a crashed enqueue leaves a gap — so a gap is expected, not a dropped
+	// payload; only a repeated or backward ordinal signals a fault.
+	Ordinal int64 `json:"ordinal"`
 }
 
 // snapshotManifest is the full-tree manifest a snapshot job carries: enough for
 // the module to diff against its own bindings and request only changed blobs.
 type snapshotManifest struct {
+	Ref    string         `json:"ref"`
 	Repo   string         `json:"repo"`
 	Commit string         `json:"commit"`
 	Files  []snapshotFile `json:"files"`
+	// Ordinal is the strictly-increasing per-source delivery ordinal (issue #511),
+	// carried on the snapshot payload for the same per-source ordering the change-set
+	// payload gets. See changeSetFile.Ordinal.
+	Ordinal int64 `json:"ordinal"`
 }
 
 type snapshotFile struct {
@@ -189,9 +210,16 @@ func DatasourceDeliveryOrderingKey(sourceID string) *jobsv1.JobOrderingKey {
 // is a no-op success; a malformed payload is terminal; a GitHub or store failure
 // stays retryable.
 func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
-	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) error {
+	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) (resultErr error) {
 		if envelope.GetQueue() != DatasourceDeliveryQueue {
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery job routing", false)
+		}
+		// An App-level content delivery names an installation and a repository
+		// rather than a source — resolving which sources it concerns is the
+		// fan-out's whole job — so it is dispatched ahead of the per-source
+		// lookup and the per-source failure audit below.
+		if envelope.GetTopic() == datasourceAppPushTopic {
+			return s.handleGitHubAppPushJob(ctx, envelope)
 		}
 		sourceID := envelope.GetAttributes()[attrSourceID]
 		if sourceID == "" {
@@ -204,6 +232,22 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		if source == nil {
 			return nil
 		}
+		defer func() {
+			if resultErr != nil {
+				resultErr = datasourceProcessingError(resultErr)
+				trigger := "reconcile"
+				if envelope.GetTopic() == datasourcePushTopic {
+					trigger = "webhook"
+				} else if envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce {
+					trigger = "manual"
+				}
+				fields := datasourceFailureFields(resultErr, source.Repo, trigger)
+				fields["job_id"] = envelope.GetId()
+				fields["attempt"] = int(envelope.GetAttemptCount())
+				s.emit(ctx, source.ID, "system", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, fields)
+			}
+		}()
+
 		// Only GitHub sources are enqueued here today, but the compiler and
 		// reconcile paths assume a GitHub token + repo; a non-GitHub source would
 		// never become processable, so drop it terminally rather than driving
@@ -219,9 +263,9 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 				return jobs.NewProcessingError("datasource.malformed_delivery", err.Error(), false)
 			}
 			return err
-		case datasourceReconcileTopic:
+		case DatasourceReconcileTopic:
 			force := envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce
-			_, err := s.ReconcileGitHubSource(ctx, source, force)
+			_, err := s.ReconcileGitHubSource(ctx, source, force, envelope.GetId())
 			return err
 		default:
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery topic", false)
@@ -249,11 +293,10 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return "", ErrMalformedDelivery
 	}
 
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return "", w.Wrapf(err, "decrypt access token")
+		return "", err
 	}
-	client := s.newGitHubClient(token)
 
 	branch := source.Branch
 	if branch == "" {
@@ -291,19 +334,19 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		base = push.Before
 	}
 	if base == "" {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, false)
+		return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", false)
 	}
 
 	comparison, err := client.Compare(ctx, source.Repo, base, push.After)
 	if err != nil {
 		if errors.Is(err, github.ErrNotFound) {
 			// base commit no longer reachable (force push) — snapshot.
-			return s.snapshotAt(ctx, source, client, push.After, deliveryID, true)
+			return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", true)
 		}
 		return "", w.Wrapf(err, "compare %s...%s", base, push.After)
 	}
 	if comparison.Status == github.CompareStatusDiverged || comparison.Truncated {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, true)
+		return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", true)
 	}
 	if comparison.Status == github.CompareStatusBehind {
 		// head is an ancestor of the base: a redelivered or out-of-order older
@@ -314,7 +357,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return DispositionStale, nil
 	}
 
-	ops := s.changeOps(comparison.Files, source.Paths)
+	ops := s.changeOps(comparison.Files, source.Paths, source.FileExtensions)
 	changeSet := base + "..." + push.After
 	for _, op := range ops {
 		if err := s.enqueueChangeSetFile(ctx, source, client, op, branch, push.After, changeSet, deliveryID); err != nil {
@@ -333,16 +376,15 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 // force is false (periodic reconcile) it snapshots only if the head differs from
 // the cursor; when force is true ("Sync now") it always snapshots. It reports
 // whether a snapshot was enqueued.
-func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceSource, force bool) (bool, error) {
+func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceSource, force bool, requestJobID string) (bool, error) {
 	w := wool.Get(ctx).In("ReconcileGitHubSource")
 	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
 		return false, w.NewError("datasource connector is not configured")
 	}
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return false, w.Wrapf(err, "decrypt access token")
+		return false, err
 	}
-	client := s.newGitHubClient(token)
 
 	branch := source.Branch
 	if branch == "" {
@@ -358,7 +400,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	disp, err := s.snapshotAt(ctx, source, client, head, "", false)
+	disp, err := s.snapshotAt(ctx, source, client, branch, head, requestJobID, requestJobID, false)
 	if err != nil {
 		return false, err
 	}
@@ -374,16 +416,27 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 // is the reconcile path for a created branch, a force push, a truncated compare,
 // the periodic reconcile, and an explicit "Sync now". forcePush records the
 // force-push audit alongside the change-set audit.
-func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID string, forcePush bool) (DeliveryDisposition, error) {
+func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, branch, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("snapshotAt")
 	files, err := client.ListFiles(ctx, source.Repo, commit, source.Paths)
 	if err != nil {
 		return "", w.Wrapf(err, "list tree at %s", commit)
 	}
-	manifest := snapshotManifest{Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
+	// Use the branch resolved by the host, not a downstream guess about the
+	// repository default. The authenticated job binding and payload must agree.
+	ref := "refs/heads/" + branch
+	manifest := snapshotManifest{Ref: ref, Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
 	for _, f := range files {
+		if !fileTypeAllowed(f.Path, source.FileExtensions) {
+			continue
+		}
 		manifest.Files = append(manifest.Files, snapshotFile{Path: f.Path, BlobSHA: f.SHA, Size: f.Size})
 	}
+	ordinal, err := s.allocateOrdinal(ctx, source.ID)
+	if err != nil {
+		return "", w.Wrapf(err, "allocate ordinal")
+	}
+	manifest.Ordinal = ordinal
 	payload, err := json.Marshal(manifest)
 	if err != nil {
 		return "", w.Wrapf(err, "encode snapshot manifest")
@@ -397,7 +450,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 		// park the source in the degraded state (which clears its schedule and drops
 		// it from the reconcile sweep) and record why, so an operator sees it and
 		// resets it once the manifest fits. Acknowledged, not retried.
-		reason := fmt.Sprintf("snapshot manifest is %d bytes, over the %d-byte ingest limit", len(payload), maxIngestPayload)
+		reason := SnapshotTooLargeDegradeReason(len(payload), maxIngestPayload)
 		// Degrading is a state transition, so only write and audit when the
 		// source is not already degraded. A source stuck oversized is retried by
 		// "Sync now" (SyncDatasourceSource ignores status), and each such attempt
@@ -417,14 +470,20 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 		}
 		return DispositionDegraded, nil
 	}
+	idempotencyPath := "\x00snapshot"
+	if requestJobID != "" {
+		// A forced sync at an unchanged commit is new work, while a retry of the
+		// same reconcile job must resolve to its original snapshot delivery.
+		idempotencyPath += "\x00" + requestJobID
+	}
 	if _, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
-			Topic:          datasourceSnapshotTopic,
-			Source:         datasourceSyncSource,
-			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, "\x00snapshot"),
+			Queue:          DatasourceIngestQueue,
+			Topic:          DatasourceSnapshotTopic,
+			Source:         DatasourceSyncSource,
+			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, idempotencyPath),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
 			Payload:        payload,
 			ContentType:    "application/json",
@@ -436,6 +495,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 				attrRepo:       source.Repo,
 				attrCommit:     commit,
 				attrDeliveryID: deliveryID,
+				attrSourceRef:  ref,
 			},
 		},
 	}); err != nil {
@@ -454,7 +514,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 		// full-tree path — clears the flag. The status read is reliable because
 		// the per-source FIFO ordering key makes this the only in-flight delivery.
 		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			return s.store.ClearDatasourceSourceDegraded(ctx, source.ID)
+			return s.store.ClearDatasourceSourceDegraded(ctx, source.ID, datasourceInstallationReasons)
 		}); err != nil {
 			return "", w.Wrapf(err, "clear degraded source")
 		}
@@ -470,25 +530,27 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	return DispositionSnapshot, nil
 }
 
-// changeOps maps a compare's files to ingest ops under the source's path filter.
-// A rename is a rename only when both endpoints are in scope; a rename into scope
-// is an upsert of the new path, a rename out of scope is a delete of the old
-// path. Ops are returned in path order so a crash mid-set replays deterministically.
-func (s *Service) changeOps(files []github.ChangedFile, paths []string) []changeOp {
+// changeOps maps a compare's files to ingest ops under the source's path prefixes
+// intersected with its file-suffix allowlist. A rename is a rename only when both
+// endpoints are in scope; a rename into scope is an upsert of the new path, a
+// rename out of scope is a delete of the old path. Ops are returned in path order
+// so a crash mid-set replays deterministically.
+func (s *Service) changeOps(files []github.ChangedFile, paths, extensions []string) []changeOp {
+	inScope := func(name string) bool { return pathInScope(name, paths) && fileTypeAllowed(name, extensions) }
 	var ops []changeOp
 	for _, f := range files {
 		switch f.Status {
 		case "added", "modified", "changed", "copied":
-			if pathInScope(f.Filename, paths) {
+			if inScope(f.Filename) {
 				ops = append(ops, changeOp{path: f.Filename, blobSHA: f.SHA, changeType: upsertChangeType(f.Status)})
 			}
 		case "removed":
-			if pathInScope(f.Filename, paths) {
+			if inScope(f.Filename) {
 				ops = append(ops, changeOp{path: f.Filename, changeType: changeTypeRemoved})
 			}
 		case "renamed":
-			fromIn := pathInScope(f.PreviousFilename, paths)
-			toIn := pathInScope(f.Filename, paths)
+			fromIn := inScope(f.PreviousFilename)
+			toIn := inScope(f.Filename)
 			switch {
 			case fromIn && toIn:
 				ops = append(ops, changeOp{path: f.Filename, prevPath: f.PreviousFilename, blobSHA: f.SHA, changeType: changeTypeRenamed})
@@ -512,7 +574,7 @@ func upsertChangeType(status string) string {
 
 // enqueueChangeSetFile emits one v2 per-file ingest job. An upsert/rename fetches
 // the blob inline when it fits the payload cap, else omits it and carries a
-// signed content ticket the document store redeems through ResolveContentTicket.
+// signed content ticket the consuming module redeems through ResolveContentTicket.
 // A delete carries no content.
 func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSource, client GitHubContentClient, op changeOp, ref, commit, changeSet, deliveryID string) error {
 	w := wool.Get(ctx).In("enqueueChangeSetFile")
@@ -546,6 +608,11 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 			file.Content = &content
 		}
 	}
+	ordinal, err := s.allocateOrdinal(ctx, source.ID)
+	if err != nil {
+		return w.Wrapf(err, "allocate ordinal")
+	}
+	file.Ordinal = ordinal
 	payload, err := json.Marshal(file)
 	if err != nil {
 		return w.Wrapf(err, "encode change-set file")
@@ -554,9 +621,9 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceSyncTopic,
-			Source:         datasourceSyncSource,
+			Source:         DatasourceSyncSource,
 			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, op.path),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
 			Payload:        payload,
@@ -594,6 +661,33 @@ func (s *Service) advanceCursor(ctx context.Context, sourceID, commit, deliveryI
 	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.AdvanceDatasourceCursor(ctx, sourceID, commit, deliveryID)
 	})
+}
+
+// allocateOrdinal hands out the next strictly-increasing per-source ordinal for
+// one emitted payload, in its own control-plane transaction. Each payload draws a
+// distinct ordinal so a consumer can order the payload stream per source and
+// reject a stale or out-of-order replay. Strictly increasing is the guarantee,
+// not density: a crash between allocation and enqueue, or an idempotent
+// re-enqueue on redelivery (the enqueue is keyed by (source, commit,
+// path/snapshot), so a retry keeps the already-delivered payload and its original
+// ordinal), only leaves a gap in the sequence — never a repeated or backward
+// ordinal. A gap is therefore expected and is not a dropped payload.
+//
+// The ordinal ordering matches enqueue ordering only because a single source's
+// deliveries are compiled one at a time: the row-lock the allocating UPDATE takes
+// keeps values unique and increasing under concurrency, but if two compilers ever
+// raced on the same source, the one that allocated the lower ordinal could enqueue
+// after the higher — decoupling ordinal order from enqueue order. The per-source
+// ordering contract therefore rests on serial per-source delivery processing, not
+// on the ordinal allocation alone.
+func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, error) {
+	var ordinal int64
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		ordinal, err = s.store.AllocateDatasourceOrdinal(ctx, sourceID)
+		return err
+	})
+	return ordinal, err
 }
 
 // RunDatasourceReconcile is the periodic sweep: it enqueues a reconcile job for
@@ -635,11 +729,13 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
 			Queue:          DatasourceDeliveryQueue,
-			Topic:          datasourceReconcileTopic,
-			Source:         datasourceReconcileSource,
+			Topic:          DatasourceReconcileTopic,
+			Source:         DatasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
-			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			SchemaVersion:  datasourceReconcileSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,

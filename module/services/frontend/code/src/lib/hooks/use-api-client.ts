@@ -19,6 +19,10 @@ export function usePermissionService() {
 	return clients.PermissionService;
 }
 
+export function usePrincipalService() {
+	return clients.PrincipalService;
+}
+
 export function useAuthService() {
 	return clients.AuthService;
 }

@@ -7,11 +7,35 @@ import { toNotification } from "../model/transforms";
 const client = createClient(NotificationService, apiTransport);
 
 export const notificationQueries = {
-	list: (pageSize = 20) =>
+	list: (
+		pageSize = 20,
+		options: {
+			orgId?: string;
+			unreadOnly?: boolean;
+			pageToken?: string;
+			userId?: string;
+			firstVisible?: boolean;
+		} = {},
+	) =>
 		queryOptions({
-			queryKey: ["notifications", pageSize],
+			queryKey: ["notifications", pageSize, options],
 			queryFn: async () => {
-				const response = await client.listNotifications({ pageSize });
+				let pageToken = options.pageToken ?? "";
+				let response;
+				do {
+					response = await client.listNotifications({
+						pageSize,
+						pageToken,
+						orgId: options.orgId,
+						unreadOnly: options.unreadOnly,
+					});
+					pageToken = response.nextPageToken;
+				} while (
+					options.firstVisible &&
+					response.notifications.length === 0 &&
+					pageToken
+				);
+
 				return {
 					notifications: response.notifications.map(toNotification),
 					nextPageToken: response.nextPageToken,

@@ -7,7 +7,9 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"time"
 
+	"accounts/pkg/events"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
@@ -24,8 +26,11 @@ type teeStore struct {
 	mu                sync.Mutex
 	audits            []AuditEntry
 	jobs              []*jobsv1.EnqueueJobRequest
-	subs              []*WebhookSubscription
 	failExportEnqueue bool
+}
+
+func (s *teeStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {
+	return nil
 }
 
 func (s *teeStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
@@ -47,10 +52,6 @@ func (s *teeStore) InsertAuditEvent(_ context.Context, entry AuditEntry) error {
 	defer s.mu.Unlock()
 	s.audits = append(s.audits, entry)
 	return nil
-}
-
-func (s *teeStore) GetActiveWebhookSubscriptions(_ context.Context, _ string) ([]*WebhookSubscription, error) {
-	return s.subs, nil
 }
 
 func (s *teeStore) CreateWebhookDelivery(_ context.Context, _ *WebhookDelivery) error { return nil }
@@ -89,13 +90,35 @@ func orgAuditEntry() AuditEntry {
 		OrgID:     teeOrgID,
 		ActorID:   NewIDString(),
 		ActorType: "user",
-		EventType: EventType("test.event.performed"),
+		// A registered type: the export handler refuses an unregistered one at the
+		// egress boundary, because without a schema its payload cannot be redacted.
+		EventType: EventSessionRevoked,
 	}
 }
 
+// auditEventSubscriber is a fake subscription over every audit type, standing in
+// for the endpoints the relay resolves once the emitter has published.
+func auditEventSubscriber() (*events.FakeTransport, string) {
+	queue := "audit.events.test"
+	return events.NewFakeTransport([]events.Subscription{{
+		ID: NewIDString(), SubscriberPrincipalID: NewIDString(),
+		TypePattern: "saas.*", Queue: queue, Delivery: events.DeliveryUnordered,
+	}}, time.Minute), queue
+}
+
+func publishedEvents(t *testing.T, transport *events.FakeTransport, queue string) []events.Leased {
+	t.Helper()
+	leased, err := transport.Claim(t.Context(), queue, 1024)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	return leased
+}
+
 func TestSelectorPostgresDoesNotTee(t *testing.T) {
-	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002"}}}
-	emitter, err := NewDurableAuditEmitter(store, store)
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)
 	}
@@ -107,14 +130,15 @@ func TestSelectorPostgresDoesNotTee(t *testing.T) {
 	if got := len(store.jobsForQueue(AuditExportQueue)); got != 0 {
 		t.Fatalf("audit export jobs = %d, want 0 (tee disabled)", got)
 	}
-	if got := len(store.jobsForQueue(OutboundWebhookQueue)); got != 1 {
-		t.Fatalf("webhook jobs = %d, want 1", got)
+	if got := len(publishedEvents(t, transport, queue)); got != 1 {
+		t.Fatalf("published domain events = %d, want 1", got)
 	}
 }
 
 func TestSelectorBothTeesAndCommitsAtomically(t *testing.T) {
-	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002"}}}
-	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee())
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee(), WithDomainEventTransport(transport))
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)
 	}
@@ -124,8 +148,8 @@ func TestSelectorBothTeesAndCommitsAtomically(t *testing.T) {
 	if got := len(store.audits); got != 1 {
 		t.Fatalf("audits committed = %d, want 1", got)
 	}
-	if got := len(store.jobsForQueue(OutboundWebhookQueue)); got != 1 {
-		t.Fatalf("webhook jobs = %d, want 1", got)
+	if got := len(publishedEvents(t, transport, queue)); got != 1 {
+		t.Fatalf("published domain events = %d, want 1", got)
 	}
 	exports := store.jobsForQueue(AuditExportQueue)
 	if len(exports) != 1 {
@@ -168,6 +192,42 @@ func TestExportToleratesUnserializablePayloadWithoutAbortingWrite(t *testing.T) 
 	}
 	if len(decoded.Payload) != 0 {
 		t.Fatalf("teed payload = %v, want empty (dropped)", decoded.Payload)
+	}
+}
+
+// An export job carrying a type the registry does not know must not reach the
+// sink. RedactPayload fails closed and strips the payload whole, so delivering it
+// would put an entry in the customer's compliance store whose empty payload is
+// indistinguishable from an event that never had one. This is the shape a job
+// enqueued under the pre-#520 vocabulary takes once the rename lands.
+func TestExportHandlerRefusesUnregisteredEventType(t *testing.T) {
+	store := &teeStore{}
+	entry := orgAuditEntry()
+	entry.EventType = EventType("auth.login") // the pre-namespace name
+	entry.Payload = map[string]any{"method": "password"}
+	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+		t.Fatalf("enqueueAuditExport: %v", err)
+	}
+	envelope := envelopeFromRequest(t, store.jobs[0])
+
+	sink := &flakySink{}
+	handler, err := NewAuditExportJobHandler(sink)
+	if err != nil {
+		t.Fatalf("NewAuditExportJobHandler: %v", err)
+	}
+	err = handler(t.Context(), envelope)
+	if err == nil {
+		t.Fatal("handler accepted an unregistered event type; it must refuse rather than ship a hollow entry")
+	}
+	var processing *jobs.ProcessingError
+	if !errors.As(err, &processing) {
+		t.Fatalf("handler error = %T (%v), want *jobs.ProcessingError", err, err)
+	}
+	if processing.Retryable {
+		t.Fatal("an unregistered event type is not fixed by retrying; the job must dead-letter")
+	}
+	if sink.attempts != 0 {
+		t.Fatalf("sink attempts = %d, want 0 (nothing may leave the audit store)", sink.attempts)
 	}
 }
 
@@ -249,6 +309,9 @@ func TestExportHandlerAtLeastOnceDrain(t *testing.T) {
 func TestExportRedactsPayload(t *testing.T) {
 	store := &teeStore{}
 	entry := orgAuditEntry()
+	// Name the unregistered type explicitly rather than leaning on the shared
+	// fixture's default: fail-closed redaction is exactly what this test asserts.
+	entry.EventType = EventType("auth.login")
 	entry.Payload = map[string]any{"secret": "value"}
 	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
 		t.Fatalf("enqueueAuditExport: %v", err)
@@ -257,8 +320,9 @@ func TestExportRedactsPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode export envelope: %v", err)
 	}
-	// An unregistered event type is redacted whole (fail closed), so nothing
-	// leaves the audit store even when the schema is unknown.
+	// An unregistered event type is redacted whole (fail closed) at enqueue, so
+	// the audit row still commits while nothing sensitive rides the tee. The
+	// export handler then refuses the job outright at the egress boundary.
 	if len(decoded.Payload) != 0 {
 		t.Fatalf("teed payload = %v, want redacted empty", decoded.Payload)
 	}
@@ -316,6 +380,44 @@ func TestExportHandlerRedactsAtEgress(t *testing.T) {
 	}
 }
 
+// The client a call was made through is part of the record, so it has to
+// survive the tee to an external sink the way the actor does — a SIEM reading
+// the feed answers "what did they do it through" from this field alone.
+func TestExportCarriesTheClientTheCallCameThrough(t *testing.T) {
+	id := NewIDString()
+	raw, err := json.Marshal(newAuditExportPayload(AuditEntry{
+		ID: id, OrgID: teeOrgID, EventType: EventUserCreated, ClientID: "example-console",
+	}))
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	sink := &capturingSink{}
+	handler, err := NewAuditExportJobHandler(sink)
+	if err != nil {
+		t.Fatalf("NewAuditExportJobHandler: %v", err)
+	}
+	envelope := &jobsv1.JobEnvelope{
+		Id:             NewIDString(),
+		Direction:      jobsv1.JobDirection_JOB_DIRECTION_OUTBOX,
+		Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: teeOrgID}},
+		Queue:          AuditExportQueue,
+		Topic:          AuditExportTopic,
+		Source:         AuditExportSource,
+		IdempotencyKey: id,
+		SchemaVersion:  AuditExportSchemaVersion,
+		Payload:        raw,
+		ContentType:    AuditExportContentType,
+		State:          jobsv1.JobState_JOB_STATE_PENDING,
+		MaxAttempts:    AuditExportMaxAttempts,
+	}
+	if err := handler(t.Context(), envelope); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if sink.last.ClientID != "example-console" {
+		t.Fatalf("sink lost the client: %q", sink.last.ClientID)
+	}
+}
+
 func TestExportHandlerRejectsMalformedJob(t *testing.T) {
 	handler, err := NewAuditExportJobHandler(&flakySink{})
 	if err != nil {
@@ -363,5 +465,69 @@ func envelopeFromRequest(t *testing.T, request *jobsv1.EnqueueJobRequest) *jobsv
 		ContentType:    job.GetContentType(),
 		State:          jobsv1.JobState_JOB_STATE_PENDING,
 		MaxAttempts:    job.GetMaxAttempts(),
+	}
+}
+
+// TestPublishedEventCarriesTheRegisteredSchemaVersion pins the envelope against
+// the payload. The webhook administration types were revised to v2 when actor_id
+// changed meaning under a name that cannot change, and the envelope's
+// schema_version is the CloudEvents attribute a subscriber is meant to read to
+// tell the two contracts apart. Leaving it unset defaults the stored event and
+// its delivery job to 1 while the payload says 2 — two fields of the same name
+// disagreeing in one delivery, and the durable one is the wrong one.
+func TestPublishedEventCarriesTheRegisteredSchemaVersion(t *testing.T) {
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
+	if err != nil {
+		t.Fatalf("NewDurableAuditEmitter: %v", err)
+	}
+
+	def, ok := LookupAuditEvent(EventWebhookCreated)
+	if !ok {
+		t.Fatalf("%s is not registered", EventWebhookCreated)
+	}
+	if def.Version < 2 {
+		t.Fatalf("expected the revised webhook administration contract, got v%d", def.Version)
+	}
+
+	entry := orgAuditEntry()
+	entry.EventType = EventWebhookCreated
+	emitter.Emit(t.Context(), entry)
+
+	leased := publishedEvents(t, transport, queue)
+	if len(leased) != 1 {
+		t.Fatalf("published domain events = %d, want 1", len(leased))
+	}
+	if got := leased[0].Envelope.GetSchemaVersion(); got != uint32(def.Version) {
+		t.Fatalf("envelope schema_version = %d, want the registered %d", got, def.Version)
+	}
+}
+
+// The impersonation justification survives the export serialization hop. It is
+// free text an operator wrote about a named customer, so the tempting reflex is
+// to mark it PII — but PII here means "stripped from every export", and the
+// compliance store is precisely where the justification has to be readable. The
+// field is declared on the registry schema and not marked PII, and this pins
+// both halves: an undeclared field would be dropped whole by fail-closed
+// redaction, and a PII one would be stripped by name.
+func TestExportPreservesTheImpersonationJustification(t *testing.T) {
+	const reason = "ticket SUP-4417: export failing for this account"
+	store := &teeStore{}
+	entry := orgAuditEntry()
+	entry.EventType = EventPlatformImpersonated
+	entry.Payload = map[string]any{"reason": reason}
+	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+		t.Fatalf("enqueueAuditExport: %v", err)
+	}
+	decoded, err := decodeAuditExportEnvelope(envelopeFromRequest(t, store.jobs[0]))
+	if err != nil {
+		t.Fatalf("decode export envelope: %v", err)
+	}
+	if got := decoded.Payload["reason"]; got != reason {
+		t.Fatalf("teed reason = %v, want %q", got, reason)
+	}
+	if got := RedactPayload(entry.EventType, decoded.Payload)["reason"]; got != reason {
+		t.Fatalf("egress reason = %v, want %q", got, reason)
 	}
 }

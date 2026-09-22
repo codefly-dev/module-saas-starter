@@ -46,13 +46,56 @@ func (s *Service) DeleteRole(ctx context.Context, actorID string, req *gen.Delet
 	w := wool.Get(ctx).In("DeleteRole")
 
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.DeleteRole(ctx, req.Id)
+		if err := s.store.DeleteRole(ctx, req.Id); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRoleDeleted, "role", req.Id, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete role")
 	}
-
-	s.emit(ctx, actorID, "user", EventRoleDeleted, "role", req.Id, "")
 	return nil
+}
+
+// UpdateRole replaces a custom role's description and permission set. The
+// scope wrapper mirrors CreateRole: a global role is a platform write and
+// runs under the control plane, an org role runs inside its tenant
+// transaction so RLS holds the boundary alongside the store's own scope
+// predicate.
+func (s *Service) UpdateRole(ctx context.Context, actorID string, req *gen.UpdateRoleRequest) (*gen.UpdateRoleResponse, error) {
+	w := wool.Get(ctx).In("UpdateRole")
+
+	var role *gen.Role
+	wrap := func(ctx context.Context) error {
+		updated, err := s.store.UpdateRole(ctx, req.Id, req.OrgId, req.Description, req.Permissions)
+		if err != nil {
+			return err
+		}
+		role = updated
+		return s.emitTx(ctx, actorID, "user", EventRoleUpdated, "role", role.Id, req.OrgId, map[string]any{
+			"name":        role.Name,
+			"permissions": permissionLabels(role.Permissions),
+		})
+	}
+	var err error
+	if req.OrgId == "" {
+		err = s.store.WithControlPlane(ctx, wrap)
+	} else {
+		err = s.store.WithOrgTx(ctx, req.OrgId, wrap)
+	}
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot update role")
+	}
+	return &gen.UpdateRoleResponse{Role: role}, nil
+}
+
+// permissionLabels renders a permission set for the audit payload, which
+// carries strings rather than structured grants.
+func permissionLabels(permissions []*gen.Permission) []string {
+	labels := make([]string, 0, len(permissions))
+	for _, p := range permissions {
+		labels = append(labels, p.Resource+":"+p.Action)
+	}
+	return labels
 }
 
 // ListRoleAssignments returns the assignments in an org. Always
@@ -79,7 +122,10 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 	w := wool.Get(ctx).In("RevokeRole")
 
 	wrap := func(ctx context.Context) error {
-		return s.store.RevokeRole(ctx, req.SubjectId, req.RoleId, req.OrgId, req.Scope)
+		if err := s.store.RevokeRole(ctx, req.SubjectId, req.RoleId, req.OrgId, req.Scope); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
 	}
 	var err error
 	if req.OrgId == "" {
@@ -90,7 +136,5 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 	if err != nil {
 		return w.Wrapf(err, "cannot revoke role")
 	}
-
-	s.emit(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
 	return nil
 }

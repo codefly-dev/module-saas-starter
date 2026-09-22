@@ -1,7 +1,12 @@
 {
-	"name": "@codefly/saas-sdk",
-	"version": "0.1.0",
+	"name": "@codefly-dev/saas-sdk",
+	"version": "0.3.4",
 	"description": "Typed Connect client, gateway-bound facades, and audit data-graph tooling for the saas-starter public API.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/codefly-dev/module-saas-starter.git",
+		"directory": "module/services/frontend/code/packages/saas-sdk"
+	},
 	"type": "module",
 	"sideEffects": false,
 	"files": [
@@ -10,19 +15,20 @@
 	],
 	"exports": {
 		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"default": "./dist/index.js"
+			"types": "./dist/src/index.d.ts",
+			"import": "./dist/src/index.js",
+			"default": "./dist/src/index.js"
 		},
 		"./chat": {
-			"types": "./dist/chat/index.d.ts",
-			"import": "./dist/chat/index.js",
-			"default": "./dist/chat/index.js"
+			"types": "./dist/src/chat/index.d.ts",
+			"import": "./dist/src/chat/index.js",
+			"default": "./dist/src/chat/index.js"
 		}
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.json",
-		"generate": "cd ../../../../accounts/proto && buf generate --template ../../frontend/code/packages/saas-sdk/buf.gen.yaml --path saas/accounts/v1/audit.proto --path saas/accounts/v1/datasource.proto --path saas/accounts/v1/webhooks.proto -o ../../frontend/code/packages/saas-sdk",
+		"build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+		"generate": "node scripts/generate.mjs",
+		"generate:bindings": "node scripts/generate.mjs --bindings-only",
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {

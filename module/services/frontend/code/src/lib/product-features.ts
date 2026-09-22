@@ -2,6 +2,7 @@
 export const productFeatures = {
 	subscriptions: process.env.NEXT_PUBLIC_ENABLE_SUBSCRIPTIONS === "true",
 	sso: process.env.NEXT_PUBLIC_ENABLE_SSO === "true",
+	entitlements: process.env.NEXT_PUBLIC_ENABLE_ENTITLEMENTS === "true",
 };
 
 export type ProductFeature = keyof typeof productFeatures;
@@ -10,6 +11,8 @@ export function isProductRouteEnabled(
 	path: string,
 	features = productFeatures,
 ): boolean {
+	if (path === "/admin/entitlements" || path.startsWith("/admin/entitlements/"))
+		return features.entitlements;
 	if (path === "/admin/billing" || path.startsWith("/admin/billing/"))
 		return features.subscriptions;
 	if (path === "/admin/sso" || path.startsWith("/admin/sso/"))

@@ -1,6 +1,6 @@
 "use client";
 
-import { ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,6 +28,17 @@ import { roleLabel } from "../model/transforms";
 import { fromTeamRole, toTeamRole, type TeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
 import { teamQueries } from "../service/queries";
+
+export function addMemberErrorMessage(error: unknown): string {
+	const connectError = ConnectError.from(error);
+	if (
+		connectError.code === Code.FailedPrecondition &&
+		connectError.rawMessage
+	) {
+		return connectError.rawMessage;
+	}
+	return "Failed to add member";
+}
 
 export function TeamMembersPanel({
 	orgId,
@@ -149,8 +160,7 @@ export function TeamMembersPanel({
 							</div>
 							{add.isError && (
 								<p role="alert" className="text-sm text-destructive">
-									Couldn&apos;t add member:{" "}
-									{ConnectError.from(add.error).rawMessage}
+									Couldn&apos;t add member: {addMemberErrorMessage(add.error)}
 								</p>
 							)}
 						</div>

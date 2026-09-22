@@ -2,28 +2,115 @@ import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 import { AuditEventSchema } from "@/gen/saas/accounts/v1/audit_pb";
-import { formatAuditAction, groupByDate, toAuditEvent } from "../transforms";
+import {
+	auditEventAction,
+	formatActorType,
+	formatAuditAction,
+	groupByDate,
+	resolveActor,
+	toAuditEvent,
+} from "../transforms";
 import type { AuditEvent } from "../types";
 
 describe("formatAuditAction", () => {
+	// The namespace names the module that minted the type, not what happened, so
+	// it must not reach the label — "Saas Auth Login" reads as a typo.
+	it("strips the namespace and title-cases the action", () => {
+		expect(formatAuditAction("saas.auth.login")).toBe("Auth Login");
+	});
+
 	it("converts dot-separated action to title case", () => {
-		expect(formatAuditAction("user.registered")).toBe("User Registered");
+		expect(formatAuditAction("saas.user.registered")).toBe("User Registered");
 	});
 
 	it("converts underscore-separated action to title case", () => {
-		expect(formatAuditAction("api_key.created")).toBe("Api Key Created");
+		expect(formatAuditAction("saas.api_key.created")).toBe("Api Key Created");
+	});
+
+	it("keeps a deeper aggregate intact", () => {
+		expect(formatAuditAction("saas.datasource.source.added")).toBe(
+			"Datasource Source Added",
+		);
 	});
 
 	it("handles single word", () => {
 		expect(formatAuditAction("login")).toBe("Login");
 	});
 
-	it("handles mixed separators", () => {
-		expect(formatAuditAction("org.member_added")).toBe("Org Member Added");
-	});
-
 	it("handles already formatted string", () => {
 		expect(formatAuditAction("Hello World")).toBe("Hello World");
+	});
+});
+
+describe("auditEventAction", () => {
+	it("strips the namespace segment", () => {
+		expect(auditEventAction("saas.auth.login")).toBe("auth.login");
+	});
+
+	it("passes a bare value through", () => {
+		expect(auditEventAction("login")).toBe("login");
+	});
+});
+
+describe("resolveActor", () => {
+	const directory = new Map([
+		["a3f81c2e-0000-4000-8000-000000000001", "Jane Doe"],
+		["a3f81c2e-0000-4000-8000-000000000002", "deploy-bot"],
+		// principals.display_name is NOT NULL but carries no non-empty CHECK.
+		["a3f81c2e-0000-4000-8000-000000000004", ""],
+	]);
+
+	it("renders a resolved principal by its display name", () => {
+		expect(
+			resolveActor("a3f81c2e-0000-4000-8000-000000000001", directory),
+		).toEqual({ label: "Jane Doe", resolved: true });
+	});
+
+	it("resolves a non-human principal by name too", () => {
+		expect(
+			resolveActor("a3f81c2e-0000-4000-8000-000000000002", directory).label,
+		).toBe("deploy-bot");
+	});
+
+	// A revoked or cross-org principal is absent from the directory. The row
+	// must still read as an actor, so it shows an unavailable label rather
+	// than to a blank cell.
+	it("shows an unavailable label for an unresolved principal", () => {
+		expect(
+			resolveActor("b7c22d10-0000-4000-8000-000000000003", directory),
+		).toEqual({ label: "Actor unavailable", resolved: false });
+	});
+
+	// The bug this pins: `directory.has(id)` says "resolved" for an empty
+	// display_name while the label falls back to the id, so a caller styling or
+	// sorting off `has` disagreed with what the cell rendered.
+	it("reports an empty display name as unresolved, not as a name", () => {
+		expect(
+			resolveActor("a3f81c2e-0000-4000-8000-000000000004", directory),
+		).toEqual({ label: "Actor unavailable", resolved: false });
+	});
+
+	it("names an actor-less row rather than rendering blank", () => {
+		expect(resolveActor("", directory)).toEqual({
+			label: "System",
+			resolved: false,
+		});
+	});
+
+	it("falls back when the directory has not landed yet", () => {
+		expect(
+			resolveActor("a3f81c2e-0000-4000-8000-000000000001", new Map()).label,
+		).toBe("Actor unavailable");
+	});
+});
+
+describe("formatActorType", () => {
+	it("renders the underscored wire value as words", () => {
+		expect(formatActorType("api_key")).toBe("api key");
+	});
+
+	it("passes a single-word type through", () => {
+		expect(formatActorType("agent")).toBe("agent");
 	});
 });
 
@@ -32,7 +119,7 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 		id: "evt-1",
 		actorId: "user-1",
 		actorType: "user",
-		eventType: "user.registered",
+		eventType: "saas.user.registered",
 		schemaVersion: 1,
 		category: "auth",
 		resource: "user",
@@ -40,6 +127,7 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 		orgId: "org-1",
 		payload: {},
 		ipAddress: "127.0.0.1",
+		clientId: "",
 		...overrides,
 	};
 }
@@ -92,7 +180,7 @@ describe("toAuditEvent", () => {
 			id: "evt-1",
 			actorId: "user-1",
 			actorType: "user",
-			eventType: "auth.login",
+			eventType: "saas.auth.login",
 			schemaVersion: 1,
 			category: "security",
 			resource: "session",
@@ -108,11 +196,27 @@ describe("toAuditEvent", () => {
 		expect(model.createdAt).toBe("2026-08-24T20:58:52.000Z");
 		// The rest of the fields pass through unchanged.
 		expect(model.id).toBe("evt-1");
-		expect(model.eventType).toBe("auth.login");
+		expect(model.eventType).toBe("saas.auth.login");
 	});
 
 	it("leaves created_at undefined when the Timestamp is absent", () => {
 		const proto = create(AuditEventSchema, { id: "evt-2" });
 		expect(toAuditEvent(proto).createdAt).toBeUndefined();
+	});
+
+	// The mapper is explicit field by field, so a field the server starts
+	// sending is dropped here silently and typecheck stays green — which is
+	// exactly how the client reached the wire without reaching the table.
+	it("carries the client the call was made through", () => {
+		const proto = create(AuditEventSchema, {
+			id: "evt-3",
+			clientId: "example-console",
+		});
+		expect(toAuditEvent(proto).clientId).toBe("example-console");
+	});
+
+	it("leaves the client empty for a call from the host's own session", () => {
+		const proto = create(AuditEventSchema, { id: "evt-4" });
+		expect(toAuditEvent(proto).clientId).toBe("");
 	});
 });

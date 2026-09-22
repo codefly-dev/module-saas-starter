@@ -1,13 +1,18 @@
+//go:build !pure
+
 package infra_test
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"accounts/pkg/relationcatalog"
 )
 
 type relationPrivileges struct {
@@ -15,92 +20,6 @@ type relationPrivileges struct {
 	insertRows bool
 	updateRows bool
 	deleteRows bool
-}
-
-type relationScope string
-
-const (
-	relationScopeGlobal  relationScope = "global"
-	relationScopeTenant  relationScope = "tenant"
-	relationScopeUser    relationScope = "user"
-	relationScopePreAuth relationScope = "pre_auth"
-	relationScopeJob     relationScope = "job"
-	relationScopeWorker  relationScope = "worker"
-)
-
-var relationsByScope = map[relationScope][]string{
-	relationScopeGlobal: {
-		"audit_event_types",
-		"bootstrap_state",
-		"data_retention_policies",
-		"email_templates",
-		"feature_flags",
-		"identity_providers",
-		"plan_entitlements",
-		"plans",
-		"platform_admins",
-	},
-	relationScopeTenant: {
-		"actor_chain_journal",
-		"actor_chain_revocations",
-		"api_keys",
-		"approval_decisions",
-		"approval_requests",
-		"audit_events",
-		"connector_credentials",
-		"dashboards",
-		"datasource_sources",
-		"delegation_grants",
-		"entitlement_overrides",
-		"installations",
-		"invitations",
-		"org_generic_settings",
-		"org_identity_providers",
-		"org_settings",
-		"organization_activations",
-		"organization_authorization_revisions",
-		"organization_members",
-		"organizations",
-		"principal_authorization_revisions",
-		"principals",
-		"record_shares",
-		"role_assignments",
-		"role_permissions",
-		"roles",
-		"scope_grants",
-		"scope_nodes",
-		"subscriptions",
-		"team_members",
-		"teams",
-		"usage_events",
-		"usage_totals",
-		"webhook_deliveries",
-		"webhook_subscriptions",
-		"work_context_replay",
-	},
-	relationScopeUser: {
-		"gdpr_requests",
-		"mfa_backup_codes",
-		"mfa_devices",
-		"mfa_login_transactions",
-		"notifications",
-		"onboarding_progress",
-		"sessions",
-		"user_consent_events",
-		"user_consent_preferences",
-		"user_identities",
-		"users",
-		"webauthn_ceremonies",
-		"webauthn_credentials",
-	},
-	relationScopePreAuth: {"magic_links", "waitlist_entries"},
-	relationScopeJob:     {"job_messages"},
-	relationScopeWorker: {
-		"analytics_deliveries",
-		"email_delivery_events",
-		"job_attempts",
-		"job_state_transitions",
-	},
 }
 
 // externalRelationAuthorities is an additive test seam for product services
@@ -128,6 +47,8 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
+	"event_subscriptions":     {}, // platform relation; request traffic has no direct access
+	"solution_registrations":  {}, // platform relation; request traffic has no direct access
 	"job_attempts":            {},
 	"job_messages":            {},
 	"job_state_transitions":   {},
@@ -138,31 +59,38 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"api_keys":                             {selectRows: true, insertRows: true, updateRows: true},
 	"approval_decisions":                   {selectRows: true, insertRows: true}, // append-only, like actor_chain_journal
 	"approval_requests":                    {selectRows: true, insertRows: true, updateRows: true},
+	"audit_event_idempotency":              {selectRows: true, insertRows: true}, // append-only guard, like audit_events
 	"audit_events":                         {selectRows: true, insertRows: true},
 	"connector_credentials":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"dashboards":                           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"github_app_setups":                    {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"github_app_installations":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
+	"domain_events":                        {selectRows: true}, // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
+	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all
 	"org_generic_settings":                 {selectRows: true, insertRows: true, updateRows: true},
 	"org_identity_providers":               {selectRows: true, insertRows: true, updateRows: true},
 	"org_settings":                         {selectRows: true, insertRows: true, updateRows: true},
 	"organization_activations":             {selectRows: true, insertRows: true, updateRows: true},
 	"organization_authorization_revisions": {selectRows: true},
+	"source_read_revisions":                {selectRows: true},
 	"organization_members":                 {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"organizations":                        {selectRows: true, insertRows: true, updateRows: true},
 	"principal_authorization_revisions":    {selectRows: true},
 	"principals":                           {selectRows: true, insertRows: true, updateRows: true},
 	"record_shares":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"role_assignments":                     {selectRows: true, insertRows: true, deleteRows: true},
-	"role_permissions":                     {selectRows: true, insertRows: true},
+	"role_permissions":                     {selectRows: true, insertRows: true, deleteRows: true},
 	"roles":                                {selectRows: true, insertRows: true, deleteRows: true},
 	"scope_grants":                         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"scope_nodes":                          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"subscriptions":                        {selectRows: true, insertRows: true, updateRows: true},
 	"team_members":                         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"team_membership_quarantine":           {},
 	"teams":                                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"usage_events":                         {selectRows: true, insertRows: true},
 	"usage_totals":                         {selectRows: true, insertRows: true, updateRows: true},
@@ -171,15 +99,19 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"work_context_replay":                  {selectRows: true, insertRows: true}, // claim-once; GC deletes run under app_control_plane
 
 	// User-scoped and pre-auth relations.
-	"gdpr_requests":          {selectRows: true, insertRows: true, updateRows: true},
-	"magic_links":            {},
-	"mfa_backup_codes":       {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
-	"mfa_devices":            {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
-	"mfa_login_transactions": {insertRows: true},
-	"notifications":          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
-	"onboarding_progress":    {selectRows: true, insertRows: true, updateRows: true},
-	"sessions":               {selectRows: true, insertRows: true, updateRows: true},
-	"user_consent_events":    {selectRows: true, insertRows: true},
+	// A privacy request is accepted and read by request traffic; only the leased
+	// worker transitions it, under the control plane.
+	"gdpr_requests":              {selectRows: true, insertRows: true},
+	"magic_links":                {},
+	"mfa_backup_codes":           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"mfa_devices":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"client_authorization_codes": {insertRows: true},
+	"mfa_login_transactions":     {insertRows: true},
+	"notifications":              {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"onboarding_progress":        {selectRows: true, insertRows: true, updateRows: true},
+	"resource_follows":           {selectRows: true, insertRows: true, updateRows: true},
+	"sessions":                   {selectRows: true, insertRows: true, updateRows: true},
+	"user_consent_events":        {selectRows: true, insertRows: true},
 	"user_consent_preferences": {
 		selectRows: true, insertRows: true, updateRows: true,
 	},
@@ -195,10 +127,10 @@ func TestRuntimeDatabaseRolesHavePinnedAuthority(t *testing.T) {
 		bypassRLS bool
 	}{
 		"app_tenant":         {bypassRLS: false},
-		"app_control_plane":  {bypassRLS: true},
-		"app_billing_worker": {bypassRLS: true},
-		"app_webhook_worker": {bypassRLS: true},
-		"app_job_worker":     {bypassRLS: true},
+		"app_control_plane":  {bypassRLS: false},
+		"app_billing_worker": {bypassRLS: false},
+		"app_webhook_worker": {bypassRLS: false},
+		"app_job_worker":     {bypassRLS: false},
 	}
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
@@ -339,17 +271,71 @@ func TestTenantRoleRelationGrantsAreExact(t *testing.T) {
 	}))
 }
 
+// The tenant's UPDATE on roles is granted per column, which has_table_privilege
+// deliberately does not see — so the table-level expectation above stays false
+// and the reachable columns are pinned here instead.
+//
+// A table-wide grant would be enough to re-parent a role: roles_polymorphic
+// admits a global row through USING and only constrains the resulting row
+// through WITH CHECK, so `SET org_id = <my org>` on a platform built-in
+// satisfies both halves. org_id being unwritable is what refuses that
+// statement, and it is refused at the privilege layer rather than by a policy
+// that happens to allow it.
+func TestTenantRoleColumnGrantsAreLimitedToDescription(t *testing.T) {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		for column, want := range map[string]bool{
+			"description": true,
+			"org_id":      false,
+			"name":        false,
+			"built_in":    false,
+			"id":          false,
+		} {
+			var granted bool
+			require.NoError(t, tx.QueryRow(ctx,
+				`SELECT has_column_privilege('app_tenant', 'roles', $1, 'UPDATE')`, column,
+			).Scan(&granted), column)
+			require.Equalf(t, want, granted, "app_tenant UPDATE on roles.%s", column)
+		}
+		return nil
+	}))
+}
+
+// The statement the column grant exists to refuse, executed as the tenant runs
+// it. roles_polymorphic admits a global row through USING and only constrains
+// the resulting row through WITH CHECK, so with a table-wide UPDATE this
+// succeeds and a platform built-in role leaves every other organization.
+// Measured: with `GRANT UPDATE ON TABLE public.roles` this UPDATE commits.
+func TestTenantCannotReparentAGlobalRole(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+
+	var globalRoleID string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		return tx.QueryRow(ctx, `SELECT id FROM roles WHERE org_id IS NULL LIMIT 1`).Scan(&globalRoleID)
+	}))
+	require.NotEmpty(t, globalRoleID, "the role catalog must seed at least one global role")
+
+	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `UPDATE roles SET org_id = $1 WHERE id = $2`, orgID, globalRoleID)
+		return err
+	})
+	require.Error(t, err, "a tenant must not be able to move a global role into its own organization")
+}
+
 func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation, scope := range relationScopeInventory(t) {
+		for relation, authority := range relationcatalog.All() {
 			want := relationPrivileges{
 				selectRows: true,
 				insertRows: true,
 				updateRows: true,
 				deleteRows: true,
 			}
-			if scope == relationScopeWorker || scope == relationScopeJob {
+			if authority.Scope == relationcatalog.ScopeWorker || authority.Scope == relationcatalog.ScopeJob {
 				want = relationPrivileges{}
 			}
 			if relation == "feature_flags" {
@@ -362,16 +348,22 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "audit_events" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
+			// audit_event_idempotency is an append-only guard like audit_events:
+			// the control plane reads and inserts reservations (system NULL-org
+			// emits land on the sentinel org) but never updates or deletes them.
+			if relation == "audit_event_idempotency" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
 			// actor_chain_journal / actor_chain_revocations are append-only
 			// like audit_events: the control plane reads and inserts but never
 			// updates or deletes (an immutable trigger rejects those anyway).
 			if relation == "actor_chain_journal" || relation == "actor_chain_revocations" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
-			// approval_requests is the mutable head: the control plane reads,
-			// inserts, and transitions it, but never deletes — org deletion cascades
-			// via the org_id FK, so no row-DELETE grant is needed.
-			if relation == "approval_requests" {
+			// approval_requests is the mutable head; source_read_revisions is
+			// a monotonic cursor revision. The control plane reads, inserts,
+			// and updates both; organization deletion uses the FK cascade.
+			if relation == "approval_requests" || relation == "source_read_revisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// approval_decisions is append-only like actor_chain_journal: read and
@@ -383,6 +375,19 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// and deletes (the expiry sweep) but never updates a consumed marker.
 			if relation == "work_context_replay" {
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
+			}
+			// domain_events and event_subscriptions: the control plane publishes
+			// platform events and maintains subscriptions (materialize / subscribe /
+			// unsubscribe marks revoked_at), so it reads, inserts, and updates but
+			// never row-deletes — retention and revocation are soft.
+			if relation == "domain_events" || relation == "event_subscriptions" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// team_membership_quarantine records what migration 127 removed. Only
+			// the migration writes it, and it is evidence of a repair — the
+			// runtime reads it and must not be able to edit the record away.
+			if relation == "team_membership_quarantine" {
+				want = relationPrivileges{selectRows: true}
 			}
 
 			var got relationPrivileges
@@ -466,7 +471,7 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation := range relationScopeInventory(t) {
+		for relation := range relationcatalog.All() {
 			var got relationPrivileges
 			var truncateRows bool
 			require.NoError(t, tx.QueryRow(ctx, `
@@ -581,13 +586,12 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 		}
 		require.NoError(t, rows.Err())
 
-		scopes := relationScopeInventory(t)
-		expected := make([]string, 0, len(scopes)+len(externalRelationAuthorities))
-		for relation := range scopes {
+		expected := make([]string, 0, len(relationcatalog.All())+len(externalRelationAuthorities))
+		for relation := range relationcatalog.All() {
 			expected = append(expected, relation)
 		}
 		for relation, authority := range externalRelationAuthorities {
-			_, baseRelation := scopes[relation]
+			_, baseRelation := relationcatalog.All()[relation]
 			require.False(t, baseRelation, "%s cannot be both Accounts-owned and externally owned by %s", relation, authority.owner)
 			expected = append(expected, relation)
 
@@ -623,8 +627,9 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 		}
 		sort.Strings(expected)
 		require.Equal(t, expected, actual, "every public table needs an explicit authority classification")
-		require.Len(t, appTenantRelationPrivileges, len(scopes), "scope and privilege inventories must cover the same relations")
-		for relation := range scopes {
+		require.Len(t, appTenantRelationPrivileges, len(relationcatalog.All()),
+			"scope and privilege inventories must cover the same relations")
+		for relation := range relationcatalog.All() {
 			_, ok := appTenantRelationPrivileges[relation]
 			require.True(t, ok, relation)
 		}
@@ -633,10 +638,9 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 }
 
 func TestDatabaseRelationRLSMatchesAuthorityScope(t *testing.T) {
-	scopes := relationScopeInventory(t)
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation, scope := range scopes {
+		for relation, authority := range relationcatalog.All() {
 			var enabled, forced bool
 			var policyCount int
 			err := tx.QueryRow(ctx, `
@@ -650,7 +654,7 @@ func TestDatabaseRelationRLSMatchesAuthorityScope(t *testing.T) {
 			).Scan(&enabled, &forced, &policyCount)
 			require.NoError(t, err, relation)
 
-			requiresRLS := scope == relationScopeTenant || scope == relationScopeUser || scope == relationScopePreAuth || scope == relationScopeJob
+			requiresRLS := authority.Scope.RequiresRLS()
 			require.Equal(t, requiresRLS, enabled, relation)
 			require.Equal(t, requiresRLS, forced, relation)
 			if requiresRLS {
@@ -683,15 +687,135 @@ func TestActivePoliciesDoNotTrustSessionBypassSettings(t *testing.T) {
 	}))
 }
 
-func relationScopeInventory(t *testing.T) map[string]relationScope {
-	t.Helper()
-	out := make(map[string]relationScope, len(appTenantRelationPrivileges))
-	for scope, relations := range relationsByScope {
-		for _, relation := range relations {
-			_, exists := out[relation]
-			require.False(t, exists, "relation %s has multiple scope classifications", relation)
-			out[relation] = scope
+// TestPublishedRLSPolicyDetailMatchesLivePolicies gates the per-relation
+// editorial detail the api service publishes through GetServiceInfo, which
+// claims fail_closed for every relation it lists.
+//
+// Scope inventory and policy presence alone cannot support that claim: a
+// relation keeps forced RLS and a non-zero policy count when a migration adds a
+// permissive USING (true) policy beside the scoped one. So this checks EVERY
+// policy expression individually — each must compare the published scope column
+// or admit nothing — rather than asking whether the column appears somewhere in
+// the relation's policies.
+func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		for relation, authority := range relationcatalog.All() {
+			if !authority.Scope.RequiresRLS() {
+				require.Empty(t, authority.PolicyShape, relation)
+				require.Empty(t, authority.ScopeColumn, relation)
+				continue
+			}
+			require.NotEmpty(t, authority.PolicyShape, relation)
+
+			policies := livePolicies(ctx, t, tx, relation)
+			// Explicit background policies replace BYPASSRLS only for the exact
+			// active SQL role. Keep checking every request-visible predicate.
+			requestPolicies := policies[:0]
+			for _, policy := range policies {
+				if policy.migrationOwner != "" {
+					require.Equal(t, "webhook_subscriptions", relation)
+					require.Equal(t, "r", policy.command, relation)
+					require.Equal(t, []string{"(CURRENT_USER = '" + policy.migrationOwner + "'::name)"}, policy.expressions, relation)
+					continue
+				}
+				if policy.backgroundRole != "" {
+					require.Equal(t, "*", policy.command, relation)
+					require.Equal(t, []string{"(CURRENT_USER = '" + policy.backgroundRole + "'::name)", "(CURRENT_USER = '" + policy.backgroundRole + "'::name)"}, policy.expressions, relation)
+					continue
+				}
+				requestPolicies = append(requestPolicies, policy)
+			}
+			policies = requestPolicies
+			require.NotEmpty(t, policies, relation)
+
+			switch authority.PolicyShape {
+			case relationcatalog.ShapeControlPlane:
+				require.Empty(t, authority.ScopeColumn, relation)
+				for _, policy := range policies {
+					for _, expression := range policy.expressions {
+						require.Equal(t, "false", expression,
+							"%s is published as control-plane-only but a policy admits rows", relation)
+					}
+				}
+			case relationcatalog.ShapeFunctionScoped:
+				require.Empty(t, authority.ScopeColumn, relation)
+				for _, policy := range policies {
+					require.NotContains(t, []string{"r", "*"}, policy.command,
+						"%s is published as function-scoped but a policy grants request traffic reads", relation)
+				}
+			default:
+				require.NotEmpty(t, authority.ScopeColumn, relation)
+				// pg_attribute rather than information_schema.columns: the latter
+				// hides relations the current role holds no privilege on, and the
+				// job platform grants the control plane none.
+				var columnExists bool
+				require.NoError(t, tx.QueryRow(ctx, `
+					SELECT EXISTS (
+					    SELECT 1 FROM pg_attribute
+					    WHERE attrelid = $1::regclass
+					      AND attname = $2
+					      AND attnum > 0
+					      AND NOT attisdropped
+					)`, relation, authority.ScopeColumn,
+				).Scan(&columnExists), relation)
+				require.True(t, columnExists,
+					"%s publishes scope column %q, which the relation does not have", relation, authority.ScopeColumn)
+
+				reference := regexp.MustCompile(
+					`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(authority.ScopeColumn) + `([^A-Za-z0-9_]|$)`)
+				for _, policy := range policies {
+					for _, expression := range policy.expressions {
+						require.True(t, expression == "false" || reference.MatchString(expression),
+							"%s publishes scope column %q, but one of its policies neither compares it nor denies: %s",
+							relation, authority.ScopeColumn, expression)
+					}
+				}
+			}
 		}
+		return nil
+	}))
+}
+
+type livePolicy struct {
+	backgroundRole string
+	migrationOwner string
+	command        string
+	expressions    []string
+}
+
+func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string) []livePolicy {
+	t.Helper()
+	rows, err := tx.Query(ctx, `
+		SELECT policy.polcmd::text,
+		       COALESCE(pg_get_expr(policy.polqual, policy.polrelid), ''),
+		       COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), ''),
+ CASE WHEN cardinality(policy.polroles)=1 AND policy.polname=role.rolname || '_explicit_rows'
+ AND role.rolname IN ('app_control_plane','app_billing_worker','app_webhook_worker','app_job_worker')
+ THEN role.rolname ELSE '' END,
+ CASE WHEN cardinality(policy.polroles)=1
+ AND policy.polname='webhook_subscriptions_migration_owner_read'
+ AND relation.relname='webhook_subscriptions' AND role.oid=relation.relowner
+ THEN role.rolname ELSE '' END
+		FROM pg_policy policy
+ JOIN pg_class relation ON relation.oid=policy.polrelid
+ LEFT JOIN pg_roles role ON role.oid=policy.polroles[1]
+		WHERE policy.polrelid = $1::regclass`, relation)
+	require.NoError(t, err, relation)
+	defer rows.Close()
+
+	var policies []livePolicy
+	for rows.Next() {
+		var command, using, check, backgroundRole, migrationOwner string
+		require.NoError(t, rows.Scan(&command, &using, &check, &backgroundRole, &migrationOwner), relation)
+		policy := livePolicy{command: command, backgroundRole: backgroundRole, migrationOwner: migrationOwner}
+		for _, expression := range []string{using, check} {
+			if expression != "" {
+				policy.expressions = append(policy.expressions, expression)
+			}
+		}
+		policies = append(policies, policy)
 	}
-	return out
+	require.NoError(t, rows.Err(), relation)
+	return policies
 }

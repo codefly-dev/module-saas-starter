@@ -1,25 +1,34 @@
 "use client";
 
-import * as SaasSdk from "@codefly/saas-sdk";
-import * as SaasUi from "@codefly/saas-ui";
+import * as SaasSdk from "@codefly-dev/saas-sdk";
+import * as SaasUi from "@codefly-dev/saas-ui";
+import * as CodeflyLayout from "@codefly-dev/ui/layout";
+import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
+import * as CodeflyChat from "@codefly-dev/ui/chat";
+import * as CodeflySkin from "@codefly-dev/ui/skin";
+import * as CodeflyTable from "@codefly-dev/ui/table";
+import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
+import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
+import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
 import * as CodeflyUi from "@codefly-dev/ui";
 import {
 	createInstance,
 	type ModuleFederation,
 } from "@module-federation/runtime";
 import * as React from "react";
-import * as ReactDOM from "react-dom";
-import * as ReactJSXRuntime from "react/jsx-runtime";
 import {
 	Component,
-	Suspense,
-	lazy,
 	type ComponentType,
+	lazy,
 	type ReactNode,
+	Suspense,
 } from "react";
+import * as ReactJSXRuntime from "react/jsx-runtime";
+import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
+import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
@@ -37,32 +46,74 @@ import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 // false` records that this host imposes no version floor on the shared instance
 // (versioning — which version wins — is governed separately; see the kit README).
 // The `kit-shared-version` test asserts the singleton flag on this object.
-const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const;
+const SEALED_SHARE_CONFIG = {
+	singleton: true,
+	requiredVersion: false,
+} as const;
 
-// The co-versioned @codefly/* kit ships lockstep with this host, so one version
-// covers all three. It MUST track the packages' real version — a shared module
-// that under-reports its version can lose singleton resolution to a remote that
-// bundles a higher one, splitting the instance the dedup exists to keep single.
-// The `kit-shared-version` test pins this to the packages' actual versions so a
-// bump can't drift it silently.
-export const CODEFLY_KIT_VERSION = "0.1.0";
+// The kit and SDK versions this host publishes live in host-runtime.ts, where
+// the register route reads them too: registration REFUSES a remote whose
+// declared requirements they do not satisfy, so both sides have to agree on one
+// set of numbers. Re-exported here because the share config below and the
+// `kit-shared-version` test have always read them from this module.
+export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION };
 
 // The co-versioned kit + module-UI packages, sealed into the Module-Federation
 // scope. This is the single source of truth the `kit-shared-version` test
 // asserts against directly, so a dropped `singleton` flag fails CI.
 export const CODEFLY_KIT_SHARED = {
+	"@codefly-dev/ui/layout": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyLayout,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/dashboard": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyDashboard,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/chat": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyChat,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/skin": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflySkin,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/table": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyTable,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/plugin-host": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyPluginHost,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/plugin-host/runtime": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyPluginRuntime,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/plugin-host/ui": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyPluginUi,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
 	"@codefly-dev/ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyUi,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
-	"@codefly/saas-ui": {
+	"@codefly-dev/saas-ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUi,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
-	"@codefly/saas-sdk": {
-		version: CODEFLY_KIT_VERSION,
+	"@codefly-dev/saas-sdk": {
+		version: CODEFLY_SAAS_SDK_VERSION,
 		lib: () => SaasSdk,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
@@ -109,8 +160,8 @@ export const SEALED_SHARED = {
  * boundary). The remote's build marks react/react-dom/jsx-runtime as shared
  * singletons and therefore ships without them.
  *
- * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly/saas-ui`,
- * `@codefly/saas-sdk`) is shared the same way, so a remote imports
+ * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly-dev/saas-ui`,
+ * `@codefly-dev/saas-sdk`) is shared the same way, so a remote imports
  * `<DatasourcesPanel gateway={…}>` and renders it against the host's one copy —
  * no bundling, and one React instance across the boundary.
  */
@@ -162,7 +213,9 @@ function isTransientRemoteLoadError(err: unknown): boolean {
  * renders — required by react-hooks/static-components and needed for Suspense
  * to keep its state.
  */
-function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProps> {
+function remoteComponent(
+	remote: SolutionRemote,
+): ComponentType<SolutionPageProps> {
 	const key = `${remote.id}|${remote.manifestUrl}|${remote.exposedModule}`;
 	const cached = remoteComponents.get(key);
 	if (cached) {
@@ -213,7 +266,9 @@ function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProp
 				if (attempt === maxAttempts - 1) {
 					break;
 				}
-				await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+				await new Promise((resolve) =>
+					setTimeout(resolve, 250 * (attempt + 1)),
+				);
 				federation.registerRemotes(
 					[{ name: remote.id, entry: remote.manifestUrl }],
 					{ force: true },
@@ -243,7 +298,21 @@ export interface SolutionRemote {
 /** Props the host injects into every solution page. */
 export interface SolutionPageProps {
 	solutionId: string;
-	/** Same-origin base the remote must use for all backend calls (the gateway BFF). */
+	/**
+	 * Same-origin base for ALL of a remote's backend calls — its own service and
+	 * the host's platform services alike. ONE base covers both because the host
+	 * proxy routes on the path, not on the base: a Connect procedure shaped
+	 * `saas.<pkg>.v1.<Service>/<Method>` goes to the API gateway's root, exactly
+	 * where a host page's own call lands, and everything else goes to this
+	 * solution's registered upstream (`api/solutions/[id]/proxy/[...path]`).
+	 *
+	 * So a kit component the host hands a remote — `<DatasourcesPanel gateway>`
+	 * calls the host's `saas.accounts.v1.DatasourceService` — works over this
+	 * base unchanged. Do NOT add a second "host" base: it would be the same
+	 * destination reached a second way, and a remote built against a base an
+	 * older host does not inject receives `undefined` and throws inside
+	 * `SolutionErrorBoundary`, blanking the page instead of failing one panel.
+	 */
 	apiBase: string;
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
@@ -264,7 +333,10 @@ export interface SolutionPageProps {
 	 * gets the portal's refresh-then-retry recovery — and the dead-session
 	 * auto-relogin — for free, rather than surfacing a bare `HTTP 401`.
 	 */
-	authedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+	authedFetch: (
+		input: RequestInfo | URL,
+		init?: RequestInit,
+	) => Promise<Response>;
 	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
@@ -318,7 +390,10 @@ export function SolutionOutlet({
 	// the remote never touches the token store or constructs its own handle.
 	pageProps: Omit<
 		SolutionPageProps,
-		"getAccessToken" | "refreshAccessToken" | "authedFetch" | "dashboardAuthoring"
+		| "getAccessToken"
+		| "refreshAccessToken"
+		| "authedFetch"
+		| "dashboardAuthoring"
 	>;
 	authoring: DashboardAuthoring;
 }) {
@@ -326,7 +401,11 @@ export function SolutionOutlet({
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
-			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
+			<Suspense
+				fallback={
+					<div className="p-6 text-sm opacity-70">Loading solution…</div>
+				}
+			>
 				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
 				<Remote
 					{...pageProps}

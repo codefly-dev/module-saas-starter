@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -15,6 +16,12 @@ import (
 
 var canonicalWebhookEventType = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 
+// ErrWebhookDeliveryExists reports that this endpoint already has history for
+// this event. It is the delivery-side half of the at-least-once contract: a
+// replayed event re-enters fan-out with the id it was published under, and the
+// endpoint has already been told about it.
+var ErrWebhookDeliveryExists = errors.New("webhooks: delivery history already exists for this event and subscription")
+
 // WebhookSubscription is the domain representation of a webhook subscription.
 type WebhookSubscription struct {
 	ID                      string
@@ -24,7 +31,7 @@ type WebhookSubscription struct {
 	PreviousSecretEncrypted string
 	PreviousSecretExpiresAt *time.Time
 	SecretReveal            string   // transient: populated only by create
-	Events                  []string // event types to subscribe to, e.g. "user.registered", "org.created"
+	Events                  []string // event types to subscribe to, e.g. "saas.user.registered", "saas.org.created"
 	Description             string
 	Active                  bool
 	CreatedAt               time.Time
@@ -60,10 +67,19 @@ type webhookPayload struct {
 	DeliveryID string          `json:"delivery_id"`
 }
 
-func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelivery, []byte, error) {
-	deliveryID := NewIDString()
-	data, err := json.Marshal(map[string]any{
-		"event_type":      string(entry.EventType),
+// AuditEventWebhookData is the `data` member of the webhook body for one audit
+// record. It is the domain event's payload: the emitter publishes these bytes as
+// the envelope data, and the relay wraps them in the delivery envelope below, so
+// the body an endpoint receives is unchanged by the move to subscriptions.
+func AuditEventWebhookData(entry AuditEntry) ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"event_type": string(entry.EventType),
+		// The registered version of this event's contract. A subscriber reads
+		// actor_id and actor_type out of this envelope, so when a field's
+		// meaning is revised under a name that cannot change (saas.webhook.*
+		// v2: actor_id became the initiating user, not the organization) this
+		// is the only in-band way to tell which contract a delivery follows.
+		"schema_version":  entry.SchemaVersion,
 		"resource":        entry.Resource,
 		"resource_id":     entry.ResourceID,
 		"actor_id":        entry.ActorID,
@@ -71,14 +87,27 @@ func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelive
 		"organization_id": entry.OrgID,
 		"payload":         RedactPayload(entry.EventType, entry.Payload),
 	})
-	if err != nil {
-		return nil, nil, err
-	}
+}
+
+// NewDomainEventWebhookDelivery renders the pending delivery and the exact bytes
+// that will be signed for one event delivered to one endpoint. Every attempt and
+// every replay signs the persisted bytes rather than re-marshalling, so this is
+// the only place the body is built.
+//
+// eventID is the envelope id, which is also the audit record's id: it is the
+// X-Webhook-Event-ID an endpoint deduplicates on, so it stays stable across the
+// move from inline fan-out to relay fan-out.
+func NewDomainEventWebhookDelivery(
+	eventID, eventType, subscriptionID string,
+	occurred time.Time,
+	data []byte,
+) (*WebhookDelivery, []byte, error) {
+	deliveryID := NewIDString()
 	payload, err := json.Marshal(webhookPayload{
-		EventID:    entry.ID,
-		EventType:  string(entry.EventType),
+		EventID:    eventID,
+		EventType:  eventType,
 		Data:       data,
-		Timestamp:  entry.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Timestamp:  occurred.UTC().Format(time.RFC3339Nano),
 		DeliveryID: deliveryID,
 	})
 	if err != nil {
@@ -87,18 +116,23 @@ func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelive
 	return &WebhookDelivery{
 		ID:             deliveryID,
 		SubscriptionID: subscriptionID,
-		EventID:        entry.ID,
-		OutboxEventID:  entry.ID,
-		EventType:      string(entry.EventType),
+		EventID:        eventID,
+		OutboxEventID:  eventID,
+		EventType:      eventType,
 		Payload:        string(payload),
 		Status:         "pending",
 	}, payload, nil
 }
 
-// CreateSubscription validates and stores a new webhook subscription.
-func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, events []string, description string) (*WebhookSubscription, error) {
+// CreateSubscription validates and stores a new webhook subscription. actor is
+// the verified caller the audit trail records as having configured the
+// destination.
+func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgID, rawURL string, events []string, description string) (*WebhookSubscription, error) {
 	w := wool.Get(ctx).In("CreateSubscription")
 
+	if err := actor.validate(); err != nil {
+		return nil, w.Wrapf(err, "cannot attribute webhook subscription")
+	}
 	if s.webhookCipher == nil {
 		return nil, w.NewError("webhook secret cipher is not configured")
 	}
@@ -144,12 +178,19 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, 
 	// RLS: write goes through WithOrgTx so the policy WITH CHECK
 	// passes (org_id matches the current_org_id setting).
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.CreateWebhookSubscription(ctx, sub)
+		if err := s.store.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		// The registration is what a customer edits; its subscriptions are derived
+		// from it in the same transaction, so an endpoint is never registered
+		// without the rows the relay fans out over.
+		if err := s.store.SyncWebhookEventSubscriptions(ctx, orgID, sub.ID, sub.Events); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookCreated, "webhook_subscription", sub.ID, orgID, actor.provenance())
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create webhook subscription")
 	}
-
-	s.emit(ctx, orgID, "system", EventWebhookCreated, "webhook_subscription", sub.ID, orgID)
 
 	return sub, nil
 }
@@ -160,9 +201,12 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, 
 // only finds rows belonging to this org. If the id is from a
 // different tenant, the DELETE simply affects 0 rows and we report
 // "not found" without leaking the existence of cross-tenant data.
-func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) error {
+func (s *Service) DeleteSubscription(ctx context.Context, actor AuditActor, orgID, id string) error {
 	w := wool.Get(ctx).In("DeleteSubscription")
 
+	if err := actor.validate(); err != nil {
+		return w.Wrapf(err, "cannot attribute webhook subscription deletion")
+	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		// Confirm row exists in THIS org first — RLS makes the lookup
 		// safe; a cross-tenant id returns nil, not the other org's row.
@@ -176,12 +220,10 @@ func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) erro
 		if err := s.store.DeleteWebhookSubscription(ctx, id); err != nil {
 			return w.Wrapf(err, "cannot delete webhook subscription")
 		}
-		return nil
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookDeleted, "webhook_subscription", id, orgID, actor.provenance())
 	}); err != nil {
 		return err
 	}
-
-	s.emit(ctx, orgID, "system", EventWebhookDeleted, "webhook_subscription", id, orgID)
 
 	return nil
 }
@@ -295,9 +337,12 @@ func (s *Service) GetWebhookDelivery(ctx context.Context, orgID, deliveryID stri
 //
 // Authz expectation: caller must already be org-admin on the
 // subscription's org — enforced at the adapter layer.
-func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID string) (*WebhookDelivery, error) {
+func (s *Service) ReplayWebhookDelivery(ctx context.Context, actor AuditActor, orgID, originalID string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("ReplayWebhookDelivery")
 
+	if err := actor.validate(); err != nil {
+		return nil, w.Wrapf(err, "cannot attribute webhook delivery replay")
+	}
 	var sub *WebhookSubscription
 	replay := &WebhookDelivery{
 		ID:           NewIDString(),
@@ -329,22 +374,26 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 		}
 		replay.EventType = o.EventType
 		replay.Payload = o.Payload
-		return createOutboundWebhookDelivery(
+		if err := createOutboundWebhookDelivery(
 			ctx, s.store, s.webhookJobs, orgID, replay, []byte(o.Payload),
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID, actor.provenance())
 	}); err != nil {
 		return nil, err
 	}
-
-	s.emit(ctx, sub.OrgID, "system", EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID)
 	return replay, nil
 }
 
 // RotateWebhookSecret generates and encrypts a new signing secret. During the
 // requested overlap, deliveries carry signatures from both the new and prior
 // keys so consumers can deploy the new verifier without an outage.
-func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID string, gracePeriod time.Duration) (string, *time.Time, error) {
+func (s *Service) RotateWebhookSecret(ctx context.Context, actor AuditActor, orgID, subscriptionID string, gracePeriod time.Duration) (string, *time.Time, error) {
 	w := wool.Get(ctx).In("RotateWebhookSecret")
+	if err := actor.validate(); err != nil {
+		return "", nil, w.Wrapf(err, "cannot attribute webhook secret rotation")
+	}
 	if s.webhookCipher == nil {
 		return "", nil, w.NewError("webhook secret cipher is not configured")
 	}
@@ -380,12 +429,13 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID
 			sub.PreviousSecretExpiresAt = nil
 		}
 		sub.SecretEncrypted = encryptedSecret
-		return s.store.UpdateWebhookSubscription(ctx, sub)
+		if err := s.store.UpdateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID, actor.provenance())
 	}); err != nil {
 		return "", nil, err
 	}
-
-	s.emit(ctx, orgID, "system", EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID)
 	return newSecret, oldSecretExpiresAt, nil
 }
 

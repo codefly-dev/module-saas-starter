@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 
@@ -262,6 +263,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
+	sessionID := callerSessionID(ctx, req.GetSessionId())
 	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -292,7 +294,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		TenantID:              req.GetOrgId(),
 		OwnerPrincipalID:      ownerID,
 		TaskID:                req.GetTaskId(),
-		SessionID:             req.GetSessionId(),
+		SessionID:             sessionID,
 		AuthorizationRevision: facts.EffectiveRevision(),
 		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),
 		AuthorityScopes:       scopes,
@@ -380,6 +382,82 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	return issuedWorkContext(token, signed), nil
 }
 
+// ModuleWorkContextAudience is the one consumer a composed module's capability
+// is good for. It keeps a module token and a delegated user context minted for
+// another service non-interchangeable even though one key signs both.
+const ModuleWorkContextAudience = "module-capabilities"
+
+// ErrWorkContextAuthorityUnconfigured distinguishes a deployment that never
+// wired the signing key from a capability this issuer refused to sign. Both
+// reach the caller as a failure to mint, but only one is the operator's to fix.
+var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is not configured")
+
+// StartModuleTask mints the capability a composed module presents to the
+// module-facing surface, with the module's service principal as both owner and
+// sole actor.
+//
+// It seals identity and tenant, not capabilities: what the principal may do is
+// re-read from the declared grant on every call, so a narrowed grant takes
+// effect at once instead of when the outstanding token expires. Sealing the
+// grant here too would put the same authority in two places that disagree for a
+// token lifetime, and an empty scope set denies at any consumer that reads one.
+//
+// Unlike every other mint here the authority is not resolved from the database:
+// a module principal is declared by the deployment rather than registered per
+// organization, so there is no owner of record to resolve, no standing grant to
+// intersect, and no authorization revision to seal. For the same reason no
+// actor-chain hop is journaled — that journal records hops between registered
+// principals — and the durable record is the issuance audit event instead.
+func (s *WorkContextAuthorityServer) StartModuleTask(
+	authority business.ModuleWorkContextAuthority,
+) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+	if s == nil || s.configureErr != nil || s.signer == nil {
+		return codefly.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
+	}
+	return s.signer.StartTask(codefly.StartTaskInput{
+		Audience:         ModuleWorkContextAudience,
+		TenantID:         authority.Tenant,
+		OwnerPrincipalID: authority.PrincipalID,
+		TaskID:           uuid.NewString(),
+		SessionID:        uuid.NewString(),
+		ActorChain: []*basev0.WorkActorV1{{
+			PrincipalId:   authority.PrincipalID,
+			PrincipalKind: business.PrincipalKindService,
+			DelegationId:  uuid.NewString(),
+		}},
+		TTL: codefly.WorkContextMaxTTL,
+	})
+}
+
+// VerifyModuleWorkContext authenticates a module capability token and returns
+// the principal it names with the tenant it is bound to. The signature, issuer,
+// audience, and expiry are all checked; the actor chain names the acting
+// principal, which for a module mint is the module's own service principal.
+func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(encoded string) (business.ModuleCaller, error) {
+	if s == nil || s.configureErr != nil || s.verifier == nil {
+		return business.ModuleCaller{}, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
+	}
+	token, err := codefly.ParseWorkContextToken(encoded)
+	if err != nil {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
+	}
+	verified, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+		Issuer:   s.issuer,
+		Audience: ModuleWorkContextAudience,
+	})
+	if err != nil {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
+	}
+	actors := verified.GetActorChain()
+	if len(actors) == 0 {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context names no actor")
+	}
+	return business.ModuleCaller{
+		PrincipalID: actors[len(actors)-1].GetPrincipalId(),
+		BoundOrg:    verified.GetTenantId(),
+	}, nil
+}
+
 func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
 	ctx context.Context,
 	orgID string,
@@ -402,6 +480,19 @@ func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
 	return nil, status.Error(codes.Internal, "cannot resolve installation authority")
 }
 
+// StartRootSession issues another root Session under the same Task. The Session
+// id is generated here rather than taken from the request: a root Session keeps
+// no lineage — the signer clears parent_session_id — so a caller-chosen id is
+// free to name anything at all, including a Session that never existed or one
+// belonging to unrelated work. Generating it is what makes the new root Session
+// verifiably fresh. The issued response carries the id, which is what a caller
+// correlates on and what the product records its own Session row under.
+//
+// The Session is an execution scope, not the caller's authenticated session.
+// This issuer never owns consumer Task/Session rows, so deriving the caller's
+// auth session here would put an identifier the product has no row for into a
+// field the product owns, and would refuse every caller whose parent Task was
+// rooted in the same auth session.
 func (s *WorkContextAuthorityServer) StartRootSession(
 	ctx context.Context,
 	req *gen.StartRootSessionWorkContextRequest,
@@ -413,20 +504,17 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, actor, err := s.verifyParent(
+	parentToken, _, actor, err := s.verifyParent(
 		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
 		return nil, err
 	}
-	if req.GetSessionId() == parent.GetSessionId() {
-		return nil, status.Error(codes.InvalidArgument, "new session_id must differ from parent session")
-	}
 	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
-		SessionID:    req.GetSessionId(),
+		SessionID:    uuid.NewString(),
 		Audience:     req.GetAudience(),
 		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
 		TTL:          workContextTTL(req.GetTtlSeconds()),
@@ -454,6 +542,15 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err != nil {
 		return nil, err
 	}
+	return s.exchangeVerifiedParent(parentToken, parent, actor, req)
+}
+
+// exchangeVerifiedParent runs AFTER the caller's authentication and
+// current-parent checks.
+func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
+	parentToken codefly.WorkContextToken, parent *basev0.WorkContextV1,
+	actor *business.Principal, req *gen.ExchangeWorkContextAudienceRequest,
+) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
 	}
@@ -711,6 +808,41 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 		return "", err
 	}
 	return ownerID, nil
+}
+
+// callerSessionID roots a Task in the session the caller actually holds, so a
+// capability is never signed and journaled under a session that only ever
+// existed in the request that named it.
+//
+// A divergent id is ignored rather than refused. Refusing reads as the safer
+// choice, but the requested id is not authority — it is a correlation field the
+// derived value replaces — so refusing buys no binding that ignoring does not,
+// and it breaks every caller that roots its own Task and Session ids while
+// presenting a real session.
+//
+// This binds attribution, not enforcement: nothing re-checks a minted capability
+// against session liveness today, so a revocation does not reach an outstanding
+// context before its TTL runs out. Deriving the id here is what makes the
+// journal name a session that can be revoked at all, and what that enforcement
+// would later hang from.
+//
+// A caller authenticated by a service credential or an API key has no session to
+// derive and keeps the requested id, as the headless installation mint does.
+func callerSessionID(ctx context.Context, requested string) string {
+	verified, ok := accountsauth.VerifiedSessionID(ctx)
+	if !ok {
+		return requested
+	}
+	// Compare parsed ids: uuid.Parse accepts spellings the canonical form does
+	// not, so the caller's own session written another way is not a divergence.
+	// Neither id is logged — a session id identifies a live session, and wool
+	// masks keys rather than values.
+	if parsed, _ := uuid.Parse(requested); parsed != verified {
+		wool.Get(ctx).In("StartTask").Warn(
+			"requested session_id is not the caller's verified session; binding to the verified session",
+		)
+	}
+	return verified.String()
 }
 
 func (s *WorkContextAuthorityServer) verifyParent(

@@ -156,7 +156,9 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-4">
 					<div>
-						<h1 className="text-2xl font-bold tracking-tight">Entitlements</h1>
+						<h1 data-slot="page-title" className="type-page-title">
+							Entitlements
+						</h1>
 						<p className="text-muted-foreground">
 							View and override organization entitlements.
 						</p>

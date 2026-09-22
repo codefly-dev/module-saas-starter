@@ -70,7 +70,7 @@ func platformAdminHandlers() []platformAdminHandler {
 			return err
 		}},
 		{"ImpersonateUser", "support", func(ctx context.Context, srv *PlatformAdminServer) error {
-			_, err := srv.ImpersonateUser(ctx, &gen.ImpersonateUserRequest{UserId: platformTargetD})
+			_, err := srv.ImpersonateUser(ctx, &gen.ImpersonateUserRequest{UserId: platformTargetD, Reason: "ticket SUP-1001"})
 			return err
 		}},
 		{"ListActiveSessions", "support", func(ctx context.Context, srv *PlatformAdminServer) error {
@@ -158,7 +158,7 @@ func TestImpersonateUserDeniesNonAdminBeforeMFAProbe(t *testing.T) {
 	installLayeredAuthzService(t, store)
 
 	ctx := stampVerifiedIdentity(context.Background(), platformActorID, "", auth.Assurance{})
-	_, err := (&PlatformAdminServer{}).ImpersonateUser(ctx, &gen.ImpersonateUserRequest{UserId: platformTargetD})
+	_, err := (&PlatformAdminServer{}).ImpersonateUser(ctx, &gen.ImpersonateUserRequest{UserId: platformTargetD, Reason: "ticket SUP-1001"})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 	require.False(t, store.mfaProbed, "role check must precede the MFA state lookup")
 }

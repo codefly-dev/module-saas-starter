@@ -1,0 +1,14 @@
+schema: codefly/saas/events-contribution/v1
+namespace: reference
+queues:
+  - reference.ingest
+publishes:
+  - type: reference.console.viewed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: tenant
+    partition: "{tenant_id}"
+    retention: 30d
+consumes:
+  - type: reference.console.viewed
+    queue: reference.ingest
+    delivery: unordered

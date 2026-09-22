@@ -18,11 +18,13 @@ import (
 	"accounts/pkg/cache"
 	"accounts/pkg/datasource"
 	"accounts/pkg/email"
+	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
+	"accounts/pkg/vaultconnection"
 	"context"
 	ed25519core "crypto/ed25519"
 	"encoding/base64"
@@ -36,6 +38,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 )
 
@@ -164,6 +167,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure durable job metrics: %w", err)
 	}
 	service.SetJobOperations(jobStore)
+	// Domain-event administration (#494 P3) reads the same isolated worker pool:
+	// per-type counters and relay lag from domain_events, dead-letters from the
+	// inbox, and live subscriptions across every principal — payload-free, and on
+	// app_job_worker so request traffic never gains that cross-tenant reach.
+	service.SetEventOperations(infra.NewPostgresEventOperations(jobWorkerPool))
 	service.SetWebhookJobProducer(store)
 
 	// Module-facing capability surface (issue #463): a request-scoped
@@ -176,6 +184,84 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("parse module principal registry: %w", err)
 	}
 	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+	// Explicit organization delegation is separate from module identity. A
+	// projected policy is refreshed by the delivery system and read per call.
+	installerHandler, err := configuredModuleInstaller(service)
+	if err != nil {
+		return nil, fmt.Errorf("configure module installer policy: %w", err)
+	}
+	if installerHandler != nil {
+		adapters.RegisterHTTPRoute("/v1/module-installations/", installerHandler)
+	}
+
+	// Domain-event pub/sub (issue #493): the reference events.Transport over the
+	// durable jobs platform. A module publish joins its WithOrgTx transaction so
+	// the insert is the transactional outbox and the tenant gate re-checks under
+	// app_tenant; the relay worker then drains domain_events after commit, fanning
+	// each event out to matching subscriptions on the app_job_worker pool
+	// (BYPASSRLS, so it resolves events and subscriptions across every tenant).
+	// The relay is also the outbound-webhook fan-out: a webhook endpoint is an
+	// event_subscriptions row with delivery = webhook (#488), and this is the
+	// dispatcher it is delivered through.
+	eventTransport := infra.NewPostgresEventTransport(
+		jobStore, jobWorkerPool, "events-relay-"+uuid.NewString(), time.Minute,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(store)),
+	)
+	service.SetModuleEventTransport(eventTransport)
+	eventRelayWorker := infra.NewEventRelayWorker(eventTransport, 0)
+
+	// The follow bridge (FOLLOWS.md) is host-internal, which is what keeps it
+	// inside the boundary: the composed catalog declares which resources are
+	// followable, the host subscribes itself over exactly those types on its own
+	// reserved queue, and the worker resolves access through the store directly
+	// rather than through a module-facing RPC. Declaring nothing leaves every
+	// piece of this inert.
+	declared := eventcatalog.Followable()
+	followables := make([]business.FollowableResource, 0, len(declared))
+	for _, followable := range declared {
+		followables = append(followables, business.FollowableResource{
+			ResourceType: followable.ResourceType,
+			Events:       followable.Events,
+		})
+	}
+	service.SetFollowables(followables)
+	// Materialization is idempotent, so a restart converges on the rows that
+	// already exist. It deliberately does not fail startup: VerifyEventWiring
+	// short-circuits on a wired transport and never reaches the database, so this
+	// is the only write at boot, and returning its error would turn a momentary
+	// database outage into a crash-loop for the whole service. Leaving the host
+	// unsubscribed would silently drop every followable event, so the failure is
+	// loud and retried in the background rather than tolerated.
+	if err := service.MaterializeFollowSubscriptions(ctx); err != nil {
+		wool.Get(ctx).In("follows").Error(
+			"cannot materialize follow subscriptions; retrying in the background",
+			wool.ErrField(err))
+		go retryFollowSubscriptions(ctx, service)
+	}
+	followFanoutWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.FollowFanoutQueue,
+		Handler:    service.FollowFanoutHandler(),
+		RetryDelay: business.FollowFanoutRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Fail fast if a deployment ever ends up with live subscriptions but no
+	// transport: without one, every publish is a silent no-op and subscribers
+	// receive nothing. The transport is wired unconditionally just above, so this
+	// is a regression guard — but it converts a future mis-wiring from invisible
+	// event loss into a startup error.
+	if err := service.VerifyEventWiring(ctx); err != nil {
+		return nil, err
+	}
+	// The symmetric guard for the other half of fan-out: a transport with no
+	// outbound dispatcher relays to module queues and silently never to webhook
+	// endpoints, which is the same invisible loss one layer over.
+	if err := eventTransport.RequireWebhookRelay(); err != nil {
+		return nil, err
+	}
 
 	eventRegistry, err := analytics.DefaultRegistry()
 	if err != nil {
@@ -220,12 +306,29 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetMFASecretCipher(vaultClient)
 	service.SetOrgIdentityProviderCipher(vaultClient)
 	service.SetConnectorCipher(vaultClient)
-	service.SetGitHubConnector(githubconnector.NewConnector())
+	service.SetGitHubConnector(githubconnector.NewConnector(
+		githubconnector.WithBaseURL(os.Getenv("GITHUB_API_BASE_URL"))))
 	// Datasource connector (issue #274): per-source credentials are Vault-transit
 	// encrypted, and pulled files are enqueued onto the durable inbox seam the
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(vaultClient, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	// The App registration is deployment custody: the signing key is read here
+	// and never copied onto a source record. Unset leaves sources on their own
+	// stored fine-grained PAT.
+	service.SetGitHubAppRegistration(
+		workspaceEnv("github-app", "GITHUB_APP_ID"),
+		workspaceEnv("github-app", "GITHUB_APP_PRIVATE_KEY"),
+		workspaceEnv("github-app", "GITHUB_APP_SLUG"),
+		workspaceEnv("github-app", "GITHUB_APP_WEBHOOK_SECRET"),
+	)
+	// The OAuth client is what attributes an installation to the person who
+	// installed it. Without it the host could only prove an installation exists,
+	// which is true of every tenant's installation, so onboarding stays off.
+	service.SetGitHubAppOAuth(
+		workspaceEnv("github-app", "GITHUB_APP_CLIENT_ID"),
+		workspaceEnv("github-app", "GITHUB_APP_CLIENT_SECRET"),
+	)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
@@ -272,10 +375,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	// Default fail-closed: a token whose revocation status can't be read is
-	// denied. Operators fronting accounts directly (no sidecar) can opt into
+	// denied. Operators fronting accounts directly (no auth-gateway) can opt into
 	// fail-open to keep the direct verify path serving through a revocation-store
 	// outage, trading a revoked token's remaining-TTL exposure for availability —
-	// the same choice the sidecar exposes via SIDECAR_REVOCATION_FAIL_OPEN.
+	// the same choice the auth-gateway ext_authz check exposes via SIDECAR_REVOCATION_FAIL_OPEN.
 	revocationFailOpen := strings.EqualFold(strings.TrimSpace(workspaceEnv("security", "ACCOUNTS_REVOCATION_FAIL_OPEN")), "true")
 	if revocationFailOpen {
 		wool.Get(ctx).Warn("ACCOUNTS_REVOCATION_FAIL_OPEN enabled: a revocation-store outage will admit possibly-revoked access tokens on the direct verify path until they expire")
@@ -297,6 +400,36 @@ func doWork(ctx context.Context) (Clean, error) {
 		"/v1/auth/.well-known/jwks.json",
 		adapters.NewJWKSHTTPHandler(service),
 	)
+	// Composed-module REST federation: the gateway admits a registration only
+	// against a token signed here, so a module exchanges its composition-declared
+	// registration secret for one. Unset means no module may federate.
+	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
+		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
+	if err != nil {
+		return nil, fmt.Errorf("read module registration secrets: %w", err)
+	}
+	service.SetModuleRegistrar(minter, moduleRegistrationSecrets)
+	if err := configureModuleIdentity(service); err != nil {
+		return nil, err
+	}
+
+	// Solution registration: the same issuer, a separate declaration. A solution
+	// remote executes in the host origin with the viewer's credentials, so who
+	// may publish one is stated on its own key rather than inherited from the
+	// module list. Unset means no solution may register.
+	//
+	// The declaration is handed over as a reader, not as a parsed map: unlike a
+	// module, a solution mounts against a host that is already serving, so
+	// authorizing or withdrawing one must not wait for this service to restart.
+	// It is still parsed once here, so a malformed declaration refuses to boot
+	// rather than silently denying every registration at runtime.
+	solutionRegistrationSecrets := func() string {
+		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
+	}
+	if _, err := business.ParseRegistrationSecrets(solutionRegistrationSecrets()); err != nil {
+		return nil, fmt.Errorf("read solution registration secrets: %w", err)
+	}
+	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
 
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
@@ -321,6 +454,17 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure oauth state signer: %w", err)
 	}
 	service.SetOAuthStateSigner(stateSigner)
+
+	// Registered first-party clients (issue #853). Wired regardless of the
+	// configured identity provider: a client signs in on the host's login page
+	// whatever authenticates the person behind it, so the registry is not part
+	// of any one provider's stack. An unset declaration registers no client,
+	// which refuses the flow rather than disabling a check.
+	clientRegistry, err := auth.NewClientRegistry(identityEnv("IDENTITY_REGISTERED_CLIENTS"))
+	if err != nil {
+		return nil, fmt.Errorf("configure registered clients: %w", err)
+	}
+	service.SetClientRegistry(clientRegistry)
 
 	// Authentication mode is explicit in the Codefly identity configuration.
 	// A selected fixture is an optional data seed and cannot replace the
@@ -391,11 +535,22 @@ func doWork(ctx context.Context) (Clean, error) {
 	if auditSinkMode == auditSinkBoth {
 		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
 	}
+	// Every org-scoped audit record publishes its external domain event in the
+	// same transaction; that event is what the relay fans out to the endpoints
+	// subscribed to its type.
+	auditEmitterOpts = append(auditEmitterOpts, business.WithDomainEventTransport(eventTransport))
 	auditEmitter, err := business.NewDurableAuditEmitter(store, store, auditEmitterOpts...)
 	if err != nil {
 		return nil, err
 	}
 	service.SetAuditEmitter(auditEmitter)
+	// Refuse to serve behind an emitter that cannot write on the caller's
+	// transaction: every security mutation commits its audit row and webhook
+	// fan-out inside its own transaction, and an emitter without EmitTx would let
+	// those mutations succeed unrecorded.
+	if err := service.VerifyAuditWiring(); err != nil {
+		return nil, err
+	}
 
 	var auditExportWorker *jobs.Worker
 	if auditSinkMode == auditSinkBoth {
@@ -533,6 +688,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		})
 	}
 	adapters.RegisterHTTPRoute("/v1/status", adapters.NewStatusHTTPHandler(service))
+	// The live companion to the follow bridge above: the same declared followable
+	// resources read forward by a connected client. It declares nothing of its
+	// own, so a composition that declares no followable resource leaves the stream
+	// open and silent rather than leaking undeclared journal traffic.
+	adapters.RegisterHTTPRoute(adapters.SubscriptionStreamPath, adapters.NewSubscriptionStreamHandler(service))
 
 	// Email production and transport are split by the generic outbox. Request
 	// paths render templates and enqueue exact messages in their product
@@ -584,7 +744,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	adapters.RegisterHTTPRoute("/v1/billing/free-plan", billingHTTPHandler)
 
 	// Billing: when Stripe is configured, wire its webhook plus the
-	// authenticated checkout and portal endpoints. The sidecar's public-path
+	// authenticated checkout and portal endpoints. The auth-gateway's public-path
 	// allowlist covers the webhook; user-facing actions are authenticated via
 	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
@@ -679,6 +839,21 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
+	// Privacy export/deletion (issue #539): the leased worker that drives a
+	// configured privacy adapter. It runs whether or not one is wired — the
+	// starter ships none — so a job enqueued by a runtime that had an adapter
+	// dead-letters visibly here instead of sitting pending after the adapter is
+	// removed.
+	privacyWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.PrivacyWorkflowQueue,
+		Handler:    service.NewPrivacyJobHandler(),
+		RetryDelay: business.PrivacyWorkflowRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The change-set compiler (issue #487): a leased worker that turns each raw
 	// GitHub delivery — and each periodic/forced reconcile request — into a set of
 	// per-file ingest ops, holding the source's decrypted token so all GitHub
@@ -689,6 +864,19 @@ func doWork(ctx context.Context) (Clean, error) {
 		Store:      jobStore,
 		Queue:      business.DatasourceDeliveryQueue,
 		Handler:    service.NewDatasourceDeliveryJobHandler(),
+		RetryDelay: business.DatasourceSyncRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// The GitHub App installation reconciler (issue #691): it leases each
+	// verified App-level delivery and re-derives the affected sources' access
+	// from GitHub, rather than acting on what the delivery claimed.
+	datasourceInstallationWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.DatasourceInstallationQueue,
+		Handler:    service.NewDatasourceInstallationJobHandler(),
 		RetryDelay: business.DatasourceSyncRetryDelay,
 	})
 	if err != nil {
@@ -709,6 +897,28 @@ func doWork(ctx context.Context) (Clean, error) {
 			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},
 		))
 		w.Info("GitHub datasource webhook enabled")
+	}
+
+	// The App's own deliveries arrive at a second, App-wide endpoint, signed
+	// with the registration's own secret. `installation` and
+	// `installation_repositories` are delivered only to the App registration's
+	// webhook URL, so neither the per-source path nor a per-source secret can
+	// receive them. `push` is here for a related reason (issue #734): an
+	// App-backed source authenticates through the installation and stores no
+	// push secret, so the per-source receiver could never verify its pushes.
+	// Mounting is gated on an actual registration, so a deployment that
+	// registered no App exposes no such surface.
+	if service.GitHubAppWebhookConfigured() {
+		adapters.RegisterHTTPRoute(datasource.GitHubAppWebhookPath, datasource.NewAppHandler(
+			datasource.AppHandlerDeps{Producer: jobStore, Registration: service},
+		))
+		w.Info("GitHub App webhook enabled")
+	} else if service.GitHubAppConfigured() {
+		// Half a registration is the dangerous shape: sources mint App tokens and
+		// look healthy, while GitHub's lifecycle deliveries land on a route that
+		// does not exist. Revocation then stays invisible for the life of a
+		// cached token with nothing anywhere to say why.
+		w.Warn("GitHub App registered without a webhook secret; installation lifecycle events cannot be verified and will not be received")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -739,6 +949,17 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		// An export artifact stays reachable only for its authorized window; the
+		// sweep asks the adapter to delete the stored object and drops the
+		// reference once that window has closed.
+		sweepPrivacyArtifacts := func() {
+			if n, err := service.PurgeExpiredPrivacyArtifacts(retentionCtx); err != nil {
+				rw.Warn("expired privacy artifact sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("deleted records", wool.Field("count", n), wool.Field("kind", "privacy_export_artifact"))
+			}
+		}
+
 		// Datasource reconcile (issue #487 §6): the production safety net for lost
 		// webhooks and for local development without a public tunnel. Each sweep
 		// enqueues a reconcile job for every active GitHub source whose schedule has
@@ -752,10 +973,27 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		// GitHub App installation re-check (issue #691): the same safety net, for
+		// the half that webhooks alone cannot cover. Parking a source removes it
+		// from the reconcile sweep above, so a restored installation whose
+		// `unsuspend` delivery GitHub failed to hand over would leave that source
+		// parked for good. This re-verifies installations that still hold one.
+		// The sweep runs on the same tick, but each installation is only enqueued
+		// once per re-check window, so the tick does not set the rate.
+		sweepInstallationRecheck := func() {
+			if n, err := service.RunGitHubInstallationRecheck(retentionCtx); err != nil {
+				rw.Warn("github installation recheck sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("enqueued github installation rechecks", wool.Field("count", n))
+			}
+		}
+
 		// Run once immediately on startup.
 		runRetention()
 		sweepReplay()
+		sweepPrivacyArtifacts()
 		sweepReconcile()
+		sweepInstallationRecheck()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
@@ -771,8 +1009,10 @@ func doWork(ctx context.Context) (Clean, error) {
 				runRetention()
 			case <-replayTicker.C:
 				sweepReplay()
+				sweepPrivacyArtifacts()
 			case <-reconcileTicker.C:
 				sweepReconcile()
+				sweepInstallationRecheck()
 			}
 		}
 	}()
@@ -799,7 +1039,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
+	privacyWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
+	datasourceInstallationWorker.Start(ctx)
+	eventRelayWorker.Start(ctx)
+	followFanoutWorker.Start(ctx)
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
@@ -847,6 +1091,12 @@ func doWork(ctx context.Context) (Clean, error) {
 			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
+		sw.Info("stopping privacy workflow worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := privacyWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("privacy workflow worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
 		sw.Info("stopping datasource sync worker")
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := datasourceSyncWorker.Shutdown(shutdownCtx); err != nil {
@@ -857,6 +1107,24 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := datasourceDeliveryWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("datasource delivery worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping datasource installation worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := datasourceInstallationWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("datasource installation worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping domain-event relay worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := eventRelayWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("domain-event relay worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping follow fan-out worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := followFanoutWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("follow fan-out worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("closing outbound webhook projection database pool")
@@ -973,6 +1241,34 @@ func configuredExternalAuditSink() (business.ExternalAuditSink, error) {
 // have NO app-layer throttle: abuse protection disabled AND no rate limiter
 // wired (no Redis). Either guard alone is a backstop; only the combination
 // leaves them open.
+// retryFollowSubscriptions re-attempts follow subscription materialization
+// until it lands. A host with no subscription receives no followable event, and
+// that loss is invisible at runtime — this is what closes the gap left by a
+// database outage during boot without holding the service hostage to it. It
+// backs off so a sustained outage does not become sustained load, and reports
+// every attempt so the gap stays visible while it is open.
+func retryFollowSubscriptions(ctx context.Context, service *business.Service) {
+	const maxDelay = 5 * time.Minute
+	delay := 5 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		if err := service.MaterializeFollowSubscriptions(ctx); err != nil {
+			wool.Get(ctx).In("follows").Warn(
+				"retrying follow subscription materialization", wool.ErrField(err))
+			if delay < maxDelay {
+				delay *= 2
+			}
+			continue
+		}
+		wool.Get(ctx).In("follows").Info("follow subscriptions materialized after retry")
+		return
+	}
+}
+
 func anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired bool) bool {
 	return abuseDisabled && !rateLimiterWired
 }
@@ -1596,8 +1892,8 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // refresh tokens.
 //
 // The key must persist across restarts and be identical across replicas: it
-// signs JWTs, seeds the OAuth-state signer, and is the public key the sidecar
-// and permissions plugin pin. Production loads it from Vault KV v2 and refuses
+// signs JWTs, seeds the OAuth-state signer, and is the public key the gateway's
+// ext_authz check and permissions plugin pin. Production loads it from Vault KV v2 and refuses
 // to boot if that load fails — an ephemeral key would make each replica sign
 // differently, break existing sessions, and desynchronise the pinned key. This
 // fails closed rather than fail-open-to-broken.
@@ -1606,12 +1902,14 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
 // no Vault. The fallback logs a warning.
 func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
-	vaultAddr, addrErr := codefly.For(ctx).Service("vault").Configuration("vault", "address")
-	vaultToken, tokErr := codefly.For(ctx).Service("vault").Secret("vault", "token")
-	if addrErr == nil && tokErr == nil && vaultAddr != "" && vaultToken != "" {
+	connection, connectionErr := vaultconnection.Load(ctx)
+	if connectionErr == nil {
+		vaultToken, tokenErr := connection.Token()
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
-			Address:           vaultAddr,
-			Token:             vaultToken,
+			Address: connection.Address, Token: vaultToken, HTTPClient: connection.Client,
 			AllowInsecureHTTP: workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") == "true",
 		})
 		if err == nil {
@@ -1673,4 +1971,13 @@ func (n *billingNotifier) CreateBillingNotification(
 		IdempotencyKey: message.DeliveryKey,
 	})
 	return err
+}
+
+func configureModuleIdentity(service *business.Service) error {
+	secrets, err := business.ParseRegistrationSecrets(workspaceEnv("federation", "MODULE_IDENTITY_SECRETS"))
+	if err != nil {
+		return fmt.Errorf("read module identity secrets: %w", err)
+	}
+	service.SetModuleIdentitySecrets(secrets)
+	return nil
 }

@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 // Only this file drives real DOM interaction (focus, key events); the rest of the
 // kit's tests are pure and run under the package's default `node` environment.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Tabs } from "../tabs.js";
 
@@ -68,34 +75,44 @@ describe("Tabs", () => {
 		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
 	});
 
-	it("moves selection with Arrow/Home/End keys", () => {
+	it("moves selection with Arrow/Home/End keys", async () => {
 		render(<Tabs tabs={tabs} />);
 		const tablist = screen.getByRole("tablist");
 		const [first] = screen.getAllByRole("tab");
-		first.focus();
+		act(() => first.focus());
 
 		fireEvent.keyDown(first, { key: "ArrowRight" });
-		expect(screen.getByRole("tabpanel").textContent).toBe("Second panel");
+		await waitFor(() =>
+			expect(screen.getByRole("tabpanel").textContent).toBe("Second panel"),
+		);
 
 		fireEvent.keyDown(document.activeElement ?? tablist, { key: "End" });
-		expect(screen.getByRole("tabpanel").textContent).toBe("Third panel");
+		await waitFor(() =>
+			expect(screen.getByRole("tabpanel").textContent).toBe("Third panel"),
+		);
 
 		fireEvent.keyDown(document.activeElement ?? tablist, { key: "ArrowRight" });
 		// Wraps back to the first tab.
-		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
+		await waitFor(() =>
+			expect(screen.getByRole("tabpanel").textContent).toBe("First panel"),
+		);
 
 		fireEvent.keyDown(document.activeElement ?? tablist, { key: "Home" });
-		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
+		await waitFor(() =>
+			expect(screen.getByRole("tabpanel").textContent).toBe("First panel"),
+		);
 
 		fireEvent.keyDown(document.activeElement ?? tablist, { key: "ArrowLeft" });
 		// Wraps to the last tab.
-		expect(screen.getByRole("tabpanel").textContent).toBe("Third panel");
+		await waitFor(() =>
+			expect(screen.getByRole("tabpanel").textContent).toBe("Third panel"),
+		);
 	});
 
 	it("ignores ArrowUp/ArrowDown on the horizontal tablist", () => {
 		render(<Tabs tabs={tabs} />);
 		const [first] = screen.getAllByRole("tab");
-		first.focus();
+		act(() => first.focus());
 
 		// Vertical arrows must not move selection (and must not preventDefault the
 		// page scroll) on a horizontal tablist — only Left/Right navigate.
@@ -114,7 +131,7 @@ describe("Tabs", () => {
 	it("keeps every panel mounted when keepMounted, hiding the inactive ones", () => {
 		const { container } = render(<Tabs tabs={tabs} keepMounted />);
 		// All three panels are in the DOM...
-		const panels = container.querySelectorAll('[id*="-panel-"]');
+		const panels = container.querySelectorAll('[role="tabpanel"]');
 		expect(panels).toHaveLength(3);
 		// ...but the two inactive ones carry `hidden`, so only the selected panel is
 		// in the accessibility tree and the tab order.
@@ -133,7 +150,7 @@ describe("Tabs", () => {
 		// (a live transcript) survives the switch.
 		expect(screen.getByText("Second panel")).toBe(secondPanel);
 		expect(screen.getByRole("tabpanel").textContent).toBe("Second panel");
-		expect(container.querySelectorAll('[id*="-panel-"]')).toHaveLength(3);
+		expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(3);
 	});
 
 	it("keeps only the selected tab in the tab order (roving tabindex)", () => {

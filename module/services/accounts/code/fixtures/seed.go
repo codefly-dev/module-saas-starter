@@ -19,6 +19,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,10 +38,19 @@ type fixtureFile struct {
 	Teams         []fixtureTeam           `yaml:"teams"`
 	Agents        []fixtureAgent          `yaml:"agents"`
 	Roles         []fixtureRole           `yaml:"roles"`
+	Collections   []fixtureCollection     `yaml:"collections"`
 	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
 }
 
+type fixtureCollection struct {
+	Org     string   `yaml:"org"`
+	Label   string   `yaml:"label"`
+	Role    string   `yaml:"role"`
+	Readers []string `yaml:"readers"`
+}
+
 type fixtureUser struct {
+	ID           string `yaml:"id"`
 	Email        string `yaml:"email"`
 	Name         string `yaml:"name"`
 	Role         string `yaml:"role"`
@@ -51,6 +61,11 @@ type fixtureUser struct {
 }
 
 type fixtureOrg struct {
+	// ID pins the organization's uuid across reseeds, as fixtureUser.ID does
+	// for users: a module principal grant (MODULE_PRINCIPALS) must name its
+	// tenant by organization id, and committed configuration can only quote
+	// an id that survives a fresh seed.
+	ID      string             `yaml:"id"`
 	Name    string             `yaml:"name"`
 	Owner   string             `yaml:"owner"`
 	Members []fixtureOrgMember `yaml:"members"`
@@ -232,6 +247,15 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		wool.Field("roles", len(f.Roles)),
 		wool.Field("assignments", len(f.Assignments)))
 
+	// Every condition that can make this seed refuse is checked before the
+	// first write. seedUsers commits each user in its own transaction and
+	// deliberately skips personal-org creation, so a refusal raised later —
+	// once organizations are being seeded — would leave fixture users
+	// belonging to no organization at all. Decide first, then write.
+	if err := validateOrganizationPreconditions(ctx, service, f.Organizations); err != nil {
+		return err
+	}
+
 	userIDs, err := seedUsers(ctx, w, service, f.Users)
 	if err != nil {
 		return err
@@ -256,6 +280,10 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		return err
 	}
 	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, roleIDs); err != nil {
+		return err
+	}
+
+	if err := seedCollections(ctx, service, f.Collections, orgIDs, orgOwnerIDs, userIDs, roleIDs); err != nil {
 		return err
 	}
 
@@ -288,6 +316,7 @@ func loadFixtureFile(path string) (*fixtureFile, error) {
 }
 
 func validateFixture(f *fixtureFile) error {
+	userIDIndexes := make(map[string]int, len(f.Users))
 	for i, u := range f.Users {
 		if u.Email == "" {
 			return fmt.Errorf("user[%d]: email is required", i)
@@ -298,8 +327,36 @@ func validateFixture(f *fixtureFile) error {
 		if u.ProviderID == "" {
 			return fmt.Errorf("user[%d] (%s): provider_id is required", i, u.Email)
 		}
+		if u.ID == "" {
+			continue
+		}
+		id, err := business.ParseID(u.ID)
+		if err != nil {
+			return fmt.Errorf("user[%d] (%s): %w", i, u.Email, err)
+		}
+		// The all-zero uuid is the absent-principal sentinel: a user seeded
+		// with it can never hold a session, and the failure would surface at
+		// login rather than here.
+		if id == uuid.Nil {
+			return fmt.Errorf("user[%d] (%s): id must not be the nil uuid", i, u.Email)
+		}
+		// uuid.Parse also accepts the 32-hex, braced and urn: spellings. The
+		// frontend parses the raw yaml against a schema that takes only the
+		// dashed form, so any other spelling seeds here and 500s the fixture
+		// route that the dev login page reads.
+		if len(u.ID) != len(uuid.Nil.String()) {
+			return fmt.Errorf("user[%d] (%s): id must be the dashed uuid form, not %q", i, u.Email, u.ID)
+		}
+		if previous, exists := userIDIndexes[id.String()]; exists {
+			return fmt.Errorf("user[%d] (%s): id %s collides with user[%d]", i, u.Email, id, previous)
+		}
+		userIDIndexes[id.String()] = i
+		// Store the canonical form so the drift check in seedUsers compares
+		// against the store's rendering of the same uuid.
+		f.Users[i].ID = id.String()
 	}
 	organizationSlugIndexes := make(map[string]int, len(f.Organizations))
+	organizationIDIndexes := make(map[string]int, len(f.Organizations))
 	for i, org := range f.Organizations {
 		if org.Name == "" {
 			return fmt.Errorf("organization[%d]: name is required", i)
@@ -321,6 +378,28 @@ func validateFixture(f *fixtureFile) error {
 			)
 		}
 		organizationSlugIndexes[slug] = i
+		if org.ID == "" {
+			continue
+		}
+		// Same rules as a user id: a real, dashed, non-nil uuid, unique in the
+		// file. A tenant sealed into a module principal's capability is compared
+		// against this id downstream, where a malformed one would silently
+		// match nothing.
+		id, err := business.ParseID(org.ID)
+		if err != nil {
+			return fmt.Errorf("organization[%d] (%s): %w", i, org.Name, err)
+		}
+		if id == uuid.Nil {
+			return fmt.Errorf("organization[%d] (%s): id must not be the nil uuid", i, org.Name)
+		}
+		if len(org.ID) != len(uuid.Nil.String()) {
+			return fmt.Errorf("organization[%d] (%s): id must be the dashed uuid form, not %q", i, org.Name, org.ID)
+		}
+		if previous, exists := organizationIDIndexes[id.String()]; exists {
+			return fmt.Errorf("organization[%d] (%s): id %s collides with organization[%d]", i, org.Name, id, previous)
+		}
+		organizationIDIndexes[id.String()] = i
+		f.Organizations[i].ID = id.String()
 	}
 	for i, agent := range f.Agents {
 		if strings.TrimSpace(agent.Org) == "" {
@@ -405,6 +484,17 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			return nil, w.Wrapf(err, "cannot look up fixture user %s", u.Email)
 		}
 		if existing != nil {
+			// A database seeded before this user declared an id keeps the uuid
+			// it was given, and a seed cannot rewrite a primary key that other
+			// rows reference. Report the drift rather than refusing to run:
+			// configuration naming the declared id silently matches nothing
+			// here, but aborting would strand every such database instead.
+			if u.ID != "" && existing.Uuid != u.ID {
+				w.Error("fixture user id drift: this database keeps its own uuid, so configuration naming the declared id matches no principal here; reseed against an empty store to adopt the declared id",
+					wool.Field("email", u.Email),
+					wool.Field("declared_id", u.ID),
+					wool.Field("stored_id", existing.Uuid))
+			}
 			userIDs[u.Email] = existing.Uuid
 			// Fixtures are desired state, not create-only samples. Converge the
 			// platform role on every activation so authentication and admin
@@ -427,7 +517,32 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			continue
 		}
 
-		userID := business.NewIDString()
+		// A declared id makes the principal quotable in committed
+		// configuration; without one every reseed mints a fresh uuid.
+		userID := u.ID
+		if userID != "" {
+			var taken bool
+			if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+				var checkErr error
+				taken, checkErr = service.Store().UserIDExists(ctx, userID)
+				return checkErr
+			}); err != nil {
+				return nil, w.Wrapf(err, "cannot check the declared id of fixture user %s", u.Email)
+			}
+			if taken {
+				// Another row holds this uuid — a deleted user keeps its row, so
+				// erasing an identity leaves its id claimed. The declared id
+				// cannot be honoured either way, and the same reasoning as a
+				// drifting id applies: report it, but let the service start.
+				w.Error("fixture user declares an id another user already holds; seeding with a fresh uuid, so configuration naming the declared id matches no principal here",
+					wool.Field("email", u.Email),
+					wool.Field("declared_id", userID))
+				userID = ""
+			}
+		}
+		if userID == "" {
+			userID = business.NewIDString()
+		}
 		identityID := business.NewIDString()
 		user := &gen.User{
 			Uuid:         userID,
@@ -463,6 +578,66 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 	return userIDs, nil
 }
 
+// validateOrganizationPreconditions decides, before any row is written,
+// whether every declared organization id can actually be honoured.
+//
+// It keys off the slug rather than the owner's membership list, which is what
+// lets it run this early: idx_organizations_slug is UNIQUE on LOWER(slug), so
+// the slug alone says whether creating this organization would collide and
+// with which id — no owner, and therefore no seeded users, required.
+//
+// Two ways a declared id cannot be delivered, and both are fatal because the
+// id's whole purpose is to be quotable by committed configuration:
+//
+//   - the organization already exists under a different uuid (a database
+//     seeded before the id was declared). A seed cannot rewrite a primary key
+//     that memberships, teams and tenant rows reference.
+//   - the id is held by some other organization, so this one cannot take it.
+//
+// seedOrganizations re-checks the second case at the point of writing. That is
+// not redundant: this pass and the write are separate transactions, so a
+// concurrent seeder can still claim the id in between.
+func validateOrganizationPreconditions(ctx context.Context, service *business.Service, orgs []fixtureOrg) error {
+	for _, org := range orgs {
+		if org.ID == "" {
+			continue
+		}
+		slug := business.Slugify(org.Name)
+		var holder *gen.Organization
+		var taken bool
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var lookupErr error
+			if holder, lookupErr = service.Store().GetOrganizationBySlug(ctx, slug); lookupErr != nil {
+				return lookupErr
+			}
+			if holder != nil {
+				return nil
+			}
+			taken, lookupErr = service.Store().OrganizationIDExists(ctx, org.ID)
+			return lookupErr
+		}); err != nil {
+			return fmt.Errorf("cannot check the declared id of fixture organization %q: %w", org.Name, err)
+		}
+		if holder != nil && holder.Id != org.ID {
+			return fmt.Errorf(
+				"fixture organization %q declares id %s but this database already holds it as %s: "+
+					"a seed cannot rewrite a primary key that memberships, teams and tenant rows reference, "+
+					"and continuing would leave configuration naming the declared id (a module principal's tenant, say) "+
+					"matching no organization here. Reseed against an empty store to adopt the declared id",
+				org.Name, org.ID, holder.Id)
+		}
+		if taken {
+			return fmt.Errorf(
+				"fixture organization %q declares id %s, which another organization in this database already holds: "+
+					"the declared id cannot be honoured, and seeding a second organization of the same name would "+
+					"collide on the unique organization slug. Reseed against an empty store, or give this "+
+					"organization an id no other organization holds",
+				org.Name, org.ID)
+		}
+	}
+	return nil
+}
+
 // seedOrganizations creates orgs from the fixture, idempotently. On re-run,
 // looks up existing orgs by querying the owner's org list.
 func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Service, orgs []fixtureOrg, userIDs map[string]string) (map[string]string, error) {
@@ -471,6 +646,17 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		ownerID, ok := userIDs[org.Owner]
 		if !ok {
 			return nil, fmt.Errorf("organization %q owner %q was not seeded", org.Name, org.Owner)
+		}
+
+		// Declaring an id is optional, so a fixture written before this
+		// existed still loads — but silence is how #610 reached a consumer in
+		// the first place. A module fixture is gated by a test; a consumer's
+		// own fixture (DEV_FIXTURE_PATH) is gated by nothing, and a consumer
+		// is exactly who needs a tenant id that survives a reseed. Say so
+		// once per seed rather than letting the omission stay invisible.
+		if org.ID == "" {
+			w.Warn("fixture organization declares no id, so every seed mints a fresh uuid: a module principal grant (MODULE_PRINCIPALS) naming this organization as its tenant has no stable id to quote. Add `id:` to the fixture organization",
+				wool.Field("name", org.Name))
 		}
 
 		var existingOrgs []*gen.Organization
@@ -484,6 +670,29 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		}
 		for _, existing := range existingOrgs {
 			if existing.Name == org.Name {
+				// A database seeded before this organization declared an id
+				// keeps the uuid it was given, and a seed cannot rewrite a
+				// primary key that memberships, teams and tenant rows
+				// reference. So the declared id cannot be honoured here, and
+				// continuing is not a safe degradation: an organization id is
+				// the tenant a MODULE_PRINCIPALS grant names, and nothing
+				// downstream ever checks that tenant exists —
+				// ParseModulePrincipalRegistry validates the uuid's *form*
+				// only, ModuleAuthorizeWorkContext copies it verbatim, and
+				// authorizeTenant compares the sealed value against itself. A
+				// boot that continued past this would therefore succeed, mint
+				// capabilities, and bind every call to an organization nobody
+				// can see, with no error anywhere. Refuse instead: the whole
+				// point of a declared id is that committed configuration can
+				// quote it, so a seed that cannot deliver it has failed.
+				if org.ID != "" && existing.Id != org.ID {
+					return nil, fmt.Errorf(
+						"fixture organization %q declares id %s but this database already holds it as %s: "+
+							"a seed cannot rewrite a primary key that memberships, teams and tenant rows reference, "+
+							"and continuing would leave configuration naming the declared id (a module principal's tenant, say) "+
+							"matching no organization here. Reseed against an empty store to adopt the declared id",
+						org.Name, org.ID, existing.Id)
+				}
 				orgIDs[org.Name] = existing.Id
 				w.Info("org already exists, reusing", wool.Field("name", org.Name))
 				break
@@ -491,12 +700,56 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		}
 
 		if _, found := orgIDs[org.Name]; !found {
-			orgResp, err := service.CreateOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{Name: org.Name})
+			// A declared id makes the tenant quotable in committed
+			// configuration; without one every reseed mints a fresh uuid.
+			orgID := org.ID
+			if orgID != "" {
+				var taken bool
+				if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+					var checkErr error
+					taken, checkErr = service.Store().OrganizationIDExists(ctx, orgID)
+					return checkErr
+				}); err != nil {
+					return nil, w.Wrapf(err, "cannot check the declared id of fixture organization %s", org.Name)
+				}
+				if taken {
+					// Falling back to a fresh uuid cannot work here. The
+					// organization holding the declared id is almost always
+					// this same fixture organization, seen from an owner who
+					// is no longer one of its members (the lookup above is
+					// membership-scoped) — so a "fallback" would insert a
+					// second organization with the same name, and
+					// idx_organizations_slug is UNIQUE on LOWER(slug) across
+					// the whole table. The insert would fail anyway, and the
+					// operator would get an opaque duplicate-key error instead
+					// of this one. Where the insert *would* succeed — the
+					// holder was renamed, so its slug differs — the outcome is
+					// worse than an error: a grant naming the declared id
+					// silently resolves to the renamed organization rather
+					// than to this fixture's. Refuse in both cases.
+					return nil, fmt.Errorf(
+						"fixture organization %q declares id %s, which another organization in this database already holds: "+
+							"the declared id cannot be honoured, and seeding a second organization of the same name would "+
+							"collide on the unique organization slug. Reseed against an empty store, or give this "+
+							"organization an id no other organization holds",
+						org.Name, orgID)
+				}
+			}
+			orgResp, err := service.CreateFixtureOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{Name: org.Name}, orgID)
 			if err != nil {
+				// The primary key, not the check above, is what actually
+				// guarantees the declared id is unique: the two run in
+				// separate transactions, so a concurrent seeder can claim the
+				// id in between and this insert is where that surfaces — as an
+				// organizations_pkey violation from the driver. Name the
+				// declared id so that error is readable without a stack trace.
+				if orgID != "" {
+					return nil, w.Wrapf(err, "cannot create fixture organization %s with declared id %s (another writer may have claimed it)", org.Name, orgID)
+				}
 				return nil, w.Wrapf(err, "cannot create fixture organization %s", org.Name)
 			}
 			orgIDs[org.Name] = orgResp.GetOrganization().GetId()
-			w.Info("seeded org", wool.Field("name", org.Name))
+			w.Info("seeded org", wool.Field("name", org.Name), wool.Field("id", orgIDs[org.Name]))
 		}
 
 		orgID := orgIDs[org.Name]
@@ -529,7 +782,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 		var existingTeams []*gen.Team
 		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
 			var listErr error
-			existingTeams, listErr = service.Store().ListTeams(ctx, orgID)
+			existingTeams, listErr = service.Store().ListTeams(ctx, orgID, "")
 			return listErr
 		}); err != nil {
 			w.Warn("cannot list fixture teams", wool.Field("name", team.Name), wool.Field("error", err.Error()))
@@ -761,6 +1014,49 @@ func seedRoleAssignments(
 			wool.Field("org", assignment.Org),
 			wool.Field("agent_identifier", assignment.AgentIdentifier),
 			wool.Field("role", assignment.Role))
+	}
+	return nil
+}
+
+func seedCollections(ctx context.Context, service *business.Service, collections []fixtureCollection, orgIDs, owners, users, roles map[string]string) error {
+	for _, collection := range collections {
+		orgID, actorID, roleID := orgIDs[collection.Org], owners[collection.Org], roles[fixtureScopedKey(collection.Org, collection.Role)]
+		if orgID == "" || actorID == "" || roleID == "" || strings.TrimSpace(collection.Label) == "" {
+			return fmt.Errorf("collection %q requires a known organization, owner, role, and label", collection.Label)
+		}
+		for _, reader := range collection.Readers {
+			if users[reader] == "" {
+				return fmt.Errorf("collection %q references unknown reader %q", collection.Label, reader)
+			}
+		}
+		var scopePath, pageToken string
+		for {
+			page, err := service.ListCollectionAccess(ctx, &gen.ListCollectionAccessRequest{OrgId: orgID, PageToken: pageToken})
+			if err != nil {
+				return err
+			}
+			for _, existing := range page.Collections {
+				if existing.Node.Label == collection.Label {
+					scopePath = existing.Node.ScopePath
+					break
+				}
+			}
+			if scopePath != "" || page.NextPageToken == "" {
+				break
+			}
+			pageToken = page.NextPageToken
+		}
+		if scopePath == "" {
+			scopePath = strings.ReplaceAll(business.NewIDString(), "-", "_")
+			if _, err := service.RegisterScopeNode(ctx, actorID, &gen.RegisterScopeNodeRequest{OrgId: orgID, ScopePath: scopePath, Kind: business.ScopeNodeKindCollection, Label: collection.Label}); err != nil {
+				return err
+			}
+		}
+		for _, reader := range collection.Readers {
+			if _, err := service.GrantScope(ctx, actorID, &gen.GrantScopeRequest{OrgId: orgID, ScopePath: scopePath, RoleId: roleID, SubjectId: users[reader], SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL}); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

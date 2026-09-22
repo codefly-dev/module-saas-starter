@@ -1,6 +1,6 @@
 # RFC-0001 — Hierarchical scope via ltree + typed registry
 
-- **Status:** Review (#177) — proposed decisions below, pending sign-off; draft ADR [0002](../9-reference/decisions/0002-hierarchical-scope.md)
+- **Status:** Accepted 2026-09-17 — shipped; the record is ADR [0002](../9-reference/decisions/0002-hierarchical-scope.md)
 - **Created:** 2026-08-19
 - **Serves:** [hierarchical-access](../0-product/stories/hierarchical-access.md) H1–H4; behaviors B4–B6.
 - **Relates to:** RFC-0002 (shares reuse the same resolver), gap analysis gaps 1, 5, 6.

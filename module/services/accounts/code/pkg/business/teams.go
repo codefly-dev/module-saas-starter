@@ -2,19 +2,21 @@ package business
 
 import (
 	"context"
+	"errors"
 
 	"github.com/codefly-dev/core/wool"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// ListTeams returns all teams in an organization.
+// ListTeams returns an organization's teams, or — when req.MemberId is set —
+// only the ones that principal belongs to.
 func (s *Service) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*gen.ListTeamsResponse, error) {
 	w := wool.Get(ctx).In("ListTeams")
 
 	var teams []*gen.Team
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		ts, err := s.store.ListTeams(ctx, req.OrgId)
+		ts, err := s.store.ListTeams(ctx, req.OrgId, req.MemberId)
 		teams = ts
 		return err
 	}); err != nil {
@@ -23,9 +25,21 @@ func (s *Service) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*ge
 	return &gen.ListTeamsResponse{Teams: teams}, nil
 }
 
+// ErrTeamMemberNotInParentOrganization is the single answer for every target
+// the organization has not admitted — a user who does not exist, one who exists
+// but belongs to no organization, one who belongs to a different organization,
+// and one whose membership was retired while the write was in flight. Telling
+// them apart would let a team administrator enumerate the user table.
+var ErrTeamMemberNotInParentOrganization = errors.New("user is not a member of the team's organization")
+
 // AddTeamMember adds a member to a team. The team_id-only request
 // shape forces a team→org resolve under WithControlPlane before entering
 // the tenant-scoped tx that does the actual write.
+//
+// A team membership is a child of an organization membership, so the target's
+// eligibility is settled in the same transaction as the write and under the
+// same lock a membership removal takes. The caller's authority over the team
+// is a separate question, answered by the handler before we get here.
 func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.AddTeamMemberRequest) error {
 	w := wool.Get(ctx).In("AddTeamMember")
 
@@ -35,12 +49,16 @@ func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.Ad
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.AddTeamMember(ctx, req.TeamId, req.UserId, teamRoleToString(req.Role))
+		if err := s.store.LockOrgMembership(ctx, orgID, req.UserId); err != nil {
+			return err
+		}
+		if err := s.store.AddTeamMember(ctx, req.TeamId, req.UserId, teamRoleToString(req.Role)); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamMemberAdded, "team", req.TeamId, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot add team member")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamMemberAdded, "team", req.TeamId, orgID)
 	return nil
 }
 
@@ -68,12 +86,13 @@ func (s *Service) RemoveTeamMember(ctx context.Context, actorID string, req *gen
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.RemoveTeamMember(ctx, req.TeamId, req.UserId)
+		if err := s.store.RemoveTeamMember(ctx, req.TeamId, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot remove team member")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
 	return nil
 }
 
@@ -89,13 +108,14 @@ func (s *Service) UpdateTeam(ctx context.Context, actorID string, req *gen.Updat
 	var team *gen.Team
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		t, err := s.store.UpdateTeam(ctx, req.TeamId, req.Name, req.Description)
+		if err != nil {
+			return err
+		}
 		team = t
-		return err
+		return s.emitTx(ctx, actorID, "user", EventTeamUpdated, "team", req.TeamId, orgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update team")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamUpdated, "team", req.TeamId, orgID)
 	return &gen.UpdateTeamResponse{Team: team}, nil
 }
 
@@ -109,12 +129,13 @@ func (s *Service) DeleteTeam(ctx context.Context, actorID string, req *gen.Delet
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.DeleteTeam(ctx, req.TeamId)
+		if err := s.store.DeleteTeam(ctx, req.TeamId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamDeleted, "team", req.TeamId, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete team")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamDeleted, "team", req.TeamId, orgID)
 	return nil
 }
 

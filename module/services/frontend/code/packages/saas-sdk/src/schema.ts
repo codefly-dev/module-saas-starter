@@ -58,6 +58,11 @@ export interface MetricFilter {
 	event: string;
 	actor?: string;
 	resource?: string;
+	/** Exact resource boundary; requires resource and current read access. */
+	resourceId?: string;
+	collectionId?: string;
+	/** Exact string payload predicates, e.g. run_id or outcome. */
+	payloadContains?: Record<string, string>;
 }
 
 /** A metric computed directly from audit events — one `AggregateAuditLog` query. */

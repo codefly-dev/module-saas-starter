@@ -204,6 +204,10 @@ type memoryWebhookStore struct {
 	current *WebhookSubscription
 }
 
+func (s *memoryWebhookStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {
+	return nil
+}
+
 func (s *memoryWebhookStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
 	return fn(ctx)
 }
@@ -244,6 +248,7 @@ func TestCreateAndRotateWebhookSecretIsEncryptedAndRevealedOnce(t *testing.T) {
 
 	created, err := service.CreateSubscription(
 		t.Context(),
+		AuditActor{ID: "00000000-0000-0000-0000-0000000000a1", Type: ActorTypeUser},
 		"00000000-0000-0000-0000-000000000001",
 		"https://HOOKS.EXAMPLE.COM:443/events",
 		[]string{"user.created"},
@@ -266,7 +271,11 @@ func TestCreateAndRotateWebhookSecretIsEncryptedAndRevealedOnce(t *testing.T) {
 	store.current.SecretReveal = ""
 	oldEnvelope := store.current.SecretEncrypted
 
-	rotated, expiresAt, err := service.RotateWebhookSecret(t.Context(), created.OrgID, created.ID, 24*time.Hour)
+	rotated, expiresAt, err := service.RotateWebhookSecret(
+		t.Context(),
+		AuditActor{ID: "00000000-0000-0000-0000-0000000000a1", Type: ActorTypeUser},
+		created.OrgID, created.ID, 24*time.Hour,
+	)
 	if err != nil {
 		t.Fatalf("RotateWebhookSecret: %v", err)
 	}

@@ -30,6 +30,121 @@
                  Postgres
 ```
 
+## Request identity — real actor vs effective subject
+
+Every layer below asks its question about *a* principal, so there is exactly one
+typed answer to "which principal": `auth.RequestIdentity`
+(`pkg/auth/request_identity.go`). It carries two ids, because authorization and
+accountability are different questions:
+
+| Field | Answers | Used by |
+|---|---|---|
+| `EffectiveSubject` | "whose authority does this request run under?" | tenant membership, scoped roles, resource authority, the user-scoped RLS context (`app.current_user_id`) |
+| `RealActor` | "who is this request attributable to?" | audit (`impersonated_by`), and the platform-authority gates, which withhold platform authority whenever the two differ |
+
+For an ordinary session the two are the same id and nothing needs a special
+case. They diverge only under **impersonation**: `PlatformAdminService.Impersonate`
+mints a token whose `sub` is the admin and whose `acting` claim is the target, so
+a support engineer can act inside a tenant **without joining it** — the
+membership lookup resolves for the target, not for them.
+
+`Delegation` is a third, separate field. The RFC 8693 `act` chain names a service
+acting *on behalf of* the subject and can nest; impersonation names one user an
+admin is *viewing as* and cannot. Neither is an authorization grant on its own.
+
+`ClientID` is a fourth: the registered client the call was made **through**,
+from the access token's `azp` claim, empty for the host's own web session. It
+answers "what did they do it through", which neither id answers, and it grants
+nothing either — `audit_events.client_id` records it, and `QueryAuditLog`
+returns and filters on it, so the two questions stay separately answerable.
+
+### One projection, every transport
+
+The identity is installed only by an authentication interceptor that either
+verified a token locally or verified the gateway credential on a forwarded
+request — never from caller-controlled headers, which are stripped
+(`forwardedIdentityHeaders`) when that credential is absent.
+
+| Path | Source of the pair |
+|---|---|
+| Direct Connect / gRPC bearer | `Identity.UserID` + `Identity.ActingAsUserID` from the verified JWT, and `Identity.ClientID` from its `azp` |
+| Gateway → Connect | `X-User-Id` + `X-Acting-As-User-Id`, and `X-Client-Id` for the client |
+| Gateway → gRPC | `x-user-id` + `x-acting-as-user-id`, and `x-client-id` for the client |
+| Gateway → REST | the same headers, carried across the grpc-gateway transcoding hop by `restIdentityHeaderMatcher`, then projected by the Connect interceptor |
+| Billing HTTP extensions | the same two paths as Connect |
+
+All of them converge on `stampRequestIdentity`, which makes the **effective
+subject** the wool principal and the verified database scope. `requireAuth` and
+`callerID` therefore return the effective subject, and `buildAuditEntry` reads
+the real actor off the same typed identity. A forwarded acting-as value that
+does not parse is refused (`PermissionDenied`) rather than admitted as "not
+impersonating", which would silently run the request with the admin's own
+authority. A forwarded client id that is not a registered client's is refused
+the same way, rather than dropped: dropping it would record a client's call as
+one made from the host's own session.
+
+### What impersonation deliberately does not grant
+
+- **No platform authority, in either direction.** `platformRole` (adapters) and
+  `Service.requirePlatformRole` (business) both resolve to nothing while a
+  request is impersonated. The target's platform grants are not the admin's to
+  borrow, and the admin's own grants do not follow them into someone else's
+  session — including the `super_admin` bypass inside `requireOrgAdmin`,
+  `requireBillingAdmin` and `requireTeamAdmin`.
+- **No nesting.** `Impersonate` sits behind that same platform gate, so an
+  impersonated session cannot mint a further impersonation token.
+- **One exception, and only one.** `StopImpersonation` ends the caller's own
+  session, so it cannot sit behind a gate that resolves nothing while
+  impersonating — that would leave the session no way out. Being impersonated is
+  its authorization, and it takes no target: the session it ends comes from the
+  verified identity. It revokes the window's row, which is what every "is this
+  window open" reader consults, and records
+  `saas.platform.user_impersonation_ended` on the same transaction. The
+  access-token marker is written alongside but cannot fail the stop, and whether
+  it took effect is carried on both the response and the record — without a
+  revocation store wired, nothing can invalidate an outstanding access token
+  before its own expiry, and a close that claimed otherwise would overstate what
+  it achieved.
+- **No method the descriptor withholds.** A method policy may declare
+  `impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN`, which the RPC policy
+  interceptor refuses on the same predicate before the handler runs. Read the
+  current set off the `impersonation=FORBIDDEN` guard in `AUTHZ_MATRIX.md`,
+  which is generated from the descriptors the interceptor reads. An undeclared
+  requirement allows, so the restriction is always visible beside the RPC it
+  governs, and dropping one is a widening the no-broadening gate reports.
+
+  The admission criterion is **what outlives the session or changes who may act
+  later**, which covers four families: authentication factors and identity
+  linkage (`AddIdentity`, the MFA enrolment and backup-code RPCs) because they
+  survive the window and the target's own password reset; durable credentials
+  and delivery channels (API keys, agent principals, webhook subscriptions and
+  secrets, work-context tokens); grants of authority (roles, scopes, shares,
+  org and team membership, invitations); and destruction or reconfiguration of
+  the principal itself (`DeleteUser`, `RequestDeletion`, SSO setup and disable).
+
+  Reading tenant *content* is what impersonation is for, so ordinary content
+  mutation stays available — a support engineer can still fix a dashboard, a
+  datasource or an onboarding step while acting as the user. The dividing line
+  is authority and credentials, not write-versus-read. `StopImpersonation` is
+  deliberately outside the set for the reason given above: a restriction on the
+  exit would strand the session until its token expired.
+- **No inactive target.** The target must be an active account, so a support
+  session cannot outlive the account's own lifecycle.
+- **A short, separately capped lifetime.** `Config.ImpersonationTokenTTL` caps
+  the access token independently of the ordinary TTL — exiting impersonation
+  means falling back to the admin's own session, which impersonation never
+  touched.
+- **No refresh half, and no way to acquire one.** `prepareMint` generates no
+  refresh token when the identity names an impersonated user, so none is
+  returned and none is stored: `sessions.refresh_token_hash` is NULL on that
+  row, and `refresh_token_hash = $1` never matches NULL, so no forged or
+  replayed hash reaches it. `acting_as_user_id` carries the same fact in the
+  schema — a CHECK ties the two, and `ExchangeOrganization` refuses such a row
+  rather than reissuing from it at the ordinary lifetime. The row's
+  `expires_at` and `idle_expires_at` are the token's, not the session policy's,
+  so it leaves `ListActiveSessions` when the window closes and is labelled as
+  impersonation while it is open rather than shown as a login.
+
 ## Layer 1 — Policy gates (handler-level)
 
 **Where:** `pkg/adapters/auth.go`, `pkg/adapters/connect_auth_interceptor.go`,
@@ -151,7 +266,7 @@ A request to `webhookConnectHandler.DeleteSubscription(orgID, subID)`:
 | L1 Policy gates | (`requireMFA` for rotate-secret only) |
 | L2 Permissions | `CheckPermission(actor, "webhooks", "write", orgID)` *if RBAC is more granular than the org-admin check* |
 | L3 RLS | `WithOrgTx(ctx, orgID, …)` → DELETE WHERE id = subID. RLS lets it through only if the row's org_id matches. |
-| Audit emit | `webhook.deleted` written to audit_events |
+| Audit emit | `saas.webhook.deleted` written to audit_events **in the delete's own transaction** — a failed audit write aborts the delete |
 
 If any single layer is wrong, the others still hold:
 
@@ -166,12 +281,339 @@ If any single layer is wrong, the others still hold:
 | New Store method developer forgets `WHERE org_id` | L3 |
 | Cross-tenant lookup via swapped variable | L3 |
 
+## Audit durability: what a recorded event does and does not prove
+
+Every registered audit event declares a **durability** alongside its category
+(`module/services/accounts/code/pkg/business/audit_registry.go`):
+
+- **transactional** — the event records a privileged write (a membership, role,
+  scope or share change; an API key, MFA factor, principal, installation,
+  webhook configuration or credential mint; a platform-admin action). Its audit
+  row and its webhook fan-out are written on the transaction the caller's
+  success depends on, so the record and the change commit together and a failed
+  audit write fails the operation.
+- **observational** — the event records something no domain transaction owns: an
+  authentication outcome, a read, or an outcome produced by an external provider.
+  It is written on the emitter's own transaction precisely so it survives a
+  rolled-back domain write.
+
+Two consequences are worth stating plainly, because they are easy to assume the
+other way round:
+
+- A method policy's `emits_audit` descriptor (and the "Audit" column of the RPC
+  matrix) is a **declaration of intent** from the policy, not evidence that the
+  event was committed durably with the mutation. The durability classification
+  and the gate below are what carry that.
+- A tenant-scoped transaction is the only scope that can enqueue tenant outbox
+  work (migration 72/75), so a security mutation whose fan-out must reach an
+  org's endpoints runs in that org's transaction rather than under the control
+  plane.
+
+`TestAuditDurability_EmitSitesMatchTheirClassification` reads this package's own
+source and fails the build when a transactional event is emitted through the
+fire-and-forget path, or an observational one through the transactional path.
+`TestAuditDurability_NoBypassOfTheClassifiedEmitPath` fails it when an audit row
+is written without going through either, by calling the store directly. Sites a
+classification cannot reach are listed, with a reason, in `auditEmitExemptions`
+— a named hole, not a waiver.
+
+What the pair does **not** do is detect a privileged write that records nothing
+at all; that needs an inventory of privileged writes, which does not exist. They
+catch an event on the wrong path, and a write that skips the paths entirely.
+
 The worker paths (audit-exporter goroutine, webhook dispatcher,
-billing reconciler, migration runner, platform-admin endpoints) bypass
-L3 deliberately by setting `app.bypass = '1'`. They run unauthenticated
-inside the api process — they're trusted by L1 implicitly. The L3
-bypass is itself audit-able: every WithBypass call logs a wool event,
-making it grep-able.
+billing reconciler, migration runner, platform-admin endpoints) cross scopes
+deliberately, through `WithControlPlane`. There is no application-settable
+bypass: the historical `app.bypass = '1'` setting is gone, and crossing scopes
+now means assuming a *different database role* (`app_control_plane`, `SET LOCAL
+ROLE`) with its own explicit grants, which a request transaction has no way to
+reach. Each entry is recorded (`recordControlPlane`), so the crossings are
+countable rather than merely greppable.
+
+## Removing an organization member: deleted vs. rendered ineffective
+
+Organization membership is the root of a member's authority in a tenant, and
+several relations hang off it. `RemoveOrgMember`
+(`module/services/accounts/code/pkg/business/organizations.go`) deletes exactly
+one of them and deliberately leaves the rest alone. The distinction is whether
+the relation can still produce an **allow** decision once the
+`organization_members` row is gone:
+
+| Relation | On removal | Why |
+| --- | --- | --- |
+| `team_members` | **Deleted**, in the same transaction | Permission resolution matches team-subject role assignments through `subject_id IN (SELECT team_id FROM team_members WHERE user_id = ...)`. A surviving row keeps producing allow decisions on its own, so it is retained authority, not residue. |
+| `role_assignments` (org-scoped, user subject) | Retained | `requireOrgPermission` checks `requireOrgMember` **before** `CheckPermission`, so an assignment held by a nonmember can never be reached. Deleting it would also destroy the intent an operator expressed, which a rejoin should not have to reconstruct. |
+| `installations` (owner of record, co-owners) | Retained | `firstEligibleOwner` / `isCurrentOrgAdmin` (`pkg/infra/postgres_installations.go`) derive owner eligibility from live `organization_members` on every read. A departed owner fails the installation closed and hands it to a co-owner or to nobody; the row is the accountability record, and erasing it would erase who was responsible. |
+| Sessions and cached membership | Invalidated | Migration 78's row-level triggers bump the authorization revision for every deleted `organization_members` and `team_members` row, which invalidates the member's sessions. The org-membership cache entry is dropped after commit. |
+
+Two properties make the retentions safe to state rather than merely assume, and
+both are tested: the team-admin helper denies a verified nonmember before it
+ever reads a team row, and a removed-then-reinvited member returns with no team
+privileges because the rows were deleted, not deactivated.
+
+The dependent delete is one set-based statement on the removal's own
+transaction, so a failure aborts the removal rather than leaving a partially
+unwound member behind. It is deliberately row-level (`DELETE ... USING teams`,
+not a statement-level path) so the revision-bump trigger still fires per removed
+membership.
+
+### Diagnosing and repairing historical orphans
+
+Rows written before the cleanup became transactional can still exist. They are
+inert against the helper above, but they are visible in team rosters and they
+keep matching team-subject role assignments for any caller that resolves
+permissions without a membership precondition, so they are worth clearing
+deliberately rather than sweeping up on the next removal.
+
+Diagnose first — this is read-only and safe to run on a live database:
+
+```sql
+SELECT t.org_id, tm.team_id, tm.user_id, tm.role, tm.joined_at
+FROM team_members tm
+JOIN teams t ON t.id = tm.team_id
+LEFT JOIN organization_members om
+       ON om.org_id = t.org_id AND om.user_id = tm.user_id
+WHERE om.user_id IS NULL
+ORDER BY t.org_id, tm.joined_at;
+```
+
+Repair is the same predicate as a `DELETE`, run per organization after the
+diagnostic output has been reviewed:
+
+```sql
+DELETE FROM team_members tm
+USING teams t
+WHERE tm.team_id = t.id
+  AND t.org_id = :org_id
+  AND NOT EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.org_id = t.org_id AND om.user_id = tm.user_id
+  );
+```
+
+Run it as the schema owner (both relations are RLS-protected and the repair is
+cross-tenant by nature), one organization at a time, so the row-level revision
+trigger fires per deleted membership and the affected users' sessions are
+invalidated. Do not fold this into application startup or into the removal path:
+a background sweep that deletes authority rows on its own is a larger hazard
+than the orphans it collects.
+
+## Administrative continuity, and what `organizations.owner_id` is not
+
+An organization that has an administrative membership keeps one. That is the
+whole invariant, and it is one rule rather than one rule per verb: removing the
+last owner/admin and demoting the last owner/admin are the same violation and
+return the same error, `business.ErrOrgAdminContinuity`.
+
+`business.OrgAdminContinuity` states it once, over a roster and a proposed
+change (`""` projects a removal). Every writer of `organization_members`
+evaluates it:
+
+| Entry point | Where | Can change administrative eligibility |
+| --- | --- | --- |
+| `Service.AddOrgMember` | `pkg/business/organizations.go` | Yes — it is an upsert. `ON CONFLICT DO UPDATE SET role` makes it the demotion path, and its seat check deliberately admits an update on a full organization, so nothing else was stopping it. |
+| `Service.RemoveOrgMember` | `pkg/business/organizations.go` | Yes |
+| `Service.ConvergeFixtureOrgMember` | `pkg/business/organizations.go` | Yes. Seeding only adds, so a well-formed fixture never sees the rule; one that would demote an organization's last administrator fails the boot rather than converging an organization nobody can administer. |
+| `Service.AcceptInvitation` | `pkg/business/invitations.go` | Yes — the invitation's role is authoritative and overwrites a membership the accepting user already holds. |
+| `Resolver.acceptInvitation` | `pkg/auth/pg/resolver.go` | Yes, and it is the one outside the service layer: a raw membership upsert at *authentication* time. An invariant enforced only in `pkg/business` would not exist here. It reads `FOR UPDATE` — see below. |
+| Whole-organization deletion | none in the application | No path in the service deletes an organization. A `DELETE FROM organizations` removes the memberships by `ON DELETE CASCADE` without passing through any of the above, so the invariant does not stand in the way of deleting an organization — it constrains membership mutation on a live one. |
+
+### Eligible means the identity can still act
+
+An administrator who cannot authenticate administers nothing. `findIdentity`
+admits only `status = 'active'` and returns `ErrAccountInactive` otherwise, and
+`DeleteUser` is a *soft* delete that leaves the `organization_members` row
+standing. Counting every administrative row would therefore let the last usable
+administrator be removed while the invariant reported the organization healthy,
+so eligibility is `role IN ('owner','admin') AND users.status = 'active'`.
+
+Request traffic cannot read a co-member's `users` row (migration 69), so tenant
+code resolves that through `organization_eligible_administrators`, a
+`SECURITY DEFINER` function owned by `app_control_plane` and scoped to the
+caller's own organization (migration 133). This is not a convenience: a direct
+join under `app_tenant` returns **zero** rows, and zero administrators reads as
+"this organization never had one", which the rule exempts — the failure mode
+silently disables the invariant instead of tightening it. Control-plane
+transactions set no tenant org and hold `BYPASSRLS`, so they evaluate the same
+predicate directly.
+
+### A change that keeps the target administrative skips the lock
+
+`OrgAdminContinuity` can only reject when the target ends up non-administrative,
+so a promotion or an administrator-role invitation is settled from the argument
+alone and never touches the organization-wide lock. That is a property of the
+input, not of concurrently mutable state, which is what makes it safe: not
+holding the lock can only make a concurrent check miss the new administrator and
+be *more* conservative, never less. The corollary is that a demotion or removal
+in a busy organization does serialize org-wide — that is the cost of the
+invariant being an organization-wide fact.
+
+An organization that has **no** eligible administrator to begin with is exempt. The rule
+refuses to remove the last administrator; it does not refuse to operate on an
+organization that already has none. Enforcing the stronger form would make
+historical zero-administrator rows unrepairable — including by an operator
+adding an administrator back. Those rows are reported, not invented: see the
+membership integrity diagnostic rather than granting anyone authority from a
+migration.
+
+### The lock is the load-bearing part
+
+Reading the roster inside a transaction does not serialize it. Two transactions
+in `READ COMMITTED` — what `WithOrgTx` opens — can each observe the same two
+administrators and each remove one, and both commit. The guard has to run under
+a lock that both contenders take, on a key that both contenders name.
+
+`Store.LockOrgAdministration(ctx, orgID)` is that key
+(`pg_advisory_xact_lock` over `administration:<org>`). It is deliberately
+coarser than `LockOrgMembership(ctx, orgID, userID)`: the invariant is a
+property of the organization, so a per-member key puts the two transactions
+that violate it on *different* keys and serializes nothing. The per-member lock
+still exists and still does its own job — excluding a concurrent team write for
+the same pair — so a path may hold both.
+
+**Lock order, for anything that takes more than one:**
+
+```
+LockOrgAdministration   ("administration:<org>")
+  -> LockOrgMembership  ("membership:<org>:<user>")
+    -> LockEntitlementQuota  ("cardinality:<org>:<feature>")
+```
+
+`AddOrgMember` holds the first and third; `RemoveOrgMember` holds the first and
+second. All three are `pg_advisory_xact_lock(hashtextextended(...))` in
+PostgreSQL's single-`bigint` advisory space, distinct from the `(int, int)`
+space scope-node registration uses. Take them in that order and there is no
+cycle to deadlock on.
+
+The pre-authentication resolver takes the same `administration:<org>` key
+directly on its own transaction, so it serializes against the service layer
+rather than only against itself — but the lock alone is **not** sufficient
+there, and this is the subtle part.
+
+That transaction is `SERIALIZABLE`, and its snapshot is fixed by the invitation
+lookup *before* the advisory lock is taken. Acquiring a lock does not refresh a
+snapshot. So a plain read, having waited politely for the lock, still reports
+the administrators as of before the contender that has since committed — and
+admits exactly the demotion the guard exists to refuse. SSI does not cover it
+either: PostgreSQL tracks rw-conflicts only between `SERIALIZABLE`
+transactions, and the service layer's writers are `READ COMMITTED`, so no
+serialization failure is ever raised.
+
+The resolver therefore reads its administrators `FOR UPDATE`. A concurrently
+removed or demoted administrator then raises `serialization_failure` on the
+locked row, which `WithAuthBootstrapTx` retries on a fresh snapshot. Only the
+membership rows are locked, not `users`: this is the authentication path, and
+locking identities would put invitation redemption in contention with every
+concurrent write to the same users.
+
+### Deactivating an identity is the same invariant, from the other side
+
+Nothing above writes `organization_members` when an identity is deactivated.
+`Service.DeleteUser` is a soft delete and `Service.SuspendUser` a status change;
+both leave every administrative membership row standing while `findIdentity`
+stops admitting the identity at all. Eligibility is what changes, and it changes
+for every organization the identity administers at once — so the decision is not
+a single-organization guard and cannot be expressed as one.
+
+`Service.organizationsStrandedByDeactivation` is that decision. It lists the
+organizations in which the identity is itself an eligible administrator
+(`Store.ListAdministeredOrganizations`), takes each one's `administration:<org>`
+lock in ascending organization id, and **re-reads until the roster comes back
+unchanged with every organization in it already locked** — only then does it
+decide. The locks are held for the rest of the transaction that writes the
+status, which is what serializes a deactivation against a concurrent removal or
+demotion in any of the same organizations.
+
+**One pass is not enough, and the reason is the promotion exemption above.** A
+promotion takes no administration lock, so the identity can be made an
+administrator of an organization the loop has already read past. Deciding on an
+organization whose lock is not held admits exactly the interleaving the lock
+exists to stop: the promotion lands, a demotion in that same organization counts
+this identity — still active, because the deactivating transaction has not
+committed — and commits, and the deactivation then commits on top and leaves the
+organization with nobody. Looping until the locked set covers the roster closes
+it, because the demotion then waits on a lock the deactivation holds and
+re-counts afterwards. `TestPromotionRacingDeactivationCannotStrandAnOrganization`
+places both steps between specific reads rather than racing for them.
+
+The lock order is established in the loop rather than inherited from the query,
+because it is the loop that depends on it. A pass that discovers an organization
+sorting below one already held does acquire out of that order — unavoidable,
+since a transaction-scoped advisory lock cannot be released and retaken — so two
+deactivations that discover each other's organizations mid-loop can deadlock.
+PostgreSQL detects that and aborts one loudly, which is the failure to prefer
+over the silent stranding it replaces, and it takes a promotion landing inside
+both loops to reach at all.
+
+**Stranded takes two conditions, and the second is the point of the rule rather
+than a softening of it** (`OrgAdministration.StrandedByDeactivating`): the
+identity is the organization's only eligible administrator, **and** somebody
+else in that organization can still authenticate. `RegisterUser` gives every
+identity a personal organization it solely owns, so counting administrators
+alone would refuse every deletion on this platform — an ordinary member's
+included. What the invariant protects is the members who would be left in an
+organization nobody can administer, so it asks whether there are any. An
+organization nobody else is in is left empty, not unadministrable.
+
+A user-scoped transaction can resolve none of this on its own:
+`organization_members` is scoped to `app.current_org_id`, which a deactivation
+does not set, and `users` is readable only for the caller's own row. Both fail
+*silently* — zero rows, no error — and "administers nothing" is exactly the
+answer that lets the deactivation through. So request traffic resolves it through
+`identity_administered_organizations`, a `SECURITY DEFINER` function owned by
+`app_control_plane` and scoped to the caller's **own identity** (migration 137),
+and a transaction that has assumed `app_control_plane` evaluates the same
+predicate directly. `ListAdministeredOrganizations` branches on which of the two
+it is in and refuses a transaction that is neither, rather than returning the
+empty answer. It decides that on the **assumed role**, not on `rolbypassrls`:
+the managed profile makes every runtime role `NOBYPASSRLS` (migration 136), so
+an attribute test would refuse every platform-administered deactivation there
+while passing on every profile that still grants it.
+
+**The two entry points differ in what they do with the result, deliberately:**
+
+| Entry point | Disposition |
+| --- | --- |
+| `Service.DeleteUser` | **Refused** — `business.ErrIdentityAdminContinuity`, carried by `IdentityAdminContinuityError`, which names the organizations and maps to `FailedPrecondition`. Offboarding an administrator is a handover first and a deletion second, and the caller is told which organizations are waiting on one. |
+| `Service.SuspendUser` | **Permitted, and recorded.** Suspension is how a compromised account is contained; an invariant about who can administer an organization must not be the reason a credential in somebody else's hands stays live. The stranded organizations go onto the `user.suspended` audit event as `organizations_without_administrator` and into the operator notification. The locks are still taken — they are what makes the recorded list the one that actually committed. |
+
+Reactivation (`Service.UnsuspendUser`) can only raise an eligible-administrator
+count, so it is settled from its argument like a promotion and takes no lock.
+
+**What this does not cover, and cannot.** In-tree, `users.status` is written in
+exactly two places — `PostgresStore.DeleteUser` behind `Service.DeleteUser`, and
+`PostgresStore.UpdateUserStatus` behind `SuspendUser`/`UnsuspendUser` — and both
+go through the guard. `PrivacyWorkflow.Delete` (`pkg/business/gdpr.go`) is the
+exception: the interface is implemented by the host, not here, so an
+implementation that deactivates the identity itself bypasses this entirely, and
+erasure is precisely where an organization's sole administrator is most likely to
+go. The guard is deliberately **not** applied around that call. Erasure runs on
+durable leases with a retry-and-fail ladder, so a precondition refusal there
+would consume attempts and land a legally mandated request in `GDPRFailed`,
+blocked on an unrelated organization's staffing. A host integrating a privacy
+workflow owns that decision and should make the handover before the erasure,
+rather than discover the invariant from a failed job.
+
+### `organizations.owner_id` is provenance, not authority
+
+`owner_id` is the owner of record. It is written exactly once, when the
+organization is created, and it is read for display and to address the billing
+contact. **No authorization decision anywhere derives from it** — every one
+resolves against `organization_members`. Installation ownership eligibility,
+organization permission checks, and the admin gates all read the live
+membership row.
+
+So: **ownership transfer is not required before the owner of record is removed
+or demoted**, and the two are deliberately not reconciled. Demoting the owner of
+record strips their authority immediately, because their authority was never in
+`owner_id` to begin with; `owner_id` keeps recording who created the
+organization, which is a fact about the past that a role change does not make
+untrue. Silently repointing it at another member would move a record of
+accountability to someone who never accepted it, and doing the reverse — making
+`owner_id` confer authority — would grant a permission no one granted.
+
+The two can therefore disagree on live data, and that disagreement is reported
+by the membership integrity diagnostic rather than repaired in place.
 
 ## Scoped roles downstream: two paths, and when to use which
 
@@ -265,9 +707,18 @@ answer is unacceptable.
 |---|---|
 | L1 Policy gates | ✅ Live. All admin RPCs gated. Webhook + api-key handlers added scope checks 2026-04-26. |
 | L2 Permissions | ✅ Live. `CheckPermission` + RBAC tables. Wildcard + team inheritance. |
-| L3 RLS | ✅ Live across **all** per-tenant tables, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. `WithOrgTx` / `WithBypass` helpers, `app_tenant` role. 11 integration tests prove cross-tenant blocking + fail-closed-on-unwrapped across direct-org, JOIN, polymorphic, and self-referential policies. |
+| L3 RLS | ✅ Live across **all** per-tenant and per-user relations, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. `WithOrgTx` / `WithUserTx` / `WithControlPlane` helpers, `app_tenant` and `app_control_plane` roles. Integration tests prove cross-tenant blocking + fail-closed-on-unwrapped across direct-org, JOIN, polymorphic, and self-referential policies. The authoritative relation inventory is [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md). |
 
 ### RLS coverage (table → migration)
+
+**Historical adoption record.** This table records how the first policies were
+rolled out, migration by migration, and is kept for that history. It is *not*
+the current inventory and has not been maintained as one — `audit_export_configs`
+below was dropped by store migration 102, and `usage_records` was replaced by
+`usage_events` + `usage_totals` in `60_usage_metering`. For what is protected
+today, read the scope inventory in
+[module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md), which is held to
+the executable inventory by a test.
 
 | Table | Policy shape | Migration |
 |---|---|---|
@@ -278,19 +729,23 @@ answer is unacceptable.
 | `org_settings`, `invitations`, `organization_members`, `subscriptions`, `entitlement_overrides`, `usage_records` | direct org_id | 29 |
 | `teams` | direct org_id | 30 |
 | `team_members` | JOIN via teams | 30 |
-| `audit_events` | polymorphic (nullable org_id; NULL only via bypass) | 31 |
+| `audit_events` | polymorphic (nullable org_id; NULL-org rows readable only under the control plane, and writable by it or by the user-scoped transaction whose own `actor_id` they carry) | 31, 122 |
 | `roles`, `role_assignments` | polymorphic (built-ins NULL globally readable) | 32 |
 | `organizations` | self-referential (id matches setting) | 33 |
 | `org_identity_providers` | direct org_id (pre-auth discovery via control-plane) | 92 |
 
-### Skip-list (intentionally NOT RLS-protected)
+### Skip-list — superseded
 
-| Table | Why |
-|---|---|
-| `users` | Global lookup needed for cross-org auth flows; `WHERE user_id = $1` filters at the SQL layer. |
-| `plans`, `plan_entitlements`, `feature_flags` | Global catalogs; no tenant data. |
-| `oauth_state`, `refresh_tokens`, `mfa_devices`, `notifications` | User-scoped, not tenant-scoped. A symmetric `WithUserTx` + `app.current_user_id` GUC would close the symmetric defense, but the existing `WHERE user_id = $1` filters already provide the primary safety property. Lower priority. |
-| `role_permissions` | Child of `roles` (FK role_id). A JOIN-via-role policy would be redundant — the rows are not tenant-secret data. |
+The user-scoped half of this list is gone: `users`, `mfa_devices`,
+`notifications`, `sessions` and their siblings carry forced RLS policies today
+and enter through `WithUserTx` (`app.current_user_id`), so `WHERE user_id = $1`
+is no longer the safety property. `oauth_state` and `refresh_tokens` no longer
+exist at all. `role_permissions` gained a parent-visibility policy in
+`65_role_permissions_rls`.
+
+What remains outside RLS is the global catalog scope, and only that. It is
+listed — with every other relation and its required boundary — in
+[module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md).
 
 ## How the role-downgrade works
 
@@ -306,25 +761,27 @@ changing codefly's Postgres plugin:
                                                      │
                               ┌──────────────────────┤
                               ▼                      ▼
-                       ┌─────────────┐         ┌─────────────┐
-                       │ WithOrgTx   │         │ WithBypass  │
-                       └─────────────┘         └─────────────┘
-                              │                      │
-                              ▼                      ▼
-              SET LOCAL                  SET LOCAL ROLE NONE
-              app.current_org_id = X     (revert to session_user
-              (still app_tenant —         = the original superuser
-               policy filters by org)     for this tx)
+                       ┌─────────────┐         ┌──────────────────┐
+                       │ WithOrgTx   │         │ WithControlPlane │
+                       │ WithUserTx  │         └──────────────────┘
+                       └─────────────┘                │
+                              │                       ▼
+                              ▼            SET LOCAL ROLE app_control_plane
+              SET LOCAL                    (a named role with BYPASSRLS and
+              app.current_org_id = X        its own explicit grants — NOT
+              app.current_user_id = U       the session superuser)
+              (still app_tenant —
+               policy filters by scope)
 
-                              ↓                      ↓
-                       RLS applies            RLS bypassed
-                       fail-closed            (intentional)
+                              ↓                       ↓
+                       RLS applies             RLS bypassed by role
+                       fail-closed             (audited, grant-limited)
 ```
 
 `BeforeAcquire` runs on every connection checkout — every operation
 the api performs (request-path or worker) starts as `app_tenant`.
-`WithOrgTx` adds the org filter; `WithBypass` elevates back to
-session_user via `SET LOCAL ROLE NONE` for the tx duration. Both
+`WithOrgTx` and `WithUserTx` add the scope filter; `WithControlPlane` assumes
+`app_control_plane` via `SET LOCAL ROLE` for the tx duration. All three
 unwind on commit/rollback. `AfterRelease` does `RESET ROLE` as a
 safety net before the connection returns to the pool.
 
@@ -380,8 +837,8 @@ into the L2 tables without forking migrations, using the catalog importer.
 - **Provenance bounds deletion.** Only `roles.catalog_managed = true` rows are
   removal candidates; a catalog that doesn't mention `admin`/`editor`/`viewer`
   leaves them alone. Org-defined custom roles (`org_id` set) are never touched.
-- **One `system`-actor audit event per applied change** (`role.created` /
-  `role.updated` / `role.deleted`, `org_id` NULL), stamped with the catalog's
+- **One `system`-actor audit event per applied change** (`saas.role.created` /
+  `saas.role.updated` / `saas.role.deleted`, `org_id` NULL), stamped with the catalog's
   SHA-256 (`catalog_sha256`) and source label (`catalog_source`) so a change is
   traceable to the exact catalog version that produced it.
 
@@ -398,7 +855,7 @@ into the L2 tables without forking migrations, using the catalog importer.
 
 ### Workflow
 
-Built-in roles can only be written with RLS bypassed (migrations 32, 65), so the
+Built-in roles can only be written with RLS bypassed (the store baseline forces it), so the
 importer runs under the audited `app_control_plane` role. The connection
 principal must be a member of that role (the same authority migrations run
 under).
@@ -483,9 +940,27 @@ runs. It carries no repository, revision, or Argo resource.
 - **Don't forget WithOrgTx on per-tenant Store calls** once policies
   are live. Missing one returns zero rows in production — fail-closed
   but invisible. Catch with cross-tenant tests per Store method.
-- **Don't WithBypass casually.** Every bypass is a layer-skip;
-  legitimate cases are workers + platform admin only. Greppable
-  audit log: `wool.Get(ctx).In("WithBypass").Info(...)`.
+- **Don't WithControlPlane casually.** Every crossing is a layer-skip;
+  legitimate cases are workers + platform admin only. Each call is counted
+  (`recordControlPlane`), and `app_control_plane` holds only the grants it was
+  given — so a careless crossing is visible and still bounded.
 - **Don't omit the empty-orgID guard.** WithOrgTx rejects "" — this
   is the load-bearing check that prevents a missing-context bug from
   silently matching the empty tenant.
+
+### Forwarded Work Context record decisions
+
+`ModuleCapabilitiesService.CheckWorkContextRecordAccess` is the internal,
+read-only exact-record companion to the subject-taking administrative oracle.
+It verifies one signed viewer Work Context, derives tenant/owner/all actors,
+checks the audience's declared resource type and the SDK's attenuated
+kind/action/record scope, and rechecks current authorization revision and every
+actor-chain hop's revocation. Delegated calls require the durable chain journal.
+
+Every subject must pass the existing `CheckAccess` resolver for the record's true
+placement within one tenant read snapshot. The allowed response carries the
+actual placed node ID; denied or unplaced records disclose no placement. An
+internal token, a caller-provided subject, or a caller-selected scope path cannot
+replace viewer authority. The caller can project a bounded installed set by
+checking its exact owned resource IDs; this RPC does not enumerate other records
+or create a new permission vocabulary. `PlaceRecord` remains installation-owned.

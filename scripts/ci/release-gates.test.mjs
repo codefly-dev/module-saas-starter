@@ -1,0 +1,1535 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import {
+  actionCommentErrors,
+  actionPinErrors,
+  activeRepositories,
+  AFFECTED_SCOPED_GATES,
+  AGGREGATE_JOB,
+  branchGating,
+  fleetLines,
+  gatingVerdict,
+  ghFailure,
+  repositoryFacts,
+  exemptedGates,
+  REQUIRED_GATES,
+  isReleaseTag,
+  needsClosure,
+  publicationReasons,
+  publicationVerdictErrors,
+  contextDrift,
+  mergeQueueContractErrors,
+  QUEUED_CONTEXTS,
+  REQUIRED_CONTEXTS,
+  releaseGateContractErrors,
+  releaseGateGraphErrors,
+  unreportedContextErrors,
+} from "./release-gates.mjs";
+import { parseWorkflowYaml } from "./workflow-yaml.mjs";
+
+const REPOSITORY_ROOT = join(import.meta.dirname, "..", "..");
+const CI_WORKFLOW = join(REPOSITORY_ROOT, ".github", "workflows", "ci.yml");
+
+test("dependency remediation can dispatch the required CI workflow", () => {
+  const audit = parseWorkflowYaml(readFileSync(join(REPOSITORY_ROOT, ".github/workflows/dep-audit.yml"), "utf8"));
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  assert.equal(audit.permissions.actions, "write");
+  assert.ok(Object.hasOwn(ci.on, "workflow_dispatch"));
+});
+
+test("dependency remediation dispatches CI after new and updated PRs, and propagates failures", () => {
+  const audit = parseWorkflowYaml(readFileSync(join(REPOSITORY_ROOT, ".github/workflows/dep-audit.yml"), "utf8"));
+  const script = audit.jobs.remediate.steps.find(step => step.name === "Open or update the remediation pull request").run;
+  const stubs = `
+    git() {
+      if [[ "$1" == diff ]]; then return "$DIFF_STATUS"; fi
+      echo "git $*"
+    }
+    node() { echo "node $*"; }
+    gh() {
+      if [[ "$1 $2" == "pr list" ]]; then
+        echo "$EXISTING_PR"
+      else
+        echo "gh $*"
+        if [[ "$1" == workflow ]]; then return "$DISPATCH_STATUS"; fi
+      fi
+    }
+  `;
+  for (const existing of ["", "123"]) {
+    for (const changed of [false, true]) {
+      for (const dispatchStatus of [0, 17]) {
+        const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", stubs + script], {
+          encoding: "utf8",
+          env: { ...process.env, DIFF_STATUS: changed ? "1" : "0", EXISTING_PR: existing, DISPATCH_STATUS: String(dispatchStatus) },
+        });
+        assert.equal(result.status, changed ? dispatchStatus : 0, result.stderr);
+        const lines = result.stdout.trim().split("\n");
+        const dispatch = "gh workflow run ci.yml --ref chore/dep-audit-remediation";
+        assert.equal(lines.filter(line => line === dispatch).length, changed ? 1 : 0);
+        assert.equal(lines.some(line => line.startsWith("gh pr create ")), changed && !existing);
+        if (changed) {
+          assert.ok(lines.indexOf("git push --force origin chore/dep-audit-remediation") < lines.indexOf(dispatch));
+          if (!existing) assert.ok(lines.findIndex(line => line.startsWith("gh pr create ")) < lines.indexOf(dispatch));
+        }
+      }
+    }
+  }
+});
+
+const MODULE_TAG = "refs/tags/module-package/v1.2.3";
+const DEPLOY_TAG = "refs/tags/v0.0.99";
+const BRANCH = "refs/heads/main";
+
+// `toJSON(needs)` for a run where everything the aggregate depends on passed.
+function allSucceeded(overrides = {}) {
+  const results = {};
+  for (const gate of REQUIRED_GATES) results[gate] = { result: "success", outputs: {} };
+  results["codefly-plan"].outputs = { has_work: "true", all: "true" };
+  return { ...results, ...overrides };
+}
+
+// The plan job as it reports a run with no affected service: an explicit
+// has_work=false, and (off a release tag) a delta-scoped selection.
+const scopedOutPlan = { result: "success", outputs: { has_work: "false", all: "false" } };
+
+// ---------------------------------------------------------------------------
+// decide — the aggregate job's runtime verdict
+// ---------------------------------------------------------------------------
+
+test("a complete successful run authorizes publication on both tag tracks", () => {
+  for (const ref of [MODULE_TAG, DEPLOY_TAG, BRANCH]) {
+    assert.deepEqual(publicationVerdictErrors({ results: allSucceeded(), ref }), []);
+  }
+});
+
+test("a failed, cancelled, or skipped authz-coverage blocks publication", () => {
+  for (const result of ["failure", "cancelled", "skipped"]) {
+    for (const ref of [MODULE_TAG, DEPLOY_TAG, BRANCH]) {
+      const results = allSucceeded({ "authz-coverage": { result, outputs: {} } });
+      assert.deepEqual(publicationVerdictErrors({ results, ref }), [`authz-coverage: ${result}`]);
+    }
+  }
+});
+
+test("every mandatory gate blocks publication on its own", () => {
+  for (const gate of REQUIRED_GATES) {
+    for (const result of ["failure", "cancelled", "skipped"]) {
+      const results = allSucceeded({ [gate]: { result, outputs: {} } });
+      const errors = publicationVerdictErrors({ results, ref: MODULE_TAG });
+      assert.deepEqual(errors, [`${gate}: ${result}`], `${gate} ${result} must block`);
+    }
+  }
+});
+
+test("a gate dropped from the aggregate's needs blocks publication", () => {
+  const results = allSucceeded();
+  delete results["authz-coverage"];
+  assert.deepEqual(publicationVerdictErrors({ results, ref: MODULE_TAG }), [
+    `authz-coverage: absent — it is not a dependency of ${AGGREGATE_JOB}`,
+  ]);
+});
+
+test("a no-affected-service plan may skip the affected-scoped gates off a release tag", () => {
+  const results = allSucceeded({ "codefly-plan": scopedOutPlan });
+  for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+  assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), []);
+  assert.deepEqual(publicationVerdictErrors({ results, ref: "refs/pull/7/merge" }), []);
+});
+
+test("that exemption does not apply on a release tag", () => {
+  const results = allSucceeded({ "codefly-plan": { ...scopedOutPlan, outputs: { has_work: "false", all: "true" } } });
+  for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+  for (const ref of [MODULE_TAG, DEPLOY_TAG]) {
+    assert.deepEqual(
+      publicationVerdictErrors({ results, ref }).sort(),
+      AFFECTED_SCOPED_GATES.map((gate) => `${gate}: skipped`).sort(),
+    );
+  }
+});
+
+test("that exemption does not apply when the plan did find work", () => {
+  const results = allSucceeded();
+  results["codefly-build"] = { result: "skipped", outputs: {} };
+  assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), ["codefly-build: skipped"]);
+});
+
+test("that exemption does not cover a gate outside the affected-scoped set", () => {
+  const results = allSucceeded({ "codefly-plan": scopedOutPlan });
+  results["marketing"] = { result: "skipped", outputs: {} };
+  assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), ["marketing: skipped"]);
+});
+
+test("a skipped plan job cannot exempt the gates it scopes", () => {
+  const results = allSucceeded({ "codefly-plan": { result: "skipped", outputs: {} } });
+  for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+  assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }).sort(), [
+    "codefly-build: skipped",
+    "codefly-plan: skipped",
+    "codefly-quality: skipped",
+    "codefly-supply-chain: skipped",
+  ]);
+});
+
+test("an absent or unrecognized has_work exempts nothing", () => {
+  // A renamed output or a lost GITHUB_OUTPUT write leaves has_work undefined.
+  // The three affected-scoped jobs then skip on every branch push, and the
+  // exemption must not quietly excuse them.
+  for (const outputs of [{}, { has_work: "" }, { has_work: "unknown" }]) {
+    const results = allSucceeded({ "codefly-plan": { result: "success", outputs } });
+    for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+    assert.deepEqual(exemptedGates({ results, ref: BRANCH }), []);
+    assert.deepEqual(
+      publicationVerdictErrors({ results, ref: BRANCH }).sort(),
+      AFFECTED_SCOPED_GATES.map((gate) => `${gate}: skipped`).sort(),
+      `has_work=${JSON.stringify(outputs.has_work)} must not exempt anything`,
+    );
+  }
+});
+
+test("a scoped plan on a release ref blocks publication even with every gate green", () => {
+  // Force-moving an existing tag carries a non-zero `before`, which used to
+  // scope the mandatory gates to a delta: they pass without rebuilding or
+  // re-auditing the services outside it.
+  for (const ref of [MODULE_TAG, DEPLOY_TAG]) {
+    const results = allSucceeded({
+      "codefly-plan": { result: "success", outputs: { has_work: "true", all: "false" } },
+    });
+    assert.deepEqual(publicationVerdictErrors({ results, ref }), [
+      "codefly-plan: resolved a scoped plan (all=false) on a release ref; the mandatory gates must verify the full topology",
+    ]);
+  }
+});
+
+test("a release ref with no plan scope reported at all blocks publication", () => {
+  const results = allSucceeded({
+    "codefly-plan": { result: "success", outputs: { has_work: "true" } },
+  });
+  assert.deepEqual(publicationVerdictErrors({ results, ref: DEPLOY_TAG }), [
+    "codefly-plan: resolved a scoped plan (all=absent) on a release ref; the mandatory gates must verify the full topology",
+  ]);
+});
+
+test("a delta-scoped plan is normal off a release ref", () => {
+  const results = allSucceeded({ "codefly-plan": scopedOutPlan });
+  for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+  assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), []);
+});
+
+test("both tag tracks are recognized as release refs", () => {
+  assert.equal(isReleaseTag(DEPLOY_TAG), true);
+  assert.equal(isReleaseTag(MODULE_TAG), true);
+  assert.equal(isReleaseTag(BRANCH), false);
+  assert.equal(isReleaseTag("refs/tags/nightly"), false);
+});
+
+// ---------------------------------------------------------------------------
+// check — the static workflow contract
+// ---------------------------------------------------------------------------
+
+const gateJob = (id) => `  ${id}:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${id}\n`;
+
+// A minimal but complete workflow: every mandatory gate, the aggregate, and
+// whatever extra job text a test wants to graft on.
+function workflow({
+  aggregateNeeds = REQUIRED_GATES,
+  aggregateIf = "${{ always() }}",
+  aggregateRun = "node scripts/ci/release-gates.mjs decide",
+  gates = REQUIRED_GATES,
+  extra = "",
+} = {}) {
+  return [
+    "name: ci\n",
+    "on:\n  push:\n    tags: [\"v*\"]\n",
+    "permissions:\n  contents: read\n",
+    "jobs:\n",
+    gates.map(gateJob).join(""),
+    `  ${AGGREGATE_JOB}:\n`,
+    `    if: ${aggregateIf}\n`,
+    "    needs:\n",
+    aggregateNeeds.map((need) => `      - ${need}\n`).join(""),
+    "    runs-on: ubuntu-latest\n",
+    "    steps:\n",
+    `      - run: ${aggregateRun}\n`,
+    extra,
+  ].join("");
+}
+
+const publisher = (id, { needs = [AGGREGATE_JOB], body } = {}) =>
+  `  ${id}:\n` +
+  (needs.length ? `    needs:\n${needs.map((n) => `      - ${n}\n`).join("")}` : "") +
+  "    runs-on: ubuntu-latest\n    steps:\n" +
+  body;
+
+const RELEASE_STEP = '      - run: gh release create "${GITHUB_REF_NAME}"\n';
+
+test("the shipped workflows satisfy the release-gate contract", () => {
+  assert.deepEqual(releaseGateGraphErrors(REPOSITORY_ROOT), []);
+});
+
+test("every artifact-writing job in ci.yml transitively requires every mandatory gate", () => {
+  const document = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  const publishers = Object.entries(document.jobs).filter(
+    ([, job]) => publicationReasons(job, document.permissions).length > 0,
+  );
+  assert.ok(publishers.length >= 3, "ci.yml must still contain its publication jobs");
+  for (const [name] of publishers) {
+    const closure = needsClosure(name, document.jobs);
+    assert.ok(closure.has(AGGREGATE_JOB), `${name} must depend on ${AGGREGATE_JOB}`);
+    for (const gate of REQUIRED_GATES) {
+      assert.ok(closure.has(gate), `${name} must transitively require ${gate}`);
+    }
+  }
+});
+
+test("a fully wired publication job passes", () => {
+  const text = workflow({ extra: publisher("publish", { body: RELEASE_STEP }) });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), []);
+});
+
+test("an aggregate dependency reached transitively is enough", () => {
+  const text = workflow({
+    extra:
+      "  stage:\n    needs:\n      - release-gates\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo stage\n" +
+      publisher("publish", { needs: ["stage"], body: RELEASE_STEP }),
+  });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), []);
+});
+
+test("a future publish job that misses the aggregate is rejected", () => {
+  const text = workflow({
+    extra: publisher("publish", { needs: ["base-integrity"], body: RELEASE_STEP }),
+  });
+  const errors = releaseGateContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /job publish writes artifacts .* neither directly nor transitively depends on release-gates/);
+});
+
+test("a publish job with no dependencies at all is rejected", () => {
+  const text = workflow({ extra: publisher("publish", { needs: [], body: RELEASE_STEP }) });
+  assert.equal(releaseGateContractErrors("w.yml", text).length, 1);
+});
+
+test("removing authz-coverage from the aggregate's needs is rejected", () => {
+  const text = workflow({
+    aggregateNeeds: REQUIRED_GATES.filter((gate) => gate !== "authz-coverage"),
+    extra: publisher("publish", { body: RELEASE_STEP }),
+  });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), [
+    "w.yml: required gate authz-coverage is not a dependency of release-gates",
+  ]);
+});
+
+test("deleting the authz-coverage job entirely is rejected", () => {
+  const remaining = REQUIRED_GATES.filter((gate) => gate !== "authz-coverage");
+  const text = workflow({
+    gates: remaining,
+    aggregateNeeds: remaining,
+    extra: publisher("publish", { body: RELEASE_STEP }),
+  });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), [
+    "w.yml: required gate authz-coverage is not a job in this workflow",
+  ]);
+});
+
+test("an aggregate guarded by !cancelled() is accepted", () => {
+  const text = workflow({
+    aggregateIf: "${{ !cancelled() }}",
+    extra: publisher("publish", { body: RELEASE_STEP }),
+  });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), []);
+});
+
+test("an aggregate that would skip past a failed gate is rejected", () => {
+  const text = workflow({
+    aggregateIf: "${{ github.event_name == 'push' }}",
+    extra: publisher("publish", { body: RELEASE_STEP }),
+  });
+  const errors = releaseGateContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /must run with always\(\) or !cancelled\(\)/);
+});
+
+test("an aggregate that never evaluates its dependencies' outcomes is rejected", () => {
+  const text = workflow({
+    aggregateRun: "echo all good",
+    extra: publisher("publish", { body: RELEASE_STEP }),
+  });
+  const errors = releaseGateContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /must run `release-gates\.mjs decide`/);
+});
+
+test("an aggregate that itself writes artifacts is rejected", () => {
+  const text = workflow({
+    aggregateRun:
+      'node scripts/ci/release-gates.mjs decide && gh release create "${GITHUB_REF_NAME}"',
+  });
+  const errors = releaseGateContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /release-gates must not write artifacts/);
+});
+
+test("a needs entry naming no job is rejected before anything else", () => {
+  const text = workflow({
+    extra: publisher("publish", { needs: ["release-gates", "ghost"], body: RELEASE_STEP }),
+  });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), [
+    "w.yml: job publish needs ghost, which is not a job here",
+  ]);
+});
+
+test("an unparsable workflow fails the contract instead of passing empty", () => {
+  const errors = releaseGateContractErrors("w.yml", "jobs:\n  a:\n    steps: {run: echo}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
+});
+
+test("a needs cycle among publication jobs fails rather than looping", () => {
+  const text = workflow({
+    extra:
+      publisher("publish", { needs: ["release-gates", "loop"], body: RELEASE_STEP }) +
+      "  loop:\n    needs:\n      - publish\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo loop\n",
+  });
+  const errors = releaseGateContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /needs cycle/);
+});
+
+test("a workflow that publishes nothing needs no aggregate", () => {
+  const text = [
+    "name: dep-audit\n",
+    "on:\n  schedule:\n    - cron: \"17 6 * * *\"\n",
+    "permissions:\n  contents: write\n  pull-requests: write\n",
+    "jobs:\n",
+    "  remediate:\n    runs-on: ubuntu-latest\n    steps:\n",
+    "      - run: |\n          git push --force origin chore/dep-audit-remediation\n          gh pr create --base main --title x --body y\n",
+  ].join("");
+  assert.deepEqual(releaseGateContractErrors("dep-audit.yml", text), []);
+});
+
+// ---------------------------------------------------------------------------
+// artifact-writing detection
+// ---------------------------------------------------------------------------
+
+test("each artifact-writing signal marks a job as a publisher", () => {
+  const signals = [
+    { steps: [{ run: 'gh release upload "$TAG" out/*' }] },
+    { steps: [{ run: "npm publish --access restricted" }] },
+    { steps: [{ run: "node scripts/publish-frontend-kit.mjs" }] },
+    { steps: [{ run: "docker push ghcr.io/example/app:1" }] },
+    { steps: [{ run: 'gh api "repos/${OWNER}/${REPO}/dispatches" \\\n  -f event_type=surface-bump' }] },
+    { steps: [{ run: "node scripts/ci/announce-release.mjs" }] },
+    { steps: [{ uses: "actions/attest-build-provenance@v4" }] },
+    { permissions: { packages: "write" }, steps: [] },
+    { permissions: { "id-token": "write" }, steps: [] },
+    { permissions: { attestations: "write" }, steps: [] },
+    // GitHub's scalar permissions form grants every scope above at once.
+    { permissions: "write-all", steps: [] },
+    // Actions that publish authenticate with a secret in `with:`, so they trip
+    // neither the permission check nor the `run:` patterns.
+    { steps: [{ uses: "example-org/repository-dispatch@v3" }] },
+    { steps: [{ uses: "example-org/npm-publish@v3" }] },
+    { steps: [{ uses: "example-org/action-gh-release@v2" }] },
+    { steps: [{ uses: "example-org/create-release@v1" }] },
+    { steps: [{ uses: "example-org/upload-release-asset@v1" }] },
+    // `codefly publish` authenticates with GH_TOKEN / NODE_AUTH_TOKEN from
+    // `env:`, so it holds no publication permission and no publishing `uses:`.
+    // Client libraries go to public repositories and GitHub Packages.
+    { steps: [{ run: "codefly publish clients saas-starter" }] },
+    { steps: [{ run: "codefly publish library saas-starter-accounts-connect-client" }] },
+    { steps: [{ run: "codefly publish minor" }] },
+    // Checking first and then publishing still publishes.
+    { steps: [{ run: "codefly publish clients saas-starter --check\ncodefly publish clients saas-starter" }] },
+  ];
+  for (const job of signals) {
+    assert.ok(publicationReasons(job, { contents: "read" }).length > 0, JSON.stringify(job));
+  }
+});
+
+// `publish clients --check` is the release gate for the clients manifest. A
+// gate cannot be a publisher: it would have to list `release-gates` in its own
+// `needs`, and nothing can depend on the aggregate that depends on it.
+test("a codefly publish gate that writes nothing is not a publisher", () => {
+  const jobs = [
+    { steps: [{ run: "codefly publish clients saas-starter --check" }] },
+    { steps: [{ run: "codefly publish clients saas-starter --dry-run" }] },
+    { steps: [{ run: "codefly publish clients saas-starter \\\n  --check" }] },
+    { steps: [{ run: "codefly generate contracts saas-starter --check" }] },
+    { steps: [{ run: "codefly ci run --all" }] },
+  ];
+  for (const job of jobs) assert.deepEqual(publicationReasons(job, { contents: "read" }), []);
+});
+
+test("ordinary checks and a branch-pushing job are not publishers", () => {
+  const jobs = [
+    { steps: [{ run: "go test ./..." }] },
+    { steps: [{ run: "gh release view v1.0.0" }] },
+    { steps: [{ run: "gh pr create --base main" }] },
+    { permissions: { contents: "write", "pull-requests": "write" }, steps: [{ run: "git push origin HEAD" }] },
+    { steps: [{ uses: "anchore/sbom-action/download-syft@v0.24.0" }] },
+    { permissions: "read-all", steps: [{ run: "npm test" }] },
+  ];
+  for (const job of jobs) assert.deepEqual(publicationReasons(job, { contents: "read" }), []);
+});
+
+test("no action already pinned in this repository is misread as a publisher", () => {
+  // Guards the `uses:` patterns above against over-matching the real toolchain.
+  const document = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  const uses = Object.values(document.jobs)
+    .flatMap((job) => job.steps ?? [])
+    .map((step) => step.uses)
+    .filter(Boolean);
+  const nonPublishing = uses.filter((ref) => !ref.startsWith("actions/attest-build-provenance"));
+  assert.ok(nonPublishing.length > 5, "expected the pinned toolchain actions to be present");
+  for (const ref of new Set(nonPublishing)) {
+    assert.deepEqual(
+      publicationReasons({ steps: [{ uses: ref }] }, { contents: "read" }),
+      [],
+      `${ref} must not be classified as a publisher`,
+    );
+  }
+});
+
+test("a job inherits the workflow's publication permissions", () => {
+  assert.ok(publicationReasons({ steps: [] }, { packages: "write" }).length > 0);
+  assert.deepEqual(publicationReasons({ permissions: { contents: "read" }, steps: [] }, { packages: "write" }), []);
+});
+
+// ---------------------------------------------------------------------------
+// check — the merge-queue contract
+// ---------------------------------------------------------------------------
+
+// A workflow that reports one required context, parameterised over the three
+// things a queue entry needs from it.
+// The context each fixture job must report, since the ruleset matches a job by
+// its `name:`. Anything outside REQUIRED_CONTEXTS is a rename, which is its own
+// failure — so fixtures that are not testing renames use the real names.
+const CONTEXT_OF = { [AGGREGATE_JOB]: "Release gates", "codefly-plan": "Codefly CI plan", "base-integrity": "Base manifest integrity" };
+
+const namedGateJob = (id, { name = CONTEXT_OF[id], jobConcurrency = "" } = {}) =>
+  `  ${id}:\n` +
+  (name === null ? "" : `    name: ${name}\n`) +
+  jobConcurrency +
+  "    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${id}\n".replace("${id}", id);
+
+function queued({
+  on = "on:\n  pull_request:\n  merge_group:\n",
+  concurrency = "",
+  planEnv = "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}",
+  planRun = "codefly ci plan",
+  gates = [AGGREGATE_JOB],
+  names = {},
+  jobConcurrency = {},
+} = {}) {
+  const planJob = gates.includes("codefly-plan")
+    ? `  codefly-plan:\n    name: ${names["codefly-plan"] ?? CONTEXT_OF["codefly-plan"]}\n` +
+      (jobConcurrency["codefly-plan"] ?? "") +
+      "    runs-on: ubuntu-latest\n    steps:\n" +
+      "      - env:\n" +
+      `          CODEFLY_BASE: ${planEnv}\n` +
+      `        run: |\n          ${planRun}\n`
+    : "";
+  return [
+    "name: ci\n",
+    on,
+    concurrency,
+    "jobs:\n",
+    gates
+      .filter((id) => id !== "codefly-plan")
+      .map((id) =>
+        namedGateJob(id, {
+          name: Object.hasOwn(names, id) ? names[id] : CONTEXT_OF[id],
+          jobConcurrency: jobConcurrency[id] ?? "",
+        }),
+      )
+      .join(""),
+    planJob,
+  ].join("");
+}
+
+test("the shipped ci.yml reports every required context from a merge-queue entry", () => {
+  const text = readFileSync(CI_WORKFLOW, "utf8");
+  assert.deepEqual(mergeQueueContractErrors(".github/workflows/ci.yml", text), []);
+});
+
+test("the queued contexts are the mandatory gates plus the aggregate", () => {
+  assert.deepEqual(QUEUED_CONTEXTS, [...REQUIRED_GATES, AGGREGATE_JOB]);
+});
+
+test("a workflow producing no required context is not subject to the contract", () => {
+  const text = "name: audit\non:\n  schedule:\n    - cron: \"0 3 * * *\"\njobs:\n" + gateJob("audit");
+  assert.deepEqual(mergeQueueContractErrors("dep-audit.yml", text), []);
+});
+
+test("a required context on a workflow with no merge_group trigger fails", () => {
+  const text = queued({ on: "on:\n  pull_request:\n" });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /has no `merge_group:` trigger/);
+  assert.match(errors[0], new RegExp(AGGREGATE_JOB));
+});
+
+test("the missing-trigger failure names every required context that would stall", () => {
+  const text = queued({ on: "on:\n  pull_request:\n", gates: [AGGREGATE_JOB, "base-integrity"] });
+  const [error] = mergeQueueContractErrors("w.yml", text);
+  assert.match(error, /base-integrity/);
+  assert.match(error, new RegExp(AGGREGATE_JOB));
+});
+
+test("a sequence or scalar on: names the trigger as well as a mapping does", () => {
+  for (const on of ["on: [pull_request, merge_group]\n", "on: merge_group\n"]) {
+    assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ on })), [], on);
+  }
+  assert.equal(mergeQueueContractErrors("w.yml", queued({ on: "on: pull_request\n" })).length, 1);
+});
+
+test("unconditionally cancelling in progress fails, since a cancelled entry never reports", () => {
+  const text = queued({ concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n" });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /cancel-in-progress is unconditionally true/);
+});
+
+test("an expression cancel-in-progress is the author discriminating by event", () => {
+  const scoped = "concurrency:\n  group: g\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ concurrency: scoped })), []);
+  const off = "concurrency:\n  group: g\n  cancel-in-progress: false\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ concurrency: off })), []);
+  const bare = "concurrency: g\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ concurrency: bare })), []);
+});
+
+test("a plan that never reads the queue entry's base sha fails", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha || github.event.before }}",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /codefly-plan never reads github\.event\.merge_group\.base_sha/);
+});
+
+test("the cancellation and plan-base contracts are reported together, not one per run", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n",
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 2);
+  assert.match(errors[0], /cancel-in-progress/);
+  assert.match(errors[1], /never reads github\.event\.merge_group\.base_sha/);
+});
+
+test("a missing trigger short-circuits the rest, which it makes moot", () => {
+  // Without the trigger there is no entry to cancel and no entry base to scope
+  // a plan against, so reporting three defects for one cause would be noise.
+  const text = queued({
+    on: "on:\n  pull_request:\n",
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n",
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /no `merge_group:` trigger/);
+});
+
+// --- the base sha must be read, not merely mentioned (finding 2) ---
+
+test("the base sha named only in a run-body comment does not count as reading it", () => {
+  // Block-scalar `run` bodies reach the reader raw, and prose about the merge
+  // queue naturally names the expression under test — ci.yml has such a
+  // comment three lines under the env this checks.
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+    planRun: "# we no longer read github.event.merge_group.base_sha here\n          codefly ci plan",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /never reads github\.event\.merge_group\.base_sha in an expression/);
+});
+
+test("a commented-out expression does not count either", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+    planRun: "# formerly ${{ github.event.merge_group.base_sha }}\n          codefly ci plan",
+  });
+  assert.equal(mergeQueueContractErrors("w.yml", text).length, 1);
+});
+
+test("a real interpolation in the run body counts wherever it sits", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+    planRun: "codefly ci plan --base ${{ github.event.merge_group.base_sha }}",
+  });
+  assert.deepEqual(mergeQueueContractErrors("w.yml", text), []);
+});
+
+// --- job-level cancellation (finding 3) ---
+
+test("a required job cancelling its own in-progress runs stalls the queue too", () => {
+  const text = queued({
+    jobConcurrency: { [AGGREGATE_JOB]: "    concurrency:\n      group: g\n      cancel-in-progress: true\n" },
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /job release-gates sets concurrency\.cancel-in-progress/);
+});
+
+test("a job-level expression is the author discriminating by event, as at workflow level", () => {
+  const scoped = "    concurrency:\n      group: g\n      cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ jobConcurrency: { [AGGREGATE_JOB]: scoped } })), []);
+});
+
+// --- the ruleset matches a job by name, so renames drift (finding 1) ---
+
+test("renaming a required job away from its context fails", () => {
+  const text = queued({ names: { [AGGREGATE_JOB]: "Gates" } });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /is named "Gates", which is not a context the ruleset requires/);
+});
+
+test("a required job with no name: has no context for the ruleset to match", () => {
+  const text = queued({ names: { [AGGREGATE_JOB]: null } });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /has no `name:`/);
+});
+
+test("every declared context is reported by a job in the shipped workflows", () => {
+  assert.deepEqual(unreportedContextErrors(REPOSITORY_ROOT), []);
+});
+
+test("a declared context no job reports is a stall the ruleset waits out", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "ci.yml"), queued());
+  const errors = unreportedContextErrors(root);
+  assert.equal(errors.length, REQUIRED_CONTEXTS.length - 1);
+  assert.ok(errors.every((error) => !error.includes('"Release gates"')));
+  assert.match(errors[0], /would wait on it forever/);
+});
+
+test("the completeness claim is about this repo, not about any fixture tree", () => {
+  // A fixture root holding one unrelated workflow must not inherit this
+  // repository's 14 declared contexts as 14 defects.
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "audit.yml"), "name: a\non:\n  schedule:\n    - cron: \"0 3 * * *\"\njobs:\n" + gateJob("audit"));
+  assert.deepEqual(releaseGateGraphErrors(root), []);
+});
+
+// --- reconciling the declared contexts with the live ruleset ---
+
+test("a context the ruleset requires but the tree never declares is the dangerous direction", () => {
+  const [unguarded, stale] = contextDrift(REQUIRED_CONTEXTS, [...REQUIRED_CONTEXTS, "Security scan"]);
+  assert.deepEqual(unguarded, ["Security scan"]);
+  assert.deepEqual(stale, []);
+});
+
+test("a context the tree declares but the ruleset dropped is reported the other way", () => {
+  const [unguarded, stale] = contextDrift([...REQUIRED_CONTEXTS, "Retired gate"], REQUIRED_CONTEXTS);
+  assert.deepEqual(unguarded, []);
+  assert.deepEqual(stale, ["Retired gate"]);
+});
+
+test("agreement between the two sides is no drift in either direction", () => {
+  assert.deepEqual(contextDrift(REQUIRED_CONTEXTS, [...REQUIRED_CONTEXTS].reverse()), [[], []]);
+});
+
+// --- reading what GitHub actually gates a merge on ---
+//
+// The two mechanisms are invisible to each other's endpoint, and the audit this
+// replaces read only one of them while also enumerating repositories by hand.
+// Both halves are fixtured here: a fake `gh` answering per endpoint.
+
+/** A `gh` stand-in: a map of endpoint substring -> { status, body }. */
+function fakeGh(answers) {
+  return (endpoint) => {
+    const match = Object.keys(answers).find((key) => endpoint.includes(key));
+    assert.ok(match, `no fixture for ${endpoint}`);
+    return answers[match];
+  };
+}
+
+const rulesetRequiring = (contexts, { strict = false, queue = false } = {}) => ({
+  status: 200,
+  body: [
+    ...(queue ? [{ type: "merge_queue", parameters: {} }] : []),
+    {
+      type: "required_status_checks",
+      parameters: {
+        strict_required_status_checks_policy: strict,
+        required_status_checks: contexts.map((context) => ({ context })),
+      },
+    },
+  ],
+});
+const protectionRequiring = (contexts, { strict = false } = {}) => ({
+  status: 200,
+  body: { required_status_checks: { strict, checks: contexts.map((context) => ({ context, app_id: null })) } },
+});
+const NOT_PROTECTED = { status: 404, body: { message: "Branch not protected", status: "404" } };
+const NO_RULES = { status: 200, body: [] };
+const PLAN_FORBIDS = { status: 403, body: { message: "Upgrade to GitHub Pro", status: "403" } };
+const RATE_LIMITED = { status: 403, body: { message: "API rate limit exceeded for user ID 1.", status: "403" } };
+
+/** An admin's view of one branch: a protection 404 is then a real answer. */
+const asAdmin = (repository, branch = "main") => ({ repository, branch, admin: true });
+
+test("a branch gated only by classic protection is not reported as ungated", () => {
+  // The endpoint the handbook reaches for answers `[]` here; reading it alone
+  // called `secure-saas-platform` advisory while three checks gated its merges.
+  const gating = branchGating(
+    asAdmin("owner/classic"),
+    fakeGh({ "rules/branches": NO_RULES, protection: protectionRequiring(["Qualification"], { strict: true }) }),
+  );
+  assert.deepEqual(gating.contexts, ["Qualification"]);
+  assert.deepEqual(gating.mechanisms, ["branch protection"]);
+  assert.equal(gating.strict, true);
+  assert.equal(gating.queue, false);
+  assert.equal(gatingVerdict({ private: false, ...gating }), "gated");
+});
+
+test("a branch gated by a ruleset reports its queue rule and does not need protection", () => {
+  const gating = branchGating(
+    asAdmin("owner/ruleset"),
+    fakeGh({ "rules/branches": rulesetRequiring(["Codefly quality"], { queue: true }), protection: NOT_PROTECTED }),
+  );
+  assert.deepEqual(gating.contexts, ["Codefly quality"]);
+  assert.deepEqual(gating.mechanisms, ["ruleset"]);
+  assert.equal(gating.queue, true);
+  assert.deepEqual(gating.unreadable, []);
+});
+
+test("both mechanisms at once merge into one context set", () => {
+  const gating = branchGating(
+    asAdmin("owner/both"),
+    fakeGh({ "rules/branches": rulesetRequiring(["Shared", "From ruleset"]), protection: protectionRequiring(["Shared", "From protection"]) }),
+  );
+  assert.deepEqual(gating.contexts, ["From protection", "From ruleset", "Shared"]);
+  assert.deepEqual(gating.mechanisms, ["ruleset", "branch protection"]);
+});
+
+test("an unprotected branch is advisory, and that is a read answer rather than a failed one", () => {
+  const gating = branchGating(asAdmin("owner/open"), fakeGh({ "rules/branches": NO_RULES, protection: NOT_PROTECTED }));
+  assert.deepEqual(gating.contexts, []);
+  assert.deepEqual(gating.unreadable, []);
+  assert.equal(gatingVerdict({ private: false, ...gating }), "advisory");
+});
+
+test("a withheld read is not advisory — it is the sweep admitting it is incomplete", () => {
+  const gating = branchGating(asAdmin("owner/opaque"), fakeGh({ "rules/branches": PLAN_FORBIDS, protection: NOT_PROTECTED }));
+  assert.equal(gating.unreadable.length, 1);
+  assert.equal(gating.unreadable[0].status, 403);
+  assert.equal(gatingVerdict({ private: false, ...gating }), "unknown");
+});
+
+test("a private repository whose plan offers neither mechanism cannot require a check at all", () => {
+  const gating = branchGating(asAdmin("owner/private"), fakeGh({ "rules/branches": PLAN_FORBIDS, protection: PLAN_FORBIDS }));
+  assert.equal(gatingVerdict({ private: true, ...gating }), "unavailable");
+  assert.equal(gatingVerdict({ private: false, ...gating }), "unknown");
+});
+
+test("the fleet sweep enumerates the organization and drops only archived repositories", () => {
+  const pages = [
+    [{ full_name: "owner/b", default_branch: "main", private: false, archived: false, permissions: { admin: true } }],
+    [
+      { full_name: "owner/a", default_branch: "develop", private: false, archived: false, permissions: { admin: false } },
+      { full_name: "owner/gone", default_branch: "main", private: false, archived: true, permissions: { admin: true } },
+    ],
+  ];
+  assert.deepEqual(activeRepositories("owner", () => ({ status: 200, body: pages })), [
+    { repository: "owner/a", branch: "develop", private: false, admin: false },
+    { repository: "owner/b", branch: "main", private: false, admin: true },
+  ]);
+});
+
+test("a protection 404 without admin is a withheld read, not an unprotected branch", () => {
+  // GitHub masks the permission error as 404: `cli/cli`'s trunk reports
+  // `protected: true` on the branch object while `/protection` 404s for a
+  // non-admin. Trusting it reported every repository the caller does not
+  // administer as advisory — the silent under-report this command replaces.
+  const gh = fakeGh({ "rules/branches": NO_RULES, protection: NOT_PROTECTED });
+  const asMember = branchGating({ repository: "owner/elsewhere", branch: "main", admin: false }, gh);
+  assert.equal(asMember.unreadable.length, 1);
+  assert.match(asMember.unreadable[0].message, /readable only by an admin/);
+  assert.equal(gatingVerdict({ private: false, ...asMember }), "unknown");
+
+  const asOwner = branchGating(asAdmin("owner/elsewhere"), gh);
+  assert.deepEqual(asOwner.unreadable, []);
+  assert.equal(gatingVerdict({ private: false, ...asOwner }), "advisory");
+});
+
+test("an absent permissions block reads as no admin rather than as admin", () => {
+  const [row] = activeRepositories("owner", () => ({
+    status: 200,
+    body: [[{ full_name: "owner/x", default_branch: "main", private: false, archived: false }]],
+  }));
+  assert.equal(row.admin, false);
+});
+
+test("a 403 that is not the plan limitation never reads as unavailable", () => {
+  // A rate limit, SAML enforcement or a token without access all answer 403.
+  // Reporting those as "nothing can require a check here" states a false fact
+  // about another repository and exits zero.
+  const limited = branchGating(asAdmin("owner/private"), fakeGh({ "rules/branches": RATE_LIMITED, protection: RATE_LIMITED }));
+  assert.equal(gatingVerdict({ private: true, ...limited }), "unknown");
+
+  const planned = branchGating(asAdmin("owner/private"), fakeGh({ "rules/branches": PLAN_FORBIDS, protection: PLAN_FORBIDS }));
+  assert.equal(gatingVerdict({ private: true, ...planned }), "unavailable");
+});
+
+test("a slurped error body is classified rather than thrown as a child-process failure", () => {
+  // Verbatim stdout from `gh api --paginate --slurp orgs/<typo>/repos`: the
+  // error body is wrapped in the page array, so the status sits one level down.
+  // Missing it made every organization-listing failure an unhandled throw of
+  // the raw child-process error.
+  assert.deepEqual(
+    ghFailure('[{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}]'),
+    { status: 404, body: { message: "Not Found", documentation_url: "https://docs.github.com/rest", status: "404" } },
+  );
+  assert.equal(ghFailure('{"message":"Branch not protected","status":"404"}').status, 404);
+  assert.equal(ghFailure("gh: could not connect"), null, "a non-JSON body has no HTTP answer to report");
+  assert.equal(ghFailure("[]"), null, "an empty slurp carries no status");
+  assert.throws(
+    () =>
+      activeRepositories("nope", () => ({
+        status: 404,
+        body: { message: "Not Found", status: "404" },
+      })),
+    /cannot list nope's repositories: 404 Not Found/,
+  );
+});
+
+test("a repository that cannot be read never becomes a branch named undefined", () => {
+  assert.throws(
+    () => repositoryFacts("owner/typo", () => ({ status: 404, body: { message: "Not Found" } })),
+    /cannot read owner\/typo: 404 Not Found/,
+  );
+  assert.deepEqual(
+    repositoryFacts("owner/real", () => ({
+      status: 200,
+      body: { default_branch: "trunk", private: false, permissions: { admin: true } },
+    })),
+    { repository: "owner/real", branch: "trunk", private: false, admin: true },
+  );
+});
+
+test("an unknown row keeps the gating it did manage to read", () => {
+  // The mechanisms need different permissions, so half-answers are ordinary.
+  const [line, context] = fleetLines([
+    {
+      repository: "owner/half",
+      branch: "main",
+      private: false,
+      admin: false,
+      contexts: ["Qualification"],
+      mechanisms: ["branch protection"],
+      strict: false,
+      queue: false,
+      unreadable: [{ endpoint: "rules/branches/main", status: 403, message: "Resource protected by SAML" }],
+    },
+  ]);
+  assert.match(line, /^unknown .*1 required via branch protection, and; rules\/branches\/main: 403 Resource protected by SAML/);
+  assert.equal(context, '                 "Qualification"');
+});
+
+test("every fleet row carries a verdict, and a gated one lists the contexts a rollout must cover", () => {
+  const lines = fleetLines([
+    { repository: "owner/gated", branch: "main", private: false, admin: true, contexts: ["One", "Two"], mechanisms: ["ruleset"], strict: true, queue: false, unreadable: [] },
+    { repository: "owner/advisory", branch: "main", private: false, admin: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [] },
+    { repository: "owner/private", branch: "main", private: true, admin: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 403, message: "Upgrade to GitHub Pro" }] },
+    { repository: "owner/opaque", branch: "main", private: false, admin: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 500, message: "Server Error" }] },
+  ]);
+  assert.match(lines[0], /^gated {8}owner\/gated .*2 required via ruleset, no merge queue, strict up-to-date/);
+  assert.deepEqual(lines.slice(1, 3), ['                 "One"', '                 "Two"']);
+  assert.match(lines[3], /^advisory .*nothing requires a status check/);
+  assert.match(lines[4], /^unavailable .*private on a plan with neither/);
+  assert.match(lines[5], /^unknown .*rules\/branches\/main: 500 Server Error/);
+});
+
+test("the graph walk reddens check when a gate workflow loses its merge_group trigger", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(
+    join(root, ".github", "workflows", "gates.yml"),
+    queued({ on: "on:\n  pull_request:\n" }),
+  );
+  const errors = releaseGateGraphErrors(root);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /gates\.yml: .*has no `merge_group:` trigger/);
+});
+
+test("an unparsable workflow fails the merge-queue check instead of passing empty", () => {
+  const errors = mergeQueueContractErrors("w.yml", "jobs: {a: b}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
+});
+
+// ---------------------------------------------------------------------------
+// check — the action-pinning contract
+// ---------------------------------------------------------------------------
+
+const NODE_DIGEST = "49933ea5288caeca8642d1e84afbd3f7d6820020";
+
+// One job, one step, whatever `uses:` a test wants to put in it.
+const usingWorkflow = (ref) =>
+  `jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: ${ref}\n`;
+
+test("every action the shipped workflows call is pinned to a digest", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  for (const file of readdirSync(workflows).filter((f) => /\.ya?ml$/.test(f))) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    assert.deepEqual(actionPinErrors(`.github/workflows/${file}`, text), []);
+  }
+});
+
+test("a digest ref passes, with or without a version comment or a subpath", () => {
+  for (const ref of [
+    `actions/setup-node@${NODE_DIGEST}`,
+    `actions/setup-node@${NODE_DIGEST} # v4`,
+    `anchore/sbom-action/download-syft@${NODE_DIGEST} # v0.24.0`,
+  ]) {
+    assert.deepEqual(actionPinErrors("w.yml", usingWorkflow(ref)), [], ref);
+  }
+});
+
+test("an action in this repository needs no digest", () => {
+  assert.deepEqual(actionPinErrors("w.yml", usingWorkflow("./.github/actions/setup")), []);
+});
+
+test("every way of naming a movable ref is rejected", () => {
+  for (const ref of [
+    "actions/setup-node@v4",
+    "actions/setup-go@v6.5.0",
+    "actions/checkout@main",
+    "actions/checkout@49933ea",
+    "actions/checkout",
+    "docker://alpine:3.19",
+    `docker://alpine@sha256:${"a".repeat(63)}`,
+  ]) {
+    const errors = actionPinErrors("w.yml", usingWorkflow(ref));
+    assert.equal(errors.length, 1, ref);
+    assert.match(errors[0], /job a uses .*, whose ref is mutable/);
+  }
+});
+
+test("a container action pins to an image digest, and is told so when it does not", () => {
+  // A `docker://` step has no commit digest to pin to, so demanding one would
+  // be a false positive nothing could act on.
+  const pinned = `docker://alpine@sha256:${"a".repeat(64)}`;
+  assert.deepEqual(actionPinErrors("w.yml", usingWorkflow(pinned)), []);
+  assert.match(
+    actionPinErrors("w.yml", usingWorkflow("docker://alpine:3.19"))[0],
+    /pin it to an image digest/,
+  );
+});
+
+test("an uppercase commit digest names one commit and is accepted", () => {
+  // Immutability is the property under test; letter case is not.
+  assert.deepEqual(
+    actionPinErrors("w.yml", usingWorkflow(`actions/checkout@${NODE_DIGEST.toUpperCase()}`)),
+    [],
+  );
+});
+
+test("a reusable-workflow call on the job itself must be pinned too", () => {
+  const text = "jobs:\n  a:\n    uses: owner/repo/.github/workflows/ci.yml@v1\n";
+  assert.equal(actionPinErrors("w.yml", text).length, 1);
+  assert.deepEqual(
+    actionPinErrors("w.yml", `jobs:\n  a:\n    uses: owner/repo/.github/workflows/ci.yml@${NODE_DIGEST}\n`),
+    [],
+  );
+});
+
+test("an unparsable workflow fails the pin check instead of passing empty", () => {
+  const errors = actionPinErrors("w.yml", "jobs: {a: b}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
+});
+
+// The `github-actions` entry in .github/dependabot.yml rewrites these digests on
+// a schedule. The trailing comment is the only record of which release a digest
+// is, and until now the pin remedy asked for it without ever checking it.
+test("every action the shipped workflows call names its version in a comment", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  for (const file of readdirSync(workflows).filter((f) => /\.ya?ml$/.test(f))) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    assert.deepEqual(actionCommentErrors(`.github/workflows/${file}`, text), []);
+  }
+});
+
+test("a digest with no trailing version comment is rejected", () => {
+  const errors = actionCommentErrors("w.yml", usingWorkflow(`actions/setup-node@${NODE_DIGEST}`));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /w\.yml:5: uses actions\/setup-node@/);
+  assert.match(errors[0], /no trailing version comment/);
+});
+
+test("any non-empty trailing comment satisfies the rule", () => {
+  for (const ref of [
+    `actions/setup-node@${NODE_DIGEST} # v4`,
+    `actions/setup-node@${NODE_DIGEST} # v4.1.0`,
+    `actions/setup-node@${NODE_DIGEST}   #v4`,
+  ]) {
+    assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow(ref)), [], ref);
+  }
+  // An empty comment records nothing, so it does not count as one.
+  assert.equal(
+    actionCommentErrors("w.yml", usingWorkflow(`actions/setup-node@${NODE_DIGEST} #`)).length,
+    1,
+  );
+});
+
+test("an action in this repository needs no version comment", () => {
+  assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow("./.github/actions/setup")), []);
+});
+
+// A mutable ref is the pin rule's defect, and its remedy already asks for the
+// comment. Reporting it here too would describe one fix as two.
+test("a mutable ref is left to the pin rule rather than reported twice", () => {
+  for (const ref of ["actions/setup-node@v4", "docker://alpine:3.19"]) {
+    assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow(ref)), [], ref);
+    assert.equal(actionPinErrors("w.yml", usingWorkflow(ref)).length, 1, ref);
+  }
+});
+
+test("a pinned container action still names its version", () => {
+  const pinned = `docker://alpine@sha256:${"a".repeat(64)}`;
+  assert.equal(actionCommentErrors("w.yml", usingWorkflow(pinned)).length, 1);
+  assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow(`${pinned} # 3.19`)), []);
+});
+
+test("a reusable-workflow call on the job itself needs its version comment too", () => {
+  const bare = `jobs:\n  a:\n    uses: owner/repo/.github/workflows/ci.yml@${NODE_DIGEST}\n`;
+  assert.equal(actionCommentErrors("w.yml", bare).length, 1);
+  assert.deepEqual(actionCommentErrors("w.yml", `${bare.trimEnd()} # v1\n`), []);
+});
+
+// A `run:` body is a block scalar, not steps. Scanning raw lines would read a
+// `uses:` written inside one as a step and demand a comment for it.
+test("a uses: line inside a run script is not mistaken for a step", () => {
+  const text = [
+    "jobs:",
+    "  a:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    `      - uses: actions/checkout@${NODE_DIGEST} # v7.0.0`,
+    "      - run: |",
+    "          echo 'uses: actions/setup-node@v4'",
+    "          uses: not-a-step/at-all@deadbeef",
+    "",
+  ].join("\n");
+  assert.deepEqual(actionCommentErrors("w.yml", text), []);
+});
+
+test("an unparsable workflow fails the comment check instead of passing empty", () => {
+  const errors = actionCommentErrors("w.yml", "jobs: {a: b}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
+});
+
+test("an unreadable workflow is one defect, not one per contract that reads it", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "broken.yml"), "jobs: {a: b}\n");
+  const errors = releaseGateGraphErrors(root);
+  assert.deepEqual(errors, [
+    "broken.yml: could not be parsed: line 1: flow mappings are not supported"
+      .replace("broken.yml", ".github/workflows/broken.yml"),
+  ]);
+});
+
+test("the pin check reaches a workflow the publication contract exits early on", () => {
+  // `releaseGateContractErrors` returns as soon as it finds no publisher, which
+  // is every gate-only workflow. A mutable ref there must still fail `check`.
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  const text = usingWorkflow("actions/setup-node@v4");
+  writeFileSync(join(root, ".github", "workflows", "audit.yml"), text);
+  assert.deepEqual(releaseGateContractErrors("audit.yml", text), []);
+  const errors = releaseGateGraphErrors(root);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /audit\.yml: job a uses actions\/setup-node@v4/);
+});
+
+// An independent oracle over the raw text, in the same spirit as the job-set
+// scan below: the gate can only pin what the reader hands it, so a `uses:` the
+// parser drops is an unpinned ref nothing would ever flag.
+//
+// A `run: |` body is data, not YAML — a step that writes a workflow file holds
+// `uses:` lines that are no more actions than a `needs:` inside one is a
+// dependency. The scan tracks block scalars so it disagrees with the reader
+// only when the reader has actually lost a ref.
+function scanUsesRefs(text) {
+  const refs = [];
+  let blockIndent = null;
+  for (const line of text.split("\n")) {
+    if (blockIndent !== null) {
+      if (/^\s*$/.test(line) || /^ */.exec(line)[0].length > blockIndent) continue;
+      blockIndent = null;
+    }
+    const block = /^( *)(?:- )?[\w.-]+:\s*[|>][-+]?\s*$/.exec(line);
+    if (block) {
+      blockIndent = block[1].length;
+      continue;
+    }
+    const match = /^ *(?:- )?uses:\s*(\S+)/.exec(line);
+    if (match) refs.push(match[1]);
+  }
+  return refs;
+}
+
+test("the raw scan reads block-scalar bodies as data, not as steps", () => {
+  const generating = [
+    "jobs:",
+    "  a:",
+    "    steps:",
+    "      - run: |",
+    "          cat > gen.yml <<EOF",
+    "          - uses: actions/setup-node@v4",
+    "          EOF",
+    `      - uses: actions/setup-node@${NODE_DIGEST}`,
+    "",
+  ].join("\n");
+  assert.deepEqual(scanUsesRefs(generating), [`actions/setup-node@${NODE_DIGEST}`]);
+  assert.deepEqual(actionPinErrors("w.yml", generating), []);
+});
+
+test("the reader and an independent text scan agree on every uses: ref", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  const files = readdirSync(workflows).filter((file) => /\.ya?ml$/.test(file));
+  let total = 0;
+  for (const file of files) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    const scanned = scanUsesRefs(text);
+    const document = parseWorkflowYaml(text);
+    const read = Object.values(document.jobs).flatMap((job) => [
+      ...(typeof job.uses === "string" ? [job.uses] : []),
+      ...(job.steps ?? []).map((step) => step.uses).filter((ref) => typeof ref === "string"),
+    ]);
+    assert.deepEqual(
+      read.sort(),
+      scanned.sort(),
+      `${file}: the reader and the raw scan disagree on the uses: refs`,
+    );
+    total += scanned.length;
+  }
+  assert.ok(total > 40, `expected the full toolchain, saw ${total} refs`);
+});
+
+// ---------------------------------------------------------------------------
+// the workflow reader
+// ---------------------------------------------------------------------------
+
+test("a block scalar keeps its body and hides it from the mapping parser", () => {
+  const document = parseWorkflowYaml(
+    [
+      "jobs:",
+      "  a:",
+      "    steps:",
+      "      - name: run it",
+      "        run: |",
+      "          # not a yaml comment",
+      "          if [[ -n \"${X}\" ]]; then",
+      "            echo 'needs: nobody'",
+      "",
+      "          fi",
+      "      - run: echo done",
+      "",
+    ].join("\n"),
+  );
+  const [first, second] = document.jobs.a.steps;
+  assert.equal(first.name, "run it");
+  assert.equal(
+    first.run,
+    "# not a yaml comment\nif [[ -n \"${X}\" ]]; then\n  echo 'needs: nobody'\n\nfi\n",
+  );
+  assert.equal(second.run, "echo done");
+});
+
+test("comments are stripped outside quotes and kept inside them", () => {
+  const document = parseWorkflowYaml(
+    [
+      "jobs:",
+      "  # a leading comment",
+      "  a:",
+      "    uses: actions/checkout@abc # v7.0.0",
+      '    run: echo "sharp # sign"',
+      "",
+    ].join("\n"),
+  );
+  assert.equal(document.jobs.a.uses, "actions/checkout@abc");
+  assert.equal(document.jobs.a.run, 'echo "sharp # sign"');
+});
+
+test("flow and block sequences both read as arrays", () => {
+  const document = parseWorkflowYaml(
+    ["on:", '  push:', '    tags: ["v*", "module-package/v*"]', "jobs:", "  a:", "    needs:", "      - x", "      - y", ""].join("\n"),
+  );
+  assert.deepEqual(document.on.push.tags, ["v*", "module-package/v*"]);
+  assert.deepEqual(document.jobs.a.needs, ["x", "y"]);
+});
+
+test("unsupported YAML throws instead of parsing to a guess", () => {
+  assert.throws(() => parseWorkflowYaml("a: {b: c}\n"), /flow mappings are not supported/);
+  assert.throws(() => parseWorkflowYaml("a: &anchor\n"), /anchors and aliases are not supported/);
+  assert.throws(() => parseWorkflowYaml("a:\n  b: 1\n   c: 2\n"), /unexpected indentation/);
+  assert.throws(() => parseWorkflowYaml("a: [1, [2]]\n"), /nested flow collections/);
+});
+
+// An independent oracle over the raw text. The contract is only as good as the
+// reader beneath it, and the dangerous direction is under-detection: a job the
+// parser silently drops is a publisher the graph check never sees. This scan
+// shares no code with the parser, so the two must agree on the job set.
+function scanJobIds(text) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  assert.ok(start >= 0, "the workflow must declare a top-level jobs: block");
+  const ids = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    const match = /^ {2}([A-Za-z_][\w-]*):\s*$/.exec(line);
+    if (match) ids.push(match[1]);
+  }
+  return ids;
+}
+
+test("the reader and an independent text scan agree on every workflow's job set", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  const files = readdirSync(workflows).filter((file) => /\.ya?ml$/.test(file));
+  assert.ok(files.length >= 2, "expected both shipped workflows");
+  for (const file of files) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    assert.deepEqual(
+      Object.keys(parseWorkflowYaml(text).jobs).sort(),
+      scanJobIds(text).sort(),
+      `${file}: the reader and the raw scan disagree on the job set`,
+    );
+  }
+});
+
+test("every job in the shipped workflows reads back with usable steps", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  for (const file of readdirSync(workflows).filter((f) => /\.ya?ml$/.test(f))) {
+    const document = parseWorkflowYaml(readFileSync(join(workflows, file), "utf8"));
+    for (const [name, job] of Object.entries(document.jobs)) {
+      assert.ok(Array.isArray(job.steps) && job.steps.length > 0, `${file}: ${name} lost its steps`);
+      for (const step of job.steps) {
+        assert.ok(
+          typeof step.run === "string" || typeof step.uses === "string",
+          `${file}: ${name} has a step with neither run nor uses`,
+        );
+      }
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// the documented gate list vs. the enforced one
+//
+// RELEASE_GATES.md § Repository-specific gates and AGENTS.md both enumerate the
+// gates that are not service gates, and both were hand-maintained. `kit-version`
+// became mandatory in REQUIRED_GATES and neither list learned about it, so the
+// document that exists to say what CI enforces disagreed with CI — and with the
+// mandatory-gates table nine lines above it in the same file. Derive the
+// repository-specific set from REQUIRED_GATES and hold the prose to it.
+
+const RELEASE_GATES_DOC = join(REPOSITORY_ROOT, "RELEASE_GATES.md");
+const AGENTS_DOC = join(REPOSITORY_ROOT, "AGENTS.md");
+const CLAIM_INVENTORY_DOC = join(REPOSITORY_ROOT, "CLAIM_INVENTORY.md");
+
+// Everything mandatory that `codefly ci run` does not own. The `codefly-` prefix
+// is the service-gate namespace; anything else is this repository's own.
+const REPOSITORY_SPECIFIC_GATES = REQUIRED_GATES.filter(
+  (gate) => !gate.startsWith("codefly-"),
+).sort();
+
+const NUMBER_WORDS = {
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+
+/** The job ids in the first column of the § Repository-specific gates table. */
+function documentedRepositorySpecificGates(markdown) {
+  const section = markdown.split("\n## Repository-specific gates\n")[1];
+  assert.ok(section, "RELEASE_GATES.md has no § Repository-specific gates");
+  const ids = [];
+  for (const line of section.split("\n")) {
+    if (line.startsWith("## ")) break;
+    const row = /^\|\s*`([a-z0-9-]+)`\s*\|/.exec(line.trim());
+    if (row) ids.push(row[1]);
+  }
+  return ids;
+}
+
+test("RELEASE_GATES.md documents exactly the mandatory repository-specific gates", () => {
+  assert.deepEqual(
+    documentedRepositorySpecificGates(readFileSync(RELEASE_GATES_DOC, "utf8")).sort(),
+    REPOSITORY_SPECIFIC_GATES,
+    "§ Repository-specific gates and REQUIRED_GATES disagree; document the gate or drop it",
+  );
+});
+
+test("every documented repository-specific gate names what it runs", () => {
+  const section = readFileSync(RELEASE_GATES_DOC, "utf8")
+    .split("\n## Repository-specific gates\n")[1]
+    .split("\n## ")[0];
+  for (const gate of REPOSITORY_SPECIFIC_GATES) {
+    const row = section.split("\n").find((line) => line.trim().startsWith(`| \`${gate}\``));
+    const cells = row.split("|").map((cell) => cell.trim()).filter(Boolean);
+    assert.equal(cells.length, 3, `${gate}: expected a job / guards / runs row`);
+    assert.ok(cells[2].includes("`"), `${gate}: the "what it runs" cell names no command`);
+  }
+});
+
+test("the prose counts of repository-specific gates match the enforced set", () => {
+  const expected = REPOSITORY_SPECIFIC_GATES.length;
+  const prose = [
+    [AGENTS_DOC, /CI runs (\w+) repository-specific gates/],
+    [CLAIM_INVENTORY_DOC, /(\w+) repository-specific jobs/],
+  ];
+  for (const [file, pattern] of prose) {
+    const match = pattern.exec(readFileSync(file, "utf8"));
+    assert.ok(match, `${file}: no repository-specific gate count to check`);
+    assert.equal(
+      NUMBER_WORDS[match[1]],
+      expected,
+      `${file}: says "${match[1]}" repository-specific gates; REQUIRED_GATES has ${expected}`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// the documented distribution policy vs. the enforced one
+//
+// AGENTS.md § Cutting a release says client libraries are not published by
+// cutting a tag here: the per-language SDK repositories distribute them. The
+// release job disagreed — it ran `codefly publish clients saas-starter
+// --check`, gating `module/contracts/clients.codefly.json`, a file no document
+// tells anyone to produce and that this repository has never carried. No
+// `module-package/v*` tag has ever been pushed, so the step had never run: the
+// contradiction was invisible and would have surfaced as a failed first
+// release. Prose and workflow are now held to each other in both directions.
+
+/** Every `run:` body in the workflow, with the job id that owns it. */
+function eachRunStep(workflow) {
+  const steps = [];
+  for (const [id, job] of Object.entries(workflow.jobs ?? {})) {
+    for (const step of job.steps ?? []) {
+      if (typeof step.run === "string") steps.push({ id, run: step.run });
+    }
+  }
+  return steps;
+}
+
+test("no workflow job runs codefly publish clients, in any form", () => {
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  for (const { id, run } of eachRunStep(ci)) {
+    assert.doesNotMatch(
+      run,
+      /\bcodefly\s+publish\s+clients\b/,
+      `${id}: publishing clients — or gating on a clients manifest — is not part ` +
+        `of cutting a release (AGENTS.md § Cutting a release). Change the document ` +
+        `first if the policy changed.`,
+    );
+  }
+});
+
+// The TypeScript client is the exception the prose must carry: it IS published
+// from this repository, by publish-frontend-kit on every `v*` tag. A reader who
+// takes "not published from this repository" at face value never bumps the
+// package version — and publish-frontend-kit.mjs refuses a republish whose
+// contents moved, so that reading fails the release it was meant to simplify.
+const KIT_PUBLISH_SCRIPT = join(
+  REPOSITORY_ROOT,
+  "module/services/frontend/code/scripts/publish-frontend-kit.mjs",
+);
+
+/** The PACKAGES array publish-frontend-kit.mjs publishes, read as text. */
+function publishedKitPackages() {
+  const source = readFileSync(KIT_PUBLISH_SCRIPT, "utf8");
+  const block = /export const PACKAGES = \[([^\]]*)\]/.exec(source);
+  assert.ok(block, "publish-frontend-kit.mjs no longer exports a PACKAGES array");
+  return [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
+test("the client package this repository publishes is named where releases are cut", () => {
+  const section = readFileSync(AGENTS_DOC, "utf8").split("\n## Cutting a release\n")[1];
+  assert.ok(section, "AGENTS.md has no § Cutting a release");
+  const prose = section.split("\n## ")[0];
+  const clientPackages = publishedKitPackages().filter((name) => name.endsWith("/saas-sdk"));
+  assert.ok(clientPackages.length > 0, "the kit publishes no SDK package to document");
+  for (const name of clientPackages) {
+    assert.ok(
+      prose.includes(name),
+      `AGENTS.md § Cutting a release never names ${name}, which publish-frontend-kit ` +
+        `publishes from this repository on every v* tag`,
+    );
+  }
+});
+
+// A library store is a loaded gun, not a setting. The `go` and `python` stores
+// create a missing repository on first publish and create it PUBLIC, and a
+// generated client carries the whole contract — `services:` trims the facade,
+// not the message graph. While one is declared, a single exploratory `codefly
+// publish clients saas-starter` discloses an endpoint under a new org
+// repository. Prose telling a maintainer not to run it casually is not a
+// control; an undeclared store is, because the command then fails closed.
+const WORKSPACE_CONFIG = join(REPOSITORY_ROOT, "workspace.codefly.yaml");
+
+/** The store kinds declared under `libraries: publish:`. */
+function declaredLibraryStores(yaml) {
+  const libraries = yaml.split(/^libraries:$/m)[1];
+  if (libraries === undefined) return [];
+  const publish = libraries.split(/^\s+publish:$/m)[1];
+  if (publish === undefined) return [];
+  const stores = [];
+  for (const line of publish.split("\n")) {
+    if (line.trim() === "" || line.startsWith("#")) continue;
+    // A line at column 0 ends the block; anything shallower than the entries does too.
+    const entry = /^\s{8}([a-z0-9-]+):/.exec(line);
+    if (entry) {
+      stores.push(entry[1]);
+      continue;
+    }
+    if (/^\S/.test(line)) break;
+  }
+  return stores;
+}
+
+test("no library store that creates a public repository is declared", () => {
+  const stores = declaredLibraryStores(readFileSync(WORKSPACE_CONFIG, "utf8"));
+  for (const kind of ["go", "python"]) {
+    assert.ok(
+      !stores.includes(kind),
+      `workspace.codefly.yaml declares a '${kind}' library store; that store creates ` +
+        `each missing repository PUBLIC on first publish (codefly-dev/cli#715), and a ` +
+        `client carries the whole contract. Publishing is a disclosure decision — see ` +
+        `AGENTS.md § Cutting a release before declaring one.`,
+    );
+  }
+});
+
+test("authorization gate always runs isolated audit SQL regressions", () => {
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  const job = ci.jobs["authz-coverage"];
+  assert.ok(Object.hasOwn(ci.on, "pull_request"));
+  assert.ok(Object.hasOwn(ci.on, "merge_group"));
+  assert.ok(job.services["audit-postgres"]);
+  const step = job.steps.find((step) => step.run?.includes("./internal/auditmetricstest"));
+  assert.ok(step, "database regression step must exist");
+  assert.equal(step.if, undefined, "database regression step must not be conditional");
+  assert.equal(step.env.AUDIT_METRICS_REQUIRE_DB, "1");
+  assert.match(step.env.AUDIT_METRICS_TEST_DSN, /job\.services\.audit-postgres\.ports/);
+});

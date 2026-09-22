@@ -25,6 +25,11 @@ const moduleBundleSchema = "codefly.dev/module-bundle/v1"
 var (
 	dnsLabelPattern   = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
 	unresolvedPattern = regexp.MustCompile(`(?i)REPLACE_ME|saas-starter|\$\{[^}]+\}|<[^>]*replace[^>]*>`)
+	// A Cloud SQL instance is addressed by project:region:instance, which is not
+	// a DNS name, so it travels beside the ExternalName rather than inside it.
+	// The optional leading segment is the legacy domain-scoped project form
+	// (example.com:project:region:instance) that older organizations still carry.
+	instanceConnectionPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)+:)?[a-z][-a-z0-9]{4,28}[a-z0-9]:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z](?:[-a-z0-9]{0,96}[a-z0-9])?$`)
 )
 
 type moduleManifest struct {
@@ -125,10 +130,12 @@ type bundleIngressRoute struct {
 }
 
 type managedServiceHandoff struct {
-	Service          string   `json:"service"`
-	Kind             string   `json:"kind"`
-	ExternalName     string   `json:"externalName"`
-	SecretReferences []string `json:"secretReferences,omitempty"`
+	Service                string   `json:"service"`
+	Kind                   string   `json:"kind"`
+	ExternalName           string   `json:"externalName"`
+	AuthMode               string   `json:"authMode,omitempty"`
+	InstanceConnectionName string   `json:"instanceConnectionName,omitempty"`
+	SecretReferences       []string `json:"secretReferences,omitempty"`
 }
 
 // UnmarshalJSON reads the handoff kind from "kind", falling back to the legacy
@@ -150,10 +157,12 @@ func (h *managedServiceHandoff) UnmarshalJSON(data []byte) error {
 }
 
 type managedServiceConfig struct {
-	Kind             string                   `yaml:"kind"`
-	ExternalName     string                   `yaml:"external-name"`
-	EgressCIDRs      []string                 `yaml:"egress-cidrs,omitempty"`
-	SecretReferences []managedSecretReference `yaml:"secret-references,omitempty"`
+	Kind                   string                   `yaml:"kind"`
+	ExternalName           string                   `yaml:"external-name"`
+	AuthMode               string                   `yaml:"auth-mode,omitempty"`
+	InstanceConnectionName string                   `yaml:"instance-connection-name,omitempty"`
+	EgressCIDRs            []string                 `yaml:"egress-cidrs,omitempty"`
+	SecretReferences       []managedSecretReference `yaml:"secret-references,omitempty"`
 }
 
 type managedSecretReference struct {
@@ -244,8 +253,17 @@ type topologyService struct {
 	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
 	BootstrapJobEndpoints              []string                             `yaml:"bootstrap_job_endpoints,omitempty"`
 	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
+	InternalHTTPRoutes                 []topologyInternalHTTPRoute          `yaml:"internal_http_routes,omitempty"`
 	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+// topologyInternalHTTPRoute is an HTTP route carrying cluster-internal
+// authority on a port that also serves browser-facing traffic. Path and method
+// are the only thing separating the two, so it is authored rather than derived.
+type topologyInternalHTTPRoute struct {
+	Path    string   `yaml:"path"`
+	Methods []string `yaml:"methods"`
 }
 
 type topologyKubernetesIdentity struct {
@@ -772,13 +790,22 @@ func validateManagedServices(
 			return fmt.Errorf("environment %q declares unexpected managed service %q", environment.Name, service)
 		}
 		switch config.Kind {
-		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible":
+		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible", "cloud-sql-postgres":
 		default:
 			return fmt.Errorf("environment %q managed service %q kind %q is not supported", environment.Name, service, config.Kind)
 		}
 		if !validExternalName(config.ExternalName) {
 			return fmt.Errorf("environment %q managed service %q external-name %q is not an exact DNS name", environment.Name, service, config.ExternalName)
 		}
+		authMode, instanceConnection, err := validateManagedAuth(environment.Name, service, config)
+		if err != nil {
+			return err
+		}
+		// Store what was validated rather than what was written: the renderer and
+		// the bundle both read these back, so a padded or defaulted spelling must
+		// not survive past the one place that checked it.
+		config.AuthMode = authMode
+		config.InstanceConnectionName = instanceConnection
 		for _, cidr := range config.EgressCIDRs {
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
 				return fmt.Errorf("environment %q managed service %q egress CIDR %q is invalid", environment.Name, service, cidr)
@@ -786,9 +813,16 @@ func validateManagedServices(
 		}
 		referenceNames := make(map[string]struct{}, len(config.SecretReferences))
 		handoff := managedServiceHandoff{
-			Service:      service,
-			Kind:         config.Kind,
-			ExternalName: config.ExternalName,
+			Service:                service,
+			Kind:                   config.Kind,
+			ExternalName:           config.ExternalName,
+			InstanceConnectionName: instanceConnection,
+		}
+		// Only a non-default mode earns a key: every consumer already reads an
+		// absent authMode as the password-backed shape, so emitting it for the
+		// default would rewrite every existing handoff to say what it already said.
+		if authMode != "password" {
+			handoff.AuthMode = authMode
 		}
 		for _, reference := range config.SecretReferences {
 			if err := validateDNSLabel("managed secret reference name", reference.Name); err != nil {
@@ -813,6 +847,38 @@ func validateManagedServices(
 		return strings.Compare(left.Service, right.Service)
 	})
 	return validateManagedDependencyCIDRs(environment.Name, topology, plan.managed)
+}
+
+// validateManagedAuth resolves how callers authenticate to a managed service.
+// An unset auth-mode keeps the password-backed shape the password-bearing kinds
+// have always had; external-identity means the workload authenticates as itself,
+// so there is no connection secret to project and none may be declared.
+func validateManagedAuth(environment, service string, config managedServiceConfig) (mode, instance string, err error) {
+	instance = strings.TrimSpace(config.InstanceConnectionName)
+	mode = strings.TrimSpace(config.AuthMode)
+	if config.Kind == "cloud-sql-postgres" {
+		// A silent password default here would have the driver project a
+		// connection secret an IAM-only instance never issued, so the choice is
+		// stated rather than inherited.
+		if mode == "" {
+			return "", "", fmt.Errorf("environment %q managed service %q kind %q requires an explicit auth-mode", environment, service, config.Kind)
+		}
+		if !instanceConnectionPattern.MatchString(instance) {
+			return "", "", fmt.Errorf("environment %q managed service %q instance-connection-name %q is not a project:region:instance name", environment, service, config.InstanceConnectionName)
+		}
+	} else if instance != "" {
+		return "", "", fmt.Errorf("environment %q managed service %q kind %q does not take an instance-connection-name", environment, service, config.Kind)
+	}
+	switch mode {
+	case "", "password":
+		return "password", instance, nil
+	case "external-identity":
+		if len(config.SecretReferences) > 0 {
+			return "", "", fmt.Errorf("environment %q managed service %q authenticates as an external identity and declares secret references", environment, service)
+		}
+		return "external-identity", instance, nil
+	}
+	return "", "", fmt.Errorf("environment %q managed service %q auth-mode %q is not supported", environment, service, config.AuthMode)
 }
 
 func validateManagedDependencyCIDRs(environment string, topology deploymentTopology, managed map[string]managedServiceConfig) error {
@@ -850,7 +916,7 @@ func classifyEnvironment(environment *environmentConfig) (local bool, managedCap
 	switch kind {
 	case "k3d":
 		return true, false, kind, nil
-	case "eks", "aks":
+	case "eks", "aks", "gke":
 		return false, true, kind, nil
 	case "":
 		if strings.HasPrefix(environment.Name, "local") {
@@ -1063,11 +1129,12 @@ func topologyIstioResources(
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
 	istio = append(istio, topologyInternalAuthorityAllowPolicies(topology, plan, namespace, labels)...)
+	istio = append(istio, topologyInternalHTTPDenyPolicies(topology, plan, namespace, labels)...)
 	if topologyRequiresWaypoint(topology, plan) {
-		// The internal-authority deny is an L7 (method-path) policy. In the
-		// ambient data plane ztunnel enforces L4 only, so a waypoint proxy must
-		// front the namespace for the path match to be evaluated. The namespace
-		// opts in via istio.io/use-waypoint (see renderEnvironment).
+		// The internal-authority allow and the internal-HTTP deny both match on
+		// request path. In the ambient data plane ztunnel enforces L4 only, so a
+		// waypoint proxy must front the namespace for that match to be evaluated.
+		// The namespace opts in via istio.io/use-waypoint (see renderEnvironment).
 		istio = append(istio, kubeObject{
 			APIVersion: "gateway.networking.k8s.io/v1",
 			Kind:       "Gateway",
@@ -1356,6 +1423,16 @@ func topologyInternalAuthorizationPolicies(
 	slices.Sort(targets)
 	policies := make([]kubeObject, 0, len(targets))
 	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
+	// Once a waypoint fronts the namespace, east-west traffic reaches the
+	// destination's ztunnel from the waypoint, not from the caller, so the
+	// caller-scoped allowlist below would drop every in-mesh request unless the
+	// waypoint's own identity is admitted too. It runs under the ServiceAccount
+	// named after its Gateway. Caller identity is still enforced above it, by the
+	// L7 policies the waypoint evaluates.
+	waypointPrincipal := ""
+	if topologyRequiresWaypoint(topology, plan) {
+		waypointPrincipal = meshPrincipal(namespace, meshWaypointName)
+	}
 	for _, target := range targets {
 		service, _ := topologyServiceByName(topology, target)
 		ports := make([]uint32, 0, len(targetPorts[target]))
@@ -1379,7 +1456,7 @@ func topologyInternalAuthorizationPolicies(
 				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
-						"principals": callerPrincipals[target],
+						"principals": portAllowPrincipals(callerPrincipals[target], waypointPrincipal),
 					}}},
 					"to": []any{map[string]any{"operation": map[string]any{
 						"ports": renderedPorts,
@@ -1391,13 +1468,110 @@ func topologyInternalAuthorizationPolicies(
 	return policies
 }
 
+// portAllowPrincipals returns the L4 allowlist for a target: its declared
+// callers plus, when one fronts the namespace, the waypoint that relays their
+// traffic.
+func portAllowPrincipals(callers []string, waypointPrincipal string) []string {
+	if waypointPrincipal == "" {
+		return callers
+	}
+	principals := append(slices.Clone(callers), waypointPrincipal)
+	slices.Sort(principals)
+	return slices.Compact(principals)
+}
+
+// topologyInternalHTTPDenyPolicies gates a service's cluster-internal HTTP
+// routes by caller workload identity. Those routes are multiplexed on a public
+// endpoint's port with browser-facing traffic, so no NetworkPolicy and no L4
+// mesh rule can separate them — only a path-and-method match can, and only a
+// DENY can subtract them from the port-wide ALLOW that admits the ingress
+// gateway. Every principal outside the target's declared callers is refused, so
+// the routes are reachable from inside the mesh and from nowhere else; a
+// service with no declared callers denies them outright rather than leaving
+// them on the public front door.
+func topologyInternalHTTPDenyPolicies(
+	topology deploymentTopology,
+	plan environmentPlan,
+	namespace string,
+	labels map[string]string,
+) []kubeObject {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
+	services := make([]topologyService, 0, len(topology.Services))
+	for _, service := range topology.Services {
+		if _, ok := inCluster[service.Name]; ok && len(service.InternalHTTPRoutes) > 0 {
+			services = append(services, service)
+		}
+	}
+	slices.SortFunc(services, func(a, b topologyService) int { return strings.Compare(a.Name, b.Name) })
+	policies := make([]kubeObject, 0, len(services))
+	for _, service := range services {
+		exempt := append(slices.Clone(callerPrincipals[service.Name]), meshIngressPrincipal)
+		slices.Sort(exempt)
+		rules := make([]any, 0, len(service.InternalHTTPRoutes))
+		for _, route := range service.InternalHTTPRoutes {
+			rules = append(rules, map[string]any{
+				"from": []any{map[string]any{"source": map[string]any{
+					"notPrincipals": exempt,
+				}}},
+				"to": []any{map[string]any{"operation": map[string]any{
+					"paths":   internalHTTPPathPatterns(route.Path),
+					"methods": route.Methods,
+				}}},
+			})
+		}
+		policies = append(policies, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "deny-" + service.Name + "-internal-http",
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"targetRefs": []any{map[string]any{
+					"kind":  "Service",
+					"group": "",
+					"name":  topologyKubernetesServiceName(service),
+				}},
+				"action": "DENY",
+				"rules":  rules,
+			},
+		})
+	}
+	return policies
+}
+
+// internalHTTPPathPatterns expands an authored route into the Istio path
+// patterns that match it. The suffix form is what closes the gap between what
+// Envoy matches and what the application routes: Istio's default path
+// normalization does not merge duplicate slashes, so an exact match alone lets
+// //api/... through while the application still serves it. Istio allows one
+// wildcard, at the start or the end, so a suffix pattern is the widest single
+// form available; percent-encoded separators are matchable by neither, which is
+// why the route's own credential check remains the gate rather than a backstop.
+func internalHTTPPathPatterns(path string) []string {
+	return []string{"*" + path, path}
+}
+
+// meshIngressPrincipal is the identity Istio's ingress gateway presents. It is
+// exempt from the internal-HTTP deny because a waypoint never sees
+// ingress-originated traffic: Istio routes it straight to the workload unless
+// the install sets istio.io/ingress-use-waypoint AND istiod's
+// ENABLE_INGRESS_WAYPOINT_ROUTING, neither of which a module can render. Naming
+// it in the deny would read as a boundary while enforcing nothing.
+const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+
 // meshWaypointName is the namespace waypoint that fronts the ambient data plane
 // so L7 (method-path) AuthorizationPolicies are enforced; ztunnel alone is L4.
 const meshWaypointName = "waypoint"
 
-// topologyRequiresWaypoint reports whether any in-cluster service exposes
-// internal-authority method paths, which are gated by an L7 AuthorizationPolicy
-// that only a waypoint can evaluate.
+// topologyRequiresWaypoint reports whether any in-cluster service exposes an
+// internal surface — gRPC authority methods or authored HTTP routes — gated by
+// an L7 AuthorizationPolicy that only a waypoint can evaluate.
 func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan) bool {
 	inCluster := make(map[string]struct{}, len(plan.services))
 	for _, service := range plan.services {
@@ -1405,6 +1579,14 @@ func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan)
 	}
 	for target := range topology.internalMethodPaths {
 		if _, ok := inCluster[target]; ok {
+			return true
+		}
+	}
+	for _, service := range topology.Services {
+		if _, ok := inCluster[service.Name]; !ok {
+			continue
+		}
+		if len(service.InternalHTTPRoutes) > 0 {
 			return true
 		}
 	}
@@ -1454,8 +1636,12 @@ func topologyInternalAuthorityAllowPolicies(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
-				"action":   "ALLOW",
+				"targetRefs": []any{map[string]any{
+					"kind":  "Service",
+					"group": "",
+					"name":  topologyKubernetesServiceName(service),
+				}},
+				"action": "ALLOW",
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
 						"principals": callerPrincipals[target],
@@ -1848,6 +2034,7 @@ func topologyNetworkPolicies(
 			})
 		}
 	}
+	tokenEgress := make(map[string]struct{})
 	for _, current := range edges {
 		if _, exists := inCluster[current.target]; exists {
 			policies = append(policies,
@@ -1861,6 +2048,12 @@ func topologyNetworkPolicies(
 			return nil, fmt.Errorf("dependency %s -> %s has no in-cluster service or managed handoff", current.caller, current.target)
 		}
 		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressCIDRs))
+		if config.AuthMode == "external-identity" {
+			if _, rendered := tokenEgress[current.caller]; !rendered {
+				tokenEgress[current.caller] = struct{}{}
+				policies = append(policies, workloadIdentityTokenEgressPolicy(namespace, labels, current.caller, current.callerApp))
+			}
+		}
 	}
 	for _, service := range topology.Services {
 		if len(service.BootstrapJobEndpoints) == 0 {
@@ -2102,6 +2295,32 @@ var publicIPv6Exceptions = []string{
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 
+// instanceMetadataCIDR is the node-local instance metadata endpoint every major
+// cloud serves workload-identity tokens from (GCP, Azure IMDS and AWS IMDS all
+// answer on this address).
+const instanceMetadataCIDR = "169.254.169.254/32"
+
+// workloadIdentityTokenEgressPolicy lets a caller mint the token that IS its
+// credential under external-identity. The default-deny baseline denies all
+// egress and publicEgressPolicy excepts link-local, so without this the
+// passwordless mode has no path to the credential it is defined by — and the
+// failure would land at connection time, long after generation reported success.
+func workloadIdentityTokenEgressPolicy(namespace string, labels map[string]string, caller, callerApp string) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "workload-identity-token"), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
+			"policyTypes": []string{"Egress"},
+			"egress": []any{map[string]any{
+				"to":    []any{map[string]any{"ipBlock": map[string]string{"cidr": instanceMetadataCIDR}}},
+				"ports": []any{map[string]any{"protocol": "TCP", "port": 80}},
+			}},
+		},
+	}
+}
+
 func publicEgressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
@@ -2196,8 +2415,8 @@ func validateGeneratedBundle(root string, bundle moduleBundle) error {
 		if err != nil {
 			return err
 		}
-		if unresolvedPattern.Match(data) {
-			return fmt.Errorf("%s contains an unresolved placeholder or starter identity", file)
+		if match := unresolvedPattern.Find(data); match != nil {
+			return fmt.Errorf("%s contains an unresolved placeholder or starter identity %q", file, match)
 		}
 		return nil
 	})

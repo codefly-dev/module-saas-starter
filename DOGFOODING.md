@@ -113,7 +113,7 @@ SMTP. Every box should pass cleanly with just the dev-admin fixture.
 - [ ] After redirect, status = "Setup pending". "Continue setup" + "Disable SSO" buttons.
 - [ ] Click **Disable SSO** → confirm → toast "SSO disabled". Status = "Disabled". "Re-enable SSO" button.
 - [ ] Click "Re-enable SSO". Goes through the same flow. Status returns to "Setup pending".
-- [ ] Audit log shows `sso.setup.started` + `sso.disabled` events.
+- [ ] Audit log shows `saas.sso.setup.started` + `saas.sso.disabled` events.
 
 ### Billing admin — no-Stripe-key callout (new)
 

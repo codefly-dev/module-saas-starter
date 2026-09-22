@@ -426,3 +426,75 @@ Backfill mapping is seeded from the ~27 known `(resource, action)` pairs; the
   migration step, the aggregation RPC, the UI work, and the PII/redaction
   follow-up), and any move to Timescale or an external OLAP store (its own
   future ADR, gated on measured need).
+
+## Amendment — 2026-09-08: namespaced event types (issue #520)
+
+The registry shipped, but with two gaps this amendment closes.
+
+**Names are namespaced.** Every event type is now
+`<namespace>.<aggregate>.<event>` and this module mints only `saas.*`:
+`auth.login` became `saas.auth.login`. The `~27 dotted names` counted in the
+Context above are now 122 namespaced ones, and `AuditEventDefinition` carries a
+`Namespace` field distinct from `Owner` — `Owner` names the emitting service,
+`Namespace` is the collision key. A composed workspace hosts several modules
+against one audit spine, so bare `<aggregate>.<event>` names were a collision
+waiting to happen: two modules both minting `user.created` would share one
+`event_type` string, and webhook fan-out routes on exactly that string. The shape
+is the domain-event law already written down in [EVENTS.md](../../EVENTS.md), so
+the two event systems now document one convention rather than two.
+
+**The foreign key this ADR specified is finally built.** The Decision above
+called for `event_type TEXT REFERENCES audit_event_types(name)`; migration 97
+shipped a bare `TEXT` column, so the "FK-checked discriminator" the Consequences
+lean on did not exist and the database accepted any string. Migration 116 adds
+it, along with a CHECK requiring at least three segments and a
+`name LIKE namespace || '.%'` CHECK on the registry projection. An unregistered
+or un-namespaced type is now a write error at the last layer that can still
+catch it, rather than the advisory log line `DurableAuditEmitter` emits.
+
+Migration 116 is a hard cutover — pre-1.0, no alias layer, no dual read. It
+rewrites history in place (unlike migration 97, which recreated `audit_events`
+wholesale), suspending the append-only triggers for that transaction only via
+`ALTER TABLE … DISABLE TRIGGER`, which needs table ownership rather than the
+superuser `session_replication_role` this ADR originally sketched. Stored
+`webhook_subscriptions.events` entries that named a registered event are
+rewritten with it, so existing subscribers keep firing; a subscriber that
+re-creates a subscription from a hardcoded legacy name is the documented break.
+
+## Amendment — 2026-09-09: per-event durability (issue #531)
+
+`AuditEventDefinition` now carries a third axis alongside `Category` and
+`Namespace`: **`Durability`**, declaring how the record must reach the log.
+
+- `DurabilityTransactional` — the event records a privileged write. Its audit row
+  and webhook fan-out are written on a transaction the caller's success depends
+  on (`Service.emitTx` / `emitEntryTx`), so the record and the change commit
+  together, and a failed audit write fails the operation.
+- `DurabilityObservational` — the event records something no domain transaction
+  owns (an authentication outcome, a read, an external provider's outcome). It is
+  written on the emitter's own transaction (`Service.emit`) precisely so it
+  survives a rolled-back domain write.
+
+Before this, `DurableAuditEmitter.Emit` opened its own transaction and logged any
+error without returning it, and most business methods committed the mutation
+first and emitted afterwards. The audit row and its fan-out were atomic with each
+other but not with the change they described, so a crash, a cancelled context, or
+a database error between the two commits could leave an effective security change
+with no durable record and no webhook.
+
+The registry deliberately offers no durability-less constructor (`mutation(...)`
+and `observation(...)` are the only two), and `auditEventIndex` panics on a
+definition without one, so a new event type cannot be added without the decision
+being made. `TestAuditDurability_EmitSitesMatchTheirClassification` reads this
+package's own AST and fails the build when either rule is broken in either
+direction, and `TestAuditDurability_NoBypassOfTheClassifiedEmitPath` fails it
+when an audit row is written straight to the store, skipping classification
+altogether; sites a classification cannot reach are listed with a reason in
+`auditEmitExemptions` rather than exempted wholesale. Neither detects a
+privileged write that records nothing — that needs an inventory of privileged
+writes, which this amendment does not create.
+
+Two things this does **not** claim. A method policy's `emits_audit` descriptor
+remains a declaration of intent, not evidence of durable commitment — the
+durability classification and the gate carry that. And nothing is backfilled:
+the guarantee begins where it is enforced, not retroactively over history.

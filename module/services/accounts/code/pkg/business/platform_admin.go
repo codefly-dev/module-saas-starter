@@ -3,6 +3,8 @@ package business
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -28,7 +30,14 @@ func PlatformRoleRank(role string) int {
 }
 
 // requirePlatformRole checks that the actor has at least the given platform role.
+// An impersonated request holds no platform authority at all: the effective
+// subject's grants are not the actor's to borrow, and the actor's own grants do
+// not follow them into someone else's session. Denying here also denies nested
+// impersonation, since ImpersonateUser sits behind this gate.
 func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole string) error {
+	if auth.ImpersonatedRequest(ctx) {
+		return fmt.Errorf("platform authority is unavailable to an impersonated session")
+	}
 	role, err := s.store.GetPlatformRole(ctx, actorID)
 	if err != nil {
 		return err
@@ -69,6 +78,15 @@ func (s *Service) SearchUsers(ctx context.Context, actorID string, req *gen.Sear
 }
 
 // SuspendUser suspends a user account (super_admin only).
+//
+// A suspension deactivates the identity exactly as a deletion does, and it
+// carries the same administrative-continuity consequence — but unlike a
+// deletion it is not refused for it. Suspension is how a compromised account is
+// contained, and an invariant about who can administer an organization must not
+// be the reason a credential in somebody else's hands stays live. The
+// organizations left without an administrator are recorded on the audit event
+// and reported to the operator instead, because the cost of containing the
+// account is theirs to repair and they have the authority to.
 func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.SuspendUserRequest) error {
 	w := wool.Get(ctx).In("SuspendUser")
 
@@ -76,14 +94,34 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		return w.Wrapf(err, "permission denied")
 	}
 
+	var stranded []string
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateUserStatus(ctx, req.UserId, "suspended")
+		var err error
+		// Taken even though nothing here is refused: holding each organization's
+		// administration lock across the status write is what keeps a concurrent
+		// removal from counting this identity as an administrator it no longer
+		// is, and what makes the recorded list the one that actually committed.
+		stranded, err = s.organizationsStrandedByDeactivation(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		if err := s.store.UpdateUserStatus(ctx, req.UserId, "suspended"); err != nil {
+			return err
+		}
+		if len(stranded) == 0 {
+			return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "",
+			map[string]any{"organizations_without_administrator": stranded})
 	}); err != nil {
 		return w.Wrapf(err, "cannot suspend user")
 	}
 
-	s.emit(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
-	s.notifySlack(ctx, fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason))
+	message := fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason)
+	if len(stranded) > 0 {
+		message += fmt.Sprintf(" — organizations left without an administrator: %s", strings.Join(stranded, ", "))
+	}
+	s.notifySlack(ctx, message)
 	return nil
 }
 
@@ -96,19 +134,35 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 	}
 
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateUserStatus(ctx, req.UserId, "active")
+		if err := s.store.UpdateUserStatus(ctx, req.UserId, "active"); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserUnsuspended, "user", req.UserId, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot unsuspend user")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserUnsuspended, "user", req.UserId, "")
 	return nil
 }
 
-// ImpersonateUser issues a token as another user (support+ only).
-// UserID on the minted Identity stays as the actor (for audit), ActingAsUserID
-// points at the target — downstream business logic authorises against the
-// target, audit logs against the actor.
+// ImpersonationReasonMinRunes is the floor the justification must clear once
+// surrounding whitespace is removed. The request contract carries the same
+// number, but buf.validate measures the string as sent: padding a single
+// character out to the contract's length satisfies it while recording nothing,
+// so the floor that actually counts is applied here, to the trimmed value.
+const ImpersonationReasonMinRunes = 10
+
+// ImpersonateUser issues a token whose real actor is the calling platform admin
+// and whose effective subject is the target (support+ only). The minted Identity
+// keeps the actor as UserID and names the target through ActingAsUserID; every
+// transport projects that pair onto auth.RequestIdentity, so downstream
+// authorization runs as the target while audit stays attributable to the actor.
+//
+// The session is deliberately narrow. It carries no platform role, and
+// requirePlatformRole denies platform authority to any request already acting as
+// someone else — which is also what forbids impersonating from inside an
+// impersonated session. The target must be an active account: a suspended or
+// deleted user cannot be stepped into, so a support session can never outlive the
+// account's own lifecycle. The token TTL is capped independently by the minter.
 func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.ImpersonateUserRequest) (*gen.ImpersonateUserResponse, error) {
 	w := wool.Get(ctx).In("ImpersonateUser")
 
@@ -119,21 +173,43 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
-	// Cross-tenant lookup: a platform admin impersonating any user
-	// needs to see all their orgs + role regardless of caller's
-	// tenant. WithControlPlane elevates for the read; the impersonation
-	// session that gets minted carries the resolved orgID so
-	// downstream tenant-scoped ops run correctly under the target's
-	// org.
-	var orgs []*gen.Organization
+	// Measured in runes on the trimmed value: the transport floor counts the
+	// string as sent, so it passes "         ." while what gets recorded is ".".
+	// The justification stays out of the error — it is free text about a named
+	// customer, and wool masks field keys, never their values.
+	reason := strings.TrimSpace(req.Reason)
+	if len([]rune(reason)) < ImpersonationReasonMinRunes {
+		return nil, w.NewError("impersonation requires a justification")
+	}
+
+	// Cross-tenant lookups: a platform admin impersonating any user needs to see
+	// the target's account state, orgs and role regardless of the caller's own
+	// tenant. WithControlPlane elevates for the reads; the impersonation session
+	// that gets minted carries the resolved orgID so downstream tenant-scoped ops
+	// run correctly under the target's org.
+	var (
+		target *gen.User
+		orgs   []*gen.Organization
+	)
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		t, err := s.store.GetUser(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		target = t
 		os, err := s.store.ListOrganizationsForUser(ctx, req.UserId)
 		orgs = os
 		return err
 	}); err != nil {
-		return nil, w.Wrapf(err, "cannot list orgs for target user")
+		return nil, w.Wrapf(err, "cannot resolve target user")
+	}
+	if target.GetStatus() != gen.UserStatus_USER_STATUS_ACTIVE {
+		return nil, w.NewError("target user is not active")
 	}
 
+	// The target's organizations come back ordered by name, so a target in
+	// several organizations always yields the same session org rather than
+	// whichever row the planner returned first.
 	orgID := ""
 	orgRole := ""
 	if len(orgs) > 0 {
@@ -170,9 +246,6 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		}
 	}
 
-	// The minted Identity names the actor as UserID (audit correlation) and
-	// the target via ActingAsUserID. Downstream services read ActingAsUserID
-	// for authz decisions when present.
 	// PlatformRole is intentionally EMPTY on an impersonation token. It used to
 	// carry the TARGET's platform role, so a `support` admin impersonating a
 	// `super_admin` inherited super-admin — a privilege escalation. Impersonation
@@ -191,11 +264,109 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "mint impersonation token")
 	}
 
-	s.emit(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "")
+	// Impersonation changes no row, so there is no mutation for the record to be
+	// atomic with — but the token must not reach the caller unless the record is
+	// committed, so the write is what gates the response. The session id ties
+	// this record to the one StopImpersonation writes, so the two sides of a
+	// support-access window reconcile to each other rather than by timestamp
+	// proximity.
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "",
+			map[string]any{"reason": reason, "session_id": identity.SessionID.String()})
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot record impersonation")
+	}
 
 	return &gen.ImpersonateUserResponse{
 		AccessToken: pair.AccessToken,
-		ExpiresIn:   int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:   expiresInSeconds(pair.AccessTokenExpiresAt),
+	}, nil
+}
+
+// StopImpersonation ends the caller's own impersonation session: it kills the
+// session's access tokens and closes the audit window ImpersonateUser opened.
+//
+// Being impersonated is itself the authorization, and the session to end is
+// derived from the verified identity. There is deliberately no target in the
+// request, so no operator can end another's window — accepting a caller-supplied
+// session id here would repeat the defect #676 closed in StartTask.
+//
+// requirePlatformRole cannot gate this one. It withholds platform authority from
+// every impersonated request by design, which is what forbids nesting; routing
+// the way out through it would leave an impersonated session no way out at all.
+func (s *Service) StopImpersonation(ctx context.Context) (*gen.StopImpersonationResponse, error) {
+	w := wool.Get(ctx).In("StopImpersonation")
+
+	if s.minter == nil {
+		return nil, w.NewError("auth path not wired: minter missing")
+	}
+	identity, ok := auth.VerifiedRequestIdentity(ctx)
+	if !ok || !identity.Impersonated() {
+		return nil, w.NewError("not an impersonated session")
+	}
+	// A verified JWT always carries a sid; a gateway-forwarded identity may not.
+	// Without one there is no window to name, and reporting a stop that closed
+	// nothing is the exact failure this RPC exists to end.
+	if identity.SessionID == uuid.Nil {
+		return nil, w.NewError("impersonated session carries no session id")
+	}
+	sessionID := identity.SessionID.String()
+
+	// The access-token marker is written first because it is the only thing that
+	// can take effect before the token's natural expiry, and it is deliberately
+	// not allowed to fail the stop: the durable close below is what the audit
+	// trail and every "is this window open" reader consult. Its outcome travels
+	// into the record instead, because a marker that was never written — or a
+	// deployment with no revocation store at all, where every revoke succeeds and
+	// revokes nothing — must not be recorded as a token that died.
+	tokenRevoked := s.minter.AccessRevocationEnabled()
+	if tokenRevoked {
+		if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
+			w.Warn("impersonation access-token revocation failed; the window is still closed durably",
+				wool.ErrField(err))
+			tokenRevoked = false
+		}
+	}
+
+	subjectID := identity.EffectiveSubjectID()
+	var durationSeconds int64
+	var closed bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		// The window's row belongs to the admin while this request runs as the
+		// target, so it is unreachable under the caller's own row scope. Closing
+		// it and reading when it opened is one statement, so the duration
+		// recorded is the one that was actually committed.
+		startedAt, didClose, err := s.store.CloseImpersonationSession(ctx, sessionID, "stopped_by_operator")
+		if err != nil {
+			return err
+		}
+		closed = didClose
+		if !didClose {
+			// Already closed, or never persisted. Either way the window is not
+			// open, and a second close record would make the trail show more
+			// ends than starts.
+			return nil
+		}
+		// created_at is the database clock and this is the service clock, so a
+		// skewed pair can run backwards. A window cannot last a negative time,
+		// and a compliance record must not say it did.
+		if elapsed := time.Since(startedAt); elapsed > 0 {
+			durationSeconds = int64(elapsed.Seconds())
+		}
+		return s.emitTx(ctx, subjectID, "user", EventPlatformImpersonationEnded, "user", subjectID, "",
+			map[string]any{
+				"session_id":           sessionID,
+				"duration_seconds":     durationSeconds,
+				"access_token_revoked": tokenRevoked,
+			})
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot close impersonation session")
+	}
+
+	return &gen.StopImpersonationResponse{
+		DurationSeconds:    durationSeconds,
+		AccessTokenRevoked: tokenRevoked,
+		AlreadyClosed:      !closed,
 	}, nil
 }
 
@@ -205,6 +376,15 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 
 	if err := s.requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, w.Wrapf(err, "permission denied")
+	}
+
+	// sessions.user_id is a uuid column, so an unparseable id reaches Postgres
+	// as a failed cast rather than an empty result — an internal error where the
+	// caller supplied bad input.
+	if req.UserId != "" {
+		if _, err := ParseID(req.UserId); err != nil {
+			return nil, w.Wrapf(err, "invalid user id")
+		}
 	}
 
 	var sessions []*Session
@@ -221,14 +401,15 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 		infos = append(infos, &gen.SessionInfo{
 			// family_id is the stable per-device session identifier. Row ids
 			// rotate with refresh tokens and must not leak into management UX.
-			Id:            sess.FamilyID,
-			UserId:        sess.UserID,
-			IpAddress:     sess.IPAddress,
-			DeviceInfo:    sess.DeviceInfo,
-			CreatedAt:     timestamppb.New(sess.CreatedAt),
-			LastActiveAt:  timestamppb.New(sess.LastActiveAt),
-			IdleExpiresAt: timestamppb.New(sess.IdleExpiresAt),
-			ExpiresAt:     timestamppb.New(sess.ExpiresAt),
+			Id:             sess.FamilyID,
+			UserId:         sess.UserID,
+			ActingAsUserId: sess.ActingAsUserID,
+			IpAddress:      sess.IPAddress,
+			DeviceInfo:     sess.DeviceInfo,
+			CreatedAt:      timestamppb.New(sess.CreatedAt),
+			LastActiveAt:   timestamppb.New(sess.LastActiveAt),
+			IdleExpiresAt:  timestamppb.New(sess.IdleExpiresAt),
+			ExpiresAt:      timestamppb.New(sess.ExpiresAt),
 		})
 	}
 
@@ -253,7 +434,10 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		revokedSessionIDs, err = s.store.RevokeSession(ctx, req.SessionId, reason)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventSessionRevoked, "session", req.SessionId, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke session")
 	}
@@ -271,7 +455,6 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 		}
 	}
 
-	s.emit(ctx, actorID, "user", EventSessionRevoked, "session", req.SessionId, "")
 	return nil
 }
 
@@ -283,11 +466,14 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.GrantPlatformRole(ctx, req.UserId, req.PlatformRole, actorID); err != nil {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		if err := s.store.GrantPlatformRole(ctx, req.UserId, req.PlatformRole, actorID); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventPlatformRoleGranted, "user", req.UserId, "")
+	}); err != nil {
 		return w.Wrapf(err, "cannot grant platform role")
 	}
-
-	s.emit(ctx, actorID, "user", EventPlatformRoleGranted, "user", req.UserId, "")
 
 	// Notify the user about their new platform role
 	_ = s.NotifyUser(
@@ -310,11 +496,14 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
+	}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
-
-	s.emit(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
 	return nil
 }
 

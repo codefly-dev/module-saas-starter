@@ -15,6 +15,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
@@ -33,10 +34,37 @@ func quotaStatusError(err error) error {
 	return err
 }
 
+// orgMembershipStatusError maps the administrative-continuity invariant to a
+// precondition failure. A rejected demotion is not a quota problem and not an
+// internal one: the caller asked for a state the organization may not be left
+// in, and the message says which.
+func orgMembershipStatusError(err error) error {
+	if errors.Is(err, business.ErrOrgAdminContinuity) {
+		// The sentinel's own text, not the wrapped chain: the message is shown
+		// to the caller, and the internal call path is not theirs to read.
+		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
+	}
+	return quotaStatusError(err)
+}
+
+// userStatusError maps a refused deactivation to a precondition failure. The
+// caller asked for a state the platform may not be left in, and the error names
+// the organizations that have to be handed over first — so this one surfaces the
+// typed error's own message rather than the bare sentinel's.
+func userStatusError(err error) error {
+	var continuity *business.IdentityAdminContinuityError
+	if errors.As(err, &continuity) {
+		return status.Error(codes.FailedPrecondition, continuity.Error())
+	}
+	return err
+}
+
 func invitationStatusError(err error) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, business.ErrOrgAdminContinuity):
+		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
 	case errors.Is(err, business.ErrInvitationUnavailable):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, business.ErrInvitationEmailMismatch):
@@ -68,6 +96,17 @@ func jobOperationStatusError(err error) error {
 		return status.Error(codes.Unavailable, err.Error())
 	default:
 		return status.Error(codes.Internal, "job operation failed")
+	}
+}
+
+func eventOperationStatusError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, business.ErrEventOperationsUnavailable):
+		return status.Error(codes.Unavailable, err.Error())
+	default:
+		return status.Error(codes.Internal, "event operation failed")
 	}
 }
 
@@ -216,7 +255,7 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*
 	if err := service.DeleteUser(ctx, actorID, access, &gen.GetUserRequest{
 		Identifier: &gen.GetUserRequest_Uuid{Uuid: targetID},
 	}); err != nil {
-		return nil, err
+		return nil, userStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -333,7 +372,7 @@ func (s *OrgServer) AddMember(ctx context.Context, req *gen.AddOrgMemberRequest)
 		return nil, err
 	}
 	if err := service.AddOrgMember(ctx, actorID, req); err != nil {
-		return nil, quotaStatusError(err)
+		return nil, orgMembershipStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -350,7 +389,7 @@ func (s *OrgServer) RemoveMember(ctx context.Context, req *gen.RemoveOrgMemberRe
 		return nil, err
 	}
 	if err := service.RemoveOrgMember(ctx, actorID, req); err != nil {
-		return nil, err
+		return nil, orgMembershipStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -418,6 +457,9 @@ func (s *TeamServer) AddMember(ctx context.Context, req *gen.AddTeamMemberReques
 	// WithControlPlane lookup. 4 transactions/request → 3.
 	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	if err := service.AddTeamMember(ctx, actorID, req); err != nil {
+		if errors.Is(err, business.ErrTeamMemberNotInParentOrganization) {
+			return nil, status.Error(codes.FailedPrecondition, business.ErrTeamMemberNotInParentOrganization.Error())
+		}
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -534,6 +576,20 @@ func (s *PermServer) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (
 		}
 	}
 	return service.ListRoles(ctx, req)
+}
+
+func (s *PermServer) UpdateRole(ctx context.Context, req *gen.UpdateRoleRequest) (*gen.UpdateRoleResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.UpdateRole(ctx, actorID, req)
 }
 
 func (s *PermServer) DeleteRole(ctx context.Context, req *gen.DeleteRoleRequest) (*emptypb.Empty, error) {
@@ -656,34 +712,6 @@ func (s *PermServer) ListAccessibleScopes(ctx context.Context, req *gen.ListAcce
 		return nil, err
 	}
 	return service.ListAccessibleScopes(ctx, req)
-}
-
-// ListMyAccessibleScopes is the authenticated, caller-scoped companion to
-// ListAccessibleScopes: the subject is the bearer's own principal, so there is no
-// subject_id in the request and it can never disclose another principal's
-// boundaries. A normal org member reaches it through the gateway. It funnels into
-// the same business method as the internal RPC, so the two resolve the identical
-// grant + share union.
-func (s *PermServer) ListMyAccessibleScopes(ctx context.Context, req *gen.ListMyAccessibleScopesRequest) (*gen.ListAccessibleScopesResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-		return nil, err
-	}
-	return service.ListAccessibleScopes(ctx, &gen.ListAccessibleScopesRequest{
-		SubjectId:    actorID,
-		SubjectKind:  gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ResourceType: req.ResourceType,
-		Action:       req.Action,
-		OrgId:        req.OrgId,
-		PageSize:     req.PageSize,
-		PageToken:    req.PageToken,
-	})
 }
 
 // The scope-tree and share management RPCs below are deliberately org-admin
@@ -1095,6 +1123,41 @@ func bearerFromContext(ctx context.Context) string {
 	return ""
 }
 
+// ValidateClientAuthorization, IssueClientAuthorizationCode and
+// ExchangeClientToken share one refusal. The first and third are public, so a
+// distinguishable error would let anyone enumerate which client ids exist and
+// which redirect URIs each registered.
+func (s *AuthServer) ValidateClientAuthorization(ctx context.Context, req *gen.ValidateClientAuthorizationRequest) (*gen.ValidateClientAuthorizationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.ValidateClientAuthorization(ctx, req)
+	return resp, clientAuthorizationError(err)
+}
+
+func (s *AuthServer) IssueClientAuthorizationCode(ctx context.Context, req *gen.IssueClientAuthorizationCodeRequest) (*gen.IssueClientAuthorizationCodeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.IssueClientAuthorizationCode(ctx, req)
+	return resp, clientAuthorizationError(err)
+}
+
+func (s *AuthServer) ExchangeClientToken(ctx context.Context, req *gen.ExchangeClientTokenRequest) (*gen.ExchangeClientTokenResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.ExchangeClientToken(ctx, req)
+	return resp, clientAuthorizationError(err)
+}
+
+func clientAuthorizationError(err error) error {
+	if errors.Is(err, auth.ErrClientAuthorizationRejected) {
+		return status.Error(codes.PermissionDenied, "client authorization rejected")
+	}
+	return err
+}
+
 func (s *AuthServer) GetJWKS(ctx context.Context, _ *emptypb.Empty) (*gen.JWKSResponse, error) {
 	jwks, err := service.GetJWKS(ctx)
 	if err != nil {
@@ -1119,7 +1182,7 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 	// audit trail; platform admins see anything. No org_id means a platform-wide
 	// read, which requires platform admin — UNLESS the caller carries a verified
 	// active org: default the read to that org rather than denying, so an org
-	// member (including a solution acting on the user's behalf, e.g. lastlogin)
+	// member (including a solution acting on the user's behalf, e.g. a composed solution)
 	// sees their own org's audit trail without a platform grant.
 	if req.OrgId == "" {
 		if err := requirePlatformAdmin(ctx, actorID); err != nil {
@@ -1145,8 +1208,10 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		ActorID:    req.ActorId,
 		EventType:  req.EventType,
 		Category:   req.Category,
+		Namespace:  req.Namespace,
 		Resource:   req.Resource,
 		ResourceID: req.ResourceId,
+		ClientID:   req.ClientId,
 		PageSize:   req.PageSize,
 		PageToken:  req.PageToken,
 	}
@@ -1207,11 +1272,19 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 	}
 
 	q := business.AuditQuery{
-		OrgID:     req.OrgId,
-		ActorID:   req.ActorId,
-		EventType: req.EventType,
-		Category:  req.Category,
-		Resource:  req.Resource,
+		OrgID:        req.OrgId,
+		ActorID:      req.ActorId,
+		EventType:    req.EventType,
+		Category:     req.Category,
+		Namespace:    req.Namespace,
+		Resource:     req.Resource,
+		ResourceID:   req.ResourceId,
+		ClientID:     req.ClientId,
+		CollectionID: req.CollectionId,
+	}
+	q.PayloadContains = make(map[string]any, len(req.PayloadContains))
+	for k, v := range req.PayloadContains {
+		q.PayloadContains[k] = v
 	}
 	if req.From != nil {
 		t := req.From.AsTime()
@@ -1250,7 +1323,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	buckets, err := service.AggregateAuditLog(ctx, q, spec)
+	buckets, err := service.AggregateAuditLogForReader(ctx, actorID, q, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -1261,9 +1334,10 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 			Count:   b.Count,
 			Keys:    b.Keys,
 			Metrics: b.Metrics,
+			Samples: b.Samples,
 		})
 	}
-	return &gen.AggregateAuditLogResponse{Buckets: out}, nil
+	return &gen.AggregateAuditLogResponse{Buckets: out, ScopeContractVersion: 1}, nil
 }
 
 func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAuditEventTypesRequest) (*gen.ListAuditEventTypesResponse, error) {
@@ -1275,6 +1349,7 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 	for _, d := range defs {
 		out = append(out, &gen.AuditEventType{
 			Name:        string(d.Type),
+			Namespace:   d.Namespace,
 			Version:     int32(d.Version),
 			Category:    string(d.Category),
 			Owner:       d.Owner,
@@ -1490,6 +1565,24 @@ func (s *PlatformAdminServer) ImpersonateUser(ctx context.Context, req *gen.Impe
 	return service.ImpersonateUser(ctx, actorID, req)
 }
 
+// StopImpersonation is the one PlatformAdminService RPC an impersonated session
+// may reach. requirePlatformRole resolves nothing while impersonating — that is
+// what contains a support session — so gating the way out on it would wall the
+// operator in. The impersonated state is the authorization, and the session it
+// ends comes from the verified identity, never from the request.
+func (s *PlatformAdminServer) StopImpersonation(ctx context.Context, req *gen.StopImpersonationRequest) (*gen.StopImpersonationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if _, err := requireAuth(ctx); err != nil {
+		return nil, err
+	}
+	if !auth.ImpersonatedRequest(ctx) {
+		return nil, status.Error(codes.PermissionDenied, "not an impersonated session")
+	}
+	return service.StopImpersonation(ctx)
+}
+
 func (s *PlatformAdminServer) ListActiveSessions(ctx context.Context, req *gen.ListActiveSessionsRequest) (*gen.ListActiveSessionsResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -1650,7 +1743,7 @@ func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.Up
 	if err != nil {
 		return nil, err
 	}
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}
@@ -1721,4 +1814,70 @@ func (s *PlatformAdminServer) ReplayJob(ctx context.Context, req *jobsv1.ReplayJ
 	}
 	response, err := service.ReplayJob(ctx, actorID, req)
 	return response, jobOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) GetEventOperations(ctx context.Context, req *eventsv1.GetEventOperationsRequest) (*eventsv1.GetEventOperationsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	response, err := service.GetEventOperations(ctx, actorID, req)
+	return response, eventOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) ListEventSubscriptions(ctx context.Context, req *eventsv1.ListEventSubscriptionsRequest) (*eventsv1.ListEventSubscriptionsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	response, err := service.ListEventSubscriptions(ctx, actorID, req)
+	return response, eventOperationStatusError(err)
+}
+
+// ExplainPermission answers an administrator the question CheckPermission
+// answers a service, for one organization: the verdict is the decision point's
+// own, not a reading an administration surface assembled for itself out of role
+// rows. The caller must administer the organization and the subject must belong
+// to it, so the internal oracle stays internal.
+func (s *PermServer) ExplainPermission(ctx context.Context, req *gen.ExplainPermissionRequest) (*gen.ExplainPermissionResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	if err := requireSubjectInOrg(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+		return nil, err
+	}
+	return service.ExplainPermission(ctx, req)
+}
+
+func (s *PermServer) ListCollectionAccess(ctx context.Context, req *gen.ListCollectionAccessRequest) (*gen.ListCollectionAccessResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.ListCollectionAccess(ctx, req)
 }

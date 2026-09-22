@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "saas/accounts/v1/clients.proto";
+import "saas/policy/v1/options.proto";
+
+// The first-party client registry's service surface (issue #853). It is split
+// from the messages in clients.proto so the auth-gateway — the only client —
+// can generate those messages without also vendoring the policy options this
+// file needs.
+
+// ClientRegistryService reads the declared first-party clients. It is internal:
+// the gateway reaches it over the accounts internal listener to resolve a
+// client id to the origins it may call from, and no browser ever sees the
+// registry itself. The public half of the flow — validating an authorization
+// request, issuing the code, exchanging it — lives on AuthService, because from
+// the person's side it is a login.
+service ClientRegistryService {
+  // ListRegisteredClients returns every declared client so a restarted or
+  // lagging replica can rebuild its cache from authoritative state.
+  rpc ListRegisteredClients(ListRegisteredClientsRequest) returns (ListRegisteredClientsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

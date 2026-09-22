@@ -44,7 +44,7 @@ const LOGICAL_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const NAMESPACED_ID = /^[a-z][a-z0-9._-]*(?::[a-z][a-z0-9._-]*)*$/;
 const SEMVER =
 	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
-const EVENT_TYPE = /^[a-z][a-z0-9]*(?:\.[a-z0-9]+)*\.v[1-9][0-9]*$/;
+const EVENT_TYPE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/;
 const CONFIG_KEY = /^[A-Z][A-Z0-9_]*$/;
 const MIGRATION_ID = /^\d{4}_[a-z0-9]+(?:_[a-z0-9]+)*$/;
 const PUBLISHER = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
@@ -213,7 +213,7 @@ function validatePublication(
 	assertExactKeys(value, ["type", "description"], "event publication");
 	assertManifest(
 		typeof value.type === "string" && EVENT_TYPE.test(value.type),
-		`event publication type '${String(value.type)}' must be namespaced and versioned`,
+		`event publication type '${String(value.type)}' must be namespaced`,
 	);
 	assertOptionalDescription(value.description, "event publication");
 }
@@ -229,7 +229,7 @@ function validateSubscription(
 	);
 	assertManifest(
 		typeof value.type === "string" && EVENT_TYPE.test(value.type),
-		`event subscription type '${String(value.type)}' must be namespaced and versioned`,
+		`event subscription type '${String(value.type)}' must be namespaced`,
 	);
 	assertManifest(
 		typeof value.handler === "string" && LOGICAL_ID.test(value.handler),

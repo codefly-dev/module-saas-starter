@@ -5,10 +5,11 @@
 // reads no host context, and imports no app code, so the host app and a
 // solution's Module-Federation remote render identical dashboards from the same
 // package instance. Data resolution (metric → audit query) is the job of
-// `@codefly/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
+// `@codefly-dev/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
 
 import type * as React from "react";
-import { Card, Section } from "../layout/card.js";
+import { Card } from "../layout/card.js";
+import { Section } from "../layout/page.js";
 import { AreaChart, BarList, LineChart, StatChart } from "./charts.js";
 import { cn } from "./cn.js";
 import type { DashboardView, DashboardWidgetView } from "./types.js";
@@ -33,7 +34,7 @@ const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	const { series, visualization } = widget;
 	if (series.points.length === 0) {
-		return <div className="py-6 text-sm text-muted-foreground">No data yet.</div>;
+		return <div className="py-6 type-body text-muted-foreground">No data yet.</div>;
 	}
 	switch (visualization) {
 		case "line":
@@ -43,11 +44,15 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 		case "bar":
 			return <BarList points={series.points} />;
 		case "number":
-			return <StatChart total={series.total} points={series.points} />;
+			return series.total === null ? (
+				<p className="type-body text-muted-foreground">Total unavailable</p>
+			) : (
+				<StatChart total={series.total} points={series.points} />
+			);
 		case "table":
 			return (
 				<div className="overflow-x-auto">
-					<table className="w-full text-sm">
+					<table className="w-full type-body">
 						<tbody>
 							{series.points.map((p) => (
 								<tr key={p.key} className="border-b last:border-0">
@@ -68,6 +73,11 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
 	const span = widget.span ? (Math.min(widget.span, columns) as 1 | 2 | 3 | 4) : 1;
 	return (
 		<Card title={widget.title} className={COL_SPAN[span]}>
+			{widget.series.coverage === "partial" && (
+				<p role="status" className="type-body text-muted-foreground">
+					Partial telemetry
+				</p>
+			)}
 			<WidgetBody widget={widget} />
 		</Card>
 	);

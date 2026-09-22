@@ -26,7 +26,7 @@ const initial = dashboard({
 // is read through the authoring surface or through useAuditEventTypes.
 const vocab = [
 	{
-		name: "auth.login",
+		name: "saas.auth.login",
 		version: 1,
 		category: "authentication",
 		owner: "accounts",

@@ -42,7 +42,7 @@ describe("StatTile", () => {
 		expect(screen.getByText("req/s")).toBeTruthy();
 	});
 
-	it("colors a rising delta green when higher is better", () => {
+	it("uses the semantic accent for an improving delta", () => {
 		render(
 			<StatTile
 				metric={{
@@ -54,7 +54,7 @@ describe("StatTile", () => {
 			/>,
 		);
 		const delta = screen.getByText(/12%/);
-		expect(delta.className).toContain("text-emerald-600");
+		expect(delta.className).toContain("text-primary");
 		expect(screen.getByText("vs last week")).toBeTruthy();
 	});
 
@@ -83,7 +83,7 @@ describe("StatTile", () => {
 		);
 		const delta = screen.getByText("0%");
 		expect(delta.className).toContain("text-muted-foreground");
-		expect(delta.className).not.toContain("text-emerald");
+		expect(delta.className).not.toContain("text-primary");
 		expect(delta.className).not.toContain("text-destructive");
 	});
 

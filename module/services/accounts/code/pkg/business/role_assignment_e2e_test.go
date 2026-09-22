@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 // E2E test for the full role-assignment chain. This is the integration
@@ -38,6 +40,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -165,10 +169,10 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 
 	// Required actions on this orgs scope:
 	for _, want := range []string{
-		"role.created",
-		"role.assigned",
-		"role.revoked",
-		"org.member_added",
+		"saas.role.created",
+		"saas.role.assigned",
+		"saas.role.revoked",
+		"saas.org.member_added",
 	} {
 		require.Greater(t, gotActions[want], 0,
 			"audit log should contain %q event for org %s; got actions=%v",
@@ -181,3 +185,47 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 func ptrTime(t time.Time) *time.Time { return &t }
 
 var _ = business.ServiceVersion // keep business import alive
+
+// A scope-qualified assignment is identified by its scope as well: the delete
+// predicate matches on it, so a revoke that omits it matches nothing. Reporting
+// that as success told an administrator authority was removed while it was
+// still held.
+func TestRevokeRole_OmittingTheScopeRefusesInsteadOfSilentlySucceeding(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	owner, orgID := mustUserAndOrg(t, ctx, "owner@revoke-scope.test", "owner-revoke-scope", "Acme Revoke Scope")
+
+	role, err := testService.CreateRole(ctx, owner, &gen.CreateRoleRequest{
+		Name: "scoped-editor", OrgId: orgID,
+		Permissions: []*gen.Permission{{Resource: "users", Action: "write"}},
+	})
+	require.NoError(t, err)
+
+	_, err = testService.AssignRole(ctx, &gen.AssignRoleRequest{
+		SubjectId: owner, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+		RoleId: role.Role.Id, OrgId: orgID, Scope: "project-x",
+	})
+	require.NoError(t, err)
+
+	err = testService.RevokeRole(ctx, owner, &gen.RevokeRoleRequest{
+		SubjectId: owner, RoleId: role.Role.Id, OrgId: orgID,
+	})
+	require.Error(t, err, "a revoke that matches no assignment must not report success")
+	require.Equal(t, codes.NotFound, status.Code(err))
+
+	assignments, err := testService.ListRoleAssignments(ctx, &gen.ListRoleAssignmentsRequest{
+		OrgId: orgID, SubjectId: owner,
+	})
+	require.NoError(t, err)
+	require.Len(t, assignments.Assignments, 1, "the grant is still held")
+
+	require.NoError(t, testService.RevokeRole(ctx, owner, &gen.RevokeRoleRequest{
+		SubjectId: owner, RoleId: role.Role.Id, OrgId: orgID, Scope: "project-x",
+	}))
+	after, err := testService.ListRoleAssignments(ctx, &gen.ListRoleAssignmentsRequest{
+		OrgId: orgID, SubjectId: owner,
+	})
+	require.NoError(t, err)
+	require.Empty(t, after.Assignments)
+}

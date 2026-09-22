@@ -67,12 +67,13 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 		if err := quota.RequireAvailable(); err != nil {
 			return err
 		}
-		return s.store.CreateAPIKey(ctx, key, keyHash)
+		if err := s.store.CreateAPIKey(ctx, key, keyHash); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventAPIKeyCreated, "api_key", keyID, req.OrganizationId)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot store API key")
 	}
-
-	s.emit(ctx, userID, "user", EventAPIKeyCreated, "api_key", keyID, req.OrganizationId)
 
 	return &gen.CreateAPIKeyResponse{
 		Key:          key,
@@ -196,11 +197,13 @@ func (s *Service) RevokeAPIKey(ctx context.Context, actorID string, req *gen.Rev
 	// org admin can never revoke another org's key by id (handler authorized
 	// the actor for req.OrganizationId; the WHERE enforces the binding).
 	if err := s.store.WithOrgTx(ctx, req.OrganizationId, func(ctx context.Context) error {
-		return s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId)
+		if err := s.store.RevokeAPIKey(ctx, req.Id, req.OrganizationId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", EventAPIKeyRevoked, "api_key", req.Id, req.OrganizationId)
 	return nil
 }
 

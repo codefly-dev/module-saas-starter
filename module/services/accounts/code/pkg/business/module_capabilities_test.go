@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -112,7 +113,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 		t.Fatalf("NewService: %v", err)
 	}
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"datasource", "documents"}},
+		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
 	})
 	return svc
 }
@@ -124,7 +125,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 		t.Fatalf("NewService: %v", err)
 	}
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -273,10 +274,19 @@ func TestModuleEnqueueJob_OrgScopedHappyPath(t *testing.T) {
 func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
 	if err != nil {
 		t.Fatalf("registered audit event should be accepted: %v", err)
 	}
+}
+
+// The module path is where registry validation actually enforces, so it is where
+// a consuming solution still carrying the pre-#520 vocabulary is told.
+func TestModuleEmitAuditEvent_LegacyTypeRejected(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.InvalidArgument)
 }
 
 // TestModuleEmitAuditEvent_WriteFailureSurfaces pins the fix for silent audit
@@ -286,7 +296,7 @@ func TestModuleEmitAuditEvent_WriteFailureSurfaces(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	svc.SetAuditEmitter(&fakeAuditEmitter{emitTxErr: errors.New("audit spine unavailable")})
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.Internal)
 }
 
@@ -337,6 +347,31 @@ func moduleLease() *jobsv1.JobLeaseReference {
 	}
 }
 
+func TestModuleAckJob_DerivesExecutionOwnerFromAuthenticatedPrincipal(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc := newModuleService(t, backend)
+	if err := svc.ModuleAckJob(context.Background(), moduleCaller(), moduleLease(), "task", "task-42"); err != nil {
+		t.Fatalf("ack: %v", err)
+	}
+	if len(backend.completed) != 1 {
+		t.Fatalf("expected one completion, got %d", len(backend.completed))
+	}
+	execution := backend.completed[0].GetExecution()
+	if execution.GetOwner() != "content" || execution.GetKind() != "task" || execution.GetId() != "task-42" {
+		t.Fatalf("execution = %+v", execution)
+	}
+}
+
+func TestModuleAckJob_RejectsPartialExecutionReference(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc := newModuleService(t, backend)
+	err := svc.ModuleAckJob(context.Background(), moduleCaller(), moduleLease(), "task", "")
+	requireCode(t, err, codes.InvalidArgument)
+	if len(backend.completed) != 0 {
+		t.Fatal("partial execution reached the store")
+	}
+}
+
 func TestModuleNackJob_RetryableRequiresRetryAt(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
 	err := svc.ModuleNackJob(context.Background(), moduleCaller(), moduleLease(), &jobsv1.JobFailure{Code: "boom", Message: "x"}, true, nil)
@@ -367,7 +402,7 @@ func TestModuleNackJob_RetryableRetries(t *testing.T) {
 
 func TestModuleEmitAuditEvent_UnregisteredTypeRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
-	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", nil)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -530,4 +565,200 @@ func TestModuleRequestApproval_ResumeQueueMustBeAllowed(t *testing.T) {
 		ResumeTopic: "document.quarantine_released",
 	})
 	requireCode(t, err, codes.PermissionDenied)
+}
+
+// The registry is authored under the prefix a module already federates with, and
+// indexed by the principal id derived from it, so a deployment never hand-writes
+// an opaque id and every side computes the same one.
+func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
+	registry, err := business.ParseModulePrincipalRegistry(
+		`{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` + moduleTenantA + `"}}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	grant, registered := registry[business.ModulePrincipalID("documents")]
+	if !registered {
+		t.Fatalf("registry is not indexed by the derived principal id: %v", registry)
+	}
+	if grant.Prefix != "documents" || grant.Tenant != moduleTenantA {
+		t.Fatalf("grant = %+v, want the declared prefix and tenant", grant)
+	}
+	if business.ModulePrincipalID("documents") == business.ModulePrincipalID("billing") {
+		t.Fatal("two modules must not derive the same principal id")
+	}
+}
+
+func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
+	tests := map[string]string{
+		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
+		// The tenant is sealed into a signed capability and compared against
+		// organization ids: a malformed one signs, then matches no tenant and drops
+		// the org from its own audit record, so it is rejected where it is read.
+		"no tenant":       `{"documents":{"queues":["datasource"]}}`,
+		"non-uuid tenant": `{"documents":{"queues":["datasource"],"tenant":"acme-org"}}`,
+		// A principal id is a valid prefix by pattern, so an entry keyed the way the
+		// registry used to be would otherwise parse into a principal no module can
+		// ever be, denying every call for a reason that names the caller.
+		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+	}
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := business.ParseModulePrincipalRegistry(raw); err == nil {
+				t.Fatal("expected an unusable module principal declaration to be rejected")
+			}
+		})
+	}
+}
+
+// fakeVisibilityStore answers the visible-subject read without a database,
+// recording the limit the surface asked for so the one-over-the-cap read that
+// distinguishes a servable set from an oversized one is pinned rather than
+// inferred from the returned value.
+type fakeVisibilityStore struct {
+	fakeTxStore
+	subjects   []string
+	gotLimit   int
+	gotOrg     string
+	gotViewer  string
+	orgTxCount int
+}
+
+func (f *fakeVisibilityStore) ListVisibleSubjects(_ context.Context, orgID, viewerID string, limit int) ([]string, error) {
+	f.gotOrg, f.gotViewer, f.gotLimit = orgID, viewerID, limit
+	out := f.subjects
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// WithOrgTx overrides the embedded no-op so a test can count the transactions
+// one call opens.
+func (f *fakeVisibilityStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	f.orgTxCount++
+	return fn(ctx)
+}
+
+func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) *business.Service {
+	t.Helper()
+	svc, err := business.NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
+	})
+	return svc
+}
+
+func TestModuleListSubjectVisibility_UnknownPrincipalRejected(t *testing.T) {
+	svc := newVisibilityService(t, &fakeVisibilityStore{}, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(),
+		business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA},
+		moduleTenantA, moduleUserA)
+	requireCode(t, err, codes.PermissionDenied)
+}
+
+func TestModuleListSubjectVisibility_CrossTenantRejected(t *testing.T) {
+	svc := newVisibilityService(t, &fakeVisibilityStore{}, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
+	requireCode(t, err, codes.PermissionDenied)
+}
+
+// A module bound to one tenant must not learn anything about a subject in
+// another: the tenant guard alone does not settle that, because a cross-tenant
+// principal may legitimately name tenant B while the viewer belongs to neither.
+func TestModuleListSubjectVisibility_ViewerOutsideTenantRejected(t *testing.T) {
+	store := &fakeVisibilityStore{fakeTxStore: fakeTxStore{members: map[string]bool{}}}
+	svc := newVisibilityService(t, store, true)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
+	requireCode(t, err, codes.PermissionDenied)
+	if store.gotViewer != "" {
+		t.Fatal("membership must be settled before the visibility read runs")
+	}
+}
+
+// The whole set comes back in one value, and the read asks for one entry more
+// than the cap so an oversized set is detectable rather than silently truncated.
+func TestModuleListSubjectVisibility_ReturnsTheWholeSet(t *testing.T) {
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    []string{"s1", "s2", "s3"},
+	}
+	svc := newVisibilityService(t, store, false)
+	grants, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	if err != nil {
+		t.Fatalf("ModuleListSubjectVisibility: %v", err)
+	}
+	if store.gotLimit != business.ModuleSubjectVisibilityMaxSet+1 {
+		t.Fatalf("store limit = %d, want the cap plus one", store.gotLimit)
+	}
+	if len(grants) != 3 {
+		t.Fatalf("grants = %+v, want every subject in one value", grants)
+	}
+	if store.gotOrg != moduleTenantA || store.gotViewer != moduleUserA {
+		t.Fatalf("store read (%q, %q), want the requested tenant and viewer", store.gotOrg, store.gotViewer)
+	}
+	for _, grant := range grants {
+		if !grant.ExpiresAt.IsZero() {
+			t.Fatalf("grant %q carries an expiry the team tree cannot produce", grant.VisibleSubjectID)
+		}
+	}
+}
+
+// The whole set is read in exactly ONE transaction. This is the invariant the
+// surface exists to hold: when the set was paginated, a consumer reassembling it
+// read each page in its own transaction, and a membership revoked between two
+// pages still reached the bulk replace — reinstating an authority an
+// administrator had withdrawn. A second transaction here is that bug returning.
+func TestModuleListSubjectVisibility_ReadsInOneTransaction(t *testing.T) {
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    []string{"s1", "s2", "s3"},
+	}
+	svc := newVisibilityService(t, store, false)
+	if _, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA); err != nil {
+		t.Fatalf("ModuleListSubjectVisibility: %v", err)
+	}
+	if store.orgTxCount != 1 {
+		t.Fatalf("opened %d org transactions, want exactly one: the set must be one snapshot", store.orgTxCount)
+	}
+}
+
+// A set past the cap is refused, not truncated: a bulk replace fed a truncated
+// set would withdraw grants that are still live, and one fed a torn set would
+// reinstate grants that are not. FailedPrecondition says the tenant's hierarchy
+// is the thing to change, which no retry or backoff can fix.
+func TestModuleListSubjectVisibility_OversizedSetRefused(t *testing.T) {
+	oversized := make([]string, business.ModuleSubjectVisibilityMaxSet+1)
+	for i := range oversized {
+		oversized[i] = fmt.Sprintf("s%d", i)
+	}
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    oversized,
+	}
+	svc := newVisibilityService(t, store, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// A set exactly at the cap is servable — the boundary is not off by one.
+func TestModuleListSubjectVisibility_SetAtTheCapIsServed(t *testing.T) {
+	atCap := make([]string, business.ModuleSubjectVisibilityMaxSet)
+	for i := range atCap {
+		atCap[i] = fmt.Sprintf("s%d", i)
+	}
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    atCap,
+	}
+	svc := newVisibilityService(t, store, false)
+	grants, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	if err != nil {
+		t.Fatalf("ModuleListSubjectVisibility: %v", err)
+	}
+	if len(grants) != business.ModuleSubjectVisibilityMaxSet {
+		t.Fatalf("grants = %d, want the whole set at the cap", len(grants))
+	}
 }

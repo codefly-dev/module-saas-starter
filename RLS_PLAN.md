@@ -1,5 +1,13 @@
 # Postgres RLS rollout plan
 
+**Historical.** This is the record of how RLS was rolled out, phase by phase; it
+is not a current-state document, and the phases below are all long since closed.
+For what is protected today and under which boundary, read the scope inventory
+in [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md). Relations
+named here have since been renamed or dropped (`audit_export_configs` went in
+store migration 102), and the foundation has changed shape — the
+application-settable bypass is gone, replaced by the `app_control_plane` role.
+
 > Defense-in-depth for tenant isolation at the database row level.
 > Layered on top of:
 >
@@ -15,7 +23,8 @@ running queries.
 
 ## Status — Phase 1, 2A, 2B, 2C, 2D, 2E, 2F all live
 
-- ✅ Foundation: `infra.WithOrgTx(ctx, orgID, fn)` + `WithBypass`.
+- ✅ Foundation: `infra.WithOrgTx(ctx, orgID, fn)` + `WithBypass` (since
+  replaced by `WithUserTx` and `WithControlPlane`).
 - ✅ Empty-orgID guard.
 - ✅ Connection-level role downgrade (`BeforeAcquire` SET ROLE
   app_tenant) — un-wrapped Store calls return zero rows by default.

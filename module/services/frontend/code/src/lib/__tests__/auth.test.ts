@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	decodeJWTPayload,
+	detectImpersonation,
 	extractSessionContext,
 	resolveSessionUser,
 	sessionDisplayLabel,
@@ -197,5 +198,44 @@ describe("Session user identity", () => {
 			{ userId: RAW_UUID, email: "fresh@acme.com" },
 		);
 		expect(user.email).toBe("fresh@acme.com");
+	});
+});
+
+describe("Impersonation detection", () => {
+	const ACTOR = "019f6c01-0001-7000-8000-000000000001";
+	const TARGET = "019f6c01-0002-7000-8000-000000000002";
+
+	it("reports no impersonation on an ordinary session", () => {
+		expect(detectImpersonation(tokenWith({ sub: ACTOR }))).toEqual({
+			isImpersonating: false,
+		});
+	});
+
+	// The banner has to name the user being viewed, not the admin viewing them:
+	// `sub` stays the actor and `acting` is the effective subject.
+	it("separates the effective subject from the real actor", () => {
+		expect(
+			detectImpersonation(tokenWith({ sub: ACTOR, acting: TARGET })),
+		).toEqual({
+			isImpersonating: true,
+			impersonatorId: ACTOR,
+			subjectId: TARGET,
+		});
+	});
+
+	// A delegation chain names a service acting for the subject. It is not
+	// impersonation and must not raise the banner.
+	it("does not treat a delegation chain as impersonation", () => {
+		expect(
+			detectImpersonation(
+				tokenWith({ sub: ACTOR, act: { sub: "svc:worker" } }),
+			),
+		).toEqual({ isImpersonating: false });
+	});
+
+	it("reports no impersonation for an undecodable token", () => {
+		expect(detectImpersonation("not-a-jwt")).toEqual({
+			isImpersonating: false,
+		});
 	});
 });

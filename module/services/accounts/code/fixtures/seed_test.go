@@ -70,6 +70,162 @@ func TestLoadFixtureAcceptsDevelopmentAssuranceField(t *testing.T) {
 	}
 }
 
+func TestLoadFixtureCanonicalizesDeclaredUserID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	contents := "users:\n  - id: 0000000A-0000-7000-8000-0000000000A1\n    email: owner@example.com\n    provider: email\n    provider_id: owner\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := loadFixtureFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fixture.Users[0].ID; got != "0000000a-0000-7000-8000-0000000000a1" {
+		t.Fatalf("loadFixtureFile() user id = %q, want the canonical uuid rendering", got)
+	}
+}
+
+func TestValidateFixtureRejectsUnusableUserIDs(t *testing.T) {
+	tests := map[string][]fixtureUser{
+		"malformed": {
+			{ID: "dev-admin", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"collision": {
+			{ID: "00000000-0000-7000-8000-0000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+			{ID: "00000000-0000-7000-8000-0000000000A1", Email: "member@example.com", Provider: "email", ProviderID: "member"},
+		},
+		"nil sentinel": {
+			{ID: "00000000-0000-0000-0000-000000000000", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		// Spellings uuid.Parse accepts but the frontend's fixture schema does not.
+		"urn spelling": {
+			{ID: "urn:uuid:00000000-0000-7000-8000-0000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"unhyphenated spelling": {
+			{ID: "000000000000700080000000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"braced spelling": {
+			{ID: "{00000000-0000-7000-8000-0000000000a1}", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+	}
+	for name, users := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateFixture(&fixtureFile{Users: users}); err == nil {
+				t.Fatal("validateFixture() accepted a user id that cannot name a principal")
+			}
+		})
+	}
+}
+
+// Module fixtures are quoted by committed configuration — seeded grants, e2e
+// specs, runbooks — so a user without a declared id silently re-mints its
+// principal on every fresh seed.
+func TestModuleFixtureUsersDeclareStableIDs(t *testing.T) {
+	entries, err := embeddedFixtures.ReadDir("embedded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		t.Run(entry.Name(), func(t *testing.T) {
+			fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, u := range fixture.Users {
+				if u.ID == "" {
+					t.Fatalf("fixture user %s declares no id", u.Email)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadFixtureCanonicalizesDeclaredOrganizationID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	contents := "users:\n  - email: owner@example.com\n    provider: email\n    provider_id: owner\n" +
+		"organizations:\n  - id: 0000000A-0000-7000-8000-0000000000B1\n    name: Example\n    owner: owner@example.com\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := loadFixtureFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fixture.Organizations[0].ID; got != "0000000a-0000-7000-8000-0000000000b1" {
+		t.Fatalf("loadFixtureFile() organization id = %q, want the canonical uuid rendering", got)
+	}
+}
+
+// An organization id is sealed as the tenant of a module principal's
+// capability and compared against organization ids downstream, so the same
+// spellings that cannot name a user cannot name a tenant.
+func TestValidateFixtureRejectsUnusableOrganizationIDs(t *testing.T) {
+	owner := fixtureUser{Email: "owner@example.com", Provider: "email", ProviderID: "owner"}
+	tests := map[string][]fixtureOrg{
+		"malformed": {
+			{ID: "acme", Name: "Acme", Owner: owner.Email},
+		},
+		"collision": {
+			{ID: "00000000-0000-7000-8000-0000000000b1", Name: "Acme", Owner: owner.Email},
+			{ID: "00000000-0000-7000-8000-0000000000B1", Name: "Globex", Owner: owner.Email},
+		},
+		"nil sentinel": {
+			{ID: "00000000-0000-0000-0000-000000000000", Name: "Acme", Owner: owner.Email},
+		},
+		"urn spelling": {
+			{ID: "urn:uuid:00000000-0000-7000-8000-0000000000b1", Name: "Acme", Owner: owner.Email},
+		},
+		"unhyphenated spelling": {
+			{ID: "000000000000700080000000000000b1", Name: "Acme", Owner: owner.Email},
+		},
+		"braced spelling": {
+			{ID: "{00000000-0000-7000-8000-0000000000b1}", Name: "Acme", Owner: owner.Email},
+		},
+	}
+	for name, orgs := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateFixture(&fixtureFile{Users: []fixtureUser{owner}, Organizations: orgs}); err == nil {
+				t.Fatal("validateFixture() accepted an organization id that cannot name a tenant")
+			}
+		})
+	}
+}
+
+// A module principal grant (MODULE_PRINCIPALS) names its tenant by organization
+// id, so a module fixture organization without a declared id leaves every
+// composed grant nothing stable to quote.
+func TestModuleFixtureOrganizationsDeclareStableIDs(t *testing.T) {
+	entries, err := embeddedFixtures.ReadDir("embedded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Counted in the outer loop, never from inside a subtest closure: a
+	// counter written by t.Run bodies and read after the loop is correct only
+	// while the subtests are synchronous, and becomes a data race and a
+	// spurious failure the moment someone adds t.Parallel.
+	checked := 0
+	for _, entry := range entries {
+		fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+		if err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
+		}
+		checked += len(fixture.Organizations)
+		t.Run(entry.Name(), func(t *testing.T) {
+			for _, org := range fixture.Organizations {
+				if org.ID == "" {
+					t.Fatalf("fixture organization %s declares no id", org.Name)
+				}
+			}
+		})
+	}
+	// Fixtures without organizations pass this vacuously, so the rule would
+	// still read as enforced if every module organization disappeared. Assert
+	// the loop actually inspected something.
+	if checked == 0 {
+		t.Fatal("no module fixture organization was checked: the stable-id rule is not being enforced by this test")
+	}
+}
+
 func TestValidateFixtureAcceptsAgentRoleAndAssignment(t *testing.T) {
 	fixture := &fixtureFile{
 		Users: []fixtureUser{{
@@ -133,8 +289,8 @@ func TestValidateFixtureRejectsUnsafeOrganizationSlugs(t *testing.T) {
 			{Name: "!!!", Owner: "owner@example.com"},
 		},
 		"collision": {
-			{Name: "Mind AI", Owner: "owner@example.com"},
-			{Name: "mind-ai", Owner: "owner@example.com"},
+			{Name: "Example AI", Owner: "owner@example.com"},
+			{Name: "example-ai", Owner: "owner@example.com"},
 		},
 	}
 	for name, organizations := range tests {

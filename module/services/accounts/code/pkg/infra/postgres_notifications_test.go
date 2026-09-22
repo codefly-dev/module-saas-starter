@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -16,10 +18,8 @@ import (
 func TestCreateAndListNotifications(t *testing.T) {
 	userID := seedUser(t)
 
-	// Each insert in its OWN WithUserTx so created_at increments
-	// (CURRENT_TIMESTAMP returns the tx start time — wrapping all
-	// 3 in one tx would give them the same value and break the
-	// pagination cursor).
+	// Separate transactions cover the usual distinct-timestamp case.
+
 	for i := 0; i < 3; i++ {
 		n := &business.Notification{
 			ID:     business.NewIDString(),
@@ -151,6 +151,50 @@ func TestMarkAllNotificationsRead(t *testing.T) {
 		count, err = testStore.GetUnreadCount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, 0, count)
+		return nil
+	}))
+}
+
+// The badge is settled from grouped references rather than from the rows
+// themselves: only unread rows carrying a reference are grouped, a read row and
+// an ordinary notification are not.
+func TestListUnreadResourceReferencesGroupsUnreadFollowItems(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+
+	create := func(resourceType, resourceID string) string {
+		n := &business.Notification{
+			ID: business.NewIDString(), UserID: userID, OrgID: orgID,
+			Title: "Followed resource changed", Body: "It changed", Type: "info",
+			ResourceType: resourceType, ResourceID: resourceID,
+		}
+		require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
+			return testStore.CreateNotification(ctx, n)
+		}))
+		return n.ID
+	}
+
+	create("doc", "doc-1")
+	create("doc", "doc-1")
+	create("doc", "doc-2")
+	alreadyRead := create("doc", "doc-3")
+	create("", "")
+
+	require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
+		return testStore.MarkNotificationRead(ctx, alreadyRead)
+	}))
+
+	require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
+		refs, err := testStore.ListUnreadResourceReferences(ctx, userID)
+		require.NoError(t, err)
+
+		unreadByResource := map[string]int{}
+		for _, ref := range refs {
+			require.Equal(t, orgID, ref.OrgID)
+			require.Equal(t, "doc", ref.ResourceType)
+			unreadByResource[ref.ResourceID] = ref.Unread
+		}
+		require.Equal(t, map[string]int{"doc-1": 2, "doc-2": 1}, unreadByResource)
 		return nil
 	}))
 }

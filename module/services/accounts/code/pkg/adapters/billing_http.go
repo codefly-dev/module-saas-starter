@@ -55,7 +55,7 @@ func handleCheckout(svc *business.Service, w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
-	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
+	ctx, userID, orgID, err := authenticateHTTPRequest(svc, r)
 	if err != nil {
 		writeBillingAuthnError(w, r, err)
 		return
@@ -108,7 +108,7 @@ func handleFreePlan(svc *business.Service, w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
-	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
+	ctx, userID, orgID, err := authenticateHTTPRequest(svc, r)
 	if err != nil {
 		writeBillingAuthnError(w, r, err)
 		return
@@ -138,7 +138,7 @@ func handlePortal(svc *business.Service, w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
-	ctx, userID, orgID, err := authenticateBillingHTTPRequest(svc, r)
+	ctx, userID, orgID, err := authenticateHTTPRequest(svc, r)
 	if err != nil {
 		writeBillingAuthnError(w, r, err)
 		return
@@ -170,17 +170,22 @@ func handlePortal(svc *business.Service, w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
 }
 
-// authenticateBillingHTTPRequest establishes the exact same private identity
+// authenticateHTTPRequest establishes the exact same private identity
 // used by Connect/gRPC before any authorization cache or database operation.
 // The returned IDs are read back from that private context, never copied from
-// untrusted transport headers.
-func authenticateBillingHTTPRequest(svc *business.Service, r *http.Request) (context.Context, string, string, error) {
+// untrusted transport headers. Every non-protobuf route that serves a signed-in
+// person shares it, so none of them can drift into trusting a raw header.
+func authenticateHTTPRequest(svc *business.Service, r *http.Request) (context.Context, string, string, error) {
 	if svc == nil || r == nil {
-		return nil, "", "", errors.New("billing authentication is unavailable")
+		return nil, "", "", errors.New("authentication is unavailable")
 	}
 	ctx := r.Context()
 	if validGatewayToken(r.Header.Get("X-Codefly-Gateway-Token")) && r.Header.Get("X-User-Id") != "" {
-		ctx = stampForwardedHTTPIdentity(ctx, r.Header)
+		forwarded, err := stampForwardedHTTPIdentity(ctx, r.Header)
+		if err != nil {
+			return ctx, "", "", err
+		}
+		ctx = forwarded
 	} else {
 		minter := svc.JWTMinter()
 		if minter == nil {
@@ -203,7 +208,7 @@ func authenticateBillingHTTPRequest(svc *business.Service, r *http.Request) (con
 		if identity == nil {
 			return ctx, "", "", errors.New("access token is invalid")
 		}
-		ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
+		ctx = stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
 	}
 	tenantID, userID, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok {

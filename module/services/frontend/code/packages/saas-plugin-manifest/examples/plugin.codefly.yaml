@@ -4,10 +4,10 @@ apiVersion: plugin.codefly.dev/v1
 kind: Plugin
 
 metadata:
-  name: warden-guardrails
+  name: acme-guardrails
   version: 1.4.0
-  displayName: Warden Guardrails
-  description: Policy guardrails, egress review, and approval workflows for Warden.
+  displayName: Acme Guardrails
+  description: Policy guardrails, egress review, and approval workflows for Acme.
   publisher: codefly.dev
 
 services:

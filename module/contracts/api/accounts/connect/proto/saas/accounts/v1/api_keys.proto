@@ -112,7 +112,7 @@ service APIKeyService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "api_key.created"
+        events: "saas.api_key.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -120,6 +120,7 @@ service APIKeyService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/api-keys"
@@ -162,7 +163,7 @@ service APIKeyService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "api_key.revoked"
+        events: "saas.api_key.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -170,6 +171,7 @@ service APIKeyService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/api-keys/{id}"};
   }

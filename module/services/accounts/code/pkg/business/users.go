@@ -140,16 +140,23 @@ func (s *Service) UpdateUser(ctx context.Context, actorID string, access Identit
 			return err
 		}
 		user, err = s.store.UpdateUser(ctx, userID, updates)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserUpdated, "user", userID, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update user")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserUpdated, "user", userID, "")
 	return user, nil
 }
 
 // DeleteUser soft-deletes a user.
+//
+// The status change is what makes the identity unusable — findIdentity admits
+// only an active one — so it is refused while the identity is the only
+// administrator of an organization. Offboarding an administrator is an
+// administrator handover first and a deletion second; doing it in that order is
+// the caller's to arrange, and the error names the organizations waiting on it.
 func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identity, req *gen.GetUserRequest) error {
 	w := wool.Get(ctx).In("DeleteUser")
 
@@ -158,15 +165,23 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 		return w.NewError("uuid required for delete")
 	}
 	if err := s.store.As(access).Within(ctx, func(ctx context.Context) error {
+		stranded, err := s.organizationsStrandedByDeactivation(ctx, targetID)
+		if err != nil {
+			return err
+		}
+		if len(stranded) > 0 {
+			return &IdentityAdminContinuityError{Organizations: stranded}
+		}
 		if err := s.store.DeleteUser(ctx, targetID); err != nil {
 			return err
 		}
-		return s.suppressProductIdentity(ctx, userAnalyticsSuppression(targetID), access)
+		if err := s.suppressProductIdentity(ctx, userAnalyticsSuppression(targetID), access); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserDeleted, "user", targetID, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete user")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserDeleted, "user", targetID, "")
 	return nil
 }
 
@@ -186,12 +201,13 @@ func (s *Service) AddIdentity(ctx context.Context, actorID string, access Identi
 	}
 
 	if err := s.store.As(access).Within(ctx, func(ctx context.Context) error {
-		return s.store.AddIdentity(ctx, identity)
+		if err := s.store.AddIdentity(ctx, identity); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserIdentityAdd, "identity", identity.Uuid, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot add identity")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserIdentityAdd, "identity", identity.Uuid, "")
 	return identity, nil
 }
 

@@ -1,8 +1,9 @@
 "use client";
 
 import { OrgSelector } from "@/components/org-selector";
-import { RoleGate } from "@/components/auth/role-gate";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { hasPermission, isSuperAdmin } from "@/lib/permissions";
 import { Button } from "@/shared/ui";
 import type { Role } from "../model/types";
 import { useRoles } from "../service/queries";
@@ -10,33 +11,46 @@ import { RoleForm } from "./role-form";
 import { RolesTable } from "./roles-table";
 
 export function RolesPage() {
-	const { organizationId } = useAuth();
-	const {
-		data: roles = [],
-		isLoading,
-		isError,
-		refetch,
-	} = useRoles(organizationId);
+	const { organizationId: orgId = "", platformRole, orgRole } = useAuth();
+	const canCreate = orgId
+		? hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)
+		: isSuperAdmin(platformRole);
+
+	// A tenant switch closes any open draft instead of silently retargeting it.
+	return (
+		<RolesPageForOrganization key={orgId} orgId={orgId} canCreate={canCreate} />
+	);
+}
+
+function RolesPageForOrganization({
+	orgId,
+	canCreate,
+}: {
+	orgId: string;
+	canCreate: boolean;
+}) {
+	const { data: roles = [], isLoading, isError, refetch } = useRoles(orgId);
 
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Roles</h1>
+					<h1 data-slot="page-title" className="type-page-title">
+						Roles
+					</h1>
 					<p className="text-muted-foreground">
-						Manage built-in roles and custom roles for the selected
-						organization.
+						{orgId
+							? "Manage roles and permissions for the selected organization."
+							: "Global roles. Select an organization to manage its roles."}
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
-					<RoleGate requirePermission="roles:write">
-						<RoleForm key={organizationId} orgId={organizationId} />
-					</RoleGate>
 					<OrgSelector />
+					{canCreate && <RoleForm orgId={orgId} />}
 				</div>
 			</div>
 
-			{!organizationId && (
+			{!orgId && (
 				<p>Select an organization to create or manage its custom roles.</p>
 			)}
 			{isError ? (

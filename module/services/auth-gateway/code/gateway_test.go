@@ -69,14 +69,19 @@ func testRouteEntries() []*RouteEntry {
 	}
 }
 
+// testRegistrationKey is the harness's signing key, published so the solution
+// registration helpers can mint the credential the gateway now requires.
+var testRegistrationKey ed25519.PrivateKey
+
 func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed25519.PrivateKey) {
 	t.Helper()
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	testRegistrationKey = priv
 	require.NoError(t, err)
 
-	sidecar := &Sidecar{
-		publicKey:     pub,
+	authz := &ExtAuthz{
+		keys:          staticAccessKeys(pub),
 		issuer:        "saas-starter",
 		audience:      "saas-starter",
 		internalToken: "test-internal-token",
@@ -102,10 +107,12 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	}
 
 	gateway := NewGateway(
-		sidecar,
+		authz,
 		matcher,
 		upstreams,
 		nil,
+		newFakeSolutionRegistry(),
+		newFakeClientRegistry(),
 	)
 
 	return gateway, apiFake, frontendFake, priv
@@ -134,6 +141,10 @@ func signValidToken(t *testing.T, priv ed25519.PrivateKey) string {
 		SessionID:    uuid.Must(uuid.NewV7()).String(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
+	// accounts stamps kid on every access token it mints; so must the tokens
+	// the gateway suite runs against, or these tests only ever cover the
+	// single-key compatibility branch.
+	token.Header["kid"] = accessKeyID(priv.Public().(ed25519.PublicKey))
 	signed, err := token.SignedString(priv)
 	require.NoError(t, err)
 	return signed
@@ -239,8 +250,8 @@ func TestGateway_TrustsPublicOriginOnlyFromAuthenticatedFrontend(t *testing.T) {
 	require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Internal-Token"))
 }
 
-func TestSidecar_AcceptsInternalTokenDuringRotationOverlap(t *testing.T) {
-	s := &Sidecar{internalToken: "new-token", previousInternalToken: "previous-token"}
+func TestExtAuthz_AcceptsInternalTokenDuringRotationOverlap(t *testing.T) {
+	s := &ExtAuthz{internalToken: "new-token", previousInternalToken: "previous-token"}
 	require.True(t, s.acceptsInternalToken("new-token"), "current token accepted")
 	require.True(t, s.acceptsInternalToken("previous-token"), "previous token accepted during overlap")
 	require.False(t, s.acceptsInternalToken("retired-token"))
@@ -252,13 +263,13 @@ func TestSidecar_AcceptsInternalTokenDuringRotationOverlap(t *testing.T) {
 	require.False(t, s.acceptsInternalToken("previous-token"))
 
 	// An unconfigured credential must never admit a caller.
-	require.False(t, (&Sidecar{}).acceptsInternalToken(""))
-	require.False(t, (&Sidecar{}).acceptsInternalToken("anything"))
+	require.False(t, (&ExtAuthz{}).acceptsInternalToken(""))
+	require.False(t, (&ExtAuthz{}).acceptsInternalToken("anything"))
 }
 
 func TestGateway_TrustsPublicOriginFromPreviousInternalTokenDuringRotation(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
-	gw.sidecar.previousInternalToken = "previous-internal-token"
+	gw.authz.previousInternalToken = "previous-internal-token"
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
 	req.Header.Set("X-Codefly-Internal-Token", "previous-internal-token")
@@ -448,9 +459,9 @@ func TestGateway_HealthCheck_Self(t *testing.T) {
 	}
 }
 
-func TestGateway_LivenessDoesNotDependOnSidecarOrUpstreams(t *testing.T) {
+func TestGateway_LivenessDoesNotDependOnExtAuthzOrUpstreams(t *testing.T) {
 	matcher := NewRouteMatcher([]*RouteEntry{{Service: "accounts", Method: "GET", Path: "/v1/users", Protected: true}, {Service: "self", Method: "GET", Path: "/health"}}, nil)
-	gateway := NewGateway(nil, matcher, nil, nil)
+	gateway := NewGateway(nil, matcher, nil, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
@@ -473,14 +484,18 @@ func TestGateway_ReadinessRequiresEveryRoutedUpstream(t *testing.T) {
 	require.NoError(t, err)
 	unavailable.Close()
 
-	gateway := NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil)
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	ready := &ExtAuthz{keys: staticAccessKeys(pub)}
+
+	gateway := NewGateway(ready, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	w := httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "accounts")
 
-	gateway = NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
+	gateway = NewGateway(ready, matcher, map[string]*url.URL{"accounts": availableURL}, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 	w = httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -493,7 +508,7 @@ func TestGateway_ReadinessRequiresEveryRoutedUpstream(t *testing.T) {
 func TestGateway_StripsCallerInjectedIdentityHeaders(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
 
-	// Public path — no sidecar will set identity headers. If the caller
+	// Public path — no ext_authz check will set identity headers. If the caller
 	// injected them, the gateway MUST strip them so the upstream never
 	// sees forged identity.
 	req := httptest.NewRequest(http.MethodPost, "/v1/auth/authenticate", strings.NewReader(`{}`))
@@ -539,7 +554,7 @@ func TestGateway_AuthenticatedRequest_CallerHeadersOverridden(t *testing.T) {
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, 200, w.Code)
-	// Must be the sidecar-derived values from the JWT, not the forged ones
+	// Must be the ext_authz-derived values from the JWT, not the forged ones
 	require.Equal(t, "super_admin", apiFake.lastHeaders.Get("x-platform-role"))
 	require.NotEqual(t, "attacker-sub", apiFake.lastHeaders.Get("x-user-id"))
 }
@@ -562,16 +577,16 @@ func TestGateway_InvalidToken_Denied_NoUpstreamCall(t *testing.T) {
 
 func TestGateway_NoRoute_404(t *testing.T) {
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
-	sidecar := &Sidecar{
-		publicKey: pub,
-		issuer:    "saas-starter",
-		audience:  "saas-starter",
-		revoker:   noopRevoker{},
+	authz := &ExtAuthz{
+		keys:     staticAccessKeys(pub),
+		issuer:   "saas-starter",
+		audience: "saas-starter",
+		revoker:  noopRevoker{},
 	}
 
 	// Empty route config — nothing is whitelisted.
 	matcher := NewRouteMatcher([]*RouteEntry{}, nil)
-	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{}, nil)
+	gateway := NewGateway(authz, matcher, map[string]*url.URL{}, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -621,8 +636,8 @@ func TestGateway_ExactMethodMatching(t *testing.T) {
 func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	sidecar := &Sidecar{
-		publicKey:    pub,
+	authz := &ExtAuthz{
+		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
@@ -639,7 +654,7 @@ func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 	matcher := NewRouteMatcher(nil, []*RouteEntry{{
 		Service: "accounts_connect", Method: http.MethodPost, Path: procedure, Protected: true,
 	}})
-	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil)
+	gateway := NewGateway(authz, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 
 	req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
@@ -659,8 +674,8 @@ func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	sidecar := &Sidecar{
-		publicKey:    pub,
+	authz := &ExtAuthz{
+		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
@@ -682,7 +697,7 @@ func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
 		UpstreamPath: canonical,
 		Protected:    true,
 	}})
-	gateway := NewGateway(sidecar, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil)
+	gateway := NewGateway(authz, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 
 	req := httptest.NewRequest(http.MethodPost, legacy, strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))

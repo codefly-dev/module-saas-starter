@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/github"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -226,8 +225,9 @@ func TestFetchDatasourceBlob_StreamsAuthorizedBlobEndToEnd(t *testing.T) {
 		blobStreamCallerID: {Queues: []string{"datasource"}, CrossTenant: true},
 	}
 	installBlobStreamService(t, store, staticCipher{token: "gh-token"}, gh, registry)
+	installModuleWorkContextAuthority(t)
 
-	ctx := stampVerifiedIdentity(context.Background(), blobStreamCallerID, blobStreamOrgID, auth.Assurance{})
+	ctx := stampModuleWorkContext(t, blobStreamCallerID, blobStreamOrgID)
 	req := &gen.FetchDatasourceBlobRequest{SourceId: blobStreamSourceID, BlobSha: blobStreamBlobSHA}
 	stream := &recordingBlobStream{}
 

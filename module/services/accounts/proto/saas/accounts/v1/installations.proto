@@ -158,7 +158,7 @@ service InstallationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "installation.created"
+        events: "saas.installation.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -188,7 +188,7 @@ service InstallationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "installation.revoked"
+        events: "saas.installation.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -218,7 +218,7 @@ service InstallationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "installation.ownership_transferred"
+        events: "saas.installation.ownership_transferred"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

@@ -126,7 +126,7 @@ service InvitationService {
       scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.created"
+        events: "saas.invitation.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -134,6 +134,7 @@ service InvitationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/invitations"
@@ -183,7 +184,7 @@ service InvitationService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.accepted"
+        events: "saas.invitation.accepted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -191,6 +192,7 @@ service InvitationService {
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/invitations:accept"
@@ -233,7 +235,7 @@ service InvitationService {
       scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.resent"
+        events: "saas.invitation.resent"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
@@ -261,7 +263,7 @@ service InvitationService {
       scopes: "invitations:write"
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "invitation.revoked"
+        events: "saas.invitation.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -269,6 +271,7 @@ service InvitationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/invitations/{id}"};
   }

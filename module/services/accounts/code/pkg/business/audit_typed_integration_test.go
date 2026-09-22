@@ -1,7 +1,10 @@
+//go:build !pure
+
 package business_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,8 +38,82 @@ func TestAuditEventTypes_Parity(t *testing.T) {
 		require.Truef(t, ok, "catalog type %q missing from audit_event_types", d.Type)
 		require.Equal(t, d.Version, row.Version, "version mismatch for %q", d.Type)
 		require.Equal(t, string(d.Category), row.Category, "category mismatch for %q", d.Type)
+		require.Equal(t, d.Namespace, row.Namespace, "namespace mismatch for %q", d.Type)
 		require.Falsef(t, row.Deprecated, "catalog type %q must not be deprecated", d.Type)
 	}
+}
+
+// The namespace column is the collision key a composed workspace relies on, and
+// migration 116 constrains every name to sit under it. After a startup sync the
+// projection must carry it for every registered type, with nothing left over
+// from the pre-cutover vocabulary.
+func TestSyncAuditEventTypesProjectsNamespace(t *testing.T) {
+	ctx := testCtx
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		return testStore.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}))
+
+	var rows []business.AuditEventTypeRow
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		rows, err = testStore.ListAuditEventTypes(ctx)
+		return err
+	}))
+
+	active := 0
+	for _, r := range rows {
+		require.Equal(t, business.AuditNamespace, r.Namespace,
+			"projected type %q carries no namespace", r.Name)
+		require.Truef(t, strings.HasPrefix(r.Name, r.Namespace+"."),
+			"projected type %q does not sit under its namespace", r.Name)
+		if !r.Deprecated {
+			active++
+		}
+	}
+	require.Equal(t, len(business.AuditEventCatalog()), active,
+		"every catalog type must be projected as active")
+}
+
+// The namespace facet has to narrow the result set, not just the event-type
+// dropdown: a filter control that changes nothing the user can observe reads as
+// broken. It resolves through audit_event_types.namespace, so it survives a
+// second module composing in without the UI learning that module's vocabulary.
+func TestQueryAuditLog_FiltersByNamespace(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		return testStore.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}))
+	_, org := mustUserAndOrg(t, ctx, "ns@audit-test.com", "ns-audit", "Namespace Co")
+
+	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
+			ActorType: "user", EventType: business.EventUserUpdated, Resource: "user", OrgID: org,
+		})
+	}))
+
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+
+	matching, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID: org, Namespace: business.AuditNamespace, From: &past, To: &future, PageSize: 100,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, matching, "the module's own namespace must match its events")
+
+	other, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID: org, Namespace: "someothermodule", From: &past, To: &future, PageSize: 100,
+	})
+	require.NoError(t, err)
+	require.Empty(t, other, "another module's namespace must match none of this module's events")
+
+	// The same predicate backs the aggregate path, so the widgets narrow with the
+	// table rather than silently ignoring the facet.
+	buckets, err := testService.AggregateAuditLog(ctx,
+		business.AuditQuery{OrgID: org, Namespace: "someothermodule"},
+		business.AuditAggregationSpec{GroupBy: []string{"event_type"}})
+	require.NoError(t, err)
+	require.Empty(t, buckets)
 }
 
 // TestAuditRetention_DropsOldPartitions proves retention actually removes data
@@ -205,7 +282,7 @@ func TestAuditAggregationMetrics(t *testing.T) {
 	require.Len(t, blank, 1)
 	_, hasMin := blank[0].Metrics["min_outcome"]
 	require.False(t, hasMin, "min over non-numeric values must be absent, not coerced to 0")
-	require.InDelta(t, 0, blank[0].Metrics["sum_outcome"], 0.001, "empty sum is the additive identity 0")
+	require.NotContains(t, blank[0].Metrics, "sum_outcome", "missing numeric telemetry remains unknown")
 
 	// Multi-dimensional grouping by actor + payload outcome.
 	byActorOutcome, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
@@ -308,7 +385,7 @@ func TestAuditAggregationNumericAndDerivedEdges(t *testing.T) {
 			{Op: "count", Alias: "n"},
 			{Op: "min", Field: "payload:price", Alias: "min_price"},
 			{Op: "min", Field: "payload:missing", Alias: "min_missing"}, // no numeric rows → absent
-			{Op: "sum", Field: "payload:label", Alias: "sum_label"},     // non-numeric → 0
+			{Op: "sum", Field: "payload:label", Alias: "sum_label"},     // non-numeric → absent
 		},
 		Derived: []business.AuditDerivedMetric{
 			{Alias: "ok_ratio", Numerator: "min_price", Denominator: "n"},     // 2.5 / 5

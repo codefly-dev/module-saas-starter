@@ -66,6 +66,10 @@ func (s *RestServer) Run(ctx context.Context) error {
 
 	gwMux := runtime.NewServeMux(
 		runtime.WithMetadata(CustomHeaderToGRPCMetadataAnnotator),
+		// CUSTOM: carry the bearer credential and canonical identity headers
+		// across the transcoding hop. See restIdentityHeaderMatcher.
+		// Preserve this line when regenerating.
+		runtime.WithIncomingHeaderMatcher(restIdentityHeaderMatcher),
 		runtime.WithErrorHandler(customErrorHandler))
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}

@@ -1,11 +1,12 @@
 # Optional product screens and entitlement enforcement
 
-Subscription management and Single Sign-On are hidden by default. Enable either
+Subscription management, Single Sign-On, and Entitlements are hidden by default. Enable each
 independently in the frontend's build/development environment:
 
 ```dotenv
 NEXT_PUBLIC_ENABLE_SUBSCRIPTIONS=true
 NEXT_PUBLIC_ENABLE_SSO=true
+NEXT_PUBLIC_ENABLE_ENTITLEMENTS=true
 ```
 
 Restart development after changing these values. Production Next.js public
@@ -13,14 +14,15 @@ environment values are bundled at build time: rebuild/redeploy to change them.
 Only the literal `true` enables a feature. These switches contain no secrets.
 
 Disabled screens are removed from the shared navigation selector (sidebar,
-command palette, and plugin registry). Direct visits to `/admin/billing` and
-`/admin/sso` show an explanatory disabled state without mounting their API-backed
+command palette, and plugin registry). Direct visits to `/admin/billing`,
+`/admin/sso`, and `/admin/entitlements` show an explanatory disabled state without mounting their API-backed
 components. Enabling a screen does not configure Stripe or an identity provider;
 those integrations still require their provider configuration.
 
 These are presentation switches, not backend authorization controls. They do not
 turn off existing API endpoints, disable existing SSO connections, or waive quotas.
-The Entitlements administration screen stays available independently of billing.
+Entitlements stays hidden while enforcement is incomplete; enabling its screen
+does not add the missing backend checks described below.
 
 ## Enforcement verified in the September 2026 local audit
 

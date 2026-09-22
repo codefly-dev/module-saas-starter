@@ -14,6 +14,7 @@
 // and a consumer's `modules/<name>/`, no path config needed. The script hashes itself, so
 // tampering with the guard is itself caught.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, dirname, resolve } from "node:path";
@@ -123,6 +124,59 @@ function walk(dir, out = [], base = MODULE_ROOT) {
 
 const sha = (abs) => createHash("sha256").update(readFileSync(abs)).digest("hex");
 
+// What ships is what git tracks, not what happens to be on the release engineer's
+// disk: a gitignored build product under the module tree would otherwise enter the
+// manifest as a base file no consumer can restore. The index is therefore the
+// authority for the base-file set, and a tree whose index cannot be read is not a
+// tree a release may be cut from.
+//
+// Keyed by NFC because the two sides can disagree about spelling: git records a
+// precomposed path where macOS hands readdir the decomposed bytes that created it.
+// The value is the spelling git recorded, which is the key the manifest carries.
+function trackedFiles(moduleRoot) {
+  const { status, stdout, stderr, error } = spawnSync(
+    "git",
+    ["ls-files", "-z"],
+    { cwd: moduleRoot, encoding: "utf8", maxBuffer: Infinity },
+  );
+  if (status !== 0) {
+    throw new Error(
+      `base-integrity: cannot read git's index in ${moduleRoot} — gen and verify ` +
+        `determine what ships from it, so they run against canonical's checkout: ` +
+        (error?.message ?? stderr?.trim() ?? `git ls-files exited ${status}`),
+    );
+  }
+  return new Map(
+    stdout
+      .split("\0")
+      .filter((rel) => rel !== "")
+      .map((rel) => [rel.normalize("NFC"), rel]),
+  );
+}
+
+// Base candidates on disk that git does not track. `gen` records only what git
+// tracks, so a new file that has not been added yet would be left out of the
+// manifest with nothing said — and surface only in a consumer as an unrecorded
+// base file. Reporting them makes the omission visible where it happens.
+export function untrackedBaseCandidates(moduleRoot = MODULE_ROOT) {
+  const tracked = trackedFiles(moduleRoot);
+  return walk(moduleRoot, [], moduleRoot)
+    .filter((onDisk) => !tracked.has(onDisk.normalize("NFC")))
+    .sort();
+}
+
+// The base files: every path on disk that git tracks and the exclusions admit,
+// as a Map from the spelling git recorded to the spelling on disk.
+function baseFiles(moduleRoot) {
+  const tracked = trackedFiles(moduleRoot);
+  const pairs = [];
+  for (const onDisk of walk(moduleRoot, [], moduleRoot)) {
+    const recorded = tracked.get(onDisk.normalize("NFC"));
+    if (recorded !== undefined) pairs.push([recorded, onDisk]);
+  }
+  return new Map(pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
 const FRONTEND_CODE_ROOT = join(MODULE_ROOT, "services", "frontend", "code");
 const PACKAGE_LOCK_FIELDS = [
   "name",
@@ -159,6 +213,261 @@ function packageLockProjection(value) {
       .filter((field) => value[field] !== undefined)
       .map((field) => [field, value[field]]),
   );
+}
+
+// Semver for workspace→workspace ranges, FAIL CLOSED beyond it. `module/tools`
+// runs on bare node with no node_modules (the Base-manifest job installs
+// nothing), so the real `semver` package is unavailable and this is hand-rolled.
+// It must accept everything npm accepts in these edges, because a false reject
+// here hard-fails "Base manifest integrity" — a gate on every PR in the repo.
+
+// A version: "1.2.3", "v1.2.3", "1.2.3-rc.1", "1.2.3-rc.1+build".
+// Prerelease identifiers are kept so precedence can be compared properly; build
+// metadata is stripped, which is what semver says to do when comparing.
+export function parseSemver(text) {
+  if (typeof text !== "string") return null;
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(text.trim());
+  if (!match) return null;
+  const pre = match[4] === undefined
+    ? null
+    : match[4].split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  return { triple: [Number(match[1]), Number(match[2]), Number(match[3])], pre };
+}
+
+// A comparator operand, which npm lets you write partially or with an `x`
+// placeholder: "1", "1.2", "1.2.3", "1.x", "1.2.*", "*", "". `specified` records
+// how many of major/minor/patch were actually pinned so `^`, `~` and bare
+// X-ranges can derive the bounds npm derives.
+function parseOperand(text) {
+  const trimmed = text.trim();
+  if (trimmed === "" || trimmed === "*" || /^[xX]$/.test(trimmed)) {
+    return { triple: [0, 0, 0], pre: null, specified: 0 };
+  }
+  const match = /^v?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(trimmed);
+  if (!match) return null;
+  const parts = [match[1], match[2], match[3]];
+  const triple = [0, 0, 0];
+  let specified = 0;
+  for (let index = 0; index < 3; index += 1) {
+    const part = parts[index];
+    if (part === undefined || /^[xX*]$/.test(part)) break;
+    triple[index] = Number(part);
+    specified += 1;
+  }
+  if (specified === 0) return { triple: [0, 0, 0], pre: null, specified: 0 };
+  const pre = match[4] === undefined
+    ? null
+    : match[4].split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  return { triple, pre, specified };
+}
+
+const compareTriples = (left, right) =>
+  left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
+
+// Semver 2.0 precedence: equal triples, then a version WITH a prerelease sorts
+// before one without; otherwise identifiers compare left to right, numeric
+// before alphanumeric.
+function comparePre(left, right) {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a === undefined) return -1;
+    if (b === undefined) return 1;
+    const aNumeric = typeof a === "number";
+    const bNumeric = typeof b === "number";
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    if (a !== b) return a < b ? -1 : 1;
+  }
+  return 0;
+}
+
+const compareSemver = (left, right) =>
+  compareTriples(left.triple, right.triple) || comparePre(left.pre, right.pre);
+
+// The upper bound npm gives `^`, including its leading-zero special cases:
+// ^0.2.1 allows <0.3.0 (not <1.0.0) and ^0.0.3 allows <0.0.4, because in a 0.x
+// line every minor is potentially breaking.
+function caretUpper({ triple, specified }) {
+  const [major, minor, patch] = triple;
+  if (major !== 0) return [major + 1, 0, 0];
+  if (specified === 1) return [1, 0, 0]; // ^0 → <1.0.0
+  if (minor !== 0) return [0, minor + 1, 0];
+  if (specified === 2) return [0, 1, 0]; // ^0.0 → <0.1.0
+  return [0, 0, patch + 1];
+}
+
+// Expand one comparator into concrete bounds. Returns a list of {op, semver}
+// predicates, or null when the shape is not understood.
+function expandComparator(token) {
+  const match = /^(>=|<=|>|<|=|\^|~)?\s*(.*)$/.exec(token);
+  if (!match) return null;
+  const [, operator = "", rest] = match;
+  const operand = parseOperand(rest);
+  if (operand === null) return null;
+  const { triple, pre, specified } = operand;
+  const lower = { triple, pre };
+  if (specified === 0) return []; // `*` / `x` — no constraint at all.
+  if (operator === "^") {
+    return [
+      { op: ">=", semver: lower },
+      { op: "<", semver: { triple: caretUpper(operand), pre: null } },
+    ];
+  }
+  if (operator === "~") {
+    const upper = specified === 1 ? [triple[0] + 1, 0, 0] : [triple[0], triple[1] + 1, 0];
+    return [
+      { op: ">=", semver: lower },
+      { op: "<", semver: { triple: upper, pre: null } },
+    ];
+  }
+  if (operator === "" || operator === "=") {
+    // A fully pinned version is exact; a partial one is an X-range.
+    if (specified === 3) return [{ op: "=", semver: lower }];
+    const upper = specified === 1 ? [triple[0] + 1, 0, 0] : [triple[0], triple[1] + 1, 0];
+    return [
+      { op: ">=", semver: lower },
+      { op: "<", semver: { triple: upper, pre: null } },
+    ];
+  }
+  // Ordering comparators zero-fill a partial operand, which is what npm does.
+  return [{ op: operator, semver: lower }];
+}
+
+// npm excludes a prerelease version from a range unless some comparator in the
+// same branch pins the SAME major.minor.patch and itself carries a prerelease.
+// So 1.5.0-rc.1 does NOT satisfy ^1.0.0, but 0.3.0-rc.2 does satisfy >=0.3.0-rc.1.
+function prereleaseAllowed(target, predicates) {
+  if (target.pre === null) return true;
+  return predicates.some(
+    ({ semver }) => semver.pre !== null && compareTriples(semver.triple, target.triple) === 0,
+  );
+}
+
+export function satisfiesWorkspaceRange(range, version) {
+  const target = parseSemver(version);
+  // The caller checks the version separately and reports it as such; guard here
+  // so this stays a total function.
+  if (target === null || typeof range !== "string") return null;
+  const branches = range.split("||").map((branch) => branch.trim());
+  let anySatisfied = false;
+  for (const branch of branches) {
+    // Split on whitespace, then re-join an operator that was written detached
+    // from its operand (">= 1.2.3" is legal npm and must not be rejected).
+    const rawTokens = branch.split(/\s+/).filter(Boolean);
+    const tokens = [];
+    for (const raw of rawTokens) {
+      if (/^(>=|<=|>|<|=|\^|~)$/.test(raw)) tokens.push({ pendingOperator: raw });
+      else if (tokens.length > 0 && tokens[tokens.length - 1].pendingOperator !== undefined) {
+        tokens[tokens.length - 1] = { token: tokens[tokens.length - 1].pendingOperator + raw };
+      } else tokens.push({ token: raw });
+    }
+    if (tokens.length === 0) return null; // An empty branch ("a || ") is malformed.
+    const predicates = [];
+    for (const entry of tokens) {
+      if (entry.token === undefined) return null; // Dangling operator, no operand.
+      const expanded = expandComparator(entry.token);
+      if (expanded === null) return null; // Hyphen ranges and anything else: fail closed.
+      predicates.push(...expanded);
+    }
+    let branchSatisfied = prereleaseAllowed(target, predicates);
+    if (branchSatisfied) {
+      for (const { op, semver } of predicates) {
+        const ordering = compareSemver(target, semver);
+        const ok =
+          op === ">=" ? ordering >= 0
+          : op === ">" ? ordering > 0
+          : op === "<=" ? ordering <= 0
+          : op === "<" ? ordering < 0
+          : ordering === 0;
+        if (!ok) {
+          branchSatisfied = false;
+          break;
+        }
+      }
+    }
+    if (branchSatisfied) anySatisfied = true;
+  }
+  return anySatisfied;
+}
+
+// Every dependency edge FROM one workspace TO another must be satisfiable by
+// that workspace. npm links a sibling workspace only when the declared range
+// covers its version; when it does not, npm stops treating it as local and goes
+// to the public registry — where these packages do not exist, so `npm ci` dies
+// with E404 (and would install a stranger's package if the name were squatted).
+//
+// The metadata equality checks above cannot see this: they prove the lockfile
+// AGREES with each manifest, and a stale exact pin copied faithfully into the
+// lockfile agrees perfectly while being unsatisfiable. That is exactly how
+// `@codefly-dev/saas-ui` kept requiring `@codefly-dev/saas-sdk@0.2.0` after the
+// SDK workspace moved to 0.2.1: this gate reported "in sync" while three CI jobs
+// died on `npm ci`. Agreement is not satisfiability.
+//
+// Scope is deliberately workspace→workspace, established by reproducing each
+// case against real npm (install-links=true, `npm ci`):
+//
+//   workspace→workspace, range mismatches sibling ........ E404
+//   workspace→workspace, sibling declares no `version` ... E404
+//   workspace→workspace, range satisfied ................. linked
+//   ROOT→workspace, range mismatches workspace ........... LINKED, no error
+//   ROOT→workspace, registry even has the pinned version . LINKED (workspace wins)
+//
+// So the root manifest is NOT checked here. A root pin that drifts from its
+// workspace is not an install hazard — npm resolves the workspace by name and
+// ignores the range — and flagging it would fail every PR in the repo with an
+// E404 claim that is simply untrue. Nothing derives behavior from the root pin's
+// version either: the kit-version gate and kit-shared-version test both read
+// `packages/*/package.json`, and the module-package claim check reads only names.
+export function workspaceLinkSatisfactionErrors({ workspaces }) {
+  const versions = new Map();
+  // A workspace whose own version npm cannot match on — missing, or not semver.
+  // A sibling depending on it gets the same E404 as a mismatched range, so it
+  // must not be silently dropped from the map the way an earlier revision did.
+  const unusable = new Map();
+  for (const { label, manifest } of workspaces) {
+    if (typeof manifest?.name !== "string" || !manifest.name) continue;
+    const declared = manifest.version;
+    if (typeof declared !== "string" || parseSemver(declared) === null) {
+      unusable.set(manifest.name, { label, declared });
+      continue;
+    }
+    versions.set(manifest.name, declared);
+  }
+  const errors = [];
+  for (const { label, manifest } of workspaces) {
+    for (const field of PACKAGE_DEPENDENCY_FIELDS) {
+      for (const [name, range] of Object.entries(manifest?.[field] ?? {})) {
+        const broken = unusable.get(name);
+        if (broken !== undefined) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" points at workspace ${broken.label}, ` +
+              `whose version is ${broken.declared === undefined ? "missing" : `"${broken.declared}"`} — ` +
+              "npm cannot match a range against it and resolves the dependency from the " +
+              "public registry instead of the local workspace",
+          );
+          continue;
+        }
+        const version = versions.get(name);
+        if (version === undefined) continue; // Not a local workspace.
+        const satisfied = satisfiesWorkspaceRange(range, version);
+        if (satisfied === null) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" uses a range this gate cannot evaluate; ` +
+              "use an exact, ^, ~, x-range or comparator range so the workspace link stays checkable",
+          );
+        } else if (!satisfied) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" is not satisfied by workspace ${name}@${version}, ` +
+              "so npm ci resolves it from the public registry instead of the local workspace",
+          );
+        }
+      }
+    }
+  }
+  return errors;
 }
 
 // package-lock.json is application-generated, but it is not unchecked. The
@@ -214,6 +523,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   const packagesRoot = join(frontendCodeRoot, "packages");
   const workspaceKeys = [];
   const packageNames = new Set();
+  const workspaceManifests = [];
   if (existsSync(packagesRoot)) {
     for (const entry of readdirSync(packagesRoot, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
       if (!entry.isDirectory()) continue;
@@ -233,6 +543,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
         continue;
       }
       packageNames.add(manifest.name);
+      workspaceManifests.push({ label: `${key}/package.json`, manifest });
       const locked = lock.packages[key];
       if (!locked || JSON.stringify(normalizedJSON(packageLockProjection(locked))) !==
           JSON.stringify(normalizedJSON(packageLockProjection(manifest)))) {
@@ -250,6 +561,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   if (JSON.stringify(lockedWorkspaceKeys) !== JSON.stringify(workspaceKeys.sort())) {
     errors.push("frontend package-lock.json contains a missing or removed packages/* workspace");
   }
+  errors.push(...workspaceLinkSatisfactionErrors({ workspaces: workspaceManifests }));
   return errors;
 }
 
@@ -558,11 +870,16 @@ const serviceOf = (rel) => {
 
 // Re-derive the manifest a fresh `gen` would write for `moduleRoot`, without touching disk.
 // `gen` persists this; the release gate compares it against the committed manifest.
+//
+// The manifest deliberately records no file count. Derived from `files`, it could disagree with
+// the tree only by being written outside `gen` — and a lone scalar is exactly what a three-way
+// merge corrupts in silence: two branches that each add a base file write the same new value,
+// git merges it without a conflict, and the count is then one short of the tree it describes,
+// rejecting a manifest whose every hash merged correctly. Derive it at print time instead.
 export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
-  const files = walk(moduleRoot, [], moduleRoot).sort();
   const hashes = {};
-  for (const rel of files) hashes[rel] = sha(join(moduleRoot, rel));
-  return { note: MANIFEST_NOTE, fileCount: files.length, files: hashes };
+  for (const [rel, onDisk] of baseFiles(moduleRoot)) hashes[rel] = sha(join(moduleRoot, onDisk));
+  return { note: MANIFEST_NOTE, files: hashes };
 }
 
 // The canonical release gate: the committed manifest must equal a fresh regeneration of the
@@ -570,7 +887,7 @@ export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
 // re-hashes only the paths already in the manifest, so a base file changed without a `gen`
 // (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the stale
 // digest is exactly what `check` trusts. Comparing against a fresh recomputation catches changed,
-// unrecorded, and removed base files, plus a fileCount or note that drifted from the tree.
+// unrecorded, and removed base files, plus a note or a field set that drifted from the tree.
 // Canonical-only: a consumer legitimately adds files, so this must never run against a consumer tree.
 export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   const manifestPath = join(moduleRoot, "tools", "base-manifest.json");
@@ -583,18 +900,37 @@ export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   } catch (error) {
     return [`tools/base-manifest.json is not valid JSON: ${error.message}`];
   }
+  if (typeof committed !== "object" || committed === null) {
+    return ["tools/base-manifest.json is not a JSON object"];
+  }
   const fresh = computeBaseManifest(moduleRoot);
-  const committedFiles = committed.files ?? {};
   const errors = [];
+  // Compare the SHAPE `gen` writes, not a list of field names this function happens to know:
+  // that equality is what makes a passing `verify` proof that `gen` is a no-op. A field `gen`
+  // no longer writes otherwise survives a mis-resolved conflict with every hash correct, and
+  // no other step runs `gen` to notice — the manifest then ships carrying it. Reported alone,
+  // because a wrong shape would otherwise arrive buried under one line per base file.
+  const freshKeys = Object.keys(fresh);
+  for (const key of Object.keys(committed)) {
+    if (!freshKeys.includes(key)) errors.push(`unexpected field: ${key}`);
+  }
+  for (const key of freshKeys) {
+    if (!(key in committed)) errors.push(`missing field: ${key}`);
+  }
+  if (errors.length) return errors;
+
+  // Presence is not kind: `files: null` satisfies the key check and then throws in the comparison
+  // below rather than reporting anything. The manifest is read off disk, so this is the boundary.
+  const committedFiles = committed.files;
+  if (typeof committedFiles !== "object" || committedFiles === null) {
+    return ["files is not the object of hashes gen writes"];
+  }
   for (const [rel, want] of Object.entries(fresh.files)) {
     if (!(rel in committedFiles)) errors.push(`unrecorded base file: ${rel}`);
     else if (committedFiles[rel] !== want) errors.push(`stale hash: ${rel}`);
   }
   for (const rel of Object.keys(committedFiles)) {
     if (!(rel in fresh.files)) errors.push(`manifest lists a removed file: ${rel}`);
-  }
-  if (committed.fileCount !== fresh.fileCount) {
-    errors.push(`fileCount ${committed.fileCount} does not match ${fresh.fileCount} base files`);
   }
   if (committed.note !== fresh.note) {
     errors.push("note does not match the canonical manifest note");
@@ -623,9 +959,21 @@ function gen() {
     rlsErrors.forEach((error) => console.error(`rls-migration-gate: ${error}`));
     process.exit(1);
   }
+  const untracked = untrackedBaseCandidates();
+  if (untracked.length) {
+    console.error(
+      `base-integrity: ${untracked.length} file(s) under the module tree are not tracked by git, `
+      + "so gen would leave them out of the manifest; `git add` them (or ignore them) first:",
+    );
+    untracked.forEach((rel) => console.error(`    ${rel}`));
+    process.exit(1);
+  }
   const manifest = computeBaseManifest();
   writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
-  console.log(`base-integrity: wrote ${manifest.fileCount} base-file hashes to tools/base-manifest.json`);
+  console.log(
+    `base-integrity: wrote ${Object.keys(manifest.files).length} base-file hashes `
+    + "to tools/base-manifest.json",
+  );
 }
 
 // verify is the canonical release gate (Base manifest integrity CI job, on
@@ -670,9 +1018,9 @@ function verify() {
     }
     process.exit(1);
   }
-  const { fileCount } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
+  const { files } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
   console.log(
-    `✓ base-manifest.json matches the canonical tree (${fileCount} base files); `
+    `✓ base-manifest.json matches the canonical tree (${Object.keys(files).length} base files); `
     + "frontend workspace install graph is in sync.",
   );
 }
@@ -699,8 +1047,8 @@ function check() {
   if (omitted) console.log(`  composed subset: skipped ${omitted} base files for ${omittedSvcs.size} non-composed service(s): ${[...omittedSvcs].sort().join(", ")}`);
 
   // Anything on disk that isn't a known base file is a legal side-addition.
-  const manifestSet = new Set(Object.keys(files));
-  const additions = walk(MODULE_ROOT).filter((r) => !manifestSet.has(r));
+  const manifestSet = new Set(Object.keys(files).map((r) => r.normalize("NFC")));
+  const additions = walk(MODULE_ROOT).filter((r) => !manifestSet.has(r.normalize("NFC")));
 
   // The allowlist is an escape hatch for genuinely per-consumer base files — kept loud so it can
   // never hide drift silently. Entries here are tech debt: prefer a config seam or a side-module.

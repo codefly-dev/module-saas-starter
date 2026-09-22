@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -123,6 +125,59 @@ func TestCheckAccess_ResolvesRecordScopeFromResourceIDNotCaller(t *testing.T) {
 	// A record with no registered node has no scope at all → scope branch denies.
 	require.False(t, checkAccess(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "unplaced-doc", "read"),
 		"an unplaced record has no resolvable scope and must fail closed on the scope branch")
+}
+
+// ListAccessibleResourceIDs narrows a candidate set to what the subject may
+// still read, and pins the resource_type while doing it. The role here permits
+// every resource ('*'), so nothing but that pin keeps a same-id record of
+// another type from answering: the grant branch admits every node beneath an
+// entitled ancestor regardless of the node's own type.
+func TestListAccessibleResourceIDs_NarrowsCandidatesAndPinsResourceType(t *testing.T) {
+	orgID, principalID, roleID := layeredFixture(t, "*", "read")
+
+	registerNode(t, orgID, "root", "root", "", "")
+	registerNode(t, orgID, "root.doc_kept", "record", "doc", "kept")
+	registerNode(t, orgID, "root.doc_gone", "record", "doc", "gone")
+	// Shares an opaque id with nothing of type doc — only a note carries it.
+	registerNode(t, orgID, "root.note", "record", "note", "note_only")
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{
+			Id: business.NewIDString(), OrgId: orgID, SubjectId: principalID,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root",
+			RoleId: roleID, GrantedBy: principalID,
+		})
+	}))
+
+	accessible := func(resourceType string, candidates ...string) []string {
+		var out []string
+		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			var err error
+			out, err = testStore.ListAccessibleResourceIDs(ctx, orgID, principalID,
+				gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, resourceType, "read", candidates)
+			return err
+		}))
+		return out
+	}
+
+	require.ElementsMatch(t, []string{"kept", "gone"}, accessible("doc", "kept", "gone"),
+		"both placed records under the grant are readable")
+	require.Empty(t, accessible("doc", "absent"),
+		"an id with no placed record resolves to no scope and stays invisible")
+	require.Empty(t, accessible("doc"),
+		"an empty candidate set asks nothing and reports nothing")
+	require.Empty(t, accessible("doc", "note_only"),
+		"a note must not answer for a doc merely by sharing its id")
+	require.Equal(t, []string{"note_only"}, accessible("note", "note_only"),
+		"asked about its own type, the note is readable")
+
+	// The verdict tracks the grant: revoking it hides the records again, which is
+	// the revocation an inbox read has to notice.
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RevokeScope(ctx, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "root", roleID)
+	}))
+	require.Empty(t, accessible("doc", "kept", "gone"),
+		"a revoked grant leaves no readable record behind")
 }
 
 // A direct record share grants access to exactly that record, independent of the
@@ -389,4 +444,118 @@ func TestCheckAccess_GlobalRoleGrant(t *testing.T) {
 
 	require.True(t, checkAccess(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "global-doc", "read"),
 		"a grant via a global/built-in role must authorize")
+}
+
+func TestListCollectionAccess_ReadGrantsAndTenantIsolation(t *testing.T) {
+	// The resource the composition declares its content under. The host never
+	// names it; this stands in for the declared module registry.
+	declared := []string{"documents"}
+	orgID, actorID, roleID := layeredFixture(t, "documents", "read")
+	otherOrg, _, _ := layeredFixture(t, "documents", "read")
+	registerNode(t, orgID, "root", "solution", "", "")
+	registerNode(t, orgID, "root.example", "collection", "", "")
+	registerNode(t, orgID, "root.empty", "collection", "", "")
+	registerNode(t, otherOrg, "private", "collection", "", "")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		for _, permission := range []string{"documents", "knowledge"} {
+			excludedRole := business.NewIDString()
+			require.NoError(t, testStore.CreateRole(ctx, &gen.Role{Id: excludedRole, OrgId: orgID, Name: "Example " + excludedRole, Permissions: []*gen.Permission{{Resource: permission, Action: "read"}}}))
+			grant := &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root.example", RoleId: excludedRole, GrantedBy: actorID}
+			if permission == "documents" {
+				grant.ExpiresAt = timestamppb.New(time.Now().Add(-time.Hour))
+			}
+			require.NoError(t, testStore.GrantScope(ctx, grant))
+		}
+		return nil
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root", RoleId: roleID, GrantedBy: actorID})
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 1, declared)
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		require.Equal(t, "root.empty", rows[0].Node.ScopePath)
+		require.Len(t, rows[0].ReadGrants, 1)
+		require.Equal(t, "root", rows[0].ReadGrants[0].Grant.ScopePath)
+		require.NotEmpty(t, rows[0].ReadGrants[0].ActorLabel)
+		next, err := testStore.ListCollectionAccess(ctx, orgID, rows[0].Node.ScopePath, 100, declared)
+		require.NoError(t, err)
+		require.Len(t, next, 1)
+		require.Equal(t, "root.example", next[0].Node.ScopePath)
+		foreign, err := testStore.ListCollectionAccess(ctx, otherOrg, "", 100, declared)
+		require.NoError(t, err)
+		require.Empty(t, foreign)
+		// A composition that declares no content resource authorizes nothing: the
+		// boundaries still list, but no grant is reported as conferring read.
+		undeclared, err := testStore.ListCollectionAccess(ctx, orgID, "", 100, nil)
+		require.NoError(t, err)
+		require.Len(t, undeclared, 2)
+		for _, row := range undeclared {
+			require.Empty(t, row.ReadGrants, "an undeclared resource must confer no read")
+		}
+		return testStore.RevokeScope(ctx, orgID, actorID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "root", roleID)
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 100, declared)
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+		require.Empty(t, rows[0].ReadGrants)
+		require.Empty(t, rows[1].ReadGrants)
+		return nil
+	}))
+}
+
+// PlaceRecordNode is the store half of the module-facing placement path. A
+// record maps to exactly one node, so placing the same record again returns the
+// node it already has instead of colliding with idx_scope_nodes_resource — and
+// that node is what CheckAccess then resolves the record's scope from.
+func TestPlaceRecordNode_IdempotentOnTheRecord(t *testing.T) {
+	orgID, principalID, roleID := layeredFixture(t, "doc", "read")
+
+	registerNode(t, orgID, "tree", "root", "", "")
+	registerNode(t, orgID, "tree.other", "space", "", "")
+
+	place := func(path string) *gen.ScopeNode {
+		t.Helper()
+		var placed *gen.ScopeNode
+		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			var err error
+			placed, err = testStore.PlaceRecordNode(ctx, &gen.ScopeNode{
+				Id:           business.NewIDString(),
+				OrgId:        orgID,
+				ScopePath:    path,
+				Kind:         "record",
+				Label:        path,
+				ResourceType: "doc",
+				ResourceId:   "placed-doc",
+			})
+			return err
+		}))
+		return placed
+	}
+
+	first := place("tree.doc_1")
+	require.Equal(t, "tree.doc_1", first.ScopePath)
+
+	require.Equal(t, first.Id, place("tree.doc_1").Id,
+		"placing the same record at the same path must return the node it already has")
+
+	elsewhere := place("tree.other.doc_1")
+	require.Equal(t, first.Id, elsewhere.Id, "a placed record is never silently re-pointed")
+	require.Equal(t, "tree.doc_1", elsewhere.ScopePath,
+		"the caller learns the path the record actually sits at, so it can refuse the move")
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{
+			Id:          business.NewIDString(),
+			OrgId:       orgID,
+			SubjectId:   principalID,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			ScopePath:   "tree",
+			RoleId:      roleID,
+		})
+	}))
+	require.True(t, checkAccess(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "placed-doc", "read"),
+		"a placed record resolves its scope from the node PlaceRecordNode created")
 }

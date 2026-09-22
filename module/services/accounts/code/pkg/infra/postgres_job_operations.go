@@ -414,7 +414,9 @@ const jobSummarySelect = `
 	       lease_expires_at, heartbeat_at,
 	       COALESCE(last_error_code, ''), COALESCE(last_error_message, ''),
 	       available_at, last_attempt_at, completed_at, dead_lettered_at,
-	       created_at, updated_at, state_version, COALESCE(replay_of::text, '')
+	       created_at, updated_at, state_version, COALESCE(replay_of::text, ''),
+	       COALESCE(execution_owner, ''), COALESCE(execution_kind, ''),
+	       COALESCE(execution_id, '')
 	FROM job_messages`
 
 func scanJobSummary(rows pgx.Rows) (*jobsv1.JobSummary, error) {
@@ -431,6 +433,7 @@ func scanJobSummaryValue(row jobEnvelopeScanner) (*jobsv1.JobSummary, error) {
 		direction, scopeKind, organizationID, subjectID    string
 		state, leaseOwner, leaseToken                      string
 		failureCode, failureMessage                        string
+		executionOwner, executionKind, executionID         string
 		schemaVersion, priority, attemptCount, maxAttempts int
 		stateVersion                                       int64
 		leaseExpiresAt, heartbeatAt                        *time.Time
@@ -445,6 +448,7 @@ func scanJobSummaryValue(row jobEnvelopeScanner) (*jobsv1.JobSummary, error) {
 		&leaseExpiresAt, &heartbeatAt, &failureCode, &failureMessage,
 		&availableAt, &lastAttemptAt, &completedAt, &deadLetteredAt,
 		&createdAt, &updatedAt, &stateVersion, &summary.ReplayOf,
+		&executionOwner, &executionKind, &executionID,
 	); err != nil {
 		return nil, err
 	}
@@ -480,6 +484,11 @@ func scanJobSummaryValue(row jobEnvelopeScanner) (*jobsv1.JobSummary, error) {
 	}
 	if failureCode != "" {
 		summary.LastFailure = &jobsv1.JobFailure{Code: failureCode, Message: failureMessage}
+	}
+	if executionOwner != "" {
+		summary.Execution = &jobsv1.JobExecutionReference{
+			Owner: executionOwner, Kind: executionKind, Id: executionID,
+		}
 	}
 	return &summary, nil
 }

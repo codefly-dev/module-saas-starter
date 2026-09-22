@@ -23,6 +23,8 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
@@ -30,8 +32,11 @@ services:
       - application
       - billing
       - email
+      - federation
+      - github-app
       - identity
       - internal-auth
+      - module-capabilities
       - observability
       - product-analytics
       - security
@@ -82,6 +87,8 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
@@ -124,6 +131,20 @@ services:
     agent:
       kind: codefly:service
       name: redis
+      # 0.0.87: runtime image served from public docker.io/codeflydev/redis
+      # instead of the private ghcr package, so anonymous composition/CI can
+      # pull it (private ghcr gave 401 -> "redis is not ready"). Carries the
+      # 0.0.86 readiness-probe fix (service-redis#28; 0.0.84 probed the wrong
+      # port).
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
+      # 0.0.89 reports serving addresses for the read and write TCP aliases
+      # (service-redis#52, fixed by #53). That is what the graph needs to reach
+      # ready: on 0.0.88 it stayed "still starting" past 200s, and on 0.0.89 it
+      # is ready in ~40s. It also serializes Docker acquisition and destroys
+      # only the generation it acquired (#54, #57). runtime-image.json is
+      # byte-identical to 0.0.88 (same tag, same digest), so the public image
+      # and the OpenSSL 3.5.8-r0 rebuild both survive the bump.
       version: 0.0.92
       publisher: codefly.dev
     endpoints:
@@ -143,6 +164,8 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.0.157
       publisher: codefly.dev
     workspace_configuration_dependencies:
@@ -161,6 +184,19 @@ services:
       - service: auth-gateway
         endpoints:
           - rest
+    # Solution self-registration mutates what the nav renders and what the
+    # solution page loads as a Module-Federation remote — host-origin script
+    # execution — on the same port that serves every browser-facing page. Only a
+    # path match can separate the two, and only in the mesh's L7 layer.
+    internal_http_routes:
+      # Read by the proxy over pod-local loopback, which the mesh never captures.
+      - path: /api/internal/solutions
+        methods:
+          - GET
+      - path: /api/solutions/register
+        methods:
+          - DELETE
+          - POST
     public_egress_ports:
       - 443
     spec:
@@ -172,10 +208,10 @@ services:
         local-dogfood: development
         production: production
       mode: ssr
-      # White-label skin delivery (obin-ai/lodestar#70). The module ships only
+      # White-label skin delivery. The module ships only
       # the MECHANISM: the SSR resolver in src/lib/skin reads a skin descriptor
       # per request from the mounted ConfigMap and applies it on <html>. No skin
-      # DATA ships here — obin-fleet supplies the frontend-skin ConfigMap per
+      # DATA ships here — the consumer's fleet control plane supplies the frontend-skin ConfigMap per
       # environment; the compiled default stays brand-neutral. config-mounts is
       # consumed once codefly-dev/service-nextjs#100 renders it and the pin is
       # bumped; the mount is optional so an env with no ConfigMap keeps the
@@ -200,6 +236,8 @@ services:
     agent:
       kind: codefly:service
       name: nextjs
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.0.157
       publisher: codefly.dev
     endpoints:
@@ -220,6 +258,10 @@ services:
     agent:
       kind: codefly:service
       name: postgres
+      # 0.0.130: Alpine OpenSSL rebuild to 3.5.8-r0 (CVE-2026-14456),
+      # codefly-dev/service-postgres#74 — resolved.
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.0.137
       publisher: codefly.dev
     endpoints:
@@ -251,6 +293,8 @@ services:
     agent:
       kind: codefly:service
       name: go-grpc
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
@@ -271,6 +315,11 @@ services:
     agent:
       kind: codefly:service
       name: vault
+      # 0.0.28: go deps bumped for CVE-2026-56854 (golang.org/x/crypto ssh
+      # auth-bypass, CRITICAL) + CVE-2026-84304 (google.golang.org/grpc),
+      # codefly-dev/service-vault#42 — resolved.
+      # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
+      # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
       version: 0.0.33
       publisher: codefly.dev
     secret_service_configurations:

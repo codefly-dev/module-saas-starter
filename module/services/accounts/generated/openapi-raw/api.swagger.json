@@ -1,10 +1,13 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "saas/accounts/v1/common.proto",
+    "title": "saas/policy/v1/options.proto",
     "version": "version not set"
   },
   "tags": [
+    {
+      "name": "AccessibleScopeService"
+    },
     {
       "name": "APIKeyService"
     },
@@ -22,6 +25,9 @@
     },
     {
       "name": "BillingService"
+    },
+    {
+      "name": "ClientRegistryService"
     },
     {
       "name": "ConsentService"
@@ -54,6 +60,9 @@
       "name": "MFAService"
     },
     {
+      "name": "WorkContextService"
+    },
+    {
       "name": "ModuleCapabilitiesService"
     },
     {
@@ -72,6 +81,12 @@
       "name": "GDPRService"
     },
     {
+      "name": "ResourceFollowService"
+    },
+    {
+      "name": "SolutionRegistryService"
+    },
+    {
       "name": "SSOAdminService"
     },
     {
@@ -88,9 +103,6 @@
     },
     {
       "name": "WebhookService"
-    },
-    {
-      "name": "WorkContextService"
     }
   ],
   "consumes": [
@@ -124,8 +136,8 @@
     },
     "/v1/accessible-scopes": {
       "get": {
-        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal ListAccessibleScopes: a signed-in org member enumerates the scope\nnodes THEY may act on with (resource_type, action) through the gateway with a\nnormal bearer. The subject is the bearer's own principal — no subject_id in\nthe request — so it can never be an oracle about other principals. Same grant\n+ share union and same pagination as the internal RPC.",
-        "operationId": "PermissionService_ListMyAccessibleScopes",
+        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal PermissionService.ListAccessibleScopes: a signed-in org member\nenumerates the scope nodes THEY may act on with (resource_type, action)\nthrough the gateway with a normal bearer. The subject is the bearer's own\nprincipal — no subject_id in the request — so it can never be an oracle\nabout other principals. Same grant + share union and same pagination as the\ninternal RPC.",
+        "operationId": "AccessibleScopeService_ListMyAccessibleScopes",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -176,7 +188,7 @@
           }
         ],
         "tags": [
-          "PermissionService"
+          "AccessibleScopeService"
         ]
       }
     },
@@ -429,6 +441,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "namespace",
+            "description": "namespace scopes the search to the module that minted the event types, e.g.\n\"saas\". A composed workspace carries one namespace per emitting module.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "clientId",
+            "description": "client_id narrows the search to calls made through one registered client.\nIt is the companion to reading the client off each record: without it\n\"what did this client do\" can only be answered by paging the whole trail.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -522,6 +548,41 @@
               "type": "string"
             },
             "collectionFormat": "multi"
+          },
+          {
+            "name": "namespace",
+            "description": "namespace scopes the aggregation to one module's event types, matching\nQueryAuditLogRequest.namespace.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceId",
+            "description": "Exact registered resource boundary. Requires org_id, resource, event_type\nand current read access to this resource in addition to audit:read.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "payloadContains",
+            "description": "String-valued JSONB containment, ANDed with every other filter. A\n`boundary` key on a registered saas.document.* event names a collection, so\nit carries the same current-read requirement as collection_id below rather\nthan being a way to spell that filter without the check.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "collectionId",
+            "description": "Document event collection: current documents/read authorization plus an\nexact payload.boundary predicate. Requires a registered saas.document.*\nevent with a boundary field; never a caller-supplied grant.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "clientId",
+            "description": "client_id narrows the aggregation to calls made through one registered\nclient, matching QueryAuditLogRequest.client_id.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -607,6 +668,72 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1AuthenticateRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/clients/authorize": {
+      "post": {
+        "summary": "IssueClientAuthorizationCode mints the one-time code the host redirects\nback to the client with. The caller is the signed-in person's own host\nsession, so the code is bound to an identity the client never saw\nauthenticate.",
+        "operationId": "AuthService_IssueClientAuthorizationCode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssueClientAuthorizationCodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1IssueClientAuthorizationCodeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/clients/validate": {
+      "post": {
+        "summary": "ValidateClientAuthorization checks a client's authorization request before\nany sign-in UI is rendered. Public RPC: this runs before the person has\nauthenticated, which is the point — an unregistered client id or a redirect\nURI that client did not register is refused while the browser is still on\nthe host, never after credentials have been entered.",
+        "operationId": "AuthService_ValidateClientAuthorization",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ValidateClientAuthorizationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ValidateClientAuthorizationRequest"
             }
           }
         ],
@@ -847,6 +974,39 @@
         ]
       }
     },
+    "/v1/auth/token": {
+      "post": {
+        "summary": "ExchangeClientToken is the registered client's token endpoint. Public RPC:\npossession of the authorization code plus its PKCE verifier, or of the\nclient's own rotating refresh token, is the credential. Both grants mint a\nsession bound to the client, separate from any host web session the person\nholds.",
+        "operationId": "AuthService_ExchangeClientToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ExchangeClientTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ExchangeClientTokenRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
     "/v1/billing/connect/portal": {
       "post": {
         "operationId": "BillingService_OpenPortal",
@@ -914,6 +1074,49 @@
         ],
         "tags": [
           "BillingService"
+        ]
+      }
+    },
+    "/v1/collection-access": {
+      "get": {
+        "operationId": "PermissionService_ListCollectionAccess",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListCollectionAccessResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
         ]
       }
     },
@@ -1920,6 +2123,19 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "orgId",
+            "description": "Filters the caller-owned inbox before pagination. Empty includes all orgs.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "unreadOnly",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -2394,6 +2610,13 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "memberId",
+            "description": "member_id (optional) narrows the list to the teams this principal\nbelongs to; empty returns every team in the org. The uuid rule applies\nonly to a non-empty value — without it the filter reaches the query as a\nuuid cast and a malformed id fails in the database as an internal error\nrather than at the boundary as an invalid argument.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -2784,6 +3007,51 @@
         ]
       }
     },
+    "/v1/platform/events/operations": {
+      "get": {
+        "summary": "Domain-event platform operations (#494 P3). Payload bytes never leave the\ndurable event boundary through these methods — only counts, timings, and\ncontrol-plane subscription metadata do.",
+        "operationId": "PlatformAdminService_GetEventOperations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetEventOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/events/subscriptions": {
+      "get": {
+        "operationId": "PlatformAdminService_ListEventSubscriptions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListEventSubscriptionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
     "/v1/platform/feature-flags": {
       "get": {
         "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
@@ -2838,6 +3106,41 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/PlatformAdminServiceUpsertFeatureFlagBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/impersonation:stop": {
+      "post": {
+        "summary": "StopImpersonation closes the caller's own impersonation window: it revokes\nthe session's access tokens and records the end of the window.",
+        "description": "platform_role is deliberately NONE. Platform authority is withheld from an\nimpersonated request by design, so a support-role gate would make this the\none operation an impersonated session can never reach — and ending the\nsession is precisely what it must be able to do. Being impersonated is\nitself the authorization, checked in the handler.",
+        "operationId": "PlatformAdminService_StopImpersonation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StopImpersonationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "StopImpersonation ends the caller's own impersonation session. It carries no\ntarget: the session to end is derived from the verified identity, so there is\nno input by which one operator could end another's window.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StopImpersonationRequest"
             }
           }
         ],
@@ -3768,6 +4071,72 @@
         ]
       }
     },
+    "/v1/resource-follows": {
+      "post": {
+        "operationId": "ResourceFollowService_Follow",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FollowResourceResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "FollowResourceRequest deliberately carries no subject field. The follower is\nalways the authenticated caller, so the RPC can never be turned into an oracle\nabout another principal — the same reason ListMyAccessibleScopesRequest omits\none. A target the caller cannot currently see is reported as missing, never as\ndenied, so Follow cannot be used to probe for resources that exist elsewhere.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1FollowResourceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ResourceFollowService"
+        ]
+      }
+    },
+    "/v1/resource-follows:unfollow": {
+      "post": {
+        "operationId": "ResourceFollowService_Unfollow",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UnfollowResourceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ResourceFollowService"
+        ]
+      }
+    },
     "/v1/role-assignments": {
       "get": {
         "operationId": "PermissionService_ListRoleAssignments",
@@ -3981,6 +4350,42 @@
             "in": "path",
             "required": true,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "patch": {
+        "operationId": "PermissionService_UpdateRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateRoleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PermissionServiceUpdateRoleBody"
+            }
           }
         ],
         "tags": [
@@ -5417,8 +5822,34 @@
         }
       }
     },
+    "PermissionServiceUpdateRoleBody": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Permission"
+          }
+        },
+        "orgId": {
+          "type": "string",
+          "title": "empty = global"
+        }
+      },
+      "description": "UpdateRoleRequest replaces a custom role's description and permission\nset wholesale: the permissions given become the role's entire grant\nset, and an empty list clears it. org_id must name the role's own\nscope (empty = a global role); a role whose scope differs is not\nfound. Built-in roles cannot be updated."
+    },
     "PlatformAdminServiceImpersonateUserBody": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Why the operator is stepping into this account. Recorded on\nsaas.platform.user_impersonated, which otherwise names only who and whom.\nThe floor is a length rather than mere presence because a justification\nthat accepts \".\" records nothing a reader can act on. The rule below\nmeasures the string as sent; the service applies the same floor to the\nvalue with surrounding whitespace removed, so padding does not satisfy it."
+        }
+      }
     },
     "PlatformAdminServiceOverrideEntitlementBody": {
       "type": "object",
@@ -5582,7 +6013,7 @@
         "NULL_VALUE"
       ],
       "default": "NULL_VALUE",
-      "description": "`NullValue` is a singleton enumeration to represent the null value for the\n`Value` type union.\n\nThe JSON representation for `NullValue` is JSON `null`.\n\n - NULL_VALUE: Null value."
+      "description": "Represents a JSON `null`.\n\n`NullValue` is a sentinel, using an enum with only one value to represent\nthe null value for the `Value` type union.\n\nA field of type `NullValue` with any value other than `0` is considered\ninvalid. Most ProtoJSON serializers will emit a Value with a `null_value` set\nas a JSON `null` regardless of the integer value, and so will round trip to\na `0` value.\n\n - NULL_VALUE: Null value."
     },
     "rpcStatus": {
       "type": "object",
@@ -5702,6 +6133,10 @@
         },
         "kind": {
           "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable boundary name, visible only for caller-accessible scopes."
         }
       }
     },
@@ -5742,6 +6177,11 @@
             "type": "object",
             "$ref": "#/definitions/v1AuditAggregateBucket"
           }
+        },
+        "scopeContractVersion": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Version 1 acknowledges resource, collection and payload filters, even with no buckets."
         }
       }
     },
@@ -5799,6 +6239,14 @@
             "format": "double"
           },
           "description": "metrics maps each requested metric and derived alias to its value. An alias\nis omitted for a group where the metric is undefined (min/avg/max/percentile\nover zero numeric values) — absence means \"no data\", not zero."
+        },
+        "samples": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          },
+          "description": "Number of non-null observations used by each source metric, before\ndistinct reduction. Less than count means partial telemetry. Missing on\nolder servers; clients must not assume completeness in that case."
         }
       }
     },
@@ -5869,6 +6317,10 @@
         },
         "category": {
           "type": "string"
+        },
+        "clientId": {
+          "type": "string",
+          "description": "client_id names the registered client the call was made through, empty for\na call made from the host's own web session. It answers \"what did they do\nit through\", which actor_id does not."
         }
       }
     },
@@ -5893,6 +6345,10 @@
         },
         "description": {
           "type": "string"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "The module namespace that owns the type: the leading segment of `name`.\nDistinct from `owner`, which names the emitting service."
         }
       }
     },
@@ -5982,6 +6438,21 @@
         }
       }
     },
+    "v1AuthorizationCodeGrant": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "type": "string"
+        },
+        "codeVerifier": {
+          "type": "string"
+        }
+      },
+      "description": "AuthorizationCodeGrant redeems a code issued by IssueClientAuthorizationCode.\nredirect_uri must be the one the code was issued for, and code_verifier the\npreimage of its challenge."
+    },
     "v1BeginOAuthRequest": {
       "type": "object",
       "properties": {
@@ -6036,6 +6507,68 @@
         "publicKeyOptionsJson": {
           "type": "string",
           "description": "JSON-encoded PublicKeyCredentialCreationOptions generated by the server."
+        }
+      }
+    },
+    "v1ClientAuthorizationRequest": {
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string"
+        },
+        "redirectUri": {
+          "type": "string"
+        },
+        "codeChallenge": {
+          "type": "string",
+          "description": "Base64url-encoded SHA-256 of the client's code verifier (RFC 7636 S256)."
+        },
+        "codeChallengeMethod": {
+          "type": "string",
+          "description": "S256 is the only accepted method. It is carried explicitly so a client\nsending \"plain\" is refused rather than silently upgraded."
+        }
+      },
+      "description": "ClientAuthorizationRequest is the authorization request a client encodes into\nthe host's login-page URL. code_challenge is the S256 hash of a verifier the\nclient keeps, so an intercepted code cannot be redeemed by anyone else."
+    },
+    "v1ClientRefreshTokenGrant": {
+      "type": "object",
+      "properties": {
+        "refreshToken": {
+          "type": "string"
+        }
+      },
+      "description": "ClientRefreshTokenGrant rotates a client's own refresh token. The presented\ntoken must belong to the named client: one client can never refresh another's\nsession, and the host's own web session is not refreshable here at all."
+    },
+    "v1CollectionAccess": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/definitions/v1ScopeNode"
+        },
+        "readGrants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionReadGrant"
+          },
+          "description": "Active documents/read grants at this node or an ancestor."
+        }
+      }
+    },
+    "v1CollectionReadGrant": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        },
+        "subjectLabel": {
+          "type": "string"
+        },
+        "roleName": {
+          "type": "string"
+        },
+        "actorLabel": {
+          "type": "string"
         }
       }
     },
@@ -6405,6 +6938,139 @@
         }
       }
     },
+    "v1EventRelayHealth": {
+      "type": "object",
+      "properties": {
+        "totalEvents": {
+          "type": "string",
+          "format": "uint64",
+          "description": "total_events is every domain_events row."
+        },
+        "publishedEvents": {
+          "type": "string",
+          "format": "uint64",
+          "description": "published_events is the number the relay has fanned out (published_at set)."
+        },
+        "backlog": {
+          "type": "string",
+          "format": "uint64",
+          "description": "backlog is the number still awaiting fan-out (published_at IS NULL)."
+        },
+        "oldestUnpublishedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "oldest_unpublished_at is the created_at of the oldest unpublished event —\nthe head-of-line relay lag. Unset when the backlog is empty."
+        }
+      },
+      "description": "EventRelayHealth is the outbox-drain view across every type: how far the relay\nis behind, expressed as a backlog count and a head-of-line age."
+    },
+    "v1EventSubscriptionSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subscriberPrincipalId": {
+          "type": "string",
+          "description": "subscriber_principal_id is the principal that receives the delivery."
+        },
+        "typePattern": {
+          "type": "string",
+          "description": "type_pattern is an exact type or a single trailing \".*\" wildcard."
+        },
+        "queue": {
+          "type": "string",
+          "description": "queue is the inbox queue the relay enqueues deliveries onto."
+        },
+        "delivery": {
+          "type": "string",
+          "description": "delivery is \"ordered\" or \"unordered\"."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "queueDeadLetter": {
+          "type": "string",
+          "format": "uint64",
+          "description": "queue_dead_letter is the number of dead-lettered deliveries currently on\nthis subscription's queue (shared across subscriptions on the same queue)."
+        }
+      },
+      "description": "EventSubscriptionSummary is one live (non-revoked) control-plane subscription\nresolved by the relay for fan-out."
+    },
+    "v1EventTypeSnapshot": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "type is the fully-qualified event type, e.g. \"reference.console.viewed\"."
+        },
+        "visibility": {
+          "type": "string",
+          "description": "visibility is the declared catalog visibility: internal | tenant | external.\nInternal types are intra-platform and never delivered to a subscriber."
+        },
+        "publisher": {
+          "type": "string",
+          "description": "publisher is the owning namespace (the leading dotted segment of type)."
+        },
+        "major": {
+          "type": "integer",
+          "format": "int64",
+          "description": "major is the schema major version from the catalog."
+        },
+        "totalEvents": {
+          "type": "string",
+          "format": "uint64",
+          "description": "total_events is the number of domain_events rows of this type."
+        },
+        "unpublished": {
+          "type": "string",
+          "format": "uint64",
+          "description": "unpublished is the number not yet fanned out (published_at IS NULL)."
+        },
+        "lastEventAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "last_event_at is the newest created_at across rows of this type, if any."
+        },
+        "subscribers": {
+          "type": "string",
+          "format": "uint64",
+          "description": "subscribers is the count of live subscriptions whose pattern matches type."
+        }
+      },
+      "description": "EventTypeSnapshot is one published event type: its declared catalog contract\njoined with live counters drawn from domain_events. A catalog type with no\nrows yet still appears, with zero counters."
+    },
+    "v1ExchangeClientTokenRequest": {
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string"
+        },
+        "authorizationCode": {
+          "$ref": "#/definitions/v1AuthorizationCodeGrant"
+        },
+        "refreshToken": {
+          "$ref": "#/definitions/v1ClientRefreshTokenGrant"
+        }
+      }
+    },
+    "v1ExchangeClientTokenResponse": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "description": "ExchangeClientTokenResponse returns both halves in the body. A public client\nhas no cookie jar the host controls and no place to keep a client secret, so\nthe tokens are the whole credential and the refresh half rotates on every use."
+    },
     "v1ExchangeWorkContextAudienceRequest": {
       "type": "object",
       "properties": {
@@ -6526,6 +7192,26 @@
         }
       }
     },
+    "v1FollowResourceRequest": {
+      "type": "object",
+      "properties": {
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      },
+      "description": "FollowResourceRequest deliberately carries no subject field. The follower is\nalways the authenticated caller, so the RPC can never be turned into an oracle\nabout another principal — the same reason ListMyAccessibleScopesRequest omits\none. A target the caller cannot currently see is reported as missing, never as\ndenied, so Follow cannot be used to probe for resources that exist elsewhere."
+    },
+    "v1FollowResourceResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
     "v1GDPRRequest": {
       "type": "object",
       "properties": {
@@ -6589,6 +7275,36 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1GetEventOperationsResponse": {
+      "type": "object",
+      "properties": {
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EventTypeSnapshot"
+          },
+          "description": "event_types is every published catalog type with its live counters,\nordered by type."
+        },
+        "relay": {
+          "$ref": "#/definitions/v1EventRelayHealth",
+          "description": "relay is the platform-wide outbox drain health."
+        },
+        "deadLetters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1QueueDeadLetters"
+          },
+          "description": "dead_letters is the per-queue dead-letter count over live subscriber queues,\nordered by queue. Empty when no event delivery is dead-lettered."
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "observed_at is the database clock at which the snapshot was taken."
         }
       }
     },
@@ -7106,6 +7822,27 @@
       },
       "description": "Invoice — trimmed view of Stripe's invoice object. Amounts are in\nthe smallest currency unit (cents for USD/EUR); FE divides by 100."
     },
+    "v1IssueClientAuthorizationCodeRequest": {
+      "type": "object",
+      "properties": {
+        "authorization": {
+          "$ref": "#/definitions/v1ClientAuthorizationRequest"
+        }
+      }
+    },
+    "v1IssueClientAuthorizationCodeResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "One-time authorization code, valid for expires_in seconds and bound to the\nclient, redirect URI, and code challenge it was issued against."
+        },
+        "expiresIn": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
     "v1IssuedWorkContext": {
       "type": "object",
       "properties": {
@@ -7227,6 +7964,21 @@
       ],
       "default": "JOB_ENQUEUE_DISPOSITION_UNSPECIFIED",
       "description": "JobEnqueueDisposition distinguishes a newly committed message from an exact\nidempotent replay that resolved to the message already stored."
+    },
+    "v1JobExecutionReference": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "description": "JobExecutionReference correlates Host work with an external execution. Owner\nis the authenticated module reporting completion; kind and id are that\nmodule's assertion and require independent verification against the external\nexecution owner's public read."
     },
     "v1JobFailure": {
       "type": "object",
@@ -7460,6 +8212,9 @@
         },
         "replayOf": {
           "type": "string"
+        },
+        "execution": {
+          "$ref": "#/definitions/v1JobExecutionReference"
         }
       },
       "description": "JobSummary is the payload-free operations view. Payload bytes and attributes\nnever cross the platform-administration API boundary."
@@ -7542,7 +8297,8 @@
           "type": "string",
           "description": "Set when more scopes remain; pass it back as page_token. Empty on the last page."
         }
-      }
+      },
+      "description": "Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal\nPermissionService.ListAccessibleScopes in authorization.proto. It lives in this\nfile, so it ships to every published SDK consumer: a field added here for the\ninternal RPC's benefit widens the public surface too. Add internal-only detail\nto a message in authorization.proto instead."
     },
     "v1ListActiveSessionsResponse": {
       "type": "object",
@@ -7568,6 +8324,34 @@
             "type": "object",
             "$ref": "#/definitions/v1AuditEventType"
           }
+        }
+      }
+    },
+    "v1ListCollectionAccessResponse": {
+      "type": "object",
+      "properties": {
+        "collections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionAccess"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListEventSubscriptionsResponse": {
+      "type": "object",
+      "properties": {
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EventSubscriptionSummary"
+          },
+          "description": "subscriptions is every live subscription across all principals, ordered by\ncreated_at."
         }
       }
     },
@@ -7949,7 +8733,8 @@
           "type": "string"
         },
         "actionUrl": {
-          "type": "string"
+          "type": "string",
+          "description": "No longer populated. The stored destination is a cache of a past grant, so\nit is never broadcast with the list; ResolveNotificationAction re-authorizes\nand returns it when the link is actually followed. Retained rather than\nremoved so the field number stays burned and the wire shape is unbroken."
         },
         "readAt": {
           "type": "string",
@@ -7958,6 +8743,10 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "hasAction": {
+          "type": "boolean",
+          "description": "Whether this item has a destination at all — enough to render it as\nactionable without handing out the destination itself."
         }
       }
     },
@@ -8478,6 +9267,19 @@
           "format": "int32"
         }
       }
+    },
+    "v1QueueDeadLetters": {
+      "type": "object",
+      "properties": {
+        "queue": {
+          "type": "string"
+        },
+        "deadLetter": {
+          "type": "string",
+          "format": "uint64"
+        }
+      },
+      "description": "QueueDeadLetters counts exhausted event deliveries currently sitting in the\ndead-letter state on one subscriber queue."
     },
     "v1RLSPolicyInfo": {
       "type": "object",
@@ -9036,6 +9838,10 @@
         "idleExpiresAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "actingAsUserId": {
+          "type": "string",
+          "description": "Set only on an impersonation window, naming the user being viewed. An\nordinary login leaves it empty, so a client can tell the two apart rather\nthan presenting an admin's support session as a device they signed in on."
         }
       }
     },
@@ -9218,6 +10024,28 @@
         }
       }
     },
+    "v1StopImpersonationRequest": {
+      "type": "object",
+      "description": "StopImpersonation ends the caller's own impersonation session. It carries no\ntarget: the session to end is derived from the verified identity, so there is\nno input by which one operator could end another's window."
+    },
+    "v1StopImpersonationResponse": {
+      "type": "object",
+      "properties": {
+        "durationSeconds": {
+          "type": "string",
+          "format": "int64",
+          "description": "Seconds the impersonation window was open. 0 when it was already closed."
+        },
+        "accessTokenRevoked": {
+          "type": "boolean",
+          "description": "Whether the window's outstanding access token was actually invalidated.\nFalse means the window is closed durably but its token keeps working until\nit expires on its own, which happens when no revocation store is wired or\nthe marker could not be written — a caller that reports \"stopped\" without\nsaying so would overstate what the stop achieved."
+        },
+        "alreadyClosed": {
+          "type": "boolean",
+          "description": "Whether the window had already been closed before this call, so a retry or\na second tab reports the outcome without recording a second end of the same\nwindow."
+        }
+      }
+    },
     "v1SubjectKind": {
       "type": "string",
       "enum": [
@@ -9338,6 +10166,17 @@
       ],
       "default": "THEME_PREFERENCE_UNSPECIFIED"
     },
+    "v1UnfollowResourceRequest": {
+      "type": "object",
+      "properties": {
+        "resourceType": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      }
+    },
     "v1UpdateConsentPreferencesRequest": {
       "type": "object",
       "properties": {
@@ -9355,6 +10194,14 @@
         },
         "context": {
           "type": "string"
+        }
+      }
+    },
+    "v1UpdateRoleResponse": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/v1Role"
         }
       }
     },
@@ -9657,6 +10504,23 @@
         "USER_STATUS_DELETED"
       ],
       "default": "USER_STATUS_UNSPECIFIED"
+    },
+    "v1ValidateClientAuthorizationRequest": {
+      "type": "object",
+      "properties": {
+        "authorization": {
+          "$ref": "#/definitions/v1ClientAuthorizationRequest"
+        }
+      }
+    },
+    "v1ValidateClientAuthorizationResponse": {
+      "type": "object",
+      "properties": {
+        "clientName": {
+          "type": "string"
+        }
+      },
+      "description": "ValidateClientAuthorizationResponse carries only what the login page needs to\nname the client to the person. The registry itself — other redirect URIs, the\nclient's origins — is never served to a browser."
     },
     "v1VerifyTOTPRequest": {
       "type": "object",

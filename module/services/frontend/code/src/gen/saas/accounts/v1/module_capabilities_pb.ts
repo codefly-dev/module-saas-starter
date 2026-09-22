@@ -2,11 +2,17 @@
 // @generated from file saas/accounts/v1/module_capabilities.proto (package saas.accounts.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { IssuedWorkContextSchema } from "./work_contexts_pb";
+import { file_saas_accounts_v1_work_contexts } from "./work_contexts_pb";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import type { Duration, EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_duration, file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { ModuleMintRegistrationRequestSchema, ModuleMintRegistrationResponseSchema, ModuleMintWorkContextRequestSchema, ModuleMintWorkContextResponseSchema, SolutionMintRegistrationRequestSchema, SolutionMintRegistrationResponseSchema } from "./module_registration_pb";
+import { file_saas_accounts_v1_module_registration } from "./module_registration_pb";
+import type { EventEnvelope } from "../../events/v1/events_pb";
+import { file_saas_events_v1_events } from "../../events/v1/events_pb";
 import type { JobEnqueueDisposition, JobEnvelope, JobFailure, JobLease, JobLeaseReference, NewJob } from "../../jobs/v1/jobs_pb";
 import { file_saas_jobs_v1_jobs } from "../../jobs/v1/jobs_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
@@ -16,7 +22,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/module_capabilities.proto.
  */
 export const file_saas_accounts_v1_module_capabilities: GenFile = /*@__PURE__*/
-  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9jYXBhYmlsaXRpZXMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXgoXTW9kdWxlRW5xdWV1ZUpvYlJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIpCgNqb2IYAiABKAsyFC5zYWFzLmpvYnMudjEuTmV3Sm9iQga6SAPIAQEidgoYTW9kdWxlRW5xdWV1ZUpvYlJlc3BvbnNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESQAoLZGlzcG9zaXRpb24YAiABKA4yIy5zYWFzLmpvYnMudjEuSm9iRW5xdWV1ZURpc3Bvc2l0aW9uQga6SAPIAQEiygEKFk1vZHVsZUNsYWltSm9ic1JlcXVlc3QSLgoFcXVldWUYASABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSHQoJd29ya2VyX2lkGAIgASgJQgq6SAdyBRABGP8BEhgKBWxpbWl0GAMgASgNQgm6SAYqBBhkKAESRwoObGVhc2VfZHVyYXRpb24YBCABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IkIKF01vZHVsZUNsYWltSm9ic1Jlc3BvbnNlEicKBGpvYnMYASADKAsyGS5zYWFzLmpvYnMudjEuSm9iRW52ZWxvcGUilwEKGU1vZHVsZUhlYXJ0YmVhdEpvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARJCCglleHRlbnNpb24YAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IksKGk1vZHVsZUhlYXJ0YmVhdEpvYlJlc3BvbnNlEi0KBWxlYXNlGAEgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlQga6SAPIAQEiTQoTTW9kdWxlQWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBIsIBChRNb2R1bGVOYWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEjEKB2ZhaWx1cmUYAiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZUIGukgDyAEBEhEKCXJldHJ5YWJsZRgDIAEoCBIsCghyZXRyeV9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi9gEKF01vZHVsZU5vdGlmeVVzZXJSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESGQoFdGl0bGUYAyABKAlCCrpIB3IFEAEY5gcSFgoEYm9keRgEIAEoCUIIukgFcgMYgEASFQoEdHlwZRgFIAEoCUIHukgEcgIYQBIcCgphY3Rpb25fdXJsGAYgASgJQgi6SAVyAxiAEBIbCghjYXRlZ29yeRgHIAEoCUIJukgGcgQQARggEiEKD2lkZW1wb3RlbmN5X2tleRgIIAEoCUIIukgFcgMY/wEiRgoYTW9kdWxlTm90aWZ5VXNlclJlc3BvbnNlEhcKD25vdGlmaWNhdGlvbl9pZBgBIAEoCRIRCglkZWxpdmVyZWQYAiABKAgiYwoUTW9kdWxlQXBwcm92YWxQb2xpY3kSFwoGcXVvcnVtGAEgASgNQge6SAQqAhhkEh4KDGFwcHJvdmVyX3NldBgCIAMoCUIIukgFkgECEGQSEgoKYWxsb3dfc2VsZhgDIAEoCCKbAQoPTW9kdWxlUmVzdW1lUmVmEi4KBXF1ZXVlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEi4KBXRvcGljGAIgASgJQh+6SBxyGhABGP8BMhNeW2Etel1bYS16MC05Xy4tXSokEigKB3BheWxvYWQYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IpYDChxNb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHAoIcmVzb3VyY2UYAiABKAlCCrpIB3IFEAEYgAESGgoGYWN0aW9uGAMgASgJQgq6SAdyBRABGIABEigKB3N1YmplY3QYBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiAKDHJlcXVlc3RlZF9ieRgFIAEoCUIKukgHcgUQARj/ARI2CgZwb2xpY3kYBiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFwcHJvdmFsUG9saWN5Ej0KCnJlc3VtZV9yZWYYByABKAsyIS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlc3VtZVJlZkIGukgDyAEBEi4KCmV4cGlyZXNfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI+Ch1Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXNwb25zZRIdCgthcHByb3ZhbF9pZBgBIAEoCUIIukgFcgOwAQEiUwoYTW9kdWxlR2V0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHQoLYXBwcm92YWxfaWQYAiABKAlCCLpIBXIDsAEBIvUCCg5Nb2R1bGVBcHByb3ZhbBIKCgJpZBgBIAEoCRIOCgZ0ZW5hbnQYAiABKAkSEAoIcmVzb3VyY2UYAyABKAkSDgoGYWN0aW9uGAQgASgJEigKB3N1YmplY3QYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhQKDHJlcXVlc3RlZF9ieRgGIAEoCRIOCgZxdW9ydW0YByABKA0SDQoFc3RhdGUYCCABKAkSNQoKcmVzdW1lX3JlZhgJIAEoCzIhLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUmVzdW1lUmVmEi4KCmV4cGlyZXNfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChtNb2R1bGVDYW5jZWxBcHByb3ZhbFJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIdCgthcHByb3ZhbF9pZBgCIAEoCUIIukgFcgOwAQESGAoGcmVhc29uGAMgASgJQgi6SAVyAxiACCLLAQobTW9kdWxlRW1pdEF1ZGl0RXZlbnRSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIeCgpldmVudF90eXBlGAIgASgJQgq6SAdyBRABGIABEhkKBWFjdG9yGAMgASgJQgq6SAdyBRABGP8BEhwKCHNvbHV0aW9uGAQgASgJQgq6SAdyBRABGIABEhoKCGVudHJ5X2lkGAUgASgJQgi6SAVyAxj/ARInCgZmaWVsZHMYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0Ms8JChlNb2R1bGVDYXBhYmlsaXRpZXNTZXJ2aWNlEn0KCkVucXVldWVKb2ISKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUVucXVldWVKb2JSZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVFbnF1ZXVlSm9iUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJ6CglDbGFpbUpvYnMSKC5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUNsYWltSm9ic1JlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUNsYWltSm9ic1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESgwEKDEhlYXJ0YmVhdEpvYhIrLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlSGVhcnRiZWF0Sm9iUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlSGVhcnRiZWF0Sm9iUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJhCgZBY2tKb2ISJS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFja0pvYlJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJjCgdOYWNrSm9iEiYuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVOYWNrSm9iUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEn0KCk5vdGlmeVVzZXISKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU5vdGlmeVVzZXJSZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVOb3RpZnlVc2VyUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKMAQoPUmVxdWVzdEFwcHJvdmFsEi4uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXF1ZXN0Gi8uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnUKC0dldEFwcHJvdmFsEiouc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVHZXRBcHByb3ZhbFJlcXVlc3QaIC5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFwcHJvdmFsIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAEScQoOQ2FuY2VsQXBwcm92YWwSLS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUNhbmNlbEFwcHJvdmFsUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnEKDkVtaXRBdWRpdEV2ZW50Ei0uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVFbWl0QXVkaXRFdmVudFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgAUK/AQoUY29tLnNhYXMuYWNjb3VudHMudjFCF01vZHVsZUNhcGFiaWxpdGllc1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_empty, file_google_protobuf_duration, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
+  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9jYXBhYmlsaXRpZXMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXgoXTW9kdWxlRW5xdWV1ZUpvYlJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIpCgNqb2IYAiABKAsyFC5zYWFzLmpvYnMudjEuTmV3Sm9iQga6SAPIAQEidgoYTW9kdWxlRW5xdWV1ZUpvYlJlc3BvbnNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESQAoLZGlzcG9zaXRpb24YAiABKA4yIy5zYWFzLmpvYnMudjEuSm9iRW5xdWV1ZURpc3Bvc2l0aW9uQga6SAPIAQEiygEKFk1vZHVsZUNsYWltSm9ic1JlcXVlc3QSLgoFcXVldWUYASABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSHQoJd29ya2VyX2lkGAIgASgJQgq6SAdyBRABGP8BEhgKBWxpbWl0GAMgASgNQgm6SAYqBBhkKAESRwoObGVhc2VfZHVyYXRpb24YBCABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IkIKF01vZHVsZUNsYWltSm9ic1Jlc3BvbnNlEicKBGpvYnMYASADKAsyGS5zYWFzLmpvYnMudjEuSm9iRW52ZWxvcGUilwEKGU1vZHVsZUhlYXJ0YmVhdEpvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARJCCglleHRlbnNpb24YAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IksKGk1vZHVsZUhlYXJ0YmVhdEpvYlJlc3BvbnNlEi0KBWxlYXNlGAEgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlQga6SAPIAQEipgEKE01vZHVsZUFja0pvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARI3Cg5leGVjdXRpb25fa2luZBgCIAEoCUIfukgcchoYQDIWXiR8XlthLXpdW2EtejAtOV8uLV0qJBIeCgxleGVjdXRpb25faWQYAyABKAlCCLpIBXIDGP8BIsIBChRNb2R1bGVOYWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEjEKB2ZhaWx1cmUYAiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZUIGukgDyAEBEhEKCXJldHJ5YWJsZRgDIAEoCBIsCghyZXRyeV9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi9gEKF01vZHVsZU5vdGlmeVVzZXJSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESGQoFdGl0bGUYAyABKAlCCrpIB3IFEAEY5gcSFgoEYm9keRgEIAEoCUIIukgFcgMYgEASFQoEdHlwZRgFIAEoCUIHukgEcgIYQBIcCgphY3Rpb25fdXJsGAYgASgJQgi6SAVyAxiAEBIbCghjYXRlZ29yeRgHIAEoCUIJukgGcgQQARggEiEKD2lkZW1wb3RlbmN5X2tleRgIIAEoCUIIukgFcgMY/wEiRgoYTW9kdWxlTm90aWZ5VXNlclJlc3BvbnNlEhcKD25vdGlmaWNhdGlvbl9pZBgBIAEoCRIRCglkZWxpdmVyZWQYAiABKAgiYwoUTW9kdWxlQXBwcm92YWxQb2xpY3kSFwoGcXVvcnVtGAEgASgNQge6SAQqAhhkEh4KDGFwcHJvdmVyX3NldBgCIAMoCUIIukgFkgECEGQSEgoKYWxsb3dfc2VsZhgDIAEoCCKbAQoPTW9kdWxlUmVzdW1lUmVmEi4KBXF1ZXVlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEi4KBXRvcGljGAIgASgJQh+6SBxyGhABGP8BMhNeW2Etel1bYS16MC05Xy4tXSokEigKB3BheWxvYWQYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IpYDChxNb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHAoIcmVzb3VyY2UYAiABKAlCCrpIB3IFEAEYgAESGgoGYWN0aW9uGAMgASgJQgq6SAdyBRABGIABEigKB3N1YmplY3QYBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiAKDHJlcXVlc3RlZF9ieRgFIAEoCUIKukgHcgUQARj/ARI2CgZwb2xpY3kYBiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFwcHJvdmFsUG9saWN5Ej0KCnJlc3VtZV9yZWYYByABKAsyIS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlc3VtZVJlZkIGukgDyAEBEi4KCmV4cGlyZXNfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI+Ch1Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXNwb25zZRIdCgthcHByb3ZhbF9pZBgBIAEoCUIIukgFcgOwAQEiUwoYTW9kdWxlR2V0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHQoLYXBwcm92YWxfaWQYAiABKAlCCLpIBXIDsAEBIvUCCg5Nb2R1bGVBcHByb3ZhbBIKCgJpZBgBIAEoCRIOCgZ0ZW5hbnQYAiABKAkSEAoIcmVzb3VyY2UYAyABKAkSDgoGYWN0aW9uGAQgASgJEigKB3N1YmplY3QYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhQKDHJlcXVlc3RlZF9ieRgGIAEoCRIOCgZxdW9ydW0YByABKA0SDQoFc3RhdGUYCCABKAkSNQoKcmVzdW1lX3JlZhgJIAEoCzIhLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUmVzdW1lUmVmEi4KCmV4cGlyZXNfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChtNb2R1bGVDYW5jZWxBcHByb3ZhbFJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIdCgthcHByb3ZhbF9pZBgCIAEoCUIIukgFcgOwAQESGAoGcmVhc29uGAMgASgJQgi6SAVyAxiACCLuAQobTW9kdWxlRW1pdEF1ZGl0RXZlbnRSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIeCgpldmVudF90eXBlGAIgASgJQgq6SAdyBRABGIABEhkKBWFjdG9yGAMgASgJQgq6SAdyBRABGP8BEhwKCHNvbHV0aW9uGAQgASgJQgq6SAdyBRABGIABEhoKCGVudHJ5X2lkGAUgASgJQgi6SAVyAxj/ARInCgZmaWVsZHMYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiEKD2lkZW1wb3RlbmN5X2tleRgHIAEoCUIIukgFcgMY/wEibQoWU3ViamVjdFZpc2liaWxpdHlHcmFudBIjChJ2aXNpYmxlX3N1YmplY3RfaWQYASABKAlCB7pIBHICEAESLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiYwoiTW9kdWxlTGlzdFN1YmplY3RWaXNpYmlsaXR5UmVxdWVzdBIYCgZ0ZW5hbnQYASABKAlCCLpIBXIDsAEBEiMKEXZpZXdlcl9zdWJqZWN0X2lkGAIgASgJQgi6SAVyA7ABASJfCiNNb2R1bGVMaXN0U3ViamVjdFZpc2liaWxpdHlSZXNwb25zZRI4CgZncmFudHMYASADKAsyKC5zYWFzLmFjY291bnRzLnYxLlN1YmplY3RWaXNpYmlsaXR5R3JhbnQiVwoaRmV0Y2hEYXRhc291cmNlQmxvYlJlcXVlc3QSGwoJc291cmNlX2lkGAEgASgJQgi6SAVyA7ABARIcCghibG9iX3NoYRgCIAEoCUIKukgHcgUQARj/ASJSChhGZXRjaERhdGFzb3VyY2VCbG9iQ2h1bmsSDAoEZGF0YRgBIAEoDBISCgp0b3RhbF9zaXplGAIgASgDEhQKDGNvbnRlbnRfdHlwZRgDIAEoCSJuChlNb2R1bGVQdWJsaXNoRXZlbnRSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESNwoIZW52ZWxvcGUYAiABKAsyHS5zYWFzLmV2ZW50cy52MS5FdmVudEVudmVsb3BlQga6SAPIAQEiOAoaTW9kdWxlUHVibGlzaEV2ZW50UmVzcG9uc2USGgoIZXZlbnRfaWQYASABKAlCCLpIBXIDsAEBIsgBChZNb2R1bGVTdWJzY3JpYmVSZXF1ZXN0EksKDHR5cGVfcGF0dGVybhgBIAEoCUI1ukgycjAQARiAATIpXlthLXpdW2EtejAtOV0qKD86XC5bYS16MC05XSspKig/OlwuXCopPyQSLgoFcXVldWUYAiABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSMQoIZGVsaXZlcnkYAyABKA4yHy5zYWFzLmFjY291bnRzLnYxLkV2ZW50RGVsaXZlcnkiyQEKEk1vZHVsZVN1YnNjcmlwdGlvbhIKCgJpZBgBIAEoCRIfChdzdWJzY3JpYmVyX3ByaW5jaXBhbF9pZBgCIAEoCRIUCgx0eXBlX3BhdHRlcm4YAyABKAkSDQoFcXVldWUYBCABKAkSMQoIZGVsaXZlcnkYBSABKA4yHy5zYWFzLmFjY291bnRzLnYxLkV2ZW50RGVsaXZlcnkSLgoKY3JlYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiVQoXTW9kdWxlU3Vic2NyaWJlUmVzcG9uc2USOgoMc3Vic2NyaXB0aW9uGAEgASgLMiQuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVTdWJzY3JpcHRpb24iPQoYTW9kdWxlVW5zdWJzY3JpYmVSZXF1ZXN0EiEKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCUIIukgFcgOwAQEiIAoeTW9kdWxlTGlzdFN1YnNjcmlwdGlvbnNSZXF1ZXN0Il4KH01vZHVsZUxpc3RTdWJzY3JpcHRpb25zUmVzcG9uc2USOwoNc3Vic2NyaXB0aW9ucxgBIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlU3Vic2NyaXB0aW9uInoKGU1vZHVsZVJlcGxheUV2ZW50c1JlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIYCgR0eXBlGAIgASgJQgq6SAdyBRABGIABEikKBXNpbmNlGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIxChpNb2R1bGVSZXBsYXlFdmVudHNSZXNwb25zZRITCgtyZWRlbGl2ZXJlZBgBIAEoBSLTAgoYUmVhZGFibGVTb3VyY2VDb2xsZWN0aW9uEhEKCXNvdXJjZV9pZBgBIAEoCRITCgtib3VuZGFyeV9pZBgCIAEoCRIOCgZvcmlnaW4YAyABKAkSEQoJY29udGFpbmVyGAQgASgJEgsKA3JlZhgFIAEoCRINCgVwYXRocxgGIAMoCRIWCg5ib3VuZGFyeV9sYWJlbBgHIAEoCRI+ChBncmFudF9kaXNjbG9zdXJlGAggASgOMiQuc2Fhcy5hY2NvdW50cy52MS5NZXRhZGF0YURpc2Nsb3N1cmUSPgoLcmVhZF9ncmFudHMYCSADKAsyKS5zYWFzLmFjY291bnRzLnYxLlJlYWRhYmxlQ29sbGVjdGlvbkdyYW50EjgKBHN5bmMYCiABKAsyKi5zYWFzLmFjY291bnRzLnYxLkNvbGxlY3Rpb25TeW5jUHJvdmVuYW5jZSKwAQoXUmVhZGFibGVDb2xsZWN0aW9uR3JhbnQSFQoNc3ViamVjdF9sYWJlbBgBIAEoCRIUCgxzdWJqZWN0X2tpbmQYAiABKAkSEQoJcm9sZV9uYW1lGAMgASgJEhIKCnNjb3BlX3BhdGgYBCABKAkSEQoJaW5oZXJpdGVkGAUgASgIEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIqkCChhDb2xsZWN0aW9uU3luY1Byb3ZlbmFuY2USMAoFc3RhZ2UYASABKA4yIS5zYWFzLmFjY291bnRzLnYxLlNvdXJjZVN5bmNTdGFnZRImCgJhdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIcmV2aXNpb24YAyABKAkSDwoHdHJpZ2dlchgEIAEoCRJCChRyZXF1ZXN0ZXJfZGlzY2xvc3VyZRgFIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuTWV0YWRhdGFEaXNjbG9zdXJlEjAKDHJlcXVlc3RlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGgoScmVxdWVzdGVkX2J5X2xhYmVsGAcgASgJImMKJExpc3RSZWFkYWJsZVNvdXJjZUNvbGxlY3Rpb25zUmVxdWVzdBIdCglwYWdlX3NpemUYASABKAVCCrpIBxoFGOgHKAASHAoKcGFnZV90b2tlbhgCIAEoCUIIukgFcgMYgBAigQEKJUxpc3RSZWFkYWJsZVNvdXJjZUNvbGxlY3Rpb25zUmVzcG9uc2USPwoLY29sbGVjdGlvbnMYASADKAsyKi5zYWFzLmFjY291bnRzLnYxLlJlYWRhYmxlU291cmNlQ29sbGVjdGlvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAki6QEKGE1vZHVsZVBsYWNlUmVjb3JkUmVxdWVzdBIYCgZ0ZW5hbnQYASABKAlCCLpIBXIDsAEBEj0KCnNjb3BlX3BhdGgYAiABKAlCKbpIJnIkEAEYgAQyHV5bYS16MC05X10rKD86XC5bYS16MC05X10rKSokEhcKBGtpbmQYAyABKAlCCbpIBnIEEAEYQBIXCgVsYWJlbBgEIAEoCUIIukgFcgMY/wESIQoNcmVzb3VyY2VfdHlwZRgFIAEoCUIKukgHcgUQARiAARIfCgtyZXNvdXJjZV9pZBgGIAEoCUIKukgHcgUQARiABCI2ChlNb2R1bGVQbGFjZVJlY29yZFJlc3BvbnNlEhkKB25vZGVfaWQYASABKAlCCLpIBXIDsAEBIoUBCiNDaGVja1dvcmtDb250ZXh0UmVjb3JkQWNjZXNzUmVxdWVzdBIhCg1yZXNvdXJjZV90eXBlGAEgASgJQgq6SAdyBRABGIACEh8KC3Jlc291cmNlX2lkGAIgASgJQgq6SAdyBRABGIAEEhoKBmFjdGlvbhgDIAEoCUIKukgHcgUQARiAAiJOCiRDaGVja1dvcmtDb250ZXh0UmVjb3JkQWNjZXNzUmVzcG9uc2USDwoHYWxsb3dlZBgBIAEoCBIVCg1zY29wZV9ub2RlX2lkGAIgASgJInwKKk1vZHVsZUV4Y2hhbmdlRGVsZWdhdGVkUmVhZEF1ZGllbmNlUmVxdWVzdBIeCgpiaW5kaW5nX2lkGAEgASgJQgq6SAdyBRABGIABEi4KGXBhcmVudF93b3JrX2NvbnRleHRfdG9rZW4YAiABKAlCC7pICHIGEAEYgIACIpEBCi9Nb2R1bGVFeGNoYW5nZURlbGVnYXRlZE9wZXJhdGlvbkF1ZGllbmNlUmVxdWVzdBIeCgpiaW5kaW5nX2lkGAEgASgJQgq6SAdyBRABGIABEi4KGXBhcmVudF93b3JrX2NvbnRleHRfdG9rZW4YAiABKAlCC7pICHIGEAEYgIACEg4KBmxvb2t1cBgDIAEoCCppCg1FdmVudERlbGl2ZXJ5Eh4KGkVWRU5UX0RFTElWRVJZX1VOU1BFQ0lGSUVEEAASHAoYRVZFTlRfREVMSVZFUllfVU5PUkRFUkVEEAESGgoWRVZFTlRfREVMSVZFUllfT1JERVJFRBACKn4KEk1ldGFkYXRhRGlzY2xvc3VyZRIjCh9NRVRBREFUQV9ESVNDTE9TVVJFX1VOU1BFQ0lGSUVEEAASIQodTUVUQURBVEFfRElTQ0xPU1VSRV9ESVNDTE9TRUQQARIgChxNRVRBREFUQV9ESVNDTE9TVVJFX1dJVEhIRUxEEAIqXAoPU291cmNlU3luY1N0YWdlEiEKHVNPVVJDRV9TWU5DX1NUQUdFX1VOU1BFQ0lGSUVEEAASJgoiU09VUkNFX1NZTkNfU1RBR0VfQ0hBTkdFU19FTlFVRVVFRBABMqwcChlNb2R1bGVDYXBhYmlsaXRpZXNTZXJ2aWNlEsUBCh1FeGNoYW5nZURlbGVnYXRlZFJlYWRBdWRpZW5jZRI8LnNhYXMuYWNjb3VudHMudjEuTW9kdWxlRXhjaGFuZ2VEZWxlZ2F0ZWRSZWFkQXVkaWVuY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5Jc3N1ZWRXb3JrQ29udGV4dCJBwvMYPQgDEAEwATorCidzYWFzLm1vZHVsZS5kZWxlZ2F0ZWRfYXVkaWVuY2VfZXhjaGFuZ2UQBEABSAdQBFgEYAESzwEKIkV4Y2hhbmdlRGVsZWdhdGVkT3BlcmF0aW9uQXVkaWVuY2USQS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUV4Y2hhbmdlRGVsZWdhdGVkT3BlcmF0aW9uQXVkaWVuY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5Jc3N1ZWRXb3JrQ29udGV4dCJBwvMYPQgDEAEwATorCidzYWFzLm1vZHVsZS5kZWxlZ2F0ZWRfYXVkaWVuY2VfZXhjaGFuZ2UQBEABSAdQBFgEYAESpwEKHENoZWNrV29ya0NvbnRleHRSZWNvcmRBY2Nlc3MSNS5zYWFzLmFjY291bnRzLnYxLkNoZWNrV29ya0NvbnRleHRSZWNvcmRBY2Nlc3NSZXF1ZXN0GjYuc2Fhcy5hY2NvdW50cy52MS5DaGVja1dvcmtDb250ZXh0UmVjb3JkQWNjZXNzUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKqAQodTGlzdFJlYWRhYmxlU291cmNlQ29sbGVjdGlvbnMSNi5zYWFzLmFjY291bnRzLnYxLkxpc3RSZWFkYWJsZVNvdXJjZUNvbGxlY3Rpb25zUmVxdWVzdBo3LnNhYXMuYWNjb3VudHMudjEuTGlzdFJlYWRhYmxlU291cmNlQ29sbGVjdGlvbnNSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEoABCgtQbGFjZVJlY29yZBIqLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUGxhY2VSZWNvcmRSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVQbGFjZVJlY29yZFJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESfQoKRW5xdWV1ZUpvYhIpLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlRW5xdWV1ZUpvYlJlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUVucXVldWVKb2JSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnoKCUNsYWltSm9icxIoLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQ2xhaW1Kb2JzUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQ2xhaW1Kb2JzUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKDAQoMSGVhcnRiZWF0Sm9iEisuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVIZWFydGJlYXRKb2JSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVIZWFydGJlYXRKb2JSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEmEKBkFja0pvYhIlLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQWNrSm9iUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEmMKB05hY2tKb2ISJi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU5hY2tKb2JSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESfQoKTm90aWZ5VXNlchIpLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlTm90aWZ5VXNlclJlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU5vdGlmeVVzZXJSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEowBCg9SZXF1ZXN0QXBwcm92YWwSLi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlcXVlc3RBcHByb3ZhbFJlcXVlc3QaLy5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlcXVlc3RBcHByb3ZhbFJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESdQoLR2V0QXBwcm92YWwSKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUdldEFwcHJvdmFsUmVxdWVzdBogLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQXBwcm92YWwiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJxCg5DYW5jZWxBcHByb3ZhbBItLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQ2FuY2VsQXBwcm92YWxSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAEScQoORW1pdEF1ZGl0RXZlbnQSLS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUVtaXRBdWRpdEV2ZW50UmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEp4BChVMaXN0U3ViamVjdFZpc2liaWxpdHkSNC5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUxpc3RTdWJqZWN0VmlzaWJpbGl0eVJlcXVlc3QaNS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUxpc3RTdWJqZWN0VmlzaWJpbGl0eVJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESiwEKE0ZldGNoRGF0YXNvdXJjZUJsb2ISLC5zYWFzLmFjY291bnRzLnYxLkZldGNoRGF0YXNvdXJjZUJsb2JSZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5GZXRjaERhdGFzb3VyY2VCbG9iQ2h1bmsiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgATABErYBChZNaW50TW9kdWxlUmVnaXN0cmF0aW9uEi8uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVNaW50UmVnaXN0cmF0aW9uUmVxdWVzdBowLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlIjnC8xg1CAMQATABOiMKH3NhYXMubW9kdWxlLnJlZ2lzdHJhdGlvbl9taW50ZWQQAkABSAdQBFgEYAESvgEKGE1pbnRTb2x1dGlvblJlZ2lzdHJhdGlvbhIxLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVxdWVzdBoyLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2UiO8LzGDcIAxABMAE6JQohc2Fhcy5zb2x1dGlvbi5yZWdpc3RyYXRpb25fbWludGVkEAJAAUgHUARYBGABErMBChVNaW50TW9kdWxlV29ya0NvbnRleHQSLi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU1pbnRXb3JrQ29udGV4dFJlcXVlc3QaLy5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU1pbnRXb3JrQ29udGV4dFJlc3BvbnNlIjnC8xg1CAMQATABOiMKH3NhYXMubW9kdWxlLndvcmtfY29udGV4dF9taW50ZWQQAkABSAdQBFgEYAESgwEKDFB1Ymxpc2hFdmVudBIrLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUHVibGlzaEV2ZW50UmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUHVibGlzaEV2ZW50UmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJ6CglTdWJzY3JpYmUSKC5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVN1YnNjcmliZVJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVN1YnNjcmliZVJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESawoLVW5zdWJzY3JpYmUSKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVVuc3Vic2NyaWJlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEpIBChFMaXN0U3Vic2NyaXB0aW9ucxIwLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlTGlzdFN1YnNjcmlwdGlvbnNSZXF1ZXN0GjEuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVMaXN0U3Vic2NyaXB0aW9uc1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESgwEKDFJlcGxheUV2ZW50cxIrLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUmVwbGF5RXZlbnRzUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUmVwbGF5RXZlbnRzUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgAUK/AQoUY29tLnNhYXMuYWNjb3VudHMudjFCF01vZHVsZUNhcGFiaWxpdGllc1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_saas_accounts_v1_work_contexts, file_buf_validate_validate, file_google_protobuf_empty, file_google_protobuf_duration, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_accounts_v1_module_registration, file_saas_events_v1_events, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
 
 /**
  * ModuleEnqueueJobRequest names the tenant the work belongs to and carries the
@@ -170,6 +176,19 @@ export type ModuleAckJobRequest = Message<"saas.accounts.v1.ModuleAckJobRequest"
    * @generated from field: saas.jobs.v1.JobLeaseReference lease = 1;
    */
   lease?: JobLeaseReference;
+
+  /**
+   * execution is supplied only after the external owner admitted immutable
+   * work. The Host derives owner from the authenticated module principal.
+   *
+   * @generated from field: string execution_kind = 2;
+   */
+  executionKind: string;
+
+  /**
+   * @generated from field: string execution_id = 3;
+   */
+  executionId: string;
 };
 
 /**
@@ -596,6 +615,17 @@ export type ModuleEmitAuditEventRequest = Message<"saas.accounts.v1.ModuleEmitAu
    * @generated from field: google.protobuf.Struct fields = 6;
    */
   fields?: JsonObject;
+
+  /**
+   * idempotency_key deduplicates retried emits: two emits with the same
+   * (tenant, event_type, idempotency_key) collapse to a single audit row, and
+   * the duplicate returns success without writing again. Empty disables
+   * deduplication (every emit is a distinct event). Scoped by tenant so one
+   * tenant's keys can never suppress another's events.
+   *
+   * @generated from field: string idempotency_key = 7;
+   */
+  idempotencyKey: string;
 };
 
 /**
@@ -606,12 +636,1000 @@ export const ModuleEmitAuditEventRequestSchema: GenMessage<ModuleEmitAuditEventR
   messageDesc(file_saas_accounts_v1_module_capabilities, 17);
 
 /**
- * ModuleCapabilitiesService is the module-facing platform surface. Every RPC
- * is internal-tier and identifies its caller from the forwarded Work Context.
+ * SubjectVisibilityGrant is one entry of a viewer's visible-subject set: another
+ * subject whose rows the viewer may read, and the instant that permission ends.
  *
+ * expires_at unset is an open-ended grant. A consuming module evaluates it at
+ * the moment of the read — an as-of read travels in data time and never
+ * restores the authority that held then — so the host writes the instant and
+ * never expires an entry on a timer.
+ *
+ * @generated from message saas.accounts.v1.SubjectVisibilityGrant
+ */
+export type SubjectVisibilityGrant = Message<"saas.accounts.v1.SubjectVisibilityGrant"> & {
+  /**
+   * @generated from field: string visible_subject_id = 1;
+   */
+  visibleSubjectId: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 2;
+   */
+  expiresAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SubjectVisibilityGrant.
+ * Use `create(SubjectVisibilityGrantSchema)` to create a new message.
+ */
+export const SubjectVisibilityGrantSchema: GenMessage<SubjectVisibilityGrant> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 18);
+
+/**
+ * ModuleListSubjectVisibilityRequest asks for one viewer's whole visible-subject
+ * set in a tenant: the projection of that tenant's team tree onto the viewer.
+ *
+ * A module that enforces row visibility by owner holds no subject vocabulary and
+ * no hierarchy of its own — why one subject may see another's rows is a question
+ * about a hierarchy, and the hierarchy is the host's. viewer_subject_id is a
+ * host subject id, opaque to the module, which reads it and never interprets it.
+ *
+ * Authorization is the caller's registered module principal plus the tenant
+ * bound to it (or its cross-tenant grant), and the viewer must be a member of
+ * that tenant — the same guard NotifyUser and subject-scoped enqueue take.
+ *
+ * @generated from message saas.accounts.v1.ModuleListSubjectVisibilityRequest
+ */
+export type ModuleListSubjectVisibilityRequest = Message<"saas.accounts.v1.ModuleListSubjectVisibilityRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * @generated from field: string viewer_subject_id = 2;
+   */
+  viewerSubjectId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleListSubjectVisibilityRequest.
+ * Use `create(ModuleListSubjectVisibilityRequestSchema)` to create a new message.
+ */
+export const ModuleListSubjectVisibilityRequestSchema: GenMessage<ModuleListSubjectVisibilityRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 19);
+
+/**
+ * ModuleListSubjectVisibilityResponse carries the viewer's WHOLE set, read in
+ * one transaction. It is deliberately not paginated: the consuming operation is
+ * a bulk replace of a viewer's whole set, so a set assembled from pages read in
+ * separate transactions could carry a grant that was revoked between two of
+ * them, and the module would then reinstate an authority an administrator had
+ * already withdrawn. A tenant whose hierarchy makes one viewer's set exceed the
+ * server cap is refused with FailedPrecondition rather than answered with a
+ * torn set.
+ *
+ * The set never contains the viewer: seeing one's own rows is ownership, not a
+ * grant from the hierarchy, and it is the consuming module's own read predicate
+ * that admits it. Order is unspecified — this is a set, and the consumer
+ * replaces with all of it.
+ *
+ * @generated from message saas.accounts.v1.ModuleListSubjectVisibilityResponse
+ */
+export type ModuleListSubjectVisibilityResponse = Message<"saas.accounts.v1.ModuleListSubjectVisibilityResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.SubjectVisibilityGrant grants = 1;
+   */
+  grants: SubjectVisibilityGrant[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleListSubjectVisibilityResponse.
+ * Use `create(ModuleListSubjectVisibilityResponseSchema)` to create a new message.
+ */
+export const ModuleListSubjectVisibilityResponseSchema: GenMessage<ModuleListSubjectVisibilityResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 20);
+
+/**
+ * FetchDatasourceBlobRequest asks accounts to re-fetch one file blob from the
+ * upstream provider of a connected datasource, by the source that owns it and
+ * the blob's content-addressed sha. It is the module's fallback when a compiled
+ * change set carried a blob sha instead of inline content (a blob past the
+ * inline cap): the module resolves the bytes here rather than holding a GitHub
+ * token. Authorization is the caller's module principal (allowed to claim the
+ * datasource queue) plus the source row's own org and boundary — not the
+ * request tenant — so no per-blob ticket is needed.
+ *
+ * @generated from message saas.accounts.v1.FetchDatasourceBlobRequest
+ */
+export type FetchDatasourceBlobRequest = Message<"saas.accounts.v1.FetchDatasourceBlobRequest"> & {
+  /**
+   * @generated from field: string source_id = 1;
+   */
+  sourceId: string;
+
+  /**
+   * @generated from field: string blob_sha = 2;
+   */
+  blobSha: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.FetchDatasourceBlobRequest.
+ * Use `create(FetchDatasourceBlobRequestSchema)` to create a new message.
+ */
+export const FetchDatasourceBlobRequestSchema: GenMessage<FetchDatasourceBlobRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 21);
+
+/**
+ * FetchDatasourceBlobChunk is one frame of the streamed blob. total_size and
+ * content_type are set on every chunk (the stream carries no separate header
+ * frame) and stay constant across the stream; data is the next slice of bytes.
+ * A blob past the 25 MiB cap is refused before the first chunk.
+ *
+ * @generated from message saas.accounts.v1.FetchDatasourceBlobChunk
+ */
+export type FetchDatasourceBlobChunk = Message<"saas.accounts.v1.FetchDatasourceBlobChunk"> & {
+  /**
+   * @generated from field: bytes data = 1;
+   */
+  data: Uint8Array;
+
+  /**
+   * @generated from field: int64 total_size = 2;
+   */
+  totalSize: bigint;
+
+  /**
+   * @generated from field: string content_type = 3;
+   */
+  contentType: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.FetchDatasourceBlobChunk.
+ * Use `create(FetchDatasourceBlobChunkSchema)` to create a new message.
+ */
+export const FetchDatasourceBlobChunkSchema: GenMessage<FetchDatasourceBlobChunk> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 22);
+
+/**
+ * ModulePublishEventRequest publishes one domain event for the caller's bound
+ * tenant. The event type's namespace (the segment before the first dot) must be
+ * one the caller's principal declares. The envelope id is the idempotency key:
+ * republishing the same id with the identical fact is a no-op, and reusing an
+ * id for a different fact is rejected.
+ *
+ * @generated from message saas.accounts.v1.ModulePublishEventRequest
+ */
+export type ModulePublishEventRequest = Message<"saas.accounts.v1.ModulePublishEventRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * @generated from field: saas.events.v1.EventEnvelope envelope = 2;
+   */
+  envelope?: EventEnvelope;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModulePublishEventRequest.
+ * Use `create(ModulePublishEventRequestSchema)` to create a new message.
+ */
+export const ModulePublishEventRequestSchema: GenMessage<ModulePublishEventRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 23);
+
+/**
+ * @generated from message saas.accounts.v1.ModulePublishEventResponse
+ */
+export type ModulePublishEventResponse = Message<"saas.accounts.v1.ModulePublishEventResponse"> & {
+  /**
+   * event_id echoes the accepted envelope id — the idempotency key the outbox
+   * stored the event of record under. A republish of the same id carrying the
+   * identical fact returns the same id and is an accepted no-op; reusing the id
+   * for a different fact is rejected with FailedPrecondition.
+   *
+   * @generated from field: string event_id = 1;
+   */
+  eventId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModulePublishEventResponse.
+ * Use `create(ModulePublishEventResponseSchema)` to create a new message.
+ */
+export const ModulePublishEventResponseSchema: GenMessage<ModulePublishEventResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 24);
+
+/**
+ * ModuleSubscribeRequest creates, or idempotently re-affirms, a durable
+ * subscription that delivers events matching type_pattern onto queue for the
+ * calling principal. type_pattern is an exact type or a single trailing ".*"
+ * prefix. An event type declared with internal visibility is not subscribable
+ * by a solution principal.
+ *
+ * @generated from message saas.accounts.v1.ModuleSubscribeRequest
+ */
+export type ModuleSubscribeRequest = Message<"saas.accounts.v1.ModuleSubscribeRequest"> & {
+  /**
+   * @generated from field: string type_pattern = 1;
+   */
+  typePattern: string;
+
+  /**
+   * @generated from field: string queue = 2;
+   */
+  queue: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.EventDelivery delivery = 3;
+   */
+  delivery: EventDelivery;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleSubscribeRequest.
+ * Use `create(ModuleSubscribeRequestSchema)` to create a new message.
+ */
+export const ModuleSubscribeRequestSchema: GenMessage<ModuleSubscribeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 25);
+
+/**
+ * ModuleSubscription is one durable subscription row as the module sees it.
+ *
+ * @generated from message saas.accounts.v1.ModuleSubscription
+ */
+export type ModuleSubscription = Message<"saas.accounts.v1.ModuleSubscription"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string subscriber_principal_id = 2;
+   */
+  subscriberPrincipalId: string;
+
+  /**
+   * @generated from field: string type_pattern = 3;
+   */
+  typePattern: string;
+
+  /**
+   * @generated from field: string queue = 4;
+   */
+  queue: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.EventDelivery delivery = 5;
+   */
+  delivery: EventDelivery;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 6;
+   */
+  createdAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleSubscription.
+ * Use `create(ModuleSubscriptionSchema)` to create a new message.
+ */
+export const ModuleSubscriptionSchema: GenMessage<ModuleSubscription> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 26);
+
+/**
+ * @generated from message saas.accounts.v1.ModuleSubscribeResponse
+ */
+export type ModuleSubscribeResponse = Message<"saas.accounts.v1.ModuleSubscribeResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ModuleSubscription subscription = 1;
+   */
+  subscription?: ModuleSubscription;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleSubscribeResponse.
+ * Use `create(ModuleSubscribeResponseSchema)` to create a new message.
+ */
+export const ModuleSubscribeResponseSchema: GenMessage<ModuleSubscribeResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 27);
+
+/**
+ * ModuleUnsubscribeRequest revokes one of the caller's own subscriptions.
+ *
+ * @generated from message saas.accounts.v1.ModuleUnsubscribeRequest
+ */
+export type ModuleUnsubscribeRequest = Message<"saas.accounts.v1.ModuleUnsubscribeRequest"> & {
+  /**
+   * @generated from field: string subscription_id = 1;
+   */
+  subscriptionId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleUnsubscribeRequest.
+ * Use `create(ModuleUnsubscribeRequestSchema)` to create a new message.
+ */
+export const ModuleUnsubscribeRequestSchema: GenMessage<ModuleUnsubscribeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 28);
+
+/**
+ * ModuleListSubscriptionsRequest lists the calling principal's live
+ * subscriptions. It carries no filter today.
+ *
+ * @generated from message saas.accounts.v1.ModuleListSubscriptionsRequest
+ */
+export type ModuleListSubscriptionsRequest = Message<"saas.accounts.v1.ModuleListSubscriptionsRequest"> & {
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleListSubscriptionsRequest.
+ * Use `create(ModuleListSubscriptionsRequestSchema)` to create a new message.
+ */
+export const ModuleListSubscriptionsRequestSchema: GenMessage<ModuleListSubscriptionsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 29);
+
+/**
+ * @generated from message saas.accounts.v1.ModuleListSubscriptionsResponse
+ */
+export type ModuleListSubscriptionsResponse = Message<"saas.accounts.v1.ModuleListSubscriptionsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.ModuleSubscription subscriptions = 1;
+   */
+  subscriptions: ModuleSubscription[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleListSubscriptionsResponse.
+ * Use `create(ModuleListSubscriptionsResponseSchema)` to create a new message.
+ */
+export const ModuleListSubscriptionsResponseSchema: GenMessage<ModuleListSubscriptionsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 30);
+
+/**
+ * ModuleReplayEventsRequest re-delivers durable events of one type for the
+ * caller's tenant, created at or after since, only to the calling principal's
+ * own subscriptions. Each redelivery carries a fresh idempotency key so a
+ * consumer that already acknowledged the event still receives the replay.
+ *
+ * @generated from message saas.accounts.v1.ModuleReplayEventsRequest
+ */
+export type ModuleReplayEventsRequest = Message<"saas.accounts.v1.ModuleReplayEventsRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * @generated from field: string type = 2;
+   */
+  type: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp since = 3;
+   */
+  since?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleReplayEventsRequest.
+ * Use `create(ModuleReplayEventsRequestSchema)` to create a new message.
+ */
+export const ModuleReplayEventsRequestSchema: GenMessage<ModuleReplayEventsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 31);
+
+/**
+ * @generated from message saas.accounts.v1.ModuleReplayEventsResponse
+ */
+export type ModuleReplayEventsResponse = Message<"saas.accounts.v1.ModuleReplayEventsResponse"> & {
+  /**
+   * redelivered is the number of durable events re-fanned to the caller's
+   * subscriptions.
+   *
+   * @generated from field: int32 redelivered = 1;
+   */
+  redelivered: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleReplayEventsResponse.
+ * Use `create(ModuleReplayEventsResponseSchema)` to create a new message.
+ */
+export const ModuleReplayEventsResponseSchema: GenMessage<ModuleReplayEventsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 32);
+
+/**
+ * ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
+ * internal-tier and identifies its caller from the forwarded Work Context —
+ * except MintModuleRegistration and MintSolutionRegistration, which a registrant
+ * calls at startup, before any user request exists, and which authorize on the
+ * registrant's own registration secret.
+ * Non-secret, current-viewer source read projection.
+ *
+ * One row per feeding source, so a boundary fed by several sources is reported
+ * once per source and a consumer groups by boundary_id to build a collection
+ * tree. Pagination is by source, so a boundary's sources may span pages.
+ *
+ * @generated from message saas.accounts.v1.ReadableSourceCollection
+ */
+export type ReadableSourceCollection = Message<"saas.accounts.v1.ReadableSourceCollection"> & {
+  /**
+   * @generated from field: string source_id = 1;
+   */
+  sourceId: string;
+
+  /**
+   * @generated from field: string boundary_id = 2;
+   */
+  boundaryId: string;
+
+  /**
+   * @generated from field: string origin = 3;
+   */
+  origin: string;
+
+  /**
+   * @generated from field: string container = 4;
+   */
+  container: string;
+
+  /**
+   * @generated from field: string ref = 5;
+   */
+  ref: string;
+
+  /**
+   * @generated from field: repeated string paths = 6;
+   */
+  paths: string[];
+
+  /**
+   * The boundary's display name as the scope tree records it.
+   *
+   * @generated from field: string boundary_label = 7;
+   */
+  boundaryLabel: string;
+
+  /**
+   * Whether read_grants is this viewer's complete view or was withheld.
+   *
+   * @generated from field: saas.accounts.v1.MetadataDisclosure grant_disclosure = 8;
+   */
+  grantDisclosure: MetadataDisclosure;
+
+  /**
+   * Active scope-tree grants conferring read on this collection's content, the
+   * same set PermissionService/ListCollectionAccess projects to an organization
+   * administrator. A record share is not a collection grant and is not listed
+   * here, so the two surfaces cannot disagree about what a grant is.
+   *
+   * @generated from field: repeated saas.accounts.v1.ReadableCollectionGrant read_grants = 9;
+   */
+  readGrants: ReadableCollectionGrant[];
+
+  /**
+   * @generated from field: saas.accounts.v1.CollectionSyncProvenance sync = 10;
+   */
+  sync?: CollectionSyncProvenance;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ReadableSourceCollection.
+ * Use `create(ReadableSourceCollectionSchema)` to create a new message.
+ */
+export const ReadableSourceCollectionSchema: GenMessage<ReadableSourceCollection> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 33);
+
+/**
+ * ReadableCollectionGrant is one active grant conferring read on a collection's
+ * content. It carries display labels rather than the subject, role and grantor
+ * identifiers the administrator's view projects. inherited is set when the grant
+ * sits on an ancestor of the boundary rather than on the boundary node itself:
+ * an inheriting grant is as real as a direct one, and a tree that dropped it
+ * would under-report who can read the collection.
+ *
+ * @generated from message saas.accounts.v1.ReadableCollectionGrant
+ */
+export type ReadableCollectionGrant = Message<"saas.accounts.v1.ReadableCollectionGrant"> & {
+  /**
+   * @generated from field: string subject_label = 1;
+   */
+  subjectLabel: string;
+
+  /**
+   * "principal" or "team".
+   *
+   * @generated from field: string subject_kind = 2;
+   */
+  subjectKind: string;
+
+  /**
+   * @generated from field: string role_name = 3;
+   */
+  roleName: string;
+
+  /**
+   * @generated from field: string scope_path = 4;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: bool inherited = 5;
+   */
+  inherited: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ReadableCollectionGrant.
+ * Use `create(ReadableCollectionGrantSchema)` to create a new message.
+ */
+export const ReadableCollectionGrantSchema: GenMessage<ReadableCollectionGrant> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 34);
+
+/**
+ * CollectionSyncProvenance is the host's record of how one feeding source last
+ * advanced. requested_at/requested_by_label describe a DIFFERENT occurrence from
+ * stage/at — a sync someone asked for, not the ingest it asked for — and are
+ * never merged into one "last synced by X at T" line: the request is recorded on
+ * the request path, the stage on the ingest path, and a request may be followed
+ * by no stage at all.
+ *
+ * docs/adr/0008-datasource-sync-actor-provenance.md keeps the audit trail the
+ * only record of who triggered a sync, so the requester is read from there and
+ * disclosed only to a viewer whose capability seals audit:read.
+ *
+ * @generated from message saas.accounts.v1.CollectionSyncProvenance
+ */
+export type CollectionSyncProvenance = Message<"saas.accounts.v1.CollectionSyncProvenance"> & {
+  /**
+   * @generated from field: saas.accounts.v1.SourceSyncStage stage = 1;
+   */
+  stage: SourceSyncStage;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp at = 2;
+   */
+  at?: Timestamp;
+
+  /**
+   * The provider revision the stage was reached at (a commit, for GitHub).
+   *
+   * @generated from field: string revision = 3;
+   */
+  revision: string;
+
+  /**
+   * The provider delivery that drove it.
+   *
+   * @generated from field: string trigger = 4;
+   */
+  trigger: string;
+
+  /**
+   * Whether the requester fields are this viewer's complete view or withheld.
+   *
+   * @generated from field: saas.accounts.v1.MetadataDisclosure requester_disclosure = 5;
+   */
+  requesterDisclosure: MetadataDisclosure;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp requested_at = 6;
+   */
+  requestedAt?: Timestamp;
+
+  /**
+   * @generated from field: string requested_by_label = 7;
+   */
+  requestedByLabel: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CollectionSyncProvenance.
+ * Use `create(CollectionSyncProvenanceSchema)` to create a new message.
+ */
+export const CollectionSyncProvenanceSchema: GenMessage<CollectionSyncProvenance> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 35);
+
+/**
+ * Tenant and viewer come exclusively from the verified Work Context.
+ *
+ * @generated from message saas.accounts.v1.ListReadableSourceCollectionsRequest
+ */
+export type ListReadableSourceCollectionsRequest = Message<"saas.accounts.v1.ListReadableSourceCollectionsRequest"> & {
+  /**
+   * @generated from field: int32 page_size = 1;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 2;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListReadableSourceCollectionsRequest.
+ * Use `create(ListReadableSourceCollectionsRequestSchema)` to create a new message.
+ */
+export const ListReadableSourceCollectionsRequestSchema: GenMessage<ListReadableSourceCollectionsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 36);
+
+/**
+ * @generated from message saas.accounts.v1.ListReadableSourceCollectionsResponse
+ */
+export type ListReadableSourceCollectionsResponse = Message<"saas.accounts.v1.ListReadableSourceCollectionsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.ReadableSourceCollection collections = 1;
+   */
+  collections: ReadableSourceCollection[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListReadableSourceCollectionsResponse.
+ * Use `create(ListReadableSourceCollectionsResponseSchema)` to create a new message.
+ */
+export const ListReadableSourceCollectionsResponseSchema: GenMessage<ListReadableSourceCollectionsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 37);
+
+/**
+ * ModulePlaceRecordRequest binds one of the calling module's own records to a
+ * node of the tenant's scope tree. Placement is what makes a record resolvable
+ * at all: CheckAccess and ListAccessibleScopes read a record's true scope from
+ * its own registered node and accept no caller-supplied path, so a record that
+ * was never placed is denied to every subject.
+ *
+ * resource_type must be one the caller principal's grant declares, which is the
+ * authority bound: a module places only records governed by the vocabulary its
+ * composition declared for it, so it can neither introduce a resource type it
+ * holds no grant for nor re-point another module's records.
+ *
+ * @generated from message saas.accounts.v1.ModulePlaceRecordRequest
+ */
+export type ModulePlaceRecordRequest = Message<"saas.accounts.v1.ModulePlaceRecordRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * The record's own leaf path, unique within the tenant, whose parent must
+   * already be registered. Labels are the lowercase ltree charset, so an opaque
+   * id is encoded (lowercase, '-' -> '_') before it is used as one.
+   *
+   * @generated from field: string scope_path = 2;
+   */
+  scopePath: string;
+
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string label = 4;
+   */
+  label: string;
+
+  /**
+   * @generated from field: string resource_type = 5;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 6;
+   */
+  resourceId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModulePlaceRecordRequest.
+ * Use `create(ModulePlaceRecordRequestSchema)` to create a new message.
+ */
+export const ModulePlaceRecordRequestSchema: GenMessage<ModulePlaceRecordRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 38);
+
+/**
+ * @generated from message saas.accounts.v1.ModulePlaceRecordResponse
+ */
+export type ModulePlaceRecordResponse = Message<"saas.accounts.v1.ModulePlaceRecordResponse"> & {
+  /**
+   * The scope node the record is placed at. Placing the same record at the same
+   * path again is an accepted no-op returning the same id, which is what the
+   * surface's at-least-once contract needs; placing it at a different path is
+   * refused, because a record resolves through exactly one node and moving it
+   * would silently rewrite who can reach it.
+   *
+   * @generated from field: string node_id = 1;
+   */
+  nodeId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModulePlaceRecordResponse.
+ * Use `create(ModulePlaceRecordResponseSchema)` to create a new message.
+ */
+export const ModulePlaceRecordResponseSchema: GenMessage<ModulePlaceRecordResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 39);
+
+/**
+ * Exact-record delegated oracle. Tenant and subjects come only from the signed
+ * forwarded Work Context; a caller cannot provide a scope path or principal.
+ *
+ * @generated from message saas.accounts.v1.CheckWorkContextRecordAccessRequest
+ */
+export type CheckWorkContextRecordAccessRequest = Message<"saas.accounts.v1.CheckWorkContextRecordAccessRequest"> & {
+  /**
+   * @generated from field: string resource_type = 1;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string resource_id = 2;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: string action = 3;
+   */
+  action: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CheckWorkContextRecordAccessRequest.
+ * Use `create(CheckWorkContextRecordAccessRequestSchema)` to create a new message.
+ */
+export const CheckWorkContextRecordAccessRequestSchema: GenMessage<CheckWorkContextRecordAccessRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 40);
+
+/**
+ * @generated from message saas.accounts.v1.CheckWorkContextRecordAccessResponse
+ */
+export type CheckWorkContextRecordAccessResponse = Message<"saas.accounts.v1.CheckWorkContextRecordAccessResponse"> & {
+  /**
+   * False also covers an unplaced or inaccessible record; no scope is disclosed.
+   *
+   * @generated from field: bool allowed = 1;
+   */
+  allowed: boolean;
+
+  /**
+   * Actual placed node, disclosed only when every current subject is allowed.
+   *
+   * @generated from field: string scope_node_id = 2;
+   */
+  scopeNodeId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CheckWorkContextRecordAccessResponse.
+ * Use `create(CheckWorkContextRecordAccessResponseSchema)` to create a new message.
+ */
+export const CheckWorkContextRecordAccessResponseSchema: GenMessage<CheckWorkContextRecordAccessResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 41);
+
+/**
+ * ModuleExchangeDelegatedReadAudienceRequest selects only an installed binding.
+ * User identity and authority come exclusively from the signed parent context.
+ *
+ * @generated from message saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
+ */
+export type ModuleExchangeDelegatedReadAudienceRequest = Message<"saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest"> & {
+  /**
+   * @generated from field: string binding_id = 1;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string parent_work_context_token = 2;
+   */
+  parentWorkContextToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest.
+ * Use `create(ModuleExchangeDelegatedReadAudienceRequestSchema)` to create a new message.
+ */
+export const ModuleExchangeDelegatedReadAudienceRequestSchema: GenMessage<ModuleExchangeDelegatedReadAudienceRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 42);
+
+/**
+ * Selects one immutable installed operation binding. The caller chooses only
+ * invocation versus receipt lookup; audience, scopes and lifetime are policy.
+ *
+ * @generated from message saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
+ */
+export type ModuleExchangeDelegatedOperationAudienceRequest = Message<"saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest"> & {
+  /**
+   * @generated from field: string binding_id = 1;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string parent_work_context_token = 2;
+   */
+  parentWorkContextToken: string;
+
+  /**
+   * @generated from field: bool lookup = 3;
+   */
+  lookup: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest.
+ * Use `create(ModuleExchangeDelegatedOperationAudienceRequestSchema)` to create a new message.
+ */
+export const ModuleExchangeDelegatedOperationAudienceRequestSchema: GenMessage<ModuleExchangeDelegatedOperationAudienceRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 43);
+
+/**
+ * EventDelivery is the ordering guarantee a subscription requests, mirroring
+ * events.Delivery in the SDK: UNORDERED fans out with no per-key ordering;
+ * ORDERED preserves FIFO within an event's partition key.
+ *
+ * @generated from enum saas.accounts.v1.EventDelivery
+ */
+export enum EventDelivery {
+  /**
+   * @generated from enum value: EVENT_DELIVERY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: EVENT_DELIVERY_UNORDERED = 1;
+   */
+  UNORDERED = 1,
+
+  /**
+   * @generated from enum value: EVENT_DELIVERY_ORDERED = 2;
+   */
+  ORDERED = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.EventDelivery.
+ */
+export const EventDeliverySchema: GenEnum<EventDelivery> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_module_capabilities, 0);
+
+/**
+ * MetadataDisclosure separates "the host withheld this from you" from "there is
+ * nothing to report". A viewer whose capability seals no authority over a detail
+ * reads WITHHELD and an empty projection of it; under DISCLOSED the projection
+ * is complete for this viewer, so an empty one is a real absence.
+ *
+ * @generated from enum saas.accounts.v1.MetadataDisclosure
+ */
+export enum MetadataDisclosure {
+  /**
+   * @generated from enum value: METADATA_DISCLOSURE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: METADATA_DISCLOSURE_DISCLOSED = 1;
+   */
+  DISCLOSED = 1,
+
+  /**
+   * @generated from enum value: METADATA_DISCLOSURE_WITHHELD = 2;
+   */
+  WITHHELD = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.MetadataDisclosure.
+ */
+export const MetadataDisclosureSchema: GenEnum<MetadataDisclosure> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_module_capabilities, 1);
+
+/**
+ * SourceSyncStage names which occurrence CollectionSyncProvenance.at records.
+ * The host reports no ingestion-completion stage: once a change set is durably
+ * enqueued the consuming module owns the rest, and no host-side fact observes it
+ * finishing. A module that needs "ingested" derives it from its own work.
+ *
+ * @generated from enum saas.accounts.v1.SourceSyncStage
+ */
+export enum SourceSyncStage {
+  /**
+   * Nothing has advanced this source yet.
+   *
+   * @generated from enum value: SOURCE_SYNC_STAGE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Every operation of a provider delivery is durably queued as a change set.
+   * This is enqueue completion, not ingestion completion.
+   *
+   * @generated from enum value: SOURCE_SYNC_STAGE_CHANGES_ENQUEUED = 1;
+   */
+  CHANGES_ENQUEUED = 1,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.SourceSyncStage.
+ */
+export const SourceSyncStageSchema: GenEnum<SourceSyncStage> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_module_capabilities, 2);
+
+/**
  * @generated from service saas.accounts.v1.ModuleCapabilitiesService
  */
 export const ModuleCapabilitiesService: GenService<{
+  /**
+   * ExchangeDelegatedReadAudience authenticates the module independently of a
+   * current parent context and exchanges only its installed read-only binding.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience
+   */
+  exchangeDelegatedReadAudience: {
+    methodKind: "unary";
+    input: typeof ModuleExchangeDelegatedReadAudienceRequestSchema;
+    output: typeof IssuedWorkContextSchema;
+  },
+  /**
+   * ExchangeDelegatedOperationAudience authenticates the module independently
+   * of a current parent context and exchanges only an installed operation's
+   * invoke scopes, or its read-only receipt-lookup subset.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience
+   */
+  exchangeDelegatedOperationAudience: {
+    methodKind: "unary";
+    input: typeof ModuleExchangeDelegatedOperationAudienceRequestSchema;
+    output: typeof IssuedWorkContextSchema;
+  },
+  /**
+   * Checks current owner and every delegated actor against true record placement,
+   * intersected with the verified capability's attenuated resource/action scope.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess
+   */
+  checkWorkContextRecordAccess: {
+    methodKind: "unary";
+    input: typeof CheckWorkContextRecordAccessRequestSchema;
+    output: typeof CheckWorkContextRecordAccessResponseSchema;
+  },
+  /**
+   * The forwarded viewer Work Context names the calling module in its audience;
+   * this read verifies it carries kind-wide read on a content resource type that
+   * module declares, and current owner/actor and collection grants.
+   * The internal listener remains mandatory; callers cannot supply identities.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections
+   */
+  listReadableSourceCollections: {
+    methodKind: "unary";
+    input: typeof ListReadableSourceCollectionsRequestSchema;
+    output: typeof ListReadableSourceCollectionsResponseSchema;
+  },
+  /**
+   * PlaceRecord places one of the caller's own records at a scope node, so the
+   * access oracles can resolve it. Bounded by the resource types the caller
+   * principal's grant declares.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord
+   */
+  placeRecord: {
+    methodKind: "unary";
+    input: typeof ModulePlaceRecordRequestSchema;
+    output: typeof ModulePlaceRecordResponseSchema;
+  },
   /**
    * EnqueueJob appends durable work for a tenant- or subject-scoped queue.
    *
@@ -711,6 +1729,119 @@ export const ModuleCapabilitiesService: GenService<{
     methodKind: "unary";
     input: typeof ModuleEmitAuditEventRequestSchema;
     output: typeof EmptySchema;
+  },
+  /**
+   * ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+   * whole set of other subjects whose rows that viewer may read.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility
+   */
+  listSubjectVisibility: {
+    methodKind: "unary";
+    input: typeof ModuleListSubjectVisibilityRequestSchema;
+    output: typeof ModuleListSubjectVisibilityResponseSchema;
+  },
+  /**
+   * FetchDatasourceBlob streams one datasource file blob, re-fetched from the
+   * upstream provider, to the module that resolves a change set's blob sha.
+   * Authorized by the caller principal's datasource-queue grant and the source
+   * row's own org/boundary, not the request tenant.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob
+   */
+  fetchDatasourceBlob: {
+    methodKind: "server_streaming";
+    input: typeof FetchDatasourceBlobRequestSchema;
+    output: typeof FetchDatasourceBlobChunkSchema;
+  },
+  /**
+   * MintModuleRegistration issues the signed, prefix-bound credential a composed
+   * module presents to the gateway to federate its REST surface. Authorized by
+   * the module's own registration secret, not the shared cluster token.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration
+   */
+  mintModuleRegistration: {
+    methodKind: "unary";
+    input: typeof ModuleMintRegistrationRequestSchema;
+    output: typeof ModuleMintRegistrationResponseSchema;
+  },
+  /**
+   * MintSolutionRegistration issues the signed, solution-bound credential a
+   * solution presents to the gateway and to the frontend to register, update, or
+   * delete its upstream and its Module-Federation remote. Authorized by the
+   * solution's own registration secret, declared separately from the module
+   * secrets because a solution remote executes in the host origin.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration
+   */
+  mintSolutionRegistration: {
+    methodKind: "unary";
+    input: typeof SolutionMintRegistrationRequestSchema;
+    output: typeof SolutionMintRegistrationResponseSchema;
+  },
+  /**
+   * MintModuleWorkContext issues the Work Context a composed module presents to
+   * this surface: owner and sole actor are the module service principal derived
+   * from its registration prefix. Authorized by the module's own registration
+   * secret, like the credential exchange above.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext
+   */
+  mintModuleWorkContext: {
+    methodKind: "unary";
+    input: typeof ModuleMintWorkContextRequestSchema;
+    output: typeof ModuleMintWorkContextResponseSchema;
+  },
+  /**
+   * PublishEvent appends one domain event to the outbox for the caller's tenant.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.PublishEvent
+   */
+  publishEvent: {
+    methodKind: "unary";
+    input: typeof ModulePublishEventRequestSchema;
+    output: typeof ModulePublishEventResponseSchema;
+  },
+  /**
+   * Subscribe creates or re-affirms a durable subscription for the caller.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.Subscribe
+   */
+  subscribe: {
+    methodKind: "unary";
+    input: typeof ModuleSubscribeRequestSchema;
+    output: typeof ModuleSubscribeResponseSchema;
+  },
+  /**
+   * Unsubscribe revokes one of the caller's own subscriptions.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe
+   */
+  unsubscribe: {
+    methodKind: "unary";
+    input: typeof ModuleUnsubscribeRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * ListSubscriptions returns the calling principal's live subscriptions.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions
+   */
+  listSubscriptions: {
+    methodKind: "unary";
+    input: typeof ModuleListSubscriptionsRequestSchema;
+    output: typeof ModuleListSubscriptionsResponseSchema;
+  },
+  /**
+   * ReplayEvents re-delivers durable events to the caller's own subscriptions.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents
+   */
+  replayEvents: {
+    methodKind: "unary";
+    input: typeof ModuleReplayEventsRequestSchema;
+    output: typeof ModuleReplayEventsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_module_capabilities, 0);

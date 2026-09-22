@@ -19,7 +19,7 @@ import {
 } from "@/shared/ui";
 import { useCreateRole } from "../service/mutations";
 
-export function RoleForm({ orgId }: { orgId?: string }) {
+export function RoleForm({ orgId }: { orgId: string }) {
 	const [error, setError] = useState<string | null>(null);
 	const [open, setOpen] = useState(false);
 	const [name, setName] = useState("");
@@ -66,7 +66,7 @@ export function RoleForm({ orgId }: { orgId?: string }) {
 	}
 
 	function handleSubmit() {
-		if (!name.trim() || !orgId || createRole.isPending) return;
+		if (!name.trim() || createRole.isPending) return;
 		setError(null);
 		createRole.mutate(
 			{
@@ -95,7 +95,7 @@ export function RoleForm({ orgId }: { orgId?: string }) {
 				setOpen(value);
 			}}
 		>
-			<DialogTrigger render={<Button disabled={!orgId} />}>
+			<DialogTrigger render={<Button />}>
 				<Plus className="mr-2 h-4 w-4" />
 				Create Role
 			</DialogTrigger>
@@ -103,7 +103,9 @@ export function RoleForm({ orgId }: { orgId?: string }) {
 				<DialogHeader>
 					<DialogTitle>Create Role</DialogTitle>
 					<DialogDescription>
-						Define a new role with custom permissions.
+						{orgId
+							? "Define a role for the selected organization."
+							: "Define a global role with custom permissions."}
 					</DialogDescription>
 				</DialogHeader>
 				{error && (

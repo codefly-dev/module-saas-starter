@@ -11,6 +11,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -135,6 +136,89 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 	return true, "granted via " + via, nil
 }
 
+func accessibleScopesQuery(subjectKind gen.SubjectKind, projection, nodePredicate string) (string, error) {
+	scopePred, err := layeredSubjectPredicate(subjectKind, "g")
+	if err != nil {
+		return "", err
+	}
+	sharePred, err := layeredSubjectPredicate(subjectKind, "sh")
+	if err != nil {
+		return "", err
+	}
+
+	// $1 subject, $2 resource_type, $3 action, $4 org; the caller binds
+	// $5 to a node, cursor or candidate set and, for listing, $6 to the limit. scope_path is UNIQUE per org, so it is a total keyset cursor.
+	// UNION dedupes a node reachable through both a grant and a share. The share
+	// branch's ancestor join is on the placed-record identity, so only nodes of the
+	// queried resource_type appear there — structural nodes (NULL resource columns)
+	// never match. The GRANT branch carries no such restriction: a grant at an
+	// ancestor reaches every node in its subtree whatever that node's
+	// resource_type, and rp.resource gates the PERMISSION rather than the node — so
+	// a caller matching on resource_id must pin n.resource_type in its own
+	// predicate or a same-id record of another type can answer for it.
+	// The explicit org_id predicate is a second gate on top of the RLS
+	// floor, not RLS alone: it pins the RETURNED node (n.org_id) as well as the
+	// authorizing grant/share (g.org_id / sh.org_id), so an ltree ancestor match or
+	// a colliding (resource_type, resource_id) across tenants can never surface
+	// another org's node even if the RLS floor is ever bypassed.
+	return `
+		SELECT ` + projection + ` FROM (
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path
+			FROM scope_nodes n
+			JOIN scope_grants g ON g.scope_path @> n.scope_path
+			JOIN role_permissions rp ON rp.role_id = g.role_id
+			WHERE ` + scopePred + `
+			  AND n.org_id = $4
+			  AND g.org_id = $4
+			  AND (g.expires_at IS NULL OR g.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $3)
+			  AND ` + nodePredicate + `
+			UNION
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path
+			FROM scope_nodes n
+			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
+			JOIN role_permissions rp ON rp.role_id = sh.role_id
+			WHERE ` + sharePred + `
+			  AND n.org_id = $4
+			  AND sh.org_id = $4
+			  AND sh.resource_type = $2
+			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $3)
+			  AND ` + nodePredicate + `
+		) accessible`, nil
+}
+
+// CanReadScopeNode tests exact membership using the same grants and shares as scope listing.
+func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error) {
+	// Compare against `n.id::text`, the exact projection ListAccessibleScopes
+	// returns as node_id, so exact membership is tested against the same set the
+	// listing enumerates and the two can never disagree on a node.
+	//
+	// It also settles the id's type: scope_nodes.id is UUID, and binding a
+	// caller-supplied string straight to it aborts the transaction with "invalid
+	// input syntax for type uuid" instead of answering. Comparing as text makes
+	// an unparseable id simply match nothing — a denial, which is the honest
+	// answer and keeps a malformed id indistinguishable from an unauthorized one.
+	//
+	// A UUID has several accepted spellings (uppercase, braced, urn, unhyphenated)
+	// that all denote the same node, but only one text form. Canonicalize so a
+	// caller naming a node it may read is not denied over punctuation; anything
+	// that is not a UUID is passed through, which matches nothing on a UUID column.
+	node := nodeID
+	if parsed, err := uuid.Parse(nodeID); err == nil {
+		node = parsed.String()
+	}
+	query, err := accessibleScopesQuery(subjectKind, "node_id", "n.id::text = $5")
+	if err != nil {
+		return false, err
+	}
+	var allowed bool
+	err = s.getQueryExecutor(ctx).QueryRow(ctx, "SELECT EXISTS ("+query+")", subjectID, resourceType, action, orgID, node).Scan(&allowed)
+	return allowed, err
+}
+
 // ListAccessibleScopes enumerates the scope nodes subject may act on with
 // (resourceType, action) — the list-objects companion to CheckAccess. A node is
 // returned when EITHER a scope grant at an ancestor-or-equal path carries a role
@@ -151,60 +235,17 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	w := wool.Get(ctx).In("ListAccessibleScopes")
 	executor := s.getQueryExecutor(ctx)
 
-	scopePred, err := layeredSubjectPredicate(subjectKind, "g")
+	query, err := accessibleScopesQuery(subjectKind, "node_id, scope_path, kind, label", "($5::ltree IS NULL OR n.scope_path > $5::ltree)")
 	if err != nil {
 		return nil, err
 	}
-	sharePred, err := layeredSubjectPredicate(subjectKind, "sh")
-	if err != nil {
-		return nil, err
-	}
-
-	// $1 subject, $2 resource_type, $3 action, $4 cursor (NULL=first page), $5
-	// limit, $6 org. scope_path is UNIQUE per org, so it is a total keyset cursor.
-	// UNION dedupes a node reachable through both a grant and a share. The share
-	// branch's ancestor join is on the placed-record identity, so only nodes of the
-	// queried resource_type appear there — structural nodes (NULL resource columns)
-	// never match. The explicit org_id predicate is a second gate on top of the RLS
-	// floor, not RLS alone: it pins the RETURNED node (n.org_id) as well as the
-	// authorizing grant/share (g.org_id / sh.org_id), so an ltree ancestor match or
-	// a colliding (resource_type, resource_id) across tenants can never surface
-	// another org's node even if the RLS floor is ever bypassed.
-	query := `
-		SELECT node_id, scope_path, kind FROM (
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.scope_path AS path
-			FROM scope_nodes n
-			JOIN scope_grants g ON g.scope_path @> n.scope_path
-			JOIN role_permissions rp ON rp.role_id = g.role_id
-			WHERE ` + scopePred + `
-			  AND n.org_id = $6
-			  AND g.org_id = $6
-			  AND (g.expires_at IS NULL OR g.expires_at > now())
-			  AND (rp.resource = '*' OR rp.resource = $2)
-			  AND (rp.action   = '*' OR rp.action   = $3)
-			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
-			UNION
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.scope_path AS path
-			FROM scope_nodes n
-			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
-			JOIN role_permissions rp ON rp.role_id = sh.role_id
-			WHERE ` + sharePred + `
-			  AND n.org_id = $6
-			  AND sh.org_id = $6
-			  AND sh.resource_type = $2
-			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
-			  AND (rp.resource = '*' OR rp.resource = $2)
-			  AND (rp.action   = '*' OR rp.action   = $3)
-			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
-		) accessible
-		ORDER BY path
-		LIMIT $5`
+	query += " ORDER BY path LIMIT $6"
 
 	var cursor any
 	if afterPath != "" {
 		cursor = afterPath
 	}
-	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, cursor, limit, orgID)
+	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, orgID, cursor, limit)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list accessible scopes")
 	}
@@ -213,13 +254,58 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	var out []*gen.AccessibleScope
 	for rows.Next() {
 		var node gen.AccessibleScope
-		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind); err != nil {
+		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind, &node.Label); err != nil {
 			return nil, w.Wrapf(err, "failed to scan accessible scope")
 		}
 		out = append(out, &node)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, w.Wrapf(err, "iterating accessible scope rows")
+	}
+	return out, nil
+}
+
+// ListAccessibleResourceIDs narrows candidates to the placed records the subject
+// may currently act on with (resourceType, action). It resolves through the same
+// grant + share union as ListAccessibleScopes and CheckAccess, so a record is
+// reported visible here exactly when its node is listed and CheckAccess allows
+// it — the three can never disagree.
+//
+// Bounded by the caller's candidate set rather than by a page cursor: a reader
+// already holding the ids it needs a verdict on settles them in one round trip,
+// without enumerating the whole subtree a broad ancestor grant reaches.
+//
+// Runs inside WithOrgTx: RLS confines every table to the caller's tenant.
+func (s *PostgresStore) ListAccessibleResourceIDs(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action string, candidates []string) ([]string, error) {
+	w := wool.Get(ctx).In("ListAccessibleResourceIDs")
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	// resource_type is pinned alongside resource_id: the grant branch admits any
+	// node beneath an entitled ancestor, so an opaque module-chosen id matched on
+	// its own would let a same-id record of another type answer for this one.
+	query, err := accessibleScopesQuery(subjectKind, "resource_id", "n.resource_type = $2 AND n.resource_id = ANY($5)")
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, subjectID, resourceType, action, orgID, candidates)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list accessible resource ids")
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, w.Wrapf(err, "failed to scan accessible resource id")
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "iterating accessible resource id rows")
 	}
 	return out, nil
 }
@@ -262,6 +348,54 @@ func (s *PostgresStore) GetOrCreateCollectionNode(ctx context.Context, node *gen
 		return "", err
 	}
 	return node.Id, nil
+}
+
+// PlaceRecordNode registers node as the placement of its (ResourceType,
+// ResourceId) record, or returns the node that record is already placed at.
+//
+// A record maps to exactly one node (idx_scope_nodes_resource), so a second
+// placement of the same record would otherwise surface as a unique violation
+// rather than as the accepted no-op the module surface's at-least-once contract
+// needs. The advisory lock serializes the read-then-insert on the record key,
+// as GetOrCreateCollectionNode does on the collection label, so two concurrent
+// placements agree on one node instead of racing the index. Runs inside
+// WithOrgTx, so RLS confines both the lookup and the insert to the tenant.
+func (s *PostgresStore) PlaceRecordNode(ctx context.Context, node *gen.ScopeNode) (*gen.ScopeNode, error) {
+	w := wool.Get(ctx).In("PlaceRecordNode")
+	executor := s.getQueryExecutor(ctx)
+
+	if node.ResourceType == "" || node.ResourceId == "" {
+		return nil, status.Error(codes.InvalidArgument, "resource_type and resource_id must be set together")
+	}
+	if _, err := executor.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+		node.OrgId, node.ResourceType+"/"+node.ResourceId,
+	); err != nil {
+		return nil, w.Wrapf(err, "failed to lock record placement")
+	}
+
+	existing := &gen.ScopeNode{
+		OrgId:        node.OrgId,
+		ResourceType: node.ResourceType,
+		ResourceId:   node.ResourceId,
+	}
+	var createdAt time.Time
+	err := executor.QueryRow(ctx, `
+		SELECT id::text, scope_path::text, kind, label, created_at FROM scope_nodes
+		WHERE resource_type = $1 AND resource_id = $2`,
+		node.ResourceType, node.ResourceId,
+	).Scan(&existing.Id, &existing.ScopePath, &existing.Kind, &existing.Label, &createdAt)
+	if err == nil {
+		existing.CreatedAt = timestamppb.New(createdAt)
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, w.Wrapf(err, "failed to look up record placement")
+	}
+	if err := s.RegisterScopeNode(ctx, node); err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 // ScopeNodeExists reports whether nodeID is a scope node visible in the caller's
@@ -554,4 +688,84 @@ func (s *PostgresStore) ListShares(ctx context.Context, orgID, resourceType, res
 		return nil, w.Wrapf(err, "iterating record share rows")
 	}
 	return out, nil
+}
+
+// ListCollectionAccess lists collection boundaries with the grants that confer
+// read on their content. readResources names the permission resource types that
+// content is governed by; it comes from the composition's declared module
+// registry, because the host holds no domain content and so cannot name the
+// resource itself. An empty set matches nothing, so an undeclared composition
+// reports no read grants rather than inventing authority (fail-closed).
+func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPath string, limit int, readResources []string) ([]*gen.CollectionAccess, error) {
+	// A nil slice would bind as NULL, and `= ANY(NULL)` is NULL rather than false.
+	// Both refuse the grant, but only an empty array says so in the plan.
+	if readResources == nil {
+		readResources = []string{}
+	}
+	executor := s.getQueryExecutor(ctx)
+	rows, err := executor.Query(ctx, `SELECT id, scope_path::text, label FROM scope_nodes
+ WHERE org_id = $1 AND kind = 'collection' AND scope_path::text > $2
+ ORDER BY scope_path::text LIMIT $3`, orgID, afterPath, limit)
+	if err != nil {
+		return nil, err
+	}
+	var collections []*gen.CollectionAccess
+	for rows.Next() {
+		node := &gen.ScopeNode{OrgId: orgID, Kind: "collection"}
+		if err := rows.Scan(&node.Id, &node.ScopePath, &node.Label); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		collections = append(collections, &gen.CollectionAccess{Node: node})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for _, collection := range collections {
+		grants, err := executor.Query(ctx, `SELECT g.id, g.subject_id, g.subject_kind, g.scope_path::text, g.role_id,
+   COALESCE(g.granted_by::text, ''), g.expires_at, g.created_at,
+   COALESCE(t.name, p.display_name, g.subject_id::text), r.name,
+   COALESCE(a.display_name, g.granted_by::text, 'Unknown actor')
+   FROM scope_grants g JOIN roles r ON r.id = g.role_id
+   LEFT JOIN principals p ON g.subject_kind = 'principal' AND p.id = g.subject_id
+   LEFT JOIN teams t ON g.subject_kind = 'team' AND t.id = g.subject_id
+   LEFT JOIN principals a ON a.id = g.granted_by
+   WHERE g.org_id = $1 AND g.scope_path @> $2::ltree
+   AND (g.expires_at IS NULL OR g.expires_at > NOW())
+   AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = g.role_id
+    AND (rp.resource = ANY($3::text[]) OR rp.resource = '*') AND rp.action IN ('read', '*'))
+   ORDER BY g.created_at, g.id`, orgID, collection.Node.ScopePath, readResources)
+		if err != nil {
+			return nil, err
+		}
+		for grants.Next() {
+			view := &gen.CollectionReadGrant{Grant: &gen.ScopeGrant{OrgId: orgID}}
+			g := view.Grant
+			var kind string
+			var expires *time.Time
+			var created time.Time
+			if err := grants.Scan(&g.Id, &g.SubjectId, &kind, &g.ScopePath, &g.RoleId, &g.GrantedBy,
+				&expires, &created, &view.SubjectLabel, &view.RoleName, &view.ActorLabel); err != nil {
+				grants.Close()
+				return nil, err
+			}
+			g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
+			if kind == "team" {
+				g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
+			}
+			g.CreatedAt = timestamppb.New(created)
+			if expires != nil {
+				g.ExpiresAt = timestamppb.New(*expires)
+			}
+			collection.ReadGrants = append(collection.ReadGrants, view)
+		}
+		err = grants.Err()
+		grants.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return collections, nil
 }

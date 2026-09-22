@@ -5,8 +5,8 @@ Status: active
 
 ## Objective
 
-Provide one trusted compile-time frontend plugin platform usable by Warden,
-Mind, Codefly-owned applications, and future products. A clean starter works
+Provide one trusted compile-time frontend plugin platform usable by consuming
+solutions, Codefly-owned applications, and future products. A clean starter works
 without products. Installing a product requires one additive package workspace
 and one explicit composition entry, with no product edits under starter `src/`.
 
@@ -72,12 +72,13 @@ diagnostic, consumer-style fixture, host typecheck, and starter production build
 ### 2. First external product slice
 
 Move one product overview route and one dashboard widget with their repository
-and controller into a product-owned package. Warden is the current proving
+and controller into a product-owned package. The first consuming solution is the current proving
 consumer, but it receives no special host API. The package builds outside
 starter `src/` and imports only active public entry points.
 
-The consumer-side execution and lifecycle matrix are specified in the detailed
-[Warden integration handoff](warden-frontend-plugin-integration-plan.md).
+The consumer-side execution and lifecycle matrix are specified in the
+consuming solution's own integration handoff, which lives in that consumer's
+repository rather than here.
 
 Exit evidence: starter-only build, independently built product package, enabled
 host render tests, and clean removal.

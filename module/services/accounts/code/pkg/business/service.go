@@ -5,13 +5,18 @@ import (
 	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
 	"accounts/pkg/email"
+	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/jobs"
 	"context"
+	"errors"
+	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -27,23 +32,33 @@ type Service struct {
 	billingURLs               BillingRedirects // server-owned Stripe return destinations
 	appBaseURL                string           // public URL of the frontend, used in email bodies
 	audit                     AuditEmitter
+	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
 	entitlements              EntitlementChecker
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState                *auth.OAuthStateSigner
+	moduleRegistrar           *registrationAuthority
+	moduleIdentity            *registrationAuthority
+	solutionRegistrar         *registrationAuthority
 	oauthPolicy               *auth.OAuthRequestPolicy
+	clientRegistry            *auth.ClientRegistry
 	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
 	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
 	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
 	webhookPolicy             *WebhookEndpointPolicy
-	webAuthn                  WebAuthnEngine  // required for passkey registration and assertion
-	jobOperations             jobs.Operations // isolated, payload-free platform operations
+	webAuthn                  WebAuthnEngine    // required for passkey registration and assertion
+	jobOperations             jobs.Operations   // isolated, payload-free platform operations
+	eventOperations           events.Operations // isolated, payload-free domain-event operations
+	followablesMu             sync.RWMutex
+	followables               []FollowableResource
+	followableByEvent         map[string]string // declared followable event type → resource type
 	acquisitionMode           gen.AcquisitionMode
 	waitlistEmailVerification bool
 	eventRegistry             *analytics.Registry
 	productEvents             analytics.Emitter
 	usageMeters               *UsageMeterCatalog
 	privacy                   PrivacyWorkflow
+	privacyJobs               jobs.Producer // request-scoped, transactional producer for privacy workflow jobs
 	ssoManagementAPIKey       string
 	abuseVerifier             abuse.Verifier
 	identityCipher            SecretCipher               // encrypts per-org IdP client secrets
@@ -52,8 +67,15 @@ type Service struct {
 	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
 	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
-	githubBaseURL             string                     // api.github.com override for the datasource connector
-	datasourceTicketSigner    *datasourceTicketSigner    // mints/verifies opaque content tickets for oversized change-set blobs
+	datasourceSyncOperations  DatasourceSyncOperationStore
+	githubBaseURL             string                  // api.github.com override for the datasource connector
+	githubAppID               string                  // deployment's GitHub App registration; empty leaves sources on their own PAT
+	githubAppKeyPEM           string                  // the App's RSA signing key, deployment custody — never copied onto a source
+	githubAppWebhookSecret    string                  // signs the App's own lifecycle deliveries; App-wide, never per source
+	githubAppSlug             string                  // the App's URL slug, used to build its install link; empty disables App onboarding
+	githubAppClientID         string                  // the App's OAuth client, which identifies the person returning from an install
+	githubAppClientSecret     string                  // its secret; without the pair, an installation cannot be attributed to a caller
+	datasourceTicketSigner    *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
 	newGitHubClient           func(token string) GitHubContentClient
 	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient          func(cfg CrawlerDatasourceConfig) CrawlerContentClient
@@ -62,6 +84,7 @@ type Service struct {
 	moduleProducer            jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
 	moduleJobStore            jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
 	modulePrincipals          ModulePrincipalRegistry // per-principal capability grants for the module-facing surface
+	eventTransport            events.Transport        // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -74,6 +97,58 @@ func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store
 	s.moduleProducer = producer
 	s.moduleJobStore = store
 	s.modulePrincipals = registry
+}
+
+// ModulePrincipals returns the declared registry, and SetModulePrincipals
+// replaces it without disturbing the job wiring SetModuleCapabilities also owns.
+// The composition declares a module's vocabulary — including the permission
+// resources its content is governed by — so a caller that needs to read or
+// stand in for that declaration goes through here rather than re-deriving it.
+func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
+	return s.modulePrincipals
+}
+
+func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
+	s.modulePrincipals = registry
+}
+
+// SetModuleEventTransport wires the domain-event pub/sub transport backing
+// ModuleCapabilitiesService.PublishEvent / ReplayEvents (issue #493). Publish
+// writes the event-of-record into the caller's transaction (transactional
+// outbox) and the relay fans it out; Replay re-delivers to a single subscriber.
+// Leaving it nil denies both RPCs (fail-closed); Subscribe/Unsubscribe/List do
+// not need it because they operate on event_subscriptions through the Store.
+func (s *Service) SetModuleEventTransport(transport events.Transport) {
+	s.eventTransport = transport
+}
+
+// VerifyEventWiring fails startup when the module has accepted event
+// subscriptions but has no delivery transport wired. Without a transport,
+// publishLifecycleEvent and ModulePublishEvent are no-ops, so every event a
+// subscriber is waiting on is silently dropped on the floor — a
+// misconfiguration that is invisible at runtime and only surfaces as missing
+// deliveries. Asserting the invariant at boot turns that silent skew into a
+// loud, immediate failure. A wired transport short-circuits before any store
+// call, so the check costs nothing on the healthy path.
+func (s *Service) VerifyEventWiring(ctx context.Context) error {
+	if s.eventTransport != nil {
+		return nil
+	}
+	var live int
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		n, e := s.store.CountLiveEventSubscriptions(ctx)
+		if e != nil {
+			return e
+		}
+		live = n
+		return nil
+	}); err != nil {
+		return fmt.Errorf("verify event wiring: %w", err)
+	}
+	if live > 0 {
+		return fmt.Errorf("verify event wiring: %d live event subscription(s) exist but no event transport is wired; events would be silently dropped — call SetModuleEventTransport before serving", live)
+	}
+	return nil
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
@@ -135,6 +210,14 @@ func (s *Service) SetJobOperations(operations jobs.Operations) {
 	s.jobOperations = operations
 }
 
+// SetEventOperations wires the payload-free domain-event administration boundary
+// backed by the isolated app_job_worker pool. Like SetJobOperations it is kept
+// separate from Store so tenant request traffic cannot inherit cross-tenant
+// access to events or subscriptions.
+func (s *Service) SetEventOperations(operations events.Operations) {
+	s.eventOperations = operations
+}
+
 func (s *Service) SetProductAnalytics(registry *analytics.Registry, emitter analytics.Emitter) {
 	s.eventRegistry = registry
 	s.productEvents = emitter
@@ -161,7 +244,13 @@ func (s *Service) SetWebhookSecurity(cipher SecretCipher, policy *WebhookEndpoin
 	s.webhookPolicy = policy.ensureDefaults()
 }
 
-func (s *Service) SetPrivacyWorkflow(workflow PrivacyWorkflow) {
+// SetPrivacyWorkflow enables the privacy capability. The producer and the
+// adapter arrive together because neither is usable alone: without a producer
+// an accepted request would have no durable owner, and without an adapter the
+// job it enqueues could never be executed. Leaving either unset keeps
+// RequestExport and RequestDeletion fail-closed.
+func (s *Service) SetPrivacyWorkflow(producer jobs.Producer, workflow PrivacyWorkflow) {
+	s.privacyJobs = producer
 	s.privacy = workflow
 }
 
@@ -286,6 +375,23 @@ func (s *Service) publicBaseURL(ctx context.Context) string {
 
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
 	s.audit = a
+	s.auditTx, _ = a.(TxAuditEmitter)
+}
+
+// VerifyAuditWiring fails startup when the wired audit emitter cannot write on
+// the caller's transaction. Every security mutation commits its audit row and
+// webhook fan-out inside its own transaction; an emitter without EmitTx would
+// let those mutations succeed with no durable record and no fan-out, which is
+// precisely the state a security-write path must not be able to reach. Boot
+// refuses it rather than discovering it as a hole in the trail later.
+func (s *Service) VerifyAuditWiring() error {
+	if s.audit == nil {
+		return errors.New("verify audit wiring: no audit emitter is wired; security mutations would commit unrecorded")
+	}
+	if s.auditTx == nil {
+		return fmt.Errorf("verify audit wiring: audit emitter %T does not implement TxAuditEmitter; security mutations could not commit their audit record atomically", s.audit)
+	}
+	return nil
 }
 
 func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
@@ -297,11 +403,16 @@ func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
 // nil invalidator (SetMembershipInvalidator never called) is a no-op,
 // which is the correct fallback when Redis caching is disabled.
 //
+// It reports whether the cached entry was actually dropped. Invalidation runs
+// after the mutation has committed, so a failure can never undo the mutation —
+// but on a removal it does leave the departed member's positive entry standing
+// until it expires, which callers must be able to see rather than infer.
+//
 // The implementation lives in adapters; this interface keeps the
 // business layer from importing adapters or cache directly, matching
 // the SetAuditEmitter / SetEntitlementChecker pattern.
 type MembershipInvalidator interface {
-	InvalidateMembership(ctx context.Context, orgID, userID string)
+	InvalidateMembership(ctx context.Context, orgID, userID string) error
 }
 
 func (s *Service) SetMembershipInvalidator(i MembershipInvalidator) {
@@ -310,11 +421,23 @@ func (s *Service) SetMembershipInvalidator(i MembershipInvalidator) {
 
 // invalidateMembership is the internal helper Service methods call after
 // mutating membership. Nil-safe so non-cache-wired setups keep working.
-func (s *Service) invalidateMembership(ctx context.Context, orgID, userID string) {
+//
+// The mutation is already committed when this runs, so a cache failure cannot
+// be reported as a failed mutation. What it can do is leave a stale entry
+// standing until its TTL expires — for a removal, an entry that still says the
+// departed member holds a role. That is logged here so it is visible in the one
+// place every membership mutation passes through, and returned so a caller can
+// react.
+func (s *Service) invalidateMembership(ctx context.Context, orgID, userID string) error {
 	if s.membership == nil {
-		return
+		return nil
 	}
-	s.membership.InvalidateMembership(ctx, orgID, userID)
+	err := s.membership.InvalidateMembership(ctx, orgID, userID)
+	if err != nil {
+		wool.Get(ctx).Warn("cached organization membership survived a membership mutation; it stays authoritative until it expires",
+			wool.Field("org_id", orgID), wool.Field("user_id", userID), wool.ErrField(err))
+	}
+	return err
 }
 
 // SetSlackNotifier wires an optional Slack webhook notifier for critical events.
@@ -384,8 +507,19 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	}
 	// Personal-org bootstrap: see CreateOrganization comment — at
 	// this moment the org doesn't exist; WithControlPlane is correct.
+	//
+	// The registration is recorded here rather than alongside the role
+	// assignment below: this transaction always runs, so the record does not
+	// hinge on a built-in admin role existing. Its fan-out is empty by
+	// construction — the org is being created in this transaction, so nothing
+	// can yet be subscribed to it — which is what lets an org-scoped event be
+	// recorded from control-plane scope (the job platform admits tenant outbox
+	// work from tenant traffic only).
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.CreateOrganization(ctx, org)
+		if err := s.store.CreateOrganization(ctx, org); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create default organization")
 	}
@@ -420,8 +554,6 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 		}
 	}
 
-	s.emit(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
-
 	return &gen.RegisterUserResponse{User: user, Identity: identity}, nil
 }
 
@@ -454,6 +586,47 @@ func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionR
 		return nil, err
 	}
 	return &gen.CheckPermissionResponse{Allowed: allowed, Reason: reason}, nil
+}
+
+// ExplainPermission is the administrative form of CheckPermission: the same
+// decision, plus the scoped assignments that would have answered a different
+// question.
+//
+// It calls the store's CheckPermission — the one the internal RPC reaches
+// through the method above — so the verdict an administrator reads is the
+// decision point's own. The wrapper above only chooses between the tenant and
+// control-plane transaction on an empty org, and this path always has one, so
+// nothing else of it applies here.
+//
+// Both reads share a single tenant transaction: a role revoked between them
+// would otherwise produce a denial beside a list of scopes that no longer
+// grant anything, which is the contradiction the explanation exists to avoid.
+func (s *Service) ExplainPermission(ctx context.Context, req *gen.ExplainPermissionRequest) (*gen.ExplainPermissionResponse, error) {
+	var allowed bool
+	var reason string
+	var scopes []string
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		a, r, err := s.store.CheckPermission(
+			ctx, req.SubjectId, req.SubjectKind,
+			req.Resource, req.Action, req.OrgId, req.Scope,
+		)
+		if err != nil {
+			return err
+		}
+		allowed, reason = a, r
+		scopes, err = s.store.ScopesGrantingPermission(
+			ctx, req.SubjectId, req.SubjectKind,
+			req.Resource, req.Action, req.OrgId,
+		)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return &gen.ExplainPermissionResponse{
+		Allowed:        allowed,
+		Reason:         reason,
+		GrantingScopes: scopes,
+	}, nil
 }
 
 // ResolveIdentity maps an auth provider ID to internal user/org/roles.
@@ -492,6 +665,20 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.
 func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
+	return s.CreateFixtureOrganization(ctx, ownerID, req, "")
+}
+
+// CreateFixtureOrganization is CreateOrganization with a caller-chosen id, for
+// the fixture seeder only: a fixture pins its organizations' uuids so committed
+// configuration (a module principal's tenant) can name one that survives a
+// reseed. An empty id mints one, exactly as CreateOrganization does.
+//
+// The id is validated here rather than trusted from the caller. The seeder does
+// validate it, but this method is exported next to CreateOrganization and takes
+// a primary key as an argument, so it has to be safe for whoever calls it next —
+// a tenant id that reaches the database malformed is not recoverable by anything
+// downstream.
+func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
 	slug := req.Slug
 	if slug == "" {
 		slug = Slugify(req.Name)
@@ -499,18 +686,37 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 	if slug == "" {
 		return nil, wool.Get(ctx).In("CreateOrganization").NewError("organization name yields an empty slug")
 	}
+	if id == "" {
+		id = NewIDString()
+	} else {
+		parsed, err := ParseID(id)
+		if err != nil {
+			return nil, wool.Get(ctx).In("CreateFixtureOrganization").Wrapf(err, "organization id must be a uuid")
+		}
+		if parsed == uuid.Nil {
+			return nil, wool.Get(ctx).In("CreateFixtureOrganization").NewError("organization id must not be the nil uuid")
+		}
+		id = parsed.String()
+	}
 	org := &gen.Organization{
-		Id:      NewIDString(),
+		Id:      id,
 		Name:    req.Name,
 		Slug:    slug,
 		OwnerId: ownerID,
 	}
+	// The audit row commits with the organization inside this control-plane
+	// transaction. Its webhook fan-out is empty by construction — the org is being
+	// created here, so no endpoint can yet be subscribed to it — which is what
+	// lets an org-scoped event be recorded from control-plane scope at all: the
+	// job platform admits tenant outbox work from tenant traffic only.
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.CreateOrganization(ctx, org)
+		if err := s.store.CreateOrganization(ctx, org); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	return &gen.CreateOrganizationResponse{Organization: org}, nil
 }
 
@@ -556,11 +762,13 @@ func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.Creat
 			}
 			team.Path = parentPath + "/" + slug
 		}
-		return s.store.CreateTeam(ctx, team)
+		if err := s.store.CreateTeam(ctx, team); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamCreated, "team", team.Id, req.OrgId)
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", EventTeamCreated, "team", team.Id, req.OrgId)
 	return &gen.CreateTeamResponse{Team: team}, nil
 }
 
@@ -599,7 +807,12 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 		BuiltIn:     false,
 		OrgId:       req.OrgId,
 	}
-	wrap := func(ctx context.Context) error { return s.store.CreateRole(ctx, role) }
+	wrap := func(ctx context.Context) error {
+		if err := s.store.CreateRole(ctx, role); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRoleCreated, "role", role.Id, req.OrgId)
+	}
 	var err error
 	if req.OrgId == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
@@ -609,7 +822,6 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", EventRoleCreated, "role", role.Id, req.OrgId)
 	return &gen.CreateRoleResponse{Role: role}, nil
 }
 
@@ -626,7 +838,12 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 		OrgId:       req.OrgId,
 		Scope:       req.Scope,
 	}
-	wrap := func(ctx context.Context) error { return s.store.AssignRole(ctx, assignment) }
+	wrap := func(ctx context.Context) error {
+		if err := s.store.AssignRole(ctx, assignment); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
+	}
 	var err error
 	if req.OrgId == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
@@ -636,6 +853,5 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
 	return &gen.AssignRoleResponse{Assignment: assignment}, nil
 }

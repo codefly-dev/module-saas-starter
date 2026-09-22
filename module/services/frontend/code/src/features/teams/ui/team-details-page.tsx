@@ -15,6 +15,9 @@ import { teamQueries } from "../service/queries";
 import { teamMutations } from "../service/mutations";
 import { TeamForm } from "./team-form";
 import { TeamMembersPanel } from "./team-members-panel";
+import { TeamRoles } from "./team-roles";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
+import { hasPermission } from "@/lib/permissions";
 
 export function TeamDetailsPage({ teamId }: { teamId: string }) {
 	const { organizationId = "" } = useAuth();
@@ -156,6 +159,11 @@ function TeamDetails({ team }: { team: Team }) {
 				canManage={canManage}
 				currentUserId={user?.id}
 			/>
+			<TeamRoles
+				teamId={team.id}
+				orgId={team.orgId}
+				canGrant={hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)}
+			/>
 			{editing && (
 				<>
 					<TeamForm
@@ -170,7 +178,11 @@ function TeamDetails({ team }: { team: Team }) {
 							}
 						}}
 						isPending={update.isPending}
-						error={update.isError ? `Couldn't update the team: ${update.error.message}` : undefined}
+						error={
+							update.isError
+								? `Couldn't update the team: ${update.error.message}`
+								: undefined
+						}
 					/>
 				</>
 			)}

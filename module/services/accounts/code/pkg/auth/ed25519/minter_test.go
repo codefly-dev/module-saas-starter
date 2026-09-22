@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +22,12 @@ import (
 
 // memoryStore — duplicated from pkg/auth/memory_store_test.go because _test
 // files don't export across packages. Keep in sync if that one changes.
+// hasRefreshCredential mirrors what `WHERE refresh_token_hash = $1` does in the
+// real store: a row holding no hash is NULL there and matches nothing, however
+// the presented hash was constructed. Without this the fake would match an
+// impersonation row on a nil hash and report a rotation the database refuses.
+func hasRefreshCredential(rec *auth.SessionRecord) bool { return len(rec.RefreshHash) > 0 }
+
 type memoryStore struct {
 	mu                   sync.Mutex
 	records              []auth.SessionRecord
@@ -39,7 +46,7 @@ func (s *memoryStore) FindByRefreshHash(_ context.Context, hash []byte) (*auth.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.records {
-		if bytes.Equal(s.records[i].RefreshHash, hash) {
+		if hasRefreshCredential(&s.records[i]) && bytes.Equal(s.records[i].RefreshHash, hash) {
 			r := s.records[i]
 			return &r, nil
 		}
@@ -55,7 +62,7 @@ func (s *memoryStore) RotateRefresh(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.records {
-		if !bytes.Equal(s.records[i].RefreshHash, hash) {
+		if !hasRefreshCredential(&s.records[i]) || !bytes.Equal(s.records[i].RefreshHash, hash) {
 			continue
 		}
 		if s.records[i].RevokedAt != nil {
@@ -121,6 +128,46 @@ func (s *memoryStore) RotateRefresh(
 		return nil
 	}
 	return auth.ErrRefreshRevoked
+}
+
+func (s *memoryStore) AuthorizeClientSession(
+	_ context.Context,
+	userID uuid.UUID,
+	authorizingSessionID uuid.UUID,
+	issue func(current *auth.SessionRecord, authorization auth.RefreshAuthorization) (*auth.SessionRecord, error),
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.records {
+		if s.records[i].ID != authorizingSessionID || s.records[i].UserID != userID {
+			continue
+		}
+		if s.records[i].RevokedAt != nil || s.records[i].ActingAsUserID != uuid.Nil || s.records[i].ClientID != "" {
+			return auth.ErrSessionUnavailable
+		}
+		current := s.records[i]
+		authorization := auth.RefreshAuthorization{
+			OrgID:        current.OrgID,
+			OrgRole:      current.OrgRole,
+			PlatformRole: current.PlatformRole,
+		}
+		if s.refreshAuthorization != nil {
+			authorization = *s.refreshAuthorization
+		}
+		next, err := issue(&current, authorization)
+		if err != nil {
+			if _, terminal := auth.RefreshRejectionReason(err); terminal {
+				return auth.ErrSessionUnavailable
+			}
+			return err
+		}
+		if next == nil || next.UserID != current.UserID || next.FamilyID == current.FamilyID || next.ClientID == "" {
+			return errors.New("memory session store: invalid client session")
+		}
+		s.records = append(s.records, *next)
+		return nil
+	}
+	return auth.ErrSessionUnavailable
 }
 
 func (s *memoryStore) ExchangeOrganization(
@@ -425,7 +472,7 @@ func TestRefreshAndOrgSwitchPreservePresentationalIdentity(t *testing.T) {
 
 	// Org-switch re-signs in place from the persisted session and must carry the
 	// email/name claims forward.
-	switched, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	switched, _, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
 	require.NoError(t, err)
 	payload := decodeJWTPayload(t, switched)
 	require.Contains(t, payload, `"email":"alice@acme.com"`)
@@ -598,7 +645,7 @@ func TestSwitchOrganizationPreservesDeviceSessionAndRefreshCredential(t *testing
 		PlatformRole: "support",
 		MFAEnrolled:  false,
 	}
-	accessToken, err := m.SwitchOrganization(ctx, identity.UserID, before.ID, targetOrgID)
+	accessToken, _, err := m.SwitchOrganization(ctx, identity.UserID, before.ID, targetOrgID)
 	require.NoError(t, err)
 
 	switched, err := m.VerifyAccess(accessToken)
@@ -656,7 +703,7 @@ func TestSwitchOrganizationPreservesDevelopmentFixtureAssurance(t *testing.T) {
 		PlatformRole: "super_admin",
 		MFAEnrolled:  false,
 	}
-	accessToken, err := m.SwitchOrganization(
+	accessToken, _, err := m.SwitchOrganization(
 		ctx,
 		identity.UserID,
 		sessionID,
@@ -1241,3 +1288,315 @@ var _ auth.SessionStore = (*memoryStore)(nil)
 
 // Compile-time use of ed25519 package to prevent accidental removal.
 var _ = ed25519.Sign
+
+// ---------------------------------------------------------------------------
+// Module-registration credentials
+// ---------------------------------------------------------------------------
+
+// parseModuleRegistration verifies a registration token exactly as the gateway
+// does: alg-locked EdDSA, this issuer, the module-registration audience, and a
+// required expiry.
+func parseModuleRegistration(t *testing.T, pub ed25519.PublicKey, token string) jwt.MapClaims {
+	t.Helper()
+	claims := jwt.MapClaims{}
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"EdDSA"}),
+		jwt.WithIssuer("saas-starter"),
+		jwt.WithAudience(ed25519minter.ModuleRegistrationAudience),
+		jwt.WithExpirationRequired(),
+	)
+	parsed, err := parser.ParseWithClaims(token, claims, func(*jwt.Token) (any, error) { return pub, nil })
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+	return claims
+}
+
+func TestMintModuleRegistrationBindsPrefix(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, priv, &memoryStore{})
+
+	token, expiresAt, err := m.MintModuleRegistration("documents")
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(5*time.Minute), expiresAt, time.Minute)
+
+	claims := parseModuleRegistration(t, pub, token)
+	require.Equal(t, "documents", claims["prefix"])
+	require.Equal(t, "module:documents", claims["sub"])
+	require.NotEmpty(t, claims["jti"])
+}
+
+// The audience is what keeps one signing key from producing two interchangeable
+// credentials: a registration token must not authenticate a user, and an access
+// token must not register a prefix.
+func TestMintModuleRegistrationIsNotAnAccessToken(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, priv, &memoryStore{})
+
+	registration, _, err := m.MintModuleRegistration("documents")
+	require.NoError(t, err)
+	_, err = m.VerifyAccess(registration)
+	require.Error(t, err)
+
+	pair, err := m.Mint(context.Background(), &auth.Identity{UserID: uuid.New()})
+	require.NoError(t, err)
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"EdDSA"}),
+		jwt.WithIssuer("saas-starter"),
+		jwt.WithAudience(ed25519minter.ModuleRegistrationAudience),
+		jwt.WithExpirationRequired(),
+	)
+	_, err = parser.ParseWithClaims(pair.AccessToken, jwt.MapClaims{}, func(*jwt.Token) (any, error) { return pub, nil })
+	require.Error(t, err)
+}
+
+func TestMintModuleRegistrationRequiresPrefix(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, priv, &memoryStore{})
+
+	_, _, err = m.MintModuleRegistration("")
+	require.Error(t, err)
+}
+
+// signedAccessClaims returns the iat and exp the token itself carries, which is
+// all a client can observe about the lifetime it was granted.
+func signedAccessClaims(t *testing.T, token string) (issuedAt, expiresAt time.Time) {
+	t.Helper()
+	var claims struct {
+		IssuedAt  int64 `json:"iat"`
+		ExpiresAt int64 `json:"exp"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodeJWTPayload(t, token)), &claims))
+	require.NotZero(t, claims.IssuedAt)
+	require.NotZero(t, claims.ExpiresAt)
+	return time.Unix(claims.IssuedAt, 0), time.Unix(claims.ExpiresAt, 0)
+}
+
+// requireSignedFor asserts that the expiry the minter reports is exactly the exp
+// it signed, and that the gap between them is the configured lifetime. Reporting
+// the instant rather than the duration is what lets a caller subtract the time
+// spent between signing and responding.
+func requireSignedFor(t *testing.T, token string, reported time.Time, want time.Duration) {
+	t.Helper()
+	issuedAt, expiresAt := signedAccessClaims(t, token)
+	require.Equal(t, want, expiresAt.Sub(issuedAt))
+	require.Equal(t, expiresAt.Unix(), reported.Unix())
+}
+
+func TestMintReportsTheExpiryItSigned(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name        string
+		cfg         ed25519minter.Config
+		impersonate bool
+		want        time.Duration
+	}{
+		{
+			name: "defaults",
+			want: 3 * time.Minute,
+		},
+		{
+			name: "configured access ttl",
+			cfg:  ed25519minter.Config{AccessTokenTTL: 11 * time.Minute},
+			want: 11 * time.Minute,
+		},
+		{
+			name:        "impersonation capped below a raised access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 10 * time.Minute, ImpersonationTokenTTL: 5 * time.Minute},
+			impersonate: true,
+			want:        5 * time.Minute,
+		},
+		{
+			// The dangerous direction: a short impersonation cap must not be
+			// reported as the longer ordinary lifetime.
+			name:        "impersonation cap lowered below the access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 3 * time.Minute, ImpersonationTokenTTL: time.Minute},
+			impersonate: true,
+			want:        time.Minute,
+		},
+		{
+			name:        "impersonation uncapped when the cap exceeds the access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 2 * time.Minute, ImpersonationTokenTTL: 30 * time.Minute},
+			impersonate: true,
+			want:        2 * time.Minute,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Built per subtest: Mint writes back through the pointer (it defaults
+			// AssuranceLevel), so a shared identity would leak between cases.
+			identity := newIdentity()
+			if tc.impersonate {
+				identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+			}
+			_, priv, err := ed25519minter.GenerateKey()
+			require.NoError(t, err)
+			m := ed25519minter.New(tc.cfg, priv, &memoryStore{})
+
+			pair, err := m.Mint(ctx, identity)
+			require.NoError(t, err)
+			requireSignedFor(t, pair.AccessToken, pair.AccessTokenExpiresAt, tc.want)
+
+			// Rotation rebuilds the identity from the session row, which holds no
+			// acting claim, so a rotated token is never an impersonation token and
+			// the cap does not apply to it.
+			if tc.impersonate {
+				return
+			}
+			rotated, err := m.VerifyRefresh(ctx, pair.RefreshToken)
+			require.NoError(t, err)
+			requireSignedFor(t, rotated.AccessToken, rotated.AccessTokenExpiresAt, tc.want)
+		})
+	}
+}
+
+func TestSwitchOrganizationReportsTheExpiryItSigned(t *testing.T) {
+	ctx := context.Background()
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{AccessTokenTTL: 7 * time.Minute}, priv, &memoryStore{})
+
+	identity := newIdentity()
+	pair, err := m.Mint(ctx, identity)
+	require.NoError(t, err)
+	minted, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+
+	switched, expiresAt, err := m.SwitchOrganization(ctx, identity.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	require.NoError(t, err)
+	requireSignedFor(t, switched, expiresAt, 7*time.Minute)
+}
+
+// An impersonation window is access-only. Nothing rotatable is generated, so
+// nothing rotatable is returned or persisted — the property AUTHZ.md claims.
+func TestMintImpersonationIssuesNoRefreshCredential(t *testing.T) {
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	store := &memoryStore{}
+	skew := 60 * time.Second
+	m := ed25519minter.New(ed25519minter.Config{
+		Issuer:                "test-issuer",
+		Audience:              "test-audience",
+		AccessTokenTTL:        10 * time.Minute,
+		ImpersonationTokenTTL: 90 * time.Second,
+		ClockSkew:             skew,
+	}, priv, store)
+
+	identity := newIdentity()
+	target := uuid.Must(uuid.NewV7())
+	identity.ActingAsUserID = target
+	identity.PlatformRole = ""
+
+	before := time.Now()
+	pair, err := m.Mint(context.Background(), identity)
+	require.NoError(t, err)
+	require.Empty(t, pair.RefreshToken, "impersonation must not hand back a refresh half")
+	require.NotEmpty(t, pair.AccessToken)
+
+	require.Len(t, store.records, 1)
+	rec := store.records[0]
+	require.Empty(t, rec.RefreshHash, "no refresh hash may be persisted for an impersonation window")
+	require.Equal(t, target, rec.ActingAsUserID)
+	require.Equal(t, identity.UserID, rec.UserID, "the row stays attributed to the admin")
+
+	// The row tracks the token, not the session policy's days, so it leaves the
+	// admin's device list when the window closes.
+	require.Equal(t, rec.ExpiresAt, rec.IdleExpiresAt)
+	require.WithinDuration(t, before.Add(90*time.Second+skew), rec.ExpiresAt, 5*time.Second)
+}
+
+// The open-window queries filter on expires_at, and a token is admitted until
+// exp+ClockSkew. A row retired at exp would leave the last leeway window of
+// every impersonation live and undiscoverable — no ListActiveSessions row to
+// show a support engineer, and no family_id for an operator to revoke.
+func TestImpersonationRowOutlivesTheTokenAcceptanceWindow(t *testing.T) {
+	skew := 60 * time.Second
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	store := &memoryStore{}
+	m := ed25519minter.New(ed25519minter.Config{
+		Issuer:                "test-issuer",
+		Audience:              "test-audience",
+		AccessTokenTTL:        3 * time.Minute,
+		ImpersonationTokenTTL: 90 * time.Second,
+		ClockSkew:             skew,
+	}, priv, store)
+
+	identity := newIdentity()
+	identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+	pair, err := m.Mint(context.Background(), identity)
+	require.NoError(t, err)
+
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodeJWTPayload(t, pair.AccessToken)), &claims))
+	acceptedUntil := time.Unix(claims.Exp, 0).Add(skew)
+
+	require.Len(t, store.records, 1)
+	rec := store.records[0]
+	require.False(t, rec.ExpiresAt.Before(acceptedUntil),
+		"row expires_at %s must not precede the token's acceptance window ending %s",
+		rec.ExpiresAt, acceptedUntil)
+	require.False(t, rec.IdleExpiresAt.Before(acceptedUntil),
+		"row idle_expires_at %s must not precede the token's acceptance window ending %s",
+		rec.IdleExpiresAt, acceptedUntil)
+}
+
+// An ordinary login is unaffected by the impersonation branch.
+func TestMintOrdinarySessionKeepsRefreshCredentialAndPolicyLifetime(t *testing.T) {
+	m, store := newMinter(t)
+
+	before := time.Now()
+	pair, err := m.Mint(context.Background(), newIdentity())
+	require.NoError(t, err)
+	require.NotEmpty(t, pair.RefreshToken)
+
+	require.Len(t, store.records, 1)
+	rec := store.records[0]
+	require.NotEmpty(t, rec.RefreshHash)
+	require.Equal(t, uuid.Nil, rec.ActingAsUserID)
+	require.WithinDuration(t, before.Add(auth.DefaultSessionAbsoluteLifetime), rec.ExpiresAt, time.Minute)
+}
+
+// The impersonation row's family carries nothing that can be rotated, so a
+// forged refresh aimed at it is indistinguishable from an unknown token.
+func TestImpersonationFamilyCannotBeRotated(t *testing.T) {
+	m, store := newMinter(t)
+
+	identity := newIdentity()
+	identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+	_, err := m.Mint(context.Background(), identity)
+	require.NoError(t, err)
+
+	_, err = m.VerifyRefresh(context.Background(), "")
+	require.ErrorIs(t, err, auth.ErrRefreshRevoked)
+
+	_, err = m.VerifyRefresh(context.Background(), uuid.Must(uuid.NewV7()).String())
+	require.ErrorIs(t, err, auth.ErrRefreshRevoked)
+
+	require.Len(t, store.records, 1, "no successor row may be minted")
+	require.Nil(t, store.records[0].RevokedAt,
+		"a failed forgery must not revoke the window it aimed at")
+}
+
+// Refresh rotation re-mints from current authorization, which never names an
+// impersonated user — so a rotated row keeps its refresh credential and an
+// ordinary session can never drift into the impersonation shape.
+func TestRotatedSessionIsNeverImpersonation(t *testing.T) {
+	m, store := newMinter(t)
+
+	pair, err := m.Mint(context.Background(), newIdentity())
+	require.NoError(t, err)
+
+	rotated, err := m.VerifyRefresh(context.Background(), pair.RefreshToken)
+	require.NoError(t, err)
+	require.NotEmpty(t, rotated.RefreshToken)
+
+	require.Len(t, store.records, 2)
+	successor := store.records[1]
+	require.Equal(t, uuid.Nil, successor.ActingAsUserID)
+	require.NotEmpty(t, successor.RefreshHash)
+}

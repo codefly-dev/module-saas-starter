@@ -149,8 +149,14 @@ func (x *CreateTeamResponse) GetTeam() *Team {
 }
 
 type ListTeamsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// member_id (optional) narrows the list to the teams this principal
+	// belongs to; empty returns every team in the org. The uuid rule applies
+	// only to a non-empty value — without it the filter reaches the query as a
+	// uuid cast and a malformed id fails in the database as an internal error
+	// rather than at the boundary as an invalid argument.
+	MemberId      string `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -188,6 +194,13 @@ func (*ListTeamsRequest) Descriptor() ([]byte, []int) {
 func (x *ListTeamsRequest) GetOrgId() string {
 	if x != nil {
 		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListTeamsRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
 	}
 	return ""
 }
@@ -596,9 +609,10 @@ const file_saas_accounts_v1_teams_proto_rawDesc = "" +
 	"\x0eparent_team_id\x18\x04 \x01(\tR\fparentTeamId\x12\x12\n" +
 	"\x04slug\x18\x05 \x01(\tR\x04slug\"@\n" +
 	"\x12CreateTeamResponse\x12*\n" +
-	"\x04team\x18\x01 \x01(\v2\x16.saas.accounts.v1.TeamR\x04team\"3\n" +
+	"\x04team\x18\x01 \x01(\v2\x16.saas.accounts.v1.TeamR\x04team\"]\n" +
 	"\x10ListTeamsRequest\x12\x1f\n" +
-	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"A\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12(\n" +
+	"\tmember_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bmemberId\"A\n" +
 	"\x11ListTeamsResponse\x12,\n" +
 	"\x05teams\x18\x01 \x03(\v2\x16.saas.accounts.v1.TeamR\x05teams\"\x8c\x01\n" +
 	"\x14AddTeamMemberRequest\x12!\n" +
@@ -619,30 +633,30 @@ const file_saas_accounts_v1_teams_proto_rawDesc = "" +
 	"\x16ListTeamMembersRequest\x12!\n" +
 	"\ateam_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\"U\n" +
 	"\x17ListTeamMembersResponse\x12:\n" +
-	"\amembers\x18\x01 \x03(\v2 .saas.accounts.v1.TeamMembershipR\amembers2\xdc\t\n" +
-	"\vTeamService\x12\xb8\x01\n" +
+	"\amembers\x18\x01 \x03(\v2 .saas.accounts.v1.TeamMembershipR\amembers2\xfb\t\n" +
+	"\vTeamService\x12\xbd\x01\n" +
 	"\n" +
-	"CreateTeam\x12#.saas.accounts.v1.CreateTeamRequest\x1a$.saas.accounts.v1.CreateTeamResponse\"_\xc2\xf3\x180\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x10\n" +
-	"\fteam.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%:\x01*\" /v1/organizations/{org_id}/teams\x12\xa4\x01\n" +
+	"CreateTeam\x12#.saas.accounts.v1.CreateTeamRequest\x1a$.saas.accounts.v1.CreateTeamResponse\"d\xc2\xf3\x185\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x15\n" +
+	"\x11saas.team.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%:\x01*\" /v1/organizations/{org_id}/teams\x12\xa4\x01\n" +
 	"\tListTeams\x12\".saas.accounts.v1.ListTeamsRequest\x1a#.saas.accounts.v1.ListTeamsResponse\"N\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\"\x12 /v1/organizations/{org_id}/teams\x12\xad\x01\n" +
-	"\tAddMember\x12&.saas.accounts.v1.AddTeamMemberRequest\x1a\x16.google.protobuf.Empty\"`\xc2\xf3\x186\b\x02\x10\x04*\r\n" +
-	"\ateam_id\x10\x03\x18\x020\x01:\x15\n" +
-	"\x11team.member_added\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/teams/{team_id}/members\x12\xbc\x01\n" +
-	"\fRemoveMember\x12).saas.accounts.v1.RemoveTeamMemberRequest\x1a\x16.google.protobuf.Empty\"i\xc2\xf3\x188\b\x02\x10\x04*\r\n" +
-	"\ateam_id\x10\x03\x18\x020\x01:\x17\n" +
-	"\x13team.member_removed\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02'*%/v1/teams/{team_id}/members/{user_id}\x12\xae\x01\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\"\x12 /v1/organizations/{org_id}/teams\x12\xb4\x01\n" +
+	"\tAddMember\x12&.saas.accounts.v1.AddTeamMemberRequest\x1a\x16.google.protobuf.Empty\"g\xc2\xf3\x18=\b\x02\x10\x04*\r\n" +
+	"\ateam_id\x10\x03\x18\x020\x01:\x1a\n" +
+	"\x16saas.team.member_added\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/teams/{team_id}/members\x12\xc3\x01\n" +
+	"\fRemoveMember\x12).saas.accounts.v1.RemoveTeamMemberRequest\x1a\x16.google.protobuf.Empty\"p\xc2\xf3\x18?\b\x02\x10\x04*\r\n" +
+	"\ateam_id\x10\x03\x18\x020\x01:\x1c\n" +
+	"\x18saas.team.member_removed\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02'*%/v1/teams/{team_id}/members/{user_id}\x12\xae\x01\n" +
 	"\vListMembers\x12(.saas.accounts.v1.ListTeamMembersRequest\x1a).saas.accounts.v1.ListTeamMembersResponse\"J\xc2\xf3\x18#\b\x02\x10\x03*\r\n" +
-	"\ateam_id\x10\x03\x18\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/teams/{team_id}/members\x12\xac\x01\n" +
+	"\ateam_id\x10\x03\x18\x020\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/teams/{team_id}/members\x12\xb1\x01\n" +
 	"\n" +
-	"UpdateTeam\x12#.saas.accounts.v1.UpdateTeamRequest\x1a$.saas.accounts.v1.UpdateTeamResponse\"S\xc2\xf3\x181\b\x02\x10\x04*\r\n" +
-	"\ateam_id\x10\x03\x18\x020\x01:\x10\n" +
-	"\fteam.updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x18:\x01*2\x13/v1/teams/{team_id}\x12\x9b\x01\n" +
+	"UpdateTeam\x12#.saas.accounts.v1.UpdateTeamRequest\x1a$.saas.accounts.v1.UpdateTeamResponse\"X\xc2\xf3\x186\b\x02\x10\x04*\r\n" +
+	"\ateam_id\x10\x03\x18\x020\x01:\x15\n" +
+	"\x11saas.team.updated\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x18:\x01*2\x13/v1/teams/{team_id}\x12\xa2\x01\n" +
 	"\n" +
-	"DeleteTeam\x12#.saas.accounts.v1.DeleteTeamRequest\x1a\x16.google.protobuf.Empty\"P\xc2\xf3\x181\b\x02\x10\x04*\r\n" +
-	"\ateam_id\x10\x03\x18\x020\x01:\x10\n" +
-	"\fteam.deleted\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x15*\x13/v1/teams/{team_id}B\xb2\x01\n" +
+	"DeleteTeam\x12#.saas.accounts.v1.DeleteTeamRequest\x1a\x16.google.protobuf.Empty\"W\xc2\xf3\x188\b\x02\x10\x04*\r\n" +
+	"\ateam_id\x10\x03\x18\x020\x01:\x15\n" +
+	"\x11saas.team.deleted\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02\x15*\x13/v1/teams/{team_id}B\xb2\x01\n" +
 	"\x14com.saas.accounts.v1B\n" +
 	"TeamsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 

@@ -21,23 +21,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PermissionService_CreateRole_FullMethodName             = "/saas.accounts.v1.PermissionService/CreateRole"
-	PermissionService_ListRoles_FullMethodName              = "/saas.accounts.v1.PermissionService/ListRoles"
-	PermissionService_DeleteRole_FullMethodName             = "/saas.accounts.v1.PermissionService/DeleteRole"
-	PermissionService_AssignRole_FullMethodName             = "/saas.accounts.v1.PermissionService/AssignRole"
-	PermissionService_RevokeRole_FullMethodName             = "/saas.accounts.v1.PermissionService/RevokeRole"
-	PermissionService_ListRoleAssignments_FullMethodName    = "/saas.accounts.v1.PermissionService/ListRoleAssignments"
-	PermissionService_CheckPermission_FullMethodName        = "/saas.accounts.v1.PermissionService/CheckPermission"
-	PermissionService_Decide_FullMethodName                 = "/saas.accounts.v1.PermissionService/Decide"
-	PermissionService_CheckAccess_FullMethodName            = "/saas.accounts.v1.PermissionService/CheckAccess"
-	PermissionService_ListAccessibleScopes_FullMethodName   = "/saas.accounts.v1.PermissionService/ListAccessibleScopes"
-	PermissionService_ListMyAccessibleScopes_FullMethodName = "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes"
-	PermissionService_RegisterScopeNode_FullMethodName      = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
-	PermissionService_GrantScope_FullMethodName             = "/saas.accounts.v1.PermissionService/GrantScope"
-	PermissionService_RevokeScope_FullMethodName            = "/saas.accounts.v1.PermissionService/RevokeScope"
-	PermissionService_ShareRecord_FullMethodName            = "/saas.accounts.v1.PermissionService/ShareRecord"
-	PermissionService_RevokeShare_FullMethodName            = "/saas.accounts.v1.PermissionService/RevokeShare"
-	PermissionService_ListShares_FullMethodName             = "/saas.accounts.v1.PermissionService/ListShares"
+	PermissionService_CreateRole_FullMethodName           = "/saas.accounts.v1.PermissionService/CreateRole"
+	PermissionService_ListRoles_FullMethodName            = "/saas.accounts.v1.PermissionService/ListRoles"
+	PermissionService_UpdateRole_FullMethodName           = "/saas.accounts.v1.PermissionService/UpdateRole"
+	PermissionService_DeleteRole_FullMethodName           = "/saas.accounts.v1.PermissionService/DeleteRole"
+	PermissionService_AssignRole_FullMethodName           = "/saas.accounts.v1.PermissionService/AssignRole"
+	PermissionService_RevokeRole_FullMethodName           = "/saas.accounts.v1.PermissionService/RevokeRole"
+	PermissionService_ListRoleAssignments_FullMethodName  = "/saas.accounts.v1.PermissionService/ListRoleAssignments"
+	PermissionService_CheckPermission_FullMethodName      = "/saas.accounts.v1.PermissionService/CheckPermission"
+	PermissionService_ExplainPermission_FullMethodName    = "/saas.accounts.v1.PermissionService/ExplainPermission"
+	PermissionService_Decide_FullMethodName               = "/saas.accounts.v1.PermissionService/Decide"
+	PermissionService_CheckAccess_FullMethodName          = "/saas.accounts.v1.PermissionService/CheckAccess"
+	PermissionService_ListAccessibleScopes_FullMethodName = "/saas.accounts.v1.PermissionService/ListAccessibleScopes"
+	PermissionService_RegisterScopeNode_FullMethodName    = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	PermissionService_ListCollectionAccess_FullMethodName = "/saas.accounts.v1.PermissionService/ListCollectionAccess"
+	PermissionService_GrantScope_FullMethodName           = "/saas.accounts.v1.PermissionService/GrantScope"
+	PermissionService_RevokeScope_FullMethodName          = "/saas.accounts.v1.PermissionService/RevokeScope"
+	PermissionService_ShareRecord_FullMethodName          = "/saas.accounts.v1.PermissionService/ShareRecord"
+	PermissionService_RevokeShare_FullMethodName          = "/saas.accounts.v1.PermissionService/RevokeShare"
+	PermissionService_ListShares_FullMethodName           = "/saas.accounts.v1.PermissionService/ListShares"
 )
 
 // PermissionServiceClient is the client API for PermissionService service.
@@ -48,11 +50,29 @@ const (
 type PermissionServiceClient interface {
 	CreateRole(ctx context.Context, in *CreateRoleRequest, opts ...grpc.CallOption) (*CreateRoleResponse, error)
 	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
+	UpdateRole(ctx context.Context, in *UpdateRoleRequest, opts ...grpc.CallOption) (*UpdateRoleResponse, error)
 	DeleteRole(ctx context.Context, in *DeleteRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AssignRole(ctx context.Context, in *AssignRoleRequest, opts ...grpc.CallOption) (*AssignRoleResponse, error)
 	RevokeRole(ctx context.Context, in *RevokeRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListRoleAssignments(ctx context.Context, in *ListRoleAssignmentsRequest, opts ...grpc.CallOption) (*ListRoleAssignmentsResponse, error)
 	CheckPermission(ctx context.Context, in *CheckPermissionRequest, opts ...grpc.CallOption) (*CheckPermissionResponse, error)
+	// ExplainPermission is the authenticated, organization-scoped companion to
+	// CheckPermission: an administrator asks the decision point whether a
+	// subject in their own organization may act, and reads the same answer the
+	// decision returns to a service. Read-only, and it evaluates the RBAC layer
+	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
+	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+	// have no administrator to supply them.
+	//
+	// The answer includes what a role assigned globally (with no organization)
+	// grants the subject, because that grant is effective in this organization
+	// and an administrator verifying access has to see it — ListRoleAssignments,
+	// which filters to the organization's own rows, does not show it.
+	//
+	// One question per call, resolved live against the tenant: it is a control an
+	// administrator points at a case, not a primitive for filling a matrix of
+	// every subject against every permission.
+	ExplainPermission(ctx context.Context, in *ExplainPermissionRequest, opts ...grpc.CallOption) (*ExplainPermissionResponse, error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
 	// compatibility while existing clients migrate. Both RPCs route
@@ -64,18 +84,14 @@ type PermissionServiceClient interface {
 	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(ctx context.Context, in *ListAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error)
-	// ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
-	// internal ListAccessibleScopes: a signed-in org member enumerates the scope
-	// nodes THEY may act on with (resource_type, action) through the gateway with a
-	// normal bearer. The subject is the bearer's own principal — no subject_id in
-	// the request — so it can never be an oracle about other principals. Same grant
-	// + share union and same pagination as the internal RPC.
-	ListMyAccessibleScopes(ctx context.Context, in *ListMyAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error)
+	ListCollectionAccess(ctx context.Context, in *ListCollectionAccessRequest, opts ...grpc.CallOption) (*ListCollectionAccessResponse, error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(ctx context.Context, in *GrantScopeRequest, opts ...grpc.CallOption) (*GrantScopeResponse, error)
@@ -115,6 +131,16 @@ func (c *permissionServiceClient) ListRoles(ctx context.Context, in *ListRolesRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRolesResponse)
 	err := c.cc.Invoke(ctx, PermissionService_ListRoles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) UpdateRole(ctx context.Context, in *UpdateRoleRequest, opts ...grpc.CallOption) (*UpdateRoleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRoleResponse)
+	err := c.cc.Invoke(ctx, PermissionService_UpdateRole_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +197,16 @@ func (c *permissionServiceClient) CheckPermission(ctx context.Context, in *Check
 	return out, nil
 }
 
+func (c *permissionServiceClient) ExplainPermission(ctx context.Context, in *ExplainPermissionRequest, opts ...grpc.CallOption) (*ExplainPermissionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExplainPermissionResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ExplainPermission_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *permissionServiceClient) Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DecideResponse)
@@ -201,20 +237,20 @@ func (c *permissionServiceClient) ListAccessibleScopes(ctx context.Context, in *
 	return out, nil
 }
 
-func (c *permissionServiceClient) ListMyAccessibleScopes(ctx context.Context, in *ListMyAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error) {
+func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListAccessibleScopesResponse)
-	err := c.cc.Invoke(ctx, PermissionService_ListMyAccessibleScopes_FullMethodName, in, out, cOpts...)
+	out := new(RegisterScopeNodeResponse)
+	err := c.cc.Invoke(ctx, PermissionService_RegisterScopeNode_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error) {
+func (c *permissionServiceClient) ListCollectionAccess(ctx context.Context, in *ListCollectionAccessRequest, opts ...grpc.CallOption) (*ListCollectionAccessResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RegisterScopeNodeResponse)
-	err := c.cc.Invoke(ctx, PermissionService_RegisterScopeNode_FullMethodName, in, out, cOpts...)
+	out := new(ListCollectionAccessResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ListCollectionAccess_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -279,11 +315,29 @@ func (c *permissionServiceClient) ListShares(ctx context.Context, in *ListShares
 type PermissionServiceServer interface {
 	CreateRole(context.Context, *CreateRoleRequest) (*CreateRoleResponse, error)
 	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)
+	UpdateRole(context.Context, *UpdateRoleRequest) (*UpdateRoleResponse, error)
 	DeleteRole(context.Context, *DeleteRoleRequest) (*emptypb.Empty, error)
 	AssignRole(context.Context, *AssignRoleRequest) (*AssignRoleResponse, error)
 	RevokeRole(context.Context, *RevokeRoleRequest) (*emptypb.Empty, error)
 	ListRoleAssignments(context.Context, *ListRoleAssignmentsRequest) (*ListRoleAssignmentsResponse, error)
 	CheckPermission(context.Context, *CheckPermissionRequest) (*CheckPermissionResponse, error)
+	// ExplainPermission is the authenticated, organization-scoped companion to
+	// CheckPermission: an administrator asks the decision point whether a
+	// subject in their own organization may act, and reads the same answer the
+	// decision returns to a service. Read-only, and it evaluates the RBAC layer
+	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
+	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+	// have no administrator to supply them.
+	//
+	// The answer includes what a role assigned globally (with no organization)
+	// grants the subject, because that grant is effective in this organization
+	// and an administrator verifying access has to see it — ListRoleAssignments,
+	// which filters to the organization's own rows, does not show it.
+	//
+	// One question per call, resolved live against the tenant: it is a control an
+	// administrator points at a case, not a primitive for filling a matrix of
+	// every subject against every permission.
+	ExplainPermission(context.Context, *ExplainPermissionRequest) (*ExplainPermissionResponse, error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
 	// compatibility while existing clients migrate. Both RPCs route
@@ -295,18 +349,14 @@ type PermissionServiceServer interface {
 	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(context.Context, *ListAccessibleScopesRequest) (*ListAccessibleScopesResponse, error)
-	// ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
-	// internal ListAccessibleScopes: a signed-in org member enumerates the scope
-	// nodes THEY may act on with (resource_type, action) through the gateway with a
-	// normal bearer. The subject is the bearer's own principal — no subject_id in
-	// the request — so it can never be an oracle about other principals. Same grant
-	// + share union and same pagination as the internal RPC.
-	ListMyAccessibleScopes(context.Context, *ListMyAccessibleScopesRequest) (*ListAccessibleScopesResponse, error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error)
+	ListCollectionAccess(context.Context, *ListCollectionAccessRequest) (*ListCollectionAccessResponse, error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(context.Context, *GrantScopeRequest) (*GrantScopeResponse, error)
@@ -338,6 +388,9 @@ func (UnimplementedPermissionServiceServer) CreateRole(context.Context, *CreateR
 func (UnimplementedPermissionServiceServer) ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRoles not implemented")
 }
+func (UnimplementedPermissionServiceServer) UpdateRole(context.Context, *UpdateRoleRequest) (*UpdateRoleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRole not implemented")
+}
 func (UnimplementedPermissionServiceServer) DeleteRole(context.Context, *DeleteRoleRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteRole not implemented")
 }
@@ -353,6 +406,9 @@ func (UnimplementedPermissionServiceServer) ListRoleAssignments(context.Context,
 func (UnimplementedPermissionServiceServer) CheckPermission(context.Context, *CheckPermissionRequest) (*CheckPermissionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckPermission not implemented")
 }
+func (UnimplementedPermissionServiceServer) ExplainPermission(context.Context, *ExplainPermissionRequest) (*ExplainPermissionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExplainPermission not implemented")
+}
 func (UnimplementedPermissionServiceServer) Decide(context.Context, *DecideRequest) (*DecideResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Decide not implemented")
 }
@@ -362,11 +418,11 @@ func (UnimplementedPermissionServiceServer) CheckAccess(context.Context, *CheckA
 func (UnimplementedPermissionServiceServer) ListAccessibleScopes(context.Context, *ListAccessibleScopesRequest) (*ListAccessibleScopesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAccessibleScopes not implemented")
 }
-func (UnimplementedPermissionServiceServer) ListMyAccessibleScopes(context.Context, *ListMyAccessibleScopesRequest) (*ListAccessibleScopesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListMyAccessibleScopes not implemented")
-}
 func (UnimplementedPermissionServiceServer) RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterScopeNode not implemented")
+}
+func (UnimplementedPermissionServiceServer) ListCollectionAccess(context.Context, *ListCollectionAccessRequest) (*ListCollectionAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCollectionAccess not implemented")
 }
 func (UnimplementedPermissionServiceServer) GrantScope(context.Context, *GrantScopeRequest) (*GrantScopeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GrantScope not implemented")
@@ -436,6 +492,24 @@ func _PermissionService_ListRoles_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PermissionServiceServer).ListRoles(ctx, req.(*ListRolesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_UpdateRole_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRoleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).UpdateRole(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_UpdateRole_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).UpdateRole(ctx, req.(*UpdateRoleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -530,6 +604,24 @@ func _PermissionService_CheckPermission_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PermissionService_ExplainPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExplainPermissionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ExplainPermission(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ExplainPermission_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ExplainPermission(ctx, req.(*ExplainPermissionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PermissionService_Decide_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DecideRequest)
 	if err := dec(in); err != nil {
@@ -584,24 +676,6 @@ func _PermissionService_ListAccessibleScopes_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PermissionService_ListMyAccessibleScopes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListMyAccessibleScopesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PermissionServiceServer).ListMyAccessibleScopes(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PermissionService_ListMyAccessibleScopes_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PermissionServiceServer).ListMyAccessibleScopes(ctx, req.(*ListMyAccessibleScopesRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _PermissionService_RegisterScopeNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RegisterScopeNodeRequest)
 	if err := dec(in); err != nil {
@@ -616,6 +690,24 @@ func _PermissionService_RegisterScopeNode_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PermissionServiceServer).RegisterScopeNode(ctx, req.(*RegisterScopeNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_ListCollectionAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCollectionAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ListCollectionAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ListCollectionAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ListCollectionAccess(ctx, req.(*ListCollectionAccessRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -726,6 +818,10 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PermissionService_ListRoles_Handler,
 		},
 		{
+			MethodName: "UpdateRole",
+			Handler:    _PermissionService_UpdateRole_Handler,
+		},
+		{
 			MethodName: "DeleteRole",
 			Handler:    _PermissionService_DeleteRole_Handler,
 		},
@@ -746,6 +842,10 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PermissionService_CheckPermission_Handler,
 		},
 		{
+			MethodName: "ExplainPermission",
+			Handler:    _PermissionService_ExplainPermission_Handler,
+		},
+		{
 			MethodName: "Decide",
 			Handler:    _PermissionService_Decide_Handler,
 		},
@@ -758,12 +858,12 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PermissionService_ListAccessibleScopes_Handler,
 		},
 		{
-			MethodName: "ListMyAccessibleScopes",
-			Handler:    _PermissionService_ListMyAccessibleScopes_Handler,
-		},
-		{
 			MethodName: "RegisterScopeNode",
 			Handler:    _PermissionService_RegisterScopeNode_Handler,
+		},
+		{
+			MethodName: "ListCollectionAccess",
+			Handler:    _PermissionService_ListCollectionAccess_Handler,
 		},
 		{
 			MethodName: "GrantScope",

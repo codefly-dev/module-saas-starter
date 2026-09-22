@@ -9,6 +9,7 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/jobs"
 )
 
 // datasourceConnectHandler exposes the tenant-facing datasource management
@@ -33,6 +34,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 		OrgID:           req.Msg.OrgId,
 		Repo:            req.Msg.Repo,
 		Paths:           req.Msg.Paths,
+		FileExtensions:  req.Msg.FileExtensions,
 		Branch:          req.Msg.Branch,
 		BoundaryNodeID:  req.Msg.GetBoundaryNodeId(),
 		CollectionLabel: req.Msg.GetCollectionLabel(),
@@ -69,6 +71,7 @@ func (h *datasourceConnectHandler) AddSource(
 	if gh := req.Msg.GetGithub(); gh != nil {
 		input.Repo = gh.Repo
 		input.Paths = gh.Paths
+		input.FileExtensions = gh.FileExtensions
 		input.Branch = gh.Branch
 	}
 	if api := req.Msg.GetApi(); api != nil {
@@ -178,14 +181,50 @@ func (h *datasourceConnectHandler) SyncSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	jobID, err := h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
+	jobID, err := h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
 	if err != nil {
+		var failure *jobs.ProcessingError
+		if errors.As(err, &failure) {
+			code := connect.CodeFailedPrecondition
+			if failure.Retryable {
+				code = connect.CodeUnavailable
+			}
+			return nil, connect.NewError(code, errors.New(failure.Failure.Message))
+		}
 		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, err)
 		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.SyncSourceResponse{JobId: jobID}), nil
+}
+
+func (h *datasourceConnectHandler) GetSourceSync(
+	ctx context.Context,
+	req *connect.Request[gen.GetSourceSyncRequest],
+) (*connect.Response[gen.GetSourceSyncResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	operation, err := h.svc.GetDatasourceSync(ctx, req.Msg.OrgId, req.Msg.SourceId, req.Msg.JobId)
+	if err != nil {
+		if errors.Is(err, business.ErrDatasourceSourceNotFound) || errors.Is(err, business.ErrDatasourceSyncNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
+	}
+	response := &gen.GetSourceSyncResponse{JobId: operation.JobID, State: operation.State}
+	for _, delivery := range operation.Deliveries {
+		response.Deliveries = append(response.Deliveries, &gen.SourceSyncDelivery{
+			JobId: delivery.JobID, State: delivery.State, Execution: delivery.Execution,
+		})
+	}
+	return connect.NewResponse(response), nil
 }
 
 func (h *datasourceConnectHandler) DeleteSource(
@@ -209,22 +248,99 @@ func (h *datasourceConnectHandler) DeleteSource(
 // datasourceSourceToProto projects the domain Source onto its non-secret proto
 // representation. Credential and webhook-secret envelopes are deliberately not
 // mapped — the wire type has no field for them.
+func (h *datasourceConnectHandler) BeginGitHubAppSetup(
+	ctx context.Context,
+	req *connect.Request[gen.BeginGitHubAppSetupRequest],
+) (*connect.Response[gen.BeginGitHubAppSetupResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	handle, err := h.svc.BeginGitHubAppSetup(ctx, actorID, req.Msg.OrgId)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.BeginGitHubAppSetupResponse{
+		InstallUrl: handle.InstallURL,
+		State:      handle.State,
+		ExpiresAt:  timestamppb.New(handle.ExpiresAt),
+	}), nil
+}
+
+func (h *datasourceConnectHandler) CompleteGitHubAppSetup(
+	ctx context.Context,
+	req *connect.Request[gen.CompleteGitHubAppSetupRequest],
+) (*connect.Response[gen.CompleteGitHubAppSetupResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	installation, err := h.svc.CompleteGitHubAppSetup(ctx, actorID, req.Msg.OrgId, req.Msg.State, req.Msg.InstallationId, req.Msg.Code)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	repositories := make([]*gen.GitHubAppRepository, 0, len(installation.Repositories))
+	for _, repository := range installation.Repositories {
+		repositories = append(repositories, &gen.GitHubAppRepository{
+			Repo:             repository.Repo,
+			DefaultBranch:    repository.DefaultBranch,
+			AlreadyConnected: repository.AlreadyConnected,
+		})
+	}
+	return connect.NewResponse(&gen.CompleteGitHubAppSetupResponse{
+		InstallationId: installation.InstallationID,
+		Repositories:   repositories,
+	}), nil
+}
+
+func (h *datasourceConnectHandler) MigrateGitHubSourceToApp(
+	ctx context.Context,
+	req *connect.Request[gen.MigrateGitHubSourceToAppRequest],
+) (*connect.Response[gen.MigrateGitHubSourceToAppResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	source, err := h.svc.MigrateGitHubSourceToApp(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.MigrateGitHubSourceToAppResponse{
+		Datasource: datasourceSourceToProto(source),
+	}), nil
+}
+
 func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource {
 	out := &gen.Datasource{
-		Id:                source.ID,
-		OrgId:             source.OrgID,
-		Provider:          datasourceProviderToProto(source.Provider),
-		BoundaryNodeId:    source.BoundaryNodeID,
-		Status:            datasourceStatusToProto(source.Status),
-		WebhookConfigured: source.WebhookConfigured(),
-		CreatedAt:         timestamppb.New(source.CreatedAt),
-		UpdatedAt:         timestamppb.New(source.UpdatedAt),
+		Id:                 source.ID,
+		OrgId:              source.OrgID,
+		Provider:           datasourceProviderToProto(source.Provider),
+		BoundaryNodeId:     source.BoundaryNodeID,
+		Status:             datasourceStatusToProto(source.Status),
+		StatusReason:       source.StatusReason,
+		WebhookConfigured:  source.WebhookConfigured(),
+		CreatedAt:          timestamppb.New(source.CreatedAt),
+		UpdatedAt:          timestamppb.New(source.UpdatedAt),
+		LastIngestedCommit: source.LastIngestedCommit,
 	}
 	if source.Provider == business.DatasourceProviderGitHub {
 		out.Github = &gen.GitHubDatasourceConfig{
-			Repo:   source.Repo,
-			Paths:  source.Paths,
-			Branch: source.Branch,
+			Repo:           source.Repo,
+			Paths:          source.Paths,
+			FileExtensions: source.FileExtensions,
+			Branch:         source.Branch,
 		}
 	}
 	if source.API != nil {
@@ -261,6 +377,9 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 	}
 	if source.LastSyncedAt != nil {
 		out.LastSyncedAt = timestamppb.New(*source.LastSyncedAt)
+	}
+	if source.LastIngestedAt != nil {
+		out.LastIngestedAt = timestamppb.New(*source.LastIngestedAt)
 	}
 	return out
 }
@@ -342,6 +461,7 @@ func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
 				ConfigFields: []*gen.DatasourceConfigField{
 					{Key: "repo", DisplayName: "Repository", Help: "owner/name, e.g. codefly-dev/module-saas-starter", Required: true},
 					{Key: "paths", DisplayName: "Paths", Help: "Path prefixes to ingest; empty means the whole repository.", Required: false},
+					{Key: "file_extensions", DisplayName: "File types", Help: "Case-insensitive suffix allowlist such as .md or .mdx, intersected with paths; empty means all types.", Required: false},
 					{Key: "branch", DisplayName: "Branch", Help: "Git ref to pull; empty resolves to the default branch.", Required: false},
 				},
 				SupportsWebhook: true,
@@ -401,6 +521,8 @@ func datasourceStatusToProto(status string) gen.DatasourceStatus {
 		return gen.DatasourceStatus_DATASOURCE_STATUS_ACTIVE
 	case business.DatasourceStatusPaused:
 		return gen.DatasourceStatus_DATASOURCE_STATUS_PAUSED
+	case business.DatasourceStatusDegraded:
+		return gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED
 	default:
 		return gen.DatasourceStatus_DATASOURCE_STATUS_UNSPECIFIED
 	}

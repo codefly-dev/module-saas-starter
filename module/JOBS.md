@@ -1,12 +1,11 @@
 # Durable inbox/outbox contract
 
 Status: generic foundation, producer path, worker runtime, operations surface,
-and the Stripe, outbound-webhook, and email workload migrations ready.
-`P2-JOB-001` through `P2-JOB-007` are complete; remaining workload migrations
-are tracked as `P2-JOB-008` and `P2-JOB-009` in the root
-[TODO](../TODO.md).
+and the Stripe, outbound-webhook, and email workload migrations ready. What the
+queue still owes its handbook stories (`HOST-JOB-*`) is tracked in the
+repository's one plan, `docs/PLAN.md` at the repository root.
 
-This contract is product-neutral. Warden, Codefly, Mind, and application
+This contract is product-neutral. Consuming solutions, Codefly, and application
 plugins use the same envelope and lifecycle; they identify their own queue,
 topic, source, payload schema, and handler without changing the platform state
 machine.
@@ -16,9 +15,12 @@ perform — and is the whole of this contract. A **domain event** is a fact fann
 out to every subscriber; the [EVENTS.md](./EVENTS.md) contract defines it, and
 its Postgres transport maps onto this jobs platform (`topic := type`,
 `idempotency_key := id`, `ordering := partition_key`). That publish/subscribe
-path is being built (see the EVENTS.md phasing); once it ships, cross-module
-communication is an event publish rather than a hand-enqueue to another module's
-queue.
+path is live (EVENTS.md phasing P2): a `Publish` writes the event of record into
+its producer's transaction, and the `events.relay` worker fans each event out as
+one ordinary inbox job per subscription — so a domain-event delivery is a command
+on the subscriber's queue, claimed and acked through this same lifecycle.
+Cross-module communication is therefore an event publish rather than a
+hand-enqueue to another module's queue.
 
 ## Sources of truth
 
@@ -180,7 +182,7 @@ inbox enqueue, and rollback with the surrounding business transaction.
 
 `P2-JOB-002` is implemented behind the product-neutral `jobs.Store` interface.
 Its inputs are the Codefly-generated `saas.jobs.v1` commands; it does not add an
-Accounts RPC, HTTP route, product handler, or Warden-specific dependency.
+Accounts RPC, HTTP route, product handler, or consumer-specific dependency.
 
 - A claim is scoped to one queue and one bounded batch. PostgreSQL selects ready
   work with `FOR UPDATE SKIP LOCKED`, transitions each row to `processing`,
@@ -248,13 +250,15 @@ offers replay only for dead letters. Both the request field and
 `Idempotency-Key` transport header use the same browser-generated key.
 
 Worker unit tests run with the race detector and cover success, typed retry and
-permanent failure, untyped-error and panic redaction, heartbeat, metrics, and
-deadline shutdown. Fresh-PostgreSQL tests cover operations snapshots,
-pagination, lifecycle detail, worker-only replay authority, exact duplicate,
-fingerprint conflict, non-dead-letter refusal, missing jobs, immutable lineage,
-and server-side payload copying. Each existing workload migrates independently
-through a generated payload adapter so moving one workload does not change the
-delivery semantics of another.
+permanent failure, untyped-error and panic redaction in both durable history and
+the log sink, the bounded failure report, the recovered panic value and stack
+behind the opt-in, lease loss and deadline shutdown not being reported as
+handler failures, heartbeat, and metrics. Fresh-PostgreSQL tests cover
+operations snapshots, pagination, lifecycle detail, worker-only replay
+authority, exact duplicate, fingerprint conflict, non-dead-letter refusal,
+missing jobs, immutable lineage, and server-side payload copying. Each existing
+workload migrates independently through a generated payload adapter so moving
+one workload does not change the delivery semantics of another.
 
 ## Stripe workload adapter
 
@@ -273,7 +277,15 @@ graceful shutdown. A thin billing handler validates the immutable routing
 contract, decodes and validates the generated payload, checks the inner event
 ID against the outer idempotency key, and invokes the existing monotonic Stripe
 projector. Malformed contracts are permanent safe failures; arbitrary provider
-or projection errors remain retryable and are redacted by the worker.
+or projection errors remain retryable and are redacted by the worker in durable
+history and in its logs alike. A failed handler is reported once, below the
+lease-loss and shutdown returns so neither is blamed on the handler, carrying
+only the bounded classification: queue, topic, job id, attempt, failure code,
+retryable, and panicked. The unredacted cause — arbitrary error text, or a
+recovered panic value with its stack — is attached only when a worker is
+configured with `UnsafeLogHandlerCause`, which is off by default because a
+transport error carries the full target URL including any secret in its path or
+query.
 
 Database authority is deliberately split: `app_job_worker` owns durable receipt
 and job lifecycle, while `app_billing_worker` can only read billing catalogs and
@@ -393,3 +405,103 @@ The worker exports `saas.jobs.polls`, `saas.jobs.claimed`,
 OpenTelemetry. Queue and bounded result/outcome are the only labels. Durable
 queue depth, oldest age, retries, terminal failures, and replay lineage remain
 in the generic Postgres operations projection.
+
+## Privacy workflow adapter
+
+Privacy export and deletion run on this platform instead of a detached
+goroutine. The workload uses queue `privacy`, topics `privacy.export.run` and
+`privacy.deletion.run`, source `saas.privacy`, schema version `1`, the request
+UUID as its idempotency key, and a per-subject ordering key so a deletion
+cannot interleave with an export of the same person's data. `RequestExport` and
+`RequestDeletion` write the `gdpr_requests` row and enqueue its job in the same
+subject transaction: an accepted request always has an owner, and a request
+whose job cannot be enqueued is not accepted at all. The schema carries that
+invariant — a request that can still progress must name a job.
+
+The request row is the product-visible projection of the durable job:
+`pending`, `processing`, `retrying` (a retryable failure the platform will
+re-lease), `completed`, or `failed` (terminal until an operator replays the
+dead-lettered job). Request cancellation is not offered. The API surface
+reports `retrying` as processing, because a scheduled retry has not failed
+from the subject's point of view. Every transition runs under the control
+plane, never under the subject's own identity — a deletion workflow may have
+removed that identity before it reports what it did — and no transition failure
+is discarded: the job retries instead.
+
+The job's lease token is carried onto the request row. Within one job the
+attempt number fences the claim; across jobs — an operator replay produces a new
+one, so attempts restart — the claim instead requires that no attempt currently
+holds the row, which every ending transition guarantees by clearing the lease.
+A worker whose lease expired therefore cannot take the request back from the
+attempt that replaced it, cannot record a receipt, and cannot finalize it; it
+stops before reaching the adapter. The claim deliberately never consults the
+worker's own copy of its job lease expiry: that copy is captured once at claim
+time while the heartbeat keeps extending the real lease, so testing against it
+would refuse attempts whose lease is very much alive. `app_tenant` holds
+select and insert on `gdpr_requests` and no update at all, so request traffic
+cannot reach execution state.
+
+### Adapter requirements
+
+`SetPrivacyWorkflow` takes the transactional producer and the adapter together;
+leaving either unset keeps the capability unavailable rather than partially
+implemented. The starter ships no adapter, so the default runtime accepts no
+privacy request. An adapter is responsible for:
+
+- **Dataset and provider inventory.** `RequiredSteps` declares the effects a
+  request type must complete. Completion is only reported once every declared
+  step carries a durable receipt; an adapter that returns success without them
+  is a permanent failure, not a completed request. A dataset or provider with
+  no adapter is a missing step, not a silent omission.
+- **Replay-safe external effects.** `PrivacyOperation` carries the stable
+  logical operation ID (the request UUID) across every attempt.
+  `IdempotencyKey(step)` derives a deterministic per-step key to hand the
+  provider; `RecordReceipt` durably records what the step produced. An attempt
+  that dies between the effect and its receipt repeats the call under the same
+  key; one that dies after it skips the step. Receipts are written once and
+  survive a lease handover, so a later attempt cannot overwrite the evidence an
+  earlier one reported.
+- **Retention and legal-hold decisions.** A hold that forbids erasure is a
+  permanent `PrivacyFailure`, which parks the request for operator action
+  rather than reporting a deletion that did not happen.
+- **Partial failure.** `NewPrivacyFailure(code, message, permanent)` classifies
+  the outcome: a permanent failure spends no further attempts, anything else is
+  retried on the bounded eight-attempt schedule and ends `failed` when the
+  budget runs out. That budget is deliberately short — under
+  `PrivacyWorkflowMaxRetryBudget` — because requests are ordered per subject, so
+  a request stuck in retry blocks every later request from the same person. A
+  schedule long enough to outlast a multi-hour outage would park an erasure
+  request behind an unrelated export for that whole span, invisibly. Spending
+  the budget quickly and dead-lettering into operator replay keeps that window
+  bounded.
+- **Bounded diagnostics.** Only a declared `PrivacyFailure` reaches durable
+  history; every other error becomes a generic retryable diagnostic, because a
+  provider error can contain credentials or the personal data being exported.
+  Raw provider errors must never be passed through as a failure message.
+- **Private artifacts.** An export artifact must live in private storage behind
+  authorization bound to the requesting subject, with an expiry the adapter
+  supplies alongside the reference. The adapter registers it with
+  `RecordArtifact` the moment the object exists and before any further step,
+  because that stored reference is the only handle the platform has on it: an
+  attempt that dies between creating an artifact and recording it leaves
+  personal data nothing will ever delete. The reference therefore survives a
+  failed attempt — a `failed` request keeps it so the sweep can still reach the
+  object — while remaining pure bookkeeping: only a completed request inside its
+  window ever hands a caller a download. `Artifact()` returns what an earlier
+  attempt registered so a retry reuses the object instead of producing a second
+  copy, and a completed export with no durable artifact is a failure rather than
+  a completion. The daily sweep is single-flight across replicas and asks the
+  optional `PrivacyArtifactCleaner` — whose deletion must be idempotent — to
+  delete the stored object before dropping the reference. A refused cleanup
+  leaves that one reference in place for the next sweep without stopping the
+  rows behind it, and the sweep reports that it could not finish.
+
+### Recovering pre-durable requests
+
+Migration `124_privacy_durable_execution` moves any `pending` or `processing`
+request accepted by the previous implementation to `failed` with failure code
+`privacy.pre_durable_request`. Those requests have no job, so no worker would
+ever claim them, and whether their adapter already produced an external effect
+is unknown. They are deliberately **not** replayed: an operator reviews each
+one — against the adapter's own provider records for the deletion case — and
+has the subject submit a fresh request where re-running is the right answer.

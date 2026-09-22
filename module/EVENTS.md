@@ -1,13 +1,14 @@
 # Domain event contract
 
-Status: contract defined. This document is the authoritative standard for
+Status: pub/sub live (P2). This document is the authoritative standard for
 asynchronous, fan-out communication between modules and solutions. The transport
 is the durable jobs platform that already ships ([JOBS.md](./JOBS.md)); the
 `saas.events.v1` envelope package, the generated event catalog, the
 `domain_events` / `event_subscriptions` relations, the relay worker, the SDK
 `events` package, and the `ModuleCapabilitiesService` publish/subscribe surface
-are sequenced under [Phasing](#phasing). Nothing here changes the behavior of an
-existing queue; a command stays a command.
+are all in place — see [Phasing](#phasing) for what remains (P3 convergence).
+Nothing here changes the behavior of an existing queue; a command stays a
+command.
 
 A **domain event** is an immutable fact that something happened in a tenant,
 published once and delivered to every subscriber. This is distinct from a
@@ -57,6 +58,7 @@ above the [Transport port](#transport-port) changes.
 | **Command / job** | Work one specific consumer must perform (today's inbox/outbox). Not fanned out. Unchanged by this contract. |
 | **Audit record** | The compliance trail of an action ([the typed audit registry](./docs/adr/0003-typed-audit-event-registry.md)). An event *may* reference an audit id; the audit spine is never a delivery channel. |
 | **Subscription** | A durable declaration that consumer `C` receives events matching a topic pattern on queue `Q`. |
+| **Resource follow** | A *person's* durable intent to be notified about one resource instance ([FOLLOWS.md](./FOLLOWS.md)). Not a subscription: this row routes a service principal to a queue, and a person holds no queue grant. |
 | **Transport** | The mechanism that stores and delivers envelopes. The Postgres outbox today; a broker later, behind the same port. |
 | **Partition key** | The ordering domain of an event stream, e.g. `tenant/source`. FIFO is guaranteed only within one partition. |
 
@@ -124,8 +126,8 @@ with no schema change:
 
 ## Event catalog
 
-Each module and solution ships one `events.codefly.yaml`, discovered and merged
-exactly like a `permissions-contribution` document:
+Each module and solution ships one `events.codefly.yaml`, shaped like a
+`permissions-contribution` document:
 
 ```yaml
 schema: codefly/saas/events-contribution/v1
@@ -142,7 +144,7 @@ consumes:
     delivery: ordered         # ordered | unordered
 ```
 
-`module-compose` merges every contribution into
+`module-compose` merges the contributions named by its `--events` arguments into
 `deployment/generated/event-catalog.json` (base-manifest-tracked) and validates:
 
 - **Namespace ownership** — a module publishes only `<its namespace>.*`.
@@ -154,11 +156,36 @@ consumes:
 - **Breaking-change gate** — removing or re-typing a field requires a major bump,
   reusing the [CONTRACT_VERSIONING.md](./CONTRACT_VERSIONING.md) compatibility
   rules. A removed field without a major bump fails compose.
+- **Follows are the contribution's own tenant facts** — an optional `follows`
+  block names a resource type of this module and the published events worth
+  notifying a follower about. Every named event must be published by the *same*
+  contribution and declared `visibility: tenant`; the `resource_type` is unique
+  across contributions, and no event may be followable under two of them. The
+  target is the envelope `subject`, so publishing one of these events with an
+  empty `subject` is refused at publish time rather than silently matching
+  nobody. See [FOLLOWS.md](./FOLLOWS.md).
 
-Generated projections mirror the typed audit registry: Go/TS/Python typed
-constants and codecs, an **AsyncAPI 3** document for humans and tooling
-(generated, never hand-written), and a docs page listing who publishes and who
-consumes each type.
+Generated projections mirror the typed audit registry: Go typed constants
+(`services/accounts/code/pkg/eventcatalog/catalog_gen.go`), an **AsyncAPI 3**
+document for humans and tooling (generated, never hand-written), and a docs page
+listing who publishes and who consumes each type. TS and Python projections are
+[Phasing](#phasing) P3 and are not generated today.
+
+**A solution's own contribution is not discovered automatically yet.**
+`module-compose` merges exactly the documents its `--events` arguments name,
+which today are this module's own contributions. The Core composition descriptor
+has no `events` contribution kind — unlike `permissions`, which it does carry —
+so a downstream solution's `events.codefly.yaml` is not collected the way its
+permissions contribution is. Two consequences worth stating plainly, because the
+platform behaves as if the catalog were complete:
+
+- The catalog contains only this module's types, so `communication.md` and
+  `asyncapi.json` describe the module's surface, not a whole deployment's.
+- Visibility is classified from the catalog, and a type absent from it is treated
+  as **not** internal. A solution-declared `internal` type is therefore fanned
+  out to matching subscribers rather than suppressed. Until the descriptor
+  carries events, a solution that needs an event kept off tenant queues must not
+  rely on `visibility: internal` alone.
 
 ## Subscriptions and fan-out
 
@@ -195,11 +222,26 @@ behind the [Transport port](#transport-port).
   on `event.id`.
 - **Replay.** `ReplayEvents(type, tenant, since)` re-fans-out from `domain_events`
   so a consumer that attaches later gets history up to `retention`. It reuses the
-  `replay_job_message` semantics and its MFA gate for operators.
+  `replay_job_message` semantics and its MFA gate for operators. A webhook
+  subscriber that already holds delivery history for an event is **not** sent a
+  second copy: the delivery is deduplicated on (subscription, event), which is
+  what makes a replay safe to run twice, and the relay reports how many were
+  dropped that way. Re-sending to an endpoint that already received one is the
+  `ReplayDelivery` RPC ([WEBHOOKS.md](./WEBHOOKS.md)), which mints a new delivery
+  for the same event id — so replaying a window re-delivers to module queues and
+  to endpoints that had never seen the event, and nothing else.
 - **Webhooks are a subscriber kind.** An outbound webhook is an
   `event_subscriptions` row with `delivery = webhook` and the existing
   [WEBHOOKS.md](./WEBHOOKS.md) dispatcher as its consumer. `visibility: external`
   on the catalog is what makes a type eligible. One model instead of two.
+  Such a row carries an `org_id` and the endpoint registration it belongs to
+  instead of a subscriber principal, and it is derived from that registration
+  rather than granted: registering an endpoint for a set of event names creates
+  the rows in the same transaction, and deleting it cascades them away. The relay
+  confines delivery to the subscription's own organization, because a type
+  pattern says nothing about ownership and the relay resolves subscriptions with
+  RLS bypassed. Every audit event type is declared `external` and published beside
+  its audit record, which is what an endpoint subscribes to.
 
 ## Transport port
 
@@ -239,7 +281,12 @@ type Transport interface {
   a `consumes` entry (admin-consented, like a permission) or at runtime by a
   caller holding `events:subscribe` on the type's namespace. A `visibility:
   internal` type can never be subscribed by a solution principal; only `external`
-  types are eligible for webhook delivery.
+  types are eligible for webhook delivery. `external` is eligibility to leave the
+  platform, not a licence for a module to read the stream: the platform's own
+  `saas.*` namespace — the audit spine, published so an organization's endpoints
+  can receive it — is refused to a module principal outright. That is the tenant's
+  grant over its own records, made through an endpoint it configured, and a module
+  does not inherit it by declaring a queue.
 - **Deliver.** Every delivered job carries `tenant_id`, `boundary_id`, and
   `actor_principal_id`. A consumer that writes must mint its own authority (an
   installation Work Context at lease time) — the event is a trigger, never a
@@ -261,6 +308,88 @@ The properties a consumer may rely on:
 | Size | `data` <= 960 KiB; larger payloads use a claim-check reference |
 | Latency | relay tick <= 1 s p50 on Postgres; not a hard real-time channel |
 
+## The subscriptions stream
+
+`GET /v1/subscriptions/stream` is the signed-in person's live view of their
+tenant's journal, as Server-Sent Events. It is the same declaration, the same
+target and the same access oracle the follow bridge uses
+([FOLLOWS.md](./FOLLOWS.md)), read forward by a connected client instead of
+fanned out into the inbox — so a client shows a change within seconds and never
+polls for it. It asks for no follow row: a follow is a durable intent to be told
+later, this is a cursor a client holds now.
+
+It does not fit the proto model — one request answers with an open-ended
+sequence of frames — so it is mounted beside the grpc-gateway mux
+(`pkg/adapters/subscription_stream_http.go`) and declared in the gateway's
+non-protobuf REST extensions. Authentication is the private request identity
+every other transport establishes; a raw `X-User-Id` is never authority.
+
+What reaches a reader, and what never does:
+
+- **Declared changes only.** An entry is on the stream when the composed
+  catalog's `follows:` binds its `type` to a `resource_type` and the envelope
+  carries a `subject`. An entry the host cannot resolve to a resource is an entry
+  it cannot authorize, so it is never guessed onto the stream. A composition that
+  declares no followable resource leaves the stream open and silent.
+- **Visible entries only.** Every page is filtered through
+  `ListAccessibleResourceIDs` — the same grant-and-share union `CheckAccess`
+  resolves — under `WithOrgTx`, so the tenant RLS floor on `domain_events` is the
+  first gate and per-resource visibility the second. An entry the reader may not
+  see produces no frame of any kind: hidden is indistinguishable from an entry
+  that never concerned them.
+- **The entry, and the producer's payload unread.** A frame names the declared
+  `type`, the `resourceType` and the `resourceId`. `data` travels verbatim when
+  the producer declared JSON, re-encoded so a newline inside it cannot split the
+  frame, and is dropped otherwise — the host never decodes another module's
+  payload, and a removal is simply another declared type over the same resource
+  rather than a host concept.
+
+The cursor is the envelope `id`, carried in the frame's `id:` field and presented
+back as `Last-Event-ID`. Resolution runs under the tenant floor, so an id from
+another organization, an id that never existed and a cursor that is not a UUID
+are one answer — the tenant's own head — and the cursor can never become an
+existence oracle. A cursor that resolved to nothing is announced with an `event:
+reset` frame before the stream begins: the reader is told its history was
+skipped rather than left to conclude it missed nothing, and saying so discloses
+nothing, because "not in your tenant" is what the caller already knows.
+Filtering advances the cursor over entries it dropped: leaving one pending would
+re-run the same denial on every poll and stall everything behind it.
+
+**`seq` is not a visibility frontier, and the stream does not treat it as one.**
+It is taken at `INSERT` — an identity column — while the row becomes visible at
+`COMMIT`, and `publish_domain_event` takes its serializing advisory lock only for
+a non-empty `partition_key`, which a followable type must not declare. A producer
+can therefore hold a low `seq` and commit after a higher one is already visible.
+A reader that advanced a plain high-water mark would pass that entry and never
+look back: it would sit in the journal with no cursor position that could ever
+yield it. Every poll therefore re-reads a bounded window *below* the cursor, so a
+late commit is still delivered. The cost is that an entry inside that window is
+offered more than once — **delivery is at-least-once, exactly as it is for a
+subscription, and a client dedupes on the event `id`** — and the residual limit
+is precise: an entry is missed only if more journal rows are committed between
+its own `INSERT` and its `COMMIT` than the window is deep. A reconnect re-reads
+the window too, so it costs duplicates rather than gaps.
+
+A page carries entry identities only; payloads are read afterwards, for the
+entries that passed the visibility filter. `domain_events.data` has no size
+`CHECK` of its own — the 1 MiB cap lives on `job_messages.payload`, which this
+path never touches — so reading payloads with the page would charge a reader with
+no access at all for every byte the tenant publishes. A payload above the inline
+bound is reported with `dataOmitted` rather than dropped silently, because a
+frame with no payload and no flag is indistinguishable from an entry that carries
+none.
+
+A connection is bounded. The bearer is re-verified on every poll, so a revoked or
+expired session stops receiving within the poll interval rather than holding a
+stream open past the credential that opened it; a forwarded gateway identity
+carries no expiry this process can re-check, so every connection also ends at a
+fixed lifetime — one deliberately **shorter** than an access token's own life,
+or the bound would not bound anything. The journal has no change signal of its
+own, so the reader reads forward on a timer, and a page that did not exhaust what
+is waiting is drained immediately rather than one page per tick. That is what
+"within seconds" costs today, and it is the piece a `LISTEN`/`NOTIFY` or broker
+transport would replace without changing anything above it.
+
 ## Commands, events, and audit
 
 Three notions of "event" now have one stated relationship:
@@ -274,6 +403,17 @@ Three notions of "event" now have one stated relationship:
   `causation_id`/`correlation_id`, but the audit spine is never used as a
   delivery channel.
 
+The two systems now share one naming law. Audit event types are
+`<namespace>.<aggregate>.<event>` exactly as the `type` attribute above is, and
+this module mints only `saas.*` — `saas.auth.login`, `saas.user.created` (issue
+#520, amending [ADR 0003](./docs/adr/0003-typed-audit-event-registry.md)). The
+constraint is enforced in the database, not just by convention:
+`audit_events.event_type` is a foreign key into the `audit_event_types` registry,
+and a CHECK requires at least three segments, so a bare `<aggregate>.<event>`
+cannot be written. Namespace ownership means the same thing on both sides — a
+module publishes only under its own namespace, so two modules composed into one
+workspace can never mint the same identifier.
+
 ## Migration
 
 No big bang. The existing string topics are reclassified, not rewritten:
@@ -284,8 +424,8 @@ No big bang. The existing string topics are reclassified, not rewritten:
    `installation.created / revoked`, `scope.granted / revoked`,
    `datasource.source.changed`. Per-file datasource operations stay commands on
    the `datasource` queue.
-2. Move the outbound webhook dispatcher onto subscriptions with
-   `delivery = webhook` ([WEBHOOKS.md](./WEBHOOKS.md)).
+2. ~~Move the outbound webhook dispatcher onto subscriptions with
+   `delivery = webhook`~~ ([WEBHOOKS.md](./WEBHOOKS.md)) — done.
 3. The command-vs-event rule is recorded in [JOBS.md](./JOBS.md).
 
 ## Phasing
@@ -294,10 +434,12 @@ No big bang. The existing string topics are reclassified, not rewritten:
   `events-contribution` schema plus `module-compose` validation; the SDK `events`
   package with the `PostgresTransport` mapping onto the existing jobs; the
   conformance suite. No behavior change for existing queues.
-- **P2 (pub/sub).** `domain_events` + `event_subscriptions` + the relay worker;
-  `Subscribe / Unsubscribe / ListSubscriptions / Publish / ReplayEvents` on
-  `ModuleCapabilitiesService`; the authority rules above; first producers and the
-  first consumer.
+- **P2 (pub/sub) — live.** `domain_events` + `event_subscriptions` + the
+  `events.relay` worker; `Subscribe / Unsubscribe / ListSubscriptions / Publish /
+  ReplayEvents` on `ModuleCapabilitiesService`; the authority rules above.
+  Accounts is the first producer (`installation.created / revoked`, `scope.granted
+  / revoked`); the `reference` namespace is the first consumer, its `consumes`
+  entry materialized into an `event_subscriptions` row at install.
 - **P3 (convergence).** Webhooks as subscribers; the AsyncAPI projection
   published; an admin "Events" page (types, subscribers, lag, dead-letters).
 - **Later, only if needed.** A broker transport behind the same port, chosen by

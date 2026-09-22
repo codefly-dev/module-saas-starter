@@ -1,6 +1,10 @@
+//go:build !pure
+
 package business_test
 
 import (
+	"crypto/ed25519"
+
 	authcore "accounts/pkg/auth"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
@@ -70,10 +74,21 @@ func authenticateFixture(ctx context.Context, req *gen.AuthenticateRequest) (*ge
 
 // Shared test fixtures — initialized once in TestMain.
 var (
-	testStore   *infra.PostgresStore
-	testService *business.Service
-	testCtx     context.Context
+	testStore        *infra.PostgresStore
+	testService      *business.Service
+	testCtx          context.Context
+	testMinterKey    ed25519.PrivateKey
+	testSessionStore authcore.SessionStore
 )
+
+// newTestMinter builds a minter over the shared signing key and session store,
+// so a test can re-mint the service's tokens under a different TTL policy and
+// restore the default one afterwards.
+func newTestMinter(cfg ed25519minter.Config) *ed25519minter.Minter {
+	cfg.Issuer = "saas-starter-test"
+	cfg.Audience = "saas-starter-test"
+	return ed25519minter.New(cfg, testMinterKey, testSessionStore)
+}
 
 func TestMain(m *testing.M) {
 	exitCode, err := testdb.RunWithPackageLock(func() int {
@@ -90,19 +105,23 @@ func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("business-db", "dependency-setup", []string{"store", "vault"}, 5*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithSharedControlChannel(),
+		sdk.WithExcludedDependencies("cache", "telemetry"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
 		// each short-lived flow temporary host ports; the scope also isolates
 		// its named containers and other runtime resources.
 		sdk.WithNamingScope("business-test"),
-		// A clean machine may need to pull Postgres, Vault, and Redis
+		// A clean machine may need to pull Postgres and Vault
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
 		sdk.WithTimeout(5*time.Minute),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
@@ -146,10 +165,9 @@ func runBusinessTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "GenerateKey failed: %v\n", err)
 		return 1
 	}
-	minter := ed25519minter.New(ed25519minter.Config{
-		Issuer:   "saas-starter-test",
-		Audience: "saas-starter-test",
-	}, priv, sessionStore)
+	testMinterKey = priv
+	testSessionStore = sessionStore
+	minter := newTestMinter(ed25519minter.Config{})
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
 	webAuthnEngine, err := infra.NewWebAuthnEngine("localhost", "SaaS Starter Test", []string{"http://localhost:21931"})
@@ -170,11 +188,25 @@ func runBusinessTests(m *testing.M) int {
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
 
+	// The audit_events.event_type foreign key (migration 116) resolves against
+	// audit_event_types, which the control plane reconciles from the code catalog
+	// at startup. Do the same here so an audit write in a test hits the same
+	// preconditions it hits in production.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "SyncAuditEventTypes: %v\n", err)
+		return 1
+	}
+
 	testStore = store
 	testService = service
 	testCtx = ctx
 
-	return m.Run()
+	executionDone := testdb.Measure("business-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 // clearData resets test data between tests.
@@ -446,7 +478,7 @@ func TestAuthenticate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 	require.NotEmpty(t, resp.RefreshToken)
-	require.Equal(t, int64(business.AccessTokenLifetime.Seconds()), resp.ExpiresIn)
+	requireExpiresInMatchesToken(t, resp.AccessToken, resp.ExpiresIn, 3*time.Minute)
 	require.NotEmpty(t, resp.User.Uuid)
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -37,6 +38,31 @@ const (
 	// until an operator resets it to active; StatusReason records why.
 	DatasourceStatusDegraded = "degraded"
 )
+
+// DatasourceDegradeReason is the closed set of explanations that may be stored
+// in a source's status_reason, which every organization member can read through
+// ListSources and GetSource. The wire contract promises that field carries no
+// credential material, and nothing about a plain string parameter would keep
+// that promise: the idiomatic way to explain a failed provider call is
+// fmt.Sprintf("%v", err), and a provider error wraps request URLs, response
+// bodies and installation identifiers verbatim. So the reason is a distinct type
+// whose body is unexported and which has no constructor from a string or an
+// error. Outside this package a caller cannot build one at all; inside it, the
+// named constructors below are the only way, which makes adding an unsafe reason
+// a visible edit here rather than an ordinary-looking call site elsewhere.
+type DatasourceDegradeReason struct{ text string }
+
+// String renders the reason for storage and for the wire projection.
+func (r DatasourceDegradeReason) String() string { return r.text }
+
+// SnapshotTooLargeDegradeReason explains a source parked because its full-tree
+// manifest overran the ingest payload cap. Both operands are sizes this process
+// measured, never provider-supplied text.
+func SnapshotTooLargeDegradeReason(size, limit int) DatasourceDegradeReason {
+	return DatasourceDegradeReason{
+		text: fmt.Sprintf("snapshot manifest is %d bytes, over the %d-byte ingest limit", size, limit),
+	}
+}
 
 // API credential kinds mirror saas.accounts.v1.ApiCredentialKind; they select
 // how the stored credential is presented on the generic connector's requests.
@@ -78,12 +104,16 @@ const (
 // different service (documents) and the seam stays decoupled from any accounts
 // type.
 const (
-	datasourceIngestQueue         = "datasource"
+	DatasourceIngestQueue         = "datasource"
 	datasourceSyncTopic           = "datasource.github.sync"
-	datasourceSyncSource          = "github.sync"
+	DatasourceSyncSource          = "github.sync"
 	datasourceIngestSchemaVersion = 1
 	datasourceIngestMaxAttempts   = 24
 	datasourceIngestContentType   = "application/octet-stream"
+
+	// datasourceRequestContentType types the body every datasource *request* job
+	// carries (see datasourceRequestBody).
+	datasourceRequestContentType = "application/json"
 
 	// The internal sync-request queue. SyncSource enqueues one request here and
 	// returns; a leased worker performs the actual repo pull off-request, so a
@@ -142,6 +172,24 @@ const (
 // Source) matches an id. It mirrors the receiver's not-found sentinel so an
 // unknown source and an unconfigured one are indistinguishable to a caller.
 var ErrDatasourceSourceNotFound = errors.New("datasource: source not found")
+
+var ErrDatasourceSyncNotFound = errors.New("datasource: sync not found")
+
+type DatasourceSyncDelivery struct {
+	JobID     string
+	State     jobsv1.JobState
+	Execution *jobsv1.JobExecutionReference
+}
+
+type DatasourceSyncOperation struct {
+	JobID      string
+	State      jobsv1.JobState
+	Deliveries []DatasourceSyncDelivery
+}
+
+type DatasourceSyncOperationStore interface {
+	GetDatasourceSyncOperation(context.Context, string, string, string) (*DatasourceSyncOperation, error)
+}
 
 // ErrOAuth2ReauthRequired reports that an OAuth 2.0 source's refresh token was
 // permanently rejected by the token endpoint: the stored grant can never
@@ -225,6 +273,7 @@ type DatasourceSource struct {
 	Provider            string
 	Repo                string
 	Paths               []string
+	FileExtensions      []string
 	Branch              string
 	API                 *APIDatasourceConfig
 	Crawler             *CrawlerDatasourceConfig
@@ -232,7 +281,13 @@ type DatasourceSource struct {
 	BoundaryNodeID      string
 	CredentialSecretRef string
 	WebhookSecretRef    string
-	Status              string
+	// GitHubInstallationID is the App installation this source's credential
+	// envelope binds it to, denormalized so an App-level delivery can resolve the
+	// sources it affects (the envelope is encrypted and cannot be selected on).
+	// It is a routing index only — the envelope stays the sole authority for
+	// minting a token. Empty for a PAT-backed source.
+	GitHubInstallationID string
+	Status               string
 	// StatusReason explains a non-active status (the degrade reason for a source
 	// the compiler parked); empty for an active source.
 	StatusReason string
@@ -263,10 +318,11 @@ func (d *DatasourceSource) WebhookConfigured() bool {
 // AccessToken and WebhookSecret are plaintext; each is encrypted through the
 // SecretCipher and only its envelope reference is persisted.
 type AddGitHubSourceInput struct {
-	OrgID  string
-	Repo   string
-	Paths  []string
-	Branch string
+	OrgID          string
+	Repo           string
+	Paths          []string
+	FileExtensions []string
+	Branch         string
 	// The data boundary the source writes into: exactly one of an existing scope
 	// node's id, or a label to mint a new `collection` node (issue #473).
 	BoundaryNodeID  string
@@ -320,6 +376,7 @@ type OAuth2RefreshFunc func(ctx context.Context, cfg apisource.OAuth2Config, ref
 func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Producer, githubBaseURL string) {
 	s.datasourceCipher = cipher
 	s.datasourceJobs = producer
+	s.datasourceSyncOperations, _ = producer.(DatasourceSyncOperationStore)
 	s.githubBaseURL = strings.TrimSpace(githubBaseURL)
 	if s.newGitHubClient == nil {
 		s.newGitHubClient = func(token string) GitHubContentClient {
@@ -399,9 +456,12 @@ func (s *Service) SetDatasourceOAuth2RefreshFunc(fn OAuth2RefreshFunc) {
 	s.newOAuth2Refresh = fn
 }
 
-// AddGitHubSource registers a GitHub repository as a Source. The access token
-// (and optional webhook signing secret) are encrypted and stored only as
-// envelope references. The returned Source carries no credential material.
+// AddGitHubSource registers a GitHub repository as a Source. A supplied access
+// token is a repository-scoped fine-grained PAT; supplying none connects the
+// source through the deployment's GitHub App, whose installation is resolved
+// from the repository server-side. Either way the credential (and the optional
+// webhook signing secret) is encrypted and stored only as an envelope
+// reference, and the returned Source carries no credential material.
 func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input AddGitHubSourceInput) (*DatasourceSource, error) {
 	w := wool.Get(ctx).In("AddGitHubSource")
 
@@ -416,11 +476,17 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
 		return nil, w.Wrap(err)
 	}
-	if strings.TrimSpace(input.AccessToken) == "" {
-		return nil, w.NewError("access token is required")
+	extensions, err := normalizeFileExtensions(input.FileExtensions)
+	if err != nil {
+		return nil, w.Wrap(err)
 	}
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
+	}
+
+	credentialPlaintext, installationID, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, input.AccessToken)
+	if err != nil {
+		return nil, err
 	}
 
 	source := &DatasourceSource{
@@ -429,16 +495,21 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		Provider:          DatasourceProviderGitHub,
 		Repo:              repo,
 		Paths:             normalizePaths(input.Paths),
+		FileExtensions:    extensions,
 		Branch:            strings.TrimSpace(input.Branch),
 		Status:            DatasourceStatusActive,
 		ReconcileInterval: defaultDatasourceReconcileInterval,
+		// Written with the row rather than after it: a source that is App-backed
+		// from birth must be resolvable by installation the moment it exists, or
+		// an App-level delivery cannot reach it. Empty for a PAT source.
+		GitHubInstallationID: installationID,
 	}
 	nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
 	source.NextReconcileAt = &nextReconcile
 
-	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), input.AccessToken)
+	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credentialPlaintext)
 	if err != nil {
-		return nil, w.Wrapf(err, "encrypt access token")
+		return nil, w.Wrapf(err, "encrypt credential")
 	}
 	source.CredentialSecretRef = credentialRef
 
@@ -456,12 +527,14 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
-		return s.store.InsertDatasourceSource(ctx, source)
+		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
+			map[string]any{"repo": source.Repo})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-		map[string]any{"repo": source.Repo})
 	return source, nil
 }
 
@@ -481,9 +554,10 @@ type AddSourceInput struct {
 	WebhookSecret   string
 
 	// GitHub provider config.
-	Repo   string
-	Paths  []string
-	Branch string
+	Repo           string
+	Paths          []string
+	FileExtensions []string
+	Branch         string
 
 	// API provider config.
 	API *APIDatasourceConfig
@@ -529,15 +603,26 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 
 	switch input.Provider {
 	case DatasourceProviderGitHub:
-		if credential == "" {
-			return nil, w.NewError("credential is required")
-		}
 		repo := strings.TrimSpace(input.Repo)
 		if !validRepo(repo) {
 			return nil, w.NewError("repo must be in owner/name form")
 		}
+		// The same resolution AddGitHubSource performs: a supplied credential is a
+		// repository-scoped PAT, and none connects through the deployment's App.
+		// Sharing it keeps the provider-agnostic call from refusing a connect the
+		// GitHub-specific one accepts.
+		resolved, installationID, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, credential)
+		if err != nil {
+			return nil, err
+		}
+		credential = resolved
+		source.GitHubInstallationID = installationID
 		source.Repo = repo
 		source.Paths = normalizePaths(input.Paths)
+		source.FileExtensions, err = normalizeFileExtensions(input.FileExtensions)
+		if err != nil {
+			return nil, w.Wrap(err)
+		}
 		source.Branch = strings.TrimSpace(input.Branch)
 		source.ReconcileInterval = defaultDatasourceReconcileInterval
 		nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
@@ -614,12 +699,14 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
-		return s.store.InsertDatasourceSource(ctx, source)
+		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
+			map[string]any{"provider": source.Provider})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-		map[string]any{"provider": source.Provider})
 	return source, nil
 }
 
@@ -848,11 +935,13 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 		return errors.New("org id and source id are required")
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.DeleteDatasourceSource(ctx, orgID, id)
+		if err := s.store.DeleteDatasourceSource(ctx, orgID, id); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
 	return nil
 }
 
@@ -863,27 +952,70 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 // (regardless of cursor equality), serialized behind any in-flight delivery for
 // the same source; other providers keep the full-refetch sync path. The Source
 // must belong to orgID.
-func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string) (string, error) {
+func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string, replacementToken ...string) (jobID string, resultErr error) {
 	w := wool.Get(ctx).In("SyncDatasourceSource")
 	source, err := s.GetDatasourceSource(ctx, orgID, id)
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		if resultErr != nil {
+			s.emit(ctx, actorID, "user", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, datasourceFailureFields(resultErr, source.Repo, "manual"))
+		}
+	}()
 	if s.datasourceJobs == nil {
 		return "", w.NewError("datasource connector is not configured")
 	}
 
+	if len(replacementToken) > 0 && replacementToken[0] != "" && (source.Provider != DatasourceProviderGitHub || len(replacementToken[0]) > 4096) {
+		return "", w.NewError("a replacement PAT of at most 4096 bytes is supported only for GitHub sources")
+	}
 	var job *jobsv1.NewJob
 	if source.Provider == DatasourceProviderGitHub {
+		if s.datasourceCipher == nil {
+			return "", w.NewError("datasource secret cipher is not configured")
+		}
+		var token string
+		if len(replacementToken) > 0 {
+			token = strings.TrimSpace(replacementToken[0])
+		}
+		replacing := token != ""
+		if !replacing {
+			if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
+				return "", err
+			}
+		} else if err := s.validateGitHubSource(ctx, source.Repo, source.Branch, token); err != nil {
+			return "", err
+		}
+		if replacing {
+			encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), token)
+			if err != nil {
+				return "", jobs.NewProcessingError("datasource.credential_store_unavailable", "Could not securely save the replacement credential. Retry shortly.", true)
+			}
+			if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+				if _, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id); err != nil {
+					return err
+				}
+				if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted); err != nil {
+					return err
+				}
+				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID,
+					map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindPAT})
+			}); err != nil {
+				return "", err
+			}
+		}
 		job = &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
 			Queue:          DatasourceDeliveryQueue,
-			Topic:          datasourceReconcileTopic,
-			Source:         datasourceReconcileSource,
+			Topic:          DatasourceReconcileTopic,
+			Source:         DatasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
-			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			SchemaVersion:  datasourceReconcileSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,
@@ -904,6 +1036,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			// already-terminal request.
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceSyncRequestSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceSyncRequestMaxAttempts,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		}
@@ -913,9 +1047,28 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	if err != nil {
 		return "", w.Wrapf(err, "enqueue sync request")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID)
+	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID, map[string]any{"job_id": response.GetJobId(), "repo": source.Repo})
 	return response.GetJobId(), nil
 }
+
+func (s *Service) GetDatasourceSync(ctx context.Context, orgID, sourceID, jobID string) (*DatasourceSyncOperation, error) {
+	if _, err := s.GetDatasourceSource(ctx, orgID, sourceID); err != nil {
+		return nil, err
+	}
+	if s.datasourceSyncOperations == nil {
+		return nil, errors.New("datasource sync observation is not configured")
+	}
+	return s.datasourceSyncOperations.GetDatasourceSyncOperation(ctx, orgID, sourceID, jobID)
+}
+
+// datasourceRequestBody is the body every datasource *request* job carries —
+// the forced and periodic reconcile requests and the generic sync request. A
+// request has no data of its own (its attributes name the source and the mode),
+// but a job is a message: saas.jobs.v1 validates content_type (min_len 1) and
+// job_messages.payload is NOT NULL, so a request declares an empty JSON object
+// rather than nothing. Returned fresh per call so no consumer can mutate a
+// shared backing array into another job's payload.
+func datasourceRequestBody() []byte { return []byte("{}") }
 
 // RunDatasourceSync performs the actual pull for one Source, dispatched by
 // provider. It is invoked by the leased sync worker, never by request traffic.
@@ -1092,7 +1245,7 @@ func (s *Service) enqueueAPIIngest(ctx context.Context, source *DatasourceSource
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceAPISyncTopic,
 			Source:         datasourceAPISyncSource,
 			IdempotencyKey: "datasource-api-sync/" + source.ID + "/" + contentSHA,
@@ -1197,7 +1350,7 @@ func (s *Service) enqueueCrawlerIngest(ctx context.Context, source *DatasourceSo
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceCrawlerSyncTopic,
 			Source:         datasourceCrawlerSyncSource,
 			IdempotencyKey: crawlerIngestIdempotencyKey(source.ID, page.URL, contentSHA),
@@ -1320,7 +1473,7 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceUploadSyncTopic,
 			Source:         datasourceUploadSyncSource,
 			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint),
@@ -1379,9 +1532,9 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 }
 
 // ingestIdempotencyKey is deterministic in (source, commit, path) and bounded,
-// so an unbounded repo path cannot overflow the inbox idempotency column, a
-// re-sync at an unchanged commit dedupes to the stored delivery, and a revert to
-// earlier content under a new commit is delivered rather than dropped.
+// so an unbounded repo path cannot overflow the inbox idempotency column,
+// retries dedupe to the stored delivery, and a revert to earlier content under
+// a new commit is delivered rather than dropped.
 func ingestIdempotencyKey(sourceID, commit, path string) string {
 	digest := sha256.Sum256([]byte(sourceID + "\x00" + commit + "\x00" + path))
 	return "datasource-sync/" + hex.EncodeToString(digest[:])

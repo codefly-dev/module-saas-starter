@@ -17,15 +17,15 @@ import (
 // runtime-init with "no configuration found for <group>".
 //
 // The defaults must ship under the module/ subtree, because that is the only
-// tree lodestar base-syncs into a consumer's modules/saas. A default parked at
+// tree that base-syncs into a consumer's modules/saas. A default parked at
 // the repo root reaches a path-composed consumer (composition walks up to this
-// repo's workspace root) but never a lodestar-composed one, so it must live at
+// repo's workspace root) but never a base-synced one, so it must live at
 // module/configurations/local/*.env. The repo-root configurations/local/ entries
 // are symlinks onto those files, so the in-repo dev workspace and path
 // composition keep reading the same values.
 //
 // This test is the guard: add a workspace-configuration dependency to a service
-// and you must ship its default under module/, or a lodestar-composed solution
+// and you must ship its default under module/, or a base-synced solution
 // breaks at runtime-init.
 
 const (
@@ -183,7 +183,7 @@ func looksLikePlaceholder(value string) bool {
 // secretDefaultProblems returns one human-readable problem per assignment in a
 // secret default that is unfit to ship in the immutable module package: an
 // empty value (a required secret default that boots nothing, so a
-// lodestar-composed consumer fails closed at runtime-init) or a value that is
+// base-synced consumer fails closed at runtime-init) or a value that is
 // not an obvious placeholder (a real credential riding along). Each value is
 // read through envValue, so a real token cannot borrow a placeholder marker
 // from a trailing "# replace-me later" comment, and a comment-only right-hand
@@ -203,7 +203,7 @@ func secretDefaultProblems(data []byte) []string {
 		switch value := envValue(rawValue); {
 		case value == "":
 			problems = append(problems, fmt.Sprintf(
-				"assigns %s an empty value: a shipped local secret default must provide a working placeholder so a lodestar-composed consumer boots, not an empty value that fails closed at runtime-init",
+				"assigns %s an empty value: a shipped local secret default must provide a working placeholder so a base-synced consumer boots, not an empty value that fails closed at runtime-init",
 				key))
 		case !looksLikePlaceholder(value):
 			problems = append(problems, fmt.Sprintf(
@@ -235,10 +235,10 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		// The base-synced location is what a lodestar-composed consumer inherits.
+		// The base-synced location is what a base-synced consumer inherits.
 		moduleDefaults := moduleDefaultFiles(group)
 		if len(moduleDefaults) == 0 {
-			t.Errorf("declared config group %q has no default under the base-synced module subtree: add a %s/%s.env (or .secret.env) that assigns at least one variable, so a lodestar-composed solution inherits it instead of dying at runtime-init with \"no configuration found for %s\"",
+			t.Errorf("declared config group %q has no default under the base-synced module subtree: add a %s/%s.env (or .secret.env) that assigns at least one variable, so a base-synced solution inherits it instead of dying at runtime-init with \"no configuration found for %s\"",
 				group, moduleConfigLocalDir, group, group)
 		}
 		// Each module default this group ships must be mirrored by a repo-root

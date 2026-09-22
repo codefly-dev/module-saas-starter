@@ -32,6 +32,9 @@ beforeEach(() => {
 	auth.orgRole = "member";
 	auth.platformRole = undefined;
 	server.use(
+		http.post(rpc("PermissionService", "ListRoleAssignments"), () =>
+			HttpResponse.json({ assignments: [] }),
+		),
 		http.post(rpc("TeamService", "ListTeams"), () =>
 			HttpResponse.json({ teams: [team] }),
 		),

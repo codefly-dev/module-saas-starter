@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,33 @@ func NewProcessingError(code, message string, retryable bool) error {
 	return &ProcessingError{Failure: failure, Retryable: retryable}
 }
 
+// panicError carries a recovered handler panic. Error() returns only the
+// generic sentinel text, so a caller that logs the error directly cannot leak
+// the panic value; the value and stack are reachable only through handlerCause,
+// which is gated on UnsafeLogHandlerCause. It deliberately implements no
+// Unwrap, so a panicked ProcessingError cannot promote itself out of the
+// generic jobs.handler_panic classification.
+type panicError struct {
+	value any
+	stack []byte
+}
+
+func (e *panicError) Error() string { return "jobs: handler panic" }
+
+// handlerCause renders the unredacted diagnostic detail behind a handler
+// failure: a recovered panic value with its stack, or the arbitrary error text.
+// Callers must gate it on UnsafeLogHandlerCause.
+func handlerCause(err error) []*wool.LogField {
+	var panicErr *panicError
+	if errors.As(err, &panicErr) {
+		return []*wool.LogField{
+			wool.Field("panic_value", fmt.Sprintf("%v", panicErr.value)),
+			wool.Field("panic_stack", string(panicErr.stack)),
+		}
+	}
+	return []*wool.LogField{wool.ErrField(err)}
+}
+
 type WorkerConfig struct {
 	Store             Store
 	Queue             string
@@ -60,6 +88,15 @@ type WorkerConfig struct {
 	Now               func() time.Time
 	RetryDelay        func(attempt uint32) time.Duration
 	Meter             metric.Meter
+	// UnsafeLogHandlerCause attaches the unredacted handler error text, and a
+	// recovered panic value with its stack, to the failure log line. It is off
+	// by default because an arbitrary handler error is not operator-safe: it
+	// routinely quotes the data the handler was handed, and a transport error
+	// carries the full target URL including any secret in its path or query
+	// (net/http masks only userinfo passwords). Durable job history never
+	// receives it either way — see ProcessingError. Enable it only where the
+	// log sink's retention is acceptable for that content.
+	UnsafeLogHandlerCause bool
 }
 
 type workerMetrics struct {
@@ -324,6 +361,26 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 		failure = processingErr.Failure
 		retryable = processingErr.Retryable
 	}
+	// Report the failure from here, below the lease-loss and shutdown returns
+	// above: a handler those paths cancelled did not fail, and blaming it made
+	// every rollout and every heartbeat blip look like a handler bug. Reporting
+	// before the store call also keeps the diagnostic when finalization then
+	// errors. The fields are the bounded classification only; retryable is that
+	// classification and not the disposition, since the store still
+	// dead-letters a retryable failure whose attempts are exhausted.
+	failureFields := []*wool.LogField{
+		wool.Field("queue", envelope.GetQueue()),
+		wool.Field("topic", envelope.GetTopic()),
+		wool.Field("job_id", envelope.GetId()),
+		wool.Field("attempt", envelope.GetAttemptCount()),
+		wool.Field("failure_code", failure.GetCode()),
+		wool.Field("retryable", retryable),
+		wool.Field("panicked", panicked),
+	}
+	if w.config.UnsafeLogHandlerCause {
+		failureFields = append(failureFields, handlerCause(handlerErr)...)
+	}
+	trace.Warn("job handler failed", failureFields...)
 	if !retryable {
 		if err := w.config.Store.DeadLetter(ctx, &jobsv1.DeadLetterJobRequest{
 			Lease: lease, Failure: failure,
@@ -357,8 +414,12 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 
 func (w *Worker) invokeHandler(ctx context.Context, envelope *jobsv1.JobEnvelope) (err error, panicked bool) {
 	defer func() {
-		if recover() != nil {
-			err = errors.New("jobs: handler panic")
+		if recovered := recover(); recovered != nil {
+			// Keep the value and the stack: they are the only record of why the
+			// handler died, and discarding them here left the failure report
+			// with nothing to say. Both stay out of durable history, which the
+			// panicked flag pins to the generic jobs.handler_panic code.
+			err = &panicError{value: recovered, stack: debug.Stack()}
 			panicked = true
 		}
 	}()

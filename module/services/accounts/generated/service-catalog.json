@@ -18,6 +18,13 @@
       ]
     },
     {
+      "name": "AccessibleScopeService",
+      "full_name": "saas.accounts.v1.AccessibleScopeService",
+      "procedures": [
+        "/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes"
+      ]
+    },
+    {
       "name": "AuditService",
       "full_name": "saas.accounts.v1.AuditService",
       "procedures": [
@@ -36,10 +43,13 @@
         "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
         "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
         "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+        "/saas.accounts.v1.AuthService/ExchangeClientToken",
         "/saas.accounts.v1.AuthService/GetJWKS",
+        "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
         "/saas.accounts.v1.AuthService/Logout",
         "/saas.accounts.v1.AuthService/RefreshToken",
-        "/saas.accounts.v1.AuthService/SwitchOrganization"
+        "/saas.accounts.v1.AuthService/SwitchOrganization",
+        "/saas.accounts.v1.AuthService/ValidateClientAuthorization"
       ]
     },
     {
@@ -49,6 +59,13 @@
         "/saas.accounts.v1.BillingService/ListInvoices",
         "/saas.accounts.v1.BillingService/ListPublicPlans",
         "/saas.accounts.v1.BillingService/OpenPortal"
+      ]
+    },
+    {
+      "name": "ClientRegistryService",
+      "full_name": "saas.accounts.v1.ClientRegistryService",
+      "procedures": [
+        "/saas.accounts.v1.ClientRegistryService/ListRegisteredClients"
       ]
     },
     {
@@ -78,10 +95,14 @@
       "procedures": [
         "/saas.accounts.v1.DatasourceService/AddGitHubSource",
         "/saas.accounts.v1.DatasourceService/AddSource",
+        "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup",
+        "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
         "/saas.accounts.v1.DatasourceService/DeleteSource",
         "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog",
         "/saas.accounts.v1.DatasourceService/GetSource",
+        "/saas.accounts.v1.DatasourceService/GetSourceSync",
         "/saas.accounts.v1.DatasourceService/ListSources",
+        "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
         "/saas.accounts.v1.DatasourceService/SyncSource"
       ]
     },
@@ -161,15 +182,29 @@
       "procedures": [
         "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
         "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
         "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
         "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
         "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+        "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+        "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+        "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
-        "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+        "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
+        "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+        "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
+        "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
       ]
     },
     {
@@ -180,7 +215,8 @@
         "/saas.accounts.v1.NotificationService/GetUnreadCount",
         "/saas.accounts.v1.NotificationService/ListNotifications",
         "/saas.accounts.v1.NotificationService/MarkAllRead",
-        "/saas.accounts.v1.NotificationService/MarkRead"
+        "/saas.accounts.v1.NotificationService/MarkRead",
+        "/saas.accounts.v1.NotificationService/ResolveNotificationAction"
       ]
     },
     {
@@ -218,9 +254,10 @@
         "/saas.accounts.v1.PermissionService/CreateRole",
         "/saas.accounts.v1.PermissionService/Decide",
         "/saas.accounts.v1.PermissionService/DeleteRole",
+        "/saas.accounts.v1.PermissionService/ExplainPermission",
         "/saas.accounts.v1.PermissionService/GrantScope",
         "/saas.accounts.v1.PermissionService/ListAccessibleScopes",
-        "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes",
+        "/saas.accounts.v1.PermissionService/ListCollectionAccess",
         "/saas.accounts.v1.PermissionService/ListRoleAssignments",
         "/saas.accounts.v1.PermissionService/ListRoles",
         "/saas.accounts.v1.PermissionService/ListShares",
@@ -228,19 +265,22 @@
         "/saas.accounts.v1.PermissionService/RevokeRole",
         "/saas.accounts.v1.PermissionService/RevokeScope",
         "/saas.accounts.v1.PermissionService/RevokeShare",
-        "/saas.accounts.v1.PermissionService/ShareRecord"
+        "/saas.accounts.v1.PermissionService/ShareRecord",
+        "/saas.accounts.v1.PermissionService/UpdateRole"
       ]
     },
     {
       "name": "PlatformAdminService",
       "full_name": "saas.accounts.v1.PlatformAdminService",
       "procedures": [
+        "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
         "/saas.accounts.v1.PlatformAdminService/GetJob",
         "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
         "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
         "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
         "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
         "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+        "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
         "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
         "/saas.accounts.v1.PlatformAdminService/ListJobs",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
@@ -249,6 +289,7 @@
         "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
         "/saas.accounts.v1.PlatformAdminService/RevokeSession",
         "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+        "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
         "/saas.accounts.v1.PlatformAdminService/SuspendUser",
         "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
         "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
@@ -268,12 +309,29 @@
       ]
     },
     {
+      "name": "ResourceFollowService",
+      "full_name": "saas.accounts.v1.ResourceFollowService",
+      "procedures": [
+        "/saas.accounts.v1.ResourceFollowService/Follow",
+        "/saas.accounts.v1.ResourceFollowService/Unfollow"
+      ]
+    },
+    {
       "name": "SSOAdminService",
       "full_name": "saas.accounts.v1.SSOAdminService",
       "procedures": [
         "/saas.accounts.v1.SSOAdminService/Disable",
         "/saas.accounts.v1.SSOAdminService/GetSSO",
         "/saas.accounts.v1.SSOAdminService/StartSetup"
+      ]
+    },
+    {
+      "name": "SolutionRegistryService",
+      "full_name": "saas.accounts.v1.SolutionRegistryService",
+      "procedures": [
+        "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+        "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+        "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
       ]
     },
     {
@@ -409,7 +467,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.created"
+            "saas.api_key.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -419,7 +477,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Mint an API key for an administered organization.",
@@ -479,7 +538,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List org's API keys.",
@@ -531,7 +591,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.revoked"
+            "saas.api_key.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -541,7 +601,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke an API key in an administered organization.",
@@ -583,10 +644,68 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal: plaintext key → key + org id.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
+      "service": "AccessibleScopeService",
+      "full_service": "saas.accounts.v1.AccessibleScopeService",
+      "method": "ListMyAccessibleScopes",
+      "input_type": "saas.accounts.v1.ListMyAccessibleScopesRequest",
+      "output_type": "saas.accounts.v1.ListAccessibleScopesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/accessible_scopes.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/accessible-scopes",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -643,7 +762,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Aggregate audit events (counts, time buckets, group-by) for analytics.",
@@ -703,7 +823,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Download audit log as CSV/JSON.",
@@ -757,7 +878,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List the registered audit event-type catalog for search facets.",
@@ -817,7 +939,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read audit events (org member sees own org; platform admin sees all).",
@@ -859,8 +982,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_started"
+            "saas.auth.login",
+            "saas.auth.mfa_challenge_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -870,7 +993,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Exchange typed OAuth-code or explicit fixture credentials for tokens.",
@@ -920,7 +1044,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Mint signed OAuth state for an allowlisted redirect.",
@@ -970,7 +1095,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Begin a WebAuthn assertion bound to an MFA login transaction.",
@@ -1012,9 +1138,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.backup_code_used"
+            "saas.auth.login",
+            "saas.auth.mfa_challenge_completed",
+            "saas.mfa.backup_code_used"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1024,7 +1150,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": true,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Consume a one-use MFA login transaction and issue the session.",
@@ -1066,9 +1193,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.webauthn_used"
+            "saas.auth.login",
+            "saas.auth.mfa_challenge_completed",
+            "saas.mfa.webauthn_used"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1078,10 +1205,64 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": true,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Verify WebAuthn and atomically consume the MFA login transaction.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/ExchangeClientToken",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "ExchangeClientToken",
+      "input_type": "saas.accounts.v1.ExchangeClientTokenRequest",
+      "output_type": "saas.accounts.v1.ExchangeClientTokenResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/token",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.auth.login"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Exchange a registered client's authorization code or rotating refresh token for tokens.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1128,10 +1309,64 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Public JWKS for JWT signature verification.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "IssueClientAuthorizationCode",
+      "input_type": "saas.accounts.v1.IssueClientAuthorizationCodeRequest",
+      "output_type": "saas.accounts.v1.IssueClientAuthorizationCodeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/clients/authorize",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.auth.client_authorized"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "auth",
+      "description": "Issue the one-time code the host redirects back to a registered client with.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1178,10 +1413,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Revoke session.",
+      "description": "Revoke the caller's session and its refresh-token family.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1228,10 +1464,11 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Refresh access token.",
+      "description": "Exchange a refresh token for a new access token, rotating the refresh token.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1270,7 +1507,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.organization_switched"
+            "saas.auth.organization_switched"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1280,10 +1517,62 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Exchange the active device session for an access token scoped to another current membership.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/ValidateClientAuthorization",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "ValidateClientAuthorization",
+      "input_type": "saas.accounts.v1.ValidateClientAuthorizationRequest",
+      "output_type": "saas.accounts.v1.ValidateClientAuthorizationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/clients/validate",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Check a registered client's authorization request before any sign-in UI is shown.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1340,10 +1629,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
-      "description": "Past Stripe invoices.",
+      "description": "List the organization's past billing invoices.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1390,7 +1680,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Sanitized public pricing and entitlement catalog.",
@@ -1442,7 +1733,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "billing.portal_opened"
+            "saas.billing.portal_opened"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1452,10 +1743,54 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "mfa",
       "description": "Stripe billing-portal session; requires billing:write and recent MFA.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ClientRegistryService/ListRegisteredClients",
+      "service": "ClientRegistryService",
+      "full_service": "saas.accounts.v1.ClientRegistryService",
+      "method": "ListRegisteredClients",
+      "input_type": "saas.accounts.v1.ListRegisteredClientsRequest",
+      "output_type": "saas.accounts.v1.ListRegisteredClientsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/clients_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read the declared first-party clients the gateway resolves origins from.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1494,7 +1829,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.terms_accepted"
+            "saas.consent.terms_accepted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1504,7 +1839,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Record acceptance of the exact Terms version presented.",
@@ -1554,7 +1890,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Read TOS acceptance state.",
@@ -1596,7 +1933,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.preferences_updated"
+            "saas.consent.preferences_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1606,7 +1943,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Persist purpose-based optional tracking choices and withdrawals.",
@@ -1648,7 +1986,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.created"
+            "saas.dashboard.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1658,7 +1996,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Create a named, user-owned dashboard from a validated spec.",
@@ -1700,7 +2039,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.deleted"
+            "saas.dashboard.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1710,7 +2049,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Delete a dashboard the caller owns or administers.",
@@ -1760,7 +2100,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Open one dashboard the caller owns or that is shared to the org.",
@@ -1810,7 +2151,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the caller's own and org-shared dashboards.",
@@ -1852,7 +2194,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.shared"
+            "saas.dashboard.shared"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1862,7 +2204,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Change a dashboard's visibility between private and org-shared.",
@@ -1904,7 +2247,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.updated"
+            "saas.dashboard.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1914,7 +2257,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Rename or replace the spec of a dashboard the caller owns or administers.",
@@ -1954,7 +2298,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.added"
+            "saas.datasource.source.added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1964,7 +2308,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Connect a GitHub repository as a datasource, storing its access token and optional webhook secret encrypted.",
@@ -2004,7 +2349,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.added"
+            "saas.datasource.source.added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2014,10 +2359,113 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Connect a datasource for any provider, storing its config and encrypted credential.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "BeginGitHubAppSetup",
+      "input_type": "saas.accounts.v1.BeginGitHubAppSetupRequest",
+      "output_type": "saas.accounts.v1.BeginGitHubAppSetupResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.github_app.setup_started"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Start GitHub App onboarding: mint a one-time, tenant-bound setup state and return the App's install URL.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "CompleteGitHubAppSetup",
+      "input_type": "saas.accounts.v1.CompleteGitHubAppSetupRequest",
+      "output_type": "saas.accounts.v1.CompleteGitHubAppSetupResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.github_app.setup_completed"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Redeem a setup state once, verify the returned GitHub App installation server-side, and list the repositories it grants.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2054,7 +2502,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.removed"
+            "saas.datasource.source.removed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2064,7 +2512,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Remove a connected datasource and its stored credentials.",
@@ -2106,7 +2555,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List the available datasource provider types and their connect metadata.",
@@ -2154,10 +2604,60 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read one connected datasource in the org.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetSourceSync",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetSourceSync",
+      "input_type": "saas.accounts.v1.GetSourceSyncRequest",
+      "output_type": "saas.accounts.v1.GetSourceSyncResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Read durable lifecycle and module-reported execution references for one source sync.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2202,10 +2702,62 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the org's connected datasources.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "MigrateGitHubSourceToApp",
+      "input_type": "saas.accounts.v1.MigrateGitHubSourceToAppRequest",
+      "output_type": "saas.accounts.v1.MigrateGitHubSourceToAppResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.credential.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2242,17 +2794,18 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.synced"
+            "saas.datasource.source.synced"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
-        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Pull the source's current contents and enqueue ingestion deliveries.",
@@ -2300,8 +2853,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.approved",
-            "delegation.denied"
+            "saas.delegation.approved",
+            "saas.delegation.denied"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2311,7 +2864,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Approve or deny a delegation request.",
@@ -2367,7 +2921,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List pending organization delegations.",
@@ -2415,8 +2970,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.requested",
-            "delegation.auto_approved"
+            "saas.delegation.requested",
+            "saas.delegation.auto_approved"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2426,7 +2981,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Request a scoped authority delegation.",
@@ -2482,7 +3038,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Stream the terminal delegation decision.",
@@ -2532,7 +3089,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Status of a GDPR deletion request.",
@@ -2582,7 +3140,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Status of a GDPR export request.",
@@ -2624,7 +3183,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "gdpr.deletion_requested"
+            "saas.gdpr.deletion_requested"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2634,7 +3193,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "mfa",
       "description": "Request account deletion when a complete privacy workflow is configured. Requires MFA.",
@@ -2676,7 +3236,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "gdpr.export_requested"
+            "saas.gdpr.export_requested"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2686,7 +3246,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Request data export when a complete privacy workflow is configured.",
@@ -2728,7 +3289,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal: provider id → user/org/roles.",
@@ -2784,7 +3346,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Get one installation and its live health.",
@@ -2832,7 +3395,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "installation.created"
+            "saas.installation.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2842,7 +3405,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
@@ -2890,7 +3454,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "installation.ownership_transferred"
+            "saas.installation.ownership_transferred"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2900,7 +3464,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Reassign an installation's accountable owner of record.",
@@ -2948,7 +3513,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "installation.revoked"
+            "saas.installation.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2958,7 +3523,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Uninstall a solution and reverse its composition.",
@@ -3008,7 +3574,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Self-describing service catalog (this RPC).",
@@ -3050,7 +3617,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.accepted"
+            "saas.invitation.accepted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3060,7 +3627,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Accept an invite by token.",
@@ -3112,7 +3680,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.created"
+            "saas.invitation.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3122,7 +3690,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Invite a user to an org.",
@@ -3172,7 +3741,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Resolve a privacy-limited invitation summary from a secret credential.",
@@ -3222,7 +3792,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Resolve an authenticated invitee's invitation summary.",
@@ -3282,7 +3853,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "List pending invites for an org.",
@@ -3334,7 +3906,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.resent"
+            "saas.invitation.resent"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3344,7 +3916,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Rotate and requeue a pending invitation after its cooldown.",
@@ -3396,7 +3969,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.revoked"
+            "saas.invitation.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3406,7 +3979,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a pending invite.",
@@ -3448,7 +4022,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registration_started"
+            "saas.mfa.webauthn_registration_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3458,7 +4032,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Begin passkey registration with server-side ceremony state.",
@@ -3500,7 +4075,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registered"
+            "saas.mfa.webauthn_registered"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3510,7 +4085,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Verify and persist a passkey credential.",
@@ -3552,7 +4128,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.backup_codes_generated"
+            "saas.mfa.backup_codes_generated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3562,7 +4138,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Mint backup codes (one-time view).",
@@ -3612,7 +4189,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List user's MFA devices.",
@@ -3654,7 +4232,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.device_revoked"
+            "saas.mfa.device_revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3664,7 +4242,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Remove an MFA device.",
@@ -3706,7 +4285,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_setup_started"
+            "saas.mfa.totp_setup_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3716,10 +4295,11 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
-      "description": "Begin TOTP enrollment.",
+      "description": "Begin TOTP enrollment for the caller and return the shared secret.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3758,7 +4338,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_verified"
+            "saas.mfa.totp_verified"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3768,7 +4348,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Confirm TOTP code; activate device.",
@@ -3810,7 +4391,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Complete a leased job successfully.",
@@ -3852,10 +4434,54 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Withdraw a still-open approval request.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "CheckWorkContextRecordAccess",
+      "input_type": "saas.accounts.v1.CheckWorkContextRecordAccessRequest",
+      "output_type": "saas.accounts.v1.CheckWorkContextRecordAccessResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Check exact placed-record access under current delegated viewer authority.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3894,7 +4520,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Lease a bounded batch of ready jobs from an allowed queue.",
@@ -3936,7 +4563,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Emit a registered audit event on the tenant's spine.",
@@ -3978,10 +4606,101 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Enqueue durable work for a tenant- or subject-scoped queue.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ExchangeDelegatedOperationAudience",
+      "input_type": "saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest",
+      "output_type": "saas.accounts.v1.IssuedWorkContext",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.delegated_audience_exchange"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS_AND_FAILURE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Exchange a current signed parent through one installed operation binding.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ExchangeDelegatedReadAudience",
+      "input_type": "saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest",
+      "output_type": "saas.accounts.v1.IssuedWorkContext",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.delegated_audience_exchange"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS_AND_FAILURE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Exchange a current signed parent through an installed read-only module binding.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4020,7 +4739,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Stream a datasource file blob referenced by a change set.",
@@ -4062,7 +4782,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Read one approval request on the caller's tenant.",
@@ -4104,10 +4825,275 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Renew a live job lease by its fencing token.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ListReadableSourceCollections",
+      "input_type": "saas.accounts.v1.ListReadableSourceCollectionsRequest",
+      "output_type": "saas.accounts.v1.ListReadableSourceCollectionsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List source collections the verified viewer may currently read.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ListSubjectVisibility",
+      "input_type": "saas.accounts.v1.ModuleListSubjectVisibilityRequest",
+      "output_type": "saas.accounts.v1.ModuleListSubjectVisibilityResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List the subjects whose rows a viewer may read in a tenant.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ListSubscriptions",
+      "input_type": "saas.accounts.v1.ModuleListSubscriptionsRequest",
+      "output_type": "saas.accounts.v1.ModuleListSubscriptionsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List the calling principal's live event subscriptions.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "MintModuleRegistration",
+      "input_type": "saas.accounts.v1.ModuleMintRegistrationRequest",
+      "output_type": "saas.accounts.v1.ModuleMintRegistrationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.registration_minted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Issue a composed module the signed credential it registers its gateway REST prefix with.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "MintModuleWorkContext",
+      "input_type": "saas.accounts.v1.ModuleMintWorkContextRequest",
+      "output_type": "saas.accounts.v1.ModuleMintWorkContextResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.work_context_minted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Issue a composed module the Work Context its service principal calls this surface with.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "MintSolutionRegistration",
+      "input_type": "saas.accounts.v1.SolutionMintRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionMintRegistrationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_minted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Issue a solution the signed credential it registers its gateway upstream and frontend remote with.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4146,7 +5132,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Fail a leased job as retryable or permanent.",
@@ -4188,10 +5175,140 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Notify a user subject to category policy.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "PlaceRecord",
+      "input_type": "saas.accounts.v1.ModulePlaceRecordRequest",
+      "output_type": "saas.accounts.v1.ModulePlaceRecordResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Place one of the caller's own records at a scope node.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "PublishEvent",
+      "input_type": "saas.accounts.v1.ModulePublishEventRequest",
+      "output_type": "saas.accounts.v1.ModulePublishEventResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Publish one domain event to the outbox for the caller's tenant.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ReplayEvents",
+      "input_type": "saas.accounts.v1.ModuleReplayEventsRequest",
+      "output_type": "saas.accounts.v1.ModuleReplayEventsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Re-deliver durable events to the caller's own subscriptions.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4230,10 +5347,97 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Open a pending approval whose resume job the module claims.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "Subscribe",
+      "input_type": "saas.accounts.v1.ModuleSubscribeRequest",
+      "output_type": "saas.accounts.v1.ModuleSubscribeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Create or re-affirm a durable event subscription for the caller.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "Unsubscribe",
+      "input_type": "saas.accounts.v1.ModuleUnsubscribeRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Revoke one of the caller's own event subscriptions.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4280,10 +5484,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
-      "description": "Delete one.",
+      "description": "Delete one of the caller's notifications.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4330,10 +5535,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
-      "description": "Count of unread.",
+      "description": "Count the caller's unread notifications.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4380,7 +5586,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List the caller's notifications.",
@@ -4430,10 +5637,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
-      "description": "Mark all read.",
+      "description": "Mark every one of the caller's notifications as read.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4480,10 +5688,54 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
-      "description": "Mark one read.",
+      "description": "Mark one of the caller's notifications as read.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.NotificationService/ResolveNotificationAction",
+      "service": "NotificationService",
+      "full_service": "saas.accounts.v1.NotificationService",
+      "method": "ResolveNotificationAction",
+      "input_type": "saas.accounts.v1.ResolveNotificationActionRequest",
+      "output_type": "saas.accounts.v1.ResolveNotificationActionResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/notifications.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_USER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "auth",
+      "description": "Re-authorize one of the caller's notification deep links and return its destination.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4528,7 +5780,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_completed"
+            "saas.onboarding.step_completed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4538,7 +5790,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Confirm a step only after its represented product state exists.",
@@ -4594,7 +5847,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Versioned organization activation checklist for the caller.",
@@ -4642,7 +5896,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_skipped"
+            "saas.onboarding.step_skipped"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4652,7 +5906,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Record an explicit skip for an optional step.",
@@ -4700,7 +5955,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_added"
+            "saas.org.member_added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4710,7 +5965,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Add a user to an org.",
@@ -4752,7 +6008,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.created"
+            "saas.org.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4762,7 +6018,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Create a new org; caller becomes owner.",
@@ -4818,10 +6075,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
-      "description": "Read branding.",
+      "description": "Read the organization's branding settings.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4874,10 +6132,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
-      "description": "Read an org.",
+      "description": "Read one organization the caller belongs to.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4930,7 +6189,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read generic typed org settings (composed JSONB blob).",
@@ -4986,7 +6246,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List members of an org.",
@@ -5036,7 +6297,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Orgs the caller belongs to.",
@@ -5084,7 +6346,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_removed"
+            "saas.org.member_removed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5094,7 +6356,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Remove a member; last-admin guard.",
@@ -5142,7 +6405,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.settings_updated"
+            "saas.org.settings_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5152,7 +6415,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Update branding (logo, color, custom domain).",
@@ -5200,7 +6464,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.generic_settings_updated"
+            "saas.org.generic_settings_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5210,7 +6474,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Patch generic typed org settings; clear_mask resets fields.",
@@ -5252,7 +6517,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.assigned"
+            "saas.role.assigned"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5262,7 +6527,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Grant a role to a principal/team.",
@@ -5304,7 +6570,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal hierarchical + per-record authz decision.",
@@ -5346,7 +6613,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal authz decision (auth-gateway caller).",
@@ -5388,7 +6656,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.created"
+            "saas.role.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5398,7 +6666,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Create a role (org-scoped or platform).",
@@ -5440,7 +6709,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal principal-aware authz decision (successor to CheckPermission).",
@@ -5482,7 +6752,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.deleted"
+            "saas.role.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5492,10 +6762,60 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Delete a custom role.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/ExplainPermission",
+      "service": "PermissionService",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "ExplainPermission",
+      "input_type": "saas.accounts.v1.ExplainPermissionRequest",
+      "output_type": "saas.accounts.v1.ExplainPermissionResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Ask the authorization service whether a subject may act in this organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5540,7 +6860,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.granted"
+            "saas.scope.granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5550,7 +6870,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Grant a role at a scope node (inherits to subtree).",
@@ -5592,7 +6913,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal list of scope nodes a subject may act on (list-objects companion to CheckAccess).",
@@ -5602,12 +6924,12 @@
       }
     },
     {
-      "procedure": "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes",
+      "procedure": "/saas.accounts.v1.PermissionService/ListCollectionAccess",
       "service": "PermissionService",
       "full_service": "saas.accounts.v1.PermissionService",
-      "method": "ListMyAccessibleScopes",
-      "input_type": "saas.accounts.v1.ListMyAccessibleScopesRequest",
-      "output_type": "saas.accounts.v1.ListAccessibleScopesResponse",
+      "method": "ListCollectionAccess",
+      "input_type": "saas.accounts.v1.ListCollectionAccessRequest",
+      "output_type": "saas.accounts.v1.ListCollectionAccessResponse",
       "client_streaming": false,
       "server_streaming": false,
       "deprecated": false,
@@ -5620,14 +6942,14 @@
       "http_bindings": [
         {
           "method": "GET",
-          "path": "/v1/accessible-scopes",
+          "path": "/v1/collection-access",
           "body": "",
           "response_body": ""
         }
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -5648,10 +6970,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_member",
-      "description": "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
+      "policy_tier": "org_admin",
+      "description": "Inspect collection boundaries and active inherited documents/read grants.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5698,7 +7021,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List assignments in an org.",
@@ -5748,7 +7072,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List built-in + org-scoped roles.",
@@ -5804,7 +7129,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "List the shares on a specific record.",
@@ -5852,7 +7178,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.node_registered"
+            "saas.scope.node_registered"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5862,7 +7188,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Register a scope node or place a record at one.",
@@ -5904,7 +7231,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.revoked"
+            "saas.role.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5914,7 +7241,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Revoke a role assignment.",
@@ -5962,7 +7290,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.revoked"
+            "saas.scope.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5972,7 +7300,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a hierarchical scope grant.",
@@ -6020,7 +7349,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.share_revoked"
+            "saas.record.share_revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6030,7 +7359,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a per-record share.",
@@ -6078,7 +7408,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.shared"
+            "saas.record.shared"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6088,10 +7418,115 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Share a record with a principal/team.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/UpdateRole",
+      "service": "PermissionService",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "UpdateRole",
+      "input_type": "saas.accounts.v1.UpdateRoleRequest",
+      "output_type": "saas.accounts.v1.UpdateRoleResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "PATCH",
+          "path": "/v1/roles/{id}",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_USER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.role.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Replace a custom role's description and permission set.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "GetEventOperations",
+      "input_type": "saas.events.v1.GetEventOperationsRequest",
+      "output_type": "saas.events.v1.GetEventOperationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/events/operations",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "Domain-event type counters, outbox relay lag, and dead-letter snapshots.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6138,7 +7573,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Payload-free job metadata, attempts, and state history.",
@@ -6188,7 +7624,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Durable queue depth, readiness, and lease-health snapshots.",
@@ -6244,7 +7681,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Plan + overrides + usage.",
@@ -6286,7 +7724,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_granted"
+            "saas.platform.role_granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6296,7 +7734,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Grant a platform role.",
@@ -6338,7 +7777,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.user_impersonated"
+            "saas.platform.user_impersonated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6348,7 +7787,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Mint an impersonation session.",
@@ -6398,10 +7838,62 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Active sessions for a user.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "ListEventSubscriptions",
+      "input_type": "saas.events.v1.ListEventSubscriptionsRequest",
+      "output_type": "saas.events.v1.ListEventSubscriptionsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/events/subscriptions",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "Live domain-event subscriptions across all principals.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6448,7 +7940,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "List the legacy feature-flag migration inventory.",
@@ -6498,7 +7991,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Seek-paginated payload-free job operations view.",
@@ -6548,10 +8042,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
-      "description": "List platform admins.",
+      "description": "List the platform administrators and their granted roles.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6590,7 +8085,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "entitlement.override"
+            "saas.entitlement.override"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6600,10 +8095,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
-      "description": "Per-org limit override.",
+      "description": "Override one entitlement limit for a single organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6642,7 +8138,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "job.replayed"
+            "saas.job.replayed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6652,7 +8148,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Idempotently copy dead-lettered work for another attempt.",
@@ -6694,7 +8191,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_revoked"
+            "saas.platform.role_revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6704,7 +8201,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Revoke a platform role.",
@@ -6746,7 +8244,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "session.revoked"
+            "saas.session.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6756,7 +8254,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Revoke a single session.",
@@ -6806,10 +8305,64 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Search across all users.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "StopImpersonation",
+      "input_type": "saas.accounts.v1.StopImpersonationRequest",
+      "output_type": "saas.accounts.v1.StopImpersonationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/platform/impersonation:stop",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.platform.user_impersonation_ended"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "auth",
+      "description": "End the caller's own impersonation session.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6848,7 +8401,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.suspended"
+            "saas.user.suspended"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6858,7 +8411,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Suspend a user account.",
@@ -6900,7 +8454,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.unsuspended"
+            "saas.user.unsuspended"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6910,7 +8464,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Restore a suspended user.",
@@ -6952,7 +8507,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "feature_flag.updated"
+            "saas.feature_flag.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6962,7 +8517,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
@@ -7010,7 +8566,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.created"
+            "saas.principal.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7020,7 +8576,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create an agent principal in an organization.",
@@ -7054,7 +8611,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.disabled"
+            "saas.principal.disabled"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7064,7 +8621,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Reversibly suspend an agent principal.",
@@ -7098,7 +8656,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.enabled"
+            "saas.principal.enabled"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7108,7 +8666,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Lift a reversible suspension on an agent principal.",
@@ -7150,7 +8709,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal agent-principal lookup.",
@@ -7192,7 +8752,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal principal lookup.",
@@ -7248,7 +8809,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List principals in an organization.",
@@ -7296,7 +8858,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.revoked"
+            "saas.principal.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7306,10 +8868,113 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Revoke an organization or platform principal.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ResourceFollowService/Follow",
+      "service": "ResourceFollowService",
+      "full_service": "saas.accounts.v1.ResourceFollowService",
+      "method": "Follow",
+      "input_type": "saas.accounts.v1.FollowResourceRequest",
+      "output_type": "saas.accounts.v1.FollowResourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/resource_follows.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/resource-follows",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Follow one resource instance the caller can see, to be told when it changes.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ResourceFollowService/Unfollow",
+      "service": "ResourceFollowService",
+      "full_service": "saas.accounts.v1.ResourceFollowService",
+      "method": "Unfollow",
+      "input_type": "saas.accounts.v1.UnfollowResourceRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/resource_follows.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/resource-follows:unfollow",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Stop following one resource instance the caller follows.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7354,7 +9019,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.disabled"
+            "saas.sso.disabled"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7364,7 +9029,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Pause SSO; preserves WorkOS state for re-enable.",
@@ -7420,7 +9086,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Read org SSO state.",
@@ -7468,7 +9135,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.setup.started"
+            "saas.sso.setup.started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7478,10 +9145,144 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Mint WorkOS portal link.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "DeleteSolutionRegistration",
+      "input_type": "saas.accounts.v1.DeleteSolutionRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Deregister a solution and leave a tombstone that blocks resurrection.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "ListSolutionRegistrations",
+      "input_type": "saas.accounts.v1.ListSolutionRegistrationsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionRegistrationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read the solution registry snapshot a replica rebuilds its cache from.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "PutSolutionRegistration",
+      "input_type": "saas.accounts.v1.PutSolutionRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Write or renew one half of a solution's durable runtime registration.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7526,7 +9327,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_added"
+            "saas.team.member_added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7536,7 +9337,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Add a user to a team.",
@@ -7584,7 +9386,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.created"
+            "saas.team.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7594,7 +9396,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Create a team within an org.",
@@ -7642,7 +9445,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.deleted"
+            "saas.team.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7652,10 +9455,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
-      "description": "Delete a team.",
+      "description": "Delete a team and its memberships.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7708,10 +9512,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
-      "description": "List team members.",
+      "description": "List the members of one team.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7764,7 +9569,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List teams in an org.",
@@ -7812,7 +9618,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_removed"
+            "saas.team.member_removed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7822,7 +9628,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Remove a user from a team.",
@@ -7870,7 +9677,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.updated"
+            "saas.team.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7880,7 +9687,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Update a team's name or description.",
@@ -7922,7 +9730,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Atomically consume a monthly meter with an idempotent receipt.",
@@ -7982,7 +9791,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Current monthly meter total and effective limit.",
@@ -8042,7 +9852,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "UTC hourly, daily, or monthly usage buckets for a bounded range.",
@@ -8102,7 +9913,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Customer-visible meter catalog with current totals and limits.",
@@ -8144,7 +9956,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.identity_added"
+            "saas.user.identity_added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8154,7 +9966,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Link an additional auth provider.",
@@ -8198,7 +10011,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.deleted"
+            "saas.user.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8208,7 +10021,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Soft-delete a user (self or platform admin).",
@@ -8258,10 +10072,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
-      "description": "Platform-admin identity lookup.",
+      "description": "Look up a user by external identity, for platform administrators.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8308,7 +10123,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Authenticated user + their orgs.",
@@ -8364,7 +10180,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Look up a user (self or platform admin).",
@@ -8414,7 +10231,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List a user's auth methods.",
@@ -8468,7 +10286,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Paginated user list (platform admin).",
@@ -8510,7 +10329,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.registered"
+            "saas.user.registered"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8520,7 +10339,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Bootstrap a new user + personal org.",
@@ -8564,7 +10384,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.updated"
+            "saas.user.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8574,7 +10394,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Update profile (self or platform admin).",
@@ -8624,7 +10445,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Service version (smoke test).",
@@ -8674,10 +10496,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
-      "description": "JSONB user prefs.",
+      "description": "Read the caller's stored user preferences.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8716,7 +10539,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "settings.updated"
+            "saas.settings.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8726,10 +10549,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
-      "description": "Patch user prefs.",
+      "description": "Patch the caller's stored user preferences.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8776,7 +10600,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Read the configured signup and waitlist mode.",
@@ -8818,7 +10643,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.invited"
+            "saas.waitlist.invited"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8828,7 +10653,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Queue the approved signup handoff for one waitlist entry.",
@@ -8878,7 +10704,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Submit an enumeration-safe public waitlist request.",
@@ -8928,7 +10755,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Search and filter the waitlist as a platform administrator.",
@@ -8970,7 +10798,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.reviewed"
+            "saas.waitlist.reviewed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8980,7 +10808,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Approve or reject a waitlist entry with audit context.",
@@ -9030,7 +10859,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Verify a waitlist email using an expiring hashed credential.",
@@ -9082,7 +10912,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.created"
+            "saas.webhook.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9092,7 +10922,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create a public-HTTPS endpoint and reveal its encrypted-at-rest signing secret once.",
@@ -9144,7 +10975,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.deleted"
+            "saas.webhook.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9154,10 +10985,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
-      "description": "Delete a subscription.",
+      "description": "Delete a webhook subscription in the organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9214,10 +11046,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
-      "description": "Read one delivery.",
+      "description": "Read one webhook delivery attempt and its response.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9274,10 +11107,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
-      "description": "Past delivery attempts.",
+      "description": "List past delivery attempts for a webhook subscription.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9334,10 +11168,11 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
-      "description": "List webhook subscriptions.",
+      "description": "List the organization's webhook subscriptions.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9386,7 +11221,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.replayed"
+            "saas.webhook.replayed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9396,7 +11231,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Create and audit a new attempt for a past delivery using its stable event ID.",
@@ -9448,7 +11284,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "webhook.secret_rotated"
+            "saas.webhook.secret_rotated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9458,7 +11294,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "mfa",
       "description": "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
@@ -9518,7 +11355,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Send a test ping.",
@@ -9560,7 +11398,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Authorize a filtered Evidence read from current tenant membership and RBAC facts.",
@@ -9602,7 +11441,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Revalidate every subject and scope in a signed Work Context against current authority.",
@@ -9644,7 +11484,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Claim a single-use Work Context exactly once; replays of the same context id fail closed.",
@@ -9692,7 +11533,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.audience_exchanged"
+            "saas.work_context.audience_exchanged"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9702,7 +11543,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Reissue one Task and Session lineage for another audience with attenuated authority.",
@@ -9750,7 +11592,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.renewed"
+            "saas.work_context.renewed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9760,7 +11602,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving.",
@@ -9808,7 +11651,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.child_session_started"
+            "saas.work_context.child_session_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9818,7 +11661,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for an attenuated child-agent Session.",
@@ -9860,7 +11704,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Headlessly mint a Work Context for an installation's agent principal under its owner of record.",
@@ -9908,7 +11753,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.root_session_started"
+            "saas.work_context.root_session_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9918,7 +11763,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for another root Session under the same Task.",
@@ -9966,7 +11812,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.task_started"
+            "saas.work_context.task_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9976,7 +11822,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Issue a signed Work Context for a new Task and root Session.",

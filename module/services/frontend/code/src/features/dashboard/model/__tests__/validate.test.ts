@@ -10,7 +10,7 @@ import {
 	validateMetric,
 } from "../validate";
 
-const login = event("auth.login");
+const login = event("saas.auth.login");
 const validSpec = dashboard({
 	title: "Activity",
 	description: "Live from the audit trail.",
@@ -220,6 +220,25 @@ describe("assertDashboardSpec", () => {
 		).toThrow(/event type must be a non-empty string/);
 	});
 
+	it("rejects a collectionId metric that declares no event", () => {
+		// Accounts requires an event type for every scoped read so it can resolve
+		// the registered boundary field. Without this the authoring surface saved
+		// the metric happily and it failed only at query time, as InvalidArgument.
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						collectionId: "collection-a",
+						groupBy: "event_type",
+						chart: "bar",
+					},
+				],
+			}),
+		).toThrow(/collectionId requires event/);
+	});
+
 	it("rejects a metric that sets both event and category", () => {
 		expect(() =>
 			assertDashboardSpec({
@@ -227,7 +246,7 @@ describe("assertDashboardSpec", () => {
 				metrics: [
 					{
 						title: "x",
-						event: { type: "auth.login" },
+						event: { type: "saas.auth.login" },
 						category: "security",
 						groupBy: "time",
 						bucket: "day",
@@ -441,13 +460,13 @@ describe("parseDashboardSpec", () => {
 });
 
 const vocab: AuditVocabulary = {
-	eventTypes: ["auth.login", "org.created"],
+	eventTypes: ["saas.auth.login", "saas.org.created"],
 	categories: ["authentication", "organization"],
 };
 
 const loginMetric: MetricDef = {
 	title: "Logins over time",
-	event: event("auth.login"),
+	event: event("saas.auth.login"),
 	groupBy: "time",
 	bucket: "day",
 	chart: "line",

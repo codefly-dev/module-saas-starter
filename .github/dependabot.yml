@@ -1,0 +1,80 @@
+# Dependency updates for the ecosystems this repository can actually update.
+#
+# Which ecosystems those are is not a free choice, and
+# `scripts/ci/dependabot-coverage.mjs` enforces both rules below on every pull
+# request rather than leaving them to this comment.
+#
+# 1. A manifest hashed in module/tools/base-manifest.json must NOT be listed.
+#    Bumping one leaves that manifest stale, which fails `base-integrity` — a
+#    gate in REQUIRED_GATES — and Dependabot cannot repair it: it has no way to
+#    run `base-integrity.mjs gen`. Regenerating the manifest from a workflow and
+#    pushing onto Dependabot's branch does not rescue it either, because a commit
+#    pushed with GITHUB_TOKEN starts no new workflow run, so the required checks
+#    would sit unreported against the new head. Such an entry yields a pull
+#    request that can never merge, and open-pull-requests-limit then blocks every
+#    later update in that ecosystem behind it.
+#
+#    This is why npm (all 11 package.json), pip (the accounts pyproject.toml) and
+#    the five in-module go.mod files are absent. They are base files: their
+#    declared versions are owned by the canonical module, not by this
+#    repository's bots.
+#
+# 2. Every non-generated dependency manifest that is NOT base-tracked must be
+#    listed. Agent-generated builder Dockerfiles are not update inputs. Their
+#    effective images are checked by scripts/ci/build-images.mjs and monitored
+#    weekly by build-images.yml; upgrades belong in the owning service agent.
+#
+# ONE catch-all group per ecosystem, at open-pull-requests-limit 1, so a week
+# yields at most one pull request per ecosystem instead of one per dependency.
+#
+# The groups deliberately carry NO `update-types:` filter. That filter only
+# recognises semver update types, so an update that is none of `major`/`minor`/
+# `patch` — a digest bump, which is what every github-actions pin here takes —
+# matches nothing in the list, falls OUT of the group, and opens an ungrouped
+# pull request of its own, one per directory. Omitting the filter makes
+# `patterns: "*"` mean what it says: everything, digests included. For the same
+# reason majors are not split into a second group — that is a guaranteed extra
+# pull request.
+#
+# Security updates keep their own group where one is defined: `applies-to`
+# separates them from version updates and they are not capped by
+# open-pull-requests-limit, because an urgent fix should not queue behind
+# routine work.
+#
+# Dependabot cannot group ACROSS ecosystems, so the entries below are the floor
+# on what Dependabot itself opens; .github/workflows/combine-deps.yml runs after
+# the weekly pass and folds whatever is open into a single pull request.
+#
+# Transitive security advisories are remediated by
+# .github/workflows/dep-audit.yml, which edits only lockfiles and regenerates the
+# base manifest itself. This file owns declared-version updates; the two do not
+# share a manifest.
+version: 2
+
+updates:
+  # The repository-root tooling module and the published SDKs. The
+  # five modules under module/ are base files; see rule 1.
+  - package-ecosystem: gomod
+    directories:
+      - /
+      - /libraries/source-read-sdk/go
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    groups:
+      gomod:
+        patterns:
+          - "*"
+
+  # Every action is already pinned to a commit digest, and
+  # `release-gates.mjs check` fails the build on any mutable ref, so nothing but
+  # this entry would ever move those pins.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        patterns:
+          - "*"

@@ -30,6 +30,9 @@ const (
 	AuthService_SwitchOrganization_FullMethodName           = "/saas.accounts.v1.AuthService/SwitchOrganization"
 	AuthService_Logout_FullMethodName                       = "/saas.accounts.v1.AuthService/Logout"
 	AuthService_GetJWKS_FullMethodName                      = "/saas.accounts.v1.AuthService/GetJWKS"
+	AuthService_ValidateClientAuthorization_FullMethodName  = "/saas.accounts.v1.AuthService/ValidateClientAuthorization"
+	AuthService_IssueClientAuthorizationCode_FullMethodName = "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode"
+	AuthService_ExchangeClientToken_FullMethodName          = "/saas.accounts.v1.AuthService/ExchangeClientToken"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -58,6 +61,23 @@ type AuthServiceClient interface {
 	SwitchOrganization(ctx context.Context, in *SwitchOrganizationRequest, opts ...grpc.CallOption) (*SwitchOrganizationResponse, error)
 	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	GetJWKS(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*JWKSResponse, error)
+	// ValidateClientAuthorization checks a client's authorization request before
+	// any sign-in UI is rendered. Public RPC: this runs before the person has
+	// authenticated, which is the point — an unregistered client id or a redirect
+	// URI that client did not register is refused while the browser is still on
+	// the host, never after credentials have been entered.
+	ValidateClientAuthorization(ctx context.Context, in *ValidateClientAuthorizationRequest, opts ...grpc.CallOption) (*ValidateClientAuthorizationResponse, error)
+	// IssueClientAuthorizationCode mints the one-time code the host redirects
+	// back to the client with. The caller is the signed-in person's own host
+	// session, so the code is bound to an identity the client never saw
+	// authenticate.
+	IssueClientAuthorizationCode(ctx context.Context, in *IssueClientAuthorizationCodeRequest, opts ...grpc.CallOption) (*IssueClientAuthorizationCodeResponse, error)
+	// ExchangeClientToken is the registered client's token endpoint. Public RPC:
+	// possession of the authorization code plus its PKCE verifier, or of the
+	// client's own rotating refresh token, is the credential. Both grants mint a
+	// session bound to the client, separate from any host web session the person
+	// holds.
+	ExchangeClientToken(ctx context.Context, in *ExchangeClientTokenRequest, opts ...grpc.CallOption) (*ExchangeClientTokenResponse, error)
 }
 
 type authServiceClient struct {
@@ -158,6 +178,36 @@ func (c *authServiceClient) GetJWKS(ctx context.Context, in *emptypb.Empty, opts
 	return out, nil
 }
 
+func (c *authServiceClient) ValidateClientAuthorization(ctx context.Context, in *ValidateClientAuthorizationRequest, opts ...grpc.CallOption) (*ValidateClientAuthorizationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ValidateClientAuthorizationResponse)
+	err := c.cc.Invoke(ctx, AuthService_ValidateClientAuthorization_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) IssueClientAuthorizationCode(ctx context.Context, in *IssueClientAuthorizationCodeRequest, opts ...grpc.CallOption) (*IssueClientAuthorizationCodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssueClientAuthorizationCodeResponse)
+	err := c.cc.Invoke(ctx, AuthService_IssueClientAuthorizationCode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authServiceClient) ExchangeClientToken(ctx context.Context, in *ExchangeClientTokenRequest, opts ...grpc.CallOption) (*ExchangeClientTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExchangeClientTokenResponse)
+	err := c.cc.Invoke(ctx, AuthService_ExchangeClientToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthServiceServer is the server API for AuthService service.
 // All implementations must embed UnimplementedAuthServiceServer
 // for forward compatibility.
@@ -184,6 +234,23 @@ type AuthServiceServer interface {
 	SwitchOrganization(context.Context, *SwitchOrganizationRequest) (*SwitchOrganizationResponse, error)
 	Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error)
 	GetJWKS(context.Context, *emptypb.Empty) (*JWKSResponse, error)
+	// ValidateClientAuthorization checks a client's authorization request before
+	// any sign-in UI is rendered. Public RPC: this runs before the person has
+	// authenticated, which is the point — an unregistered client id or a redirect
+	// URI that client did not register is refused while the browser is still on
+	// the host, never after credentials have been entered.
+	ValidateClientAuthorization(context.Context, *ValidateClientAuthorizationRequest) (*ValidateClientAuthorizationResponse, error)
+	// IssueClientAuthorizationCode mints the one-time code the host redirects
+	// back to the client with. The caller is the signed-in person's own host
+	// session, so the code is bound to an identity the client never saw
+	// authenticate.
+	IssueClientAuthorizationCode(context.Context, *IssueClientAuthorizationCodeRequest) (*IssueClientAuthorizationCodeResponse, error)
+	// ExchangeClientToken is the registered client's token endpoint. Public RPC:
+	// possession of the authorization code plus its PKCE verifier, or of the
+	// client's own rotating refresh token, is the credential. Both grants mint a
+	// session bound to the client, separate from any host web session the person
+	// holds.
+	ExchangeClientToken(context.Context, *ExchangeClientTokenRequest) (*ExchangeClientTokenResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
 }
 
@@ -220,6 +287,15 @@ func (UnimplementedAuthServiceServer) Logout(context.Context, *LogoutRequest) (*
 }
 func (UnimplementedAuthServiceServer) GetJWKS(context.Context, *emptypb.Empty) (*JWKSResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJWKS not implemented")
+}
+func (UnimplementedAuthServiceServer) ValidateClientAuthorization(context.Context, *ValidateClientAuthorizationRequest) (*ValidateClientAuthorizationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ValidateClientAuthorization not implemented")
+}
+func (UnimplementedAuthServiceServer) IssueClientAuthorizationCode(context.Context, *IssueClientAuthorizationCodeRequest) (*IssueClientAuthorizationCodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method IssueClientAuthorizationCode not implemented")
+}
+func (UnimplementedAuthServiceServer) ExchangeClientToken(context.Context, *ExchangeClientTokenRequest) (*ExchangeClientTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExchangeClientToken not implemented")
 }
 func (UnimplementedAuthServiceServer) mustEmbedUnimplementedAuthServiceServer() {}
 func (UnimplementedAuthServiceServer) testEmbeddedByValue()                     {}
@@ -404,6 +480,60 @@ func _AuthService_GetJWKS_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_ValidateClientAuthorization_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidateClientAuthorizationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ValidateClientAuthorization(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ValidateClientAuthorization_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ValidateClientAuthorization(ctx, req.(*ValidateClientAuthorizationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_IssueClientAuthorizationCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IssueClientAuthorizationCodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).IssueClientAuthorizationCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_IssueClientAuthorizationCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).IssueClientAuthorizationCode(ctx, req.(*IssueClientAuthorizationCodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthService_ExchangeClientToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExchangeClientTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).ExchangeClientToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_ExchangeClientToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).ExchangeClientToken(ctx, req.(*ExchangeClientTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthService_ServiceDesc is the grpc.ServiceDesc for AuthService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -446,6 +576,18 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJWKS",
 			Handler:    _AuthService_GetJWKS_Handler,
+		},
+		{
+			MethodName: "ValidateClientAuthorization",
+			Handler:    _AuthService_ValidateClientAuthorization_Handler,
+		},
+		{
+			MethodName: "IssueClientAuthorizationCode",
+			Handler:    _AuthService_IssueClientAuthorizationCode_Handler,
+		},
+		{
+			MethodName: "ExchangeClientToken",
+			Handler:    _AuthService_ExchangeClientToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

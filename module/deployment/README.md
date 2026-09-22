@@ -161,14 +161,15 @@ an empty ingress list.
 
 ## Managed-service handoffs
 
-Managed-capable environments — `eks` on AWS and `aks` on Azure — declare each
-module-owned managed service under `managed-services`. The module generates an
-`ExternalName` Service and topology-derived egress policy. Optional
+Managed-capable environments — `eks` on AWS, `aks` on Azure, and `gke` on GCP —
+declare each module-owned managed service under `managed-services`. The module
+generates an `ExternalName` Service and topology-derived egress policy. Optional
 `secret-references` generate ExternalSecret objects containing only provider
 keys and SecretStore references. Supported `kind` values are `elasticache`,
-`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`. The
-Azure `ExternalSecret` handoff shape is still in flux under infra's passwordless
-direction, so the worked example below stays on the stable AWS shape:
+`rds-postgresql`, `s3`, `secrets-manager`, `azure-postgres-flexible`, and
+`cloud-sql-postgres`. The Azure `ExternalSecret` handoff shape is still in flux
+under infra's passwordless direction, so the worked example below stays on the
+stable AWS shape:
 
 ```yaml
 managed-services:
@@ -185,6 +186,49 @@ managed-services:
           kind: ClusterSecretStore
 ```
 
+### Authentication mode
+
+`auth-mode` states how callers authenticate to a managed service. It defaults to
+`password`: the connection secret reaches the workload through
+`secret-references`, which is the shape every AWS and Azure kind above uses. A
+handoff in the default mode records no `authMode` key, so a bundle for an
+existing environment is unchanged. `external-identity` is the passwordless shape
+— the pod authenticates as its own workload identity, so the instance issues no
+connection secret, the bundle handoff records the mode for the promotion driver,
+and the overlay renders no ExternalSecret. Declaring `secret-references`
+alongside it is rejected.
+
+Under `external-identity` the module also renders an egress NetworkPolicy from
+each caller to the node-local instance metadata endpoint
+(`169.254.169.254/32`, TCP 80), which is where every major cloud serves
+workload-identity tokens. The baseline denies all egress and the public-egress
+policy excepts link-local, so without that rule the mode would have no path to
+the credential it is defined by and the failure would land at connection time
+rather than at generation.
+
+The rendered shape is a **direct** authenticated connection to the instance's
+DNS name — an `ExternalName` Service plus the declared egress CIDRs on the
+declared ports. The module does not render a Cloud SQL connector/Auth Proxy
+sidecar, and a deployment that adds one needs egress this module does not
+generate. `instance-connection-name` is carried in the bundle for the promotion
+driver, which owns anything outside the cluster; it is the
+`project:region:instance` coordinate (the legacy domain-scoped
+`domain:project:region:instance` form is also accepted) and is not derivable
+from a DNS name. Because a silent password default would have the driver project
+a secret an IAM-only instance never issued, the kind requires `auth-mode` to be
+stated rather than inherited:
+
+```yaml
+managed-services:
+  store:
+    kind: cloud-sql-postgres
+    external-name: store.identity.internal.example.com
+    auth-mode: external-identity
+    instance-connection-name: identity-prod:us-central1:store
+    egress-cidrs:
+      - 10.42.0.0/24
+```
+
 No cloud-provider behavior is added to the generic Postgres, Redis, S3, or
 Vault service plugins.
 
@@ -199,7 +243,7 @@ Runtime environment variables reach a service through a **configuration group**:
 a named `.env` file that one or more services opt into. This is the committed,
 portable path — use it for any value that should travel with the repo. For a
 one-off, uncommitted override on a single `codefly run`, use the `--set` flag
-instead (see [AGENTS.md](../../AGENTS.md#passing-an-environment-variable-to-a-service)).
+instead.
 
 ### Layout
 
@@ -276,15 +320,15 @@ a mounted skin descriptor) as a committed value for local runs:
 
 3. **Regenerate** the per-service manifests from the bindings so
    `service.codefly.yaml` picks up the new dependency (the same module render
-   described in [AGENTS.md](../../AGENTS.md#agent-version-pins)).
+   described in [AGENTS.md](./AGENTS.md#agent-version-pins)).
 
 4. **Refresh the base-integrity manifest.** `topology.bindings.codefly.yaml`,
    this README, and the generated `service.codefly.yaml` are base-tracked;
    editing them without regenerating `module/tools/base-manifest.json` fails CI.
-   See [AGENTS.md](../../AGENTS.md#base-file-integrity-manifest--the-easy-gate-to-trip).
+   See [AGENTS.md](../AGENTS.md#base-file-integrity-manifest).
 
 Steps 2–4 are only for the committed path. For a throwaway local value, skip them
-and use `--set` (AGENTS.md) or — frontend only — a gitignored `.env*.local` under
+and use `--set` or — frontend only — a gitignored `.env*.local` under
 `module/services/frontend/code/`.
 
 The skin resolver spans all three tiers: `FRONTEND_SKIN_JSON` (an inline JSON

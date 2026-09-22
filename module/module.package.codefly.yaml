@@ -2,7 +2,7 @@ schema: codefly/module-package/v2
 kind: module-package
 id: codefly/saas-starter
 version: 0.1.0
-minimum-codefly-version: ">=0.3.0 <1.0.0"
+minimum-codefly-version: ">=0.3.32 <1.0.0"
 artifact-roots:
   - contracts
   - deployment
@@ -18,7 +18,7 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:e6202131a07b3905490af44fa5e5194660c4a6eaaa19c0ec14a110cc3690cb51
+        digest: sha256:a2a5392f9ff0f8b50d9d197eaed043dcaa54db93b36a2cb214bd9114ebb8de66
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -26,7 +26,7 @@ services:
         kind: protobuf
         package: saas.gateway.auth.v1
         path: contracts/api/auth-gateway/grpc/contract.binpb
-        digest: sha256:b1ff9b4b5d4521fc6c3f495f4a7cd7dc21004da5e2241128eeccb2cecea33868
+        digest: sha256:38f7f83226f383b4594c1cce7c9f325f2fc4b52dde93cf5d185312b79a33aff4
   - name: cache
     endpoints: [read, write]
   - name: frontend
@@ -39,6 +39,29 @@ services:
     endpoints: [grpc]
   - name: vault
     endpoints: [http]
+fixtures:
+  - name: dev-admin
+    description: Acme tenant seeded with an administrator, members, teams and a shared collection
+    principals:
+      - id: 00000000-0000-7000-8000-0000000000a1
+        email: admin@acme.com
+        role: super_admin
+        token: dev-admin
+      - id: 00000000-0000-7000-8000-0000000000a2
+        email: alice@acme.com
+        role: admin
+        token: dev-alice
+      - id: 00000000-0000-7000-8000-0000000000a3
+        email: bob@acme.com
+        role: member
+        token: dev-bob
+  - name: simple
+    description: Single super administrator with no tenant
+    principals:
+      - id: 00000000-0000-7000-8000-0000000000b1
+        email: admin@example.com
+        role: super_admin
+        token: local-admin
 contracts:
   composition: ">=2.0.0 <3.0.0"
   frontendPlugin: ">=1.0.0 <2.0.0"
@@ -48,7 +71,7 @@ contracts:
 generators:
   - name: composition
     working-directory: tools
-    command: [go, run, ./cmd/module-compose]
+    command: [go, run, ./cmd/module-compose, --events, ../contracts/accounts/installation.events.codefly.yaml, --events, ../contracts/accounts/scope.events.codefly.yaml, --events, ../contracts/reference/events.codefly.yaml, --base-events, ../contracts/accounts/saas.events.codefly.yaml]
   - name: composed-protobuf
     working-directory: services/accounts
     command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/saas/composed/org_settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.yaml]
@@ -71,6 +94,7 @@ migrations:
     breaking: true
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
+  - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
 reserved-namespaces:
   - "@codefly/saas-"
   - saas
@@ -82,12 +106,18 @@ claims:
   - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-manifest", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
-  - {kind: package, key: "@codefly/saas-sdk", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
-  - {kind: package, key: "@codefly/saas-ui", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-sdk", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-ui", owner: base}
   - {kind: package, key: "@codefly-dev/ui", owner: base}
   - {kind: package, key: "@connectrpc/connect", owner: base}
   - {kind: package, key: "@connectrpc/connect-web", owner: base}
+  - {kind: package, key: "@fontsource/figtree", owner: base}
+  - {kind: package, key: "@fontsource/inter", owner: base}
+  - {kind: package, key: "@fontsource/jetbrains-mono", owner: base}
+  - {kind: package, key: "@fontsource/newsreader", owner: base}
+  - {kind: package, key: "@fontsource/roboto", owner: base}
+  - {kind: package, key: "@fontsource/source-serif-4", owner: base}
   - {kind: package, key: "@hookform/resolvers", owner: base}
   - {kind: package, key: "@module-federation/runtime", owner: base}
   - {kind: package, key: "@playwright/test", owner: base}

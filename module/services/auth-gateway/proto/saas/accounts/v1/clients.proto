@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+// ============================================================================
+// Registered first-party clients (handbook track 0016)
+//
+// The host is the only sign-in UI. A client — the host's own web frontend, an
+// add-in, a CLI, a mobile app — never talks to an identity provider itself: the
+// host signs the person in however it is configured and hands the client a
+// token. A registration is what makes a client namable: the access tokens the
+// host mints for it carry its id in `azp`, so a call is attributable to a
+// person *and* to the client they made it through.
+//
+// The record is operator configuration rather than tenant data. First-party
+// clients do not self-register the way solutions do, and this module names no
+// specific one; a deployment supplies the set, and an empty set means no client
+// is registered — which refuses rather than defaults.
+//
+// These messages live in their own file, with no imports, so the auth-gateway
+// can generate the same types from the same source proto and call
+// ClientRegistryService (declared in clients_service.proto) over the internal
+// listener. Sharing the generated definition rather than restating the wire
+// shape is what keeps the two sides from drifting.
+// ============================================================================
+
+// ClientKind is how a client holds its credentials. Public clients — anything
+// running on a device the person controls — can keep no secret, which is why
+// their flow is authorization-code + PKCE and their tokens never ride the
+// host's cookie.
+enum ClientKind {
+  CLIENT_KIND_UNSPECIFIED = 0;
+  CLIENT_KIND_PUBLIC = 1;
+}
+
+// RegisteredClient is one first-party client.
+//
+// redirect_uris and origins are independent lists and neither is derivable from
+// the other: where a client is sent back after sign-in and where it issues its
+// requests from are different facts, and a client may legitimately have one
+// without the other. A client that never runs in a browser registers no origin,
+// and is granted no cross-origin access rather than a default.
+message RegisteredClient {
+  string client_id = 1;
+  string name = 2;
+  ClientKind kind = 3;
+  // Exact URIs a sign-in may return to. A redirect target that is not one of
+  // these is refused before any sign-in UI is shown.
+  repeated string redirect_uris = 4;
+  // Exact browser origins — scheme://host[:port], never a wildcard, a path, or
+  // a trailing slash. accounts canonicalizes and validates them when it loads
+  // the registry, so a consumer compares them to a browser's Origin header by
+  // string equality.
+  repeated string origins = 5;
+}
+
+message ListRegisteredClientsRequest {}
+
+// ListRegisteredClientsResponse carries the whole registry. There is one
+// registry per deployment and it holds a handful of records, so consumers
+// rebuild their view from a full snapshot rather than paging it.
+message ListRegisteredClientsResponse {
+  repeated RegisteredClient clients = 1;
+}

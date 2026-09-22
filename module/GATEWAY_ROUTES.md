@@ -102,3 +102,10 @@ document is filtered and verified against it. See `REST_SURFACE.md`.
 catch-all. The environment topology generator owns the deployed ingress
 VirtualService, so the target-neutral route catalog does not carry a namespace,
 gateway, or destination host.
+
+## Solution stream carrier
+
+The frontend solution proxy preserves bounded GET resume hints and incremental
+SSE responses while retaining its existing gateway identity and origin checks.
+See [Solution event streams through the host](SOLUTION_STREAMING.md) for the
+carrier contract, local HTTP tests and remaining composition qualifications.

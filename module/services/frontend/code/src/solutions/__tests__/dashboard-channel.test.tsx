@@ -63,7 +63,7 @@ function eventTypesHandler() {
 		HttpResponse.json({
 			types: [
 				{
-					name: "auth.login",
+					name: "saas.auth.login",
 					version: 1,
 					category: "authentication",
 					owner: "accounts",

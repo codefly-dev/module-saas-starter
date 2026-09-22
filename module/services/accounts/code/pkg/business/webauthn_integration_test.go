@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (

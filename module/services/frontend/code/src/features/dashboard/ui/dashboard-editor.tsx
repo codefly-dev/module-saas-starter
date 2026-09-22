@@ -139,7 +139,7 @@ export function DashboardEditor({
 	const [errors, setErrors] = useState<FieldError[]>([]);
 	const [pending, setPending] = useState<string | null>(null);
 	const [preview, setPreview] = useState<{
-		total: number;
+		total: number | null;
 		points: number;
 	} | null>(null);
 
@@ -366,7 +366,8 @@ export function DashboardEditor({
 
 					{preview && (
 						<p className="text-sm text-muted-foreground" role="status">
-							Preview: {preview.total} across {preview.points} point
+							Preview: {preview.total ?? "total unavailable"} across{" "}
+							{preview.points} point
 							{preview.points === 1 ? "" : "s"}.
 						</p>
 					)}

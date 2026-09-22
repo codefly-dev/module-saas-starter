@@ -54,6 +54,7 @@ const (
 // the requireRoleScope call sites by TestGlobalScopeEscapeHatchMatchesHandlers.
 var globalScopeEscapeMethods = map[string]struct{}{
 	"/saas.accounts.v1.PermissionService/CreateRole":        {},
+	"/saas.accounts.v1.PermissionService/UpdateRole":        {},
 	"/saas.accounts.v1.PermissionService/AssignRole":        {},
 	"/saas.accounts.v1.PermissionService/RevokeRole":        {},
 	"/saas.accounts.v1.PermissionService/RegisterScopeNode": {},

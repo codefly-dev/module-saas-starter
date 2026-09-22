@@ -11,7 +11,7 @@ import type { DataGraph } from "./data-graph.js";
 /**
  * Schema identity for `plugin.codefly.yaml`. The api group and version pin the
  * manifest shape independently of any plugin's own version. This mirrors the
- * `apiVersion`/`kind` header obin's lodestar uses for `SolutionSpec` so the two
+ * `apiVersion`/`kind` header a consuming platform uses for `SolutionSpec` so the two
  * manifests can be told apart by their headers, never by guessing.
  */
 export const PLUGIN_MANIFEST_API_VERSION = "plugin.codefly.dev/v1" as const;
@@ -20,7 +20,7 @@ export const PLUGIN_MANIFEST_KIND = "Plugin" as const;
 /** Browser and service protocols the platform can route. */
 export type ApiProtocol = "connect" | "rest" | "grpc";
 
-/** Platform capability a plugin backend requires to run (obin's `needs`). */
+/** Platform capability a plugin backend requires to run (a consumer's `needs`). */
 export type CapabilityRequirementOptionality = "required" | "optional";
 
 /** Typed value kinds accepted by a plugin's configuration schema. */
@@ -194,7 +194,7 @@ export interface PluginIntegrity {
  * migrations, egress, lifecycle, and integrity.
  *
  * The shared identity/services/api/events/ui/needs/permissions/lifecycle facts
- * project losslessly onto obin's `SolutionSpec`; the starter-only sections
+ * project losslessly onto a consuming platform's `SolutionSpec`; the starter-only sections
  * carry through a documented namespace. See `toSolutionSpec`.
  */
 export interface PluginManifest {

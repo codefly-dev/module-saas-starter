@@ -16,7 +16,7 @@ import { useOrganizations } from "@/lib/hooks";
 // OrgSelector changes the authenticated tenant for every admin surface. The
 // selected value comes from the signed access token, never page-local state.
 //
-// Built on the shadcn Select primitive (Radix under the hood) instead
+// Built on the kit's Select primitive (Base UI under the hood) instead
 // of a native <select>. Native selects open the OS-level dropdown,
 // which:
 //   - styles inconsistently with the rest of the design system,
@@ -50,28 +50,30 @@ export function OrgSelector() {
 		}
 	}
 
+	const placeholder = isLoading
+		? "Loading orgs…"
+		: isSwitching
+			? "Switching…"
+			: "Select organization…";
+
 	return (
 		<Select
-			items={orgs.map((org) => ({ value: org.id, label: org.name }))}
-			value={organizationId ?? ""}
+			value={organizationId ?? null}
 			onValueChange={handleChange}
 			disabled={isLoading || isSwitching}
 		>
 			<SelectTrigger className="w-[260px]">
 				<Building2 className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-				<SelectValue
-					placeholder={
-						isLoading
-							? "Loading orgs…"
-							: isSwitching
-								? "Switching…"
-								: "Select organization…"
+				<SelectValue placeholder={placeholder}>
+					{/* Resolve the label from the list rather than trusting item
+					    registration: the selected id is known before the items
+					    have mounted, and the primitive would show the raw value —
+					    a UUID where the organization's name belongs. While the
+					    list is still loading the id resolves to nothing, and the
+					    trigger must say so rather than go blank. */}
+					{(value: string | null) =>
+						orgs.find((org) => org.id === value)?.name ?? placeholder
 					}
-				>
-					{organizationId
-						? orgs.find((org) => org.id === organizationId)?.name ||
-							(isLoading ? "Loading organization…" : "Organization unavailable")
-						: undefined}
 				</SelectValue>
 			</SelectTrigger>
 			<SelectContent>

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"time"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -32,13 +34,26 @@ func (s *PostgresStore) CreateTeam(ctx context.Context, team *gen.Team) error {
 	return nil
 }
 
-func (s *PostgresStore) ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error) {
+// ListTeams returns the org's teams, narrowed to the ones memberID belongs to
+// when it is set. The membership test rides in the same statement rather than
+// filtering a fetched page, so a caller who may not see a team never learns of
+// it from a shortened list.
+func (s *PostgresStore) ListTeams(ctx context.Context, orgID string, memberID string) ([]*gen.Team, error) {
 	w := wool.Get(ctx).In("ListTeams")
 	executor := s.getQueryExecutor(ctx)
 
+	var member any
+	if memberID != "" {
+		member = memberID
+	}
 	rows, err := executor.Query(ctx, `
 		SELECT id, org_id, name, description, parent_team_id, slug, path, created_at
-		FROM teams WHERE org_id = $1 ORDER BY path`, orgID,
+		FROM teams t
+		WHERE t.org_id = $1
+		  AND ($2::uuid IS NULL OR EXISTS (
+		        SELECT 1 FROM team_members m
+		        WHERE m.team_id = t.id AND m.user_id = $2::uuid))
+		ORDER BY t.path`, orgID, member,
 	)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list teams")
@@ -84,18 +99,37 @@ func (s *PostgresStore) GetTeamPath(ctx context.Context, teamID string) (string,
 	return orgID, path, nil
 }
 
+// AddTeamMember inserts or re-roles a membership. org_id is taken from the team
+// row rather than from an argument, and the join to organization_members makes
+// the parent membership a precondition of the write itself: an ineligible
+// target writes no row instead of relying on an earlier check in some caller.
+// The composite foreign keys behind it (migration 127) hold the same line for
+// writers that never come through here at all.
 func (s *PostgresStore) AddTeamMember(ctx context.Context, teamID string, userID string, role string) error {
 	w := wool.Get(ctx).In("AddTeamMember")
 	executor := s.getQueryExecutor(ctx)
 
-	_, err := executor.Exec(ctx, `
-		INSERT INTO team_members (team_id, user_id, role)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (team_id, user_id) DO UPDATE SET role = $3`,
+	tag, err := executor.Exec(ctx, `
+		INSERT INTO team_members (team_id, org_id, user_id, role)
+		SELECT t.id, t.org_id, o.user_id, $3::text
+		FROM teams t
+		JOIN organization_members o
+		  ON o.org_id = t.org_id AND o.user_id = $2
+		WHERE t.id = $1
+		ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
 		teamID, userID, role,
 	)
 	if err != nil {
+		// A parent membership retired between this statement's snapshot and its
+		// referential check reports the same ineligibility, not an internal fault.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "team_members_parent_org_membership_fkey" {
+			return business.ErrTeamMemberNotInParentOrganization
+		}
 		return w.Wrapf(err, "failed to add team member")
+	}
+	if tag.RowsAffected() == 0 {
+		return business.ErrTeamMemberNotInParentOrganization
 	}
 	return nil
 }
@@ -112,6 +146,33 @@ func (s *PostgresStore) RemoveTeamMember(ctx context.Context, teamID string, use
 		return w.Wrapf(err, "failed to remove team member")
 	}
 	return nil
+}
+
+// RemoveOrgTeamMemberships deletes every team membership one user holds in one
+// organization as a single statement, on the caller's transaction, and reports
+// how many rows went. The JOIN to teams is what scopes the delete to the
+// organization, and it is also what team_members' RLS policy checks, so the
+// statement is confined to the tenant the surrounding WithOrgTx opened.
+//
+// Row-level rather than statement-level: migration 78's
+// team_members_bump_authorization_revision fires FOR EACH ROW, so every removed
+// membership still bumps the user's authorization revision and invalidates
+// their sessions.
+func (s *PostgresStore) RemoveOrgTeamMemberships(ctx context.Context, orgID string, userID string) (int64, error) {
+	w := wool.Get(ctx).In("RemoveOrgTeamMemberships")
+
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		DELETE FROM team_members tm
+		USING teams t
+		WHERE tm.team_id = t.id
+		  AND t.org_id = $1
+		  AND tm.user_id = $2`,
+		orgID, userID,
+	)
+	if err != nil {
+		return 0, w.Wrapf(err, "failed to remove org team memberships")
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (s *PostgresStore) GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error) {
@@ -266,4 +327,59 @@ func parseTeamRole(role string) gen.TeamRole {
 	default:
 		return gen.TeamRole_TEAM_ROLE_UNSPECIFIED
 	}
+}
+
+// ListVisibleSubjects projects the org's team tree onto one viewer: the OTHER
+// users who belong to a team at or below a team the viewer belongs to. A viewer
+// in no team sees nobody, which is the fail-closed answer.
+//
+// The viewer is excluded: seeing one's own rows is ownership, not a grant from
+// the hierarchy. Including it would also make the set's size depend on whether
+// the viewer happens to be in a team at all, since an unplaced viewer's set is
+// empty either way.
+//
+// Subtree membership is read off the materialized path rather than walked
+// through parent_team_id: teams.path is derived at creation and a team is never
+// re-parented, so a prefix match is the tree. Slugs are [a-z0-9-] by CHECK
+// constraint, so a path can carry no LIKE metacharacter.
+//
+// The caller reads the whole set in one statement and passes limit as its cap
+// plus one, so a set past the cap is detectable rather than silently truncated.
+// No ORDER BY: the result is a set, and leaving it unordered lets the planner
+// satisfy DISTINCT by hash aggregate instead of a sort. RLS on teams and
+// team_members is org-GUC'd, so this runs inside the caller's WithOrgTx.
+func (s *PostgresStore) ListVisibleSubjects(ctx context.Context, orgID, viewerID string, limit int) ([]string, error) {
+	w := wool.Get(ctx).In("ListVisibleSubjects")
+	executor := s.getQueryExecutor(ctx)
+
+	rows, err := executor.Query(ctx, `
+		SELECT DISTINCT visible_member.user_id
+		FROM team_members viewer_member
+		JOIN teams viewer_team ON viewer_team.id = viewer_member.team_id
+		JOIN teams visible_team
+		  ON visible_team.org_id = viewer_team.org_id
+		 AND (visible_team.id = viewer_team.id OR visible_team.path LIKE viewer_team.path || '/%')
+		JOIN team_members visible_member ON visible_member.team_id = visible_team.id
+		WHERE viewer_member.user_id = $1
+		  AND viewer_team.org_id = $2
+		  AND visible_member.user_id <> $1
+		LIMIT $3`, viewerID, orgID, limit,
+	)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list visible subjects")
+	}
+	defer rows.Close()
+
+	var subjects []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, w.Wrapf(err, "failed to scan visible subject")
+		}
+		subjects = append(subjects, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed iterating visible subjects")
+	}
+	return subjects, nil
 }

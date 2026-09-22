@@ -5,6 +5,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { orgMutations } from "@/features/organizations/service/mutations";
 import { useAuth } from "@/lib/auth";
 import { createBrowserOnboardingDraftStore } from "../application/browser-draft-store";
+import { browserStorage } from "../application/browser-storage";
 import {
 	OnboardingController,
 	type OnboardingViewModel,
@@ -39,10 +40,12 @@ export function useOnboardingController(
 					getProgress: onboardingClient.getProgress,
 					skipStep: onboardingClient.skipStep,
 				},
-				draftStore:
-					typeof window === "undefined"
-						? undefined
-						: createBrowserOnboardingDraftStore(window.sessionStorage),
+				draftStore: (() => {
+					const session = browserStorage("session");
+					return session
+						? createBrowserOnboardingDraftStore(session)
+						: undefined;
+				})(),
 				navigate: (href) => router.push(href),
 			}),
 		[organizationId, requiredOnly, router, switchOrganization],

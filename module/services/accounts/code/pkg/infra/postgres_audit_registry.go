@@ -18,16 +18,17 @@ func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business
 	for _, d := range defs {
 		names = append(names, string(d.Type))
 		_, err := q.Exec(ctx, `
-			INSERT INTO audit_event_types (name, version, category, owner, payload_schema, deprecated, updated_at)
-			VALUES ($1, $2, $3, $4, $5, FALSE, NOW())
+			INSERT INTO audit_event_types (name, namespace, version, category, owner, payload_schema, deprecated, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
 			ON CONFLICT (name) DO UPDATE SET
+				namespace = EXCLUDED.namespace,
 				version = EXCLUDED.version,
 				category = EXCLUDED.category,
 				owner = EXCLUDED.owner,
 				payload_schema = EXCLUDED.payload_schema,
 				deprecated = FALSE,
 				updated_at = NOW()`,
-			string(d.Type), d.Version, string(d.Category), d.Owner, d.PayloadSchemaJSON())
+			string(d.Type), d.Namespace, d.Version, string(d.Category), d.Owner, d.PayloadSchemaJSON())
 		if err != nil {
 			return err
 		}
@@ -41,7 +42,7 @@ func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business
 func (s *PostgresStore) ListAuditEventTypes(ctx context.Context) ([]business.AuditEventTypeRow, error) {
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx,
-		`SELECT name, version, category, owner, deprecated FROM audit_event_types ORDER BY name`)
+		`SELECT name, namespace, version, category, owner, deprecated FROM audit_event_types ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,7 @@ func (s *PostgresStore) ListAuditEventTypes(ctx context.Context) ([]business.Aud
 	var out []business.AuditEventTypeRow
 	for rows.Next() {
 		var r business.AuditEventTypeRow
-		if err := rows.Scan(&r.Name, &r.Version, &r.Category, &r.Owner, &r.Deprecated); err != nil {
+		if err := rows.Scan(&r.Name, &r.Namespace, &r.Version, &r.Category, &r.Owner, &r.Deprecated); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

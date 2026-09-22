@@ -93,7 +93,7 @@ describe("public React plugin import map", () => {
 			.map((name) => readFileSync(join(packageDir, "src", name), "utf8"))
 			.join("\n");
 		expect(source).not.toMatch(
-			/(?:from\s+["']@\/|next\/|token-store|Warden|Mind)/,
+			/(?:from\s+["']@\/|next\/|token-store)/,
 		);
 	});
 });

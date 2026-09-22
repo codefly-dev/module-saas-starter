@@ -16,6 +16,18 @@ type moduleCapabilitiesConnectHandler struct {
 	inner *ModuleCapabilitiesServer
 }
 
+func (h *moduleCapabilitiesConnectHandler) MintModuleRegistration(ctx context.Context, req *connect.Request[gen.ModuleMintRegistrationRequest]) (*connect.Response[gen.ModuleMintRegistrationResponse], error) {
+	return unary(ctx, req, h.inner.MintModuleRegistration)
+}
+
+func (h *moduleCapabilitiesConnectHandler) MintModuleWorkContext(ctx context.Context, req *connect.Request[gen.ModuleMintWorkContextRequest]) (*connect.Response[gen.ModuleMintWorkContextResponse], error) {
+	return unary(ctx, req, h.inner.MintModuleWorkContext)
+}
+
+func (h *moduleCapabilitiesConnectHandler) MintSolutionRegistration(ctx context.Context, req *connect.Request[gen.SolutionMintRegistrationRequest]) (*connect.Response[gen.SolutionMintRegistrationResponse], error) {
+	return unary(ctx, req, h.inner.MintSolutionRegistration)
+}
+
 func (h *moduleCapabilitiesConnectHandler) EnqueueJob(ctx context.Context, req *connect.Request[gen.ModuleEnqueueJobRequest]) (*connect.Response[gen.ModuleEnqueueJobResponse], error) {
 	return unary(ctx, req, h.inner.EnqueueJob)
 }
@@ -56,6 +68,34 @@ func (h *moduleCapabilitiesConnectHandler) EmitAuditEvent(ctx context.Context, r
 	return unary(ctx, req, h.inner.EmitAuditEvent)
 }
 
+func (h *moduleCapabilitiesConnectHandler) ListSubjectVisibility(ctx context.Context, req *connect.Request[gen.ModuleListSubjectVisibilityRequest]) (*connect.Response[gen.ModuleListSubjectVisibilityResponse], error) {
+	return unary(ctx, req, h.inner.ListSubjectVisibility)
+}
+
 func (h *moduleCapabilitiesConnectHandler) FetchDatasourceBlob(ctx context.Context, req *connect.Request[gen.FetchDatasourceBlobRequest], stream *connect.ServerStream[gen.FetchDatasourceBlobChunk]) error {
 	return streamDatasourceBlob(ctx, req.Msg, stream)
+}
+
+func (h *moduleCapabilitiesConnectHandler) PlaceRecord(ctx context.Context, req *connect.Request[gen.ModulePlaceRecordRequest]) (*connect.Response[gen.ModulePlaceRecordResponse], error) {
+	return unary(ctx, req, h.inner.PlaceRecord)
+}
+
+func (h *moduleCapabilitiesConnectHandler) PublishEvent(ctx context.Context, req *connect.Request[gen.ModulePublishEventRequest]) (*connect.Response[gen.ModulePublishEventResponse], error) {
+	return unary(ctx, req, h.inner.PublishEvent)
+}
+
+func (h *moduleCapabilitiesConnectHandler) Subscribe(ctx context.Context, req *connect.Request[gen.ModuleSubscribeRequest]) (*connect.Response[gen.ModuleSubscribeResponse], error) {
+	return unary(ctx, req, h.inner.Subscribe)
+}
+
+func (h *moduleCapabilitiesConnectHandler) Unsubscribe(ctx context.Context, req *connect.Request[gen.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.Unsubscribe)
+}
+
+func (h *moduleCapabilitiesConnectHandler) ListSubscriptions(ctx context.Context, req *connect.Request[gen.ModuleListSubscriptionsRequest]) (*connect.Response[gen.ModuleListSubscriptionsResponse], error) {
+	return unary(ctx, req, h.inner.ListSubscriptions)
+}
+
+func (h *moduleCapabilitiesConnectHandler) ReplayEvents(ctx context.Context, req *connect.Request[gen.ModuleReplayEventsRequest]) (*connect.Response[gen.ModuleReplayEventsResponse], error) {
+	return unary(ctx, req, h.inner.ReplayEvents)
 }

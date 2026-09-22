@@ -14,26 +14,54 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 const useAuditLogMock = vi.fn();
+const principalDirectory = new Map<string, string>();
 vi.mock("@/features/audit/service/queries", () => ({
 	useAuditLog: (...args: unknown[]) => useAuditLogMock(...args),
+	usePrincipalDirectory: () => ({
+		directory: principalDirectory,
+		failed: false,
+	}),
 }));
 
-import { ActivityFeed } from "@/components/activity-feed";
+import {
+	ACTION_ICONS,
+	ACTION_PHRASES,
+	ActivityFeed,
+} from "@/components/activity-feed";
 
-function event(createdAt: string | undefined) {
+function event(createdAt: string | undefined, overrides = {}) {
 	return {
 		id: "e1",
-		eventType: "auth.login",
+		eventType: "saas.auth.login",
 		actorId: "user-1",
+		actorType: "user",
 		resource: "session",
 		resourceId: "s1",
 		createdAt,
+		...overrides,
 	};
 }
 
 afterEach(() => {
 	cleanup();
 	useAuditLogMock.mockReset();
+	principalDirectory.clear();
+});
+
+// The icon and phrase maps are keyed on registered audit event types. Before
+// the namespace cutover they carried four names no producer could ever emit
+// (billing.subscription_*, role.granted), so those rows silently fell through to
+// the raw-key fallback. Pin the shape so that class of dead key cannot come back.
+describe("ActivityFeed action maps", () => {
+	it("keys every icon and phrase on a namespaced event type", () => {
+		const namespaced = /^saas\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+		for (const key of [
+			...Object.keys(ACTION_ICONS),
+			...Object.keys(ACTION_PHRASES),
+		]) {
+			expect(key).toMatch(namespaced);
+		}
+	});
 });
 
 describe("ActivityFeed timestamps", () => {
@@ -79,5 +107,65 @@ describe("ActivityFeed timestamps", () => {
 		expect(screen.queryByText("Invalid Date")).toBeNull();
 		// The event line still renders even with no timestamp.
 		expect(screen.getByText("signed in")).toBeTruthy();
+	});
+});
+
+// The feed used to render every actor that was not the signed-in user as the
+// literal "Someone" — an org admin could not tell who acted without querying
+// the database by hand.
+describe("ActivityFeed actors", () => {
+	it("names another member from the principal directory", () => {
+		principalDirectory.set("user-2", "Ada Lovelace");
+		useAuditLogMock.mockReturnValue({
+			data: { events: [event(undefined, { actorId: "user-2" })] },
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("Ada Lovelace")).toBeTruthy();
+		expect(screen.queryByText("Someone")).toBeNull();
+	});
+
+	it("shows an unavailable label instead of an opaque actor id", () => {
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [
+					event(undefined, { actorId: "b7c22d10-0000-4000-8000-000000000003" }),
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("Actor unavailable")).toBeTruthy();
+	});
+
+	it("tags a non-human actor so its action does not read as a person's", () => {
+		principalDirectory.set("agent-1", "reconciler/sync:v2");
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [event(undefined, { actorId: "agent-1", actorType: "agent" })],
+			},
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("reconciler/sync:v2")).toBeTruthy();
+		expect(screen.getByText("agent")).toBeTruthy();
+	});
+
+	it('leaves the signed-in user as "You" without a type tag', () => {
+		useAuditLogMock.mockReturnValue({
+			data: { events: [event(undefined)] },
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("You")).toBeTruthy();
+		expect(screen.queryByText("user")).toBeNull();
 	});
 });

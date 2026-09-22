@@ -4,7 +4,7 @@
 // paints a themed conversation with a composer — it opens no socket, reads no
 // host context, and imports no app code, so the host app and a solution's
 // Module-Federation remote render identical chat from one package instance.
-// Streaming and state are the job of `@codefly/saas-sdk`'s `useChatStream`, which
+// Streaming and state are the job of `@codefly-dev/saas-sdk`'s `useChatStream`, which
 // owns the SSE/WS transport and feeds `messages`/`onSend` in.
 
 import {
@@ -13,7 +13,10 @@ import {
 	type ReactNode,
 	useState,
 } from "react";
-import { Section } from "../layout/card.js";
+import { Avatar as SharedAvatar, AvatarFallback } from "../layout/avatar.js";
+import { Button } from "../layout/button.js";
+import { Textarea } from "../layout/textarea.js";
+import { Section } from "../layout/page.js";
 import { cn } from "./cn.js";
 import type { ChatMessage, ChatRole } from "./types.js";
 
@@ -32,12 +35,12 @@ function initials(label: string): string {
 
 function Avatar({ label }: { label: string }) {
 	return (
-		<div
+		<SharedAvatar
 			aria-hidden="true"
-			className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
+			className="h-8 w-8 shrink-0 select-none type-caption-plain"
 		>
-			{initials(label)}
-		</div>
+			<AvatarFallback>{initials(label)}</AvatarFallback>
+		</SharedAvatar>
 	);
 }
 
@@ -50,12 +53,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 			<div
 				className={cn("flex max-w-[75%] flex-col gap-1", isUser && "items-end")}
 			>
-				<span className="text-xs font-medium text-muted-foreground">
+				<span className="type-chat-author text-muted-foreground">
 					{author}
 				</span>
 				<div
 					className={cn(
-						"whitespace-pre-wrap rounded-lg px-3 py-2 text-sm",
+						"whitespace-pre-wrap rounded-lg px-3 py-2 type-chat-message",
 						isUser
 							? "bg-primary text-primary-foreground"
 							: "bg-muted text-foreground",
@@ -113,22 +116,18 @@ function Composer({
 
 	return (
 		<form onSubmit={onSubmit} className="flex items-end gap-2 border-t p-3">
-			<textarea
+			<Textarea
 				value={value}
 				onChange={(event) => setValue(event.target.value)}
 				onKeyDown={onKeyDown}
 				rows={1}
 				placeholder={placeholder ?? "Send a message…"}
 				aria-label="Message"
-				className="min-h-9 flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+				className="min-h-9 flex-1 resize-none"
 			/>
-			<button
-				type="submit"
-				disabled={busy || value.trim() === ""}
-				className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-			>
+			<Button type="submit" disabled={busy || value.trim() === ""}>
 				Send
-			</button>
+			</Button>
 		</form>
 	);
 }
@@ -152,7 +151,7 @@ export interface ChatProps {
 
 /**
  * Render a conversation with a composer. Pass `messages` (from your own state or
- * from `@codefly/saas-sdk`'s `useChatStream`) and an `onSend` handler. The
+ * from `@codefly-dev/saas-sdk`'s `useChatStream`) and an `onSend` handler. The
  * component is pure presentation — wrap it, restyle it via tokens, or swap the
  * `composer` freely.
  */
@@ -195,7 +194,7 @@ export function Chat({
 			>
 				{messages.length === 0
 					? (emptyState ?? (
-							<div className="m-auto text-sm text-muted-foreground">
+							<div className="m-auto type-body text-muted-foreground">
 								No messages yet.
 							</div>
 						))

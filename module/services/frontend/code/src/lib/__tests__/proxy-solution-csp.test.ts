@@ -1,7 +1,34 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { proxy } from "@/proxy";
+// The proxy resolves the cluster-internal token through the Codefly SDK and
+// presents it on the internal detail lookup. vi.mock is hoisted above module
+// init, so the stub must be created with vi.hoisted.
+const {
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+} = vi.hoisted(() => ({
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
+	getCurrentModule: vi.fn<() => string>(),
+	getCurrentService: vi.fn<() => string>(),
+	getEndpoints: vi.fn<() => unknown[]>(),
+}));
+vi.mock("codefly", () => ({
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+}));
+
+const INTERNAL_TOKEN = "internal-test-token";
+
+// The proxy keeps module-level state — a short-lived cache of the solutions
+// listing and the dedup key for failure logging — so each test imports a fresh
+// module graph rather than inheriting the previous test's cache or log state.
+let proxy: typeof import("@/proxy").proxy;
 
 // Stand-in for next.config's build-time snapshot of the env-derived CSP inputs.
 const SELF_ONLY_SNAPSHOT = JSON.stringify({
@@ -23,8 +50,29 @@ const AUDIT = {
 	backend: { serviceAlias: "audit" },
 };
 
-function authedRequest(url: string): NextRequest {
-	const request = new NextRequest(url);
+// A top-level navigation: the only request kind whose CSP a browser enforces.
+function documentRequest(url: string): NextRequest {
+	return new NextRequest(url, {
+		headers: {
+			"sec-fetch-dest": "document",
+			accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+		},
+	});
+}
+
+function authedDocument(url: string): NextRequest {
+	const request = documentRequest(url);
+	request.cookies.set("codefly_session", "token");
+	return request;
+}
+
+// fetch/XHR from an already-loaded document: a Connect RPC, a REST call, or
+// Next's RSC payload request. It inherits the document's policy and carries
+// none of its own.
+function authedSubresource(url: string): NextRequest {
+	const request = new NextRequest(url, {
+		headers: { "sec-fetch-dest": "empty", accept: "*/*" },
+	});
 	request.cookies.set("codefly_session", "token");
 	return request;
 }
@@ -38,44 +86,89 @@ function directive(csp: string, name: string): string {
 	);
 }
 
+function cspOf(response: Response): string {
+	return response.headers.get("content-security-policy") ?? "";
+}
+
 // The registry lives in the route-handler context the proxy cannot share, so
-// the proxy reads registered remotes over the local solutions listing. Stub
-// that boundary and assert the proxy queries loopback at the server's own PORT
-// — never a host or port taken from the (client-controlled) request.
+// the proxy reads registered remotes over the local internal detail lookup.
+// Stub that boundary and assert the proxy queries loopback at the server's own
+// PORT — never a host or port taken from the (client-controlled) request — and
+// authenticates with the cluster-internal token the lookup requires.
 function stubListing(
 	solutions: unknown[],
 	expectedPort = "4711",
 ): ReturnType<typeof vi.fn> {
-	const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
-		expect(input.toString()).toBe(
-			`http://127.0.0.1:${expectedPort}/api/solutions/register`,
-		);
-		return { ok: true, json: async () => ({ solutions }) } as Response;
-	});
+	return stubListingBody({ solutions }, expectedPort);
+}
+
+function stubListingBody(
+	body: unknown,
+	expectedPort = "4711",
+): ReturnType<typeof vi.fn> {
+	const fetchMock = vi.fn(
+		async (input: URL | RequestInfo, init?: RequestInit) => {
+			expect(input.toString()).toBe(
+				`http://127.0.0.1:${expectedPort}/api/internal/solutions`,
+			);
+			expect(new Headers(init?.headers).get("x-codefly-internal-token")).toBe(
+				INTERNAL_TOKEN,
+			);
+			return { ok: true, json: async () => body } as Response;
+		},
+	);
 	vi.stubGlobal("fetch", fetchMock);
 	return fetchMock;
 }
 
-describe("proxy solution-page CSP", () => {
-	beforeEach(() => {
+describe("proxy solution CSP", () => {
+	// The listing result is cached for a few seconds, so tests that need a
+	// second lookup move the clock rather than waiting. Spying on Date.now
+	// leaves timers and microtask ordering alone.
+	let now = 1_700_000_000_000;
+	function advanceClock(ms: number): void {
+		now += ms;
+	}
+
+	beforeEach(async () => {
+		now = 1_700_000_000_000;
+		getWorkspaceSecret.mockReturnValue(INTERNAL_TOKEN);
+		// Isolated-component default: no Codefly runtime identity to discover.
+		getCurrentModule.mockReturnValue("");
+		getCurrentService.mockReturnValue("");
+		getEndpoints.mockReturnValue([]);
+		vi.spyOn(Date, "now").mockImplementation(() => now);
 		vi.stubEnv("SOLUTION_CSP_INPUTS", SELF_ONLY_SNAPSHOT);
 		// A distinctive non-default port proves the listing target is read from
 		// the server's PORT, not hardcoded and not taken from the request.
 		vi.stubEnv("PORT", "4711");
+		// The product API cases below (/v1/*, /saas.accounts.v1.*) are forwarded
+		// to auth-gateway/rest by the proxy, which resolves it per request. A
+		// running server always has one — instrumentation.ts refuses to start
+		// otherwise — so name it here; without it those requests take the
+		// fail-closed 503 path, which carries no CSP to assert on.
+		vi.stubEnv("PRODUCT_GATEWAY_INTERNAL", "http://auth-gateway.internal");
 		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.spyOn(console, "info").mockImplementation(() => {});
+		vi.resetModules();
+		({ proxy } = await import("@/proxy"));
 	});
 
 	afterEach(() => {
 		vi.unstubAllEnvs();
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
+		getWorkspaceSecret.mockReset();
+		getCurrentModule.mockReset();
+		getCurrentService.mockReset();
+		getEndpoints.mockReset();
 	});
 
 	it("allows a registered cross-origin remote without a build-time env", async () => {
 		stubListing([AUDIT]);
 
-		const response = await proxy(authedRequest("https://app.example/s/audit"));
-		const csp = response.headers.get("content-security-policy") ?? "";
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		const csp = cspOf(response);
 		const scriptSrc = directive(csp, "script-src");
 		// Nonce-based, no unsafe-inline; strict-dynamic + the remote origin.
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
@@ -84,6 +177,14 @@ describe("proxy solution-page CSP", () => {
 		expect(scriptSrc).toContain("http://localhost:8091");
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' http://localhost:8091",
+		);
+		// The remote's CSS chunk loads as a cross-origin <link>, which
+		// 'unsafe-inline' never admits and 'strict-dynamic' has no equivalent of
+		// (it is script-only). Without the origin here the chunk is refused and
+		// the whole remote fails to mount, so the served header — not just the
+		// pure assembly function — has to carry it (#778).
+		expect(directive(csp, "style-src")).toBe(
+			"style-src 'self' 'unsafe-inline' http://localhost:8091",
 		);
 	});
 
@@ -96,16 +197,13 @@ describe("proxy solution-page CSP", () => {
 		const fetchMock = stubListing([AUDIT]);
 
 		const response = await proxy(
-			authedRequest("https://169.254.169.254:1337/s/audit"),
+			authedDocument("https://169.254.169.254:1337/s/audit"),
 		);
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(
-			directive(
-				response.headers.get("content-security-policy") ?? "",
-				"connect-src",
-			),
-		).toBe("connect-src 'self' http://localhost:8091");
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
 	});
 
 	it("defaults the listing port to 3000 when PORT is unset", async () => {
@@ -114,42 +212,39 @@ describe("proxy solution-page CSP", () => {
 		vi.stubEnv("PORT", "");
 		stubListing([AUDIT], "3000");
 
-		const response = await proxy(authedRequest("https://app.example/s/audit"));
-		expect(
-			directive(
-				response.headers.get("content-security-policy") ?? "",
-				"connect-src",
-			),
-		).toBe("connect-src 'self' http://localhost:8091");
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
 	});
 
-	it("locks the CSP to self for an unregistered solution id", async () => {
+	it("admits only registered origins — an unknown solution id adds nothing", async () => {
+		// The requested id does not select the origin: every document carries the
+		// full registered set. What must hold is that nothing beyond the
+		// registered origins is ever admitted, whatever id the path names.
 		stubListing([AUDIT]);
 
 		const response = await proxy(
-			authedRequest("https://app.example/s/unknown"),
+			authedDocument("https://app.example/s/unknown"),
 		);
-		const csp = response.headers.get("content-security-policy") ?? "";
-		const scriptSrc = directive(csp, "script-src");
-		expect(scriptSrc).not.toContain("'unsafe-inline'");
-		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
-		expect(scriptSrc).toContain("'strict-dynamic'");
-		expect(scriptSrc).not.toContain("localhost");
-		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
+		const csp = cspOf(response);
+		expect(directive(csp, "script-src")).toMatch(/'nonce-[^']+'/);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
 	});
 
-	it("does not query the listing or throw on a malformed id segment", async () => {
-		const fetchMock = stubListing([AUDIT]);
+	it("does not throw on a malformed path segment", async () => {
+		// The path is not parsed for an id, so a segment that is not valid
+		// percent-encoding must neither throw nor narrow the policy.
+		stubListing([AUDIT]);
 
-		const response = await proxy(authedRequest("https://app.example/s/%ZZ"));
-		const csp = response.headers.get("content-security-policy") ?? "";
-		const scriptSrc = directive(csp, "script-src");
-		expect(scriptSrc).not.toContain("'unsafe-inline'");
-		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
-		expect(scriptSrc).toContain("'strict-dynamic'");
-		expect(scriptSrc).not.toContain("localhost");
-		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
-		expect(fetchMock).not.toHaveBeenCalled();
+		const response = await proxy(authedDocument("https://app.example/s/%ZZ"));
+		const csp = cspOf(response);
+		expect(directive(csp, "script-src")).toMatch(/'nonce-[^']+'/);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
 	});
 
 	it("logs and stays self-only when the listing is unreachable", async () => {
@@ -160,12 +255,89 @@ describe("proxy solution-page CSP", () => {
 			}),
 		);
 
-		const response = await proxy(authedRequest("https://app.example/s/audit"));
-		const csp = response.headers.get("content-security-policy") ?? "";
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		const csp = cspOf(response);
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
 		expect(directive(csp, "script-src")).not.toContain("localhost");
 		// The failure is surfaced, not swallowed — a silent fallback is
 		// indistinguishable from the bug this fix addresses.
+		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("admits a registered origin when the public origin cannot be resolved", async () => {
+		// The internal secret is the only thing this lookup needs. Reading it off
+		// the gateway context also made it depend on PUBLIC ORIGIN resolution,
+		// which fails on a malformed `x-forwarded-host` — silently narrowing the
+		// policy to self-only and reporting a missing secret that was present.
+		getCurrentModule.mockReturnValue("saas-starter");
+		getCurrentService.mockReturnValue("frontend");
+		// The render bakes the own HTTP endpoint as a loopback placeholder, so
+		// the public origin comes from the request's forwarded host.
+		getEndpoints.mockReturnValue([
+			{
+				module: "saas-starter",
+				service: "frontend",
+				name: "http",
+				protocol: "HTTP",
+				address: "http://localhost:8080",
+			},
+		]);
+		const fetchMock = stubListing([AUDIT]);
+
+		const request = new NextRequest("http://10.0.0.5/s/audit", {
+			headers: {
+				"sec-fetch-dest": "document",
+				accept: "text/html",
+				"x-forwarded-proto": "https",
+				"x-forwarded-host": "app example",
+			},
+		});
+		request.cookies.set("codefly_session", "token");
+
+		const response = await proxy(request);
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			`connect-src 'self' ${new URL(AUDIT_MANIFEST).origin}`,
+		);
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(console.error).not.toHaveBeenCalled();
+	});
+
+	it("stays self-only and reports when no internal token is configured", async () => {
+		// Without the secret the detail lookup would 401 — and registration
+		// itself fails closed, so there is no registered remote to admit. The
+		// self-only policy is correct, but the missing secret is still reported
+		// rather than hidden behind a policy that merely looks conservative.
+		getWorkspaceSecret.mockReturnValue(undefined);
+		const fetchMock = stubListing([AUDIT]);
+
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("logs and stays self-only when the lookup rejects the token", async () => {
+		// A rotated or mismatched internal token reads as a 401 here. It must
+		// narrow the policy, never widen it from a body the lookup did not
+		// authorize.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					({
+						ok: false,
+						status: 401,
+						json: async () => ({ error: "unauthorized" }),
+					}) as Response,
+			),
+		);
+
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
 		expect(console.error).toHaveBeenCalledOnce();
 	});
 
@@ -178,20 +350,17 @@ describe("proxy solution-page CSP", () => {
 			),
 		);
 
-		const response = await proxy(authedRequest("https://app.example/s/audit"));
-		expect(
-			directive(
-				response.headers.get("content-security-policy") ?? "",
-				"connect-src",
-			),
-		).toBe("connect-src 'self'");
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
 		expect(console.error).toHaveBeenCalledOnce();
 	});
 
 	it("keeps build-time analytics/allowlist hosts from the snapshot, not runtime env", async () => {
 		// The snapshot carries the analytics host and a build-time allowlist entry;
 		// no NEXT_PUBLIC_* is present in process.env. If the proxy re-read env
-		// instead of the snapshot, these would silently drop on solution pages.
+		// instead of the snapshot, these would silently drop.
 		vi.stubEnv(
 			"SOLUTION_CSP_INPUTS",
 			JSON.stringify({
@@ -202,10 +371,9 @@ describe("proxy solution-page CSP", () => {
 		);
 		stubListing([AUDIT]);
 
-		const csp =
-			(await proxy(authedRequest("https://app.example/s/audit"))).headers.get(
-				"content-security-policy",
-			) ?? "";
+		const csp = cspOf(
+			await proxy(authedDocument("https://app.example/s/audit")),
+		);
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' https://trusted.example http://localhost:8091 https://eu.i.posthog.com",
 		);
@@ -213,37 +381,347 @@ describe("proxy solution-page CSP", () => {
 
 	it("fails loudly when the build-time snapshot is missing", async () => {
 		vi.stubEnv("SOLUTION_CSP_INPUTS", "");
-		stubListing([AUDIT]);
-
-		await expect(
-			proxy(authedRequest("https://app.example/s/audit")),
-		).rejects.toThrow(/SOLUTION_CSP_INPUTS/);
-	});
-
-	it("sets a per-request nonce'd self CSP on non-solution pages", async () => {
 		const fetchMock = stubListing([AUDIT]);
 
-		// The proxy now owns the CSP on every route (next.config emits only the
-		// constant hardening headers), so a non-solution page gets a nonce'd
-		// self policy — not the old null (which relied on next.config's static CSP).
-		const response = await proxy(authedRequest("https://app.example/settings"));
-		const csp = response.headers.get("content-security-policy") ?? "";
-		const scriptSrc = directive(csp, "script-src");
-		expect(scriptSrc).not.toContain("'unsafe-inline'");
-		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
-		expect(scriptSrc).toContain("'strict-dynamic'");
-		// A non-solution page never queries the listing.
+		await expect(
+			proxy(authedDocument("https://app.example/s/audit")),
+		).rejects.toThrow(/SOLUTION_CSP_INPUTS/);
+		// The snapshot is read before any network work, so a broken build never
+		// spends a loopback round trip to discover it is broken.
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("admits every registered origin on non-solution pages too (#545)", async () => {
+		// A CSP is document-scoped. The sidebar reaches /s/:id through client-side
+		// navigation, which keeps the policy of the document the user started in
+		// — the dashboard — so that document must already permit the remote, or
+		// the manifest fetch is blocked (Module Federation RUNTIME-003) until a
+		// hard reload. Widening only /s/:id was exactly that bug.
+		stubListing([AUDIT]);
+
+		for (const page of [
+			"https://app.example/",
+			"https://app.example/settings",
+		]) {
+			const csp = cspOf(await proxy(authedDocument(page)));
+			const scriptSrc = directive(csp, "script-src");
+			// The proxy owns the CSP on every route (next.config emits only the
+			// constant hardening headers): nonce'd, no unsafe-inline, plus the
+			// registered remote so the runtime-loaded remoteEntry is allowed.
+			expect(scriptSrc).not.toContain("'unsafe-inline'");
+			expect(scriptSrc).toMatch(/'nonce-[^']+'/);
+			expect(scriptSrc).toContain("'strict-dynamic'");
+			expect(scriptSrc).toContain("http://localhost:8091");
+			expect(directive(csp, "connect-src")).toBe(
+				"connect-src 'self' http://localhost:8091",
+			);
+		}
+	});
+
+	it("admits every registered solution, deduplicated by origin", async () => {
+		const guides = {
+			...AUDIT,
+			id: "guides",
+			nav: { title: "Guides", path: "/s/guides" },
+			frontend: {
+				...AUDIT.frontend,
+				manifestUrl: "http://localhost:34041/assets/mf-manifest.json",
+			},
+		};
+		// Same origin as AUDIT under a different path: one source expression.
+		const auditTwin = {
+			...AUDIT,
+			id: "audit-twin",
+			frontend: {
+				...AUDIT.frontend,
+				manifestUrl: "http://localhost:8091/twin/mf-manifest.json",
+			},
+		};
+		stubListing([AUDIT, guides, auditTwin]);
+
+		const response = await proxy(authedDocument("https://app.example/"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091 http://localhost:34041",
+		);
 	});
 
 	it("does not emit a CSP when redirecting an unauthenticated visitor", async () => {
 		stubListing([AUDIT]);
 
 		const response = await proxy(
-			new NextRequest("https://app.example/s/audit"),
+			documentRequest("https://app.example/s/audit"),
 		);
 		expect(response.status).toBe(307);
 		expect(response.headers.get("location")).toContain("/auth/login");
 		expect(response.headers.get("content-security-policy")).toBeNull();
+	});
+
+	// ── The CSP follows the document, not the session cookie ────────────────
+	//
+	// AuthProvider writes `codefly_session` from the browser AFTER the login
+	// response lands (src/lib/auth.tsx), so the login DOCUMENT is always served
+	// without it. Fixture login and header-injected login then enter the app
+	// with router.push (src/features/auth/ui/login-page.tsx) — a soft
+	// navigation that keeps the cookieless document's policy for the rest of the
+	// session. Gating the widening on the cookie left exactly those two flows
+	// unable to load a remote until a hard reload: the #545 bug, one document
+	// further along.
+	it("widens a cookieless login document, which the login flow soft-navigates from", async () => {
+		stubListing([AUDIT]);
+
+		const csp = cspOf(
+			await proxy(documentRequest("https://app.example/auth/login")),
+		);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
+	});
+
+	// ── Only documents pay for the lookup ───────────────────────────────────
+
+	it("does not query the listing for a backend API call", async () => {
+		// /v1/* and /saas.accounts.v1.* carry the session cookie and are matched
+		// by this proxy, so keying on the cookie put a second loopback request
+		// through this same server on the backend-API hot path.
+		const fetchMock = stubListing([AUDIT]);
+
+		for (const url of [
+			"https://app.example/v1/users",
+			"https://app.example/saas.accounts.v1.UserService/ListUsers",
+			"https://app.example/api/solutions/audit/proxy/data",
+		]) {
+			const csp = cspOf(await proxy(authedSubresource(url)));
+			expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
+		}
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("does not query the listing for an RSC payload fetch", async () => {
+		// Client-side navigation fetches the RSC payload for the new route. It
+		// runs under the originating document's policy and carries none itself.
+		const fetchMock = stubListing([AUDIT]);
+
+		await proxy(authedSubresource("https://app.example/settings?_rsc=1a2b3"));
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("falls back to Accept when the client sends no Sec-Fetch-Dest", async () => {
+		const fetchMock = stubListing([AUDIT]);
+
+		const navigation = new NextRequest("https://app.example/settings", {
+			headers: { accept: "text/html,application/xhtml+xml" },
+		});
+		navigation.cookies.set("codefly_session", "token");
+		expect(directive(cspOf(await proxy(navigation)), "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		const xhr = new NextRequest("https://app.example/v1/users", {
+			headers: { accept: "application/json" },
+		});
+		xhr.cookies.set("codefly_session", "token");
+		expect(directive(cspOf(await proxy(xhr)), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("never re-enters the lookup for the lookup path itself", async () => {
+		// The lookup is served by this same server, so its fetch runs back
+		// through this proxy. Nothing may make that request query the lookup
+		// again, at any depth.
+		const fetchMock = stubListing([AUDIT]);
+
+		await proxy(authedDocument("https://app.example/api/internal/solutions"));
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// ── The lookup is shared, not repeated per request ──────────────────────
+
+	it("fetches the listing once for a burst of documents", async () => {
+		const fetchMock = stubListing([AUDIT]);
+
+		// Concurrent documents coalesce onto one in-flight lookup...
+		const burst = await Promise.all([
+			proxy(authedDocument("https://app.example/")),
+			proxy(authedDocument("https://app.example/settings")),
+			proxy(authedDocument("https://app.example/s/audit")),
+		]);
+		// ...and later documents reuse the cached result.
+		burst.push(await proxy(authedDocument("https://app.example/reports")));
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		for (const response of burst) {
+			expect(directive(cspOf(response), "connect-src")).toBe(
+				"connect-src 'self' http://localhost:8091",
+			);
+		}
+	});
+
+	it("picks up a newly registered solution once the cached listing expires", async () => {
+		const fetchMock = stubListing([AUDIT]);
+		await proxy(authedDocument("https://app.example/"));
+
+		const guides = {
+			...AUDIT,
+			id: "guides",
+			frontend: {
+				...AUDIT.frontend,
+				manifestUrl: "http://localhost:34041/assets/mf-manifest.json",
+			},
+		};
+		stubListing([AUDIT, guides]);
+		advanceClock(6_000);
+
+		const csp = cspOf(await proxy(authedDocument("https://app.example/")));
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091 http://localhost:34041",
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	// ── A sticky failure is reported once, not once per document ────────────
+
+	it("reports a sustained listing outage once, and again after it recovers", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("connection refused");
+			}),
+		);
+
+		// A wrong PORT or an unreachable listing fails on every request for as
+		// long as it lasts. One line per document would bury the log.
+		for (let attempt = 0; attempt < 5; attempt++) {
+			await proxy(authedDocument("https://app.example/"));
+			advanceClock(6_000);
+		}
+		expect(console.error).toHaveBeenCalledOnce();
+
+		// Recovery is worth a line, and re-arms the report for the next outage.
+		stubListing([AUDIT]);
+		await proxy(authedDocument("https://app.example/"));
+		advanceClock(6_000);
+		expect(console.info).toHaveBeenCalledOnce();
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("connection refused");
+			}),
+		);
+		await proxy(authedDocument("https://app.example/"));
+		expect(console.error).toHaveBeenCalledTimes(2);
+	});
+
+	// ── A bad listing payload degrades, it does not 500 every document ──────
+
+	it("stays self-only when the listing body carries no solutions array", async () => {
+		// The listing crosses a process boundary. Anything else bound on
+		// 127.0.0.1:$PORT can answer, and an unguarded iteration here would throw
+		// out of the proxy — a 500 on every document, not one solution page.
+		stubListingBody({ solutions: 5 });
+
+		const response = await proxy(authedDocument("https://app.example/"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
+		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("stays self-only when the listing body is not an object at all", async () => {
+		stubListingBody("not json");
+
+		const response = await proxy(authedDocument("https://app.example/"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
+	});
+
+	it("skips an entry with an unusable manifestUrl and admits the rest", async () => {
+		stubListing([
+			{
+				...AUDIT,
+				id: "broken",
+				frontend: { ...AUDIT.frontend, manifestUrl: "" },
+			},
+			{
+				...AUDIT,
+				id: "relative",
+				frontend: { ...AUDIT.frontend, manifestUrl: "/assets/mf.json" },
+			},
+			{
+				...AUDIT,
+				id: "numeric",
+				frontend: { ...AUDIT.frontend, manifestUrl: 42 },
+			},
+			{ ...AUDIT, id: "no-frontend", frontend: undefined },
+			null,
+			AUDIT,
+		]);
+
+		const response = await proxy(authedDocument("https://app.example/"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
+	});
+
+	// ── The policy cannot silently outgrow the response header buffer ───────
+
+	it("warns when the assembled policy outgrows a reverse-proxy header buffer", async () => {
+		// The policy must not be truncated — dropping origins would silently
+		// break the solutions they belong to — so an operator has to hear about
+		// it while the site is still serving, not as an opaque 502.
+		stubListing(
+			Array.from({ length: 250 }, (_, index) => ({
+				...AUDIT,
+				id: `solution-${index}`,
+				frontend: {
+					...AUDIT.frontend,
+					manifestUrl: `https://solution-${index}.solutions.example.com/assets/mf-manifest.json`,
+				},
+			})),
+		);
+
+		const response = await proxy(authedDocument("https://app.example/"));
+		// Still complete: the warning is an alarm, not a truncation.
+		expect(directive(cspOf(response), "connect-src")).toContain(
+			"https://solution-249.solutions.example.com",
+		);
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/policy is \d+ bytes/),
+		);
+	});
+
+	it("warns below 8k, at the LOWEST reverse-proxy buffer default", async () => {
+		// The case above uses 250 origins, so it fires at any threshold under
+		// ~32k and says nothing about where the threshold actually sits. This one
+		// pins it: nginx's proxy_buffer_size defaults to 4k OR 8k depending on
+		// platform, so a policy in the 4k–8k band already 502s every document on
+		// a 4k-configured proxy. A threshold of 8k would stay silent through
+		// exactly that outage — the warning could only fire after the failure it
+		// exists to pre-empt. This fails if the threshold is raised back to 8k.
+		stubListing(
+			Array.from({ length: 40 }, (_, index) => ({
+				...AUDIT,
+				id: `solution-${index}`,
+				frontend: {
+					...AUDIT.frontend,
+					manifestUrl: `https://solution-${index}.solutions.example.com/assets/mf-manifest.json`,
+				},
+			})),
+		);
+
+		const response = await proxy(authedDocument("https://app.example/"));
+
+		// Non-vacuity guard: the policy must genuinely land in the 4k–8k band,
+		// or this test proves nothing about the threshold.
+		const bytes = cspOf(response).length;
+		expect(bytes).toBeGreaterThan(4 * 1024);
+		expect(bytes).toBeLessThan(8 * 1024);
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/policy is \d+ bytes, over the 4096-byte threshold/),
+		);
 	});
 });

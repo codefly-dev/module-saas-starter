@@ -2,13 +2,18 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -29,13 +34,115 @@ var moduleCapabilitiesSingleton = &ModuleCapabilitiesServer{}
 // ModuleCapabilitiesSingleton returns the shared server instance.
 func ModuleCapabilitiesSingleton() *ModuleCapabilitiesServer { return moduleCapabilitiesSingleton }
 
-// moduleCaller resolves the authenticated module service principal.
+// moduleCaller resolves the authenticated module service principal from the Work
+// Context the caller forwards. The identity is taken from the signed capability
+// rather than from request metadata, so a caller that reaches this listener
+// cannot name a principal it was never issued.
 func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
-	id, err := callerID(ctx)
-	if err != nil {
-		return business.ModuleCaller{}, err
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
-	return business.ModuleCaller{PrincipalID: id, BoundOrg: callerOrg(ctx)}, nil
+	values := md.Get(codefly.WorkContextHeaderName)
+	if len(values) == 0 || values[0] == "" {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
+	}
+	return WorkContextSingleton().VerifyModuleWorkContext(values[0])
+}
+
+// MintModuleWorkContext issues that Work Context. Like MintModuleRegistration it
+// takes none itself — this is where a module obtains its identity, so it
+// authenticates with the identity secret its composition provisioned and the
+// principal it acts as is derived from the prefix that secret is bound to.
+func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	authority, err := service.ModuleAuthorizeWorkContext(req.GetPrefix(), req.GetSecret())
+	if err != nil {
+		if errors.Is(err, business.ErrModuleRegistrationDenied) {
+			return nil, status.Error(codes.PermissionDenied, "module work context denied")
+		}
+		return nil, err
+	}
+	// The declared tenant is checked against the database before anything is
+	// signed. Everything upstream validates its *form* only, and the capability
+	// seals the tenant, so an id that names no organization would mint cleanly
+	// and then bind every call to a tenant that is not there — silently, since
+	// the audit and event tables carry no foreign key to organizations. Fail
+	// closed here instead: a module cannot act on a tenant that does not exist.
+	if err := service.VerifyModuleTenant(ctx, authority); err != nil {
+		if errors.Is(err, business.ErrModuleTenantUnknown) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, err
+	}
+	// The signer lives on the Work Context authority, which owns this cluster's
+	// signing key; this RPC lives here so the gateway can broker it from the same
+	// minimal-import proto as the registration exchange.
+	token, signed, err := WorkContextSingleton().StartModuleTask(authority)
+	if err != nil {
+		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, mapWorkContextError(err)
+	}
+	// The record is written only once the capability exists, and the capability is
+	// withheld when the record cannot be committed.
+	if err := service.RecordModuleWorkContextMint(ctx, req.GetPrefix(), authority); err != nil {
+		return nil, err
+	}
+	return &gen.ModuleMintWorkContextResponse{
+		Token:       token.Encoded(),
+		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
+		PrincipalId: authority.PrincipalID,
+		Tenant:      authority.Tenant,
+	}, nil
+}
+
+// MintModuleRegistration issues the credential a composed module presents to the
+// gateway to federate its REST prefix. Unlike every other method here it takes
+// no Work Context: a module registers at startup, before any user request
+// exists, so the caller is authorized by its own registration secret rather than
+// by a forwarded principal. The internal-credential gate on this listener still
+// applies.
+func (s *ModuleCapabilitiesServer) MintModuleRegistration(ctx context.Context, req *gen.ModuleMintRegistrationRequest) (*gen.ModuleMintRegistrationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	token, expiresAt, err := service.ModuleMintRegistration(ctx, req.GetPrefix(), req.GetSecret())
+	if err != nil {
+		if errors.Is(err, business.ErrModuleRegistrationDenied) {
+			return nil, status.Error(codes.PermissionDenied, "module registration denied")
+		}
+		return nil, err
+	}
+	return &gen.ModuleMintRegistrationResponse{
+		Token:     token,
+		ExpiresAt: timestamppb.New(expiresAt),
+	}, nil
+}
+
+// MintSolutionRegistration issues the credential a solution presents to the
+// gateway and to the frontend to register, update, or delete its upstream and
+// its Module-Federation remote. Like MintModuleRegistration it takes no Work
+// Context and authorizes on the solution's own registration secret, declared
+// separately from the module secrets.
+func (s *ModuleCapabilitiesServer) MintSolutionRegistration(ctx context.Context, req *gen.SolutionMintRegistrationRequest) (*gen.SolutionMintRegistrationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	token, expiresAt, err := service.SolutionMintRegistration(ctx, req.GetSolutionId(), req.GetSecret())
+	if err != nil {
+		if errors.Is(err, business.ErrSolutionRegistrationDenied) {
+			return nil, status.Error(codes.PermissionDenied, "solution registration denied")
+		}
+		return nil, err
+	}
+	return &gen.SolutionMintRegistrationResponse{
+		Token:     token,
+		ExpiresAt: timestamppb.New(expiresAt),
+	}, nil
 }
 
 func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.ModuleEnqueueJobRequest) (*gen.ModuleEnqueueJobResponse, error) {
@@ -96,7 +203,7 @@ func (s *ModuleCapabilitiesServer) AckJob(ctx context.Context, req *gen.ModuleAc
 	if err != nil {
 		return nil, err
 	}
-	if err := service.ModuleAckJob(ctx, caller, &jobsv1.CompleteJobRequest{Lease: req.GetLease()}); err != nil {
+	if err := service.ModuleAckJob(ctx, caller, req.GetLease(), req.GetExecutionKind(), req.GetExecutionId()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -208,10 +315,33 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 		return nil, err
 	}
 	if err := service.ModuleEmitAuditEvent(ctx, caller,
-		req.GetTenant(), req.GetEventType(), req.GetActor(), req.GetSolution(), req.GetEntryId(), req.GetFields()); err != nil {
+		req.GetTenant(), req.GetEventType(), req.GetActor(), req.GetSolution(), req.GetEntryId(), req.GetIdempotencyKey(), req.GetFields()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
+}
+
+func (s *ModuleCapabilitiesServer) ListSubjectVisibility(ctx context.Context, req *gen.ModuleListSubjectVisibilityRequest) (*gen.ModuleListSubjectVisibilityResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	grants, err := service.ModuleListSubjectVisibility(ctx, caller, req.GetTenant(), req.GetViewerSubjectId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*gen.SubjectVisibilityGrant, 0, len(grants))
+	for _, grant := range grants {
+		entry := &gen.SubjectVisibilityGrant{VisibleSubjectId: grant.VisibleSubjectID}
+		if !grant.ExpiresAt.IsZero() {
+			entry.ExpiresAt = timestamppb.New(grant.ExpiresAt)
+		}
+		out = append(out, entry)
+	}
+	return &gen.ModuleListSubjectVisibilityResponse{Grants: out}, nil
 }
 
 // FetchDatasourceBlob streams one datasource blob to the module. The blob is
@@ -277,9 +407,146 @@ func writeDatasourceBlobFrames(content []byte, contentType string, stream dataso
 	}
 }
 
+func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.ModulePlaceRecordRequest) (*gen.ModulePlaceRecordResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nodeID, err := service.ModulePlaceRecord(ctx, caller, req.GetTenant(), req.GetScopePath(), req.GetKind(), req.GetLabel(), req.GetResourceType(), req.GetResourceId())
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModulePlaceRecordResponse{NodeId: nodeID}, nil
+}
+
+func (s *ModuleCapabilitiesServer) PublishEvent(ctx context.Context, req *gen.ModulePublishEventRequest) (*gen.ModulePublishEventResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eventID, err := service.ModulePublishEvent(ctx, caller, req.GetTenant(), req.GetEnvelope())
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModulePublishEventResponse{EventId: eventID}, nil
+}
+
+func (s *ModuleCapabilitiesServer) Subscribe(ctx context.Context, req *gen.ModuleSubscribeRequest) (*gen.ModuleSubscribeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := service.ModuleSubscribe(ctx, caller, req.GetTypePattern(), req.GetQueue(), deliveryToString(req.GetDelivery()))
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModuleSubscribeResponse{Subscription: moduleSubscriptionProto(sub)}, nil
+}
+
+func (s *ModuleCapabilitiesServer) Unsubscribe(ctx context.Context, req *gen.ModuleUnsubscribeRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := service.ModuleUnsubscribe(ctx, caller, req.GetSubscriptionId()); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *ModuleCapabilitiesServer) ListSubscriptions(ctx context.Context, req *gen.ModuleListSubscriptionsRequest) (*gen.ModuleListSubscriptionsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subs, err := service.ModuleListSubscriptions(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*gen.ModuleSubscription, 0, len(subs))
+	for _, sub := range subs {
+		out = append(out, moduleSubscriptionProto(sub))
+	}
+	return &gen.ModuleListSubscriptionsResponse{Subscriptions: out}, nil
+}
+
+func (s *ModuleCapabilitiesServer) ReplayEvents(ctx context.Context, req *gen.ModuleReplayEventsRequest) (*gen.ModuleReplayEventsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var since time.Time
+	if req.GetSince() != nil {
+		since = req.GetSince().AsTime()
+	}
+	redelivered, err := service.ModuleReplayEvents(ctx, caller, req.GetTenant(), req.GetType(), since)
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModuleReplayEventsResponse{Redelivered: int32(redelivered)}, nil
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// deliveryToString narrows the wire enum to the business/DB spelling; an
+// unspecified delivery is left empty so the Store applies its 'unordered'
+// default.
+func deliveryToString(d gen.EventDelivery) string {
+	switch d {
+	case gen.EventDelivery_EVENT_DELIVERY_ORDERED:
+		return "ordered"
+	case gen.EventDelivery_EVENT_DELIVERY_UNORDERED:
+		return "unordered"
+	default:
+		return ""
+	}
+}
+
+// deliveryToProto is the inverse of deliveryToString for outbound subscriptions.
+func deliveryToProto(s string) gen.EventDelivery {
+	switch s {
+	case "ordered":
+		return gen.EventDelivery_EVENT_DELIVERY_ORDERED
+	case "unordered":
+		return gen.EventDelivery_EVENT_DELIVERY_UNORDERED
+	default:
+		return gen.EventDelivery_EVENT_DELIVERY_UNSPECIFIED
+	}
+}
+
+func moduleSubscriptionProto(sub *business.EventSubscription) *gen.ModuleSubscription {
+	if sub == nil {
+		return nil
+	}
+	return &gen.ModuleSubscription{
+		Id:                    sub.ID,
+		SubscriberPrincipalId: sub.SubscriberPrincipalID,
+		TypePattern:           sub.TypePattern,
+		Queue:                 sub.Queue,
+		Delivery:              deliveryToProto(sub.Delivery),
+		CreatedAt:             timestamppb.New(sub.CreatedAt),
+	}
+}
 
 func structToMap(s *structpb.Struct) map[string]any {
 	if s == nil {

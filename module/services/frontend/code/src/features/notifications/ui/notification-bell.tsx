@@ -73,9 +73,15 @@ export function NotificationBell() {
 	const handleSSECount = useCallback(
 		(count: number) => {
 			setSseCount(count);
-			// Keep the query cache in sync so NotificationPanel sees fresh data.
+			// Keep the count exact and wake every host-owned notification surface.
+			// The stream deliberately carries no row data; the bell, panel and
+			// banner all re-read the authenticated projection instead.
 			queryClient.setQueryData(["notifications", "unread-count"], {
 				count,
+			});
+			void queryClient.invalidateQueries({
+				queryKey: ["notifications"],
+				predicate: (query) => query.queryKey[1] !== "unread-count",
 			});
 		},
 		[queryClient],

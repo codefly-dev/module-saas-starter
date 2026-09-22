@@ -24,11 +24,11 @@ describe("Chat", () => {
 		render(
 			<Chat
 				messages={[
-					{ id: "1", role: "assistant", content: "hi", author: "Robin" },
+					{ id: "1", role: "assistant", content: "hi", author: "Alex" },
 				]}
 			/>,
 		);
-		expect(screen.getByText("Robin")).toBeTruthy();
+		expect(screen.getByText("Alex")).toBeTruthy();
 		expect(screen.queryByText("Assistant")).toBeNull();
 	});
 

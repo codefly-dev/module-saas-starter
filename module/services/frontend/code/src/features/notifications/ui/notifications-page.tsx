@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { CheckCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -12,7 +13,10 @@ import { notificationQueries } from "../service/queries";
 export function NotificationsPage() {
 	const queryClient = useQueryClient();
 	const router = useRouter();
-	const { data, isLoading } = useQuery(notificationQueries.list(50));
+	const [pages, setPages] = useState<string[]>([""]);
+	const { data, isLoading, error } = useQuery(
+		notificationQueries.list(50, { pageToken: pages[pages.length - 1] }),
+	);
 	const notifications = data?.notifications ?? [];
 
 	const markReadMutation = useMutation({
@@ -30,6 +34,21 @@ export function NotificationsPage() {
 		onError: () => toast.error("Failed to mark all as read"),
 	});
 
+	// Marking read is part of following the link, so it happens only once the
+	// destination has been re-authorized. Marking first would let a click the
+	// server then refuses still consume the item's unread state.
+	const resolveActionMutation = useMutation({
+		mutationFn: ({ id }: { id: string; unread: boolean }) =>
+			notificationMutations.resolveAction(id),
+		onSuccess: (actionUrl, { id, unread }) => {
+			if (unread) {
+				markReadMutation.mutate(id);
+			}
+			router.push(actionUrl);
+		},
+		onError: () => toast.error("This notification is no longer available"),
+	});
+
 	const deleteMutation = useMutation({
 		mutationFn: (id: string) => notificationMutations.delete(id),
 		onSuccess: () => {
@@ -42,7 +61,7 @@ export function NotificationsPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
-				<h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
+				<h2 data-slot="page-title" className="type-page-title">Notifications</h2>
 				<Button
 					variant="outline"
 					size="sm"
@@ -54,6 +73,9 @@ export function NotificationsPage() {
 				</Button>
 			</div>
 
+			{error && (
+				<p role="alert">Could not load notifications. Please try again.</p>
+			)}
 			{isLoading ? (
 				<div className="space-y-3">
 					{Array.from({ length: 5 }).map((_, i) => (
@@ -80,11 +102,15 @@ export function NotificationsPage() {
 									type="button"
 									className="flex-1 text-left"
 									onClick={() => {
+										if (notification.hasAction) {
+											resolveActionMutation.mutate({
+												id: notification.id,
+												unread: !notification.read,
+											});
+											return;
+										}
 										if (!notification.read) {
 											markReadMutation.mutate(notification.id);
-										}
-										if (notification.actionUrl) {
-											router.push(notification.actionUrl);
 										}
 									}}
 								>
@@ -119,6 +145,26 @@ export function NotificationsPage() {
 					))}
 				</div>
 			)}
+			<div className="flex gap-2">
+				{pages.length > 1 && (
+					<Button
+						variant="outline"
+						onClick={() => setPages((current) => current.slice(0, -1))}
+					>
+						Newer notifications
+					</Button>
+				)}
+				{data?.nextPageToken && (
+					<Button
+						variant="outline"
+						onClick={() =>
+							setPages((current) => [...current, data.nextPageToken])
+						}
+					>
+						Older notifications
+					</Button>
+				)}
+			</div>
 		</div>
 	);
 }

@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 // Phase 2G — user-scoped RLS (notifications, mfa_devices,

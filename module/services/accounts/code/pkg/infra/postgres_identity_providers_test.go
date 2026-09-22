@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -10,9 +12,10 @@ import (
 // testStore + testCtx. NEVER mock per saas-starter rule.
 
 func TestProviderRegistered_SeededProviders(t *testing.T) {
-	// Seeded by migrations: the built-in providers plus the generic OIDC set
+	// Seeded by migrations: the built-in providers, the generic OIDC set, and
+	// the providers the service synthesizes itself (magic_link) — every value
 	// that user_identities.provider foreign-keys against.
-	for _, provider := range []string{"workos", "google", "oidc", "auth0", "okta", "ping"} {
+	for _, provider := range []string{"workos", "google", "oidc", "auth0", "okta", "ping", "magic_link"} {
 		registered, err := testStore.ProviderRegistered(testCtx, provider)
 		require.NoError(t, err)
 		require.True(t, registered, "provider %q must be registered so login can insert an identity", provider)

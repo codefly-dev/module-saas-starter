@@ -2,6 +2,7 @@ package cataloggen_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -114,20 +115,28 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
 
-	// Mesh policy: STRICT mTLS baseline plus a positive ALLOW AuthorizationPolicy
+	// Mesh policy: STRICT mTLS baseline, a positive ALLOW AuthorizationPolicy
 	// that gates the internal authority method paths to the target's declared
 	// callers by their per-service ServiceAccount — deny-by-default for everyone
-	// else. accounts' only caller is auth-gateway, so only sa/auth-gateway is
-	// allowed; the shared sa/default and the ingress gateway SA are not.
+	// else — and a DENY subtracting the frontend's authored internal HTTP routes
+	// from the port-wide ingress allow. accounts' only caller is auth-gateway, so
+	// only sa/auth-gateway is allowed; the shared sa/default and the ingress
+	// gateway SA are not.
 	mesh := string(first.MeshPolicy)
 	require.Contains(t, mesh, "kind: PeerAuthentication")
 	require.Contains(t, mesh, "mode: STRICT")
 	require.Contains(t, mesh, "name: allow-accounts-internal-authority")
 	require.Contains(t, mesh, "action: ALLOW")
+	require.Contains(t, mesh, "name: deny-frontend-internal-http")
+	require.Contains(t, mesh, "action: DENY")
+	require.Contains(t, mesh, `- "/api/solutions/register"`)
 	require.Contains(t, mesh, "gatewayClassName: istio-waypoint")
 	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/auth-gateway")
 	require.NotContains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
-	require.NotContains(t, mesh, "istio-ingressgateway-service-account")
+	// Neither L7 policy may carry a workload selector: ztunnel cannot evaluate an
+	// L7 rule and fails safe by denying everything to the workload it selects.
+	require.NotContains(t, mesh, "  selector:")
+	require.Contains(t, mesh, "  targetRefs:")
 	for _, procedure := range []string{
 		"/saas.accounts.v1.PermissionService/CheckPermission",
 		"/saas.accounts.v1.PermissionService/CheckAccess",
@@ -150,11 +159,11 @@ func TestApplicationBindingsAddOnlyNamedPostgresMigrationSources(t *testing.T) {
 module_name: installed-saas
 postgres_migration_sources:
   - service: store
+    name: acme
+    path: ../../../platform/services/acme/migrations
+  - service: store
     name: eventlog
     path: ../../../platform/services/eventlog/migrations
-  - service: store
-    name: warden
-    path: ../../../platform/services/warden/migrations
 `)
 
 	artifacts, err := cataloggen.BuildDeploymentArtifactsWithApplicationBindings(
@@ -168,7 +177,7 @@ postgres_migration_sources:
 	store := string(artifacts.ServiceManifests["store"])
 	require.Contains(t, store, "migration-sources:")
 	require.Contains(t, store, "name: eventlog")
-	require.Contains(t, store, "name: warden")
+	require.Contains(t, store, "name: acme")
 	require.Contains(t, store, "../../../platform/services/eventlog/migrations")
 	require.NotContains(t, string(artifacts.ServiceManifests["accounts"]), "migration-sources:")
 
@@ -424,8 +433,34 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			strictMTLS = true
 		case "AuthorizationPolicy":
 			require.Equal(t, "security.istio.io/v1", document.APIVersion)
+			// Attachment, not selection. A selector routes an L7 policy to ztunnel,
+			// which cannot evaluate one and fails safe by turning it into a blanket
+			// DENY on the workload it selects. A targetRef to a Service both puts
+			// the policy on the waypoint that can evaluate it and keeps it scoped to
+			// one service rather than the namespace (the shape the GitOps baseline's
+			// empty-ALLOW default-deny takes).
+			require.NotContains(t, document.Spec, "selector",
+				"an L7 policy attached by selector is enforced by ztunnel, which fails safe into a blanket deny")
+			targetRefs, ok := document.Spec["targetRefs"].([]any)
+			require.True(t, ok, "an L7 policy must attach to a waypoint by targetRef")
+			require.Len(t, targetRefs, 1, "the gate scopes to exactly one service")
+			targetRef, ok := targetRefs[0].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "Service", targetRef["kind"])
+			require.Equal(t, "", targetRef["group"])
+
+			if document.Metadata.Name == "deny-frontend-internal-http" {
+				// A different resource gating a different surface: the authored HTTP
+				// routes, not the catalog-derived procedures. Its rules are pinned by
+				// TestMeshPolicyGatesInternalSurfacesByShape.
+				require.Equal(t, "frontend", targetRef["name"])
+				require.Equal(t, "DENY", document.Spec["action"])
+				continue
+			}
 			require.Equal(t, "allow-accounts-internal-authority", document.Metadata.Name)
 			require.Equal(t, "ALLOW", document.Spec["action"])
+			require.Equal(t, "accounts", targetRef["name"],
+				"only the catalog owner carries a generated reach gate")
 			allowFound = true
 
 			rule := document.Spec["rules"].([]any)[0].(map[string]any)
@@ -441,6 +476,15 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			paths := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
 			require.Contains(t, paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
 			require.Contains(t, paths, "/saas.accounts.v1.UsageService/ConsumeUsage")
+			// EVERY gated path is a gRPC procedure, not only the two named above.
+			// The frontend's token-gated HTTP routes are not gated here and cannot
+			// be: this policy is derived from authz-methods.json. They are authored
+			// instead, and carry their own deny. See DEPLOYMENT_TOPOLOGY.md,
+			// "Cluster-internal HTTP routes".
+			for _, path := range paths {
+				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+					"the gate lists gRPC procedures, not HTTP routes: %q", path)
+			}
 		case "Gateway":
 			// The waypoint that makes the L7 allow enforceable in the ambient mesh.
 			require.Equal(t, "gateway.networking.k8s.io/v1", document.APIVersion)
@@ -454,6 +498,161 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 	require.True(t, strictMTLS, "namespace mTLS must be STRICT")
 	require.True(t, allowFound, "internal-authority AuthorizationPolicy must be present")
 	require.True(t, waypointFound, "L7 allow requires a waypoint to be enforced in the ambient mesh")
+}
+
+// TestMeshPolicyGatesInternalSurfacesByShape states the boundary the pin #570
+// left behind (TestMeshPolicyGatesOnlyOwnerGRPCProcedures, since folded into
+// TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity) was written to
+// force: it required the mesh policy to carry exactly one gate, the catalog
+// owner's gRPC procedures, and to fail the moment the renderer learned HTTP
+// paths. It now has, so the boundary is stated by shape rather than by count.
+// A catalog-derived gate lists gRPC procedures for the owner alone; an authored
+// HTTP route is only ever subtracted from the port-wide ingress ALLOW by a DENY.
+// Attachment is pinned by the walker above; what is pinned here is every rule of
+// the deny, which is the half no other test reads.
+func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
+	const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+
+	// Every authored route, and the methods that carry internal authority on it.
+	// A GET on /api/solutions/register is the sidebar's unauthenticated nav poll
+	// and must stay reachable; a GET on /api/internal/solutions is the internal
+	// detail read and must not.
+	wantRules := map[string][]any{
+		"/api/internal/solutions": {"GET"},
+		"/api/solutions/register": {"DELETE", "POST"},
+	}
+
+	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
+	allows, denies := 0, 0
+	for {
+		var document struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Spec map[string]any `yaml:"spec"`
+		}
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if document.Kind != "AuthorizationPolicy" {
+			continue
+		}
+		// Read defensively: a policy shape this test does not expect must fail it,
+		// not panic out of the run and take the other assertions with it.
+		rules, ok := document.Spec["rules"].([]any)
+		require.True(t, ok, "policy %q carries no rules", document.Metadata.Name)
+
+		switch document.Spec["action"] {
+		case "ALLOW":
+			allows++
+			require.Equal(t, "allow-accounts-internal-authority", document.Metadata.Name)
+			for _, rule := range rules {
+				operation, ok := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
+				require.True(t, ok)
+				for _, path := range operation["paths"].([]any) {
+					require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+						"a catalog-derived gate lists gRPC procedures, not HTTP routes: %q", path)
+				}
+			}
+		case "DENY":
+			denies++
+			require.Equal(t, "deny-frontend-internal-http", document.Metadata.Name)
+			require.Len(t, rules, len(wantRules), "one rule per authored route")
+			for _, rule := range rules {
+				source, ok := rule.(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
+				require.True(t, ok, "a deny with no source clause denies the route outright")
+				// The waypoint that evaluates this rule never sees ingress-originated
+				// traffic, so the ingress gateway is exempt by construction. Denying
+				// it here would read as a north-south boundary and enforce nothing;
+				// the route's credential is what gates the front door.
+				require.Contains(t, source["notPrincipals"], meshIngressPrincipal)
+
+				operation, ok := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
+				require.True(t, ok)
+				paths := operation["paths"].([]any)
+				// Istio does not merge duplicate slashes by default, so the exact
+				// path alone would let //api/solutions/register reach the handler.
+				require.Len(t, paths, 2, "each route is matched exactly and as a suffix")
+				path := paths[1].(string)
+				require.Equal(t, "*"+path, paths[0])
+				methods, declared := wantRules[path]
+				require.True(t, declared, "policy gates an undeclared route %q", path)
+				require.Equal(t, methods, operation["methods"])
+				delete(wantRules, path)
+			}
+		default:
+			t.Fatalf("unexpected mesh policy action %v on %q", document.Spec["action"], document.Metadata.Name)
+		}
+	}
+	require.Equal(t, 1, allows, "exactly one internal-authority allow, for the catalog owner")
+	require.Equal(t, 1, denies, "exactly one internal-HTTP deny, for the service that declares such routes")
+	require.Empty(t, wantRules, "every authored route must be gated")
+}
+
+// TestInternalHTTPDenyExemptsDeclaredCallers covers the branch the shipped
+// topology does not exercise: once a service declares an edge to the endpoint
+// carrying internal routes, that caller — and only it, alongside the ingress
+// gateway the waypoint cannot see — is subtracted from the deny.
+func TestInternalHTTPDenyExemptsDeclaredCallers(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	bindings := strings.NewReplacer(
+		`  - name: marketing
+    version: 0.0.0`,
+		`  - name: marketing
+    version: 0.0.0
+    dependencies:
+      - service: frontend
+        endpoints:
+          - http`,
+		"      mode: ssr\n  - name: store",
+		"      mode: ssr\n      service-account:\n        name: marketing\n  - name: store",
+	).Replace(string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")))
+
+	require.Contains(t, bindings, "        name: marketing", "the topology binding no longer matches this fixture")
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(bindings))
+	require.NoError(t, err)
+
+	// The same authored edge opens the L3 path the exemption is useless without.
+	network := string(artifacts.NetworkPolicy)
+	require.Contains(t, network, "name: allow-frontend-from-dependents")
+	require.Contains(t, network, "name: allow-marketing-to-dependencies")
+
+	decoder := yaml.NewDecoder(strings.NewReader(string(artifacts.MeshPolicy)))
+	found := false
+	for {
+		var document struct {
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Spec map[string]any `yaml:"spec"`
+		}
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if document.Metadata.Name != "deny-frontend-internal-http" {
+			continue
+		}
+		found = true
+		rules, ok := document.Spec["rules"].([]any)
+		require.True(t, ok)
+		require.NotEmpty(t, rules)
+		for _, rule := range rules {
+			source, ok := rule.(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, []any{
+				"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account",
+				"cluster.local/ns/saas-starter/sa/marketing",
+			}, source["notPrincipals"],
+				"the exemption is the caller's own ServiceAccount, never the shared default")
+		}
+	}
+	require.True(t, found, "the frontend still declares internal HTTP routes")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
@@ -479,6 +678,28 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
 	unknownServiceEntry := strings.Replace(bindings, "service_entry: frontend", "service_entry: missing", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownServiceEntry))
 	require.ErrorContains(t, err, "service entry references unknown service")
+
+	unsortedMethods := strings.Replace(bindings, "          - DELETE\n          - POST", "          - POST\n          - DELETE", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unsortedMethods))
+	require.ErrorContains(t, err, "internal HTTP route \"/api/solutions/register\" methods are invalid or unsorted")
+
+	relativeRoute := strings.Replace(bindings, "      - path: /api/solutions/register", "      - path: api/solutions/register", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(relativeRoute))
+	require.ErrorContains(t, err, "internal HTTP routes are invalid or unsorted")
+
+	methodlessRoute := strings.Replace(bindings, "        methods:\n          - DELETE\n          - POST", "        methods: []", 1)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(methodlessRoute))
+	require.ErrorContains(t, err, "declares no methods")
+
+	// A path policy on a service that speaks TCP matches nothing that will ever
+	// be evaluated, so the route must belong to a service that serves HTTP.
+	routesOnTCPService := strings.Replace(bindings,
+		"    bootstrap_job_endpoints:\n      - tcp",
+		"    internal_http_routes:\n      - path: /internal\n        methods:\n          - POST\n    bootstrap_job_endpoints:\n      - tcp",
+		1,
+	)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(routesOnTCPService))
+	require.ErrorContains(t, err, "internal HTTP routes without an HTTP endpoint")
 
 	cycle := strings.Replace(bindings, "    spec:\n      watch: false\n      with-read-replicas: true", `    dependencies:
       - service: accounts
@@ -536,6 +757,50 @@ func TestDeploymentTopologyPreservesCompleteModuleAgentIdentity(t *testing.T) {
 	incomplete := strings.Replace(withAgent, "    publisher: codefly.dev\n", "", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incomplete))
 	require.ErrorContains(t, err, "module agent identity is incomplete")
+}
+
+// The generated service manifest's agent block is built by hand from the
+// binding's, so a field added to deploymentAgentBinding reaches the bindings
+// file and is then silently dropped from every generated manifest — sync-drift
+// cannot see it, because the module agent drops it too. Compare the two
+// authorities directly, and pin the rendered key order, so a reordering that
+// would drift the checked-in manifests fails here first.
+func TestServiceManifestAgentCarriesEveryBindingField(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
+
+	var declared struct {
+		Services []struct {
+			Name  string            `yaml:"name"`
+			Agent map[string]string `yaml:"agent"`
+		} `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(bindings, &declared))
+	require.NotEmpty(t, declared.Services)
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, bindings)
+	require.NoError(t, err)
+
+	for _, service := range declared.Services {
+		manifest, ok := artifacts.ServiceManifests[service.Name]
+		require.True(t, ok, "no generated manifest for %s", service.Name)
+		require.NotEmpty(t, service.Agent, "%s declares no agent", service.Name)
+
+		var generated struct {
+			Agent map[string]string `yaml:"agent"`
+		}
+		require.NoError(t, yaml.Unmarshal(manifest, &generated))
+		require.Equal(t, service.Agent, generated.Agent,
+			"generated %s agent must carry every declared agent field", service.Name)
+
+		require.Contains(t, string(manifest), fmt.Sprintf(`agent:
+    kind: %s
+    name: %s
+    version: %s
+    publisher: %s
+`, service.Agent["kind"], service.Agent["name"], service.Agent["version"], service.Agent["publisher"]),
+			"%s agent must render in deploymentAgentBinding's field order", service.Name)
+	}
 }
 
 func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {

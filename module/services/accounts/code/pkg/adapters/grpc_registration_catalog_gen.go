@@ -13,8 +13,10 @@ import (
 // the catalog-complete Connect listener and are intentionally omitted here.
 func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcServer) {
 	gen.RegisterAPIKeyServiceServer(registrar, server.APIKey)
+	gen.RegisterAccessibleScopeServiceServer(registrar, AccessibleScopeSingleton())
 	gen.RegisterAuditServiceServer(registrar, server.Audit)
 	gen.RegisterAuthServiceServer(registrar, server.Auth)
+	gen.RegisterClientRegistryServiceServer(registrar, ClientRegistrySingleton())
 	gen.RegisterDelegationServiceServer(registrar, DelegationSingleton())
 	gen.RegisterIdentityServiceServer(registrar, server.Ident)
 	gen.RegisterInstallationServiceServer(registrar, InstallationSingleton())
@@ -26,6 +28,7 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 	gen.RegisterPermissionServiceServer(registrar, server.Perm)
 	gen.RegisterPlatformAdminServiceServer(registrar, server.PlatformAdmin)
 	gen.RegisterPrincipalServiceServer(registrar, PrincipalSingleton())
+	gen.RegisterSolutionRegistryServiceServer(registrar, SolutionRegistrySingleton())
 	gen.RegisterTeamServiceServer(registrar, server.Team)
 	gen.RegisterUsageServiceServer(registrar, UsageSingleton())
 	gen.RegisterUserServiceServer(registrar, server.User)
@@ -34,8 +37,10 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 
 var catalogGRPCServiceNames = []string{
 	"saas.accounts.v1.APIKeyService",
+	"saas.accounts.v1.AccessibleScopeService",
 	"saas.accounts.v1.AuditService",
 	"saas.accounts.v1.AuthService",
+	"saas.accounts.v1.ClientRegistryService",
 	"saas.accounts.v1.DelegationService",
 	"saas.accounts.v1.IdentityService",
 	"saas.accounts.v1.InstallationService",
@@ -47,6 +52,7 @@ var catalogGRPCServiceNames = []string{
 	"saas.accounts.v1.PermissionService",
 	"saas.accounts.v1.PlatformAdminService",
 	"saas.accounts.v1.PrincipalService",
+	"saas.accounts.v1.SolutionRegistryService",
 	"saas.accounts.v1.TeamService",
 	"saas.accounts.v1.UsageService",
 	"saas.accounts.v1.UserService",
@@ -61,6 +67,7 @@ var catalogConnectOnlyServiceNames = []string{
 	"saas.accounts.v1.GDPRService",
 	"saas.accounts.v1.NotificationService",
 	"saas.accounts.v1.OnboardingService",
+	"saas.accounts.v1.ResourceFollowService",
 	"saas.accounts.v1.SSOAdminService",
 	"saas.accounts.v1.UserSettingsService",
 	"saas.accounts.v1.WaitlistService",

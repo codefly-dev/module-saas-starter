@@ -54,6 +54,186 @@ func (store *notificationPreferenceStore) CreateNotification(
 	return nil
 }
 
+// notificationVisibilityStore serves a fixed inbox page and a fixed answer from
+// the access oracle, so the read-time recheck can be exercised without a scope
+// tree. visible is keyed "org|resource_type".
+type notificationVisibilityStore struct {
+	business.Store
+	page         []*business.Notification
+	nextToken    string
+	unread       int
+	unreadRefs   []business.UnreadResourceReference
+	visible      map[string][]string
+	scopeLookups int
+	scopedOrgs   []string
+}
+
+func (store *notificationVisibilityStore) WithUserTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (store *notificationVisibilityStore) WithOrgTx(ctx context.Context, orgID string, fn func(context.Context) error) error {
+	store.scopedOrgs = append(store.scopedOrgs, orgID)
+	return fn(ctx)
+}
+
+func (store *notificationVisibilityStore) ListNotifications(_ context.Context, _ string, _ int, _ string, _ ...business.NotificationFilter) ([]*business.Notification, string, error) {
+	return store.page, store.nextToken, nil
+}
+
+func (store *notificationVisibilityStore) GetUnreadCount(_ context.Context, _ string) (int, error) {
+	return store.unread, nil
+}
+
+func (store *notificationVisibilityStore) ListUnreadResourceReferences(_ context.Context, _ string) ([]business.UnreadResourceReference, error) {
+	return store.unreadRefs, nil
+}
+
+func (store *notificationVisibilityStore) ListAccessibleResourceIDs(
+	_ context.Context, orgID, _ string, _ gen.SubjectKind, resourceType, _ string, candidates []string,
+) ([]string, error) {
+	store.scopeLookups++
+	allowed := store.visible[orgID+"|"+resourceType]
+	var out []string
+	for _, candidate := range candidates {
+		for _, a := range allowed {
+			if a == candidate {
+				out = append(out, candidate)
+			}
+		}
+	}
+	return out, nil
+}
+
+func followItem(id, orgID, resourceType, resourceID string) *business.Notification {
+	return &business.Notification{
+		ID: id, UserID: "user-1", OrgID: orgID, Title: "Followed resource changed",
+		Body: "It changed", Type: "info",
+		ResourceType: resourceType, ResourceID: resourceID,
+	}
+}
+
+// The stored title and body are a cache that outlives the grant, so an item
+// whose resource is no longer readable must not be returned at all — redacting
+// its fields would still concede the item exists.
+func TestListNotificationsDropsItemsForUnreadableResources(t *testing.T) {
+	store := &notificationVisibilityStore{
+		page: []*business.Notification{
+			{ID: "plain", UserID: "user-1", OrgID: "org-1", Title: "Welcome", Type: "info"},
+			followItem("kept", "org-1", "doc", "doc-1"),
+			followItem("revoked", "org-1", "doc", "doc-2"),
+		},
+		visible: map[string][]string{"org-1|doc": {"doc-1"}},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	notifications, _, err := service.ListNotifications(context.Background(), "user-1", 10, "")
+
+	require.NoError(t, err)
+	var ids []string
+	for _, n := range notifications {
+		ids = append(ids, n.ID)
+	}
+	require.Equal(t, []string{"plain", "kept"}, ids,
+		"an ordinary notification and a still-readable follow item survive; a revoked one does not")
+}
+
+// A reference with no org cannot be resolved against any scope tree, and
+// notifications.org_id is nullable and descriptive. The unanswerable question
+// fails closed rather than defaulting to visible.
+func TestListNotificationsDropsFollowItemWithoutOrg(t *testing.T) {
+	store := &notificationVisibilityStore{
+		page:    []*business.Notification{followItem("orphan", "", "doc", "doc-1")},
+		visible: map[string][]string{"|doc": {"doc-1"}},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	notifications, _, err := service.ListNotifications(context.Background(), "user-1", 10, "")
+
+	require.NoError(t, err)
+	require.Empty(t, notifications)
+	require.Zero(t, store.scopeLookups, "an org-less reference is never asked about")
+}
+
+// The cursor must advance by rows READ, not rows kept: deriving it from the
+// filtered page would re-serve the dropped rows' neighbours forever.
+func TestListNotificationsKeepsThePageTokenOfRowsRead(t *testing.T) {
+	store := &notificationVisibilityStore{
+		page:      []*business.Notification{followItem("revoked", "org-1", "doc", "doc-2")},
+		nextToken: "cursor-from-rows-read",
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	notifications, next, err := service.ListNotifications(context.Background(), "user-1", 10, "")
+
+	require.NoError(t, err)
+	require.Empty(t, notifications, "the only row on the page is no longer readable")
+	require.Equal(t, "cursor-from-rows-read", next, "a fully filtered page still advances the cursor")
+}
+
+// One call per (org, resource_type), not one point check per item.
+func TestListNotificationsResolvesVisibilityOncePerOrgAndType(t *testing.T) {
+	store := &notificationVisibilityStore{
+		page: []*business.Notification{
+			followItem("a", "org-1", "doc", "doc-1"),
+			followItem("b", "org-1", "doc", "doc-2"),
+			followItem("c", "org-2", "doc", "doc-3"),
+			followItem("d", "org-1", "note", "note-1"),
+		},
+		visible: map[string][]string{
+			"org-1|doc": {"doc-1", "doc-2"}, "org-2|doc": {"doc-3"}, "org-1|note": {"note-1"},
+		},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	notifications, _, err := service.ListNotifications(context.Background(), "user-1", 10, "")
+
+	require.NoError(t, err)
+	require.Len(t, notifications, 4)
+	require.Equal(t, 3, store.scopeLookups,
+		"four items across three (org, type) groups cost three lookups, not four")
+	require.ElementsMatch(t, []string{"org-1", "org-2", "org-1"}, store.scopedOrgs)
+}
+
+// The badge is a cache of a past grant too: a count that still moves for a
+// revoked resource reports its activity just as the title would.
+func TestGetUnreadCountDiscountsUnreadableResources(t *testing.T) {
+	store := &notificationVisibilityStore{
+		unread: 6,
+		unreadRefs: []business.UnreadResourceReference{
+			{OrgID: "org-1", ResourceType: "doc", ResourceID: "doc-1", Unread: 1},
+			{OrgID: "org-1", ResourceType: "doc", ResourceID: "doc-2", Unread: 2},
+			{OrgID: "", ResourceType: "doc", ResourceID: "doc-3", Unread: 1},
+		},
+		visible: map[string][]string{"org-1|doc": {"doc-1"}},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	count, err := service.GetUnreadCount(context.Background(), "user-1")
+
+	require.NoError(t, err)
+	require.Equal(t, 3, count,
+		"6 unread less the 2 for a revoked resource and the 1 with no resolvable org")
+}
+
+// An inbox holding no follow items must cost nothing and read exactly as before.
+func TestGetUnreadCountLeavesAnInboxWithoutFollowItemsAlone(t *testing.T) {
+	store := &notificationVisibilityStore{unread: 4}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	count, err := service.GetUnreadCount(context.Background(), "user-1")
+
+	require.NoError(t, err)
+	require.Equal(t, 4, count)
+	require.Zero(t, store.scopeLookups, "no references means no visibility call at all")
+}
+
 func TestCreateNotificationUsesEnabledDefault(t *testing.T) {
 	store := &notificationPreferenceStore{}
 	service, err := business.NewService(store)
@@ -177,4 +357,175 @@ func TestCreateNotificationRejectsInvalidCategoryBeforeReadingPreferences(t *tes
 	require.ErrorContains(t, err, `notification category "unknown" is invalid`)
 	require.Nil(t, notification)
 	require.Empty(t, store.notifications)
+}
+
+// notificationActionStore serves one inbox row and a fixed answer from the
+// listing oracle, so deep-link resolution can be exercised without a scope tree.
+//
+// CheckAccess deliberately answers "yes" to everything: it is the oracle the
+// resolver must NOT consult, because its share branch admits records the inbox
+// listing refuses. A resolver that regressed to it would pass the revoked case.
+type notificationActionStore struct {
+	business.Store
+	notification *business.Notification
+	visible      map[string][]string
+	scopeLookups int
+	checkAccess  int
+	scopedOrgs   []string
+}
+
+func (store *notificationActionStore) WithUserTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (store *notificationActionStore) WithOrgTx(ctx context.Context, orgID string, fn func(context.Context) error) error {
+	store.scopedOrgs = append(store.scopedOrgs, orgID)
+	return fn(ctx)
+}
+
+func (store *notificationActionStore) GetNotification(_ context.Context, _ string) (*business.Notification, error) {
+	return store.notification, nil
+}
+
+func (store *notificationActionStore) ListAccessibleResourceIDs(
+	_ context.Context, orgID, _ string, _ gen.SubjectKind, resourceType, _ string, candidates []string,
+) ([]string, error) {
+	store.scopeLookups++
+	allowed := store.visible[orgID+"|"+resourceType]
+	var out []string
+	for _, candidate := range candidates {
+		for _, a := range allowed {
+			if a == candidate {
+				out = append(out, candidate)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (store *notificationActionStore) CheckAccess(
+	_ context.Context, _ string, _ gen.SubjectKind, _, _, _ string,
+) (bool, string, error) {
+	store.checkAccess++
+	return true, "", nil
+}
+
+// An ordinary notification refers to no resource, so there is nothing to
+// re-authorize and no oracle is consulted.
+func TestResolveNotificationActionReturnsAPlainItemsDestination(t *testing.T) {
+	store := &notificationActionStore{
+		notification: &business.Notification{
+			ID: "plain", UserID: "user-1", OrgID: "org-1", ActionURL: "/admin/billing",
+		},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	actionURL, err := service.ResolveNotificationAction(context.Background(), "user-1", "plain")
+
+	require.NoError(t, err)
+	require.Equal(t, "/admin/billing", actionURL)
+	require.Zero(t, store.scopeLookups, "an item referring to no resource is never rechecked")
+	require.Zero(t, store.checkAccess)
+}
+
+// The point of the RPC: the grant is re-read at follow time, not trusted from
+// whenever the page was fetched.
+func TestResolveNotificationActionRechecksTheResourceAtFollowTime(t *testing.T) {
+	store := &notificationActionStore{
+		notification: followItem("kept", "org-1", "doc", "doc-1"),
+		visible:      map[string][]string{"org-1|doc": {"doc-1"}},
+	}
+	store.notification.ActionURL = "/docs/doc-1"
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	actionURL, err := service.ResolveNotificationAction(context.Background(), "user-1", "kept")
+
+	require.NoError(t, err)
+	require.Equal(t, "/docs/doc-1", actionURL)
+	require.Equal(t, 1, store.scopeLookups, "one lookup, against the row's own resource")
+	require.Equal(t, []string{"org-1"}, store.scopedOrgs)
+}
+
+// The window the read-time filter cannot close: the item was listed while it was
+// visible and is followed after the grant was revoked.
+func TestResolveNotificationActionReportsARevokedResourceAsMissing(t *testing.T) {
+	store := &notificationActionStore{
+		notification: followItem("revoked", "org-1", "doc", "doc-2"),
+		visible:      map[string][]string{"org-1|doc": {"doc-1"}},
+	}
+	store.notification.ActionURL = "/docs/doc-2"
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	actionURL, err := service.ResolveNotificationAction(context.Background(), "user-1", "revoked")
+
+	require.ErrorIs(t, err, business.ErrNotificationNotFound)
+	require.Empty(t, actionURL)
+}
+
+// The deep link and the inbox must answer the same access question. CheckAccess
+// admits a share on an unregistered record that the listing oracle refuses, so
+// resolving through it would open a link for an item the inbox hides.
+func TestResolveNotificationActionAsksTheSameOracleAsTheInbox(t *testing.T) {
+	store := &notificationActionStore{
+		notification: followItem("hidden", "org-1", "doc", "doc-9"),
+		visible:      map[string][]string{},
+	}
+	store.notification.ActionURL = "/docs/doc-9"
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	_, err = service.ResolveNotificationAction(context.Background(), "user-1", "hidden")
+
+	require.ErrorIs(t, err, business.ErrNotificationNotFound,
+		"the listing oracle refuses it, so the deep link must too")
+	require.Zero(t, store.checkAccess,
+		"CheckAccess is more permissive than the inbox filter and must not decide this")
+	require.Equal(t, 1, store.scopeLookups)
+}
+
+// RLS on `notifications` keys on user_id, so another user's id reads as absent.
+// It must report exactly what a revoked resource reports.
+func TestResolveNotificationActionReportsAnotherUsersItemAsMissing(t *testing.T) {
+	store := &notificationActionStore{notification: nil}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	_, err = service.ResolveNotificationAction(context.Background(), "user-1", "someone-elses")
+
+	require.ErrorIs(t, err, business.ErrNotificationNotFound)
+}
+
+// Resolving an item that points nowhere would hand the caller an empty
+// destination to navigate to.
+func TestResolveNotificationActionReportsAnItemWithoutADestinationAsMissing(t *testing.T) {
+	store := &notificationActionStore{
+		notification: &business.Notification{ID: "no-action", UserID: "user-1", OrgID: "org-1"},
+	}
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	_, err = service.ResolveNotificationAction(context.Background(), "no-action", "no-action")
+
+	require.ErrorIs(t, err, business.ErrNotificationNotFound)
+}
+
+// An org-less reference cannot be resolved against any scope tree, so the
+// unanswerable question fails closed rather than defaulting to visible.
+func TestResolveNotificationActionFailsClosedWithoutAnOrg(t *testing.T) {
+	store := &notificationActionStore{
+		notification: followItem("orphan", "", "doc", "doc-1"),
+		visible:      map[string][]string{"|doc": {"doc-1"}},
+	}
+	store.notification.ActionURL = "/docs/doc-1"
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+
+	_, err = service.ResolveNotificationAction(context.Background(), "user-1", "orphan")
+
+	require.ErrorIs(t, err, business.ErrNotificationNotFound)
+	require.Zero(t, store.scopeLookups, "an org-less reference is never asked about")
+	require.Zero(t, store.checkAccess)
 }

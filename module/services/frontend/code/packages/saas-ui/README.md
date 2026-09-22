@@ -1,4 +1,4 @@
-# @codefly/saas-ui
+# @codefly-dev/saas-ui
 
 Reusable SaaS-domain frontend components the portal **and** solutions import — so
 there is one `<DatasourcesPanel>`, not a per-consumer copy. Components are built on
@@ -9,7 +9,7 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 - **Gateway binding** (solution remotes) — pass
   `gateway={{ apiBase, getAccessToken, refreshAccessToken }}` and the panel self-wires:
-  it builds a `@codefly/saas-sdk` client over a scoped transport that stamps the host's
+  it builds a `@codefly-dev/saas-sdk` client over a scoped transport that stamps the host's
   bearer token on every request and, on an `Unauthenticated` response, calls
   `refreshAccessToken` and retries once — so a data call survives the short-lived token
   expiring mid-session. It also mounts its own `@tanstack/react-query` provider. A
@@ -25,16 +25,137 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
-  (repo · paths · branch · webhook · last sync) with per-row **Sync**/**Delete** and
-  a **Connect GitHub** action. Loading/error/empty are first-class.
+  (repo · status · paths · branch · boundary · webhook · last sync) with per-row **Sync**/**Delete** and
+  a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
+  `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
+  <short commit>` for a github source, whose change sets the compiler enqueues
+  (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
+  reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
+  shown above live provenance. Loading/error/empty are first-class.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
-  target collection, access token, webhook secret).
+  target collection, webhook secret, and an access token only on the PAT path).
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
   transport you already own.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useSyncSource`, `useDeleteSource`.
+  `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+
+### Connecting through the GitHub App
+
+`Connect GitHub` offers the App as the default path and keeps a repository-scoped
+fine-grained PAT as a named alternative for existing connections and development.
+The panel drives `beginGitHubAppSetup`, sends the browser to the install URL the
+host mints, and on the way back redeems `completeGitHubAppSetup` with the echoed
+state, the installation id, and the authorization code GitHub appends when the App
+requests user authorization during installation — the host trades that code to prove
+the caller can reach the installation they name, so the App must be registered with
+it enabled. It then lists the repositories that installation grants,
+skipping the ones this organization already connects and offering each repository's
+reported default branch. Connecting that way sends no access token at all. An
+existing source moves onto the App in place with `migrateGitHubSourceToApp`.
+
+These three client methods are optional. A consumer adapting its own client may
+implement none of them: the App path is then hidden, the PAT path is unaffected,
+and the panel leaves a redirect's parameters and the address bar alone so that
+consumer can handle the return itself.
+
+**Deployment prerequisite.** GitHub returns the browser to the **Setup URL set on
+the App registration**, which nothing in this repo can set or verify. Point it at
+the page that mounts this panel (`https://<host>/admin/datasources` in the portal)
+and enable "Redirect on update", or the tenant installs the App and is returned no
+source and no error. See `module/configurations/local/github-app.env`.
+
+### Data boundaries
+
+Each source binds to a collection scope node. Connecting or creating a collection
+creates **no creator, default-team, or organization-wide read grant**. Accounts
+is the authority for read on the declared content resource; source labels and flat administrative
+roles never substitute for a collection grant.
+
+The host's `/admin/datasources` picker lists existing collections, their active
+read grants (including inherited grants), and the creator's current read access.
+Administrators can choose a member or team and grant a role containing only
+that resource, or revoke a displayed grant. Revoking an inherited grant removes
+that role at its ancestor and all descendants; the confirmation names this impact.
+Accounts checks admin authority and emits its transactional grant/revoke audit and
+lifecycle events. The host audit page resolves actor names, and grant rows display
+the granting actor. The host adapter supplies `listCollections`,
+`listGrantSubjects`, `grantCollectionRead`, and `revokeCollectionRead` to the
+transport-free `CollectionGrants` component. Gateway-bound source panels link to
+that host action; admin permission APIs are not added to the public SDK.
+
+`createDatasourceClient` queries the SDK's caller-scoped `ListMyAccessibleScopes`
+with read on that resource, follows every page, and propagates failures. No readable
+collection, permission-service failure, and an unresolved lookup have separate
+states; none is an empty search result or proof of an indexing failure.
+
+A consuming collection or chat page can wrap **all** private state beneath
+`CollectionReadBoundary` (inside its React Query provider), passing `client`,
+`orgId`, and the collection's `nodeId`. It unmounts its children on denied or
+failed permission refreshes. Permission queries refresh every five seconds,
+including in background tabs, and on focus; local grant mutations invalidate
+them immediately in the same query client. Server-side document/search/stream
+requests must still enforce current Accounts grants. Browser timers can be
+throttled, so this polling is not an instantaneous revocation guarantee.
+
+The consuming page owns cancellation and deletion of any private query caches,
+stream buffers, persisted history, or state outside the boundary. Dispose those
+on unmount and reauthorize before restoring content. Do not keep private content
+in an ancestor of the boundary. Render "No indexed content" only inside an
+allowed boundary after a successful empty content response. This repository has
+no consuming collection or chat screen; its wrapper tests exercise state disposal,
+while end-to-end ingestion and those screens require verification in a consuming
+solution.
+
+The collection panel reads its content resource from the `contentResource` on the
+gateway binding, and the server matches grants against the `resources` each composed
+module declares in `MODULE_PRINCIPALS`. Neither names a resource itself: this kit
+ships with the host, which holds no domain content. A deployment that declares none
+grants nothing, and its `listAccessibleScopes` rejects rather than resolving
+empty, so the panel reports the viewer's read access as unresolved. It does not
+report the viewer as refused: an empty scope list is a verdict about their
+authority, and nothing authorised the kit to state one. The method stays present
+on the client either way, so a consumer calling it through the optional-property
+`!` keeps a resolvable call rather than a missing one. `ListCollectionAccess`, which the host answers from
+the union of every composed module's declared resources, still lists a collection's
+readers — so an administrator can see a grant that this deployment's own
+`contentResource` does not cover.
+
+The `dev-admin` fixture provisions an `Example Collection` and a `Collection reader`
+role via Accounts' registration/grant service paths. Only `admin@acme.com` and
+`bob@acme.com` receive that grant. Select this existing collection when connecting
+a demo source; other fixture viewers remain ungranted. Reseeding reconverges the
+declared grants, so test revocation without restarting the fixture runtime.
+
+## Installing from a solution
+
+This package is published to GitHub Packages under the org's `@codefly-dev`
+scope, so a consumer needs that scope routed to the GitHub registry with a read
+token:
+
+```
+@codefly-dev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+Everything this package renders with is a **peer**, not a bundled dependency, so
+that the host and every Module-Federation remote share one instance of each (a
+second copy of React Query or React Hook Form means a second context, which is
+the split the sealing invariant exists to prevent). That means the consumer
+installs them:
+
+```
+npm i @codefly-dev/saas-ui @codefly-dev/saas-sdk @codefly-dev/ui \
+      react react-hook-form @hookform/resolvers zod \
+      @tanstack/react-query @connectrpc/connect @connectrpc/connect-web @bufbuild/protobuf
+```
+
+Omitting one does not fail the install — npm only warns about unmet peers — it
+fails later at import. (`peer-docs.test.ts` pins this list to `peerDependencies`,
+so it cannot drift the way a hand-maintained list otherwise would.) `@codefly-dev/saas-sdk` is deliberately a range rather
+than an exact pin: it versions independently of this package, so an exact pin
+here would make an SDK patch bump uninstallable against the published saas-ui.
 
 ## Styling
 
@@ -48,4 +169,9 @@ scan this package's source** or the utilities used only here (e.g. the modal's
   detection already scans `packages/**`.
 - An external consumer that installs the built package from `node_modules` (which
   Tailwind v4 excludes by default) must opt it in, e.g.
-  `@source "../node_modules/@codefly/saas-ui/dist";` in its CSS.
+  `@source "../node_modules/@codefly-dev/saas-ui/dist";` in its CSS.
+
+GitHub connection forms accept `fileExtensions` (for example `.md, .mdx`) and
+offer a Markdown preset. The host intersects suffixes with paths for snapshots
+and incremental changes; empty keeps all file types. The filter is selected at
+connection time and does not rewrite existing sources.

@@ -32,19 +32,22 @@ export interface WebhookDelivery {
 	responseBody: string;
 }
 
+// Webhook fan-out routes on the audit event type (DurableAuditEmitter.write), so
+// a subscription only ever fires for a name the audit registry mints — which is
+// namespaced from issue #520 on.
 export const WEBHOOK_EVENT_TYPES = [
-	"user.created",
-	"user.updated",
-	"user.deleted",
-	"org.created",
-	"org.updated",
-	"org.deleted",
-	"team.member.added",
-	"team.member.removed",
-	"invite.sent",
-	"invite.accepted",
-	"api_key.created",
-	"api_key.revoked",
+	"saas.user.created",
+	"saas.user.updated",
+	"saas.user.deleted",
+	"saas.org.created",
+	"saas.org.updated",
+	"saas.org.deleted",
+	"saas.team.member.added",
+	"saas.team.member.removed",
+	"saas.invite.sent",
+	"saas.invite.accepted",
+	"saas.api_key.created",
+	"saas.api_key.revoked",
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];

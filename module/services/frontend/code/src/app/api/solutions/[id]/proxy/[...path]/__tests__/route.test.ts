@@ -25,15 +25,26 @@ vi.mock("codefly", () => ({
 	getWorkspaceSecret,
 }));
 
+// The registry is a durable, gateway-brokered record rather than a map in this
+// process, so the fixtures stub the one read the route makes instead of
+// performing a real registration over the mocked fetch.
+const { findSolution } = vi.hoisted(() => ({
+	findSolution: vi.fn<(id: string) => Promise<unknown>>(),
+}));
+vi.mock("@/solutions/registry", () => ({ findSolution }));
+
 import { GET, POST } from "@/app/api/solutions/[id]/proxy/[...path]/route";
-import { registerSolution, unregisterSolution } from "@/solutions/registry";
 
 const GATEWAY = "http://gateway.internal:8080";
+// The composed endpoint carries a base path, which the route must preserve:
+// src/proxy.ts forwards a host page's own product API call to `${rest}${path}`,
+// so a solution's call has to land on the same URL, not on the bare origin.
+const GATEWAY_BASE = `${GATEWAY}/rest`;
 const INTERNAL_TOKEN = "trusted-internal-token";
 
 function withGateway() {
 	getEndpoints.mockReturnValue([
-		{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
+		{ service: "auth-gateway", name: "rest", address: GATEWAY_BASE },
 	]);
 }
 
@@ -51,16 +62,20 @@ function withTrustContext() {
 }
 
 function registerAudit(serviceAlias = "audit-backend") {
-	registerSolution({
-		id: "audit",
-		nav: { title: "Audit", path: "/s/audit" },
-		frontend: {
-			type: "module-federation",
-			manifestUrl: "https://audit.internal/mf-manifest.json",
-			exposedModule: "./Page",
-		},
-		backend: { serviceAlias },
-	});
+	findSolution.mockImplementation(async (id: string) =>
+		id === "audit"
+			? {
+					id: "audit",
+					nav: { title: "Audit", path: "/s/audit" },
+					frontend: {
+						type: "module-federation",
+						manifestUrl: "https://audit.internal/mf-manifest.json",
+						exposedModule: "./Page",
+					},
+					backend: { serviceAlias },
+				}
+			: null,
+	);
 }
 
 function context(id: string, path?: string[]) {
@@ -93,6 +108,7 @@ beforeEach(() => {
 	getCurrentModule.mockReturnValue("");
 	getCurrentService.mockReturnValue("");
 	getWorkspaceSecret.mockReturnValue(undefined);
+	findSolution.mockResolvedValue(null);
 	fetchMock = vi.fn(
 		async () =>
 			new Response("upstream-body", {
@@ -104,7 +120,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	unregisterSolution("audit");
+	findSolution.mockReset();
 	getEndpoints.mockReset();
 	getCurrentModule.mockReset();
 	getCurrentService.mockReset();
@@ -127,28 +143,175 @@ describe("solution proxy passthrough", () => {
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const [target, init] = fetchMock.mock.calls[0];
-		expect(target).toBe(`${GATEWAY}/solutions/audit-backend/records`);
+		expect(target).toBe(`${GATEWAY_BASE}/solutions/audit-backend/records`);
 		expect((init.headers as Headers).get("authorization")).toBe(
 			"Bearer caller-token",
 		);
 	});
 
-	it("rejects a cross-site request before reaching any upstream", async () => {
-		withGateway();
+	it.each([
+		"saas.accounts.v1.DatasourceService/ListSources",
+		"saas.store.v1.StoreService/Get",
+	])(
+		"forwards platform procedure %s to the gateway root",
+		async (procedure) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
+			const body = JSON.stringify({ pageSize: 10 });
+
+			const res = await POST(
+				proxyRequest(
+					`http://frontend/api/solutions/audit/proxy/${procedure}?key=value`,
+					{
+						method: "POST",
+						headers: {
+							authorization: "Bearer caller-token",
+							"content-type": "application/json",
+							"x-codefly-internal-token": "untrusted-token",
+						},
+						body,
+					},
+				),
+				context("audit", procedure.split("/")),
+			);
+
+			expect(res.status).toBe(200);
+			expect(await res.text()).toBe("upstream-body");
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const [target, init] = fetchMock.mock.calls[0];
+			expect(target).toBe(`${GATEWAY_BASE}/${procedure}?key=value`);
+			expect(init.method).toBe("POST");
+			expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe(body);
+			const headers = init.headers as Headers;
+			expect(headers.get("authorization")).toBe("Bearer caller-token");
+			expect(headers.get("content-type")).toBe("application/json");
+			expect(headers.get("x-codefly-internal-token")).toBe(INTERNAL_TOKEN);
+			expect(headers.get("x-codefly-public-origin")).toBe("http://frontend");
+		},
+	);
+
+	// `gatewayBase` resolved the endpoint to `new URL(address).origin`, dropping
+	// any base path the composition put on it, while `src/proxy.ts` keeps it
+	// (server/accounts-bindings.mjs normalises with toString()). The identical
+	// procedure therefore reached two different URLs depending on whether a host
+	// page or a solution remote issued it. Pin both ends of the normalisation.
+	it.each([
+		["http://gateway.internal:8080/rest", "http://gateway.internal:8080/rest"],
+		[
+			"http://gateway.internal:8080/api/v2/",
+			"http://gateway.internal:8080/api/v2",
+		],
+		["http://gateway.internal:8080", "http://gateway.internal:8080"],
+		["http://gateway.internal:8080/", "http://gateway.internal:8080"],
+	])("preserves the gateway base path in %s", async (address, base) => {
+		getEndpoints.mockReturnValue([
+			{ service: "auth-gateway", name: "rest", address },
+		]);
 		withTrustContext();
 		registerAudit();
+		const procedure = "saas.accounts.v1.DatasourceService/ListSources";
 
-		const res = await POST(
-			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
-				cookie: "codefly_session=1",
-				"sec-fetch-site": "cross-site",
+		await POST(
+			proxyRequest(`http://frontend/api/solutions/audit/proxy/${procedure}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
 			}),
-			context("audit", ["records"]),
+			context("audit", procedure.split("/")),
 		);
 
-		expect(res.status).toBe(403);
-		expect(fetchMock).not.toHaveBeenCalled();
+		expect(fetchMock.mock.calls[0][0]).toBe(`${base}/${procedure}`);
 	});
+
+	// The behavioural contract behind `SolutionPageProps.apiBase`: a remote gets
+	// ONE base, and the kit components the host hands it reach the HOST's
+	// services over that same base. Every procedure below is one the kit's
+	// datasource client issues (packages/saas-ui/src/datasources/gateway.ts). If
+	// the platform branch ever stops matching one, `<DatasourcesPanel>` mounted
+	// by a solution 404s against that solution's upstream — which is exactly the
+	// symptom that gets misread as "the host never gave the remote a usable
+	// base" and answered by inventing a second one.
+	it.each([
+		"saas.accounts.v1.DatasourceService/ListSources",
+		"saas.accounts.v1.DatasourceService/AddGitHubSource",
+		"saas.accounts.v1.DatasourceService/BeginGitHubAppSetup",
+		"saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
+		"saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+		"saas.accounts.v1.DatasourceService/SyncSource",
+		"saas.accounts.v1.DatasourceService/DeleteSource",
+		"saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
+		"saas.accounts.v1.AuditService/QueryAuditLog",
+	])(
+		"reaches the host over the solution's own apiBase for %s",
+		async (procedure) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
+
+			await POST(
+				proxyRequest(`http://frontend/api/solutions/audit/proxy/${procedure}`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+				}),
+				context("audit", procedure.split("/")),
+			);
+
+			const target = fetchMock.mock.calls[0][0] as string;
+			expect(target).toBe(`${GATEWAY_BASE}/${procedure}`);
+			expect(target).not.toContain("/solutions/audit-backend/");
+		},
+	);
+
+	it.each([
+		"records",
+		"example.audit.v1.AuditService/ListRecords",
+		"saas.accounts.v1.DatasourceService",
+		"saas.accounts.v1.DatasourceService/ListSources/extra",
+		"saas.accounts.v1.DatasourceService/not-a-method",
+		"saas.accounts.v2.DatasourceService/ListSources",
+	])("keeps solution path %s on the registered upstream", async (path) => {
+		withGateway();
+		registerAudit();
+
+		await POST(
+			proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
+				method: "POST",
+				body: "{}",
+			}),
+			context("audit", path.split("/")),
+		);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			`${GATEWAY_BASE}/solutions/audit-backend/${path}`,
+		);
+	});
+
+	it.each(["records", "saas.accounts.v1.DatasourceService/ListSources"])(
+		"rejects a cross-site request before reaching any upstream (%s)",
+		async (path) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
+
+			const res = await POST(
+				rawRequest(
+					`http://frontend/api/solutions/audit/proxy/${path}`,
+					"POST",
+					{
+						cookie: "codefly_session=1",
+						"sec-fetch-site": "cross-site",
+					},
+				),
+				context("audit", path.split("/")),
+			);
+
+			expect(res.status).toBe(403);
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
 
 	it("rejects a request whose Origin is a different origin", async () => {
 		withGateway();
@@ -249,23 +412,26 @@ describe("solution proxy passthrough", () => {
 		);
 	});
 
-	it("forwards the session cookie so a cookie-authenticated remote is identified", async () => {
-		withGateway();
-		withTrustContext();
-		registerAudit();
+	it.each(["records", "saas.accounts.v1.DatasourceService/ListSources"])(
+		"forwards the session cookie so a cookie-authenticated remote is identified (%s)",
+		async (path) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
 
-		await GET(
-			rawRequest("http://frontend/api/solutions/audit/proxy/records", "GET", {
-				cookie: "codefly_session=1; codefly_refresh=abc",
-			}),
-			context("audit", ["records"]),
-		);
+			await GET(
+				rawRequest(`http://frontend/api/solutions/audit/proxy/${path}`, "GET", {
+					cookie: "codefly_session=1; codefly_refresh=abc",
+				}),
+				context("audit", path.split("/")),
+			);
 
-		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
-		expect(forwarded.get("cookie")).toBe(
-			"codefly_session=1; codefly_refresh=abc",
-		);
-	});
+			const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
+			expect(forwarded.get("cookie")).toBe(
+				"codefly_session=1; codefly_refresh=abc",
+			);
+		},
+	);
 
 	it("omits trust headers when no internal token is configured", async () => {
 		withGateway();
@@ -296,7 +462,9 @@ describe("solution proxy passthrough", () => {
 		);
 
 		const [target] = fetchMock.mock.calls[0];
-		expect(target).toBe(`${GATEWAY}/solutions/audit-backend/a%20b/c%3Fd%3De`);
+		expect(target).toBe(
+			`${GATEWAY_BASE}/solutions/audit-backend/a%20b/c%3Fd%3De`,
+		);
 	});
 
 	it("appends the original request query string verbatim", async () => {
@@ -313,24 +481,27 @@ describe("solution proxy passthrough", () => {
 
 		const [target] = fetchMock.mock.calls[0];
 		expect(target).toBe(
-			`${GATEWAY}/solutions/audit-backend/records?limit=10&cursor=abc`,
+			`${GATEWAY_BASE}/solutions/audit-backend/records?limit=10&cursor=abc`,
 		);
 	});
 
-	it("rejects an unregistered solution id without reaching any upstream", async () => {
-		withGateway();
-		// No registration for "ghost".
+	it.each(["records", "saas.accounts.v1.DatasourceService/ListSources"])(
+		"rejects an unregistered solution id without reaching any upstream (%s)",
+		async (path) => {
+			withGateway();
+			// No registration for "ghost".
 
-		const res = await GET(
-			proxyRequest("http://frontend/api/solutions/ghost/proxy/records", {
-				headers: { authorization: "Bearer caller-token" },
-			}),
-			context("ghost", ["records"]),
-		);
+			const res = await GET(
+				proxyRequest(`http://frontend/api/solutions/ghost/proxy/${path}`, {
+					headers: { authorization: "Bearer caller-token" },
+				}),
+				context("ghost", path.split("/")),
+			);
 
-		expect(res.status).toBe(404);
-		expect(fetchMock).not.toHaveBeenCalled();
-	});
+			expect(res.status).toBe(404);
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
 
 	it("fails with 502 when the gateway endpoint is unresolvable", async () => {
 		getEndpoints.mockReturnValue([]);

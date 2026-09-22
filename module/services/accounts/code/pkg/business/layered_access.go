@@ -92,12 +92,14 @@ func (s *Service) RegisterScopeNode(ctx context.Context, actorID string, req *ge
 		ResourceId:   req.ResourceId,
 	}
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.RegisterScopeNode(ctx, node)
+		if err := s.store.RegisterScopeNode(ctx, node); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventScopeNodeRegistered, "scope_node", node.Id, req.OrgId,
+			map[string]any{"scope_path": node.ScopePath, "kind": node.Kind})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot register scope node")
 	}
-	s.emit(ctx, actorID, "user", EventScopeNodeRegistered, "scope_node", node.Id, req.OrgId,
-		map[string]any{"scope_path": node.ScopePath, "kind": node.Kind})
 	return &gen.RegisterScopeNodeResponse{Node: node}, nil
 }
 
@@ -115,12 +117,26 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 		ExpiresAt:   req.ExpiresAt,
 	}
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.GrantScope(ctx, grant)
+		if e := s.store.GrantScope(ctx, grant); e != nil {
+			return e
+		}
+		// scope.granted is tenant-visible so a solution can track the boundaries
+		// it holds; published in the grant's transaction (outbox). The boundary
+		// is the scope node path the grant targets.
+		if e := s.publishLifecycleEvent(ctx, EventScopeGranted, req.OrgId,
+			req.ScopePath, actorID, map[string]any{
+				"scope_grant_id": grant.Id,
+				"role_id":        req.RoleId,
+				"subject_id":     req.SubjectId,
+				"scope_path":     req.ScopePath,
+			}); e != nil {
+			return e
+		}
+		return s.emitTx(ctx, actorID, "user", EventScopeGranted, "scope_grant", grant.Id, req.OrgId,
+			map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId, "scope_path": req.ScopePath})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot grant scope")
 	}
-	s.emit(ctx, actorID, "user", EventScopeGranted, "scope_grant", grant.Id, req.OrgId,
-		map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId, "scope_path": req.ScopePath})
 	return &gen.GrantScopeResponse{Grant: grant}, nil
 }
 
@@ -128,12 +144,25 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
 	w := wool.Get(ctx).In("RevokeScope")
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId)
+		if e := s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId); e != nil {
+			return e
+		}
+		// scope.revoked is tenant-visible: a solution learns a boundary it held
+		// went away (RFC-0004 open question 4). Published in the revoke's
+		// transaction (outbox); boundary is the scope node path.
+		if e := s.publishLifecycleEvent(ctx, EventScopeRevoked, req.OrgId,
+			req.ScopePath, actorID, map[string]any{
+				"role_id":    req.RoleId,
+				"subject_id": req.SubjectId,
+				"scope_path": req.ScopePath,
+			}); e != nil {
+			return e
+		}
+		return s.emitTx(ctx, actorID, "user", EventScopeRevoked, "scope_grant", req.RoleId, req.OrgId,
+			map[string]any{"subject_id": req.SubjectId, "scope_path": req.ScopePath})
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke scope")
 	}
-	s.emit(ctx, actorID, "user", EventScopeRevoked, "scope_grant", req.RoleId, req.OrgId,
-		map[string]any{"subject_id": req.SubjectId, "scope_path": req.ScopePath})
 	return nil
 }
 
@@ -152,12 +181,14 @@ func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.Shar
 		ExpiresAt:    req.ExpiresAt,
 	}
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.ShareRecord(ctx, share)
+		if err := s.store.ShareRecord(ctx, share); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRecordShared, req.ResourceType, req.ResourceId, req.OrgId,
+			map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot share record")
 	}
-	s.emit(ctx, actorID, "user", EventRecordShared, req.ResourceType, req.ResourceId, req.OrgId,
-		map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId})
 	return &gen.ShareRecordResponse{Share: share}, nil
 }
 
@@ -165,12 +196,14 @@ func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.Shar
 func (s *Service) RevokeShare(ctx context.Context, actorID string, req *gen.RevokeShareRequest) error {
 	w := wool.Get(ctx).In("RevokeShare")
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.RevokeShare(ctx, req.OrgId, req.ResourceType, req.ResourceId, req.SubjectId, req.SubjectKind, req.RoleId)
+		if err := s.store.RevokeShare(ctx, req.OrgId, req.ResourceType, req.ResourceId, req.SubjectId, req.SubjectKind, req.RoleId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRecordShareRevoked, req.ResourceType, req.ResourceId, req.OrgId,
+			map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId})
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke record share")
 	}
-	s.emit(ctx, actorID, "user", EventRecordShareRevoked, req.ResourceType, req.ResourceId, req.OrgId,
-		map[string]any{"role_id": req.RoleId, "subject_id": req.SubjectId})
 	return nil
 }
 
@@ -186,4 +219,25 @@ func (s *Service) ListShares(ctx context.Context, req *gen.ListSharesRequest) (*
 		return nil, w.Wrapf(err, "cannot list record shares")
 	}
 	return &gen.ListSharesResponse{Shares: shares}, nil
+}
+
+func (s *Service) ListCollectionAccess(ctx context.Context, req *gen.ListCollectionAccessRequest) (*gen.ListCollectionAccessResponse, error) {
+	size := int(req.PageSize)
+	if size <= 0 || size > 100 {
+		size = 100
+	}
+	var collections []*gen.CollectionAccess
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		var err error
+		collections, err = s.store.ListCollectionAccess(ctx, req.OrgId, req.PageToken, size+1, s.modulePrincipals.ContentResources())
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	response := &gen.ListCollectionAccessResponse{Collections: collections}
+	if len(collections) > size {
+		response.Collections = collections[:size]
+		response.NextPageToken = collections[size-1].Node.ScopePath
+	}
+	return response, nil
 }

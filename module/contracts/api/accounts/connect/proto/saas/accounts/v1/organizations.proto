@@ -121,7 +121,7 @@ service OrganizationService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.created"
+        events: "saas.org.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -182,7 +182,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.member_added"
+        events: "saas.org.member_added"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -190,6 +190,7 @@ service OrganizationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/organizations/{org_id}/members"
@@ -208,7 +209,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.member_removed"
+        events: "saas.org.member_removed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -216,6 +217,7 @@ service OrganizationService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/organizations/{org_id}/members/{user_id}"};
   }
@@ -271,7 +273,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.settings_updated"
+        events: "saas.org.settings_updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -321,7 +323,7 @@ service OrganizationService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "org.generic_settings_updated"
+        events: "saas.org.generic_settings_updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

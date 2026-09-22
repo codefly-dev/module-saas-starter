@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package saas.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Operations is the payload-free, cross-tenant administration view of the
+// domain-event platform (issue #494 P3). It mirrors the job-operations surface:
+// event payload bytes never leave the durable boundary through these messages —
+// only counts, timings, and control-plane metadata do. The durable event of
+// record is the domain_events relation; subscriptions are event_subscriptions;
+// failed deliveries are dead-lettered inbox jobs on each subscriber queue.
+
+// EventTypeSnapshot is one published event type: its declared catalog contract
+// joined with live counters drawn from domain_events. A catalog type with no
+// rows yet still appears, with zero counters.
+message EventTypeSnapshot {
+  // type is the fully-qualified event type, e.g. "reference.console.viewed".
+  string type = 1;
+  // visibility is the declared catalog visibility: internal | tenant | external.
+  // Internal types are intra-platform and never delivered to a subscriber.
+  string visibility = 2;
+  // publisher is the owning namespace (the leading dotted segment of type).
+  string publisher = 3;
+  // major is the schema major version from the catalog.
+  uint32 major = 4;
+  // total_events is the number of domain_events rows of this type.
+  uint64 total_events = 5;
+  // unpublished is the number not yet fanned out (published_at IS NULL).
+  uint64 unpublished = 6;
+  // last_event_at is the newest created_at across rows of this type, if any.
+  google.protobuf.Timestamp last_event_at = 7;
+  // subscribers is the count of live subscriptions whose pattern matches type.
+  uint64 subscribers = 8;
+}
+
+// EventRelayHealth is the outbox-drain view across every type: how far the relay
+// is behind, expressed as a backlog count and a head-of-line age.
+message EventRelayHealth {
+  // total_events is every domain_events row.
+  uint64 total_events = 1;
+  // published_events is the number the relay has fanned out (published_at set).
+  uint64 published_events = 2;
+  // backlog is the number still awaiting fan-out (published_at IS NULL).
+  uint64 backlog = 3;
+  // oldest_unpublished_at is the created_at of the oldest unpublished event —
+  // the head-of-line relay lag. Unset when the backlog is empty.
+  google.protobuf.Timestamp oldest_unpublished_at = 4;
+}
+
+// QueueDeadLetters counts exhausted event deliveries currently sitting in the
+// dead-letter state on one subscriber queue.
+message QueueDeadLetters {
+  string queue = 1;
+  uint64 dead_letter = 2;
+}
+
+message GetEventOperationsRequest {}
+
+message GetEventOperationsResponse {
+  // event_types is every published catalog type with its live counters,
+  // ordered by type.
+  repeated EventTypeSnapshot event_types = 1;
+  // relay is the platform-wide outbox drain health.
+  EventRelayHealth relay = 2;
+  // dead_letters is the per-queue dead-letter count over live subscriber queues,
+  // ordered by queue. Empty when no event delivery is dead-lettered.
+  repeated QueueDeadLetters dead_letters = 3;
+  // observed_at is the database clock at which the snapshot was taken.
+  google.protobuf.Timestamp observed_at = 4;
+}
+
+// EventSubscriptionSummary is one live (non-revoked) control-plane subscription
+// resolved by the relay for fan-out.
+message EventSubscriptionSummary {
+  string id = 1;
+  // subscriber_principal_id is the principal that receives the delivery.
+  string subscriber_principal_id = 2;
+  // type_pattern is an exact type or a single trailing ".*" wildcard.
+  string type_pattern = 3;
+  // queue is the inbox queue the relay enqueues deliveries onto.
+  string queue = 4;
+  // delivery is "ordered" or "unordered".
+  string delivery = 5;
+  google.protobuf.Timestamp created_at = 6;
+  // queue_dead_letter is the number of dead-lettered deliveries currently on
+  // this subscription's queue (shared across subscriptions on the same queue).
+  uint64 queue_dead_letter = 7;
+}
+
+message ListEventSubscriptionsRequest {}
+
+message ListEventSubscriptionsResponse {
+  // subscriptions is every live subscription across all principals, ordered by
+  // created_at.
+  repeated EventSubscriptionSummary subscriptions = 1;
+}

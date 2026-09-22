@@ -190,7 +190,7 @@ test.describe("Server-side auth boundary", () => {
 				{
 					orgId: claims.org,
 					url: "https://example.com/hooks/codefly",
-					events: ["user.created"],
+					events: ["saas.user.created"],
 				},
 				bobToken,
 			),

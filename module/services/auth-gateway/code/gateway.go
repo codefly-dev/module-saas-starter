@@ -4,7 +4,7 @@ package main
 //
 // The browser talks only to the frontend origin. Next.js forwards exact API
 // routes here and authenticates the observed browser origin with Codefly's
-// internal service token. In production, Envoy may also use the sidecar's gRPC
+// internal service token. In production, Envoy may also use the ext_authz check's gRPC
 // ext_authz endpoint.
 //
 // Routing is WHITELIST-ONLY: backend endpoints come from generated and
@@ -32,33 +32,62 @@ import (
 )
 
 // Gateway is an HTTP reverse proxy that delegates auth decisions to a
-// Sidecar (in-process) and forwards allowed requests to upstream services.
+// ExtAuthz (in-process) and forwards allowed requests to upstream services.
 // Route matching is driven entirely by the static RouteMatcher — no prefix
 // matching, no implicit exposure.
 type Gateway struct {
-	sidecar           *Sidecar
+	authz             *ExtAuthz
 	matcher           *RouteMatcher
 	upstreams         map[string]*url.URL // service name → upstream URL
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
-	solutions         *upstreamRegistry // runtime-registered solution upstreams
-	modules           *upstreamRegistry // runtime-registered composed-module REST upstreams
-	workContext       *workContextVerifier
+	// solutions is this replica's view of the durable solution registry: the
+	// authority is accounts, and the cache converges on it (#534).
+	solutions *solutionRegistryCache
+	// clients is this replica's view of the registered-client registry: which
+	// browser origins each first-party client speaks from (track 0016).
+	clients *clientRegistryCache
+	modules *upstreamRegistry // runtime-registered composed-module REST upstreams
+	// registeredTransport re-validates a runtime-registered upstream's resolved
+	// address at dial time (SSRF / DNS-rebinding defense). Both federated module
+	// and solution routes use it: a solution upstream is durable now (#534) but
+	// still names a host its registrant chose, and it receives forwarded user
+	// bearers. Catalog upstreams are static trusted config and keep the default
+	// transport.
+	registeredTransport http.RoundTripper
+	// registrationReplay makes each solution-registration credential single-use.
+	registrationReplay *registrationReplayGuard
+	workContext        *workContextVerifier
 }
 
 // NewGateway constructs a gateway with explicit route matching.
 // upstreams maps service names (from routes.codefly.yaml) to their URLs.
-// rateLimiter may be nil to disable rate limiting.
-func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
+// rateLimiter may be nil to disable rate limiting. solutionRegistry is the
+// durable registry client; a nil one leaves the solution surface answering
+// "registry unavailable" rather than silently serving an empty registry.
+// clientRegistry is the registered-client registry; a nil one grants no
+// cross-origin access, which is how the gateway behaved before clients were
+// registrable.
+func NewGateway(
+	authz *ExtAuthz,
+	matcher *RouteMatcher,
+	upstreams map[string]*url.URL,
+	rateLimiter *RateLimiter,
+	solutionRegistry solutionRegistryClient,
+	clientRegistry clientRegistryClient,
+) *Gateway {
 	g := &Gateway{
-		sidecar:           sidecar,
-		matcher:           matcher,
-		upstreams:         upstreams,
-		rateLimiter:       rateLimiter,
-		requiredUpstreams: matcher.RequiredServices(),
-		solutions:         newUpstreamRegistry(),
-		modules:           newUpstreamRegistry(),
+		authz:               authz,
+		matcher:             matcher,
+		upstreams:           upstreams,
+		rateLimiter:         rateLimiter,
+		requiredUpstreams:   matcher.RequiredServices(),
+		solutions:           newSolutionRegistryCache(solutionRegistry),
+		clients:             newClientRegistryCache(clientRegistry),
+		modules:             newUpstreamRegistry(),
+		registeredTransport: newModuleUpstreamTransport(net.DefaultResolver),
+		registrationReplay:  newRegistrationReplayGuard(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -80,15 +109,15 @@ func (g *Gateway) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }
 
-// readyHandler returns 200 when the sidecar is ready to serve traffic.
+// readyHandler returns 200 when the ext_authz check is ready to serve traffic.
 // Every service referenced by the exact route catalog must be configured and
 // reachable; a partial deployment must not receive traffic.
 func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if g.sidecar == nil {
+	if g.authz == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = io.WriteString(w, `{"status":"not ready","reason":"sidecar not initialized"}`)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"ext_authz not initialized"}`)
 		return
 	}
 
@@ -121,6 +150,18 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 		_ = conn.Close()
 	}
 
+	// A gateway that has never acquired verification keys answers 503 to every
+	// authenticated request, so it must not be routed traffic yet; it recovers
+	// on its own once the published key set loads. Checked after the upstreams
+	// because the key set is published by one of them — an unreachable accounts
+	// is the more actionable reason. Staleness deliberately does not fail this
+	// probe (see ExtAuthz.hasLoadedAccessTokenKeys).
+	if !g.authz.hasLoadedAccessTokenKeys() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"access-token verification keys never loaded"}`)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }
@@ -133,6 +174,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// expired, or unattenuated capability is rejected at the edge rather than
 	// forwarded to a callee. Absent header: nothing to verify, carry on.
 	if g.rejectInvalidWorkContext(w, r) {
+		return
+	}
+
+	// A registered client's browser asks permission before it may call at all.
+	// Answered from the registry alone and before routing, because a preflight
+	// carries no credential and names a path nothing has authorized yet.
+	if g.handleCORSPreflight(w, r) {
 		return
 	}
 
@@ -152,6 +200,20 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// only stores a prefix→upstream mapping; every proxied module request below
 	// still runs the full auth pipeline.
 	if g.handleModuleRegister(w, r) {
+		return
+	}
+
+	// The credential exchange that precedes it (/modules/_registration-token):
+	// same listener, same reason to run before the header is stripped, and it
+	// brokers to accounts rather than deciding anything itself.
+	if g.handleModuleRegistrationToken(w, r) {
+		return
+	}
+
+	// The module's other startup exchange (/modules/_work-context): the identity
+	// it calls the module-facing capability surface with, brokered the same way
+	// and gated on the same header this pass has yet to strip.
+	if g.handleModuleWorkContext(w, r) {
 		return
 	}
 
@@ -181,7 +243,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Identity and trust credentials are never accepted from the public side
-	// of the gateway. Sidecar.Check only sees the caller's real credential
+	// of the gateway. ExtAuthz.Check only sees the caller's real credential
 	// (Authorization); successful checks re-stamp canonical headers below.
 	stripAllIdentityHeaders(r)
 
@@ -198,7 +260,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "public":
 		// Public route: call Check to get identity headers if a token is present,
 		// but don't reject if no token.
-		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, "auth check failed")
 			return
@@ -238,7 +300,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "required":
 		// Protected route: must have valid auth.
-		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, "auth check failed")
 			return
@@ -262,10 +324,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "mfa_pending":
-		// MFA pending route: sidecar handles mfa_token validation.
-		// For now, delegate to the same Check flow — the sidecar accepts
+		// MFA pending route: ext_authz check handles mfa_token validation.
+		// For now, delegate to the same Check flow — the ext_authz check accepts
 		// mfa_token on these paths.
-		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, "auth check failed")
 			return
@@ -296,6 +358,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
 func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	// Every forwarded request passes through here, whichever route matched it,
+	// so this is where a request is bound to the origins its client registered.
+	// Ahead of the limiter, not inside proxyTo: a refusal must not spend the
+	// org's budget, and a 429 has to carry the grant or the caller sees an
+	// opaque CORS failure instead of the reason it was throttled.
+	w, ok := g.authorizeCrossOrigin(w, r)
+	if !ok {
+		return
+	}
 	if g.rateLimiter != nil {
 		g.rateLimiter.Middleware(limiterFailureModeFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.proxyTo(w, r, upstream, entry)
@@ -323,9 +394,9 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	r.Header.Del("X-Codefly-Gateway-Token")
 	r.Header.Del("X-Codefly-Internal-Token")
 	r.Header.Del("X-Codefly-Public-Origin")
-	if isAccountsRoute(entry) && g.sidecar != nil && g.sidecar.gatewayToken != "" {
-		r.Header.Set("X-Codefly-Gateway-Token", g.sidecar.gatewayToken)
-		if publicOrigin, ok := trustedFrontendOrigin(r.Context()); ok {
+	if isAccountsRoute(entry) && g.authz != nil && g.authz.gatewayToken != "" {
+		r.Header.Set("X-Codefly-Gateway-Token", g.authz.gatewayToken)
+		if publicOrigin, ok := publicOriginFor(r); ok {
 			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
 	}
@@ -334,6 +405,13 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		r.URL.RawPath = ""
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	if isRuntimeRegisteredRoute(entry) && g.registeredTransport != nil {
+		// A runtime-registered upstream — module or solution — merely names a mesh
+		// host that its registrant chose; re-validate the resolved address at dial
+		// time (SSRF / DNS-rebinding defense). Catalog upstreams keep the default
+		// transport.
+		proxy.Transport = g.registeredTransport
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
@@ -348,7 +426,7 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	r.Header.Del("X-Codefly-Public-Origin")
 	r.Header.Del("X-Codefly-Internal-Token")
 
-	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(presentedToken) {
+	if g.authz == nil || !g.authz.acceptsInternalToken(presentedToken) {
 		return r
 	}
 	origin, err := canonicalPublicOrigin(claimedOrigin)
@@ -357,6 +435,29 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	}
 	ctx := context.WithValue(r.Context(), trustedFrontendOriginContextKey{}, origin)
 	return r.WithContext(ctx)
+}
+
+// publicOriginFor is the browser origin accounts may treat as verified: the
+// WebAuthn relying party a credential is bound to, and the origin an OAuth
+// redirect is validated against.
+//
+// Two callers can establish one. The frontend proves it by presenting the
+// cluster-internal token alongside the origin it resolved server-side. A
+// registered client proves it by arriving from an origin its own registration
+// declares, which authorizeCrossOrigin has already checked — a stronger claim,
+// since it names the client rather than only the process that forwarded it.
+func publicOriginFor(r *http.Request) (string, bool) {
+	if origin, ok := trustedFrontendOrigin(r.Context()); ok {
+		return origin, true
+	}
+	if r.Header.Get(clientIDHeader) == "" {
+		return "", false
+	}
+	origin, err := canonicalPublicOrigin(r.Header.Get("Origin"))
+	if err != nil {
+		return "", false
+	}
+	return origin, true
 }
 
 func trustedFrontendOrigin(ctx context.Context) (string, bool) {
@@ -398,7 +499,7 @@ func buildCheckRequest(r *http.Request) *authv3.CheckRequest {
 
 // injectHeaders writes the ext_authz OkResponse headers onto the incoming
 // request before forwarding to the upstream. Existing header values are
-// replaced — the sidecar is authoritative for identity.
+// replaced — the ext_authz check is authoritative for identity.
 func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 	stripAllIdentityHeaders(r)
 	for _, h := range headers {
@@ -451,9 +552,11 @@ var untrustedAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
 	"x-scoped-roles", "x-scoped-roles-truncated",
 	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
-	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
+	"x-acting-as-user-id", "x-act", "x-scopes", "x-credential-kind", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
+	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
+	clientIDHeader,
 }
 
 // httpError writes a plain-text error response. Bodies are short,

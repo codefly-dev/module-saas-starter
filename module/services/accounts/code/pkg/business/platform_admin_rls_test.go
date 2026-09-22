@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (
@@ -128,4 +130,29 @@ func TestPlatformAdminSuspendUserEntersControlPlaneScope(t *testing.T) {
 	}))
 	require.NotNil(t, target)
 	require.Equal(t, gen.UserStatus_USER_STATUS_SUSPENDED, target.Status)
+}
+
+// sessions.user_id is a uuid column, so an unparseable id is a failed cast
+// inside Postgres rather than an empty page of results — and the failure is
+// swallowed by the surrounding transaction, so the caller gets "commit
+// unexpectedly resulted in rollback" with nothing naming the bad input. The
+// assertion is on that naming: an error alone does not distinguish the guard
+// from the cast, since both fail.
+func TestListActiveSessionsRejectsAnUnparseableUserID(t *testing.T) {
+	clearData(t)
+	adminID, _ := mustUserAndOrg(t, testCtx,
+		"sessions-guard@example.com", "sessions-guard", "Sessions Guard Org")
+	grantPlatformRole(t, adminID, "support", adminID)
+
+	for _, userID := range []string{" ", "not-a-uuid"} {
+		_, err := testService.ListActiveSessions(testCtx, adminID,
+			&gen.ListActiveSessionsRequest{UserId: userID, PageSize: 10})
+		require.ErrorContains(t, err, "invalid user id",
+			"user id %q must be refused by name, not as an opaque rollback", userID)
+	}
+
+	// The guard rejects only bad input: a real id still lists.
+	_, err := testService.ListActiveSessions(testCtx, adminID,
+		&gen.ListActiveSessionsRequest{UserId: adminID, PageSize: 10})
+	require.NoError(t, err)
 }

@@ -17,7 +17,7 @@ vi.mock("../dashboard", () => ({
 const eventTypes = [
 	{
 		$typeName: "saas.accounts.v1.AuditEventType",
-		name: "auth.login",
+		name: "saas.auth.login",
 		version: 1,
 		category: "authentication",
 		owner: "accounts",

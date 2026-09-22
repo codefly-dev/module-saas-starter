@@ -10,7 +10,7 @@ This package is the schema half of `P3-PLUGIN-002`. It ships:
 - `plugin.codefly.schema.json` — the canonical, language-neutral JSON Schema.
 - TypeScript types and a pure, JSON-safe validator (`assertPluginManifest`,
   `loadPluginManifest`, `definePluginManifest`).
-- `toSolutionSpec` — the projection onto obin's lodestar `SolutionSpec`.
+- `toSolutionSpec` — the projection onto a consuming platform's `SolutionSpec`.
 - `examples/plugin.codefly.yaml` — a reference manifest exercising every field.
 
 The frontend contribution block (`ui`) is validated by
@@ -51,10 +51,10 @@ The manifest is JSON-safe. It declares stable ids and compatibility metadata
 only — never deployment addresses, credentials, or resolved bindings. Those are
 host-owned and resolved after installation.
 
-## Relationship to obin's SolutionSpec
+## Relationship to a consuming platform's SolutionSpec
 
 The identity, services, api, events, ui, needs, permissions, and lifecycle
-sections project directly onto lodestar's `SolutionSpec`. The starter-only
+sections project directly onto that `SolutionSpec`. The starter-only
 sections (dashboard, entitlements, config, migrations, egress, integrity) carry
 through `extensions['x-codefly']` so the projection is lossless. See
 [`plugin-manifest-schema.md`](../../../../../docs/plugin-manifest-schema.md).

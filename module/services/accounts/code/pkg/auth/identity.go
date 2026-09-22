@@ -87,6 +87,13 @@ type Identity struct {
 	DeviceInfo map[string]string
 	IPAddress  string
 
+	// ClientID names the registered first-party client this session belongs to
+	// and is emitted as the standard `azp` (authorized party) claim. Empty for
+	// the host's own web session, which is not a registered client. It is
+	// accountability, not authority: audit reads "person, via client", while
+	// authorization still resolves from the subject and their roles.
+	ClientID string
+
 	// Email and DisplayName are purely presentational identity, carried into
 	// the access token's `email`/`name` claims so a client can render the
 	// signed-in person by name or address instead of the raw user id. Neither

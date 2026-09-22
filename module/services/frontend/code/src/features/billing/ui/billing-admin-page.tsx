@@ -111,7 +111,9 @@ export function BillingAdminPage() {
 		<div className="space-y-6 max-w-4xl">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Subscription</h1>
+					<h1 data-slot="page-title" className="type-page-title">
+						Subscription
+					</h1>
 					<p className="text-muted-foreground">
 						Plan, usage, invoices, and payment management. Powered by Stripe.
 					</p>

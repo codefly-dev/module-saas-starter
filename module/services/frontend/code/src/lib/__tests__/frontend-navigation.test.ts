@@ -45,6 +45,7 @@ describe("generated frontend navigation", () => {
 			"/admin/users",
 			"/admin/organizations",
 			"/admin/roles",
+			"/admin/permissions",
 			"/admin/invitations",
 			"/admin/api-keys",
 		]);

@@ -65,16 +65,18 @@ func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL s
 		// click Disable to test that path).
 		now := time.Now()
 		if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-			return s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
+			if err := s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
 				OrgID:        orgID,
 				Provider:     "workos",
 				Status:       "linked",
 				ConfiguredAt: &now,
-			})
+			}); err != nil {
+				return err
+			}
+			return s.emitTx(ctx, actorID, "user", EventSSOSetupStarted, "organization", orgID, orgID)
 		}); err != nil {
 			return "", fmt.Errorf("persist stub SSO setup: %w", err)
 		}
-		s.emit(ctx, actorID, "user", EventSSOSetupStarted, "organization", orgID, orgID)
 		return returnURL + "?demo=1", nil
 	}
 
@@ -106,6 +108,20 @@ func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL s
 		if err != nil {
 			return "", fmt.Errorf("workos org create: %w", err)
 		}
+		// Record the provider-side identifier before anything else can fail. The
+		// organization now exists at the provider and nothing here can delete it,
+		// so losing its id would strand it: the next attempt would read no
+		// configuration and mint a second one. Status stays unset — the setup is
+		// not linked until the portal session below succeeds.
+		if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+			return s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
+				OrgID:          orgID,
+				Provider:       "workos",
+				OrganizationID: workosOrgID,
+			})
+		}); err != nil {
+			return "", fmt.Errorf("persist workos organization id: %w", err)
+		}
 	}
 
 	link, err := client.generatePortalLink(ctx, workosOrgID, returnURL)
@@ -114,16 +130,20 @@ func (s *Service) StartSSOSetup(ctx context.Context, actorID, orgID, returnURL s
 	}
 
 	now := time.Now()
-	_ = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.store.UpsertOrgSSO(ctx, &OrgSSOConfig{
 			OrgID:          orgID,
 			Provider:       "workos",
 			OrganizationID: workosOrgID,
 			Status:         "linked",
 			ConfiguredAt:   &now,
-		})
-	})
-	s.emit(ctx, actorID, "user", EventSSOSetupStarted, "organization", orgID, orgID)
+		}); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventSSOSetupStarted, "organization", orgID, orgID)
+	}); err != nil {
+		return "", fmt.Errorf("persist sso setup: %w", err)
+	}
 	return link, nil
 }
 
@@ -143,11 +163,13 @@ func (s *Service) DisableSSO(ctx context.Context, actorID, orgID string) error {
 		}
 		cfg.Status = "disabled"
 		cfg.ConnectionID = ""
-		return s.store.UpsertOrgSSO(ctx, cfg)
+		if err := s.store.UpsertOrgSSO(ctx, cfg); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventSSODisabled, "organization", orgID, orgID)
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", EventSSODisabled, "organization", orgID, orgID)
 	return nil
 }
 
@@ -159,7 +181,10 @@ type workosClient struct {
 	http   *http.Client
 }
 
-const workosBase = "https://api.workos.com"
+// workosBase is the identity-management API origin. A var, not a const, so a
+// test can point the two provider calls at a local server and exercise the
+// ordering between them.
+var workosBase = "https://api.workos.com"
 
 // createOrganization mints a WorkOS Organization for the
 // saas-starter org. The `external_id` field stamps our org id on

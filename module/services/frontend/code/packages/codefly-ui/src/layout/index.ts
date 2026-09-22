@@ -6,7 +6,7 @@
 // mirroring `@codefly-dev/ui/dashboard`. No host context, no SDK — React only.
 
 // Page containers
-export { Card, type CardProps, Section, type SectionProps } from "./card.js";
+export { Card, type CardProps } from "./card.js";
 export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
 
 // Feedback / state
@@ -34,6 +34,19 @@ export {
 	SelectTrigger,
 	SelectValue,
 } from "./select.js";
+export { Field, type FieldControlProps, type FieldProps } from "./field.js";
+export { Fieldset, FieldsetLegend } from "./fieldset.js";
+export {
+	DateField,
+	type DateFieldPart,
+	type DateFieldProps,
+	type DateFieldVariant,
+} from "./date-field.js";
+export {
+	SegmentedControl,
+	type SegmentedControlOption,
+	type SegmentedControlProps,
+} from "./segmented-control.js";
 
 // Data display
 export { Badge, badgeVariants } from "./badge.js";
@@ -50,13 +63,22 @@ export {
 	TableBody,
 	TableCaption,
 	TableCell,
+	TableEmptyState,
 	TableFooter,
 	TableHead,
 	TableHeader,
 	TableRow,
+	TableToolbar,
 } from "./table.js";
 export { Skeleton } from "./skeleton.js";
 export { Separator } from "./separator.js";
+export { Pagination, type PaginationProps } from "./pagination.js";
+export {
+	PAGE_GAP,
+	type PaginationEntry,
+	type PaginationRangeOptions,
+	paginationRange,
+} from "./pagination-model.js";
 
 // Overlays
 export {
@@ -108,3 +130,100 @@ export {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "./dropdown-menu.js";
+
+export {
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardEyebrow,
+	CardFooter,
+	CardHeader,
+	CardMetadata,
+	CardRoot,
+	CardTitle,
+} from "./card-root.js";
+
+export {
+	TabsContent,
+	TabsList,
+	TabsRoot,
+	TabsTrigger,
+	tabsListVariants,
+} from "./tabs-root.js";
+
+export {
+	Command,
+	CommandDialog,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+	CommandSeparator,
+	CommandShortcut,
+	useCommandFilter,
+} from "./command.js";
+
+export {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+	InputGroupText,
+	InputGroupTextarea,
+} from "./input-group.js";
+
+export {
+	Sheet,
+	SheetClose,
+	SheetContent,
+	SheetDescription,
+	SheetFooter,
+	SheetHeader,
+	SheetTitle,
+	SheetTrigger,
+} from "./sheet.js";
+
+export {
+	Sidebar,
+	SidebarContent,
+	SidebarFooter,
+	SidebarGroup,
+	SidebarGroupAction,
+	SidebarGroupContent,
+	SidebarGroupLabel,
+	SidebarHeader,
+	SidebarInput,
+	SidebarInset,
+	SidebarMenu,
+	SidebarMenuAction,
+	SidebarMenuBadge,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	SidebarMenuSkeleton,
+	SidebarMenuSub,
+	SidebarMenuSubButton,
+	SidebarMenuSubItem,
+	SidebarProvider,
+	SidebarRail,
+	SidebarSeparator,
+	SidebarTrigger,
+	useSidebar,
+} from "./sidebar.js";
+
+export { Toaster } from "./sonner.js";
+
+export { useIsMobile } from "./use-mobile.js";
+
+export type { SectionProps } from "./page.js";
+export {
+	Grid,
+	Layout,
+	Page,
+	PageHeader,
+	Panel,
+	Section,
+	Stack,
+} from "./page.js";
+
+export { Banner, type BannerProps } from "./banner.js";

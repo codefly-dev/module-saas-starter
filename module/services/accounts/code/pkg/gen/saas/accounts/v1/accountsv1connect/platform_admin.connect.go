@@ -6,6 +6,7 @@ package accountsv1connect
 
 import (
 	v1 "accounts/pkg/gen/saas/accounts/v1"
+	v12 "accounts/pkg/gen/saas/events/v1"
 	v11 "accounts/pkg/gen/saas/jobs/v1"
 	context "context"
 	errors "errors"
@@ -48,6 +49,9 @@ const (
 	// PlatformAdminServiceImpersonateUserProcedure is the fully-qualified name of the
 	// PlatformAdminService's ImpersonateUser RPC.
 	PlatformAdminServiceImpersonateUserProcedure = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
+	// PlatformAdminServiceStopImpersonationProcedure is the fully-qualified name of the
+	// PlatformAdminService's StopImpersonation RPC.
+	PlatformAdminServiceStopImpersonationProcedure = "/saas.accounts.v1.PlatformAdminService/StopImpersonation"
 	// PlatformAdminServiceListActiveSessionsProcedure is the fully-qualified name of the
 	// PlatformAdminService's ListActiveSessions RPC.
 	PlatformAdminServiceListActiveSessionsProcedure = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
@@ -87,6 +91,12 @@ const (
 	// PlatformAdminServiceReplayJobProcedure is the fully-qualified name of the PlatformAdminService's
 	// ReplayJob RPC.
 	PlatformAdminServiceReplayJobProcedure = "/saas.accounts.v1.PlatformAdminService/ReplayJob"
+	// PlatformAdminServiceGetEventOperationsProcedure is the fully-qualified name of the
+	// PlatformAdminService's GetEventOperations RPC.
+	PlatformAdminServiceGetEventOperationsProcedure = "/saas.accounts.v1.PlatformAdminService/GetEventOperations"
+	// PlatformAdminServiceListEventSubscriptionsProcedure is the fully-qualified name of the
+	// PlatformAdminService's ListEventSubscriptions RPC.
+	PlatformAdminServiceListEventSubscriptionsProcedure = "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"
 )
 
 // PlatformAdminServiceClient is a client for the saas.accounts.v1.PlatformAdminService service.
@@ -96,6 +106,15 @@ type PlatformAdminServiceClient interface {
 	SuspendUser(context.Context, *connect.Request[v1.SuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	UnsuspendUser(context.Context, *connect.Request[v1.UnsuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ImpersonateUser(context.Context, *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error)
+	// StopImpersonation closes the caller's own impersonation window: it revokes
+	// the session's access tokens and records the end of the window.
+	//
+	// platform_role is deliberately NONE. Platform authority is withheld from an
+	// impersonated request by design, so a support-role gate would make this the
+	// one operation an impersonated session can never reach — and ending the
+	// session is precisely what it must be able to do. Being impersonated is
+	// itself the authorization, checked in the handler.
+	StopImpersonation(context.Context, *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error)
 	// Session visibility
 	ListActiveSessions(context.Context, *connect.Request[v1.ListActiveSessionsRequest]) (*connect.Response[v1.ListActiveSessionsResponse], error)
 	RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error)
@@ -119,6 +138,11 @@ type PlatformAdminServiceClient interface {
 	ListJobs(context.Context, *connect.Request[v11.ListJobsRequest]) (*connect.Response[v11.ListJobsResponse], error)
 	GetJob(context.Context, *connect.Request[v11.GetJobRequest]) (*connect.Response[v11.GetJobResponse], error)
 	ReplayJob(context.Context, *connect.Request[v11.ReplayJobRequest]) (*connect.Response[v11.ReplayJobResponse], error)
+	// Domain-event platform operations (#494 P3). Payload bytes never leave the
+	// durable event boundary through these methods — only counts, timings, and
+	// control-plane subscription metadata do.
+	GetEventOperations(context.Context, *connect.Request[v12.GetEventOperationsRequest]) (*connect.Response[v12.GetEventOperationsResponse], error)
+	ListEventSubscriptions(context.Context, *connect.Request[v12.ListEventSubscriptionsRequest]) (*connect.Response[v12.ListEventSubscriptionsResponse], error)
 }
 
 // NewPlatformAdminServiceClient constructs a client for the saas.accounts.v1.PlatformAdminService
@@ -154,6 +178,12 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			httpClient,
 			baseURL+PlatformAdminServiceImpersonateUserProcedure,
 			connect.WithSchema(platformAdminServiceMethods.ByName("ImpersonateUser")),
+			connect.WithClientOptions(opts...),
+		),
+		stopImpersonation: connect.NewClient[v1.StopImpersonationRequest, v1.StopImpersonationResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceStopImpersonationProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("StopImpersonation")),
 			connect.WithClientOptions(opts...),
 		),
 		listActiveSessions: connect.NewClient[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse](
@@ -234,28 +264,43 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(platformAdminServiceMethods.ByName("ReplayJob")),
 			connect.WithClientOptions(opts...),
 		),
+		getEventOperations: connect.NewClient[v12.GetEventOperationsRequest, v12.GetEventOperationsResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceGetEventOperationsProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("GetEventOperations")),
+			connect.WithClientOptions(opts...),
+		),
+		listEventSubscriptions: connect.NewClient[v12.ListEventSubscriptionsRequest, v12.ListEventSubscriptionsResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceListEventSubscriptionsProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("ListEventSubscriptions")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // platformAdminServiceClient implements PlatformAdminServiceClient.
 type platformAdminServiceClient struct {
-	searchUsers         *connect.Client[v1.SearchUsersRequest, v1.SearchUsersResponse]
-	suspendUser         *connect.Client[v1.SuspendUserRequest, emptypb.Empty]
-	unsuspendUser       *connect.Client[v1.UnsuspendUserRequest, emptypb.Empty]
-	impersonateUser     *connect.Client[v1.ImpersonateUserRequest, v1.ImpersonateUserResponse]
-	listActiveSessions  *connect.Client[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse]
-	revokeSession       *connect.Client[v1.RevokeSessionRequest, emptypb.Empty]
-	getOrgEntitlements  *connect.Client[v1.GetOrgEntitlementsRequest, v1.GetOrgEntitlementsResponse]
-	overrideEntitlement *connect.Client[v1.OverrideEntitlementRequest, v1.OverrideEntitlementResponse]
-	grantPlatformRole   *connect.Client[v1.GrantPlatformRoleRequest, emptypb.Empty]
-	revokePlatformRole  *connect.Client[v1.RevokePlatformRoleRequest, emptypb.Empty]
-	listPlatformAdmins  *connect.Client[v1.ListPlatformAdminsRequest, v1.ListPlatformAdminsResponse]
-	listFeatureFlags    *connect.Client[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse]
-	upsertFeatureFlag   *connect.Client[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse]
-	getJobOperations    *connect.Client[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse]
-	listJobs            *connect.Client[v11.ListJobsRequest, v11.ListJobsResponse]
-	getJob              *connect.Client[v11.GetJobRequest, v11.GetJobResponse]
-	replayJob           *connect.Client[v11.ReplayJobRequest, v11.ReplayJobResponse]
+	searchUsers            *connect.Client[v1.SearchUsersRequest, v1.SearchUsersResponse]
+	suspendUser            *connect.Client[v1.SuspendUserRequest, emptypb.Empty]
+	unsuspendUser          *connect.Client[v1.UnsuspendUserRequest, emptypb.Empty]
+	impersonateUser        *connect.Client[v1.ImpersonateUserRequest, v1.ImpersonateUserResponse]
+	stopImpersonation      *connect.Client[v1.StopImpersonationRequest, v1.StopImpersonationResponse]
+	listActiveSessions     *connect.Client[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse]
+	revokeSession          *connect.Client[v1.RevokeSessionRequest, emptypb.Empty]
+	getOrgEntitlements     *connect.Client[v1.GetOrgEntitlementsRequest, v1.GetOrgEntitlementsResponse]
+	overrideEntitlement    *connect.Client[v1.OverrideEntitlementRequest, v1.OverrideEntitlementResponse]
+	grantPlatformRole      *connect.Client[v1.GrantPlatformRoleRequest, emptypb.Empty]
+	revokePlatformRole     *connect.Client[v1.RevokePlatformRoleRequest, emptypb.Empty]
+	listPlatformAdmins     *connect.Client[v1.ListPlatformAdminsRequest, v1.ListPlatformAdminsResponse]
+	listFeatureFlags       *connect.Client[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse]
+	upsertFeatureFlag      *connect.Client[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse]
+	getJobOperations       *connect.Client[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse]
+	listJobs               *connect.Client[v11.ListJobsRequest, v11.ListJobsResponse]
+	getJob                 *connect.Client[v11.GetJobRequest, v11.GetJobResponse]
+	replayJob              *connect.Client[v11.ReplayJobRequest, v11.ReplayJobResponse]
+	getEventOperations     *connect.Client[v12.GetEventOperationsRequest, v12.GetEventOperationsResponse]
+	listEventSubscriptions *connect.Client[v12.ListEventSubscriptionsRequest, v12.ListEventSubscriptionsResponse]
 }
 
 // SearchUsers calls saas.accounts.v1.PlatformAdminService.SearchUsers.
@@ -276,6 +321,11 @@ func (c *platformAdminServiceClient) UnsuspendUser(ctx context.Context, req *con
 // ImpersonateUser calls saas.accounts.v1.PlatformAdminService.ImpersonateUser.
 func (c *platformAdminServiceClient) ImpersonateUser(ctx context.Context, req *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error) {
 	return c.impersonateUser.CallUnary(ctx, req)
+}
+
+// StopImpersonation calls saas.accounts.v1.PlatformAdminService.StopImpersonation.
+func (c *platformAdminServiceClient) StopImpersonation(ctx context.Context, req *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error) {
+	return c.stopImpersonation.CallUnary(ctx, req)
 }
 
 // ListActiveSessions calls saas.accounts.v1.PlatformAdminService.ListActiveSessions.
@@ -345,6 +395,16 @@ func (c *platformAdminServiceClient) ReplayJob(ctx context.Context, req *connect
 	return c.replayJob.CallUnary(ctx, req)
 }
 
+// GetEventOperations calls saas.accounts.v1.PlatformAdminService.GetEventOperations.
+func (c *platformAdminServiceClient) GetEventOperations(ctx context.Context, req *connect.Request[v12.GetEventOperationsRequest]) (*connect.Response[v12.GetEventOperationsResponse], error) {
+	return c.getEventOperations.CallUnary(ctx, req)
+}
+
+// ListEventSubscriptions calls saas.accounts.v1.PlatformAdminService.ListEventSubscriptions.
+func (c *platformAdminServiceClient) ListEventSubscriptions(ctx context.Context, req *connect.Request[v12.ListEventSubscriptionsRequest]) (*connect.Response[v12.ListEventSubscriptionsResponse], error) {
+	return c.listEventSubscriptions.CallUnary(ctx, req)
+}
+
 // PlatformAdminServiceHandler is an implementation of the saas.accounts.v1.PlatformAdminService
 // service.
 type PlatformAdminServiceHandler interface {
@@ -353,6 +413,15 @@ type PlatformAdminServiceHandler interface {
 	SuspendUser(context.Context, *connect.Request[v1.SuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	UnsuspendUser(context.Context, *connect.Request[v1.UnsuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ImpersonateUser(context.Context, *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error)
+	// StopImpersonation closes the caller's own impersonation window: it revokes
+	// the session's access tokens and records the end of the window.
+	//
+	// platform_role is deliberately NONE. Platform authority is withheld from an
+	// impersonated request by design, so a support-role gate would make this the
+	// one operation an impersonated session can never reach — and ending the
+	// session is precisely what it must be able to do. Being impersonated is
+	// itself the authorization, checked in the handler.
+	StopImpersonation(context.Context, *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error)
 	// Session visibility
 	ListActiveSessions(context.Context, *connect.Request[v1.ListActiveSessionsRequest]) (*connect.Response[v1.ListActiveSessionsResponse], error)
 	RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error)
@@ -376,6 +445,11 @@ type PlatformAdminServiceHandler interface {
 	ListJobs(context.Context, *connect.Request[v11.ListJobsRequest]) (*connect.Response[v11.ListJobsResponse], error)
 	GetJob(context.Context, *connect.Request[v11.GetJobRequest]) (*connect.Response[v11.GetJobResponse], error)
 	ReplayJob(context.Context, *connect.Request[v11.ReplayJobRequest]) (*connect.Response[v11.ReplayJobResponse], error)
+	// Domain-event platform operations (#494 P3). Payload bytes never leave the
+	// durable event boundary through these methods — only counts, timings, and
+	// control-plane subscription metadata do.
+	GetEventOperations(context.Context, *connect.Request[v12.GetEventOperationsRequest]) (*connect.Response[v12.GetEventOperationsResponse], error)
+	ListEventSubscriptions(context.Context, *connect.Request[v12.ListEventSubscriptionsRequest]) (*connect.Response[v12.ListEventSubscriptionsResponse], error)
 }
 
 // NewPlatformAdminServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -407,6 +481,12 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		PlatformAdminServiceImpersonateUserProcedure,
 		svc.ImpersonateUser,
 		connect.WithSchema(platformAdminServiceMethods.ByName("ImpersonateUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	platformAdminServiceStopImpersonationHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceStopImpersonationProcedure,
+		svc.StopImpersonation,
+		connect.WithSchema(platformAdminServiceMethods.ByName("StopImpersonation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	platformAdminServiceListActiveSessionsHandler := connect.NewUnaryHandler(
@@ -487,6 +567,18 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		connect.WithSchema(platformAdminServiceMethods.ByName("ReplayJob")),
 		connect.WithHandlerOptions(opts...),
 	)
+	platformAdminServiceGetEventOperationsHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceGetEventOperationsProcedure,
+		svc.GetEventOperations,
+		connect.WithSchema(platformAdminServiceMethods.ByName("GetEventOperations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	platformAdminServiceListEventSubscriptionsHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceListEventSubscriptionsProcedure,
+		svc.ListEventSubscriptions,
+		connect.WithSchema(platformAdminServiceMethods.ByName("ListEventSubscriptions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.PlatformAdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PlatformAdminServiceSearchUsersProcedure:
@@ -497,6 +589,8 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceUnsuspendUserHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceImpersonateUserProcedure:
 			platformAdminServiceImpersonateUserHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceStopImpersonationProcedure:
+			platformAdminServiceStopImpersonationHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListActiveSessionsProcedure:
 			platformAdminServiceListActiveSessionsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceRevokeSessionProcedure:
@@ -523,6 +617,10 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceGetJobHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceReplayJobProcedure:
 			platformAdminServiceReplayJobHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceGetEventOperationsProcedure:
+			platformAdminServiceGetEventOperationsHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceListEventSubscriptionsProcedure:
+			platformAdminServiceListEventSubscriptionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -546,6 +644,10 @@ func (UnimplementedPlatformAdminServiceHandler) UnsuspendUser(context.Context, *
 
 func (UnimplementedPlatformAdminServiceHandler) ImpersonateUser(context.Context, *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ImpersonateUser is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) StopImpersonation(context.Context, *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.StopImpersonation is not implemented"))
 }
 
 func (UnimplementedPlatformAdminServiceHandler) ListActiveSessions(context.Context, *connect.Request[v1.ListActiveSessionsRequest]) (*connect.Response[v1.ListActiveSessionsResponse], error) {
@@ -598,4 +700,12 @@ func (UnimplementedPlatformAdminServiceHandler) GetJob(context.Context, *connect
 
 func (UnimplementedPlatformAdminServiceHandler) ReplayJob(context.Context, *connect.Request[v11.ReplayJobRequest]) (*connect.Response[v11.ReplayJobResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ReplayJob is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) GetEventOperations(context.Context, *connect.Request[v12.GetEventOperationsRequest]) (*connect.Response[v12.GetEventOperationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.GetEventOperations is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) ListEventSubscriptions(context.Context, *connect.Request[v12.ListEventSubscriptionsRequest]) (*connect.Response[v12.ListEventSubscriptionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ListEventSubscriptions is not implemented"))
 }

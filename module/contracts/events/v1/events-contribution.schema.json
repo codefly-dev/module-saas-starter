@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codefly.dev/schemas/saas/events-contribution-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "namespace"],
+  "properties": {
+    "schema": {"const": "codefly/saas/events-contribution/v1"},
+    "namespace": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
+    "queues": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"}
+    },
+    "publishes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "schema", "visibility"],
+        "properties": {
+          "type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+$"},
+          "schema": {"type": "string", "pattern": "^[^#]+\\.proto#[A-Za-z][A-Za-z0-9]*$"},
+          "visibility": {"enum": ["internal", "tenant", "external"]},
+          "partition": {"type": "string"},
+          "retention": {"type": "string"}
+        }
+      }
+    },
+    "consumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "queue", "delivery"],
+        "properties": {
+          "type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+$"},
+          "queue": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
+          "delivery": {"enum": ["ordered", "unordered"]}
+        }
+      }
+    },
+    "follows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resource_type", "events"],
+        "properties": {
+          "resource_type": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+$"}
+          }
+        }
+      }
+    }
+  }
+}

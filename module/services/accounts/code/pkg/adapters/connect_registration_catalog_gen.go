@@ -14,9 +14,11 @@ import (
 // descriptor-generated Connect handler interface.
 var (
 	_ genconnect.APIKeyServiceHandler             = (*apiKeyConnectHandler)(nil)
+	_ genconnect.AccessibleScopeServiceHandler    = (*accessibleScopeConnectHandler)(nil)
 	_ genconnect.AuditServiceHandler              = (*auditConnectHandler)(nil)
 	_ genconnect.AuthServiceHandler               = (*authConnectHandler)(nil)
 	_ genconnect.BillingServiceHandler            = (*billingConnectHandler)(nil)
+	_ genconnect.ClientRegistryServiceHandler     = (*clientRegistryConnectHandler)(nil)
 	_ genconnect.ConsentServiceHandler            = (*consentConnectHandler)(nil)
 	_ genconnect.DashboardServiceHandler          = (*dashboardConnectHandler)(nil)
 	_ genconnect.DatasourceServiceHandler         = (*datasourceConnectHandler)(nil)
@@ -34,7 +36,9 @@ var (
 	_ genconnect.PermissionServiceHandler         = (*permConnectHandler)(nil)
 	_ genconnect.PlatformAdminServiceHandler      = (*platformAdminConnectHandler)(nil)
 	_ genconnect.PrincipalServiceHandler          = (*principalConnectHandler)(nil)
+	_ genconnect.ResourceFollowServiceHandler     = (*resourceFollowConnectHandler)(nil)
 	_ genconnect.SSOAdminServiceHandler           = (*ssoAdminConnectHandler)(nil)
+	_ genconnect.SolutionRegistryServiceHandler   = (*solutionRegistryConnectHandler)(nil)
 	_ genconnect.TeamServiceHandler               = (*teamConnectHandler)(nil)
 	_ genconnect.UsageServiceHandler              = (*usageConnectHandler)(nil)
 	_ genconnect.UserServiceHandler               = (*userConnectHandler)(nil)
@@ -48,9 +52,11 @@ var (
 // Exact procedure paths remain owned by protoc-gen-connect-go.
 func registerCatalogConnectServices(mux *http.ServeMux, server *ConnectServer, options ...connect.HandlerOption) {
 	mux.Handle(genconnect.NewAPIKeyServiceHandler(&apiKeyConnectHandler{inner: server.grpc.APIKey}, options...))
+	mux.Handle(genconnect.NewAccessibleScopeServiceHandler(&accessibleScopeConnectHandler{inner: AccessibleScopeSingleton()}, options...))
 	mux.Handle(genconnect.NewAuditServiceHandler(&auditConnectHandler{inner: server.grpc.Audit}, options...))
 	mux.Handle(genconnect.NewAuthServiceHandler(&authConnectHandler{inner: server.grpc.Auth}, options...))
 	mux.Handle(genconnect.NewBillingServiceHandler(&billingConnectHandler{svc: server.service}, options...))
+	mux.Handle(genconnect.NewClientRegistryServiceHandler(&clientRegistryConnectHandler{inner: ClientRegistrySingleton()}, options...))
 	mux.Handle(genconnect.NewConsentServiceHandler(&consentConnectHandler{svc: server.service}, options...))
 	mux.Handle(genconnect.NewDashboardServiceHandler(&dashboardConnectHandler{svc: server.service}, options...))
 	mux.Handle(genconnect.NewDatasourceServiceHandler(&datasourceConnectHandler{svc: server.service}, options...))
@@ -68,7 +74,9 @@ func registerCatalogConnectServices(mux *http.ServeMux, server *ConnectServer, o
 	mux.Handle(genconnect.NewPermissionServiceHandler(&permConnectHandler{inner: server.grpc.Perm}, options...))
 	mux.Handle(genconnect.NewPlatformAdminServiceHandler(&platformAdminConnectHandler{inner: server.grpc.PlatformAdmin}, options...))
 	mux.Handle(genconnect.NewPrincipalServiceHandler(&principalConnectHandler{inner: PrincipalSingleton()}, options...))
+	mux.Handle(genconnect.NewResourceFollowServiceHandler(&resourceFollowConnectHandler{svc: server.service}, options...))
 	mux.Handle(genconnect.NewSSOAdminServiceHandler(&ssoAdminConnectHandler{svc: server.service}, options...))
+	mux.Handle(genconnect.NewSolutionRegistryServiceHandler(&solutionRegistryConnectHandler{inner: SolutionRegistrySingleton()}, options...))
 	mux.Handle(genconnect.NewTeamServiceHandler(&teamConnectHandler{inner: server.grpc.Team}, options...))
 	mux.Handle(genconnect.NewUsageServiceHandler(&usageConnectHandler{inner: UsageSingleton()}, options...))
 	mux.Handle(genconnect.NewUserServiceHandler(&userConnectHandler{inner: server.grpc.User}, options...))

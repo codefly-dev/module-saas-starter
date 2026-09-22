@@ -10,10 +10,13 @@ export type NotificationType =
 
 export interface Notification {
 	id: string;
+	orgId: string;
 	title: string;
 	body: string;
 	type: NotificationType;
 	read: boolean;
 	createdAt: string;
-	actionUrl?: string;
+	/** Whether the item has a destination. The destination itself is fetched,
+	 *  and re-authorized, only when the link is followed. */
+	hasAction: boolean;
 }

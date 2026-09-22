@@ -1,0 +1,21 @@
+{
+  "schema": "saas.naming.allowlist.v1",
+  "comment": "Path exemptions for naming-gate.mjs. Every entry needs a path, a reason, and a ticket; an entry missing any of the three is ignored, so an exemption cannot take effect without a reviewable justification. Use a real issue number for tech debt that should be burned down, or `policy:AGENTS.md` for a permanent carve-out where a real name is load-bearing and a placeholder would break the file. Removing an entry re-arms the gate for that path. Paths are relative to the scan root: the repository root in canonical, the module root in a consumer copy.",
+  "paths": [
+    {
+      "path": "LICENSE",
+      "reason": "A copyright notice must name the real legal rights holder; a placeholder would make the licence unenforceable.",
+      "ticket": "policy:AGENTS.md"
+    },
+    {
+      "path": ".github/CODEOWNERS",
+      "reason": "GitHub resolves review assignment against real account handles; a placeholder silently disables code-owner review rather than failing loudly.",
+      "ticket": "policy:AGENTS.md"
+    },
+    {
+      "path": ".gitleaks-baseline.json",
+      "reason": "Machine-generated from commit metadata, so author names are reproduced mechanically. Regenerate the baseline rather than hand-editing it; hand-edits are overwritten on the next run.",
+      "ticket": "policy:AGENTS.md"
+    }
+  ]
+}

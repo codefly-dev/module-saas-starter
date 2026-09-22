@@ -36,6 +36,21 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's ExchangeDelegatedReadAudience RPC.
+	ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
+	// ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure is the fully-qualified name
+	// of the ModuleCapabilitiesService's ExchangeDelegatedOperationAudience RPC.
+	ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
+	// ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's CheckWorkContextRecordAccess RPC.
+	ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
+	// ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's ListReadableSourceCollections RPC.
+	ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
+	// ModuleCapabilitiesServicePlaceRecordProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's PlaceRecord RPC.
+	ModuleCapabilitiesServicePlaceRecordProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
 	// ModuleCapabilitiesServiceEnqueueJobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EnqueueJob RPC.
 	ModuleCapabilitiesServiceEnqueueJobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
@@ -66,14 +81,60 @@ const (
 	// ModuleCapabilitiesServiceEmitAuditEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EmitAuditEvent RPC.
 	ModuleCapabilitiesServiceEmitAuditEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	// ModuleCapabilitiesServiceListSubjectVisibilityProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ListSubjectVisibility RPC.
+	ModuleCapabilitiesServiceListSubjectVisibilityProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	// ModuleCapabilitiesServiceFetchDatasourceBlobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's FetchDatasourceBlob RPC.
 	ModuleCapabilitiesServiceFetchDatasourceBlobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintModuleRegistration RPC.
+	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	// ModuleCapabilitiesServiceMintSolutionRegistrationProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintSolutionRegistration RPC.
+	ModuleCapabilitiesServiceMintSolutionRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	// ModuleCapabilitiesServiceMintModuleWorkContextProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintModuleWorkContext RPC.
+	ModuleCapabilitiesServiceMintModuleWorkContextProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
+	// ModuleCapabilitiesServicePublishEventProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's PublishEvent RPC.
+	ModuleCapabilitiesServicePublishEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	// ModuleCapabilitiesServiceSubscribeProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's Subscribe RPC.
+	ModuleCapabilitiesServiceSubscribeProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	// ModuleCapabilitiesServiceUnsubscribeProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's Unsubscribe RPC.
+	ModuleCapabilitiesServiceUnsubscribeProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	// ModuleCapabilitiesServiceListSubscriptionsProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ListSubscriptions RPC.
+	ModuleCapabilitiesServiceListSubscriptionsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	// ModuleCapabilitiesServiceReplayEventsProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ReplayEvents RPC.
+	ModuleCapabilitiesServiceReplayEventsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// ExchangeDelegatedOperationAudience authenticates the module independently
+	// of a current parent context and exchanges only an installed operation's
+	// invoke scopes, or its read-only receipt-lookup subset.
+	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
+	// PlaceRecord places one of the caller's own records at a scope node, so the
+	// access oracles can resolve it. Bounded by the resource types the caller
+	// principal's grant declares.
+	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -94,11 +155,39 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
 	// row's own org/boundary, not the request tenant.
 	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error)
+	// MintModuleRegistration issues the signed, prefix-bound credential a composed
+	// module presents to the gateway to federate its REST surface. Authorized by
+	// the module's own registration secret, not the shared cluster token.
+	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(context.Context, *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(context.Context, *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
 }
 
 // NewModuleCapabilitiesServiceClient constructs a client for the
@@ -112,6 +201,36 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
+			connect.WithClientOptions(opts...),
+		),
+		exchangeDelegatedOperationAudience: connect.NewClient[v1.ModuleExchangeDelegatedOperationAudienceRequest, v1.IssuedWorkContext](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedOperationAudience")),
+			connect.WithClientOptions(opts...),
+		),
+		checkWorkContextRecordAccess: connect.NewClient[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("CheckWorkContextRecordAccess")),
+			connect.WithClientOptions(opts...),
+		),
+		listReadableSourceCollections: connect.NewClient[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListReadableSourceCollections")),
+			connect.WithClientOptions(opts...),
+		),
+		placeRecord: connect.NewClient[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServicePlaceRecordProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PlaceRecord")),
+			connect.WithClientOptions(opts...),
+		),
 		enqueueJob: connect.NewClient[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceEnqueueJobProcedure,
@@ -172,10 +291,64 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		listSubjectVisibility: connect.NewClient[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListSubjectVisibilityProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubjectVisibility")),
+			connect.WithClientOptions(opts...),
+		),
 		fetchDatasourceBlob: connect.NewClient[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceFetchDatasourceBlobProcedure,
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
+			connect.WithClientOptions(opts...),
+		),
+		mintModuleRegistration: connect.NewClient[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
+			connect.WithClientOptions(opts...),
+		),
+		mintSolutionRegistration: connect.NewClient[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
+			connect.WithClientOptions(opts...),
+		),
+		mintModuleWorkContext: connect.NewClient[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleWorkContext")),
+			connect.WithClientOptions(opts...),
+		),
+		publishEvent: connect.NewClient[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServicePublishEventProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PublishEvent")),
+			connect.WithClientOptions(opts...),
+		),
+		subscribe: connect.NewClient[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceSubscribeProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Subscribe")),
+			connect.WithClientOptions(opts...),
+		),
+		unsubscribe: connect.NewClient[v1.ModuleUnsubscribeRequest, emptypb.Empty](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceUnsubscribeProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Unsubscribe")),
+			connect.WithClientOptions(opts...),
+		),
+		listSubscriptions: connect.NewClient[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListSubscriptionsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubscriptions")),
+			connect.WithClientOptions(opts...),
+		),
+		replayEvents: connect.NewClient[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceReplayEventsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -183,17 +356,60 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
-	enqueueJob          *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
-	claimJobs           *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
-	heartbeatJob        *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
-	ackJob              *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
-	nackJob             *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
-	notifyUser          *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
-	requestApproval     *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
-	getApproval         *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
-	cancelApproval      *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
-	emitAuditEvent      *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
-	fetchDatasourceBlob *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	exchangeDelegatedReadAudience      *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext]
+	exchangeDelegatedOperationAudience *connect.Client[v1.ModuleExchangeDelegatedOperationAudienceRequest, v1.IssuedWorkContext]
+	checkWorkContextRecordAccess       *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
+	listReadableSourceCollections      *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
+	placeRecord                        *connect.Client[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse]
+	enqueueJob                         *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
+	claimJobs                          *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
+	heartbeatJob                       *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
+	ackJob                             *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
+	nackJob                            *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
+	notifyUser                         *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
+	requestApproval                    *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
+	getApproval                        *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
+	cancelApproval                     *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
+	emitAuditEvent                     *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
+	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	mintModuleRegistration             *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
+	mintSolutionRegistration           *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
+	mintModuleWorkContext              *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
+	publishEvent                       *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
+	subscribe                          *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
+	unsubscribe                        *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
+	listSubscriptions                  *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
+	replayEvents                       *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+}
+
+// ExchangeDelegatedReadAudience calls
+// saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience.
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return c.exchangeDelegatedReadAudience.CallUnary(ctx, req)
+}
+
+// ExchangeDelegatedOperationAudience calls
+// saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience.
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return c.exchangeDelegatedOperationAudience.CallUnary(ctx, req)
+}
+
+// CheckWorkContextRecordAccess calls
+// saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess.
+func (c *moduleCapabilitiesServiceClient) CheckWorkContextRecordAccess(ctx context.Context, req *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
+	return c.checkWorkContextRecordAccess.CallUnary(ctx, req)
+}
+
+// ListReadableSourceCollections calls
+// saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections.
+func (c *moduleCapabilitiesServiceClient) ListReadableSourceCollections(ctx context.Context, req *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
+	return c.listReadableSourceCollections.CallUnary(ctx, req)
+}
+
+// PlaceRecord calls saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord.
+func (c *moduleCapabilitiesServiceClient) PlaceRecord(ctx context.Context, req *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error) {
+	return c.placeRecord.CallUnary(ctx, req)
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -246,14 +462,79 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, re
 	return c.emitAuditEvent.CallUnary(ctx, req)
 }
 
+// ListSubjectVisibility calls saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility.
+func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Context, req *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error) {
+	return c.listSubjectVisibility.CallUnary(ctx, req)
+}
+
 // FetchDatasourceBlob calls saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob.
 func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, req *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error) {
 	return c.fetchDatasourceBlob.CallServerStream(ctx, req)
 }
 
+// MintModuleRegistration calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration.
+func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, req *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
+	return c.mintModuleRegistration.CallUnary(ctx, req)
+}
+
+// MintSolutionRegistration calls
+// saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration.
+func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, req *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
+	return c.mintSolutionRegistration.CallUnary(ctx, req)
+}
+
+// MintModuleWorkContext calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext.
+func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, req *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {
+	return c.mintModuleWorkContext.CallUnary(ctx, req)
+}
+
+// PublishEvent calls saas.accounts.v1.ModuleCapabilitiesService.PublishEvent.
+func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, req *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
+	return c.publishEvent.CallUnary(ctx, req)
+}
+
+// Subscribe calls saas.accounts.v1.ModuleCapabilitiesService.Subscribe.
+func (c *moduleCapabilitiesServiceClient) Subscribe(ctx context.Context, req *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error) {
+	return c.subscribe.CallUnary(ctx, req)
+}
+
+// Unsubscribe calls saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe.
+func (c *moduleCapabilitiesServiceClient) Unsubscribe(ctx context.Context, req *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.unsubscribe.CallUnary(ctx, req)
+}
+
+// ListSubscriptions calls saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions.
+func (c *moduleCapabilitiesServiceClient) ListSubscriptions(ctx context.Context, req *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error) {
+	return c.listSubscriptions.CallUnary(ctx, req)
+}
+
+// ReplayEvents calls saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents.
+func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error) {
+	return c.replayEvents.CallUnary(ctx, req)
+}
+
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// ExchangeDelegatedOperationAudience authenticates the module independently
+	// of a current parent context and exchanges only an installed operation's
+	// invoke scopes, or its read-only receipt-lookup subset.
+	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
+	// PlaceRecord places one of the caller's own records at a scope node, so the
+	// access oracles can resolve it. Bounded by the resource types the caller
+	// principal's grant declares.
+	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -274,11 +555,39 @@ type ModuleCapabilitiesServiceHandler interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
 	// row's own org/boundary, not the request tenant.
 	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error
+	// MintModuleRegistration issues the signed, prefix-bound credential a composed
+	// module presents to the gateway to federate its REST surface. Authorized by
+	// the module's own registration secret, not the shared cluster token.
+	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(context.Context, *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(context.Context, *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
 }
 
 // NewModuleCapabilitiesServiceHandler builds an HTTP handler from the service implementation. It
@@ -288,6 +597,36 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
+		svc.ExchangeDelegatedReadAudience,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceExchangeDelegatedOperationAudienceHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure,
+		svc.ExchangeDelegatedOperationAudience,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedOperationAudience")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
+		svc.CheckWorkContextRecordAccess,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("CheckWorkContextRecordAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceListReadableSourceCollectionsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
+		svc.ListReadableSourceCollections,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListReadableSourceCollections")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServicePlaceRecordHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServicePlaceRecordProcedure,
+		svc.PlaceRecord,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PlaceRecord")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceEnqueueJobHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceEnqueueJobProcedure,
 		svc.EnqueueJob,
@@ -348,14 +687,78 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceListSubjectVisibilityHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListSubjectVisibilityProcedure,
+		svc.ListSubjectVisibility,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubjectVisibility")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceFetchDatasourceBlobHandler := connect.NewServerStreamHandler(
 		ModuleCapabilitiesServiceFetchDatasourceBlobProcedure,
 		svc.FetchDatasourceBlob,
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceMintModuleRegistrationHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
+		svc.MintModuleRegistration,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceMintSolutionRegistrationHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
+		svc.MintSolutionRegistration,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceMintModuleWorkContextHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
+		svc.MintModuleWorkContext,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleWorkContext")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServicePublishEventHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServicePublishEventProcedure,
+		svc.PublishEvent,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PublishEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceSubscribeHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceSubscribeProcedure,
+		svc.Subscribe,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Subscribe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceUnsubscribeHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceUnsubscribeProcedure,
+		svc.Unsubscribe,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Unsubscribe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceListSubscriptionsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListSubscriptionsProcedure,
+		svc.ListSubscriptions,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubscriptions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceReplayEventsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceReplayEventsProcedure,
+		svc.ReplayEvents,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure:
+			moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure:
+			moduleCapabilitiesServiceExchangeDelegatedOperationAudienceHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure:
+			moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure:
+			moduleCapabilitiesServiceListReadableSourceCollectionsHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServicePlaceRecordProcedure:
+			moduleCapabilitiesServicePlaceRecordHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEnqueueJobProcedure:
 			moduleCapabilitiesServiceEnqueueJobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceClaimJobsProcedure:
@@ -376,8 +779,26 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceCancelApprovalHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEmitAuditEventProcedure:
 			moduleCapabilitiesServiceEmitAuditEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceListSubjectVisibilityProcedure:
+			moduleCapabilitiesServiceListSubjectVisibilityHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceBlobProcedure:
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
+			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintSolutionRegistrationProcedure:
+			moduleCapabilitiesServiceMintSolutionRegistrationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintModuleWorkContextProcedure:
+			moduleCapabilitiesServiceMintModuleWorkContextHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServicePublishEventProcedure:
+			moduleCapabilitiesServicePublishEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceSubscribeProcedure:
+			moduleCapabilitiesServiceSubscribeHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceUnsubscribeProcedure:
+			moduleCapabilitiesServiceUnsubscribeHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceListSubscriptionsProcedure:
+			moduleCapabilitiesServiceListSubscriptionsHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceReplayEventsProcedure:
+			moduleCapabilitiesServiceReplayEventsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -386,6 +807,26 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob is not implemented"))
@@ -427,6 +868,42 @@ func (UnimplementedModuleCapabilitiesServiceHandler) EmitAuditEvent(context.Cont
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent is not implemented"))
 }
 
+func (UnimplementedModuleCapabilitiesServiceHandler) ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility is not implemented"))
+}
+
 func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.PublishEvent is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) Subscribe(context.Context, *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.Subscribe is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) Unsubscribe(context.Context, *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents is not implemented"))
 }

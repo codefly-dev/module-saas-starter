@@ -1,15 +1,30 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CODEFLY_KIT_SHARED, CODEFLY_KIT_VERSION } from "../SolutionOutlet";
+import { HOST_SHARED_VERSIONS } from "../host-runtime";
+import { CODEFLY_KIT_SHARED } from "../SolutionOutlet";
 
-// The host shares @codefly-dev/ui, @codefly/saas-ui, and @codefly/saas-sdk into the
-// Module-Federation scope under CODEFLY_KIT_VERSION. If a package is version-
-// bumped without updating that constant, the host would under-report the shared
-// version and a remote bundling the newer copy could win singleton resolution,
-// splitting the instance. This pins the constant to the packages' real versions
-// so the bump can't drift silently.
-const KIT_PACKAGES = ["codefly-ui", "saas-ui", "saas-sdk"] as const;
+// The host shares @codefly-dev/ui, @codefly-dev/saas-ui, and @codefly-dev/saas-sdk
+// into the Module-Federation scope, each under its own published version. If a
+// share entry under-reports its package's real version, a remote bundling the
+// newer copy could win singleton resolution and split the instance. The UI kit
+// (@codefly-dev/ui + @codefly-dev/saas-ui) is co-versioned; @codefly-dev/saas-sdk
+// tracks the API contract and versions independently — so this pins EACH share
+// entry's declared version to that package's actual package.json version rather
+// than to one shared constant, and a bump to any of them can't drift silently.
+const SHARE_KEY_TO_DIR: Record<keyof typeof CODEFLY_KIT_SHARED, string> = {
+	"@codefly-dev/ui": "codefly-ui",
+	"@codefly-dev/ui/layout": "codefly-ui",
+	"@codefly-dev/ui/dashboard": "codefly-ui",
+	"@codefly-dev/ui/chat": "codefly-ui",
+	"@codefly-dev/ui/skin": "codefly-ui",
+	"@codefly-dev/ui/table": "codefly-ui",
+	"@codefly-dev/ui/plugin-host": "codefly-ui",
+	"@codefly-dev/ui/plugin-host/runtime": "codefly-ui",
+	"@codefly-dev/ui/plugin-host/ui": "codefly-ui",
+	"@codefly-dev/saas-ui": "saas-ui",
+	"@codefly-dev/saas-sdk": "saas-sdk",
+};
 
 function packageVersion(dir: string): string {
 	// Vitest runs from the frontend `code` root (its config lives there).
@@ -17,11 +32,18 @@ function packageVersion(dir: string): string {
 	return JSON.parse(readFileSync(manifestPath, "utf8")).version;
 }
 
-describe("CODEFLY_KIT_VERSION", () => {
-	it.each(KIT_PACKAGES)(
-		"matches the published version of @codefly/%s",
-		(dir) => {
-			expect(packageVersion(dir)).toBe(CODEFLY_KIT_VERSION);
+describe("shared kit versions match their published packages", () => {
+	it("keeps the two UI kits co-versioned", () => {
+		expect(packageVersion("saas-ui")).toBe(packageVersion("codefly-ui"));
+	});
+	it.each(Object.entries(SHARE_KEY_TO_DIR))(
+		"%s shares its real package.json version",
+		(shareKey, dir) => {
+			const entry =
+				CODEFLY_KIT_SHARED[shareKey as keyof typeof CODEFLY_KIT_SHARED];
+			expect(entry, `missing share entry for ${shareKey}`).toBeDefined();
+			expect(entry.version).toBe(packageVersion(dir));
+			expect(HOST_SHARED_VERSIONS[shareKey]).toBe(entry.version);
 		},
 	);
 });

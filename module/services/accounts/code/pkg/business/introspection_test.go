@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (
@@ -14,6 +16,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
+	"accounts/pkg/relationcatalog"
 )
 
 // authedCtx returns a context that GetServiceInfo will treat as
@@ -60,7 +63,10 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 			"table %q must declare fail_closed=true", tbl.Table)
 		require.NotEmpty(t, tbl.Table)
 		require.Contains(t,
-			[]string{"control_plane", "direct", "join", "polymorphic", "self_referential"},
+			[]string{
+				"control_plane", "direct", "function_scoped", "join",
+				"polymorphic", "self_referential", "union",
+			},
 			tbl.PolicyShape,
 			"table %q has unexpected policy_shape %q", tbl.Table, tbl.PolicyShape)
 	}
@@ -78,6 +84,36 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 	}
 	require.True(t, adminWildcard,
 		"built-in 'admin' role must hold wildcard *:* permission")
+}
+
+// TestIntrospection_RLSCatalogCoversEveryProtectedRelation — drift guard. The
+// published catalog is a projection of the store schema's authority inventory,
+// which the infrastructure suite checks against a live database. Anything the
+// catalog omits or invents is therefore a projection bug rather than a stale
+// hand-maintained list.
+func TestIntrospection_RLSCatalogCoversEveryProtectedRelation(t *testing.T) {
+	resp, err := testService.GetServiceInfo(authedCtx(), &gen.GetServiceInfoRequest{})
+	require.NoError(t, err)
+
+	inventory := relationcatalog.All()
+	var expected []string
+	for relation, authority := range inventory {
+		if authority.Scope.RequiresRLS() {
+			expected = append(expected, relation)
+		}
+	}
+	sort.Strings(expected)
+
+	published := make([]string, 0, len(resp.Capabilities.RlsTables))
+	for _, table := range resp.Capabilities.RlsTables {
+		published = append(published, table.Table)
+
+		authority := inventory[table.Table]
+		require.Equal(t, authority.PolicyShape, table.PolicyShape, table.Table)
+		require.Equal(t, authority.ScopeColumn, table.ScopeColumn, table.Table)
+		require.Equal(t, authority.Notes, table.Notes, table.Table)
+	}
+	require.Equal(t, expected, published)
 }
 
 // TestIntrospection_NoMissingPolicy — drift guard. The RPC list and policy are
@@ -98,61 +134,6 @@ func TestIntrospection_NoMissingPolicy(t *testing.T) {
 	}
 }
 
-func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
-	policies := business.RPCPolicies()
-	require.NotEmpty(t, policies)
-	seen := make(map[string]struct{}, len(policies))
-	streaming := make(map[string]bool)
-	var internalWithoutHTTP []string
-	for _, policy := range policies {
-		require.Empty(t, policy.PolicyError, "%s has invalid descriptor policy", policy.FullMethod)
-		require.NotNil(t, policy.MethodPolicy, "%s has no descriptor policy", policy.FullMethod)
-		require.True(t, policy.Tier.Valid(), "%s has invalid tier %q", policy.FullMethod, policy.Tier)
-		if policy.MethodPolicy.GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL {
-			require.Empty(t, policy.HTTPMethod, "%s must not opt into REST", policy.FullMethod)
-			require.Empty(t, policy.HTTPPath, "%s must not opt into REST", policy.FullMethod)
-			internalWithoutHTTP = append(internalWithoutHTTP, policy.FullMethod)
-		} else {
-			require.Equal(t, policy.HTTPMethod == "", policy.HTTPPath == "", "%s has incomplete HTTP metadata", policy.FullMethod)
-		}
-		require.NotEmpty(t, policy.Description, "%s has no description", policy.FullMethod)
-		_, duplicate := seen[policy.FullMethod]
-		require.False(t, duplicate, "duplicate policy for %s", policy.FullMethod)
-		seen[policy.FullMethod] = struct{}{}
-		streaming[policy.FullMethod] = policy.Streaming
-	}
-	require.ElementsMatch(t, []string{
-		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
-		"/saas.accounts.v1.IdentityService/ResolveIdentity",
-		"/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
-		"/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
-		"/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
-		"/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
-		"/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
-		"/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
-		"/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
-		"/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
-		"/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
-		"/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
-		"/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
-		"/saas.accounts.v1.PermissionService/CheckAccess",
-		"/saas.accounts.v1.PermissionService/CheckPermission",
-		"/saas.accounts.v1.PermissionService/Decide",
-		"/saas.accounts.v1.PermissionService/ListAccessibleScopes",
-		"/saas.accounts.v1.PrincipalService/DisableAgentPrincipal",
-		"/saas.accounts.v1.PrincipalService/EnableAgentPrincipal",
-		"/saas.accounts.v1.PrincipalService/GetAgentPrincipal",
-		"/saas.accounts.v1.PrincipalService/GetPrincipal",
-		"/saas.accounts.v1.UsageService/ConsumeUsage",
-		"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
-		"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
-		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
-		"/saas.accounts.v1.WorkContextService/StartInstallationTask",
-	}, internalWithoutHTTP, "the exact internal RPC inventory must remain off the REST surface")
-	require.True(t, streaming["/saas.accounts.v1.DelegationService/WaitForDelegation"], "server-streaming RPC must be present and marked streaming")
-	require.True(t, streaming["/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"], "server-streaming RPC must be present and marked streaming")
-}
-
 func TestRPCPolicyDescriptorFixesFormerManualDrift(t *testing.T) {
 	byMethod := make(map[string]business.RPCPolicy)
 	for _, policy := range business.RPCPolicies() {
@@ -161,7 +142,7 @@ func TestRPCPolicyDescriptorFixesFormerManualDrift(t *testing.T) {
 
 	authenticate := byMethod["/saas.accounts.v1.AuthService/Authenticate"]
 	require.True(t, authenticate.EmitsAudit)
-	require.ElementsMatch(t, []string{"auth.login", "auth.mfa_challenge_started"}, authenticate.MethodPolicy.GetAudit().GetEvents())
+	require.ElementsMatch(t, []string{"saas.auth.login", "saas.auth.mfa_challenge_started"}, authenticate.MethodPolicy.GetAudit().GetEvents())
 
 	listUsers := byMethod["/saas.accounts.v1.UserService/ListUsers"]
 	require.Equal(t, []string{"users:read"}, listUsers.Scopes)
@@ -276,6 +257,8 @@ func TestIntrospection_UnauthenticatedRedacts(t *testing.T) {
 	}
 	require.NotEmpty(t, anonResp.Capabilities.Rpcs,
 		"anonymous still gets non-privileged RPCs")
+	require.Empty(t, anonResp.Capabilities.RlsTables,
+		"anonymous response must not map the schema: relation names, scope columns, and the notes describing each boundary's mechanism")
 }
 
 var _ = business.ServiceVersion // keep business import alive

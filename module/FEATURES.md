@@ -23,13 +23,13 @@ browser → auth-gateway → api           browser → api
 ```
 
 Defense-in-depth: the api validates the bearer JWT itself even when the
-sidecar is in front. A misconfigured sidecar / a direct port-hit cannot
+auth-gateway ext_authz check is in front. A misconfigured ext_authz check / a direct port-hit cannot
 bypass auth. Implemented as `connect_auth_interceptor.go` and
 `grpc_auth_interceptor.go`.
 
-CORS lives on the api (not the sidecar) because Connect-Web preflights
+CORS lives on the api (not the auth-gateway) because Connect-Web preflights
 every POST. Permissive in dev (any localhost origin); production puts
-the sidecar in front so this code path isn't reached.
+the auth-gateway in front so this code path isn't reached.
 
 ### Stack
 
@@ -266,8 +266,8 @@ their next owning change.
 | Find by identity         | ✅    | `FindUserByIdentity` — platform-admin only (security fix 2026-04-25)           |
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
 | Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |
-| Privacy export           | ❌    | Request/status scaffolding fails closed until a complete secure-artifact workflow is wired |
-| Verified privacy delete  | ❌    | No complete dataset/provider inventory, retention authority, legal-hold handling, or completion receipt |
+| Privacy export           | ❌    | Requests and their execution are durable, leased, and receipt-gated ([JOBS.md](./JOBS.md#privacy-workflow-adapter)); fails closed until a complete secure-artifact adapter is wired |
+| Verified privacy delete  | ❌    | The durable job and its per-step receipts are in place; no adapter ships, so dataset/provider inventory, retention authority, and legal-hold handling stay adopter work |
 
 ### Multi-tenancy (orgs / teams)
 
@@ -369,22 +369,24 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Feature                | Status | Notes                                                               |
 |------------------------|--------|---------------------------------------------------------------------|
 | In-app notifications   | ✅    | DB-backed, actionable, list / mark-read / unread-count; optional writes honor the user opt-out |
+| In-app banner          | ✅    | Active-tenant unread selection, current-action authorization, shared kit Banner; see [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
 | Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
 | Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
 | Resend delivery events | ✅    | Exact-body Svix verification, stale/tamper rejection, durable `svix-id` dedup, PII-minimized history, monotonic invitation projection |
 | User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
 | Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
+| Resource follows       | ✅    | Follow/Unfollow, catalog-gated event fan-out, read-time visibility and action reauthorization (#713, #721, #722, #727); producer reachability depends on composition |
 | Push notifications     | ❌    | No web/mobile push implementation or user-facing control            |
-| SMS notifications      | ❌    | No SMS provider                                                     |
-| Slack / Teams hooks    | 🟡    | Internal Slack notifier (errors/health); not customer-facing        |
+| SMS notifications      | ❌    | Sender interface and E.164 validation prepared; no provider, enrollment or delivery |
+| Slack / Teams hooks    | 🟡    | Internal ops Slack exists; bot transport/signature verification prepared but tenant installation and delivery remain open in #838. No Teams provider |
 
 ### Audit log
 
 | Feature                | Status | Notes                                                              |
 |------------------------|--------|--------------------------------------------------------------------|
 | Durable event emit     | ✅    | Audit row + delivery history + generated webhook jobs commit atomically; no lossy process queue |
-| Event types            | ✅    | auth.login, user.registered, org.created, role.assigned, etc.      |
+| Event types            | ✅    | Namespaced `saas.*`: saas.auth.login, saas.user.registered, saas.org.created, saas.role.assigned, etc. |
 | Multi-field filter     | ✅    | By org, actor, action, resource, time range                        |
 | Cursor pagination      | ✅    | Stable across writes                                               |
 | Retention purge job    | 🟡    | Configurable database purge policies exist; provider data, backups, holds, receipts, and production execution evidence do not |
@@ -409,7 +411,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 
 | Feature                  | Status | Notes                                                            |
 |--------------------------|--------|------------------------------------------------------------------|
-| Privacy export artifact  | ❌    | UI disabled until secure storage, subject binding, expiry, deletion, and completeness are verified |
+| Privacy export artifact  | ❌    | Expiry is enforced on read and swept from storage, but the UI stays disabled until secure storage, subject binding, and completeness are verified |
 | Verified data deletion   | ❌    | UI disabled until dataset rules, blockers, provider cleanup, retained records, and receipts are complete |
 | Audit purge configuration| 🟡    | Starter database policy only; deployment retention is adopter-owned and must be evidenced |
 | Terms acceptance         | ✅    | Versioned authenticated evidence, separate from optional tracking choices |
@@ -478,7 +480,7 @@ extraction contracts.
 | Layer       | Coverage                                                                |
 |-------------|-------------------------------------------------------------------------|
 | Unit (Go)   | Auth/identity/business — `*_test.go` per package                        |
-| Integration | Sidecar↔backend gateway, audit retention, billing handler               |
+| Integration | ext_authz↔backend gateway, audit retention, billing handler             |
 | e2e (Playwright) | 32 specs across 8 files (login, navigation, admin-flow, webhooks, auth-boundary, revocation, command-palette, sdk-smoke), full stack via `withDependencies` (~54s warm, ~2min cold) |
 | Coverage gates | None enforced today                                                  |
 
@@ -593,17 +595,17 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **s3 plugin now actually runs MinIO** — was a redis-template scaffold (port 6379, redis ping readiness); now real (port 9000, /minio/health/live, structured conn keys, agent v0.0.2).
 - ✅ **User settings API** — JSONB-backed (`users.settings`) + UserSettingsService + /settings hub (theme / locale / timezone / date-time format / email opt-ins).
 - ✅ **Theme toggle** — next-themes wired with system / light / dark, persists per user via the settings API, syncs across devices.
-- ✅ **Stripe billing portal in /admin/billing** — Connect-RPC `BillingService.OpenPortal` works without sidecar.
+- ✅ **Stripe billing portal in /admin/billing** — Connect-RPC `BillingService.OpenPortal` works without the auth-gateway.
 - ✅ **Stripe invoices list** — last 12 invoices on /admin/billing with hosted-detail link + PDF download.
 - ✅ **Rate-limit visibility** — X-RateLimit-* exposed via CORS; FE captures every response, banner appears at <10% remaining.
 
 ### Resolved 2026-04-25
 
 - ✅ **User identity endpoints unauthenticated** — `AddIdentity`, `FindUserByIdentity`, `ListUserIdentities` would let any authenticated caller enumerate provider identities or attach attacker-controlled identities to any user. Now gated by `requireSelfOrPlatformAdmin` / `requirePlatformAdmin`.
-- ✅ **gRPC server had no in-process auth interceptor** — handlers assumed sidecar presence; direct port hits bypassed auth. Added `grpcAuthInterceptor` mirroring the Connect interceptor (defense in depth: api validates the bearer regardless of upstream).
+- ✅ **gRPC server had no in-process auth interceptor** — handlers assumed the auth-gateway ext_authz check was in front; direct port hits bypassed auth. Added `grpcAuthInterceptor` mirroring the Connect interceptor (defense in depth: api validates the bearer regardless of upstream).
 - ✅ **Connect server had no CORS** — browser preflight returned 405; every Connect-Web request from the FE failed in production-style architectures. Added `rs/cors` middleware.
 - ✅ **MFA is enforced and refresh-safe** — enrolled users receive no normal session until a durable one-use challenge succeeds. JWT/session evidence carries `amr`, `auth_time`, `acr`, and `mfa_at`; refresh preserves rather than renews that evidence. Refresh re-resolves verified enrollment: newly enrolled MFA terminates AAL1 refresh families and requires login, while removed MFA strips factor methods and downgrades the successor to AAL1. General sensitive operations apply the configured recent-AAL2 policy to enrolled users; money-moving billing checkout/portal is stricter and always requires fresh AAL2, so lack of enrollment is not a bypass. Passkeys require WebAuthn user verification with exact Codefly-configured RP/origin policy; complete credentials and ceremony state use Vault Transit envelopes. TOTP seeds are encrypted and recovery codes are one-use bcrypt hashes.
-- ✅ **API key scopes forwarded but not enforced** — sidecar set `X-Scopes`; handlers ignored. New `requireScope(ctx, "resource:action")` gate with wildcard support (`*`, `users:*`, `*:read`). Applied to `ListUsers`, `UpdateUser`, `DeleteUser` as a starter set; extend to other resources per business needs (JWT-authenticated callers bypass — RBAC handles them).
+- ✅ **API key scopes forwarded but not enforced** — the auth-gateway ext_authz check set `X-Scopes`; handlers ignored. New `requireScope(ctx, "resource:action")` gate with wildcard support (`*`, `users:*`, `*:read`). Applied to `ListUsers`, `UpdateUser`, `DeleteUser` as a starter set; extend to other resources per business needs (JWT-authenticated callers bypass — RBAC handles them).
 - ✅ **Access tokens not individually revocable** — Logout only killed the refresh chain; old access tokens stayed valid up to 15 min. New `auth.TokenRevoker` interface + `cache.NewTokenRevoker` Redis impl. `Logout(refresh, accessToken)` now calls `JWTMinter.RevokeAccess` which adds the jti to the revocation list with TTL = remaining `exp`. `VerifyAccess` consults the list. Falls back to `NoopTokenRevoker` (no Redis) → original behavior.
 - ✅ **Impersonation had no time limit** — admin "view-as" sessions inherited the normal 15-min TTL. New `Config.ImpersonationTokenTTL` (default 5 min) auto-applied when minting tokens with `acting` claim set.
 - ✅ **Cache invalidation on member-remove** — confirmed correct on a closer read. `CacheInvalidator.InvalidateMembership` calls `cache.Delete` against shared Redis, so all api instances see the change immediately. The 30s TTL is safety net, not staleness window.
@@ -615,32 +617,11 @@ _All previously-open gaps closed 2026-04-25._
 
 ---
 
-## Roadmap (proposed)
+## Roadmap
 
-In priority order, based on "where we'd lose deals or land in a CVE":
-
-**Quarter 1 — production hardening**
-1. ~~Enforce MFA on sensitive ops~~ — done 2026-04-25.
-2. ~~Enforce API key scopes~~ — done 2026-04-25.
-3. ~~Access-token revocation list~~ — done 2026-04-25 (Redis-backed).
-4. ~~Impersonation TTL cap~~ — done 2026-04-25 (5 min default).
-5. ~~OAuth state server-side / PKCE~~ — done 2026-04-25 (`BeginOAuth` RPC + signer + FE refactor).
-6. ~~Rate limiting per org + per API key~~ — done 2026-04-25 (Redis fixed-window; Connect + gRPC interceptors).
-7. ~~Cmd-K command palette~~ — done 2026-04-25 (role-gated nav + super_admin user search).
-8. ~~Webhooks v2 — replay UI, signing-secret rotation, generic retry visibility~~ — done 2026-07-20.
-
-**Quarter 2 — growth features**
-6. Org-scoped subdomains + cookie scoping (~1 week).
-7. Self-serve SSO admin UI (WorkOS Connections passthrough) (~3 days).
-8. Sample-data onboarding extension (~2 days).
-9. Usage dashboards (~1 week).
-10. Status page + internal probes (~3 days).
-
-**Quarter 3 — enterprise**
-11. Audit log streaming to customer S3 / SIEM (~1 week).
-12. Jurisdiction-specific legal content and consent review (deployment work).
-13. ABAC / row-level rules where useful (selective; ~ 2 weeks scoped).
-14. i18n (~2 weeks for full pass).
+There is no roadmap in this file. What the host still owes its functional
+contract — the `HOST-*` stories on its handbook page — is tracked story by story
+in the repository's one plan, `docs/PLAN.md` at the repository root.
 
 ---
 
@@ -671,7 +652,7 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OBSERVABILITY_EXPORTER`       | In-graph collector output: `debug` or `otlphttp`             |
+| `OBSERVABILITY_EXPORTER`       | Required in-graph collector output: `debug` or `otlphttp`; the collector refuses to start when it is unset |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
 | `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
@@ -679,9 +660,9 @@ Environment variables consumed by the api:
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and auth
-sidecar export unsampled request and Go runtime metrics through the in-graph
-OpenTelemetry collector. The auth sidecar covers both its HTTP gateway and gRPC
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and the
+auth-gateway export unsampled request and Go runtime metrics through the in-graph
+OpenTelemetry collector. The auth-gateway covers both its HTTP gateway and gRPC ext_authz
 authorization service. Prometheus can alternatively scrape `/metrics` on each
 service's private REST endpoint; neither route is a module or public interface
 endpoint.
@@ -706,10 +687,26 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_ABUSE_PROTECTION_MODE` | Explicit `disabled` or `turnstile` widget mode          |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile widget key                              |
 
-Accounts REST and Connect browser calls are relative and same-origin. The
-server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are
-resolved by Next rewrites and server route handlers; backend origins are never
-published to browser code.
+Accounts REST and Connect browser calls are relative and same-origin. The server
+forwards them to `auth-gateway/rest` — the single product API path — and to
+nothing else; backend origins are never published to browser code. `src/proxy.ts`
+forwards the two product API namespaces onto that endpoint and server route
+handlers dial it directly, both resolving it through the Codefly SDK on the
+request, so a frontend composed with its `auth-gateway` dependency needs no
+configuration. Nothing is baked into the build: an image carries no product API
+address at all, so a server forwards to the gateway its own composition
+injected — never one a build host happened to see. A frontend started outside the
+module graph (the browser suite's own server) names the same gateway explicitly
+with `PRODUCT_GATEWAY_INTERNAL`; a server that resolves no gateway refuses to
+start, and fails any product API request closed rather than answering it from
+the Next app.
+
+`API_REST_INTERNAL` and `API_CONNECT_INTERNAL` are retired. They pointed the
+server straight at Accounts, which bypassed the gateway's route allow-list, rate
+limiter, and identity-header discipline. Setting either one now fails startup
+with a migration error: remove it, and either compose the frontend with its
+`auth-gateway` dependency or set `PRODUCT_GATEWAY_INTERNAL` to the gateway's REST
+address.
 
 ---
 

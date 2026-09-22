@@ -21,26 +21,56 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ModuleCapabilitiesService_EnqueueJob_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
-	ModuleCapabilitiesService_ClaimJobs_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
-	ModuleCapabilitiesService_HeartbeatJob_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
-	ModuleCapabilitiesService_AckJob_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
-	ModuleCapabilitiesService_NackJob_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
-	ModuleCapabilitiesService_NotifyUser_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
-	ModuleCapabilitiesService_RequestApproval_FullMethodName     = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
-	ModuleCapabilitiesService_GetApproval_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
-	ModuleCapabilitiesService_CancelApproval_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
-	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
-	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
+	ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
+	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
+	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
+	ModuleCapabilitiesService_PlaceRecord_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
+	ModuleCapabilitiesService_EnqueueJob_FullMethodName                         = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
+	ModuleCapabilitiesService_ClaimJobs_FullMethodName                          = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
+	ModuleCapabilitiesService_HeartbeatJob_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
+	ModuleCapabilitiesService_AckJob_FullMethodName                             = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
+	ModuleCapabilitiesService_NackJob_FullMethodName                            = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
+	ModuleCapabilitiesService_NotifyUser_FullMethodName                         = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_RequestApproval_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
+	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
+	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
+	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
+	ModuleCapabilitiesService_PublishEvent_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	ModuleCapabilitiesService_Subscribe_FullMethodName                          = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	ModuleCapabilitiesService_Unsubscribe_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	ModuleCapabilitiesService_ListSubscriptions_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	ModuleCapabilitiesService_ReplayEvents_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ModuleCapabilitiesService is the module-facing platform surface. Every RPC
-// is internal-tier and identifies its caller from the forwarded Work Context.
 type ModuleCapabilitiesServiceClient interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
+	// ExchangeDelegatedOperationAudience authenticates the module independently
+	// of a current parent context and exchanges only an installed operation's
+	// invoke scopes, or its read-only receipt-lookup subset.
+	ExchangeDelegatedOperationAudience(ctx context.Context, in *ModuleExchangeDelegatedOperationAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error)
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(ctx context.Context, in *ListReadableSourceCollectionsRequest, opts ...grpc.CallOption) (*ListReadableSourceCollectionsResponse, error)
+	// PlaceRecord places one of the caller's own records at a scope node, so the
+	// access oracles can resolve it. Bounded by the resource types the caller
+	// principal's grant declares.
+	PlaceRecord(ctx context.Context, in *ModulePlaceRecordRequest, opts ...grpc.CallOption) (*ModulePlaceRecordResponse, error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -61,11 +91,39 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
 	// row's own org/boundary, not the request tenant.
 	FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error)
+	// MintModuleRegistration issues the signed, prefix-bound credential a composed
+	// module presents to the gateway to federate its REST surface. Authorized by
+	// the module's own registration secret, not the shared cluster token.
+	MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(ctx context.Context, in *ModuleSubscribeRequest, opts ...grpc.CallOption) (*ModuleSubscribeResponse, error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(ctx context.Context, in *ModuleUnsubscribeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(ctx context.Context, in *ModuleListSubscriptionsRequest, opts ...grpc.CallOption) (*ModuleListSubscriptionsResponse, error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(ctx context.Context, in *ModuleReplayEventsRequest, opts ...grpc.CallOption) (*ModuleReplayEventsResponse, error)
 }
 
 type moduleCapabilitiesServiceClient struct {
@@ -74,6 +132,56 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssuedWorkContext)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx context.Context, in *ModuleExchangeDelegatedOperationAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssuedWorkContext)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckWorkContextRecordAccessResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ListReadableSourceCollections(ctx context.Context, in *ListReadableSourceCollectionsRequest, opts ...grpc.CallOption) (*ListReadableSourceCollectionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReadableSourceCollectionsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) PlaceRecord(ctx context.Context, in *ModulePlaceRecordRequest, opts ...grpc.CallOption) (*ModulePlaceRecordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModulePlaceRecordResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_PlaceRecord_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error) {
@@ -176,6 +284,16 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleListSubjectVisibilityResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ModuleCapabilitiesService_ServiceDesc.Streams[0], ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName, cOpts...)
@@ -195,13 +313,109 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Contex
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceBlobClient = grpc.ServerStreamingClient[FetchDatasourceBlobChunk]
 
+func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleMintRegistrationResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintModuleRegistration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SolutionMintRegistrationResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleMintWorkContextResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModulePublishEventResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_PublishEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) Subscribe(ctx context.Context, in *ModuleSubscribeRequest, opts ...grpc.CallOption) (*ModuleSubscribeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleSubscribeResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_Subscribe_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) Unsubscribe(ctx context.Context, in *ModuleUnsubscribeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_Unsubscribe_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ListSubscriptions(ctx context.Context, in *ModuleListSubscriptionsRequest, opts ...grpc.CallOption) (*ModuleListSubscriptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleListSubscriptionsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListSubscriptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *ModuleReplayEventsRequest, opts ...grpc.CallOption) (*ModuleReplayEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleReplayEventsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ReplayEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ModuleCapabilitiesServiceServer is the server API for ModuleCapabilitiesService service.
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
-//
-// ModuleCapabilitiesService is the module-facing platform surface. Every RPC
-// is internal-tier and identifies its caller from the forwarded Work Context.
 type ModuleCapabilitiesServiceServer interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error)
+	// ExchangeDelegatedOperationAudience authenticates the module independently
+	// of a current parent context and exchanges only an installed operation's
+	// invoke scopes, or its read-only receipt-lookup subset.
+	ExchangeDelegatedOperationAudience(context.Context, *ModuleExchangeDelegatedOperationAudienceRequest) (*IssuedWorkContext, error)
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error)
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(context.Context, *ListReadableSourceCollectionsRequest) (*ListReadableSourceCollectionsResponse, error)
+	// PlaceRecord places one of the caller's own records at a scope node, so the
+	// access oracles can resolve it. Bounded by the resource types the caller
+	// principal's grant declares.
+	PlaceRecord(context.Context, *ModulePlaceRecordRequest) (*ModulePlaceRecordResponse, error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -222,11 +436,39 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
 	// row's own org/boundary, not the request tenant.
 	FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error
+	// MintModuleRegistration issues the signed, prefix-bound credential a composed
+	// module presents to the gateway to federate its REST surface. Authorized by
+	// the module's own registration secret, not the shared cluster token.
+	MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(context.Context, *ModuleSubscribeRequest) (*ModuleSubscribeResponse, error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(context.Context, *ModuleUnsubscribeRequest) (*emptypb.Empty, error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(context.Context, *ModuleListSubscriptionsRequest) (*ModuleListSubscriptionsResponse, error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(context.Context, *ModuleReplayEventsRequest) (*ModuleReplayEventsResponse, error)
 	mustEmbedUnimplementedModuleCapabilitiesServiceServer()
 }
 
@@ -237,6 +479,21 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedReadAudience not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedOperationAudience(context.Context, *ModuleExchangeDelegatedOperationAudienceRequest) (*IssuedWorkContext, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedOperationAudience not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckWorkContextRecordAccess not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ListReadableSourceCollections(context.Context, *ListReadableSourceCollectionsRequest) (*ListReadableSourceCollectionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListReadableSourceCollections not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) PlaceRecord(context.Context, *ModulePlaceRecordRequest) (*ModulePlaceRecordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PlaceRecord not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueJob not implemented")
 }
@@ -267,8 +524,35 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
 }
+func (UnimplementedModuleCapabilitiesServiceServer) ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSubjectVisibility not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error {
 	return status.Error(codes.Unimplemented, "method FetchDatasourceBlob not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintModuleRegistration not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintSolutionRegistration not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintModuleWorkContext not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) Subscribe(context.Context, *ModuleSubscribeRequest) (*ModuleSubscribeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Subscribe not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) Unsubscribe(context.Context, *ModuleUnsubscribeRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Unsubscribe not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ListSubscriptions(context.Context, *ModuleListSubscriptionsRequest) (*ModuleListSubscriptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSubscriptions not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ReplayEvents(context.Context, *ModuleReplayEventsRequest) (*ModuleReplayEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReplayEvents not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) mustEmbedUnimplementedModuleCapabilitiesServiceServer() {
 }
@@ -290,6 +574,96 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExchangeDelegatedReadAudienceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedReadAudience(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedReadAudience(ctx, req.(*ModuleExchangeDelegatedReadAudienceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExchangeDelegatedOperationAudienceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedOperationAudience(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedOperationAudience(ctx, req.(*ModuleExchangeDelegatedOperationAudienceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_CheckWorkContextRecordAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckWorkContextRecordAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).CheckWorkContextRecordAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).CheckWorkContextRecordAccess(ctx, req.(*CheckWorkContextRecordAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ListReadableSourceCollections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReadableSourceCollectionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListReadableSourceCollections(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListReadableSourceCollections(ctx, req.(*ListReadableSourceCollectionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_PlaceRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModulePlaceRecordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).PlaceRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_PlaceRecord_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).PlaceRecord(ctx, req.(*ModulePlaceRecordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_EnqueueJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -472,6 +846,24 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_ListSubjectVisibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleListSubjectVisibilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubjectVisibility(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubjectVisibility(ctx, req.(*ModuleListSubjectVisibilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_FetchDatasourceBlob_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(FetchDatasourceBlobRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -483,6 +875,150 @@ func _ModuleCapabilitiesService_FetchDatasourceBlob_Handler(srv interface{}, str
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceBlobServer = grpc.ServerStreamingServer[FetchDatasourceBlobChunk]
 
+func _ModuleCapabilitiesService_MintModuleRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleMintRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleRegistration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintModuleRegistration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleRegistration(ctx, req.(*ModuleMintRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_MintSolutionRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SolutionMintRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, req.(*SolutionMintRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_MintModuleWorkContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleMintWorkContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleWorkContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleWorkContext(ctx, req.(*ModuleMintWorkContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModulePublishEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).PublishEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_PublishEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).PublishEvent(ctx, req.(*ModulePublishEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_Subscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleSubscribeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).Subscribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_Subscribe_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).Subscribe(ctx, req.(*ModuleSubscribeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_Unsubscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleUnsubscribeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).Unsubscribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_Unsubscribe_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).Unsubscribe(ctx, req.(*ModuleUnsubscribeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ListSubscriptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleListSubscriptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubscriptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListSubscriptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubscriptions(ctx, req.(*ModuleListSubscriptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ReplayEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleReplayEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ReplayEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ReplayEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ReplayEvents(ctx, req.(*ModuleReplayEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ModuleCapabilitiesService_ServiceDesc is the grpc.ServiceDesc for ModuleCapabilitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -490,6 +1026,26 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ExchangeDelegatedReadAudience",
+			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler,
+		},
+		{
+			MethodName: "ExchangeDelegatedOperationAudience",
+			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_Handler,
+		},
+		{
+			MethodName: "CheckWorkContextRecordAccess",
+			Handler:    _ModuleCapabilitiesService_CheckWorkContextRecordAccess_Handler,
+		},
+		{
+			MethodName: "ListReadableSourceCollections",
+			Handler:    _ModuleCapabilitiesService_ListReadableSourceCollections_Handler,
+		},
+		{
+			MethodName: "PlaceRecord",
+			Handler:    _ModuleCapabilitiesService_PlaceRecord_Handler,
+		},
 		{
 			MethodName: "EnqueueJob",
 			Handler:    _ModuleCapabilitiesService_EnqueueJob_Handler,
@@ -529,6 +1085,42 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EmitAuditEvent",
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
+		},
+		{
+			MethodName: "ListSubjectVisibility",
+			Handler:    _ModuleCapabilitiesService_ListSubjectVisibility_Handler,
+		},
+		{
+			MethodName: "MintModuleRegistration",
+			Handler:    _ModuleCapabilitiesService_MintModuleRegistration_Handler,
+		},
+		{
+			MethodName: "MintSolutionRegistration",
+			Handler:    _ModuleCapabilitiesService_MintSolutionRegistration_Handler,
+		},
+		{
+			MethodName: "MintModuleWorkContext",
+			Handler:    _ModuleCapabilitiesService_MintModuleWorkContext_Handler,
+		},
+		{
+			MethodName: "PublishEvent",
+			Handler:    _ModuleCapabilitiesService_PublishEvent_Handler,
+		},
+		{
+			MethodName: "Subscribe",
+			Handler:    _ModuleCapabilitiesService_Subscribe_Handler,
+		},
+		{
+			MethodName: "Unsubscribe",
+			Handler:    _ModuleCapabilitiesService_Unsubscribe_Handler,
+		},
+		{
+			MethodName: "ListSubscriptions",
+			Handler:    _ModuleCapabilitiesService_ListSubscriptions_Handler,
+		},
+		{
+			MethodName: "ReplayEvents",
+			Handler:    _ModuleCapabilitiesService_ReplayEvents_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

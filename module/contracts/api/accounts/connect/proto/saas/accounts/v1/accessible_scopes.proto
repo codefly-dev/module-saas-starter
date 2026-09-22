@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "saas/policy/v1/options.proto";
+
+// The caller-scoped view of the scope tree, kept in its own file so a published
+// client can bind it without also carrying the administrative authorization
+// surface: role assignment, scope grants, record shares and the decision
+// oracles all live in authorization.proto, and a generated binding is scoped to
+// a whole file. authorization.proto imports this file for the shared response
+// and scope shapes; the dependency never runs the other way.
+
+message AccessibleScope {
+  string node_id = 1;
+  string scope_path = 2;
+  string kind = 3;
+  // Human-readable boundary name, visible only for caller-accessible scopes.
+  string label = 4;
+}
+
+// Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal
+// PermissionService.ListAccessibleScopes in authorization.proto. It lives in this
+// file, so it ships to every published SDK consumer: a field added here for the
+// internal RPC's benefit widens the public surface too. Add internal-only detail
+// to a message in authorization.proto instead.
+message ListAccessibleScopesResponse {
+  repeated AccessibleScope scopes = 1;
+  // Set when more scopes remain; pass it back as page_token. Empty on the last page.
+  string next_page_token = 2;
+}
+
+// ListMyAccessibleScopesRequest is the authenticated caller-scoped form of
+// ListAccessibleScopesRequest: the subject is the bearer's own principal, so
+// there is deliberately NO subject_id field. The caller can therefore only ever
+// enumerate their own boundaries and never probe another principal's (I5).
+message ListMyAccessibleScopesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string resource_type = 2 [(buf.validate.field).string.min_len = 1];
+  string action = 3 [(buf.validate.field).string.min_len = 1];
+  // Page bound, same ceiling as the internal RPC.
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 5;
+}
+
+service AccessibleScopeService {
+  // ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
+  // internal PermissionService.ListAccessibleScopes: a signed-in org member
+  // enumerates the scope nodes THEY may act on with (resource_type, action)
+  // through the gateway with a normal bearer. The subject is the bearer's own
+  // principal — no subject_id in the request — so it can never be an oracle
+  // about other principals. Same grant + share union and same pagination as the
+  // internal RPC.
+  rpc ListMyAccessibleScopes(ListMyAccessibleScopesRequest) returns (ListAccessibleScopesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/accessible-scopes"};
+  }
+}

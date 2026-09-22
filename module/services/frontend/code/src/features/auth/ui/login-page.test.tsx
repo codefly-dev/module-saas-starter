@@ -13,6 +13,17 @@ const h = vi.hoisted(() => ({
 	signInWith: vi.fn(),
 	loginWithHeaderInjected: vi.fn(),
 	push: vi.fn(),
+	query: new URLSearchParams(),
+	validateClientAuthorization: vi.fn(),
+	rememberClientAuthorization: vi.fn(),
+	forgetClientAuthorization: vi.fn(),
+}));
+
+vi.mock("@/features/auth/model/client-authorization", async (original) => ({
+	...(await original<Record<string, unknown>>()),
+	validateClientAuthorization: h.validateClientAuthorization,
+	rememberClientAuthorization: h.rememberClientAuthorization,
+	forgetClientAuthorization: h.forgetClientAuthorization,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -33,7 +44,7 @@ vi.mock("@/lib/appearance-provider", () => ({
 
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push: h.push }),
-	useSearchParams: () => new URLSearchParams(),
+	useSearchParams: () => h.query,
 }));
 
 vi.mock("@/components/brand-mark", () => ({
@@ -57,7 +68,24 @@ beforeEach(() => {
 	h.signInWith.mockResolvedValue(undefined);
 	h.loginWithHeaderInjected.mockReset();
 	h.push.mockReset();
+	h.query = new URLSearchParams();
+	h.validateClientAuthorization.mockReset();
+	h.rememberClientAuthorization.mockReset();
+	h.forgetClientAuthorization.mockReset();
 });
+
+// A registered client's authorization request, as it arrives in the login
+// page's query string.
+function clientQuery(overrides: Record<string, string> = {}) {
+	return new URLSearchParams({
+		client_id: "example-addin",
+		redirect_uri: "https://localhost:3000/auth/callback",
+		state: "opaque-state",
+		code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+		code_challenge_method: "S256",
+		...overrides,
+	});
+}
 
 afterEach(cleanup);
 
@@ -93,6 +121,64 @@ describe("LoginPage", () => {
 		await waitFor(() =>
 			expect(screen.getByText(/temporarily misconfigured/)).toBeTruthy(),
 		);
+		expect(h.push).not.toHaveBeenCalled();
+	});
+
+	it("names the client once the host has accepted its request", async () => {
+		h.query = clientQuery();
+		h.validateClientAuthorization.mockResolvedValue("Example Add-in");
+
+		render(<LoginPage />);
+
+		await waitFor(() =>
+			expect(screen.getByText(/to continue to Example Add-in/)).toBeTruthy(),
+		);
+		expect(h.rememberClientAuthorization).toHaveBeenCalledTimes(1);
+		expect(
+			screen.getByRole("button", { name: /Continue with Provider/ }),
+		).toBeTruthy();
+	});
+
+	it("offers no way to sign in until the host has accepted the client", () => {
+		h.query = clientQuery();
+		h.validateClientAuthorization.mockReturnValue(new Promise(() => {}));
+
+		render(<LoginPage />);
+
+		expect(screen.getByText(/Checking the application/)).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: /Continue with Provider/ }),
+		).toBeNull();
+	});
+
+	it("refuses an unregistered client before offering any sign-in method", async () => {
+		h.query = clientQuery({ redirect_uri: "https://evil.test/auth/callback" });
+		h.validateClientAuthorization.mockRejectedValue(
+			new Error("This application is not registered to sign in here."),
+		);
+
+		render(<LoginPage />);
+
+		await waitFor(() =>
+			expect(screen.getByText(/not registered to sign in here/)).toBeTruthy(),
+		);
+		expect(
+			screen.queryByRole("button", { name: /Continue with Provider/ }),
+		).toBeNull();
+		expect(h.rememberClientAuthorization).not.toHaveBeenCalled();
+		expect(h.forgetClientAuthorization).toHaveBeenCalled();
+	});
+
+	it("does not sign a header-injected person in behind a refused client", async () => {
+		h.headerInjected = true;
+		h.providers = [];
+		h.query = clientQuery({ client_id: "nobody" });
+		h.validateClientAuthorization.mockRejectedValue(new Error("refused"));
+
+		render(<LoginPage />);
+
+		await waitFor(() => expect(screen.getByText(/refused/)).toBeTruthy());
+		expect(h.loginWithHeaderInjected).not.toHaveBeenCalled();
 		expect(h.push).not.toHaveBeenCalled();
 	});
 

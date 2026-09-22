@@ -1,0 +1,67 @@
+---
+name: cut-a-release
+description: Cut a release from this repository — the `v0.0.N` deploy-counter tag consumers sync to, or the `module-package/vX.Y.Z` immutable module-package tag — and understand which artifacts each tag actually publishes, including the TypeScript client kit. Use when asked to cut, tag, publish, or release anything here, or to work out why a release job refused to publish.
+---
+
+# Cutting a release
+
+Two tag tracks live here on **separate version axes**. They are not
+interchangeable, and conflating them has broken a release before. The step-by-step
+recipes are in [RELEASE_GATES.md § Release cadence and
+ownership](../../../RELEASE_GATES.md#release-cadence-and-ownership); this file is
+what a reader needs to choose the right one and not be surprised.
+
+- **Deploy counter** — the `v0.0.N` tag series consumers adopt via `codefly sync
+  module`. The tag itself is the counter. It is *not* derived from
+  `agent.codefly.yaml`'s `version:`, which carries the module agent's own version
+  and may lag the tags.
+- **Immutable module package** — a `version:` bump on
+  `module/module.package.codefly.yaml` plus a `module-package/vX.Y.Z` tag. **Only
+  this track** triggers the immutable module-package publication job (strict
+  manifest validation, SBOM, provenance signing).
+
+Publication of any artifact additionally requires the aggregate `release-gates`
+job to have seen every mandatory gate actually succeed, plus three release-only
+secrets — see [RELEASE_GATES.md § Publication
+gating](../../../RELEASE_GATES.md#publication-gating). The provenance signing
+keypair is a one-time setup and the job fails before creating a release without
+it.
+
+## What a tag does and does not publish
+
+**The TypeScript client is published from here.** `@codefly-dev/saas-sdk`
+(`module/services/frontend/code/packages/saas-sdk`) builds the generated bindings
+into its `dist`, and the `publish-frontend-kit` job pushes it to GitHub Packages
+on every **`v0.0.N` deploy-counter tag** — not on the module-package track. So a
+contract change that reaches that tree has to carry a `version:` bump in the
+package's `package.json`: `scripts/publish-frontend-kit.mjs` refuses to republish
+a version whose contents moved, and that refusal fails the release.
+
+**The Go and Python clients are not published by cutting a tag here.** The
+per-language SDK repositories are the distribution mechanism: `saas-sdk-go` and
+`saas-sdk-python` each carry a generated stub tree, committed and released under
+that repository's own tag. On GitHub that tag *is* the publish — a Go module path
+is its repository URL, and Python installs from the same ref. Nothing in this
+repository verifies that either tree exists or is current; check the SDK
+repository itself before relying on one.
+
+`codefly publish clients saas-starter` is **not part of cutting a release**, and
+this workspace is configured so that running it cannot disclose anything by
+accident: `libraries.publish` in `workspace.codefly.yaml` declares **no `go` or
+`python` store**, so the command fails closed instead of creating a repository —
+it would create one **public** (codefly-dev/cli#715), and a client's bindings
+carry the whole contract, not just the `services:` facade. Restoring a store is a
+deliberate, separately-agreed disclosure decision.
+
+No new repository is created for a client, and nothing generated is vendored into
+a *consumer*: a consumer imports the SDK, never a stub package, so the SDK's
+public API must alias its generated types rather than expose their import path.
+For the kit that rule is enforced — the package's `exports` map may not name a
+subpath into the generated tree (`publish-frontend-kit.test.mjs`).
+
+`module/clients.codefly.yaml` remains the policy that decides, per exported
+contract endpoint, which languages get a client and which services its facade
+reaches. It is **generation** policy, not publication policy. Every exported
+endpoint must appear there — an endpoint the file omits would otherwise generate
+every service in its package, in every default language — and the `clients-config`
+gate in `module/tools/composition` enforces that.

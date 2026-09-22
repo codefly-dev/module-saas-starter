@@ -1,0 +1,47 @@
+{
+  "schema": "codefly/module-api-contracts/v1",
+  "package": "codefly/saas-starter",
+  "version": "0.1.0",
+  "endpoints": [
+    {
+      "service": "accounts",
+      "endpoint": "connect",
+      "api": "connect",
+      "kind": "protobuf",
+      "package": "saas.accounts.v1",
+      "path": "contract.binpb",
+      "digest": "sha256:0e4456c65985a563695d7408fa2d201e6d1a69752288cce3edc6ca79948579d0",
+      "services": [
+        {
+          "name": "ModuleCapabilitiesService",
+          "fullName": "saas.accounts.v1.ModuleCapabilitiesService",
+          "procedures": [
+            "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
+            "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
+            "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+            "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
+            "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
+            "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
+            "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+          ]
+        }
+      ]
+    }
+  ]
+}

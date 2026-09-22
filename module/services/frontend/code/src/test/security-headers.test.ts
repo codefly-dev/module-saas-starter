@@ -60,6 +60,9 @@ describe("contentSecurityPolicy", () => {
 		expect(directive(csp, "frame-src")).toBe("frame-src 'self'");
 		// Avatars are user-supplied external image URLs.
 		expect(directive(csp, "img-src")).toBe("img-src 'self' data: https:");
+		expect(directive(csp, "style-src")).toBe(
+			"style-src 'self' 'unsafe-inline'",
+		);
 	});
 
 	it("allows 'unsafe-eval' only in development", () => {
@@ -100,6 +103,8 @@ describe("contentSecurityPolicy", () => {
 		expect(directive(csp, "script-src")).toContain("https://b.example.com");
 		expect(directive(csp, "connect-src")).toContain("https://a.example.com");
 		expect(directive(csp, "connect-src")).toContain("https://b.example.com");
+		expect(directive(csp, "style-src")).toContain("https://a.example.com");
+		expect(directive(csp, "style-src")).toContain("https://b.example.com");
 	});
 
 	it("allowlists runtime-derived solution origins without a build-time env", () => {
@@ -109,6 +114,16 @@ describe("contentSecurityPolicy", () => {
 		);
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' http://localhost:8091",
+		);
+		expect(directive(csp, "style-src")).toBe(
+			"style-src 'self' 'unsafe-inline' http://localhost:8091",
+		);
+	});
+
+	it("admits a remote's stylesheet under a nonce, where 'unsafe-inline' is dropped from script-src but style-src still needs the origin", () => {
+		const csp = contentSecurityPolicy({}, ["http://localhost:8093"], "n0nce");
+		expect(directive(csp, "style-src")).toBe(
+			"style-src 'self' 'unsafe-inline' http://localhost:8093",
 		);
 	});
 

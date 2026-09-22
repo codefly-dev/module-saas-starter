@@ -4,7 +4,7 @@ Date: 2026-07-15
 Authority: canonical SaaS starter frontend-plugin direction
 
 This repository is the source of truth for the generic host and public SDK.
-Product repositories such as Warden, Mind, or Codefly-owned applications are
+Product repositories — consuming solutions and Codefly-owned applications — are
 consumers and proving grounds; they do not define private exceptions to this
 contract.
 
@@ -17,7 +17,6 @@ Read before changing the plugin boundary:
 
 1. [Architecture](frontend-plugin-architecture.md)
 2. [Implementation plan](frontend-plugin-platform-implementation-plan.md)
-3. [Execution TODO](frontend-plugin-platform-todo.md)
 4. [Packaging ADR](adr/0001-frontend-plugin-packaging.md)
 5. [Public import map](frontend-plugin-public-api.md)
 6. [Same-origin BFF contract](frontend-plugin-bff-contract.md)

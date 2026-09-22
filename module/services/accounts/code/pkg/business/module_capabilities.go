@@ -21,13 +21,18 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"accounts/pkg/datasource/github"
+	"accounts/pkg/eventcatalog"
+	"accounts/pkg/events"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -36,12 +41,23 @@ import (
 
 // ModulePrincipalGrant declares what a module service principal may do on the
 // capability surface. Queues bounds the queues it may enqueue to and claim from;
-// CrossTenant lets it act on tenants other than its bound org and enqueue global
-// (inbox-worker) jobs — the authority an inbox worker needs to service every
-// tenant's deliveries on its queue.
+// Namespaces bounds the event namespaces it may publish into (the leading dotted
+// segment of an event type); Resources names the permission resource types the
+// module's own content is governed by, which is how the host authorizes reads of
+// content it does not itself hold; CrossTenant lets it act on tenants other than
+// its bound org and enqueue global (inbox-worker) jobs — the authority an inbox
+// worker needs to service every tenant's deliveries on its queue. Tenant is the
+// org a single-tenant module is bound to, which its minted Work Context carries;
+// a cross-tenant module names the tenant per mint instead.
 type ModulePrincipalGrant struct {
-	Queues      []string
-	CrossTenant bool
+	ReadAudiences      map[string]ModuleReadAudience      `json:"read_audiences"`
+	OperationAudiences map[string]ModuleOperationAudience `json:"operation_audiences"`
+	Prefix             string
+	Queues             []string
+	Namespaces         []string
+	Resources          []string
+	CrossTenant        bool
+	Tenant             string
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -53,27 +69,128 @@ func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
 	return false
 }
 
+// allowsResource reports whether the principal's own content is governed by the
+// given permission resource type. The registry is the allowlist, so a module
+// that declares no resources may place nothing (fail-closed).
+func (g ModulePrincipalGrant) allowsResource(resource string) bool {
+	for _, r := range g.Resources {
+		if r == resource {
+			return true
+		}
+	}
+	return false
+}
+
+// allowsNamespace reports whether the principal may publish an event whose
+// namespace is the given leading segment. The registry is the allowlist, so an
+// empty Namespaces denies every publish (fail-closed).
+func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
+	for _, n := range g.Namespaces {
+		if n == namespace {
+			return true
+		}
+	}
+	return false
+}
+
 // ModulePrincipalRegistry maps a module service principal id to its grant.
 type ModulePrincipalRegistry map[string]ModulePrincipalGrant
 
+// ContentResources is the union of the permission resource types every composed
+// module declares its content under, sorted and deduplicated.
+//
+// The host owns permissions but holds no domain content, so it cannot name the
+// resource a collection's documents, rows or models are governed by — only the
+// composition knows which modules it composed. Reading the union from the
+// declared registry is what keeps that knowledge out of this module: nothing
+// here spells a consumer's noun, and a composition that declares none gets an
+// empty set, which authorizes nothing (fail-closed).
+func (r ModulePrincipalRegistry) ContentResources() []string {
+	seen := make(map[string]struct{})
+	for _, grant := range r {
+		for _, resource := range grant.Resources {
+			if resource != "" {
+				seen[resource] = struct{}{}
+			}
+		}
+	}
+	resources := make([]string, 0, len(seen))
+	for resource := range seen {
+		resources = append(resources, resource)
+	}
+	slices.Sort(resources)
+	return resources
+}
+
+// ModulePrincipalID is the service principal a composed module acts as. It is
+// derived from the module's registration prefix — the same identity the
+// registration broker binds as the credential's `sub` — so a composition
+// declares a module's authority under the name it already federates with rather
+// than inventing an opaque id, and every side computes the same value without
+// coordinating. A UUID is what the identity columns downstream (the actor-chain
+// journal, audit actors) are typed as.
+func ModulePrincipalID(prefix string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
+}
+
 // ParseModulePrincipalRegistry decodes the deployment-provided registry of
-// module service principals. The document its JSON describes is a map of
-// principal id to {"queues": [...], "cross_tenant": bool}. An empty string
-// yields an empty registry, which denies every caller (fail-closed).
+// module service principals. The document its JSON describes is a map of module
+// prefix to {"queues": [...], "namespaces": [...], "resources": [...],
+// "cross_tenant": bool, "tenant": "<org uuid>"}, indexed here by the principal id
+// derived from that prefix. An empty string yields an empty registry, which
+// denies every caller (fail-closed).
 func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 	if raw == "" {
 		return ModulePrincipalRegistry{}, nil
 	}
 	var wire map[string]struct {
-		Queues      []string `json:"queues"`
-		CrossTenant bool     `json:"cross_tenant"`
+		ReadAudiences      map[string]ModuleReadAudience      `json:"read_audiences"`
+		OperationAudiences map[string]ModuleOperationAudience `json:"operation_audiences"`
+		Queues             []string                           `json:"queues"`
+		Namespaces         []string                           `json:"namespaces"`
+		Resources          []string                           `json:"resources"`
+		CrossTenant        bool                               `json:"cross_tenant"`
+		Tenant             string                             `json:"tenant"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, err
 	}
 	registry := make(ModulePrincipalRegistry, len(wire))
-	for id, grant := range wire {
-		registry[id] = ModulePrincipalGrant{Queues: grant.Queues, CrossTenant: grant.CrossTenant}
+	for prefix, grant := range wire {
+		// A principal id is a valid module prefix by pattern, so an entry still
+		// keyed the way the registry used to be — by the opaque principal id —
+		// would otherwise parse into a principal no module can ever be, and every
+		// call would be denied for a reason that names the caller rather than the
+		// stale configuration.
+		if err := uuid.Validate(prefix); err == nil {
+			return nil, fmt.Errorf("module principal registry is keyed by module prefix, not principal id: %q", prefix)
+		}
+		if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
+			return nil, fmt.Errorf("module principal registry has invalid module prefix %q", prefix)
+		}
+		// The tenant is sealed into a signed capability and compared against
+		// organization ids, so a malformed one cannot be caught downstream: it
+		// signs, then silently matches no tenant and drops the org from its own
+		// audit record.
+		if err := uuid.Validate(grant.Tenant); err != nil {
+			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
+		}
+		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
+			return nil, err
+		}
+		if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
+			return nil, err
+		}
+		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
+			ReadAudiences:      grant.ReadAudiences,
+			OperationAudiences: grant.OperationAudiences,
+			Prefix:             prefix,
+			Queues:             grant.Queues,
+			Namespaces:         grant.Namespaces,
+			Resources:          grant.Resources,
+			CrossTenant:        grant.CrossTenant,
+			Tenant:             grant.Tenant,
+		}
 	}
 	return registry, nil
 }
@@ -96,6 +213,28 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil
+}
+
+// ModuleContentResources reports the permission resource types the content of
+// one composed module is governed by. prefix is the module's registration
+// prefix — the name a composition declares its principal under, and the audience
+// a capability minted for that module carries.
+//
+// The host owns permissions but holds no domain content, so it cannot name the
+// resource a collection's records are governed by; only the composition knows
+// which modules it composed. Reading the answer from the declared registry is
+// what keeps that knowledge out of this module, and an audience that names no
+// registered module — or one that declares no content — resolves to nothing
+// rather than to an invented authority (fail-closed).
+//
+// This is the per-caller counterpart of ContentResources, which takes the union
+// because its caller is an org administrator rather than one module.
+func (s *Service) ModuleContentResources(prefix string) ([]string, error) {
+	grant, registered := s.modulePrincipals[ModulePrincipalID(prefix)]
+	if !registered || len(grant.Resources) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "capability audience declares no module content")
+	}
+	return grant.Resources, nil
 }
 
 // authorizeTenant resolves the tenant a call targets. A call may only name its
@@ -252,11 +391,20 @@ func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, r
 }
 
 // ModuleAckJob completes a leased job successfully.
-func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, req *jobsv1.CompleteJobRequest) error {
+func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, executionKind, executionID string) error {
 	w := wool.Get(ctx).In("ModuleAckJob")
-	if _, err := s.moduleGrant(caller); err != nil {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
 		return err
 	}
+	var execution *jobsv1.JobExecutionReference
+	if (executionKind == "") != (executionID == "") {
+		return status.Error(codes.InvalidArgument, "execution kind and id must be supplied together")
+	}
+	if executionKind != "" {
+		execution = &jobsv1.JobExecutionReference{Owner: grant.Prefix, Kind: executionKind, Id: executionID}
+	}
+	req := &jobsv1.CompleteJobRequest{Lease: lease, Execution: execution}
 	if err := s.moduleJobStore.Complete(ctx, req); err != nil {
 		return moduleJobError(w, err)
 	}
@@ -534,7 +682,7 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // spine. The event type must be registered in the code-owned catalog;
 // unregistered types are rejected, not stored free-form. An empty tenant emits a
 // system-scoped event and requires the cross-tenant grant.
-func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID string, fields *structpb.Struct) error {
+func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
 		return err
@@ -564,7 +712,9 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.
 	emit := func(ctx context.Context) error {
-		return s.emitTx(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+		entry := s.buildAuditEntry(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+		entry.IdempotencyKey = idempotencyKey
+		return s.emitEntryTx(ctx, entry)
 	}
 	if tenant == "" {
 		if err := s.store.WithControlPlane(ctx, emit); err != nil {
@@ -576,6 +726,143 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 		return status.Error(codes.Internal, err.Error())
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Subject visibility
+// ---------------------------------------------------------------------------
+
+// ModuleSubjectVisibilityMaxSet bounds a viewer's whole set. The set is read and
+// returned as one value on purpose (see ModuleListSubjectVisibility), so the cap
+// is what keeps one response bounded in memory and under the transport's message
+// limit; at a uuid per entry this is well inside it. It is exported because it
+// is a bound on the surface's contract, not a private tuning knob: a tenant past
+// it gets a refusal a consumer has to handle.
+const ModuleSubjectVisibilityMaxSet = 10000
+
+// ModuleSubjectVisibilityGrant is one entry of a viewer's visible-subject set.
+// ExpiresAt zero is an open-ended grant: the host's hierarchy is team
+// membership, which carries no end of its own, so today every entry is
+// open-ended. The consuming module evaluates the instant at the moment of the
+// read, which is why the host writes it rather than expiring entries on a timer.
+type ModuleSubjectVisibilityGrant struct {
+	VisibleSubjectID string
+	ExpiresAt        time.Time
+}
+
+// ModuleListSubjectVisibility reports the other subjects whose rows a viewer may
+// read in a tenant — the tenant's team tree projected onto that viewer. A module
+// enforcing row visibility by owner composes the set into its read predicate; it
+// never derives the set itself, because a module that grew a subject hierarchy
+// would be holding a permission vocabulary.
+//
+// The WHOLE set comes back from ONE transaction, and that is the contract rather
+// than an implementation detail. The consuming operation is a bulk replace of a
+// viewer's whole set, so a set assembled from pages read in separate
+// transactions could carry an entry revoked between two of them: the module
+// would reinstate an authority an administrator had already withdrawn, and with
+// no invalidation signal to correct it the stale grant would stand until the
+// consumer's next refresh. A tenant whose hierarchy puts more than
+// ModuleSubjectVisibilityMaxSet subjects under one viewer is therefore refused
+// outright — a legible failure an operator can act on — rather than answered
+// with a set that was never true at any instant.
+//
+// Authority is the caller's registered principal and its bound tenant, plus the
+// viewer's membership of that tenant: without the membership check a module
+// bound to one tenant could name a subject in another and learn whether that
+// subject has colleagues.
+func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller ModuleCaller, tenant, viewer string) ([]ModuleSubjectVisibilityGrant, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return nil, err
+	}
+	if err := s.requireTenantMember(ctx, tenant, viewer); err != nil {
+		return nil, err
+	}
+
+	var subjects []string
+	// One entry over the cap distinguishes a set that fits from one that does not.
+	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
+		out, e := s.store.ListVisibleSubjects(ctx, tenant, viewer, ModuleSubjectVisibilityMaxSet+1)
+		subjects = out
+		return e
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if len(subjects) > ModuleSubjectVisibilityMaxSet {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"viewer %s sees more than %d subjects in tenant %s; the per-viewer visibility set cannot be served whole",
+			viewer, ModuleSubjectVisibilityMaxSet, tenant)
+	}
+
+	grants := make([]ModuleSubjectVisibilityGrant, 0, len(subjects))
+	for _, subject := range subjects {
+		grants = append(grants, ModuleSubjectVisibilityGrant{VisibleSubjectID: subject})
+	}
+	return grants, nil
+}
+
+// ---------------------------------------------------------------------------
+// Record placement
+// ---------------------------------------------------------------------------
+
+// ModulePlaceRecord binds one of the calling module's records to a node of the
+// tenant's scope tree and returns that node's id. Placement is what makes a
+// record resolvable at all: CheckAccess and ListAccessibleScopes read a record's
+// true scope from its own registered node and accept no caller-supplied path, so
+// a record that was never placed is denied to every subject.
+//
+// The authority bound is the resource vocabulary the composition declared for
+// this principal. A module may place a record only under a resource type its own
+// grant names, so it can neither introduce a type it holds no grant for nor
+// re-point a record another module owns.
+func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, tenant, scopePath, kind, label, resourceType, resourceID string) (string, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return "", err
+	}
+	if !grant.allowsResource(resourceType) {
+		return "", status.Errorf(codes.PermissionDenied, "principal %s may not place records of resource type %q", caller.PrincipalID, resourceType)
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return "", err
+	}
+
+	offered := &gen.ScopeNode{
+		Id:           NewIDString(),
+		OrgId:        tenant,
+		ScopePath:    scopePath,
+		Kind:         kind,
+		Label:        label,
+		ResourceType: resourceType,
+		ResourceId:   resourceID,
+	}
+	var nodeID string
+	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
+		placed, err := s.store.PlaceRecordNode(ctx, offered)
+		if err != nil {
+			return err
+		}
+		nodeID = placed.Id
+		if placed.Id != offered.Id {
+			// Already placed — the retry this surface's at-least-once contract
+			// expects, unless the caller named a different path. A record resolves
+			// through exactly one node, so moving it would silently rewrite who can
+			// reach it; that is an authorization change, not a placement.
+			if placed.ScopePath != scopePath {
+				return status.Errorf(codes.FailedPrecondition, "record is already placed at scope %q", placed.ScopePath)
+			}
+			return nil
+		}
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventScopeNodeRegistered, "scope_node", placed.Id, tenant,
+			map[string]any{"scope_path": placed.ScopePath, "kind": placed.Kind})
+	}); err != nil {
+		return "", err
+	}
+	return nodeID, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -602,8 +889,8 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	if err != nil {
 		return nil, "", err
 	}
-	if !grant.allowsQueue(datasourceIngestQueue) {
-		return nil, "", status.Errorf(codes.PermissionDenied, "principal %s may not fetch datasource blobs: the %q queue grant is required", caller.PrincipalID, datasourceIngestQueue)
+	if !grant.allowsQueue(DatasourceIngestQueue) {
+		return nil, "", status.Errorf(codes.PermissionDenied, "principal %s may not fetch datasource blobs: the %q queue grant is required", caller.PrincipalID, DatasourceIngestQueue)
 	}
 	if s.datasourceCipher == nil || s.newGitHubClient == nil {
 		return nil, "", status.Error(codes.FailedPrecondition, "datasource connector is not configured")
@@ -618,9 +905,19 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	if err := authorizeTenant(caller, grant, source.OrgID); err != nil {
 		return nil, "", err
 	}
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "decrypt access token").Error())
+		// A revoked installation or an unreadable credential is a precondition the
+		// tenant must repair, not an internal fault; reporting it as Internal tells
+		// a module caller to retry something that can never succeed.
+		var failure *jobs.ProcessingError
+		if errors.As(err, &failure) {
+			if failure.Retryable {
+				return nil, "", status.Error(codes.Unavailable, failure.Failure.Message)
+			}
+			return nil, "", status.Error(codes.FailedPrecondition, failure.Failure.Message)
+		}
+		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "authenticate to github").Error())
 	}
 	// Trust boundary: blobSHA is caller-supplied and NOT re-validated against the
 	// change set that referenced it. Authorization is enforced at the repository
@@ -635,12 +932,303 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	// per-fetch ticket this RPC exists to remove and break the intended lag between
 	// a module's cursor and the repo head, so the repo-grained check is the
 	// boundary by design.
-	content, err := s.newGitHubClient(token).GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
+	content, err := client.GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, "", status.Errorf(codes.FailedPrecondition, "blob exceeds the %d-byte fetch limit", maxContentTicketBytes)
 		}
 		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "fetch blob").Error())
 	}
+	// Record the data access on the source's own tenant spine. Each fetch is a
+	// distinct access event (no idempotency key), and a transient audit-write
+	// failure must not fail the read the module needs, so this is the
+	// fire-and-forget emit rather than a transactional one.
+	s.emit(ctx, caller.PrincipalID, "agent", EventDatasourceBlobFetched, "datasource", source.ID, source.OrgID,
+		map[string]any{"repo": source.Repo, "blob_sha": blobSHA, "bytes": len(content)})
 	return content, http.DetectContentType(content), nil
+}
+
+// Domain events (pub/sub, issue #493)
+// ---------------------------------------------------------------------------
+
+// moduleTx surfaces the ambient pgx transaction the Store opened for this
+// request (WithOrgTx / WithControlPlane both carry it on ctx) so the events
+// transport can join it — the transactional-outbox rule. It is typed as the
+// port's opaque TxHandle, so the business layer never imports the concrete
+// driver; a nil handle (no active tx) makes the transport open its own, which
+// is only the test/simple-caller path, never a tenant publish.
+func moduleTx(ctx context.Context) events.TxHandle {
+	return ctx.Value("tx") //nolint:staticcheck // shared transaction context key with the Store layer
+}
+
+// mapPublishError narrows the transport's sentinel publish errors to gRPC codes:
+// a reused id carrying a different fact is a caller contract violation, and an
+// unroutable envelope is invalid input; anything else is an internal fault.
+func mapPublishError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, events.ErrIdempotencyConflict):
+		return status.Error(codes.FailedPrecondition, "event id reused with a different envelope")
+	case errors.Is(err, events.ErrInvalidEnvelope):
+		return status.Error(codes.InvalidArgument, "event envelope is not routable: id, type, and source are required")
+	default:
+		return status.Error(codes.Internal, err.Error())
+	}
+}
+
+// ModulePublishEvent appends one domain event to the transactional outbox for
+// the caller's tenant and returns the accepted envelope id. Authority is
+// namespace + tenant: the event type's namespace (the segment before the first
+// dot) must be one the principal declares, and the event is published for a
+// tenant the caller may act on, and the type must be declared in the composed
+// catalog. The insert joins the WithOrgTx transaction so
+// the security-definer publish gate re-checks tenant == current_org under the
+// app_tenant role; the relay fans the event out to matching subscriptions after
+// commit. Publishing is deliberately not audited per-event — the durable event
+// of record is itself the trail — so only subscription changes and replays emit
+// audit events.
+func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, tenant string, envelope *events.EventEnvelope) (string, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return "", err
+	}
+	if s.eventTransport == nil {
+		return "", status.Error(codes.Internal, "event transport is not configured")
+	}
+	if envelope == nil {
+		return "", status.Error(codes.InvalidArgument, "envelope is required")
+	}
+	if tenant == "" {
+		return "", status.Error(codes.InvalidArgument, "tenant is required")
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return "", err
+	}
+	namespace := eventcatalog.Namespace(envelope.GetType())
+	if !grant.allowsNamespace(namespace) {
+		return "", status.Errorf(codes.PermissionDenied, "principal %s may not publish events in namespace %q", caller.PrincipalID, namespace)
+	}
+	// The authorized tenant wins over any tenant id the client wrote into the
+	// envelope: a caller cannot smuggle another tenant's scope past the namespace
+	// gate. The DB gate re-checks it under the app_tenant role regardless.
+	envelope.TenantId = tenant
+	// Publish authority (the namespace grant) is deployment configuration, while
+	// the catalog is compiled into this binary, so the two can disagree: a
+	// principal may hold a namespace whose types this build was never composed
+	// with. Refusing the publish is the only way that disagreement is visible.
+	// Accepting it would silently drop the type's whole contract — its declared
+	// partition, its visibility, its retention — and the producer that declared
+	// it needs ordering would get none, with nothing anywhere reporting why.
+	declared, inCatalog := eventcatalog.LookupPublished(envelope.GetType())
+	if !inCatalog {
+		return "", status.Errorf(codes.FailedPrecondition, "event type %q is not declared in this deployment's event catalog; add it to the module's events contribution and recompose", envelope.GetType())
+	}
+	if resourceType, missing := missingFollowableSubject(envelope); missing {
+		return "", status.Errorf(codes.InvalidArgument,
+			"event type %q is declared followable for resource type %q, so its subject must carry the resource id",
+			envelope.GetType(), resourceType)
+	}
+	// The declared partition template is the ordering domain, and it is what a
+	// caller that omits the key gets. Ordering is not free — publish_domain_event
+	// holds a transaction-scoped advisory lock on the partition until the
+	// producing transaction commits — so a type that declares no partition
+	// publishes unordered rather than inheriting one it never promised. A key the
+	// caller set deliberately (e.g. per-aggregate ordering within a tenant) wins
+	// over the declaration.
+	if envelope.GetPartitionKey() == "" {
+		envelope.PartitionKey = eventcatalog.ResolvePartition(declared.Partition, tenant, envelope.GetBoundaryId())
+	}
+
+	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
+		return s.eventTransport.Publish(ctx, moduleTx(ctx), envelope)
+	}); err != nil {
+		return "", mapPublishError(err)
+	}
+	return envelope.GetId(), nil
+}
+
+// followableLookup is the catalog consulted by the exact-target guard below,
+// indirected through a var so a test can install a declaration. No composed
+// contribution declares a followable resource yet, so without this seam the
+// guard has no reachable failing path at all — and a guard nothing can exercise
+// is one that can be inverted, or deleted outright, with every test still green.
+var followableLookup = eventcatalog.LookupFollowable
+
+// missingFollowableSubject reports the resource type an envelope should have
+// targeted and did not, for a type some contribution declared followable: the
+// envelope subject carries the resource id the host matches a follow on.
+// Publishing without one fails nowhere downstream — it matches no follower and
+// delivers nothing, which is indistinguishable from a resource nobody follows —
+// so the publish is refused here instead.
+//
+// This binds the module publish path only, which is the one that can reach it.
+// The first-party lifecycle producer cannot: every EventType it emits is
+// saas.*-prefixed (audit_registry.go) while the catalog declares the unprefixed
+// domain types, and compose refuses a follows declaration in the reserved saas
+// namespace — so no lifecycle event can ever resolve to a followable resource.
+func missingFollowableSubject(envelope *events.EventEnvelope) (string, bool) {
+	if envelope.GetSubject() != "" {
+		return "", false
+	}
+	declared, followable := followableLookup(envelope.GetType())
+	if !followable {
+		return "", false
+	}
+	return declared.ResourceType, true
+}
+
+// ModuleSubscribe creates, or idempotently re-affirms, a durable subscription
+// delivering events matching typePattern onto queue for the calling principal.
+// Authority is the queue grant plus two visibility rules. A solution principal
+// may never subscribe a pattern that matches an internal published event, so
+// internal events stay intra-platform; and it may never subscribe the platform's
+// own namespace, whose types are the audit spine published for outbound webhook
+// delivery — the compliance record of every action in the tenant, including the
+// ones taken against the module itself. A re-subscribe of the same (principal,
+// pattern, queue) returns the existing live row and emits no second audit event.
+func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return nil, err
+	}
+	if !grant.allowsQueue(queue) {
+		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not use queue %q", caller.PrincipalID, queue)
+	}
+	// An internal-visibility event is never delivered to a tenant-scoped
+	// subscriber: reject a pattern that would match any internal published type.
+	for _, internalType := range eventcatalog.InternalPublishedTypes() {
+		if events.Matches(typePattern, internalType) {
+			return nil, status.Errorf(codes.PermissionDenied, "type pattern %q matches internal event %q, which is not subscribable", typePattern, internalType)
+		}
+	}
+	// The platform namespace is external so an org's own endpoints may receive it
+	// over a webhook the org configured. That is a tenant's grant over its own
+	// records, not a capability a module inherits by declaring a queue.
+	if eventcatalog.Namespace(typePattern) == auditEventsNamespace {
+		return nil, status.Errorf(codes.PermissionDenied, "type pattern %q is in the platform namespace, which is not subscribable", typePattern)
+	}
+	// Ordered delivery is only meaningful over a type that declares a partition;
+	// without one the relay hands deliveries out unordered and says nothing. A
+	// subscriber that asked for FIFO has to be told here, at subscribe time,
+	// rather than discovering the reordering in production.
+	if delivery == string(events.DeliveryOrdered) {
+		for _, unorderedType := range eventcatalog.UnorderedPublishedTypesInNamespace(eventcatalog.Namespace(typePattern)) {
+			if events.Matches(typePattern, unorderedType) {
+				return nil, status.Errorf(codes.FailedPrecondition, "type pattern %q matches event %q, which declares no partition; ordered delivery cannot be provided for it", typePattern, unorderedType)
+			}
+		}
+	}
+
+	var created *EventSubscription
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		sub, inserted, e := s.store.CreateEventSubscription(ctx, &EventSubscription{
+			SubscriberPrincipalID: caller.PrincipalID,
+			TypePattern:           typePattern,
+			Queue:                 queue,
+			Delivery:              delivery,
+			CreatedBy:             caller.PrincipalID,
+		})
+		if e != nil {
+			return e
+		}
+		created = sub
+		if !inserted {
+			return nil // idempotent re-affirm of an existing subscription: no new audit event
+		}
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventEventSubscriptionCreated, "event_subscription", sub.ID, "", map[string]any{
+			"subscription_id":         sub.ID,
+			"subscriber_principal_id": sub.SubscriberPrincipalID,
+			"type_pattern":            sub.TypePattern,
+			"queue":                   sub.Queue,
+		})
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return created, nil
+}
+
+// ModuleUnsubscribe revokes one of the caller's own subscriptions. The revoke is
+// scoped by subscriber principal, so a caller can only revoke what it owns;
+// revoking an unknown or already-revoked subscription is NotFound and emits no
+// audit event.
+func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, subscriptionID string) error {
+	if _, err := s.moduleGrant(caller); err != nil {
+		return err
+	}
+	var revoked bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		ok, e := s.store.RevokeEventSubscription(ctx, subscriptionID, caller.PrincipalID)
+		if e != nil {
+			return e
+		}
+		revoked = ok
+		if !ok {
+			return nil
+		}
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventEventSubscriptionRevoked, "event_subscription", subscriptionID, "", map[string]any{
+			"subscription_id": subscriptionID,
+		})
+	}); err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	if !revoked {
+		return status.Errorf(codes.NotFound, "subscription %s not found for principal %s", subscriptionID, caller.PrincipalID)
+	}
+	return nil
+}
+
+// ModuleListSubscriptions returns the calling principal's live subscriptions.
+func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCaller) ([]*EventSubscription, error) {
+	if _, err := s.moduleGrant(caller); err != nil {
+		return nil, err
+	}
+	var subscriptions []*EventSubscription
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		subscriptions, e = s.store.ListEventSubscriptions(ctx, caller.PrincipalID)
+		return e
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return subscriptions, nil
+}
+
+// ModuleReplayEvents re-delivers durable events of one type for the caller's
+// tenant, created at or after since, only to the caller's own subscriptions.
+// Each redelivery carries a fresh idempotency key so a consumer that already
+// acknowledged the event still receives the replay. The replay itself is
+// audited (a control-plane action) but the individual redeliveries are not.
+func (s *Service) ModuleReplayEvents(ctx context.Context, caller ModuleCaller, tenant, eventType string, since time.Time) (int, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return 0, err
+	}
+	if s.eventTransport == nil {
+		return 0, status.Error(codes.Internal, "event transport is not configured")
+	}
+	if tenant == "" {
+		return 0, status.Error(codes.InvalidArgument, "tenant is required")
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return 0, err
+	}
+	redelivered, err := s.eventTransport.Replay(ctx, events.ReplaySelector{
+		Type:                  eventType,
+		TenantID:              tenant,
+		Since:                 since,
+		SubscriberPrincipalID: caller.PrincipalID,
+	})
+	if err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventEventReplayed, "domain_event", eventType, "", map[string]any{
+			"type":        eventType,
+			"redelivered": redelivered,
+		})
+	}); err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	return redelivered, nil
 }

@@ -7,8 +7,7 @@ a cloud-coupling scorecard, and testing lessons — and maps each item to what
 **this** Go/Postgres/Codefly starter already ships, partially ships, or has
 not built. It exists so the starter can adopt the proven patterns and skip the
 recorded mistakes without re-deriving them. It is a **reference**, not a plan:
-the executable backlog lives in [ROADMAP.md](./ROADMAP.md) and
-[TODO.md](./TODO.md).
+the plan is [docs/PLAN.md](./docs/PLAN.md).
 
 The audited platform is a *different* codebase (GCP, FastAPI, Firestore). Its
 lessons transfer; its mechanisms do not. Where this starter reaches the same
@@ -32,7 +31,7 @@ Trust level of the cited docs matters. [PRODUCTION_READY.md](./PRODUCTION_READY.
 [module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
 [module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md), and
 `docs/authorization/9-reference/current-state.md` describe **shipped** behavior.
-`module/docs/IDENTITY_ACCESS_PLAN.md` and [APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)
+[docs/historical/IDENTITY_ACCESS_PLAN.md](./docs/historical/IDENTITY_ACCESS_PLAN.md) and [APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)
 and [FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md) are **forward-looking**
 and are not evidence of current implementation.
 
@@ -45,10 +44,10 @@ and are not evidence of current implementation.
 | Capability | Status | Starter mechanism & reference |
 |---|---|---|
 | Hosted-IdP login (sign-in/up/callback, throttling, login audit) | ✅ | WorkOS / Auth0 / Google / generic OIDC validated once at `Authenticate`; provider token never enters the runtime path. `pkg/auth/{workos,oidc}`, [PRODUCTION_READY.md](./PRODUCTION_READY.md), [module/FEATURES.md](./module/FEATURES.md) |
-| Self-minted session JWT + own JWKS | ✅ | Backend mints an Ed25519 session JWT (`sub/org/or/pr/sid`); the sidecar verifies it (signature, claims, revocation) but never mints. `GET /v1/auth/.well-known/jwks.json` (`pkg/adapters/jwks_http.go`), Vault-held current+previous keypair for rotation. This is the "own session JWT is the primary path" escape hatch the audit recommends. |
+| Self-minted session JWT + own JWKS | ✅ | Backend mints an Ed25519 session JWT (`sub/org/or/pr/sid`); the gateway verifies it (signature, claims, revocation) but never mints. `GET /v1/auth/.well-known/jwks.json` (`pkg/adapters/jwks_http.go`); the gateway resolves the verifying key by the token's `kid` from a refreshing JWKS cache, so overlapping keys verify without a deploy (#532). This is the "own session JWT is the primary path" escape hatch the audit recommends. |
 | JIT provisioning | ✅ | `pkg/auth/pg/resolver.go` upserts `(provider, sub)` → `user_identities`/`users` in one tx, plus `BOOTSTRAP_ADMIN_EMAIL` super-admin bootstrap. |
 | Session revocation | ✅ ↔ | The audit's platform left this permanently stubbed (501). This starter **closed that gap**: refresh-rotation with reuse detection, plus migration-70 DB triggers that atomically revoke affected sessions on user-status / membership / role / MFA change, and migration-71 device-cap eviction (`sr` claim, [AUTHZ.md](./AUTHZ.md), [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)). |
-| Enterprise SSO / per-tenant `authMode` | 🟡 | Per-org IdP directory (`org_identity_providers`, RLS migration 92), pre-auth domain/host→provider discovery (`pkg/business/identity_discovery.go`), and WorkOS SSO setup/disable (`pkg/business/sso_admin.go`, `/admin/sso`). No shipped `authMode`/"require-SSO" enforcement flag; the login/invite/signup split that would make it explicit is proposal-only (`module/docs/IDENTITY_ACCESS_PLAN.md`). |
+| Enterprise SSO / per-tenant `authMode` | 🟡 | Per-org IdP directory (`org_identity_providers`, RLS migration 92), pre-auth domain/host→provider discovery (`pkg/business/identity_discovery.go`), and WorkOS SSO setup/disable (`pkg/business/sso_admin.go`, `/admin/sso`). No shipped `authMode`/"require-SSO" enforcement flag; the login/invite/signup split that would make it explicit was proposal-only (`docs/historical/IDENTITY_ACCESS_PLAN.md`). |
 
 **Adopt/keep:** session revocation and self-minted sessions are already the
 audit's recommended shape — hold that line.
@@ -63,18 +62,22 @@ from the audited platform, so read the mapping carefully.
   orthogonal checks — L1 handler policy gates (`requireAuth` / `requireOrgMember`
   / `requireOrgAdmin` / `requirePlatformAdmin` / `requireMFA` / `requireScope`),
   L2 RBAC `resource:action` permissions with wildcards + team inheritance, and
-  L3 Postgres RLS (`SET ROLE app_tenant` via `WithOrgTx`). This is the analog of
+  L3 Postgres RLS (`SET ROLE app_tenant` via `WithOrgTx` / `WithUserTx`). This is the analog of
   the audit's `require_permission(...)` dependency, hardened with a database
   backstop. See [AUTHZ.md](./AUTHZ.md), [MODULE.md](./MODULE.md).
-- **Role dimensions, 🟡:** the starter has a **tenant org role**
+- **Role dimensions, ✅ ↔:** the starter has a **tenant org role**
   (`owner`/`admin`/`member`, `X-Org-Role`) and a **platform/operator role**
-  (`super_admin`/`billing`/`support`, `X-Platform-Role`), plus RBAC grants. It
-  does **not** ship the audit's third dimension — a per-`(member, product)`
-  **solution role** vocabulary (`administrator`/`approver`/`analyst`/…), nor an
-  **org access type** (`standard`/`internal`/`delegated`). Impersonation here is
-  gated by the platform `support` role, not by an org-level access type (§1.6).
-  If the starter grows multiple products, the solution-role dimension is the one
-  to add.
+  (`super_admin`/`billing`/`support`, `X-Platform-Role`), plus RBAC grants. The
+  audit's third dimension arrived by a different mechanism than a fixed
+  per-`(member, product)` vocabulary: store migration `98_layered_access` adds a
+  hierarchical scope registry (`scope_nodes`, org-rooted ltree paths), role
+  grants at a scope node (`scope_grants`), and a per-record share overlay
+  (`record_shares`); `112_installations` composes an installed solution's agent
+  principal, its scope node, its standing grant, and an accountable human owner
+  of record. A solution role is therefore a role granted at that solution's
+  scope node rather than a name in an enum. What is still absent is the **org
+  access type** (`standard`/`internal`/`delegated`): impersonation remains gated
+  by the platform `support` role, not by an org-level access type (§1.6).
 - **Canonical policy vocabulary, ✅ ↔:** rather than one JSON file symlinked
   across two runtimes, the starter's vocabulary is `saas.policy.v1.MethodPolicy`
   (proto extension 51000) projected to `generated/authz-methods.json` for every
@@ -109,8 +112,10 @@ from the audited platform, so read the mapping carefully.
   of the audit's token-exchange service and its ceiling-snapshot auditor.
 - **System-route declaration, ✅ ↔:** `EXPOSURE_INTERNAL` in the method policy
   is the in-code declaration, enforced by `requireInternalCredential` and by a
-  generated Istio `deny-<service>-internal-authority` policy — the analog of
-  `system_authorized(kind, reason)` plus its boot-time checker.
+  generated Istio `allow-<service>-internal-authority` policy — a positive ALLOW
+  naming the target's declared callers, deny-by-default for every other
+  principal — the analog of `system_authorized(kind, reason)` plus its boot-time
+  checker.
 
 ### 1.4 Tenant model & provisioning
 
@@ -118,7 +123,7 @@ from the audited platform, so read the mapping carefully.
 |---|---|---|
 | Tenant directory + members | ✅ | `organizations`, `organization_members`, `teams`/`team_members`, all RLS-scoped; `OrganizationService`/`TeamService` CRUD; `/admin/organizations`, `/admin/teams`. Postgres-first — the audit explicitly regrets Firestore-first, so this is the recommended shape. |
 | Per-product enablement flags (`provisioned`/`visible`) | 🟡 | Entitlement/plan gates (`entitlement_overrides`, `plans`, `plan_entitlements`) answer "is this org allowed this capability"; runtime rollout moved to Unleash (`feature-flags@1`), and the DB `feature_flags` table is retired/read-only ([MODULE.md](./MODULE.md)). No generic per-product provisioned/visible matrix beyond entitlements. |
-| Tenant-lifecycle admin UI | 🟡 | Org settings + member management ship; ownership transfer / suspension / deletion are roadmap P4.1 ([ROADMAP.md](./ROADMAP.md)). The audit calls the *absence* of any lifecycle UI untenable past ~5 tenants — the starter is ahead here but not complete. |
+| Tenant-lifecycle admin UI | 🟡 | Org settings + member management ship; ownership transfer / suspension / deletion are not built ([docs/PLAN.md](./docs/PLAN.md)). The audit calls the *absence* of any lifecycle UI untenable past ~5 tenants — the starter is ahead here but not complete. |
 
 ### 1.5 The admin console
 
@@ -143,23 +148,32 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   support must be authority-stripped server-side, not cosmetic.
   `pkg/business/platform_admin.go` (`ImpersonateUser`),
   [PRODUCTION_READY.md](./PRODUCTION_READY.md) decisions 7–8.
-- **Audited, ✅:** emits `platform.user_impersonated`; `RevokeSession` /
-  `ListActiveSessions` are support+.
+- **Actor/subject separated, ✅:** every transport projects one typed
+  `auth.RequestIdentity` carrying both the real actor and the effective subject
+  (`pkg/auth/request_identity.go`); authorization, the RLS user context and the
+  membership cache resolve for the subject while audit records both, and the
+  platform-authority gates resolve to nothing whenever the two differ — so
+  neither party's platform grants reach an impersonated request. See
+  [AUTHZ.md](./AUTHZ.md) "Request identity".
+- **Audited, ✅:** emits `platform.user_impersonated`; every audited action taken
+  while impersonating carries `impersonated_by` (migration 129); `RevokeSession`
+  / `ListActiveSessions` are support+.
 - **Per-request re-validation, ✅:** the impersonation token is a normal
   L1/L2/L3-checked runtime identity each request; it is a signed 15-minute
   snapshot rather than a re-read-every-request cookie.
 - **Divergence ↔:** capability derives from the platform `support` role, not
   from an org **access type** (`staff`/`delegated`) as the audit recommends. The
   audit's access-type model is worth considering if delegated/contractor access
-  ever needs an explicit per-org allowlist. A user-visible impersonation banner
-  is roadmap P4.4.
+  ever needs an explicit per-org allowlist. The user-visible impersonation banner
+  ships: it names the target being viewed and owns the exit, which restores the
+  admin's own session from the refresh cookie impersonation never touches.
 
 ### 1.7 The BFF / proxy perimeter — ✅
 
 - The Next.js same-origin proxy strips caller-supplied trust headers, stamps the
   real origin with `CODEFLY_INTERNAL_TOKEN`, and forwards only API routes to the
-  private `auth-gateway`; accounts is never publicly reachable. The gateway/
-  sidecar strips all client-supplied identity/org/role/scope/MFA headers before
+  private `auth-gateway`; accounts is never publicly reachable. The gateway
+  strips all client-supplied identity/org/role/scope/MFA headers before
   auth, then emits canonical `X-User-ID` / `X-Org-ID` / `X-Org-Role` /
   `X-Platform-Role` / `X-Session-ID` (+ signed `amr`/`auth_time`/`acr`) plus a
   gateway token that accounts validates constant-time.
@@ -182,7 +196,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   CI gates over review discipline — is present. `module/tools/authz-coverage-gate.mjs`
   enforces RBAC + audit coverage and rejects permission-broadening without
   approval; `module/tools/rls-migration-gate.mjs` enforces tenant RLS coverage;
-  the sidecar header-lockstep invariant runs in CI. See §5.
+  the gateway header-lockstep invariant runs in CI. See §5.
 - **Delegation chain, ✅:** `actor_chain_journal` is append-only, hash-chained,
   with immutable UPDATE/DELETE triggers and revision-gated revocation — the
   analog of the audit's `delegation_jti` + `caused_by` chain + ceiling-snapshot
@@ -257,7 +271,7 @@ there.
 | Audit **emission** | stdout JSON | ↔ Postgres `audit_events` + typed registry (see §1.8); async tee to a swappable compliance sink + tiered retention planned ([ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md)) |
 | Audit/analytics **query** | Hand-written BigQuery SQL (❌ lock-in) | ✅ SQL over the same Postgres — no warehouse dialect to lock into |
 | Document/DB store | Firestore-first (❌) | ✅ Postgres-first |
-| Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); typed domain-event contract standardized over the outbox behind a Transport port ([module/EVENTS.md](./module/EVENTS.md)); pub/sub relay and external broker adapter sequenced, not built |
+| Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); typed domain-event contract over the outbox behind a Transport port, with the pub/sub relay, subscriptions and fan-out live and outbound webhooks delivered as subscribers ([module/EVENTS.md](./module/EVENTS.md)); an external broker adapter is sequenced, not built |
 | Scheduling + leases + idempotency | Zero abstraction (❌) | ✅ Leased workers + idempotency in the jobs layer ([module/JOBS.md](./module/JOBS.md)) |
 | Consumer IdP | Swappable in practice (⚠️) | ✅ Multi-provider adapters + own session JWT as the primary path |
 | LLM access | Provider port + capability flags | ⬜ Not a starter concern |
@@ -271,7 +285,7 @@ as designed, not proven, until exercised end to end.
 ## 3. Patterns already adopted (keep them)
 
 1. **One source of truth, generated into every consumer** — proto `MethodPolicy`
-   → `authz-methods.json` → sidecar + gateway + REST, drift-checked in CI. The
+   → `authz-methods.json` → ext_authz + gateway + REST, drift-checked in CI. The
    starter's analog of "one policy file, two runtimes".
 2. **Enforce-by-default, deny-by-default** — no fail-open shadow mode; missing
    policy fails generation. This is the audit's #1 mistake pre-avoided.
@@ -313,7 +327,7 @@ starter already follows.
 
 - **Structural gates shipped (✅):** `authz-coverage-gate.mjs` (RBAC + audit
   coverage, permission no-broadening), `rls-migration-gate.mjs` (tenant RLS
-  coverage), sidecar header-lockstep, base-integrity manifest, and clean-diff
+  coverage), gateway header-lockstep, base-integrity manifest, and clean-diff
   checks on every generated catalog. Each gate has its own `--test` suite in CI
   (`.github/workflows/ci.yml`) — the audit's "test the guards themselves".
 - **Security-core tests (✅):** `pkg/business/rls_*_test.go` prove cross-tenant
@@ -326,7 +340,7 @@ starter already follows.
      `tests/` dir maps to a job if suites start proliferating.
   2. **Write perimeter tests as forgery tests** — "can a client-supplied header/
      claim ever become trusted?" The starter's header-lockstep invariant is this
-     framing; keep new proxy/sidecar tests in it.
+     framing; keep new proxy/gateway tests in it.
   3. **Never allow environment-conditional skips in deny-path tests.** A deny
      test that can silently no-op reads as coverage while protecting nothing;
      fail loud when a fixture is missing. (See the parallel `go test` daemon
@@ -334,19 +348,28 @@ starter already follows.
 
 ## 6. Open gaps for the starter
 
-Honest backlog implied by the mapping above; sequence and ownership live in
-[ROADMAP.md](./ROADMAP.md) / [TODO.md](./TODO.md), not here.
+Honest backlog implied by the mapping above; what is owed and to which story
+lives in [docs/PLAN.md](./docs/PLAN.md), not here.
+
+**Read this list as historical input, not as current ground truth.** It is
+written by hand and closes by hand, so an entry survives its own remediation
+until someone notices — the solution-role entry did exactly that for the whole
+life of two store migrations. Confirm any entry below against the code it
+names before treating it as an open gap.
 
 - **Read-access auditing** (§1.8) — the access-set audit pattern with an inline
   cap + dedupe window is unbuilt.
 - **`authMode` / require-SSO enforcement per org** (§1.1) — directory + WorkOS
   setup exist; the enforcement flag and the login/invite/signup split do not.
-- **Solution-role dimension** (§1.2) — only tenant + platform roles ship; a
-  per-`(member, product)` role vocabulary is the audit's third layer, deferred
-  until the starter hosts multiple products.
+- ~~**Solution-role dimension** (§1.2)~~ — **closed.** Scope-node role grants
+  (`98_layered_access`) and installation identity (`112_installations`) ship the
+  per-solution authority dimension; see §1.2 for what that does and does not
+  cover.
 - **Org access-type model for support/delegation** (§1.6) — impersonation is
   platform-role-gated; an org-level `standard`/`internal`/`delegated` access type
-  with an explicit allowlist is not built.
+  with an explicit allowlist is not built. Impersonation actor/subject semantics
+  are themselves under active correction (#533), so treat §1.6's description as
+  provisional until that lands.
 - **Approvals primitive** (§Approvals) — the Postgres-backed engine scaffolding
   ships (`pkg/business/approvals.go`, `pkg/infra/postgres_approvals.go` + tests),
   but the `saas/approvals/v1` proto, `approvals:decide` permission, the
@@ -361,4 +384,7 @@ Honest backlog implied by the mapping above; sequence and ownership live in
 
 *Source: issue #247 (external platform audit), reconciled against the shipped
 accounts service and the authoritative docs cited throughout. Update this file
-when a gap above closes; it is a living map, not a snapshot.*
+when a gap above closes; it is a living map, not a snapshot — and a living map
+nothing tests, which is why §6 carries the warning it does. The per-claim
+provenance of this and the other root architecture documents is tracked in
+[CLAIM_INVENTORY.md](./CLAIM_INVENTORY.md).*

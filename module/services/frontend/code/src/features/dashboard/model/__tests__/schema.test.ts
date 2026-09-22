@@ -3,11 +3,11 @@ import { DASHBOARD_SPEC_VERSION, dashboard, event, metric } from "../schema";
 
 describe("dashboard data-graph declaration", () => {
 	it("names an event type", () => {
-		expect(event("auth.login")).toEqual({ type: "auth.login" });
+		expect(event("saas.auth.login")).toEqual({ type: "saas.auth.login" });
 	});
 
 	it("carries a metric's aggregation and chart intent through", () => {
-		const login = event("auth.login");
+		const login = event("saas.auth.login");
 		const m = metric({
 			title: "Logins over time",
 			event: login,
@@ -72,7 +72,7 @@ describe("dashboard data-graph declaration", () => {
 				metrics: [
 					metric({
 						title: "Logins over time",
-						event: event("auth.login"),
+						event: event("saas.auth.login"),
 						groupBy: "time",
 						chart: "line",
 					}),

@@ -21,6 +21,7 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
+	Badge,
 	Button,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -52,6 +53,20 @@ export function SessionsPage() {
 			col.accessor("userId", {
 				header: "User",
 				cell: (info) => <UserLabel userId={info.getValue()} />,
+			}),
+			col.accessor("actingAsUserId", {
+				header: "Type",
+				cell: (info) => {
+					const target = info.getValue();
+					if (!target) {
+						return <span className="text-muted-foreground">Login</span>;
+					}
+					return (
+						<Badge variant="outline" className="text-xs">
+							Impersonating <UserLabel userId={target} />
+						</Badge>
+					);
+				},
 			}),
 			col.accessor("ipAddress", {
 				header: "IP Address",
@@ -139,7 +154,9 @@ export function SessionsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">Active Sessions</h1>
+				<h1 data-slot="page-title" className="type-page-title">
+					Active Sessions
+				</h1>
 				<p className="text-muted-foreground">
 					View and monitor active user sessions.
 				</p>

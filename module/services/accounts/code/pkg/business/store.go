@@ -40,6 +40,9 @@ type Store interface {
 	RegisterUser(ctx context.Context, user *gen.User, identity *gen.UserIdentity) error
 	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)
 	GetUser(ctx context.Context, id string) (*gen.User, error)
+	// UserIDExists reports whether any users row already holds this uuid.
+	// A deleted user keeps its row, so its primary key stays taken.
+	UserIDExists(ctx context.Context, id string) (bool, error)
 	GetUserByEmail(ctx context.Context, email string) (*gen.User, error)
 	GetOrganizationMemberPrimaryEmail(ctx context.Context, userID string) (string, error)
 	ListUsers(ctx context.Context, orgID string, statusFilter string, pageSize int32, pageToken string) ([]*gen.User, string, error)
@@ -96,6 +99,11 @@ type Store interface {
 	//     Call it at the top level only — nesting it inside an existing
 	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
+	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
+	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
+	ReadableCollectionGrants(context.Context, string, []string, []string) (map[string][]*gen.ReadableCollectionGrant, error)
+	LatestSourceSyncRequests(context.Context, string, []string) (map[string]SourceSyncRequest, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
@@ -117,6 +125,17 @@ type Store interface {
 	// ancestor check, which drops a delivery whose head is an ancestor of the
 	// cursor before this is reached.
 	AdvanceDatasourceCursor(ctx context.Context, sourceID, commit, deliveryID string) error
+	// AllocateDatasourceOrdinal atomically hands out the next strictly-increasing
+	// per-source delivery ordinal (UPDATE … next_ordinal = next_ordinal + 1
+	// RETURNING the prior value; the first allocation returns 1). The compiler
+	// stamps it on every emitted sync/snapshot payload so a consumer can order
+	// deliveries per source and reject a stale or out-of-order replay. Runs
+	// control-plane. The allocation commits on its own — the job enqueue that
+	// follows is a separate transaction owned by the jobs platform — so a delivery
+	// that fails after allocating leaves a gap, never a repeated or backward
+	// ordinal. Strictly increasing is the guarantee, not density: a gap is expected
+	// and is not a dropped payload.
+	AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error)
 	// ListDatasourceSourcesDueForReconcile returns active sources whose
 	// next_reconcile_at has elapsed, for the periodic reconcile sweep. Control-plane.
 	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
@@ -128,21 +147,151 @@ type Store interface {
 	// progress on (an oversized snapshot manifest), recording the reason and
 	// clearing next_reconcile_at so the reconcile sweep stops re-selecting it
 	// until an operator resets it to active. Control-plane.
-	MarkDatasourceSourceDegraded(ctx context.Context, sourceID, reason string) error
+	// The reason is a closed-set DatasourceDegradeReason rather than a string:
+	// status_reason is tenant-readable, so raw provider error text must not be
+	// able to reach it.
+	MarkDatasourceSourceDegraded(ctx context.Context, sourceID string, reason DatasourceDegradeReason) error
 	// ClearDatasourceSourceDegraded returns a degraded source to active once a
 	// snapshot has succeeded again: it clears status_reason and restores
 	// next_reconcile_at from the source's reconcile interval so the reconcile
 	// sweep resumes selecting it. Scoped to status='degraded' so it cannot
-	// resurrect a source an operator has since paused. Control-plane.
-	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error
+	// resurrect a source an operator has since paused, and to reasons outside
+	// excludeReasons so it cannot lift a degrade another path owns — a snapshot
+	// fitting the ingest cap is no evidence that withdrawn GitHub App access has
+	// returned. Control-plane.
+	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string, excludeReasons []string) error
+	// MarkDatasourceSourceInstallationDegraded parks a source whose GitHub App
+	// access was withdrawn, and re-labels one this path already parked when the
+	// cause changes. The reconciler decides what to park from a read taken before
+	// any GitHub call, so the predicate lives in the UPDATE: it writes only over
+	// 'active' or over one of reasons, and only when the reason actually differs.
+	// Without that, a webhook can overwrite an operator's pause or a degrade the
+	// compiler recorded for its own fault; with an active-only predicate it would
+	// instead no-op silently on a changed cause. Reports whether a row changed,
+	// which is the transition the audit trail records. Control-plane.
+	MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string, reasons []string) (bool, error)
+	// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
+	// narrowed to sources parked for one of reasons. Matching the recorded reason
+	// as well as the status is what keeps restored GitHub App access from
+	// reviving a source degraded for an unrelated structural fault. Returns the
+	// reason it cleared, or "" when no row matched: the audit record names the
+	// cause the source recovered from, and reading it back from the UPDATE is the
+	// only way to name the one that was actually there. Control-plane.
+	ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) (string, error)
+	// ListDatasourceSourcesByGitHubInstallation returns one page of the GitHub
+	// sources bound to an App installation, ordered by id and starting after
+	// afterID. The read spans tenants — an App-level delivery names an
+	// installation and nothing else, and its receiver is unauthenticated, so
+	// there is no tenant to scope the lookup to. Control-plane.
+	ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID, afterID string, limit int) ([]*DatasourceSource, error)
+	// ListActiveDatasourceSourcesByGitHubInstallationRepo returns one page of the
+	// currently eligible GitHub sources an App-level content delivery concerns:
+	// bound to the delivered installation, pointed at the delivered repository,
+	// and active. It spans tenants for the same reason the listing above does —
+	// one installation can serve sources in several organizations and the
+	// delivery names none of them — so a caller fans out to every row it
+	// returns and infers no global tenant. Status is part of the predicate
+	// rather than a caller-side filter: a suspended installation, a deselected
+	// repository and an operator pause all leave the row non-active, so
+	// eligibility is re-read here on every delivery instead of being cached.
+	// Control-plane.
+	ListActiveDatasourceSourcesByGitHubInstallationRepo(ctx context.Context, installationID, repo, afterID string, limit int) ([]*DatasourceSource, error)
+	// ListGitHubInstallationsPendingRecheck returns one page of the distinct
+	// installations still holding a source parked for one of reasons, so
+	// restoration does not depend on a single webhook delivery arriving. offset
+	// rotates that page: a deleted installation parks its sources permanently, so
+	// a fixed first page would eventually be filled by installations that can
+	// never recover and would starve every live one behind them. Control-plane.
+	ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, offset, limit int) ([]string, error)
+	// CountGitHubInstallationsPendingRecheck sizes that set, which is what lets
+	// the sweep rotate across all of it rather than re-reading one page.
+	// Control-plane.
+	CountGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string) (int, error)
+	// SetDatasourceSourceGitHubInstallation stamps the routing index an App-level
+	// delivery resolves sources through, recording which installation the
+	// source's credential envelope binds it to. The envelope stays the only thing
+	// a token is minted from. Runs under the caller's WithOrgTx.
+	SetDatasourceSourceGitHubInstallation(ctx context.Context, orgID, id, installationID string) error
+
+	// GitHub App onboarding (issue #687). All org-scoped: every call runs inside
+	// WithOrgTx, and the tables' RLS policies key on app.current_org_id.
+	//
+	// InsertGitHubAppSetup records a one-time setup state bound to the
+	// organization and the user who began it. Only the state's SHA-256 is
+	// stored, so a database read never yields a redeemable state.
+	InsertGitHubAppSetup(ctx context.Context, setup *GitHubAppSetup) error
+	// ConsumeGitHubAppSetup redeems a setup state exactly once: it locks the row
+	// for the hash, rejects one that is unknown, expired, already consumed, or
+	// bound to a different initiator, and otherwise marks it consumed in the
+	// same transaction. A concurrent second redemption loses the compare-and-set
+	// and is rejected, so the state cannot be replayed.
+	ConsumeGitHubAppSetup(ctx context.Context, orgID, stateHash, initiatedBy string, now time.Time) error
+	// ClaimGitHubAppInstallation binds a verified installation to this
+	// organization, or reports that another organization already holds it. The
+	// installation id is the table's primary key, so the refusal is a uniqueness
+	// guarantee rather than a check that could race.
+	ClaimGitHubAppInstallation(ctx context.Context, installationID, orgID, verifiedBy string) (claimed bool, err error)
+	// GitHubAppInstallationClaimedBy reports whether this organization holds a
+	// verified claim on the installation, which is what authorizes connecting a
+	// source through it.
+	GitHubAppInstallationClaimedBy(ctx context.Context, installationID, orgID string) (bool, error)
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
+	// OrganizationIDExists reports whether any organizations row already holds
+	// this id, so a fixture declaring one can tell a reusable row from a
+	// primary key another organization has claimed.
+	OrganizationIDExists(ctx context.Context, id string) (bool, error)
+	// GetOrganizationBySlug resolves the organization holding a slug, or nil
+	// when the slug is free. The slug is globally unique (idx_organizations_slug
+	// is UNIQUE on LOWER(slug)), so this answers "would creating an
+	// organization of this name collide, and with which id" without needing to
+	// know who owns it — which is what the fixture seeder must decide before it
+	// writes anything.
+	GetOrganizationBySlug(ctx context.Context, slug string) (*gen.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
 	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
 	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	// CountOrgAdministrators returns how many eligible administrative
+	// memberships the organization has, and how many of those are held by
+	// somebody other than excludeUserID. Eligible means the membership carries
+	// an administrative role AND the identity behind it can still authenticate:
+	// a soft-deleted or suspended user administers nothing, so counting their
+	// membership would let the last usable administrator be removed.
+	//
+	// Call it under LockOrgAdministration — on its own it is only a read.
+	CountOrgAdministrators(ctx context.Context, orgID string, excludeUserID string) (int, int, error)
+	// ListAdministeredOrganizations returns every organization the identity is
+	// an eligible administrator of, each carrying that organization's total
+	// count of eligible administrators and how many of its other members can
+	// still authenticate. Ordered by organization id, because deactivating an
+	// identity locks all of them and the order they are taken in is what keeps
+	// two concurrent deactivations off each other's backs.
+	//
+	// Same eligibility as CountOrgAdministrators, applied to the identity as
+	// well: an identity that cannot authenticate administers nothing, so it
+	// administers no organization either.
+	ListAdministeredOrganizations(ctx context.Context, userID string) ([]OrgAdministration, error)
+	// LockOrgAdministration serializes every change to one organization's
+	// administrative standing, whichever member it names: a role upsert, a
+	// demotion, or a removal. Callers take it before reading the roster the
+	// decision depends on and hold it for the rest of the transaction, so two
+	// requests cannot each observe the same two administrators and each
+	// remove one.
+	//
+	// Deliberately coarser than LockOrgMembership: the invariant is a property
+	// of the organization, not of one member, so a per-pair lock does not
+	// serialize the contenders that violate it. Lock order when a path takes
+	// more than one: LockOrgAdministration -> LockOrgMembership ->
+	// LockEntitlementQuota.
+	LockOrgAdministration(ctx context.Context, orgID string) error
+	// LockOrgMembership serializes every mutation of one (organization, user)
+	// authority pair. Callers hold it for the whole transaction that writes
+	// the membership row and the team memberships that depend on it, so an
+	// organization removal and a concurrent team insert cannot interleave.
+	LockOrgMembership(ctx context.Context, orgID string, userID string) error
 	// GetOrgMembership is the authorization hot path. It must be an indexed
 	// point lookup, never an org-roster scan. Nil means the user is not a member.
 	GetOrgMembership(ctx context.Context, orgID string, userID string) (*gen.OrgMembership, error)
@@ -172,11 +321,19 @@ type Store interface {
 
 	// Teams
 	CreateTeam(ctx context.Context, team *gen.Team) error
-	ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error)
+	// ListTeams returns the org's teams; a non-empty memberID narrows them
+	// to the teams that principal belongs to.
+	ListTeams(ctx context.Context, orgID string, memberID string) ([]*gen.Team, error)
 	UpdateTeam(ctx context.Context, teamID, name, description string) (*gen.Team, error)
 	DeleteTeam(ctx context.Context, teamID string) error
 	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
 	RemoveTeamMember(ctx context.Context, teamID string, userID string) error
+	// RemoveOrgTeamMemberships deletes, in one statement on the caller's
+	// transaction, every team membership the user holds in the organization,
+	// and returns the number of rows removed. This is the dependent-access
+	// half of removing an organization member: it commits with the membership
+	// deletion or not at all.
+	RemoveOrgTeamMemberships(ctx context.Context, orgID string, userID string) (int64, error)
 	// GetTeamMembership is the authorization hot path. Nil means the user is
 	// not a member; list access remains a separate, explicitly authorized API.
 	GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error)
@@ -190,6 +347,10 @@ type Store interface {
 	// GetTeamPath returns (orgID, path) — the parent lookup CreateTeam uses
 	// to derive a child team's path. ("", "") with no error when not found.
 	GetTeamPath(ctx context.Context, teamID string) (string, string, error)
+	// ListVisibleSubjects projects the team tree onto one viewer: the other
+	// users in a team at or below a team the viewer belongs to, in one
+	// statement bounded by limit. Org-scoped, so it runs under WithOrgTx.
+	ListVisibleSubjects(ctx context.Context, orgID, viewerID string, limit int) ([]string, error)
 
 	// Identity Claims v1 (the validate-key read surface — see postgres_claims.go)
 	ListTeamPathsForUser(ctx context.Context, userID string, orgID string) ([]string, error)
@@ -203,6 +364,10 @@ type Store interface {
 	// Roles
 	CreateRole(ctx context.Context, role *gen.Role) error
 	ListRoles(ctx context.Context, orgID string) ([]*gen.Role, error)
+	// UpdateRole replaces a custom role's description and permission set,
+	// and returns the role as it now stands. orgID names the scope the role
+	// must belong to; a role in another scope, or a built-in one, is refused.
+	UpdateRole(ctx context.Context, roleID, orgID, description string, permissions []*gen.Permission) (*gen.Role, error)
 	DeleteRole(ctx context.Context, roleID string) error
 
 	// Role assignments
@@ -215,6 +380,12 @@ type Store interface {
 
 	// Permission checking
 	CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error)
+	// ScopesGrantingPermission lists the scoped assignments that grant
+	// (resource, action) to this subject in this organization. CheckPermission's
+	// unscoped question is answered only by NULL-scope assignments, so without
+	// this an administrator cannot tell "no entitlement" from "entitled at a
+	// scope I did not name".
+	ScopesGrantingPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string) ([]string, error)
 
 	// Layered access — hierarchical scope grants + per-record shares (#178).
 	// CheckAccess resolves the record's scope from resource_id itself, never a
@@ -226,7 +397,18 @@ type Store interface {
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
 	// Confined to orgID with an explicit predicate on top of the RLS tenant floor.
 	ListAccessibleScopes(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
+	// ListAccessibleResourceIDs narrows candidates to the placed records the
+	// subject may currently act on, through the same grant + share union as
+	// ListAccessibleScopes — one call for a set of ids a reader already holds,
+	// rather than a point check each. Run under WithOrgTx.
+	ListAccessibleResourceIDs(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action string, candidates []string) ([]string, error)
+	CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
+	// PlaceRecordNode registers node as the placement of its
+	// (ResourceType, ResourceId) record, or returns the node that record is
+	// already placed at, unchanged. Run under WithOrgTx. The caller tells the two
+	// apart by comparing the returned node's id with the one it offered.
+	PlaceRecordNode(ctx context.Context, node *gen.ScopeNode) (*gen.ScopeNode, error)
 	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
 	// in the tenant, or registers node and returns its id — one boundary per
 	// collection name. Run under WithOrgTx.
@@ -234,6 +416,8 @@ type Store interface {
 	// ScopeNodeExists reports whether a scope node id is visible in the caller's
 	// tenant (run under WithOrgTx so RLS confines the probe to the org).
 	ScopeNodeExists(ctx context.Context, nodeID string) (bool, error)
+	RecordScopeNodeID(ctx context.Context, resourceType, resourceID string) (string, error)
+	ListCollectionAccess(ctx context.Context, orgID, afterPath string, limit int, readResources []string) ([]*gen.CollectionAccess, error)
 	GrantScope(ctx context.Context, grant *gen.ScopeGrant) error
 	RevokeScope(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, scopePath, roleID string) error
 	ShareRecord(ctx context.Context, share *gen.RecordShare) error
@@ -259,6 +443,14 @@ type Store interface {
 
 	// Audit
 	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
+	// ReserveAuditIdempotency records a (org_id, event_type, idempotency_key)
+	// guard row so a retried emit collapses to one event. It returns true when the
+	// row was newly inserted (write the event) and false when it already existed (a
+	// duplicate; skip the write). It MUST run in the emitter's ambient transaction
+	// so the guard row and the audit row commit or roll back together. An empty
+	// orgID (system-scoped emit) maps to a sentinel org so system events still
+	// dedup. See audit_event_idempotency (migration 118).
+	ReserveAuditIdempotency(ctx context.Context, orgID, eventType, idempotencyKey string) (bool, error)
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
 	AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error)
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error
@@ -331,6 +523,11 @@ type Store interface {
 	// Sessions
 	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
+	// CloseImpersonationSession revokes the impersonation window whose row id is
+	// sessionID and reports when it opened. It matches only a row that is still
+	// open and actually is a window, so a second call closes nothing and reports
+	// closed=false rather than reopening or double-counting one.
+	CloseImpersonationSession(ctx context.Context, sessionID, reason string) (startedAt time.Time, closed bool, err error)
 	// RevokeSession revokes every live row in the device family and returns the
 	// ids of the rows it revoked. Those ids are the `sid` claim carried by the
 	// family's outstanding access tokens, so the caller can write a
@@ -346,10 +543,52 @@ type Store interface {
 	UpdateWebhookSubscription(ctx context.Context, sub *WebhookSubscription) error
 	DeleteWebhookSubscription(ctx context.Context, id string) error
 	ListWebhookSubscriptions(ctx context.Context, orgID string) ([]*WebhookSubscription, error)
-	GetActiveWebhookSubscriptions(ctx context.Context, eventType string) ([]*WebhookSubscription, error)
+	// SyncWebhookEventSubscriptions makes an endpoint registration's subscription
+	// rows match the event names it is registered for. Delivery is driven by
+	// those rows, so the relay fans an event out to an endpoint only through a
+	// subscription this created.
+	SyncWebhookEventSubscriptions(ctx context.Context, orgID, webhookSubscriptionID string, eventNames []string) error
 	CreateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
+
+	// Domain event subscriptions (pub/sub control plane — issue #493).
+	// event_subscriptions is a control-plane-owned platform relation (no RLS),
+	// so all three run under WithControlPlane; request traffic never writes it.
+	//
+	//   - CreateEventSubscription is idempotent on the active-unique index
+	//     (subscriber_principal_id, type_pattern, queue) WHERE revoked_at IS NULL:
+	//     re-subscribing the same shape returns the existing live row instead of a
+	//     second row. The returned bool reports whether a new row was inserted.
+	//   - RevokeEventSubscription is scoped by subscriber_principal_id so a caller
+	//     can only revoke a subscription it owns; the bool reports whether a live
+	//     row was revoked (false = not found or already revoked / not owned).
+	//   - ListEventSubscriptions returns the principal's live (non-revoked) rows.
+	//   - CountLiveEventSubscriptions counts every live (non-revoked) subscription
+	//     across all principals. Startup uses it to assert that a module which has
+	//     accepted subscriptions also has a delivery transport wired, so events are
+	//     never silently dropped on the floor.
+	CreateEventSubscription(ctx context.Context, sub *EventSubscription) (*EventSubscription, bool, error)
+	RevokeEventSubscription(ctx context.Context, subscriptionID, subscriberPrincipalID string) (bool, error)
+	ListEventSubscriptions(ctx context.Context, subscriberPrincipalID string) ([]*EventSubscription, error)
+	CountLiveEventSubscriptions(ctx context.Context) (int, error)
+
+	// Solution registry (issue #534). solution_registrations is a control-plane
+	// -owned platform relation with no tenant column, so all four run under
+	// WithControlPlane; request traffic has no access to it at all.
+	//
+	//   - GetSolutionRegistrationForUpdate returns nil when no record exists and
+	//     row-locks the record when one does, so the read-decide-write that
+	//     implements compare-and-swap cannot interleave with a concurrent write.
+	//   - NextSolutionRegistryRevision draws the next registry-wide revision.
+	//   - SaveSolutionRegistration persists the whole record at the revision it
+	//     carries; a tombstoned record is written with both halves cleared.
+	//   - ListSolutionRegistrations returns the snapshot plus the highest
+	//     revision in the registry, tombstones included.
+	GetSolutionRegistrationForUpdate(ctx context.Context, solutionID string) (*SolutionRegistration, error)
+	NextSolutionRegistryRevision(ctx context.Context) (int64, error)
+	SaveSolutionRegistration(ctx context.Context, record *SolutionRegistration) error
+	ListSolutionRegistrations(ctx context.Context, includeTombstoned bool) ([]*SolutionRegistration, int64, error)
 
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
@@ -363,16 +602,76 @@ type Store interface {
 
 	// Notifications
 	CreateNotification(ctx context.Context, n *Notification) error
-	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)
+	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string, filters ...NotificationFilter) ([]*Notification, string, error)
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	// ListUnreadResourceReferences groups the user's unread follow items by the
+	// resource they refer to, so the caller can recheck visibility per resource
+	// and discount what is no longer readable. Run under WithUserTx.
+	ListUnreadResourceReferences(ctx context.Context, userID string) ([]UnreadResourceReference, error)
 	MarkNotificationRead(ctx context.Context, id string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
+	// GetNotification reads one notification by id. Run under WithUserTx: the
+	// RLS policy on `notifications` is the access floor, so an id belonging to
+	// another user reads as absent rather than forbidden. Returns (nil, nil) on
+	// miss.
+	GetNotification(ctx context.Context, id string) (*Notification, error)
 	// GetNotificationUserID resolves notification.id → user_id.
 	// Called under WithControlPlane by Service methods that only have an
 	// id (MarkRead / DeleteNotification) and need to enter the
 	// user's WithUserTx for the actual mutation. Returns "" on miss.
 	GetNotificationUserID(ctx context.Context, id string) (string, error)
+
+	// Resource follows. Both run under the follower's WithUserTx, so the RLS
+	// policy on resource_follows confines them to that user's own rows.
+	CreateResourceFollow(ctx context.Context, follow *ResourceFollow) error
+	RevokeResourceFollow(ctx context.Context, userID, resourceType, resourceID string) error
+
+	// ListResourceFollowers answers who currently follows one resource, one
+	// bounded page at a time. It reads across users, so it runs under
+	// WithControlPlane rather than any one follower's transaction; the result is
+	// only a candidate set, and each candidate's access and follow are rechecked
+	// before anything is written. Nothing bounds how many people follow one
+	// instance, so the caller pages with `after` (the last user id it saw) rather
+	// than materializing the whole set.
+	ListResourceFollowers(ctx context.Context, orgID, resourceType, resourceID, after string, limit int) ([]string, error)
+	// ExistingNotificationIDs reports which of the given notification ids already
+	// exist. Notification ids are derived from the delivery key, so a fan-out
+	// retry uses this to skip the followers it already wrote instead of redoing
+	// the access check and the write for every one of them.
+	ExistingNotificationIDs(ctx context.Context, ids []string) (map[string]struct{}, error)
+	// ResourceFollowIsLive re-reads one follower's own follow. It runs inside the
+	// follower's WithUserTx alongside the notification write, which is what makes
+	// a follow revoked before that read suppress the item and stops a replay
+	// resurrecting a removed follow.
+	ResourceFollowIsLive(ctx context.Context, orgID, userID, resourceType, resourceID string) (bool, error)
+
+	// The tenant's committed journal. All three run under WithOrgTx and take orgID
+	// besides: domain_events carries an org-keyed RLS policy, and the explicit
+	// predicate is a second gate on top of that floor, exactly as
+	// ListAccessibleScopes pins n.org_id rather than trusting RLS alone. Without
+	// it a caller that reached these under WithControlPlane — which bypasses RLS —
+	// would read every tenant's journal.
+	//
+	// ListTenantJournal returns one page of entry identities strictly after
+	// afterSeq, in seq order, at most limit rows. It deliberately does NOT read
+	// the payload: the page is read before visibility is resolved, so fetching
+	// payloads here would make a reader with no access pay for every byte in the
+	// tenant.
+	ListTenantJournal(ctx context.Context, orgID string, afterSeq int64, limit int) ([]JournalEntry, error)
+	// LoadTenantJournalPayloads reads the producer payloads of entries the caller
+	// has already been authorized for. An entry whose payload exceeds maxBytes is
+	// absent from the result rather than truncated, so a caller can tell "no
+	// payload" from "too large to stream" and re-read it from its owner.
+	LoadTenantJournalPayloads(ctx context.Context, orgID string, eventIDs []string, maxBytes int) (map[string]JournalPayload, error)
+	// ResolveTenantJournalCursor answers which seq a reader resumes after, and
+	// whether the id it presented was resolved at all. An empty, unknown or
+	// foreign eventID resolves to the tenant's current head with resolved=false:
+	// under the tenant floor an id belonging to another organization and an id
+	// that never existed are the same answer, which is what keeps the cursor from
+	// being an existence oracle. The caller tells the reader that its history was
+	// skipped rather than leaving it to believe it is caught up.
+	ResolveTenantJournalCursor(ctx context.Context, orgID, eventID string) (seq int64, resolved bool, err error)
 
 	// MFA — exposed on the main Store interface so the auth layer's
 	// requireMFA gate can check enrollment without casting to MFAStore.
@@ -476,8 +775,11 @@ type RetentionPolicy struct {
 
 // Session represents a refresh token session.
 type Session struct {
-	ID               string
-	UserID           string
+	ID     string
+	UserID string
+	// ActingAsUserID names the impersonated user on an impersonation window,
+	// and is empty on an ordinary login. Such a row has no RefreshTokenHash.
+	ActingAsUserID   string
 	RefreshTokenHash string
 	FamilyID         string
 	DeviceInfo       map[string]string

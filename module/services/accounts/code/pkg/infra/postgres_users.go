@@ -52,6 +52,19 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*gen.User, erro
 	return &u, nil
 }
 
+func (s *PostgresStore) UserIDExists(ctx context.Context, id string) (bool, error) {
+	w := wool.Get(ctx).In("UserIDExists")
+	executor := s.getQueryExecutor(ctx)
+
+	var exists bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM users WHERE uuid = $1)`, id,
+	).Scan(&exists); err != nil {
+		return false, w.Wrapf(err, "failed to check user id")
+	}
+	return exists, nil
+}
+
 // GetUserByEmail returns a user by email (case-insensitive).
 func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*gen.User, error) {
 	w := wool.Get(ctx).In("GetUserByEmail")
@@ -210,9 +223,9 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, userID string, updates m
 // profile writers serialize on the server instead of a caller having to
 // read-modify-write the whole map (which loses concurrent changes).
 //
-// This is deliberately separate from the "profile" replace path, which GDPR
-// anonymization (business.(*Service).processDeletion) relies on to scrub PII
-// by overwriting the entire map — a merge there would preserve the PII.
+// This is deliberately separate from the "profile" replace path, which a
+// privacy deletion adapter relies on to scrub PII by overwriting the entire
+// map — a merge there would preserve the PII.
 func (s *PostgresStore) mergeUserProfile(ctx context.Context, executor QueryExecutor, userID string, patch any) error {
 	w := wool.Get(ctx).In("mergeUserProfile")
 	fields, ok := patch.(map[string]string)

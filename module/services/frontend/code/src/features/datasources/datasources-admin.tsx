@@ -1,6 +1,6 @@
 "use client";
 
-import { DatasourcesPanel } from "@codefly/saas-ui";
+import { DatasourcesPanel } from "@codefly-dev/saas-ui";
 import { HardDriveDownload } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -14,7 +14,7 @@ export function DatasourcesAdmin() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
-				<h2 className="text-2xl font-bold tracking-tight">Data sources</h2>
+				<h2 data-slot="page-title" className="type-page-title">Data sources</h2>
 				<OrgSelector />
 			</div>
 

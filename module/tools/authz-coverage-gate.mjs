@@ -94,6 +94,18 @@ const PLATFORM_ROLE_RANK = new Map([
   ["PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN", 4],
 ]);
 
+// Impersonation admission is two-state. UNSPECIFIED and ALLOWED rank equal
+// because they admit identically — the option defaults open — so only losing
+// FORBIDDEN counts as widening. A catalog written before the option existed
+// carries no value at all, which reads as the open rank.
+const IMPERSONATION_RANK = new Map([
+  ["IMPERSONATION_REQUIREMENT_UNSPECIFIED", 0],
+  ["IMPERSONATION_REQUIREMENT_ALLOWED", 0],
+  ["IMPERSONATION_REQUIREMENT_FORBIDDEN", 1],
+]);
+
+const IMPERSONATION_ALLOWED = "IMPERSONATION_REQUIREMENT_UNSPECIFIED";
+
 // MFA strength is not the proto enum order: IF_ENROLLED_RECENT_STEP_UP is weaker
 // than an unconditional RECENT_STEP_UP, so it is ranked explicitly.
 const MFA_RANK = new Map([
@@ -222,6 +234,12 @@ export function broadeningViolations(baseMethods, headMethods) {
       widenedRank("tenant", TENANT_RANK, b.tenant, h.tenant),
       widenedRank("platform_role", PLATFORM_ROLE_RANK, b.platform_role ?? NO_PLATFORM_ROLE, h.platform_role ?? NO_PLATFORM_ROLE),
       widenedRank("mfa", MFA_RANK, b.mfa, h.mfa),
+      widenedRank(
+        "impersonation",
+        IMPERSONATION_RANK,
+        b.impersonation ?? IMPERSONATION_ALLOWED,
+        h.impersonation ?? IMPERSONATION_ALLOWED,
+      ),
       droppedRequirements("permissions", b.permissions, h.permissions),
       droppedRequirements("scopes", b.scopes, h.scopes),
     ].filter(Boolean);

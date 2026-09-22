@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AreaChart, BarChart, chartSeriesColor, LineChart } from "./chart";
-import type { ChartSeries } from "./geometry";
+import type { ChartSeries } from "@codefly-dev/ui/dashboard";
 
 const single: ChartSeries[] = [
 	{

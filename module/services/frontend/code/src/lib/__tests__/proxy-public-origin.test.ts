@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
+
 import { publicRequestOrigin } from "@/proxy";
 
 describe("publicRequestOrigin", () => {

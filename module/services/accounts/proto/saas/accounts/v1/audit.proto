@@ -30,6 +30,10 @@ message AuditEvent {
   int32 schema_version = 12;
   google.protobuf.Struct payload = 13;
   string category = 14;
+  // client_id names the registered client the call was made through, empty for
+  // a call made from the host's own web session. It answers "what did they do
+  // it through", which actor_id does not.
+  string client_id = 15;
 }
 
 message QueryAuditLogRequest {
@@ -50,6 +54,13 @@ message QueryAuditLogRequest {
   // payload_contains is a JSONB containment filter: every key/value must match
   // the event's payload.
   map<string, string> payload_contains = 12;
+  // namespace scopes the search to the module that minted the event types, e.g.
+  // "saas". A composed workspace carries one namespace per emitting module.
+  string namespace = 13;
+  // client_id narrows the search to calls made through one registered client.
+  // It is the companion to reading the client off each record: without it
+  // "what did this client do" can only be answered by paging the whole trail.
+  string client_id = 14;
 }
 
 message QueryAuditLogResponse {
@@ -122,6 +133,24 @@ message AggregateAuditLogRequest {
   repeated AuditMetric metrics = 11;
   // derived computes ratios of the metrics above, per group.
   repeated AuditDerivedMetric derived = 12;
+  // namespace scopes the aggregation to one module's event types, matching
+  // QueryAuditLogRequest.namespace.
+  string namespace = 13;
+  // Exact registered resource boundary. Requires org_id, resource, event_type
+  // and current read access to this resource in addition to audit:read.
+  string resource_id = 14;
+  // String-valued JSONB containment, ANDed with every other filter. A
+  // `boundary` key on a registered saas.document.* event names a collection, so
+  // it carries the same current-read requirement as collection_id below rather
+  // than being a way to spell that filter without the check.
+  map<string, string> payload_contains = 15;
+  // Document event collection: current documents/read authorization plus an
+  // exact payload.boundary predicate. Requires a registered saas.document.*
+  // event with a boundary field; never a caller-supplied grant.
+  string collection_id = 16;
+  // client_id narrows the aggregation to calls made through one registered
+  // client, matching QueryAuditLogRequest.client_id.
+  string client_id = 17;
 }
 
 message AuditAggregateBucket {
@@ -136,10 +165,16 @@ message AuditAggregateBucket {
   // is omitted for a group where the metric is undefined (min/avg/max/percentile
   // over zero numeric values) — absence means "no data", not zero.
   map<string, double> metrics = 4;
+  // Number of non-null observations used by each source metric, before
+  // distinct reduction. Less than count means partial telemetry. Missing on
+  // older servers; clients must not assume completeness in that case.
+  map<string, int64> samples = 5;
 }
 
 message AggregateAuditLogResponse {
   repeated AuditAggregateBucket buckets = 1;
+  // Version 1 acknowledges resource, collection and payload filters, even with no buckets.
+  uint32 scope_contract_version = 2;
 }
 
 message ListAuditEventTypesRequest {}
@@ -151,6 +186,9 @@ message AuditEventType {
   string owner = 4;
   bool deprecated = 5;
   string description = 6;
+  // The module namespace that owns the type: the leading segment of `name`.
+  // Distinct from `owner`, which names the emitting service.
+  string namespace = 7;
 }
 
 message ListAuditEventTypesResponse {

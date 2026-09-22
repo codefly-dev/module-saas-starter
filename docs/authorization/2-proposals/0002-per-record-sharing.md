@@ -1,6 +1,6 @@
 # RFC-0002 — Per-record sharing (record_shares overlay)
 
-- **Status:** Review (#177) — proposed decisions below, pending sign-off; draft ADR [0003](../9-reference/decisions/0003-per-record-sharing.md)
+- **Status:** Accepted 2026-09-17 — shipped; the record is ADR [0003](../9-reference/decisions/0003-per-record-sharing.md)
 - **Created:** 2026-08-19
 - **Serves:** [record-sharing](../0-product/stories/record-sharing.md) S1–S4; behaviors B7–B10.
 - **Depends on:** RFC-0001 (shares the `CheckAccess` resolver + capability vocabulary).

@@ -29,7 +29,7 @@ func pushDelivery(ref, before, after string, created, deleted bool) []byte {
 func githubSource(t *testing.T, svc *business.Service, branch string, paths []string, cursor string) *business.DatasourceSource {
 	t.Helper()
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", Branch: branch, Paths: paths, CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", Branch: branch, Paths: paths, CollectionLabel: "guides", AccessToken: "t",
 	})
 	source.LastIngestedCommit = cursor
 	return source
@@ -613,7 +613,7 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 
 	// head == cursor: nothing to do.
 	source := githubSource(t, svc, "main", []string{"docs"}, "HEAD")
-	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, false)
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,12 +623,37 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 
 	// head != cursor: one snapshot.
 	source.LastIngestedCommit = "OLD"
-	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, false)
+	requestJobID := "11111111-1111-1111-1111-111111111111"
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, false, requestJobID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !enqueued || len(producer.jobs) != 1 || producer.jobs[0].GetTopic() != "datasource.github.snapshot" {
 		t.Fatalf("head!=cursor must enqueue one snapshot, got %d jobs", len(producer.jobs))
+	}
+	if got := producer.jobs[0].GetAttributes()["datasource.delivery_id"]; got != requestJobID {
+		t.Fatalf("snapshot correlation = %q, want request job %q", got, requestJobID)
+	}
+
+	// A second explicit sync at the same commit must create a delivery that can
+	// be correlated to the second request rather than resolving to the first
+	// request's idempotent snapshot.
+	secondRequestJobID := "22222222-2222-2222-2222-222222222222"
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, true, secondRequestJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enqueued || len(producer.jobs) != 2 {
+		t.Fatalf("second forced reconcile must enqueue its own snapshot, got %d jobs", len(producer.jobs))
+	}
+	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
+		t.Fatalf("forced sync snapshots share idempotency key %q", producer.jobs[0].GetIdempotencyKey())
+	}
+	if got := producer.jobs[1].GetAttributes()["datasource.delivery_id"]; got != secondRequestJobID {
+		t.Fatalf("second snapshot correlation = %q, want request job %q", got, secondRequestJobID)
+	}
+	if _, disclosed := producer.jobs[1].GetAttributes()["datasource.requested_by"]; disclosed {
+		t.Fatal("forced snapshot disclosed audit-classified actor provenance in job attributes")
 	}
 }
 
@@ -656,6 +681,19 @@ func TestRunDatasourceReconcile_SchedulesDueSourcesOnly(t *testing.T) {
 	if job.GetAttributes()["datasource.source_id"] != due.ID {
 		t.Fatalf("reconcile enqueued for %q, want the due source %q", job.GetAttributes()["datasource.source_id"], due.ID)
 	}
+	// The periodic sweep builds its own job, and it is a message on exactly the
+	// same terms as the manual "Sync now" request: the platform validates
+	// content_type (min_len 1) on every enqueue. A sweep job that declares none
+	// is refused, and RunDatasourceReconcile logs and continues WITHOUT bumping
+	// the schedule — so the same due batch fails forever and nothing behind it is
+	// ever reconciled, at WARN level with no other symptom.
+	if job.GetContentType() != "application/json" || string(job.GetPayload()) != "{}" {
+		t.Fatalf("reconcile sweep body = %q/%q, want an empty JSON object; an undeclared content type is refused before the sweep can reschedule",
+			job.GetContentType(), job.GetPayload())
+	}
+	if job.GetSchemaVersion() != 1 {
+		t.Fatalf("schema version = %d, want the reconcile request's (1), not the change set's (2)", job.GetSchemaVersion())
+	}
 }
 
 func TestReconcile_RecoversDegradedSourceWhenManifestFitsAgain(t *testing.T) {
@@ -673,11 +711,11 @@ func TestReconcile_RecoversDegradedSourceWhenManifestFitsAgain(t *testing.T) {
 	// Park it degraded in both the in-memory source the handler carries and the
 	// stored copy the recovery write revives.
 	source.Status = business.DatasourceStatusDegraded
-	if err := store.MarkDatasourceSourceDegraded(context.Background(), source.ID, "manifest was over the ingest limit"); err != nil {
+	if err := store.MarkDatasourceSourceDegraded(context.Background(), source.ID, business.SnapshotTooLargeDegradeReason(1048576, 983040)); err != nil {
 		t.Fatal(err)
 	}
 
-	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true)
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +758,7 @@ func TestReconcile_DegradeIsAStateTransitionEmittedOnce(t *testing.T) {
 	svc, audit := newDatasourceService(store, producer, gh)
 	source := githubSource(t, svc, "main", nil, "OLD")
 
-	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true)
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true, "")
 	if err != nil {
 		t.Fatalf("oversized snapshot must be acknowledged, got error: %v", err)
 	}
@@ -737,7 +775,7 @@ func TestReconcile_DegradeIsAStateTransitionEmittedOnce(t *testing.T) {
 	if degraded.Status != business.DatasourceStatusDegraded {
 		t.Fatalf("source status = %q, want degraded after the first reconcile", degraded.Status)
 	}
-	enqueued, err = svc.ReconcileGitHubSource(context.Background(), degraded, true)
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), degraded, true, "")
 	if err != nil {
 		t.Fatalf("retry of an oversized snapshot must be acknowledged, got error: %v", err)
 	}

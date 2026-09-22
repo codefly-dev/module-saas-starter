@@ -15,7 +15,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/audit.proto.
  */
 export const file_saas_accounts_v1_audit: GenFile = /*@__PURE__*/
-  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqgDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJGi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKsAwoUUXVlcnlBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKBmFjdGlvbhgDIAEoCUICGAESEAoIcmVzb3VyY2UYBCABKAkSEwoLcmVzb3VyY2VfaWQYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKCXBhZ2Vfc2l6ZRgIIAEoBUIJukgGGgQYZCAAEhIKCnBhZ2VfdG9rZW4YCSABKAkSEgoKZXZlbnRfdHlwZRgKIAEoCRIQCghjYXRlZ29yeRgLIAEoCRJVChBwYXlsb2FkX2NvbnRhaW5zGAwgAygLMjsuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdC5QYXlsb2FkQ29udGFpbnNFbnRyeRo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInMKFVF1ZXJ5QXVkaXRMb2dSZXNwb25zZRIsCgZldmVudHMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFInEKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKBmFjdGlvbhgEIAEoCUICGAESEgoKZXZlbnRfdHlwZRgFIAEoCSJOChZFeHBvcnRBdWRpdExvZ1Jlc3BvbnNlEgwKBGRhdGEYASABKAwSFAoMY29udGVudF90eXBlGAIgASgJEhAKCGZpbGVuYW1lGAMgASgJIksKC0F1ZGl0TWV0cmljEgoKAm9wGAEgASgJEg0KBWZpZWxkGAIgASgJEhIKCnBlcmNlbnRpbGUYAyABKAESDQoFYWxpYXMYBCABKAkiSwoSQXVkaXREZXJpdmVkTWV0cmljEg0KBWFsaWFzGAEgASgJEhEKCW51bWVyYXRvchgCIAEoCRITCgtkZW5vbWluYXRvchgDIAEoCSLiAgoYQWdncmVnYXRlQXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEhAKCGNhdGVnb3J5GAQgASgJEhAKCHJlc291cmNlGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghncm91cF9ieRgIIAEoCRIOCgZidWNrZXQYCSABKAkSEQoJZ3JvdXBfYnlzGAogAygJEi4KB21ldHJpY3MYCyADKAsyHS5zYWFzLmFjY291bnRzLnYxLkF1ZGl0TWV0cmljEjUKB2Rlcml2ZWQYDCADKAsyJC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RGVyaXZlZE1ldHJpYyK2AQoUQXVkaXRBZ2dyZWdhdGVCdWNrZXQSCwoDa2V5GAEgASgJEg0KBWNvdW50GAIgASgDEgwKBGtleXMYAyADKAkSRAoHbWV0cmljcxgEIAMoCzIzLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQuTWV0cmljc0VudHJ5Gi4KDE1ldHJpY3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBIlQKGUFnZ3JlZ2F0ZUF1ZGl0TG9nUmVzcG9uc2USNwoHYnVja2V0cxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQiHAoaTGlzdEF1ZGl0RXZlbnRUeXBlc1JlcXVlc3QieQoOQXVkaXRFdmVudFR5cGUSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhAKCGNhdGVnb3J5GAMgASgJEg0KBW93bmVyGAQgASgJEhIKCmRlcHJlY2F0ZWQYBSABKAgSEwoLZGVzY3JpcHRpb24YBiABKAkiTgobTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlEi8KBXR5cGVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEV2ZW50VHlwZTKdBgoMQXVkaXRTZXJ2aWNlErUBCg1RdWVyeUF1ZGl0TG9nEiYuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdBonLnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1Jlc3BvbnNlIlPC8xg6CAIQAxoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCDxINL3YxL2F1ZGl0LWxvZxLLAQoRQWdncmVnYXRlQXVkaXRMb2cSKi5zYWFzLmFjY291bnRzLnYxLkFnZ3JlZ2F0ZUF1ZGl0TG9nUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAMaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhkSFy92MS9hdWRpdC1sb2c6YWdncmVnYXRlEsEBChNMaXN0QXVkaXRFdmVudFR5cGVzEiwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlIk3C8xgsCAIQARoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZDABOgIQAUABSANQAlgCYAGC0+STAhcSFS92MS9hdWRpdC1ldmVudC10eXBlcxLCAQoORXhwb3J0QXVkaXRMb2cSJy5zYWFzLmFjY291bnRzLnYxLkV4cG9ydEF1ZGl0TG9nUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAQaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhk6ASoiFC92MS9hdWRpdC1sb2c6ZXhwb3J0QrIBChRjb20uc2Fhcy5hY2NvdW50cy52MUIKQXVkaXRQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIrsDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJEhEKCWNsaWVudF9pZBgPIAEoCRovCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi0gMKFFF1ZXJ5QXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgZhY3Rpb24YAyABKAlCAhgBEhAKCHJlc291cmNlGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIcCglwYWdlX3NpemUYCCABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAkgASgJEhIKCmV2ZW50X3R5cGUYCiABKAkSEAoIY2F0ZWdvcnkYCyABKAkSVQoQcGF5bG9hZF9jb250YWlucxgMIAMoCzI7LnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1JlcXVlc3QuUGF5bG9hZENvbnRhaW5zRW50cnkSEQoJbmFtZXNwYWNlGA0gASgJEhEKCWNsaWVudF9pZBgOIAEoCRo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBInMKFVF1ZXJ5QXVkaXRMb2dSZXNwb25zZRIsCgZldmVudHMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFInEKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKBmFjdGlvbhgEIAEoCUICGAESEgoKZXZlbnRfdHlwZRgFIAEoCSJOChZFeHBvcnRBdWRpdExvZ1Jlc3BvbnNlEgwKBGRhdGEYASABKAwSFAoMY29udGVudF90eXBlGAIgASgJEhAKCGZpbGVuYW1lGAMgASgJIksKC0F1ZGl0TWV0cmljEgoKAm9wGAEgASgJEg0KBWZpZWxkGAIgASgJEhIKCnBlcmNlbnRpbGUYAyABKAESDQoFYWxpYXMYBCABKAkiSwoSQXVkaXREZXJpdmVkTWV0cmljEg0KBWFsaWFzGAEgASgJEhEKCW51bWVyYXRvchgCIAEoCRITCgtkZW5vbWluYXRvchgDIAEoCSLHBAoYQWdncmVnYXRlQXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEhAKCGNhdGVnb3J5GAQgASgJEhAKCHJlc291cmNlGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghncm91cF9ieRgIIAEoCRIOCgZidWNrZXQYCSABKAkSEQoJZ3JvdXBfYnlzGAogAygJEi4KB21ldHJpY3MYCyADKAsyHS5zYWFzLmFjY291bnRzLnYxLkF1ZGl0TWV0cmljEjUKB2Rlcml2ZWQYDCADKAsyJC5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RGVyaXZlZE1ldHJpYxIRCgluYW1lc3BhY2UYDSABKAkSEwoLcmVzb3VyY2VfaWQYDiABKAkSWQoQcGF5bG9hZF9jb250YWlucxgPIAMoCzI/LnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXF1ZXN0LlBheWxvYWRDb250YWluc0VudHJ5EhUKDWNvbGxlY3Rpb25faWQYECABKAkSEQoJY2xpZW50X2lkGBEgASgJGjYKFFBheWxvYWRDb250YWluc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEirAIKFEF1ZGl0QWdncmVnYXRlQnVja2V0EgsKA2tleRgBIAEoCRINCgVjb3VudBgCIAEoAxIMCgRrZXlzGAMgAygJEkQKB21ldHJpY3MYBCADKAsyMy5zYWFzLmFjY291bnRzLnYxLkF1ZGl0QWdncmVnYXRlQnVja2V0Lk1ldHJpY3NFbnRyeRJECgdzYW1wbGVzGAUgAygLMjMuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEFnZ3JlZ2F0ZUJ1Y2tldC5TYW1wbGVzRW50cnkaLgoMTWV0cmljc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAToCOAEaLgoMU2FtcGxlc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAzoCOAEidAoZQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZRI3CgdidWNrZXRzGAEgAygLMiYuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEFnZ3JlZ2F0ZUJ1Y2tldBIeChZzY29wZV9jb250cmFjdF92ZXJzaW9uGAIgASgNIhwKGkxpc3RBdWRpdEV2ZW50VHlwZXNSZXF1ZXN0IowBCg5BdWRpdEV2ZW50VHlwZRIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEAoIY2F0ZWdvcnkYAyABKAkSDQoFb3duZXIYBCABKAkSEgoKZGVwcmVjYXRlZBgFIAEoCBITCgtkZXNjcmlwdGlvbhgGIAEoCRIRCgluYW1lc3BhY2UYByABKAkiTgobTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlEi8KBXR5cGVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEV2ZW50VHlwZTKdBgoMQXVkaXRTZXJ2aWNlErUBCg1RdWVyeUF1ZGl0TG9nEiYuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdBonLnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1Jlc3BvbnNlIlPC8xg6CAIQAxoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCDxINL3YxL2F1ZGl0LWxvZxLLAQoRQWdncmVnYXRlQXVkaXRMb2cSKi5zYWFzLmFjY291bnRzLnYxLkFnZ3JlZ2F0ZUF1ZGl0TG9nUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAMaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhkSFy92MS9hdWRpdC1sb2c6YWdncmVnYXRlEsEBChNMaXN0QXVkaXRFdmVudFR5cGVzEiwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlIk3C8xgsCAIQARoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZDABOgIQAUABSANQAlgCYAGC0+STAhcSFS92MS9hdWRpdC1ldmVudC10eXBlcxLCAQoORXhwb3J0QXVkaXRMb2cSJy5zYWFzLmFjY291bnRzLnYxLkV4cG9ydEF1ZGl0TG9nUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAQaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhk6ASoiFC92MS9hdWRpdC1sb2c6ZXhwb3J0QrIBChRjb20uc2Fhcy5hY2NvdW50cy52MUIKQXVkaXRQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.AuditEvent
@@ -100,6 +100,15 @@ export type AuditEvent = Message<"saas.accounts.v1.AuditEvent"> & {
    * @generated from field: string category = 14;
    */
   category: string;
+
+  /**
+   * client_id names the registered client the call was made through, empty for
+   * a call made from the host's own web session. It answers "what did they do
+   * it through", which actor_id does not.
+   *
+   * @generated from field: string client_id = 15;
+   */
+  clientId: string;
 };
 
 /**
@@ -178,6 +187,23 @@ export type QueryAuditLogRequest = Message<"saas.accounts.v1.QueryAuditLogReques
    * @generated from field: map<string, string> payload_contains = 12;
    */
   payloadContains: { [key: string]: string };
+
+  /**
+   * namespace scopes the search to the module that minted the event types, e.g.
+   * "saas". A composed workspace carries one namespace per emitting module.
+   *
+   * @generated from field: string namespace = 13;
+   */
+  namespace: string;
+
+  /**
+   * client_id narrows the search to calls made through one registered client.
+   * It is the companion to reading the client off each record: without it
+   * "what did this client do" can only be answered by paging the whole trail.
+   *
+   * @generated from field: string client_id = 14;
+   */
+  clientId: string;
 };
 
 /**
@@ -440,6 +466,49 @@ export type AggregateAuditLogRequest = Message<"saas.accounts.v1.AggregateAuditL
    * @generated from field: repeated saas.accounts.v1.AuditDerivedMetric derived = 12;
    */
   derived: AuditDerivedMetric[];
+
+  /**
+   * namespace scopes the aggregation to one module's event types, matching
+   * QueryAuditLogRequest.namespace.
+   *
+   * @generated from field: string namespace = 13;
+   */
+  namespace: string;
+
+  /**
+   * Exact registered resource boundary. Requires org_id, resource, event_type
+   * and current read access to this resource in addition to audit:read.
+   *
+   * @generated from field: string resource_id = 14;
+   */
+  resourceId: string;
+
+  /**
+   * String-valued JSONB containment, ANDed with every other filter. A
+   * `boundary` key on a registered saas.document.* event names a collection, so
+   * it carries the same current-read requirement as collection_id below rather
+   * than being a way to spell that filter without the check.
+   *
+   * @generated from field: map<string, string> payload_contains = 15;
+   */
+  payloadContains: { [key: string]: string };
+
+  /**
+   * Document event collection: current documents/read authorization plus an
+   * exact payload.boundary predicate. Requires a registered saas.document.*
+   * event with a boundary field; never a caller-supplied grant.
+   *
+   * @generated from field: string collection_id = 16;
+   */
+  collectionId: string;
+
+  /**
+   * client_id narrows the aggregation to calls made through one registered
+   * client, matching QueryAuditLogRequest.client_id.
+   *
+   * @generated from field: string client_id = 17;
+   */
+  clientId: string;
 };
 
 /**
@@ -483,6 +552,15 @@ export type AuditAggregateBucket = Message<"saas.accounts.v1.AuditAggregateBucke
    * @generated from field: map<string, double> metrics = 4;
    */
   metrics: { [key: string]: number };
+
+  /**
+   * Number of non-null observations used by each source metric, before
+   * distinct reduction. Less than count means partial telemetry. Missing on
+   * older servers; clients must not assume completeness in that case.
+   *
+   * @generated from field: map<string, int64> samples = 5;
+   */
+  samples: { [key: string]: bigint };
 };
 
 /**
@@ -500,6 +578,13 @@ export type AggregateAuditLogResponse = Message<"saas.accounts.v1.AggregateAudit
    * @generated from field: repeated saas.accounts.v1.AuditAggregateBucket buckets = 1;
    */
   buckets: AuditAggregateBucket[];
+
+  /**
+   * Version 1 acknowledges resource, collection and payload filters, even with no buckets.
+   *
+   * @generated from field: uint32 scope_contract_version = 2;
+   */
+  scopeContractVersion: number;
 };
 
 /**
@@ -555,6 +640,14 @@ export type AuditEventType = Message<"saas.accounts.v1.AuditEventType"> & {
    * @generated from field: string description = 6;
    */
   description: string;
+
+  /**
+   * The module namespace that owns the type: the leading segment of `name`.
+   * Distinct from `owner`, which names the emitting service.
+   *
+   * @generated from field: string namespace = 7;
+   */
+  namespace: string;
 };
 
 /**

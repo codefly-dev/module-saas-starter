@@ -169,7 +169,9 @@ export function AdminsPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Platform Admins</h1>
+					<h1 data-slot="page-title" className="type-page-title">
+						Platform Admins
+					</h1>
 					<p className="text-muted-foreground">
 						Grant and revoke platform-level admin roles.
 					</p>

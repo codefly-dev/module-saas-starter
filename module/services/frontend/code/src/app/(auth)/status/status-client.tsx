@@ -88,7 +88,7 @@ export default function StatusClient() {
 						{branding.name}
 					</span>
 				</div>
-				<h1 className="text-3xl font-bold tracking-tight mt-8">
+				<h1 data-slot="page-title" className="type-page-title mt-8">
 					System status
 				</h1>
 				<p className="text-muted-foreground mt-1.5">
@@ -100,7 +100,7 @@ export default function StatusClient() {
 				<div className="mt-8 rounded-2xl border bg-card p-6 flex items-start gap-4">
 					<StatusIcon status={overall} large />
 					<div className="flex-1">
-						<h2 className="text-xl font-semibold">{overallHeading(overall)}</h2>
+						<h2 data-slot="page-title" className="type-page-title">{overallHeading(overall)}</h2>
 						{data && (
 							<p className="text-sm text-muted-foreground mt-1">
 								Last checked {new Date(data.checked_at).toLocaleTimeString()} ·

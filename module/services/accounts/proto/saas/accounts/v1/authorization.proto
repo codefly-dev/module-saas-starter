@@ -7,6 +7,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/accessible_scopes.proto";
 import "saas/accounts/v1/common.proto";
 import "saas/policy/v1/options.proto";
 
@@ -33,6 +34,22 @@ message ListRolesResponse {
 
 message DeleteRoleRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// UpdateRoleRequest replaces a custom role's description and permission
+// set wholesale: the permissions given become the role's entire grant
+// set, and an empty list clears it. org_id must name the role's own
+// scope (empty = a global role); a role whose scope differs is not
+// found. Built-in roles cannot be updated.
+message UpdateRoleRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string description = 2;
+  repeated Permission permissions = 3;
+  string org_id = 4; // empty = global
+}
+
+message UpdateRoleResponse {
+  Role role = 1;
 }
 
 message AssignRoleRequest {
@@ -80,6 +97,63 @@ message CheckPermissionRequest {
 message CheckPermissionResponse {
   bool allowed = 1;
   string reason = 2;
+}
+
+// --- ExplainPermission (the administrator's view of a decision) ---
+//
+// ExplainPermission answers the question CheckPermission answers, for an
+// administrator rather than for a service: may this subject perform this
+// action on this resource in this organization? It funnels into the same
+// decision the internal RPC returns, so an administration surface never has
+// to reconstruct one from role rows it read itself.
+//
+// CheckPermission stays internal. It accepts any subject in any tenant and
+// trusts its caller because only the mesh reaches it, and the auth-gateway
+// calls it on that footing; widening it would widen the gateway's path too.
+// This companion narrows the same question to one organization: org_id is
+// required and bound to the organization resource, the caller must administer
+// it, and the handler requires the subject to belong to it as well — so the
+// RPC can never be an oracle about a principal or a tenant the caller cannot
+// already see.
+message ExplainPermissionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  // subject_kind must name a principal or a team. Unlike
+  // ListRoleAssignments, where the unspecified value means "both kinds", a
+  // decision about "whichever of the two happens to carry this id" is not a
+  // question the decision point can answer, so the unspecified value is
+  // rejected rather than guessed.
+  SubjectKind subject_kind = 3 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  string resource = 4 [(buf.validate.field).string.min_len = 1];
+  string action = 5 [(buf.validate.field).string.min_len = 1];
+  // scope matches an assignment's scope exactly: empty asks the organization-
+  // wide question and only an organization-wide assignment answers it. Read
+  // granting_scopes before presenting a denial: a subject entitled only at a
+  // scope answers this question with a plain "no".
+  string scope = 6;
+}
+
+message ExplainPermissionResponse {
+  bool allowed = 1;
+  // reason is the decision point's own wording, e.g. "granted via role: admin"
+  // or "no matching permission found". It reports why THIS question was
+  // answered as it was and never mentions another scope, which is what
+  // granting_scopes is for.
+  string reason = 2;
+  // granting_scopes lists every scoped assignment that grants this
+  // (resource, action) to this subject in this organization, whatever scope was
+  // asked about and whatever the verdict was. An organization-wide assignment
+  // is never listed: it has no scope, and it already answers every question
+  // through allowed.
+  //
+  // A denial beside a non-empty list is the shape this field exists for — the
+  // subject cannot act at the scope that was asked about, and can at these. A
+  // surface that presents allowed without it will tell an administrator a
+  // scoped entitlement does not exist.
+  repeated string granting_scopes = 3;
 }
 
 // --- Decide (the new permission-check primitive) ---
@@ -194,6 +268,30 @@ message ScopeGrant {
   google.protobuf.Timestamp created_at = 9;
 }
 
+message CollectionReadGrant {
+  ScopeGrant grant = 1;
+  string subject_label = 2;
+  string role_name = 3;
+  string actor_label = 4;
+}
+
+message CollectionAccess {
+  ScopeNode node = 1;
+  // Active documents/read grants at this node or an ancestor.
+  repeated CollectionReadGrant read_grants = 2;
+}
+
+message ListCollectionAccessRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0 lte: 100}];
+  string page_token = 3;
+}
+
+message ListCollectionAccessResponse {
+  repeated CollectionAccess collections = 1;
+  string next_page_token = 2;
+}
+
 message GrantScopeRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string subject_id = 2 [(buf.validate.field).string.uuid = true];
@@ -290,12 +388,10 @@ message CheckAccessResponse {
 // what the subject cannot see. It resolves through the same union as CheckAccess
 // — an ancestor-or-equal scope grant, or a direct per-record share on a placed
 // node — so the two never disagree.
-
-message AccessibleScope {
-  string node_id = 1;
-  string scope_path = 2;
-  string kind = 3;
-}
+//
+// Only this internal, subject-addressed request lives here. AccessibleScope, the
+// shared response and the caller-scoped request live in accessible_scopes.proto
+// so a published client can bind them without this file's admin surface.
 
 message ListAccessibleScopesRequest {
   string subject_id = 1 [(buf.validate.field).string.uuid = true];
@@ -312,29 +408,6 @@ message ListAccessibleScopesRequest {
   }];
   // Opaque cursor from a previous response's next_page_token; empty for page one.
   string page_token = 7;
-}
-
-message ListAccessibleScopesResponse {
-  repeated AccessibleScope scopes = 1;
-  // Set when more scopes remain; pass it back as page_token. Empty on the last page.
-  string next_page_token = 2;
-}
-
-// ListMyAccessibleScopesRequest is the authenticated caller-scoped form of
-// ListAccessibleScopesRequest: the subject is the bearer's own principal, so
-// there is deliberately NO subject_id field. The caller can therefore only ever
-// enumerate their own boundaries and never probe another principal's (I5).
-message ListMyAccessibleScopesRequest {
-  string org_id = 1 [(buf.validate.field).string.uuid = true];
-  string resource_type = 2 [(buf.validate.field).string.min_len = 1];
-  string action = 3 [(buf.validate.field).string.min_len = 1];
-  // Page bound, same ceiling as the internal RPC.
-  int32 page_size = 4 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 1000
-  }];
-  // Opaque cursor from a previous response's next_page_token; empty for page one.
-  string page_token = 5;
 }
 
 // --- Principal CRUD (M1 promoted to RPCs in M2) ---
@@ -409,7 +482,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.created"
+        events: "saas.role.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -417,6 +490,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/roles"
@@ -439,13 +513,35 @@ service PermissionService {
     option (google.api.http) = {get: "/v1/roles"};
   }
 
+  rpc UpdateRole(UpdateRoleRequest) returns (UpdateRoleResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.role.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      patch: "/v1/roles/{id}"
+      body: "*"
+    };
+  }
+
   rpc DeleteRole(DeleteRoleRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.deleted"
+        events: "saas.role.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -453,6 +549,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/roles/{id}"};
   }
@@ -463,7 +560,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.assigned"
+        events: "saas.role.assigned"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -471,6 +568,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/role-assignments"
@@ -484,7 +582,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.revoked"
+        events: "saas.role.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -492,6 +590,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/role-assignments"};
   }
@@ -519,6 +618,41 @@ service PermissionService {
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // ExplainPermission is the authenticated, organization-scoped companion to
+  // CheckPermission: an administrator asks the decision point whether a
+  // subject in their own organization may act, and reads the same answer the
+  // decision returns to a service. Read-only, and it evaluates the RBAC layer
+  // CheckPermission evaluates — a record-addressed question is CheckAccess's,
+  // and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+  // have no administrator to supply them.
+  //
+  // The answer includes what a role assigned globally (with no organization)
+  // grants the subject, because that grant is effective in this organization
+  // and an administrator verifying access has to see it — ListRoleAssignments,
+  // which filters to the organization's own rows, does not show it.
+  //
+  // One question per call, resolved live against the tenant: it is a control an
+  // administrator points at a case, not a primitive for filling a matrix of
+  // every subject against every permission.
+  rpc ExplainPermission(ExplainPermissionRequest) returns (ExplainPermissionResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
@@ -562,7 +696,9 @@ service PermissionService {
 
   // ListAccessibleScopes enumerates the scope nodes a subject may act on with
   // (resource_type, action) — the list-objects companion to CheckAccess, same
-  // internal trust boundary. Org-bound; resolved live on the DB path.
+  // internal trust boundary. Org-bound; resolved live on the DB path. Its
+  // response type is declared in accessible_scopes.proto and is published; see
+  // the note there before adding a field to it.
   rpc ListAccessibleScopes(ListAccessibleScopesRequest) returns (ListAccessibleScopesResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -575,32 +711,6 @@ service PermissionService {
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
-  }
-
-  // ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
-  // internal ListAccessibleScopes: a signed-in org member enumerates the scope
-  // nodes THEY may act on with (resource_type, action) through the gateway with a
-  // normal bearer. The subject is the bearer's own principal — no subject_id in
-  // the request — so it can never be an oracle about other principals. Same grant
-  // + share union and same pagination as the internal RPC.
-  rpc ListMyAccessibleScopes(ListMyAccessibleScopesRequest) returns (ListAccessibleScopesResponse) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_AUTHENTICATED
-      tenant: TENANT_REQUIREMENT_ORG_MEMBER
-      resource_bindings: {
-        request_field: "org_id"
-        target: RESOURCE_TARGET_ORGANIZATION
-        lookup: RESOURCE_LOOKUP_DIRECT_ID
-      }
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {emission: AUDIT_EMISSION_NONE}
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
-      request_sensitivity: SENSITIVITY_CONFIDENTIAL
-      response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-    option (google.api.http) = {get: "/v1/accessible-scopes"};
   }
 
   // RegisterScopeNode adds a node to the org's scope tree, or places a product
@@ -616,7 +726,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "scope.node_registered"
+        events: "saas.scope.node_registered"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -624,11 +734,32 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/scope-nodes"
       body: "*"
     };
+  }
+
+  rpc ListCollectionAccess(ListCollectionAccessRequest) returns (ListCollectionAccessResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/collection-access"};
   }
 
   // GrantScope grants a role to a principal/team at a registered scope node;
@@ -644,7 +775,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "scope.granted"
+        events: "saas.scope.granted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -652,6 +783,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/scope-grants"
@@ -671,7 +803,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "scope.revoked"
+        events: "saas.scope.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -679,6 +811,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/scope-grants"};
   }
@@ -696,7 +829,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "record.shared"
+        events: "saas.record.shared"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -704,6 +837,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/record-shares"
@@ -723,7 +857,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "record.share_revoked"
+        events: "saas.record.share_revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -731,6 +865,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/record-shares"};
   }
@@ -803,7 +938,7 @@ service PrincipalService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.created"
+        events: "saas.principal.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -811,6 +946,7 @@ service PrincipalService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/principals:agent"
@@ -828,7 +964,7 @@ service PrincipalService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.revoked"
+        events: "saas.principal.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -836,6 +972,7 @@ service PrincipalService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/principals/{id}:revoke"
@@ -848,7 +985,7 @@ service PrincipalService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.disabled"
+        events: "saas.principal.disabled"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -864,7 +1001,7 @@ service PrincipalService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.enabled"
+        events: "saas.principal.enabled"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

@@ -46,7 +46,7 @@ describe("dynamic-dashboard channel boundary", () => {
 		const offenders: string[] = [];
 		for (const root of ROOTS) {
 			for (const file of sourceFiles(root)) {
-				const text = readFileSync(file, "utf8");
+				const text = withoutSharedKitSpecifier(readFileSync(file, "utf8"));
 				for (const pattern of FORBIDDEN) {
 					if (pattern.test(text)) {
 						offenders.push(`${path.relative(root, file)}: ${pattern.source}`);
@@ -56,4 +56,33 @@ describe("dynamic-dashboard channel boundary", () => {
 		}
 		expect(offenders).toEqual([]);
 	});
+});
+
+function withoutSharedKitSpecifier(source: string): string {
+	const subpath = ["ch", "at"].join("");
+	return source.replaceAll(
+		`"@codefly-dev/ui/${subpath}"`,
+		'"shared-kit-subpath"',
+	);
+}
+
+it("allows the sealed lower-tier package but still rejects composing surfaces", () => {
+	const surface = ["ch", "at"].join("");
+	expect(
+		FORBIDDEN[0].test(
+			withoutSharedKitSpecifier(
+				`import * as Shared from "@codefly-dev/ui/${surface}";`,
+			),
+		),
+	).toBe(false);
+	expect(
+		FORBIDDEN[0].test(
+			withoutSharedKitSpecifier(`import X from "@example/${surface}";`),
+		),
+	).toBe(true);
+	expect(
+		FORBIDDEN[0].test(
+			withoutSharedKitSpecifier(`const surface = "${surface}";`),
+		),
+	).toBe(true);
 });

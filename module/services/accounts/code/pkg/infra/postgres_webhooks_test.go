@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -8,7 +10,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,15 +75,39 @@ func TestMain(m *testing.M) {
 }
 
 func runPostgresInfraTests(m *testing.M) int {
+	if raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL"); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "localhost") || !strings.HasPrefix(parsed.Path, "/installer_test_") {
+			fmt.Fprintln(os.Stderr, "installer tests require a disposable loopback installer_test_ database")
+			return 1
+		}
+		store, err := infra.NewPostgresStoreFromURL(context.Background(), raw)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		defer store.Close()
+		testStore, testPool, testCtx = store, store.Pool(), context.Background()
+		if err := store.WithControlPlane(testCtx, func(ctx context.Context) error { return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog()) }); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return m.Run()
+	}
+
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("infra-db", "dependency-setup", []string{"store"}, 90*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithSharedControlChannel(),
+		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		sdk.WithNamingScope("test-infra"),
 		sdk.WithTimeout(90*time.Second),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
 		return 1
@@ -98,11 +126,25 @@ func runPostgresInfraTests(m *testing.M) int {
 	}
 	defer store.Close()
 
+	// The audit_events.event_type foreign key (migration 116) resolves against
+	// audit_event_types, which the control plane reconciles from the code catalog
+	// at startup. Do the same here so an audit write in a test hits the same
+	// preconditions it hits in production.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "SyncAuditEventTypes: %v\n", err)
+		return 1
+	}
+
 	testStore = store
 	testPool = store.Pool()
 	testCtx = ctx
 
-	return m.Run()
+	executionDone := testdb.Measure("infra-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 func TestBillingWorkerPoolUsesLeastPrivilegeBypassRole(t *testing.T) {
@@ -117,7 +159,8 @@ func TestBillingWorkerPoolUsesLeastPrivilegeBypassRole(t *testing.T) {
 		FROM pg_roles
 		WHERE rolname = current_user`).Scan(&currentRole, &bypassRLS))
 	require.Equal(t, "app_billing_worker", currentRole)
-	require.True(t, bypassRLS)
+	// The billing worker sees its rows through its explicit policy, never by bypassing RLS.
+	require.False(t, bypassRLS)
 
 	var planCount int
 	require.NoError(t, pool.QueryRow(testCtx, `SELECT COUNT(*) FROM plans`).Scan(&planCount))
@@ -276,51 +319,6 @@ func TestDeleteWebhookSubscription(t *testing.T) {
 	}))
 }
 
-func TestGetActiveWebhookSubscriptions(t *testing.T) {
-	userID := seedUser(t)
-	orgID := seedOrg(t, userID)
-
-	activeSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/active", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: true,
-	}
-	inactiveSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/inactive", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: false,
-	}
-	otherEventSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/other", SecretEncrypted: "encrypted:sec",
-		Events: []string{"org.created"}, Active: true,
-	}
-	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, activeSub))
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, inactiveSub))
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, otherEventSub))
-		return nil
-	}))
-
-	// Use the control-plane scope here to exercise event/active filtering across
-	// all fixtures. Production audit fan-out calls the same query inside one
-	// organization transaction and RLS restricts it to that organization.
-	var subs []*business.WebhookSubscription
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		s, err := testStore.GetActiveWebhookSubscriptions(ctx, "user.registered")
-		subs = s
-		return err
-	}))
-
-	ids := make(map[string]bool)
-	for _, s := range subs {
-		ids[s.ID] = true
-	}
-	require.True(t, ids[activeSub.ID], "active sub with matching event should be returned")
-	require.False(t, ids[inactiveSub.ID], "inactive sub should not be returned")
-	require.False(t, ids[otherEventSub.ID], "sub with different event should not be returned")
-}
-
 func TestCreateAndListWebhookDeliveries(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
@@ -363,17 +361,32 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
 	eventID := business.NewIDString()
-	eventType := "test.webhook.outbox." + eventID
+	// A registered type: audit_events.event_type is a foreign key into the
+	// registry from migration 116 on. The subscription is still isolated — the
+	// org is freshly seeded and the fan-out lookup runs under its RLS scope.
+	eventType := string(business.EventUserUpdated)
 	sub := &business.WebhookSubscription{
 		ID: business.NewIDString(), OrgID: orgID,
 		URL: endpoint.URL, SecretEncrypted: "test-signing-secret",
 		Events: []string{eventType}, Active: true,
 	}
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		return testStore.CreateWebhookSubscription(ctx, sub)
+		if err := testStore.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return testStore.SyncWebhookEventSubscriptions(ctx, orgID, sub.ID, sub.Events)
 	}))
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	relayPool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(relayPool.Close)
+	transport := infra.NewPostgresEventTransport(
+		infra.NewPostgresJobStore(relayPool), relayPool, "audit-webhook-"+business.NewIDString(), time.Second,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(testStore)),
+	)
+
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
 	require.NoError(t, err)
 	emitter.Emit(testCtx, business.AuditEntry{
 		ID: eventID, ActorID: userID, ActorType: "user",
@@ -381,6 +394,11 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 		Payload:   map[string]any{"source": "integration-test"},
 		CreatedAt: time.Now().UTC(),
 	})
+	// The audit record and its event commit together; fan-out is the relay's
+	// work afterwards, which is what the emitter no longer does itself.
+	relayed, err := transport.RelayOnce(testCtx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, relayed, 1)
 
 	var deliveries []*business.WebhookDelivery
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
@@ -519,7 +537,11 @@ func TestManualWebhookCommandsUseTransactionalGenericOutbox(t *testing.T) {
 	require.Equal(t, testDelivery.EventID, workload.GetEventId())
 	require.Equal(t, []byte(testDelivery.Payload), workload.GetRawBody())
 
-	replay, err := service.ReplayWebhookDelivery(testCtx, orgID, testDelivery.ID)
+	replay, err := service.ReplayWebhookDelivery(
+		testCtx,
+		business.AuditActor{ID: userID, Type: business.ActorTypeUser},
+		orgID, testDelivery.ID,
+	)
 	require.NoError(t, err)
 	require.NotEqual(t, testDelivery.ID, replay.ID)
 	require.Equal(t, testDelivery.EventID, replay.EventID)

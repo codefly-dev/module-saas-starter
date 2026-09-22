@@ -64,7 +64,7 @@ describe("SaaS settings public API", () => {
 	it("contains no generated product schema or host dependency", () => {
 		const source = readFileSync(join(packageDir, "src/index.ts"), "utf8");
 		expect(source).not.toMatch(
-			/(?:from\s+["'](?:@\/|react["'/]|next\/)|UserSettings|Warden|Mind)/,
+			/(?:from\s+["'](?:@\/|react["'/]|next\/)|UserSettings)/,
 		);
 	});
 });

@@ -3,24 +3,32 @@ package infra
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *PostgresStore) CreateNotification(ctx context.Context, n *business.Notification) error {
 	q := s.getQueryExecutor(ctx)
 	result, err := q.Exec(ctx, `
-		INSERT INTO notifications (id, user_id, org_id, title, body, type, action_url)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO notifications (id, user_id, org_id, title, body, type, action_url, resource_type, resource_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
 		WHERE notifications.user_id = EXCLUDED.user_id
 		  AND notifications.org_id IS NOT DISTINCT FROM EXCLUDED.org_id
 		  AND notifications.title = EXCLUDED.title
 		  AND notifications.body = EXCLUDED.body
 		  AND notifications.type = EXCLUDED.type
-		  AND notifications.action_url IS NOT DISTINCT FROM EXCLUDED.action_url`,
-		n.ID, n.UserID, nilIfEmpty(n.OrgID), n.Title, n.Body, n.Type, nilIfEmpty(n.ActionURL))
+		  AND notifications.action_url IS NOT DISTINCT FROM EXCLUDED.action_url
+		  AND notifications.resource_type IS NOT DISTINCT FROM EXCLUDED.resource_type
+		  AND notifications.resource_id IS NOT DISTINCT FROM EXCLUDED.resource_id`,
+		n.ID, n.UserID, nilIfEmpty(n.OrgID), n.Title, n.Body, n.Type, nilIfEmpty(n.ActionURL),
+		nilIfEmpty(n.ResourceType), nilIfEmpty(n.ResourceID))
 	if err != nil {
 		return err
 	}
@@ -30,24 +38,75 @@ func (s *PostgresStore) CreateNotification(ctx context.Context, n *business.Noti
 	return nil
 }
 
-func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*business.Notification, string, error) {
+// ExistingNotificationIDs reports which of the given ids already have a row.
+// The lookup spans users, so it runs under the control-plane role; a follow
+// fan-out uses it to skip the recipients a previous attempt already wrote.
+func (s *PostgresStore) ExistingNotificationIDs(ctx context.Context, ids []string) (map[string]struct{}, error) {
+	if len(ids) == 0 {
+		return map[string]struct{}{}, nil
+	}
+	q := s.getQueryExecutor(ctx)
+	rows, err := q.Query(ctx, `SELECT id FROM notifications WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	existing := make(map[string]struct{}, len(ids))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		existing[id] = struct{}{}
+	}
+	return existing, rows.Err()
+}
+
+func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string, filters ...business.NotificationFilter) ([]*business.Notification, string, error) {
 	q := s.getQueryExecutor(ctx)
 
 	query := `
-		SELECT id, user_id, org_id, title, body, type, action_url, read_at, created_at
+		SELECT id, user_id, org_id, title, body, type, action_url, resource_type, resource_id, read_at, created_at
 		FROM notifications
 		WHERE user_id = $1`
 	args := []any{userID}
 
-	if pageToken != "" {
-		query += ` AND created_at < $2`
-		args = append(args, pageToken)
-		query += ` ORDER BY created_at DESC LIMIT $3`
-		args = append(args, pageSize)
-	} else {
-		query += ` ORDER BY created_at DESC LIMIT $2`
-		args = append(args, pageSize)
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 100
 	}
+	if len(filters) > 0 {
+		filter := filters[0]
+		if filter.OrgID != "" {
+			if _, err := uuid.Parse(filter.OrgID); err != nil {
+				return nil, "", business.ErrInvalidNotificationFilter
+			}
+			args = append(args, filter.OrgID)
+			query += fmt.Sprintf(" AND org_id = $%d", len(args))
+		}
+		if filter.UnreadOnly {
+			query += " AND read_at IS NULL"
+		}
+	}
+	if pageToken != "" {
+		stamp, id, composite := strings.Cut(pageToken, "|")
+		createdAt, err := time.Parse(time.RFC3339Nano, stamp)
+		if err != nil {
+			return nil, "", business.ErrInvalidNotificationPageToken
+		}
+		args = append(args, createdAt)
+		if composite {
+			if _, err := uuid.Parse(id); err != nil {
+				return nil, "", business.ErrInvalidNotificationPageToken
+			}
+			args = append(args, id)
+			query += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d)", len(args)-1, len(args))
+		} else {
+			// Accept cursors issued before the composite-cursor rollout.
+			query += fmt.Sprintf(" AND created_at < $%d", len(args))
+		}
+	}
+	args = append(args, pageSize+1)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", len(args))
 
 	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
@@ -58,11 +117,11 @@ func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pa
 	var notifications []*business.Notification
 	for rows.Next() {
 		var n business.Notification
-		var orgID, actionURL *string
+		var orgID, actionURL, resourceType, resourceID *string
 		var readAt *time.Time
 
 		err := rows.Scan(&n.ID, &n.UserID, &orgID, &n.Title, &n.Body, &n.Type,
-			&actionURL, &readAt, &n.CreatedAt)
+			&actionURL, &resourceType, &resourceID, &readAt, &n.CreatedAt)
 		if err != nil {
 			return nil, "", err
 		}
@@ -72,14 +131,24 @@ func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pa
 		if actionURL != nil {
 			n.ActionURL = *actionURL
 		}
+		if resourceType != nil {
+			n.ResourceType = *resourceType
+		}
+		if resourceID != nil {
+			n.ResourceID = *resourceID
+		}
 		n.ReadAt = readAt
 		notifications = append(notifications, &n)
 	}
 
-	// Next page token is the created_at of the last item
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
 	var nextToken string
-	if len(notifications) == pageSize {
-		nextToken = notifications[len(notifications)-1].CreatedAt.Format(time.RFC3339Nano)
+	if len(notifications) > pageSize {
+		notifications = notifications[:pageSize]
+		last := notifications[len(notifications)-1]
+		nextToken = last.CreatedAt.Format(time.RFC3339Nano) + "|" + last.ID
 	}
 
 	return notifications, nextToken, nil
@@ -92,6 +161,39 @@ func (s *PostgresStore) GetUnreadCount(ctx context.Context, userID string) (int,
 		SELECT COUNT(*) FROM notifications
 		WHERE user_id = $1 AND read_at IS NULL`, userID).Scan(&count)
 	return count, err
+}
+
+// ListUnreadResourceReferences groups the user's unread follow items by the
+// resource they refer to. The caller settles visibility per resource and
+// subtracts what is no longer readable, so the badge costs one grouped read
+// rather than one row per unread item.
+//
+// org_id is nullable and descriptive; a row carrying none is still returned, and
+// the caller fails it closed rather than guessing a tenant for it.
+func (s *PostgresStore) ListUnreadResourceReferences(ctx context.Context, userID string) ([]business.UnreadResourceReference, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		SELECT org_id, resource_type, resource_id, COUNT(*)
+		FROM notifications
+		WHERE user_id = $1 AND read_at IS NULL AND resource_type IS NOT NULL
+		GROUP BY org_id, resource_type, resource_id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []business.UnreadResourceReference
+	for rows.Next() {
+		var ref business.UnreadResourceReference
+		var orgID *string
+		if err := rows.Scan(&orgID, &ref.ResourceType, &ref.ResourceID, &ref.Unread); err != nil {
+			return nil, err
+		}
+		if orgID != nil {
+			ref.OrgID = *orgID
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }
 
 func (s *PostgresStore) MarkNotificationRead(ctx context.Context, id string) error {
@@ -114,6 +216,38 @@ func (s *PostgresStore) DeleteNotification(ctx context.Context, id string) error
 	q := s.getQueryExecutor(ctx)
 	_, err := q.Exec(ctx, `DELETE FROM notifications WHERE id = $1`, id)
 	return err
+}
+
+// GetNotification reads one notification by id. Run under WithUserTx: the RLS
+// policy on `notifications` keys on user_id, so an id belonging to another user
+// reads as absent rather than forbidden. Returns (nil, nil) on miss.
+func (s *PostgresStore) GetNotification(ctx context.Context, id string) (*business.Notification, error) {
+	var n business.Notification
+	var orgID, actionURL, resourceType, resourceID *string
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT id, user_id, org_id, title, body, type, action_url, resource_type, resource_id, read_at, created_at
+		FROM notifications
+		WHERE id = $1`, id).Scan(&n.ID, &n.UserID, &orgID, &n.Title, &n.Body, &n.Type,
+		&actionURL, &resourceType, &resourceID, &n.ReadAt, &n.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if orgID != nil {
+		n.OrgID = *orgID
+	}
+	if actionURL != nil {
+		n.ActionURL = *actionURL
+	}
+	if resourceType != nil {
+		n.ResourceType = *resourceType
+	}
+	if resourceID != nil {
+		n.ResourceID = *resourceID
+	}
+	return &n, nil
 }
 
 // GetNotificationUserID resolves notification.id → user_id. Called

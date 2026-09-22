@@ -32,7 +32,7 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 			publicCount++
 		}
 	}
-	require.Equal(t, 16, publicCount)
+	require.Equal(t, 18, publicCount)
 	require.Nil(t, routes["POST /v1/permissions:check"])
 	require.Nil(t, routes["POST /v1/api-keys:validate"])
 	require.Equal(t, "/saas.accounts.v1.UserService/RegisterUser", routes["POST /v1/users"].GetProcedure())

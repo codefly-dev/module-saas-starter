@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -727,6 +728,172 @@ func TestVerifyActorParentRejectsOwnerOnlyContext(t *testing.T) {
 		context.Background(), renewOrgID, renewOwnerID, token.Encoded(),
 	)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
+	const foreignSession = "019f6bf7-2222-7222-8222-222222222272"
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	request := func(sessionID string) *gen.StartTaskWorkContextRequest {
+		return &gen.StartTaskWorkContextRequest{
+			OrgId:            renewOrgID,
+			TaskId:           renewTaskID,
+			SessionId:        sessionID,
+			ActorPrincipalId: renewActorID,
+			Audience:         "tool.test",
+			TtlSeconds:       900,
+			AuthorityScopes: []*gen.WorkContextScope{{
+				ResourceKind: "evidence",
+				Actions:      []string{"read"},
+			}},
+		}
+	}
+	caller := func() context.Context {
+		return stampVerifiedIdentity(
+			context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{},
+		)
+	}
+
+	t.Run("session_backed_caller", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		ctx := accountsauth.WithVerifiedSessionIDString(caller(), renewSession)
+
+		issued, err := server.StartTask(ctx, request(renewSession))
+		require.NoError(t, err)
+		require.Equal(t, renewSession, issued.GetSessionId())
+	})
+
+	// A caller that roots its own Task and Session ids while presenting a real
+	// session must keep minting, and must still get a capability bound to the
+	// session it actually holds rather than the one it named. Refusing here
+	// instead would have bound nothing extra and broken that caller outright.
+	t.Run("session_the_caller_does_not_hold_is_ignored_not_refused", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		ctx := accountsauth.WithVerifiedSessionIDString(caller(), renewSession)
+
+		issued, err := server.StartTask(ctx, request(foreignSession))
+		require.NoError(t, err)
+		require.Equal(t, renewSession, issued.GetSessionId())
+	})
+
+	// A service credential or an API key carries no session to derive, so the
+	// headless shape is preserved rather than failing closed on its absence.
+	t.Run("caller_without_a_session_keeps_the_requested_id", func(t *testing.T) {
+		server := newRenewTestServer(t)
+
+		issued, err := server.StartTask(caller(), request(foreignSession))
+		require.NoError(t, err)
+		require.Equal(t, foreignSession, issued.GetSessionId())
+	})
+}
+
+// mintOwnedContext issues a Work Context the caller owns outright, rooted in the
+// given Session — the capability a StartRootSession call derives from.
+func mintOwnedContext(
+	t *testing.T, server *WorkContextAuthorityServer, sessionID string,
+) codefly.WorkContextToken {
+	t.Helper()
+	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+		Audience:              "tool.test",
+		TenantID:              renewOrgID,
+		OwnerPrincipalID:      renewActorID,
+		TaskID:                renewTaskID,
+		SessionID:             sessionID,
+		AuthorizationRevision: 12,
+		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		AuthorityScopes: []*basev0.WorkScopeV1{{
+			ResourceKind: "evidence",
+			Actions:      []string{"append", "read"},
+		}},
+	})
+	require.NoError(t, err)
+	return token
+}
+
+func TestStartRootSessionGeneratesFreshRootSession(t *testing.T) {
+	const requestedSession = "019f6bf7-2222-7222-8222-222222222274"
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	request := func(parent codefly.WorkContextToken, sessionID string) *gen.StartRootSessionWorkContextRequest {
+		return &gen.StartRootSessionWorkContextRequest{
+			OrgId:                  renewOrgID,
+			ParentWorkContextToken: parent.Encoded(),
+			SessionId:              sessionID,
+			Audience:               "tool.test",
+			TtlSeconds:             900,
+		}
+	}
+	caller := func() context.Context {
+		return stampVerifiedIdentity(
+			context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{},
+		)
+	}
+
+	// The id a request names never reaches the capability: a root Session keeps
+	// no lineage, so a caller-chosen one is free to name a Session that never
+	// existed or one belonging to unrelated work.
+	t.Run("requested_session_id_is_not_honoured", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		parent := mintOwnedContext(t, server, renewSession)
+
+		issued, err := server.StartRootSession(caller(), request(parent, requestedSession))
+		require.NoError(t, err)
+		require.NotEqual(t, requestedSession, issued.GetSessionId())
+		require.NotEqual(t, renewSession, issued.GetSessionId())
+		require.Equal(t, renewTaskID, issued.GetTaskId())
+		require.Equal(t, renewActorID, issued.GetOwnerPrincipalId())
+	})
+
+	// A Work Context Session is an execution scope, not the caller's auth
+	// session: this issuer owns no consumer Session rows. Deriving the auth
+	// session refused exactly this call — the ordinary one, since the parent Task
+	// is rooted in the session the caller still holds.
+	t.Run("caller_in_the_parent_session_still_succeeds", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		ctx := accountsauth.WithVerifiedSessionIDString(caller(), renewSession)
+		parent := mintOwnedContext(t, server, renewSession)
+
+		issued, err := server.StartRootSession(ctx, request(parent, renewSession))
+		require.NoError(t, err)
+		require.NotEqual(t, renewSession, issued.GetSessionId())
+	})
+
+	// Freshness is the property a caller cannot be trusted to supply, so two
+	// mints from one parent must never land on the same root Session.
+	t.Run("each_call_mints_a_distinct_root_session", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		parent := mintOwnedContext(t, server, renewSession)
+
+		first, err := server.StartRootSession(caller(), request(parent, requestedSession))
+		require.NoError(t, err)
+		second, err := server.StartRootSession(caller(), request(parent, requestedSession))
+		require.NoError(t, err)
+		require.NotEqual(t, first.GetSessionId(), second.GetSessionId())
+	})
+
+	// uuid validation accepts uppercase hex, so a parent Session can be spelled
+	// in a form an equality check against a canonical id would miss. A generated
+	// id cannot alias the parent under any spelling.
+	t.Run("parent_session_in_another_spelling_cannot_be_aliased", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		upper := strings.ToUpper(renewSession)
+		parent := mintOwnedContext(t, server, upper)
+
+		issued, err := server.StartRootSession(caller(), request(parent, renewSession))
+		require.NoError(t, err)
+		require.NotEqual(t, upper, issued.GetSessionId())
+		require.NotEqual(t, renewSession, issued.GetSessionId())
+	})
 }
 
 func TestVerifyActorParentRejectsStaleRevision(t *testing.T) {

@@ -268,7 +268,7 @@ func routeBehaviorEntries(entries []*RouteEntry) []*RouteEntry {
 	return result
 }
 
-// An additive proto field must not fail an older sidecar: unknown fields are
+// An additive proto field must not fail an older auth-gateway: unknown fields are
 // tolerated so a newer platform's artifact still loads.
 func TestRouteArtifactToleratesUnknownField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rest-surface.json")

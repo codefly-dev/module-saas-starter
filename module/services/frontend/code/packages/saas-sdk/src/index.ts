@@ -7,7 +7,11 @@ export {
 	type ResolvedWidget,
 	runDashboard,
 } from "./datagraph/dashboard.js";
-export { runDataGraph, runMetric } from "./datagraph/run.js";
+export {
+	assertAuditScopeContract,
+	runDataGraph,
+	runMetric,
+} from "./datagraph/run.js";
 export type {
 	AuditAggregateClient,
 	AuditAggregateQuery,
@@ -15,22 +19,27 @@ export type {
 	MetricPoint,
 	MetricSeries,
 } from "./datagraph/types.js";
-// Gateway-bound facades, one per public service. `svc.New(gw)` binds the
-// generated Connect client to a transport (the gateway seam), mirroring the Go
-// SDK's `svc.New(gw).method(...)`:
-//   import { datasource } from "@codefly/saas-sdk";
-//   await datasource.New(gw).addGitHubSource({ orgId, repo });
-export * as audit from "./facade/audit.js";
-export * as datasource from "./facade/datasource.js";
-export * as webhooks from "./facade/webhooks.js";
-export { AuditService } from "./gen/saas/accounts/v1/audit_pb.js";
+// The generated gateway-bound facade for the accounts/connect endpoint.
+// `accounts.New(gw)` binds the generated Connect clients to a transport (the
+// gateway seam); each accessor returns the typed client for one public service,
+// mirroring the Go SDK's `accounts.New(gw).datasource()`:
+//   import { accounts } from "@codefly-dev/saas-sdk";
+//   await accounts.New(gw).datasource().addGitHubSource({ orgId, repo });
+export { accounts } from "../generated/typescript/src/accounts_facade.js";
+export {
+	type AccessibleScope,
+	AccessibleScopeService,
+	type ListAccessibleScopesResponse,
+	type ListMyAccessibleScopesRequest,
+} from "../generated/typescript/src/gen/saas/accounts/v1/accessible_scopes_pb.js";
+export { AuditService } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 export {
 	type Datasource,
 	DatasourceProvider,
 	DatasourceService,
 	DatasourceStatus,
-} from "./gen/saas/accounts/v1/datasource_pb.js";
-export { WebhookService } from "./gen/saas/accounts/v1/webhooks_pb.js";
+} from "../generated/typescript/src/gen/saas/accounts/v1/datasource_pb.js";
+export { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1/webhooks_pb.js";
 export type {
 	Dashboard,
 	DashboardLayout,

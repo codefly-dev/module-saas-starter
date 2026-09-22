@@ -1,3 +1,5 @@
+//go:build !pure
+
 package pgauth_test
 
 import (
@@ -57,12 +59,16 @@ func runSessionStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("auth-db", "dependency-setup", []string{"store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithSharedControlChannel(),
+		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		sdk.WithNamingScope("pgauth-test"),
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
@@ -86,10 +92,25 @@ func runSessionStoreTests(m *testing.M) int {
 		return 1
 	}
 	defer store.Close()
+
+	// The audit_events.event_type foreign key (migration 116) resolves against
+	// audit_event_types, which the control plane reconciles from the code catalog
+	// at startup. Do the same here so an audit write in a test hits the same
+	// preconditions it hits in production.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "SyncAuditEventTypes: %v\n", err)
+		return 1
+	}
+
 	testStore = store
 	testPool = store.Pool()
 
-	return m.Run()
+	executionDone := testdb.Measure("auth-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 // seedUser inserts a minimum users row so sessions FK is happy.
@@ -1099,4 +1120,203 @@ func TestRLS_Sessions_CrossUserBlocked(t *testing.T) {
 	foundB, err := store.FindByRefreshHash(ctx, recB.RefreshHash)
 	require.NoError(t, err)
 	require.Equal(t, userB, foundB.UserID)
+}
+
+// newImpersonationRecord is the shape prepareMint builds for an impersonation
+// window: the admin as UserID, the target named, no refresh credential, and a
+// lifetime measured in minutes rather than the session policy's days.
+func newImpersonationRecord(adminID, targetID uuid.UUID) *auth.SessionRecord {
+	rec := newRecord(adminID)
+	rec.RefreshHash = nil
+	rec.ActingAsUserID = targetID
+	rec.ExpiresAt = rec.IssuedAt.Add(3 * time.Minute)
+	rec.IdleExpiresAt = rec.ExpiresAt
+	return rec
+}
+
+// The absence of a refresh credential is carried by the schema, not by a
+// convention in Go: the column is NULL, and the CHECK ties that to the row
+// being an impersonation window.
+func TestSessionStore_ImpersonationRowStoresNoRefreshCredential(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+
+	rec := newImpersonationRecord(adminID, targetID)
+	require.NoError(t, store.Insert(ctx, rec))
+
+	var hashIsNull bool
+	scanControlPlane(t, &hashIsNull,
+		`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, rec.ID)
+	require.True(t, hashIsNull, "an impersonation row must hold no refresh token hash")
+
+	var actingAs uuid.UUID
+	scanControlPlane(t, &actingAs,
+		`SELECT acting_as_user_id FROM sessions WHERE id = $1`, rec.ID)
+	require.Equal(t, targetID, actingAs)
+}
+
+// The CHECK refuses both halves of the invariant, in both directions. A
+// constraint that only ever rejects is indistinguishable from one that rejects
+// everything, so the accepted shapes are asserted alongside.
+func TestSessionStore_ImpersonationAndRefreshCredentialAreMutuallyExclusive(t *testing.T) {
+	ctx := context.Background()
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+
+	insert := func(t *testing.T, hash any, actingAs any) error {
+		t.Helper()
+		return testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			now := time.Now()
+			_, err := tx.Exec(ctx, `
+				INSERT INTO sessions (
+					id, user_id, refresh_token_hash, family_id, acting_as_user_id,
+					created_at, last_active_at, idle_expires_at, expires_at
+				) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $7)`,
+				business.NewID(), adminID, hash, business.NewID(), actingAs,
+				now, now.Add(time.Hour))
+			return err
+		})
+	}
+	someHash := func() string {
+		sum := sha256.Sum256([]byte(uuid.Must(uuid.NewV7()).String()))
+		return fmt.Sprintf("%x", sum[:])
+	}
+
+	require.NoError(t, insert(t, someHash(), nil), "an ordinary login is accepted")
+	require.NoError(t, insert(t, nil, targetID), "an impersonation window is accepted")
+
+	err := insert(t, someHash(), targetID)
+	require.Error(t, err, "an impersonation row must not also carry a rotatable credential")
+	require.Contains(t, err.Error(), "sessions_impersonation_has_no_refresh_credential")
+
+	err = insert(t, nil, nil)
+	require.Error(t, err, "an ordinary login must carry a refresh credential")
+	require.Contains(t, err.Error(), "sessions_impersonation_has_no_refresh_credential")
+}
+
+// `refresh_token_hash = $1` never matches NULL, so no presented hash — however
+// constructed — reaches an impersonation row through either lookup.
+func TestSessionStore_ImpersonationRowIsUnreachableByRefreshHash(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+
+	rec := newImpersonationRecord(adminID, targetID)
+	require.NoError(t, store.Insert(ctx, rec))
+
+	for name, hash := range map[string][]byte{
+		"empty": {},
+		"nil":   nil,
+		"zeros": make([]byte, sha256.Size),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := store.FindByRefreshHash(ctx, hash)
+			require.ErrorIs(t, err, auth.ErrRefreshRevoked)
+
+			err = store.RotateRefresh(ctx, hash,
+				func(*auth.SessionRecord, auth.RefreshAuthorization) (*auth.SessionRecord, error) {
+					t.Fatal("rotation must never reach an impersonation row")
+					return nil, nil
+				})
+			require.ErrorIs(t, err, auth.ErrRefreshRevoked)
+		})
+	}
+
+	var revokedAt *time.Time
+	scanControlPlane(t, &revokedAt, `SELECT revoked_at FROM sessions WHERE id = $1`, rec.ID)
+	require.Nil(t, revokedAt, "a rejected rotation attempt must not revoke the window")
+}
+
+// Reissuing from an impersonation row would drop the acting claim and re-arm
+// the ordinary access-token lifetime, so the exchange refuses it outright.
+func TestSessionStore_ExchangeOrganizationRefusesImpersonationWindow(t *testing.T) {
+	ctx := context.Background()
+	store := pgauth.NewSessionStore(testStore)
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+	orgID := seedOrganizationMembership(t, adminID, "admin", time.Now().Add(-time.Hour))
+
+	rec := newImpersonationRecord(adminID, targetID)
+	require.NoError(t, store.Insert(ctx, rec))
+
+	err := store.ExchangeOrganization(ctx, adminID, rec.ID, orgID,
+		func(*auth.SessionRecord, auth.RefreshAuthorization) error {
+			t.Fatal("an impersonation window must never be exchanged for a fresh token")
+			return nil
+		})
+	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
+}
+
+// Windows are bounded on their own terms. The edge budget for ImpersonateUser
+// is the ordinary per-minute allowance, so without this an admin could hold
+// thousands of open windows and see nothing but windows in their own session
+// list — the oldest are retired, and only windows are ever the row retired.
+func TestSessionStore_ImpersonationWindowsAreBoundedWithoutTouchingLogins(t *testing.T) {
+	ctx := context.Background()
+	policy := auth.DefaultSessionPolicy()
+	policy.MaxActiveDevices = 3
+	store := pgauth.NewSessionStore(testStore, policy)
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+
+	login := newRecord(adminID)
+	require.NoError(t, store.Insert(ctx, login))
+
+	windows := make([]*auth.SessionRecord, 0, 6)
+	for range 6 {
+		rec := newImpersonationRecord(adminID, targetID)
+		require.NoError(t, store.Insert(ctx, rec))
+		windows = append(windows, rec)
+	}
+
+	var openWindows int
+	scanControlPlane(t, &openWindows, `
+		SELECT count(*) FROM sessions
+		WHERE user_id = $1 AND revoked_at IS NULL AND acting_as_user_id IS NOT NULL`, adminID)
+	require.LessOrEqual(t, openWindows, policy.MaxActiveDevices,
+		"open impersonation windows must stay within the ceiling")
+
+	// The newest window survives; the login is untouched by any of it.
+	var newestRevoked *time.Time
+	scanControlPlane(t, &newestRevoked,
+		`SELECT revoked_at FROM sessions WHERE id = $1`, windows[len(windows)-1].ID)
+	require.Nil(t, newestRevoked, "the window just opened must not be the one retired")
+
+	active, err := store.FindByRefreshHash(ctx, login.RefreshHash)
+	require.NoError(t, err)
+	require.Nil(t, active.RevokedAt, "a real login is never retired to make room for a window")
+}
+
+// An impersonation window is not a device. It neither occupies a device slot
+// nor evicts one, so an admin at their device limit keeps every login they
+// have however many people they step into.
+func TestSessionStore_ImpersonationDoesNotDisturbTheDeviceLimit(t *testing.T) {
+	ctx := context.Background()
+	policy := auth.DefaultSessionPolicy()
+	policy.MaxActiveDevices = 2
+	store := pgauth.NewSessionStore(testStore, policy)
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+
+	base := time.Now().Add(-time.Hour)
+	logins := []*auth.SessionRecord{newRecord(adminID), newRecord(adminID)}
+	for i, rec := range logins {
+		rec.LastActiveAt = base.Add(time.Duration(i) * time.Minute)
+		rec.IdleExpiresAt = rec.LastActiveAt.Add(policy.IdleTimeout)
+		require.NoError(t, store.Insert(ctx, rec))
+	}
+
+	for range 3 {
+		require.NoError(t, store.Insert(ctx, newImpersonationRecord(adminID, targetID)))
+	}
+
+	for i, rec := range logins {
+		active, err := store.FindByRefreshHash(ctx, rec.RefreshHash)
+		require.NoError(t, err)
+		require.Nilf(t, active.RevokedAt, "login %d must survive the impersonation windows", i)
+	}
 }

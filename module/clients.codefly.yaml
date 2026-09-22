@@ -1,0 +1,41 @@
+# Which client libraries Codefly generates from this module's exported API
+# contracts, and how wide each one's facade is.
+#
+# This is GENERATION policy. The clients themselves are distributed through the
+# per-language SDK repositories (saas-sdk-go, saas-sdk-python, the frontend
+# kit), which carry the generated stub tree and release it under their own tag;
+# `codefly publish clients` remains available but is optional and is not part of
+# cutting a release here. See "Cutting a release" in AGENTS.md.
+#
+# The file is deliberately kept OUT of module.codefly.yaml: that file is
+# generated from deployment/topology.bindings.codefly.yaml, so a module sync
+# would replace an inline block there on the next regeneration. The CLI reads
+# this path only (generators.LoadModuleClientsConfig), with strict field
+# checking.
+#
+# An endpoint that exports a contract and is NOT listed here gets a client in
+# every default language with its FULL service surface — and if it is ever
+# published, that surface is public. Listing every exported endpoint is
+# therefore load-bearing, not documentation — the clients-config gate in
+# module/tools/composition enforces it.
+schema: codefly/module-clients-config/v1
+endpoints:
+    # Generates saas-starter-accounts-connect-client (go / typescript / python)
+    # at the package version. The facade is restricted to the public surface a
+    # solution may reach; a generated binding is one proto file, so a service
+    # that must not ship keeps its messages in its own .proto (see
+    # accessible_scopes.proto).
+    - service: accounts
+      endpoint: connect
+      languages: [go, typescript, python]
+      services: [AccessibleScopeService, AuditService, DatasourceService, WebhookService]
+    # Reached only through the mesh by this module's own services; no
+    # out-of-module consumer exists, so this endpoint declares no client.
+    # `publish: false` is a declaration, NOT a confidentiality control: it
+    # states that nothing is wanted here, and no gate may infer from it that a
+    # binding cannot reach anyone. Anything generated lands in an SDK
+    # repository that ships, so an entry that ever gains a `services:`
+    # allowlist is held to the same proto-file isolation rule as `accounts`.
+    - service: auth-gateway
+      endpoint: grpc
+      publish: false

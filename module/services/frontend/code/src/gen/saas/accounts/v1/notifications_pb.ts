@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/notifications.proto.
  */
 export const file_saas_accounts_v1_notifications: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL25vdGlmaWNhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEi9QEKDE5vdGlmaWNhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAMgASgJQgi6SAVyA7ABARINCgV0aXRsZRgEIAEoCRIMCgRib2R5GAUgASgJEgwKBHR5cGUYBiABKAkSEgoKYWN0aW9uX3VybBgHIAEoCRIrCgdyZWFkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJMChhMaXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QSHAoJcGFnZV9zaXplGAEgASgFQgm6SAYaBBhkIAASEgoKcGFnZV90b2tlbhgCIAEoCSJrChlMaXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlEjUKDW5vdGlmaWNhdGlvbnMYASADKAsyHi5zYWFzLmFjY291bnRzLnYxLk5vdGlmaWNhdGlvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiFwoVR2V0VW5yZWFkQ291bnRSZXF1ZXN0IicKFkdldFVucmVhZENvdW50UmVzcG9uc2USDQoFY291bnQYASABKAUiMwobTWFya05vdGlmaWNhdGlvblJlYWRSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIhCh9NYXJrQWxsTm90aWZpY2F0aW9uc1JlYWRSZXF1ZXN0IjEKGURlbGV0ZU5vdGlmaWNhdGlvblJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBMp8GChNOb3RpZmljYXRpb25TZXJ2aWNlEp8BChFMaXN0Tm90aWZpY2F0aW9ucxIqLnNhYXMuYWNjb3VudHMudjEuTGlzdE5vdGlmaWNhdGlvbnNSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5MaXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlIjHC8xgUCAIQAjABOgIQAUABSANQA1gDYAGC0+STAhMSES92MS9ub3RpZmljYXRpb25zEqMBCg5HZXRVbnJlYWRDb3VudBInLnNhYXMuYWNjb3VudHMudjEuR2V0VW5yZWFkQ291bnRSZXF1ZXN0Giguc2Fhcy5hY2NvdW50cy52MS5HZXRVbnJlYWRDb3VudFJlc3BvbnNlIj7C8xgUCAIQAjABOgIQAUABSANQA1gDYAGC0+STAiASHi92MS9ub3RpZmljYXRpb25zL3VucmVhZC1jb3VudBKRAQoITWFya1JlYWQSLS5zYWFzLmFjY291bnRzLnYxLk1hcmtOb3RpZmljYXRpb25SZWFkUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSI+wvMYFAgCEAIwAToCEAFAAUgEUANYA2ABgtPkkwIgOgEqIhsvdjEvbm90aWZpY2F0aW9ucy97aWR9OnJlYWQSlwEKC01hcmtBbGxSZWFkEjEuc2Fhcy5hY2NvdW50cy52MS5NYXJrQWxsTm90aWZpY2F0aW9uc1JlYWRSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5Ij3C8xgUCAIQAjABOgIQAUABSARQA1gDYAGC0+STAh86ASoiGi92MS9ub3RpZmljYXRpb25zOnJlYWQtYWxsEpEBChJEZWxldGVOb3RpZmljYXRpb24SKy5zYWFzLmFjY291bnRzLnYxLkRlbGV0ZU5vdGlmaWNhdGlvblJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiNsLzGBQIAhACMAE6AhABQAFIBFADWANgAYLT5JMCGCoWL3YxL25vdGlmaWNhdGlvbnMve2lkfUK6AQoUY29tLnNhYXMuYWNjb3VudHMudjFCEk5vdGlmaWNhdGlvbnNQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL25vdGlmaWNhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEijQIKDE5vdGlmaWNhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAMgASgJQgi6SAVyA7ABARINCgV0aXRsZRgEIAEoCRIMCgRib2R5GAUgASgJEgwKBHR5cGUYBiABKAkSFgoKYWN0aW9uX3VybBgHIAEoCUICGAESKwoHcmVhZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKaGFzX2FjdGlvbhgKIAEoCCJxChhMaXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QSHAoJcGFnZV9zaXplGAEgASgFQgm6SAYaBBhkIAASEgoKcGFnZV90b2tlbhgCIAEoCRIOCgZvcmdfaWQYAyABKAkSEwoLdW5yZWFkX29ubHkYBCABKAgiawoZTGlzdE5vdGlmaWNhdGlvbnNSZXNwb25zZRI1Cg1ub3RpZmljYXRpb25zGAEgAygLMh4uc2Fhcy5hY2NvdW50cy52MS5Ob3RpZmljYXRpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIhcKFUdldFVucmVhZENvdW50UmVxdWVzdCInChZHZXRVbnJlYWRDb3VudFJlc3BvbnNlEg0KBWNvdW50GAEgASgFIjMKG01hcmtOb3RpZmljYXRpb25SZWFkUmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQEiIQofTWFya0FsbE5vdGlmaWNhdGlvbnNSZWFkUmVxdWVzdCIxChlEZWxldGVOb3RpZmljYXRpb25SZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASI4CiBSZXNvbHZlTm90aWZpY2F0aW9uQWN0aW9uUmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQEiNwohUmVzb2x2ZU5vdGlmaWNhdGlvbkFjdGlvblJlc3BvbnNlEhIKCmFjdGlvbl91cmwYASABKAkywAcKE05vdGlmaWNhdGlvblNlcnZpY2USnwEKEUxpc3ROb3RpZmljYXRpb25zEiouc2Fhcy5hY2NvdW50cy52MS5MaXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLkxpc3ROb3RpZmljYXRpb25zUmVzcG9uc2UiMcLzGBQIAhACMAE6AhABQAFIA1ADWANgAYLT5JMCExIRL3YxL25vdGlmaWNhdGlvbnMSowEKDkdldFVucmVhZENvdW50Eicuc2Fhcy5hY2NvdW50cy52MS5HZXRVbnJlYWRDb3VudFJlcXVlc3QaKC5zYWFzLmFjY291bnRzLnYxLkdldFVucmVhZENvdW50UmVzcG9uc2UiPsLzGBQIAhACMAE6AhABQAFIA1ADWANgAYLT5JMCIBIeL3YxL25vdGlmaWNhdGlvbnMvdW5yZWFkLWNvdW50EpEBCghNYXJrUmVhZBItLnNhYXMuYWNjb3VudHMudjEuTWFya05vdGlmaWNhdGlvblJlYWRSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5Ij7C8xgUCAIQAjABOgIQAUABSARQA1gDYAGC0+STAiA6ASoiGy92MS9ub3RpZmljYXRpb25zL3tpZH06cmVhZBKXAQoLTWFya0FsbFJlYWQSMS5zYWFzLmFjY291bnRzLnYxLk1hcmtBbGxOb3RpZmljYXRpb25zUmVhZFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiPcLzGBQIAhACMAE6AhABQAFIBFADWANgAYLT5JMCHzoBKiIaL3YxL25vdGlmaWNhdGlvbnM6cmVhZC1hbGwSkQEKEkRlbGV0ZU5vdGlmaWNhdGlvbhIrLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlTm90aWZpY2F0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSI2wvMYFAgCEAIwAToCEAFAAUgEUANYA2ABgtPkkwIYKhYvdjEvbm90aWZpY2F0aW9ucy97aWR9Ep4BChlSZXNvbHZlTm90aWZpY2F0aW9uQWN0aW9uEjIuc2Fhcy5hY2NvdW50cy52MS5SZXNvbHZlTm90aWZpY2F0aW9uQWN0aW9uUmVxdWVzdBozLnNhYXMuYWNjb3VudHMudjEuUmVzb2x2ZU5vdGlmaWNhdGlvbkFjdGlvblJlc3BvbnNlIhjC8xgUCAIQAjABOgIQAUABSANQA1gDYAFCugEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhJOb3RpZmljYXRpb25zUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.Notification
@@ -52,7 +52,13 @@ export type Notification = Message<"saas.accounts.v1.Notification"> & {
   type: string;
 
   /**
-   * @generated from field: string action_url = 7;
+   * No longer populated. The stored destination is a cache of a past grant, so
+   * it is never broadcast with the list; ResolveNotificationAction re-authorizes
+   * and returns it when the link is actually followed. Retained rather than
+   * removed so the field number stays burned and the wire shape is unbroken.
+   *
+   * @generated from field: string action_url = 7 [deprecated = true];
+   * @deprecated
    */
   actionUrl: string;
 
@@ -65,6 +71,14 @@ export type Notification = Message<"saas.accounts.v1.Notification"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 9;
    */
   createdAt?: Timestamp;
+
+  /**
+   * Whether this item has a destination at all — enough to render it as
+   * actionable without handing out the destination itself.
+   *
+   * @generated from field: bool has_action = 10;
+   */
+  hasAction: boolean;
 };
 
 /**
@@ -87,6 +101,18 @@ export type ListNotificationsRequest = Message<"saas.accounts.v1.ListNotificatio
    * @generated from field: string page_token = 2;
    */
   pageToken: string;
+
+  /**
+   * Filters the caller-owned inbox before pagination. Empty includes all orgs.
+   *
+   * @generated from field: string org_id = 3;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: bool unread_only = 4;
+   */
+  unreadOnly: boolean;
 };
 
 /**
@@ -196,6 +222,49 @@ export const DeleteNotificationRequestSchema: GenMessage<DeleteNotificationReque
   messageDesc(file_saas_accounts_v1_notifications, 7);
 
 /**
+ * ResolveNotificationActionRequest names the notification whose deep link is
+ * being followed. The follower is always the authenticated caller, so the
+ * request carries no subject.
+ *
+ * @generated from message saas.accounts.v1.ResolveNotificationActionRequest
+ */
+export type ResolveNotificationActionRequest = Message<"saas.accounts.v1.ResolveNotificationActionRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ResolveNotificationActionRequest.
+ * Use `create(ResolveNotificationActionRequestSchema)` to create a new message.
+ */
+export const ResolveNotificationActionRequestSchema: GenMessage<ResolveNotificationActionRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_notifications, 8);
+
+/**
+ * ResolveNotificationActionResponse carries the destination to open. A
+ * notification the caller may no longer reach is reported as missing rather
+ * than denied, so following a link cannot become an existence oracle for a
+ * resource whose grant was revoked.
+ *
+ * @generated from message saas.accounts.v1.ResolveNotificationActionResponse
+ */
+export type ResolveNotificationActionResponse = Message<"saas.accounts.v1.ResolveNotificationActionResponse"> & {
+  /**
+   * @generated from field: string action_url = 1;
+   */
+  actionUrl: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ResolveNotificationActionResponse.
+ * Use `create(ResolveNotificationActionResponseSchema)` to create a new message.
+ */
+export const ResolveNotificationActionResponseSchema: GenMessage<ResolveNotificationActionResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_notifications, 9);
+
+/**
  * NotificationService — user notification management
  *
  * @generated from service saas.accounts.v1.NotificationService
@@ -240,6 +309,17 @@ export const NotificationService: GenService<{
     methodKind: "unary";
     input: typeof DeleteNotificationRequestSchema;
     output: typeof EmptySchema;
+  },
+  /**
+   * Deliberately Connect-only: the stored action_url is never a public-edge
+   * resource, and the inbox that follows it speaks Connect.
+   *
+   * @generated from rpc saas.accounts.v1.NotificationService.ResolveNotificationAction
+   */
+  resolveNotificationAction: {
+    methodKind: "unary";
+    input: typeof ResolveNotificationActionRequestSchema;
+    output: typeof ResolveNotificationActionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_notifications, 0);

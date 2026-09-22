@@ -59,6 +59,15 @@ const (
 	AuthServiceLogoutProcedure = "/saas.accounts.v1.AuthService/Logout"
 	// AuthServiceGetJWKSProcedure is the fully-qualified name of the AuthService's GetJWKS RPC.
 	AuthServiceGetJWKSProcedure = "/saas.accounts.v1.AuthService/GetJWKS"
+	// AuthServiceValidateClientAuthorizationProcedure is the fully-qualified name of the AuthService's
+	// ValidateClientAuthorization RPC.
+	AuthServiceValidateClientAuthorizationProcedure = "/saas.accounts.v1.AuthService/ValidateClientAuthorization"
+	// AuthServiceIssueClientAuthorizationCodeProcedure is the fully-qualified name of the AuthService's
+	// IssueClientAuthorizationCode RPC.
+	AuthServiceIssueClientAuthorizationCodeProcedure = "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode"
+	// AuthServiceExchangeClientTokenProcedure is the fully-qualified name of the AuthService's
+	// ExchangeClientToken RPC.
+	AuthServiceExchangeClientTokenProcedure = "/saas.accounts.v1.AuthService/ExchangeClientToken"
 )
 
 // AuthServiceClient is a client for the saas.accounts.v1.AuthService service.
@@ -83,6 +92,23 @@ type AuthServiceClient interface {
 	SwitchOrganization(context.Context, *connect.Request[v1.SwitchOrganizationRequest]) (*connect.Response[v1.SwitchOrganizationResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error)
 	GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error)
+	// ValidateClientAuthorization checks a client's authorization request before
+	// any sign-in UI is rendered. Public RPC: this runs before the person has
+	// authenticated, which is the point — an unregistered client id or a redirect
+	// URI that client did not register is refused while the browser is still on
+	// the host, never after credentials have been entered.
+	ValidateClientAuthorization(context.Context, *connect.Request[v1.ValidateClientAuthorizationRequest]) (*connect.Response[v1.ValidateClientAuthorizationResponse], error)
+	// IssueClientAuthorizationCode mints the one-time code the host redirects
+	// back to the client with. The caller is the signed-in person's own host
+	// session, so the code is bound to an identity the client never saw
+	// authenticate.
+	IssueClientAuthorizationCode(context.Context, *connect.Request[v1.IssueClientAuthorizationCodeRequest]) (*connect.Response[v1.IssueClientAuthorizationCodeResponse], error)
+	// ExchangeClientToken is the registered client's token endpoint. Public RPC:
+	// possession of the authorization code plus its PKCE verifier, or of the
+	// client's own rotating refresh token, is the credential. Both grants mint a
+	// session bound to the client, separate from any host web session the person
+	// holds.
+	ExchangeClientToken(context.Context, *connect.Request[v1.ExchangeClientTokenRequest]) (*connect.Response[v1.ExchangeClientTokenResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the saas.accounts.v1.AuthService service. By
@@ -150,6 +176,24 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("GetJWKS")),
 			connect.WithClientOptions(opts...),
 		),
+		validateClientAuthorization: connect.NewClient[v1.ValidateClientAuthorizationRequest, v1.ValidateClientAuthorizationResponse](
+			httpClient,
+			baseURL+AuthServiceValidateClientAuthorizationProcedure,
+			connect.WithSchema(authServiceMethods.ByName("ValidateClientAuthorization")),
+			connect.WithClientOptions(opts...),
+		),
+		issueClientAuthorizationCode: connect.NewClient[v1.IssueClientAuthorizationCodeRequest, v1.IssueClientAuthorizationCodeResponse](
+			httpClient,
+			baseURL+AuthServiceIssueClientAuthorizationCodeProcedure,
+			connect.WithSchema(authServiceMethods.ByName("IssueClientAuthorizationCode")),
+			connect.WithClientOptions(opts...),
+		),
+		exchangeClientToken: connect.NewClient[v1.ExchangeClientTokenRequest, v1.ExchangeClientTokenResponse](
+			httpClient,
+			baseURL+AuthServiceExchangeClientTokenProcedure,
+			connect.WithSchema(authServiceMethods.ByName("ExchangeClientToken")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -164,6 +208,9 @@ type authServiceClient struct {
 	switchOrganization           *connect.Client[v1.SwitchOrganizationRequest, v1.SwitchOrganizationResponse]
 	logout                       *connect.Client[v1.LogoutRequest, emptypb.Empty]
 	getJWKS                      *connect.Client[emptypb.Empty, v1.JWKSResponse]
+	validateClientAuthorization  *connect.Client[v1.ValidateClientAuthorizationRequest, v1.ValidateClientAuthorizationResponse]
+	issueClientAuthorizationCode *connect.Client[v1.IssueClientAuthorizationCodeRequest, v1.IssueClientAuthorizationCodeResponse]
+	exchangeClientToken          *connect.Client[v1.ExchangeClientTokenRequest, v1.ExchangeClientTokenResponse]
 }
 
 // BeginOAuth calls saas.accounts.v1.AuthService.BeginOAuth.
@@ -211,6 +258,21 @@ func (c *authServiceClient) GetJWKS(ctx context.Context, req *connect.Request[em
 	return c.getJWKS.CallUnary(ctx, req)
 }
 
+// ValidateClientAuthorization calls saas.accounts.v1.AuthService.ValidateClientAuthorization.
+func (c *authServiceClient) ValidateClientAuthorization(ctx context.Context, req *connect.Request[v1.ValidateClientAuthorizationRequest]) (*connect.Response[v1.ValidateClientAuthorizationResponse], error) {
+	return c.validateClientAuthorization.CallUnary(ctx, req)
+}
+
+// IssueClientAuthorizationCode calls saas.accounts.v1.AuthService.IssueClientAuthorizationCode.
+func (c *authServiceClient) IssueClientAuthorizationCode(ctx context.Context, req *connect.Request[v1.IssueClientAuthorizationCodeRequest]) (*connect.Response[v1.IssueClientAuthorizationCodeResponse], error) {
+	return c.issueClientAuthorizationCode.CallUnary(ctx, req)
+}
+
+// ExchangeClientToken calls saas.accounts.v1.AuthService.ExchangeClientToken.
+func (c *authServiceClient) ExchangeClientToken(ctx context.Context, req *connect.Request[v1.ExchangeClientTokenRequest]) (*connect.Response[v1.ExchangeClientTokenResponse], error) {
+	return c.exchangeClientToken.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the saas.accounts.v1.AuthService service.
 type AuthServiceHandler interface {
 	// BeginOAuth issues a server-signed `state` for the OAuth code flow.
@@ -233,6 +295,23 @@ type AuthServiceHandler interface {
 	SwitchOrganization(context.Context, *connect.Request[v1.SwitchOrganizationRequest]) (*connect.Response[v1.SwitchOrganizationResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error)
 	GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error)
+	// ValidateClientAuthorization checks a client's authorization request before
+	// any sign-in UI is rendered. Public RPC: this runs before the person has
+	// authenticated, which is the point — an unregistered client id or a redirect
+	// URI that client did not register is refused while the browser is still on
+	// the host, never after credentials have been entered.
+	ValidateClientAuthorization(context.Context, *connect.Request[v1.ValidateClientAuthorizationRequest]) (*connect.Response[v1.ValidateClientAuthorizationResponse], error)
+	// IssueClientAuthorizationCode mints the one-time code the host redirects
+	// back to the client with. The caller is the signed-in person's own host
+	// session, so the code is bound to an identity the client never saw
+	// authenticate.
+	IssueClientAuthorizationCode(context.Context, *connect.Request[v1.IssueClientAuthorizationCodeRequest]) (*connect.Response[v1.IssueClientAuthorizationCodeResponse], error)
+	// ExchangeClientToken is the registered client's token endpoint. Public RPC:
+	// possession of the authorization code plus its PKCE verifier, or of the
+	// client's own rotating refresh token, is the credential. Both grants mint a
+	// session bound to the client, separate from any host web session the person
+	// holds.
+	ExchangeClientToken(context.Context, *connect.Request[v1.ExchangeClientTokenRequest]) (*connect.Response[v1.ExchangeClientTokenResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -296,6 +375,24 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("GetJWKS")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceValidateClientAuthorizationHandler := connect.NewUnaryHandler(
+		AuthServiceValidateClientAuthorizationProcedure,
+		svc.ValidateClientAuthorization,
+		connect.WithSchema(authServiceMethods.ByName("ValidateClientAuthorization")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authServiceIssueClientAuthorizationCodeHandler := connect.NewUnaryHandler(
+		AuthServiceIssueClientAuthorizationCodeProcedure,
+		svc.IssueClientAuthorizationCode,
+		connect.WithSchema(authServiceMethods.ByName("IssueClientAuthorizationCode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authServiceExchangeClientTokenHandler := connect.NewUnaryHandler(
+		AuthServiceExchangeClientTokenProcedure,
+		svc.ExchangeClientToken,
+		connect.WithSchema(authServiceMethods.ByName("ExchangeClientToken")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceBeginOAuthProcedure:
@@ -316,6 +413,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceLogoutHandler.ServeHTTP(w, r)
 		case AuthServiceGetJWKSProcedure:
 			authServiceGetJWKSHandler.ServeHTTP(w, r)
+		case AuthServiceValidateClientAuthorizationProcedure:
+			authServiceValidateClientAuthorizationHandler.ServeHTTP(w, r)
+		case AuthServiceIssueClientAuthorizationCodeProcedure:
+			authServiceIssueClientAuthorizationCodeHandler.ServeHTTP(w, r)
+		case AuthServiceExchangeClientTokenProcedure:
+			authServiceExchangeClientTokenHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -359,4 +462,16 @@ func (UnimplementedAuthServiceHandler) Logout(context.Context, *connect.Request[
 
 func (UnimplementedAuthServiceHandler) GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.GetJWKS is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) ValidateClientAuthorization(context.Context, *connect.Request[v1.ValidateClientAuthorizationRequest]) (*connect.Response[v1.ValidateClientAuthorizationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.ValidateClientAuthorization is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) IssueClientAuthorizationCode(context.Context, *connect.Request[v1.IssueClientAuthorizationCodeRequest]) (*connect.Response[v1.IssueClientAuthorizationCodeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.IssueClientAuthorizationCode is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) ExchangeClientToken(context.Context, *connect.Request[v1.ExchangeClientTokenRequest]) (*connect.Response[v1.ExchangeClientTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.ExchangeClientToken is not implemented"))
 }

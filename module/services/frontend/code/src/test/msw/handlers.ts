@@ -124,6 +124,11 @@ export const handlers = [
 		HttpResponse.json({ allowed: true }),
 	),
 
+	// ── PrincipalService ──────────────────────────────────────
+	http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+		HttpResponse.json({ principals: [], nextPageToken: "" }),
+	),
+
 	// ── APIKeyService ─────────────────────────────────────────
 	http.post(rpc("APIKeyService", "ListAPIKeys"), () =>
 		HttpResponse.json({ keys: [] }),
@@ -173,6 +178,9 @@ export const handlers = [
 	),
 	http.post(rpc("PlatformAdminService", "ImpersonateUser"), () =>
 		HttpResponse.json({ accessToken: "impersonated-token", expiresIn: "900" }),
+	),
+	http.post(rpc("PlatformAdminService", "StopImpersonation"), () =>
+		HttpResponse.json({ durationSeconds: "42" }),
 	),
 	http.post(rpc("PlatformAdminService", "ListActiveSessions"), () =>
 		HttpResponse.json({ sessions: [mockSession()] }),

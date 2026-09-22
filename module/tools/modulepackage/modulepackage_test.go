@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	corecomposition "github.com/codefly-dev/core/composition"
+	"gopkg.in/yaml.v3"
 )
 
 func TestStarterManifestIsTheCoreV2Contract(t *testing.T) {
@@ -164,6 +165,82 @@ func TestSignedReleaseVerifiesAndMaterializesThroughCore(t *testing.T) {
 	materializer := corecomposition.NewMaterializer(cacheRoot)
 	if _, err := materializer.Materialize(context.Background(), verified); err != nil {
 		t.Fatalf("Core rejected canonical materialization: %v", err)
+	}
+}
+
+// The release is the only place a consumer can learn which identity and key
+// to trust, so what it publishes has to be exactly what Core verifies with.
+func TestSignedReleasePublishesTheTrustPolicyCoreVerifiesWith(t *testing.T) {
+	repository := newPackageRepository(t)
+	commit := git(t, repository, "rev-parse", "HEAD")
+	releaseDir := filepath.Join(t.TempDir(), "release")
+	if _, err := Build(BuildOptions{RepositoryRoot: repository, OutputDir: releaseDir, Commit: commit}); err != nil {
+		t.Fatal(err)
+	}
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ReadManifest(filepath.Join(repository, "module"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SignRelease(SignOptions{
+		ModuleRoot:        filepath.Join(repository, "module"),
+		ReleaseDir:        releaseDir,
+		Ref:               ReleaseTag(manifest.Version),
+		Commit:            commit,
+		SignatureIdentity: ReleaseSignatureIdentity,
+		PrivateKey:        []byte(base64.StdEncoding.EncodeToString(privateKey)),
+		ExpectedPublicKey: []byte(base64.StdEncoding.EncodeToString(publicKey)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var published struct {
+		ModuleTrust struct {
+			Repositories map[string]string `yaml:"repositories"`
+			Signers      map[string]string `yaml:"signers"`
+		} `yaml:"module-trust"`
+	}
+	if err := yaml.Unmarshal(mustRead(t, filepath.Join(releaseDir, TrustName)), &published); err != nil {
+		t.Fatal(err)
+	}
+	if published.ModuleTrust.Repositories[manifest.ID] != PackageRepository {
+		t.Fatalf("published repository for %s = %q, want %q", manifest.ID,
+			published.ModuleTrust.Repositories[manifest.ID], PackageRepository)
+	}
+	signers := map[string]ed25519.PublicKey{}
+	for identity, encoded := range published.ModuleTrust.Signers {
+		decoded, decodeErr := base64.StdEncoding.DecodeString(encoded)
+		if decodeErr != nil {
+			t.Fatalf("published signer %q: %v", identity, decodeErr)
+		}
+		signers[identity] = decoded
+	}
+	if _, err := corecomposition.VerifyRelease(&corecomposition.Release{
+		Repository: PackageRepository,
+		Ref:        ReleaseTag(manifest.Version),
+		Commit:     commit,
+		Artifact:   mustRead(t, filepath.Join(releaseDir, ArchiveName)),
+		Provenance: mustRead(t, filepath.Join(releaseDir, ProvenanceName)),
+		Signature:  mustRead(t, filepath.Join(releaseDir, SignatureName)),
+	}, manifest.ID, manifest.Version, corecomposition.TrustPolicy{
+		Repositories: published.ModuleTrust.Repositories,
+		Signers:      signers,
+	}); err != nil {
+		t.Fatalf("Core rejected the release under its own published trust policy: %v", err)
+	}
+}
+
+// A consumer declares the repository in its workspace, its loader normalizes
+// that away, and Core byte-compares the result against the repository the
+// provenance was signed with. A signed URL that normalization would rewrite is
+// therefore one no workspace can match, however it spells it.
+func TestPublishedRepositorySurvivesConsumerNormalization(t *testing.T) {
+	published := strings.TrimSpace(PackageRepository)
+	normalized := strings.TrimSuffix(strings.TrimSuffix(published, "/"), ".git")
+	if normalized != published {
+		t.Fatalf("signed repository %q normalizes to %q, which no workspace could declare", published, normalized)
 	}
 }
 

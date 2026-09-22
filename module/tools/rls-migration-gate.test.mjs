@@ -8,6 +8,7 @@ import { analyzeSql, rlsGateErrors } from "./rls-migration-gate.mjs";
 
 const tenantSetup = `
 CREATE TABLE t (id UUID PRIMARY KEY, org_id UUID NOT NULL);
+GRANT SELECT, INSERT, UPDATE, DELETE ON t TO app_tenant;
 ALTER TABLE t ENABLE ROW LEVEL SECURITY;
 ALTER TABLE t FORCE ROW LEVEL SECURITY;
 `;
@@ -87,6 +88,7 @@ test("a state-machine trigger that returns NEW is not treated as append-only", (
 test("forced RLS is required, not just enabled", () => {
   const sql = `
     CREATE TABLE t (org_id UUID);
+    GRANT SELECT ON t TO app_tenant;
     ALTER TABLE t ENABLE ROW LEVEL SECURITY;
     CREATE POLICY p ON t USING (org_id::text = current_setting('app.current_org_id', true));
   `;
@@ -96,7 +98,7 @@ test("forced RLS is required, not just enabled", () => {
 });
 
 test("a table with no RLS at all reports both ENABLE and FORCE missing", () => {
-  const errors = analyzeSql("CREATE TABLE t (org_id UUID);");
+  const errors = analyzeSql("CREATE TABLE t (org_id UUID); GRANT SELECT ON t TO app_tenant;");
   assert.equal(errors.length, 1);
   assert.match(errors[0], /missing ENABLE \+ FORCE ROW LEVEL SECURITY/);
 });
@@ -173,6 +175,7 @@ test("expands DO/FOREACH/format loops that apply one recipe to many tables", () 
 test("a DO loop that forgets FORCE is still caught after expansion", () => {
   const sql = `
     CREATE TABLE a (org_id UUID);
+    GRANT SELECT ON a TO app_tenant;
     DO $$
     DECLARE t TEXT;
     BEGIN
@@ -256,6 +259,7 @@ test("a DO block using plain EXECUTE literals to force RLS is recognized", () =>
 test("a DO block whose EXECUTE literals forget FORCE is still caught", () => {
   const sql = `
     CREATE TABLE t (org_id UUID);
+    GRANT SELECT ON t TO app_tenant;
     DO $$ BEGIN
         EXECUTE 'ALTER TABLE t ENABLE ROW LEVEL SECURITY';
         EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''app.current_org_id'', true))';
@@ -336,4 +340,73 @@ test("rlsGateErrors reads a real migration tree in version order", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test("a private control-plane relation may deny every tenant row", () => {
+  assert.deepEqual(analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false) WITH CHECK (false);`), []);
+});
+
+test("deny-all does not make an append-only trigger reachable", () => {
+  const errors = analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false) WITH CHECK (false);` + appendOnlyTrigger);
+  assert.equal(errors.length, 2);
+  assert.ok(errors.every(e => e.includes("no RLS policy admits")));
+});
+
+test("a false literal inside an unconditional expression is not deny-all", () => {
+  const errors = analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false OR true) WITH CHECK (true);`);
+  assert.equal(errors.length, 2);
+});
+
+
+// pg_dump spells the same schema differently: `ALTER TABLE ONLY`, an upper-case
+// CURRENT_USER, a `::name` cast and doubled parentheses. A baseline exported from
+// a database is read with the same rules as the SQL that produced it.
+test("pg_dump's spelling of forced RLS and the exact-role policy is the same schema", () => {
+  const dumped = `
+CREATE TABLE public.t (id uuid NOT NULL, org_id uuid NOT NULL);
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.t TO app_tenant;
+ALTER TABLE public.t ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.t FORCE ROW LEVEL SECURITY;
+CREATE POLICY t_tenant ON public.t USING (((org_id)::text = current_setting('app.current_org_id'::text, true))) WITH CHECK (((org_id)::text = current_setting('app.current_org_id'::text, true)));
+CREATE POLICY app_job_worker_explicit_rows ON public.t TO app_job_worker USING ((CURRENT_USER = 'app_job_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_job_worker'::name));
+`;
+  assert.deepEqual(analyzeSql(dumped), []);
+  const wrongRole = dumped.replace("(CURRENT_USER = 'app_job_worker'::name)) WITH", "(CURRENT_USER = 'app_tenant'::name)) WITH");
+  assert.equal(analyzeSql(wrongRole).length, 1);
+});
+
+// A worker or platform relation can carry an org_id column and still owe no
+// policy: the request role is granted nothing on it, so the grant is the boundary.
+// The moment request traffic is granted the table, isolation is owed again — and
+// a schema-wide grant reaches every table at once.
+test("a tenant-column table the request role cannot reach owes no policy", () => {
+  const worker = `
+CREATE TABLE public.w (id uuid NOT NULL, org_id uuid NOT NULL);
+GRANT SELECT ON TABLE public.w TO app_job_worker;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.w TO app_control_plane;
+`;
+  assert.deepEqual(analyzeSql(worker), []);
+  assert.equal(analyzeSql(worker + "GRANT SELECT ON public.w TO app_tenant;").length, 1);
+  assert.equal(analyzeSql(worker + "GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_tenant;").length, 1);
+});
+
+test("exact named background role policies are scoped by current SQL identity", () => {
+  for (const role of ["app_control_plane", "app_billing_worker", "app_webhook_worker", "app_job_worker"]) {
+    assert.deepEqual(analyzeSql(tenantSetup + `CREATE POLICY p ON t FOR ALL TO ${role} USING (current_user = '${role}') WITH CHECK (current_user = '${role}');`), []);
+  }
+});
+
+test("background policy exception refuses public, mismatched roles, flags and extra clauses", () => {
+  for (const [role, expression] of [
+    ["public", "current_user = 'app_control_plane'"],
+    ["app_tenant", "current_user = 'app_tenant'"],
+    ["app_job_worker", "current_user = 'app_control_plane'"],
+    ["app_control_plane, app_tenant", "current_user = 'app_control_plane'"],
+    ["app_control_plane", "current_user = 'app_control_plane' OR true"],
+    ["app_control_plane", "current_setting('app.role') = 'app_control_plane'"],
+  ]) {
+    assert.ok(analyzeSql(tenantSetup + `CREATE POLICY p ON t TO ${role} USING (${expression});`).length > 0);
+  }
+  assert.ok(analyzeSql(tenantSetup + `CREATE POLICY p ON t TO app_control_plane USING (current_user = 'app_control_plane'); ALTER POLICY p ON t TO public;`).length > 0);
 });

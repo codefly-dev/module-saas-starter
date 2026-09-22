@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -20,12 +21,44 @@ import {
   isExcludedFile,
   productionTruthErrors,
   requiredAdditionsErrors,
+  untrackedBaseCandidates,
   verifyErrors,
+  satisfiesWorkspaceRange,
   workspaceInstallGraphErrors,
+  workspaceLinkSatisfactionErrors,
 } from "./base-integrity.mjs";
 
 function writeJSON(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+// The base-file set is defined by git's index, so every fixture that a manifest
+// is computed over is a repository, and the tests that need one skip where git
+// is absent rather than pass against a set nothing defined.
+const NO_GIT =
+  spawnSync("git", ["--version"]).status === 0
+    ? false
+    : "git is unavailable; the base-file set is defined by git's index";
+
+function git(root, ...args) {
+  const { status, stderr } = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  assert.equal(status, 0, `git ${args.join(" ")} failed: ${stderr}`);
+}
+
+function scratchModule(prefix) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  mkdirSync(join(root, "tools"), { recursive: true });
+  git(root, "init", "-q");
+  return root;
+}
+
+// Stage everything, ignore rules included — a fixture decides what it tracks.
+const track = (root) => git(root, "add", "-A", "-f");
+
+function writeManifest(root) {
+  const manifest = computeBaseManifest(root);
+  writeJSON(join(root, "tools", "base-manifest.json"), manifest);
+  return manifest;
 }
 
 function fixture() {
@@ -93,8 +126,8 @@ test("committed frontend package-lock.json is in sync with its workspaces", () =
 // gate is blind to and the exact failure #359 shipped. The frontend is nested at
 // services/frontend/code because verifyErrors takes a module root, not a
 // frontend root.
-test("verifyErrors enforces the excluded frontend lock", (t) => {
-  const moduleRoot = mkdtempSync(join(tmpdir(), "saas-module-integrity-"));
+test("verifyErrors enforces the excluded frontend lock", { skip: NO_GIT }, (t) => {
+  const moduleRoot = scratchModule("saas-module-integrity-");
   t.after(() => rmSync(moduleRoot, { recursive: true, force: true }));
   const frontendCodeRoot = join(moduleRoot, "services", "frontend", "code");
   const packageRoot = join(frontendCodeRoot, "packages", "product-plugin");
@@ -121,6 +154,7 @@ test("verifyErrors enforces the excluded frontend lock", (t) => {
   writeJSON(join(frontendCodeRoot, "package.json"), rootManifest);
   writeJSON(join(packageRoot, "package.json"), productManifest);
   writeJSON(join(frontendCodeRoot, "package-lock.json"), lock);
+  track(moduleRoot);
   const errors = verifyErrors(moduleRoot).flatMap((group) => group.errors);
   assert.ok(errors.some((error) => error.includes("workspace link")));
 });
@@ -426,13 +460,13 @@ test("the committed canonical manifest matches the tree it ships with", () => {
   assert.deepEqual(baseManifestFreshnessErrors(), []);
 });
 
-test("flags changed, unrecorded, and removed base files against a fresh regeneration", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "saas-manifest-freshness-"));
+test("flags changed, unrecorded, and removed base files against a fresh regeneration", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-freshness-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "nested"), { recursive: true });
-  mkdirSync(join(root, "tools"), { recursive: true });
   writeFileSync(join(root, "a.txt"), "alpha\n");
   writeFileSync(join(root, "nested/b.txt"), "bravo\n");
+  track(root);
 
   const manifestPath = join(root, "tools/base-manifest.json");
   writeJSON(manifestPath, computeBaseManifest(root));
@@ -451,24 +485,61 @@ test("flags changed, unrecorded, and removed base files against a fresh regenera
   ]);
 });
 
-test("flags a fileCount or note that drifts even when every hash is current", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "saas-manifest-metadata-"));
+test("flags a note that drifts even when every hash is current", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-metadata-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, "tools"), { recursive: true });
   writeFileSync(join(root, "a.txt"), "alpha\n");
+  track(root);
   const manifestPath = join(root, "tools/base-manifest.json");
 
-  // Correct hashes, but the recorded fileCount and note no longer match what
-  // `gen` would write — the artifact is stale even though `check` would pass.
+  // Correct hashes, but the recorded note no longer matches what `gen` would
+  // write — the artifact is stale even though `check` would pass.
   const drifted = computeBaseManifest(root);
-  drifted.fileCount = 999;
   drifted.note = "hand-edited note";
   writeJSON(manifestPath, drifted);
 
   const errors = baseManifestFreshnessErrors(root);
-  assert.ok(errors.some((error) => error === "fileCount 999 does not match 1 base files"));
   assert.ok(errors.some((error) => error === "note does not match the canonical manifest note"));
   assert.ok(!errors.some((error) => error.startsWith("stale hash")));
+});
+
+// The manifest carries no derived file count. Two branches that each add a file
+// both rewrite such a scalar, and git merges the pair cleanly to one of the two
+// values — wrong, with no conflict marker, rejecting a tree whose every hash
+// merged correctly. Only fields a merge cannot silently corrupt belong here.
+//
+// What keeps it gone is comparing the field set `gen` writes. The branches in
+// flight when it was removed carry it, and their rebase is a modify/delete
+// conflict on that very line: resolved the wrong way, every hash is still
+// correct, so nothing else in the tree or in CI would notice.
+test("the manifest records no field derived from the file set", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-shape-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "a.txt"), "alpha\n");
+  writeFileSync(join(root, "b.txt"), "bravo\n");
+  track(root);
+
+  assert.deepEqual(Object.keys(computeBaseManifest(root)), ["note", "files"]);
+
+  const manifestPath = join(root, "tools/base-manifest.json");
+  const fresh = computeBaseManifest(root);
+
+  writeJSON(manifestPath, { ...fresh, fileCount: 999 });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["unexpected field: fileCount"]);
+
+  writeJSON(manifestPath, { note: fresh.note });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["missing field: files"]);
+
+  // Present but not an object: the key check passes and the hash comparison then
+  // throws instead of reporting, so the kind is part of the shape.
+  writeJSON(manifestPath, { note: fresh.note, files: null });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["files is not the object of hashes gen writes"]);
+
+  writeJSON(manifestPath, null);
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["tools/base-manifest.json is not a JSON object"]);
+
+  writeManifest(root);
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
 });
 
 test("does not require the frontend capability manifest when frontend is omitted", (t) => {
@@ -480,4 +551,264 @@ test("does not require the frontend capability manifest when frontend is omitted
   );
 
   assert.deepEqual(productionTruthErrors(root), []);
+});
+
+// The base-file set is git's index, not the working tree: a build product the
+// release engineer's .gitignore hides must never enter the manifest, because it
+// becomes a base file every consumer is missing and none can restore.
+test("an ignored build product never enters the manifest", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-tracked-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".gitignore"), "artifact\n");
+  writeFileSync(join(root, "src.txt"), "source\n");
+  git(root, "add", ".gitignore", "src.txt");
+  writeFileSync(join(root, "artifact"), "\x7fELF\0\0");
+
+  assert.deepEqual(Object.keys(computeBaseManifest(root).files), [".gitignore", "src.txt"]);
+});
+
+// The base-file set is the index, so a file that is on disk but not yet added is
+// not a base file — and `gen` running before `git add` would record a manifest
+// without it, silently. The candidates are reported so gen can refuse.
+test("a base candidate git does not track is reported, an ignored one is not", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-untracked-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".gitignore"), "artifact\n");
+  writeFileSync(join(root, "src.txt"), "source\n");
+  git(root, "add", ".gitignore", "src.txt");
+  writeFileSync(join(root, "artifact"), "\x7fELF\0\0");
+  writeFileSync(join(root, "new.txt"), "not added yet\n");
+
+  assert.deepEqual(untrackedBaseCandidates(root), ["artifact", "new.txt"]);
+  git(root, "add", "new.txt");
+  assert.deepEqual(untrackedBaseCandidates(root), ["artifact"]);
+});
+
+test("an unreadable index fails the release rather than hashing the build", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-index-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "src.txt"), "source\n");
+  track(root);
+  writeManifest(root);
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
+
+  writeFileSync(join(root, ".git", "index"), "not an index");
+  assert.throws(() => computeBaseManifest(root), /cannot read git's index/);
+  assert.throws(() => baseManifestFreshnessErrors(root), /cannot read git's index/);
+  assert.throws(() => verifyErrors(root), /cannot read git's index/);
+});
+
+// git records a precomposed path where macOS hands readdir the decomposed bytes
+// that created the file. Compared byte-for-byte the two never meet, so the file is
+// silently dropped from the manifest while verify reports a clean tree; the
+// manifest has to carry the spelling git tracks.
+test("a decomposed filename is recorded under the path git tracks", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-nfc-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const decomposed = "cafe\u0301.md"; // NFD: e + combining acute
+  writeFileSync(join(root, decomposed), "doc\n");
+  writeFileSync(join(root, "src.txt"), "source\n");
+  track(root);
+
+  const { stdout } = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
+  const recorded = stdout.split("\0").filter((rel) => rel.includes("caf"));
+  assert.equal(recorded.length, 1);
+
+  const manifest = computeBaseManifest(root);
+  assert.equal(Object.keys(manifest.files).length, 2);
+  assert.ok(
+    recorded[0] in manifest.files,
+    `manifest keys ${JSON.stringify(Object.keys(manifest.files))} omit ${JSON.stringify(recorded[0])}`,
+  );
+  writeManifest(root);
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
+});
+
+// The range evaluation is hand-rolled (bare node, no `semver`), and it sits on a
+// gate that runs for every PR in the repo — so a FALSE REJECT is as damaging as a
+// false accept: it hard-fails unrelated PRs until someone edits a range npm was
+// always happy with. These pin both directions.
+test("satisfiesWorkspaceRange evaluates the ranges workspace links use", () => {
+  assert.equal(satisfiesWorkspaceRange("0.2.1", "0.2.1"), true);
+  assert.equal(satisfiesWorkspaceRange("0.2.0", "0.2.1"), false);
+  assert.equal(satisfiesWorkspaceRange("^0.2.1", "0.2.9"), true);
+  // ^0.2.1 must NOT allow 0.3.0: in a 0.x line npm treats a minor as breaking.
+  assert.equal(satisfiesWorkspaceRange("^0.2.1", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^0.0.3", "0.0.4"), false);
+  assert.equal(satisfiesWorkspaceRange("^0", "0.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("^0", "1.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^1.2.3", "1.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("^1.2.3", "2.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("~0.2.1", "0.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("~0.2.1", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("~1.2", "1.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("~1.2", "1.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange(">=19.2 <20", "19.2.8"), true);
+  assert.equal(satisfiesWorkspaceRange(">=19.2 <20", "20.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^1.0.0 || ^2.0.0", "2.1.0"), true);
+});
+
+// Forms npm accepts that an earlier revision of this gate rejected outright,
+// hard-failing "Base manifest integrity" and telling the author their perfectly
+// legal range was unsupported.
+test("satisfiesWorkspaceRange accepts the npm range forms it once false-rejected", () => {
+  // Operator detached from its operand.
+  assert.equal(satisfiesWorkspaceRange(">= 0.2.1", "0.2.1"), true);
+  assert.equal(satisfiesWorkspaceRange(">=  0.2.1  <0.4.0", "0.3.0"), true);
+  assert.equal(satisfiesWorkspaceRange("<  0.2.1", "0.3.0"), false);
+  // Leading `v`.
+  assert.equal(satisfiesWorkspaceRange("v0.2.1", "0.2.1"), true);
+  // X-ranges and wildcards.
+  assert.equal(satisfiesWorkspaceRange("0.2.x", "0.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("0.2.x", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("1.x", "1.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("1.x", "2.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("*", "9.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("x", "1.0.0"), true);
+});
+
+// npm excludes a prerelease from a range unless a comparator pins the same
+// major.minor.patch AND carries a prerelease itself. Getting this wrong in the
+// permissive direction would call an unlinkable workspace fine.
+test("satisfiesWorkspaceRange applies npm's prerelease inclusion rule", () => {
+  assert.equal(satisfiesWorkspaceRange("^1.0.0", "1.5.0-rc.1"), false);
+  assert.equal(satisfiesWorkspaceRange(">=0.3.0-rc.1", "0.3.0-rc.2"), true);
+  assert.equal(satisfiesWorkspaceRange("^0.3.0-rc.1", "0.3.0-rc.2"), true);
+  assert.equal(satisfiesWorkspaceRange("0.3.0-rc.1", "0.3.0-rc.1"), true);
+  // Prerelease sorts below its own release.
+  assert.equal(satisfiesWorkspaceRange(">=0.3.0", "0.3.0-rc.1"), false);
+});
+
+// Fail closed: a shape the evaluator does not understand must surface as unknown
+// (null) so the caller errors, never as a silent pass.
+test("satisfiesWorkspaceRange reports unknown rather than guessing", () => {
+  for (const range of ["1.0.0 - 2.0.0", "workspace:*", ">=1.0.0 || ", "not-a-range"]) {
+    assert.equal(satisfiesWorkspaceRange(range, "1.0.0"), null, range);
+  }
+});
+
+// The regression this gate exists for: `@codefly-dev/saas-ui` kept requiring
+// `@codefly-dev/saas-sdk@0.2.0` after the SDK workspace moved to 0.2.1. The
+// lockfile agreed with the manifest, so every metadata-equality check passed and
+// "Base manifest integrity" reported in-sync — while `npm ci` went to the public
+// registry for a package that is not there and failed three CI jobs with E404.
+test("workspaceLinkSatisfactionErrors catches a workspace pin the workspace cannot satisfy", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+    {
+      label: "packages/saas-ui/package.json",
+      manifest: {
+        name: "@codefly-dev/saas-ui",
+        version: "0.2.0",
+        devDependencies: { "@codefly-dev/saas-sdk": "0.2.0" },
+        peerDependencies: { "@codefly-dev/saas-sdk": "0.2.0", react: ">=19.2 <20" },
+      },
+    },
+  ];
+  const errors = workspaceLinkSatisfactionErrors({ workspaces });
+  assert.equal(errors.length, 2);
+  for (const error of errors) {
+    assert.match(error, /@codefly-dev\/saas-sdk = "0\.2\.0" is not satisfied by workspace @codefly-dev\/saas-sdk@0\.2\.1/);
+  }
+  // A third-party range is not a workspace edge and must not be evaluated.
+  assert.ok(!errors.some((error) => error.includes("react")));
+});
+
+test("workspaceLinkSatisfactionErrors accepts a range the workspace satisfies", () => {
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      workspaces: [
+        { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+        {
+          label: "packages/saas-ui/package.json",
+          manifest: {
+            name: "@codefly-dev/saas-ui",
+            version: "0.2.0",
+            peerDependencies: { "@codefly-dev/saas-sdk": "^0.2.1" },
+          },
+        },
+      ],
+    }),
+    [],
+  );
+});
+
+// Scope check, verified against real npm: a ROOT dependency resolves a workspace
+// by NAME and links it whatever the range says — even when the registry carries
+// the pinned version (a workspace named `is-odd` at 99.0.0 wins over a root pin
+// of the real `is-odd@3.0.1`). So a drifting root pin is not an install hazard,
+// and an earlier revision that flagged it failed the repo-wide gate with an E404
+// claim that could never happen.
+test("workspaceLinkSatisfactionErrors does not police root-manifest pins", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.2" } },
+  ];
+  // Passed the way the caller once did; the root manifest must be ignored.
+  assert.deepEqual(workspaceLinkSatisfactionErrors({ workspaces }), []);
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      root: { dependencies: { "@codefly-dev/saas-sdk": "0.2.1" } },
+      workspaces,
+    }),
+    [],
+  );
+});
+
+// A sibling that declares no readable `version` produces the SAME E404 as a
+// mismatched range (reproduced against real npm), so it must not be dropped.
+// An earlier revision skipped it entirely and returned no errors at all.
+test("workspaceLinkSatisfactionErrors catches an edge onto an unusable workspace version", () => {
+  for (const declared of [undefined, "not-a-version", null]) {
+    const manifest = { name: "foo" };
+    if (declared !== undefined) manifest.version = declared;
+    const errors = workspaceLinkSatisfactionErrors({
+      workspaces: [
+        { label: "packages/foo/package.json", manifest },
+        {
+          label: "packages/bar/package.json",
+          manifest: { name: "bar", version: "1.0.0", devDependencies: { foo: "1.0.0" } },
+        },
+      ],
+    });
+    assert.equal(errors.length, 1, `declared=${String(declared)}`);
+    assert.match(errors[0], /points at workspace packages\/foo\/package\.json/);
+    assert.match(errors[0], /public registry instead of the local workspace/);
+  }
+});
+
+// …but a workspace nobody depends on cannot break an install, so it is not an
+// error on its own. Over-reporting here would fail the repo-wide gate for a
+// private helper package that is perfectly fine.
+test("workspaceLinkSatisfactionErrors ignores an unusable version nothing depends on", () => {
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      workspaces: [{ label: "packages/foo/package.json", manifest: { name: "foo" } }],
+    }),
+    [],
+  );
+});
+
+test("workspaceLinkSatisfactionErrors supports a prerelease workspace version", () => {
+  const workspaces = (range) => [
+    { label: "packages/a/package.json", manifest: { name: "a", version: "0.3.0-rc.1" } },
+    { label: "packages/b/package.json", manifest: { name: "b", version: "1.0.0", dependencies: { a: range } } },
+  ];
+  assert.deepEqual(workspaceLinkSatisfactionErrors({ workspaces: workspaces("^0.3.0-rc.1") }), []);
+  const stale = workspaceLinkSatisfactionErrors({ workspaces: workspaces("^0.1.0") });
+  assert.equal(stale.length, 1);
+  assert.match(stale[0], /is not satisfied by workspace a@0\.3\.0-rc\.1/);
+});
+
+test("workspaceLinkSatisfactionErrors fails closed on an unevaluatable workspace range", () => {
+  const errors = workspaceLinkSatisfactionErrors({
+    workspaces: [
+      { label: "packages/saas-ui/package.json", manifest: { name: "@codefly-dev/saas-ui", version: "1.5.0" } },
+      {
+        label: "packages/other/package.json",
+        manifest: { name: "other", version: "1.0.0", dependencies: { "@codefly-dev/saas-ui": "1.0.0 - 2.0.0" } },
+      },
+    ],
+  });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /cannot evaluate/);
 });

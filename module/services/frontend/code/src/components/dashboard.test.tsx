@@ -52,7 +52,13 @@ describe("Dashboard renderer", () => {
 	it("shows a skeleton while a widget is loading", () => {
 		const { container } = renderDashboard({
 			widgets: [
-				{ id: "s", kind: "sparkline", title: "Trend", points: [], isLoading: true },
+				{
+					id: "s",
+					kind: "sparkline",
+					title: "Trend",
+					points: [],
+					isLoading: true,
+				},
 			],
 		});
 		expect(container.querySelector('[data-slot="skeleton"]')).toBeTruthy();
@@ -123,5 +129,73 @@ describe("Dashboard renderer", () => {
 		expect(screen.getByText("user.login")).toBeTruthy();
 		expect(screen.getByText("7")).toBeTruthy();
 		expect(screen.queryByText("Failed to load.")).toBeNull();
+	});
+
+	it("renders a metrics widget as a full-width tile row", () => {
+		render(
+			<Dashboard
+				data={{
+					widgets: [
+						{
+							id: "kpis",
+							kind: "metrics",
+							metrics: [
+								{ id: "events", label: "Events", value: 1284, delta: 0.12 },
+								{ id: "users", label: "New users", value: 37 },
+							],
+						},
+					],
+				}}
+			/>,
+		);
+		expect(screen.getByText("Events")).toBeTruthy();
+		expect(screen.getByText("New users")).toBeTruthy();
+		expect(screen.getByText("1,284")).toBeTruthy();
+	});
+
+	it("renders a series widget with an accessible chart", () => {
+		render(
+			<Dashboard
+				data={{
+					widgets: [
+						{
+							id: "by-category",
+							kind: "series",
+							title: "Events by category",
+							series: [
+								{ name: "identity", data: [{ label: "d1", value: 3 }] },
+								{ name: "security", data: [{ label: "d1", value: 1 }] },
+							],
+						},
+					],
+				}}
+			/>,
+		);
+		// The chart's accessible form is a screen-reader table captioned with
+		// the title, one row per series; that is the handle worth asserting on.
+		expect(
+			screen.getByRole("table", { name: "Events by category" }),
+		).toBeTruthy();
+		expect(screen.getByRole("row", { name: /identity/ })).toBeTruthy();
+		expect(screen.getByRole("row", { name: /security/ })).toBeTruthy();
+	});
+
+	it("shows the empty message for a series widget with no points", () => {
+		render(
+			<Dashboard
+				data={{
+					widgets: [
+						{
+							id: "by-category",
+							kind: "series",
+							title: "Events by category",
+							series: [{ name: "identity", data: [] }],
+							emptyMessage: "No events in range.",
+						},
+					],
+				}}
+			/>,
+		);
+		expect(screen.getByText("No events in range.")).toBeTruthy();
 	});
 });
