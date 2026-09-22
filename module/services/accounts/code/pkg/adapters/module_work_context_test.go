@@ -10,7 +10,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -118,7 +118,7 @@ func stampModuleWorkContext(t *testing.T, principalID, tenant string) context.Co
 	})
 	require.NoError(t, err)
 	return metadata.NewIncomingContext(context.Background(),
-		metadata.Pairs(codefly.WorkContextHeaderName, token.Encoded()))
+		metadata.Pairs(workcontext.WorkContextHeaderName, token.Encoded()))
 }
 
 func mintModuleWorkContext(t *testing.T, prefix, secret string) (*gen.ModuleMintWorkContextResponse, error) {
@@ -354,9 +354,9 @@ func TestModuleCallerRequiresAVerifiableWorkContext(t *testing.T) {
 	tests := map[string]context.Context{
 		"no metadata":  context.Background(),
 		"no header":    metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-user-id", "someone")),
-		"empty header": metadata.NewIncomingContext(context.Background(), metadata.Pairs(codefly.WorkContextHeaderName, "")),
+		"empty header": metadata.NewIncomingContext(context.Background(), metadata.Pairs(workcontext.WorkContextHeaderName, "")),
 		"not a token": metadata.NewIncomingContext(context.Background(),
-			metadata.Pairs(codefly.WorkContextHeaderName, "not-a-capability")),
+			metadata.Pairs(workcontext.WorkContextHeaderName, "not-a-capability")),
 	}
 	for name, ctx := range tests {
 		t.Run(name, func(t *testing.T) {

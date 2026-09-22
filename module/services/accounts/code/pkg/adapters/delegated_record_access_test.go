@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
@@ -39,7 +39,7 @@ func (s *exactRecordStore) CheckAccess(ctx context.Context, subject string, kind
 }
 func exactRequest(token, id string) *connect.Request[gen.CheckWorkContextRecordAccessRequest] {
 	r := connect.NewRequest(&gen.CheckWorkContextRecordAccessRequest{ResourceType: "rows", ResourceId: id, Action: "read"})
-	r.Header().Set(codefly.WorkContextHeaderName, token)
+	r.Header().Set(workcontext.WorkContextHeaderName, token)
 	r.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return r
 }
@@ -65,7 +65,7 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 		require.Nil(t, out)
 		require.Len(t, store.subjects, before)
 	}
-	narrow, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task-narrow", SessionID: "session-narrow", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-b"}}}})
+	narrow, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task-narrow", SessionID: "session-narrow", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-b"}}}})
 	require.NoError(t, err)
 	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(narrow.Encoded(), "record-a"))
 	require.Error(t, err)
@@ -110,7 +110,7 @@ func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	require.NoError(t, err)
 	// The same identity re-minted at the module's own prefix, so the declared
 	// vocabulary gate passes and only the empty scope set can refuse it.
-	prefixed, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: module,
+	prefixed, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: module,
 		TaskID: "019f6bf7-3333-7333-8333-333333333333", SessionID: "019f6bf7-4444-7444-8444-444444444444", AuthorizationRevision: facts.facts.EffectiveRevision(),
 		ActorChain: []*basev0.WorkActorV1{{PrincipalId: module, PrincipalKind: "service", DelegationId: "install-hop"}}})
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}}}
-	parent, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
+	parent, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
 		TaskID: "exchange-task", SessionID: "exchange-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes,
 		ActorChain: []*basev0.WorkActorV1{
 			{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes},
@@ -205,9 +205,9 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	require.NoError(t, err)
 	exchanged, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent.Encoded()))
 	require.NoError(t, err)
-	issued, err := codefly.ParseWorkContextToken(exchanged.Msg.Token)
+	issued, err := workcontext.ParseWorkContextToken(exchanged.Msg.Token)
 	require.NoError(t, err)
-	child, err := workContextSingleton.verifier.Verify(issued, codefly.WorkContextExpectations{Audience: "rows"})
+	child, err := workContextSingleton.verifier.Verify(issued, workcontext.WorkContextExpectations{Audience: "rows"})
 	require.NoError(t, err)
 	require.Empty(t, child.AuthorityScopes[0].ResourceIds, "the top-level scope stays at the parent's width")
 	require.Equal(t, []string{"record-a"}, child.ActorChain[len(child.ActorChain)-1].GrantedScopes[0].ResourceIds,
@@ -283,7 +283,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	journal := &exactChainJournal{}
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}
-	token, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "chain-task", SessionID: "chain-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}, {PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}})
+	token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "chain-task", SessionID: "chain-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}, {PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}})
 	require.NoError(t, err)
 	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token.Encoded(), "record-a"))
 	require.NoError(t, err)

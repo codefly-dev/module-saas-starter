@@ -391,7 +391,7 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	emitter.Emit(testCtx, business.AuditEntry{
 		ID: eventID, ActorID: userID, ActorType: "user",
 		EventType: business.EventType(eventType), Resource: "user", ResourceID: userID, OrgID: orgID,
-		Payload:   map[string]any{"source": "integration-test"},
+		Payload:   map[string]any{},
 		CreatedAt: time.Now().UTC(),
 	})
 	// The audit record and its event commit together; fan-out is the relay's
@@ -420,6 +420,15 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	jobPool, err := infra.NewJobWorkerPool(testCtx)
 	require.NoError(t, err)
 	t.Cleanup(jobPool.Close)
+	tag, err := jobPool.Exec(testCtx, `
+			UPDATE job_messages
+			SET priority = 100
+			WHERE direction = 'outbox'
+			  AND queue = $1
+			  AND idempotency_key = $2`,
+		business.OutboundWebhookQueue, deliveries[0].ID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, tag.RowsAffected())
 	projectionPool, err := infra.NewWebhookProjectionPool(testCtx)
 	require.NoError(t, err)
 	t.Cleanup(projectionPool.Close)

@@ -51,6 +51,25 @@ func loadModuleInterfaceEndpoints(t *testing.T, moduleRoot string) map[string]st
 	return endpoints
 }
 
+func TestSDKTemplateUsesThePinnedCompanionPlugin(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(findModuleRoot(t), "services/accounts/buf.gen.sdk.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var template struct {
+		Plugins []struct {
+			Local          string `yaml:"local"`
+			IncludeImports bool   `yaml:"include_imports"`
+		} `yaml:"plugins"`
+	}
+	if err := yaml.Unmarshal(data, &template); err != nil {
+		t.Fatal(err)
+	}
+	if len(template.Plugins) != 1 || template.Plugins[0].Local != "protoc-gen-es" || !template.Plugins[0].IncludeImports {
+		t.Fatal("SDK generation must use the companion's protoc-gen-es with the complete import closure")
+	}
+}
+
 // TestPackageAPIContractsAreASubsetOfTheModuleInterface guards the invariant
 // #483 introduces: every endpoint the package publishes a machine-readable API
 // contract for must be one the module formally exposes on its interface. Core's

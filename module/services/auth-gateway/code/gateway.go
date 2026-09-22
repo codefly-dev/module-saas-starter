@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -520,11 +520,11 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 	if g.workContext == nil {
 		return false
 	}
-	raw := r.Header.Get(codefly.WorkContextHeaderName)
+	raw := r.Header.Get(workcontext.WorkContextHeaderName)
 	if raw == "" {
 		return false
 	}
-	token, err := codefly.ParseWorkContextToken(raw)
+	token, err := workcontext.ParseWorkContextToken(raw)
 	if err == nil {
 		err = g.workContext.Verify(r.Context(), token)
 	}

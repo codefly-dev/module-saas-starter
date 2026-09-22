@@ -14,7 +14,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -264,14 +264,14 @@ func TestWorkContextParentVerificationRejectsStaleAuthorization(t *testing.T) {
 	})
 	require.NoError(t, server.configureErr)
 
-	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              "consumer.test",
 		TenantID:              "019f6bf7-5b4b-74e5-8c17-092259bb1661",
 		OwnerPrincipalID:      "019f6bf7-5b1c-730d-9687-fe6d4aff31ed",
 		TaskID:                "019f6bf7-1111-7111-8111-111111111111",
 		SessionID:             "019f6bf7-2222-7222-8222-222222222222",
 		AuthorizationRevision: 12,
-		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
 		AuthorityScopes: []*basev0.WorkScopeV1{{
 			ResourceKind: "evidence",
 			Actions:      []string{"append"},
@@ -431,16 +431,16 @@ func newRenewTestServer(t *testing.T) *WorkContextAuthorityServer {
 
 // mintDelegatedContext issues a Work Context whose current actor is renewActorID,
 // modelling a context an in-flight agent holds while acting for the owner.
-func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) codefly.WorkContextToken {
+func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) workcontext.WorkContextToken {
 	t.Helper()
-	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              "tool.test",
 		TenantID:              renewOrgID,
 		OwnerPrincipalID:      renewOwnerID,
 		TaskID:                renewTaskID,
 		SessionID:             renewSession,
 		AuthorizationRevision: 12,
-		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
 		AuthorityScopes: []*basev0.WorkScopeV1{{
 			ResourceKind: "evidence",
 			Actions:      []string{"append", "read"},
@@ -462,7 +462,7 @@ func mintDelegatedContext(t *testing.T, server *WorkContextAuthorityServer) code
 func TestRenewWorkContextExtendsDelegatedAuthorityForCurrentActor(t *testing.T) {
 	server := newRenewTestServer(t)
 	parent := mintDelegatedContext(t, server)
-	parentClaims, err := server.verifier.Verify(parent, codefly.WorkContextExpectations{
+	parentClaims, err := server.verifier.Verify(parent, workcontext.WorkContextExpectations{
 		Issuer:   "accounts.test",
 		TenantID: renewOrgID,
 	})
@@ -494,9 +494,9 @@ func TestRenewWorkContextExtendsDelegatedAuthorityForCurrentActor(t *testing.T) 
 		"renewed Work Context must expire later than its parent",
 	)
 
-	renewed, err := codefly.ParseWorkContextToken(issued.GetToken())
+	renewed, err := workcontext.ParseWorkContextToken(issued.GetToken())
 	require.NoError(t, err)
-	renewedClaims, err := server.verifier.Verify(renewed, codefly.WorkContextExpectations{
+	renewedClaims, err := server.verifier.Verify(renewed, workcontext.WorkContextExpectations{
 		Issuer:   "accounts.test",
 		TenantID: renewOrgID,
 	})
@@ -640,14 +640,14 @@ func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
 
 func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 	server := newRenewTestServer(t)
-	parent, _, err := server.signer.StartTask(codefly.StartTaskInput{
+	parent, _, err := server.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              "tool.test",
 		TenantID:              renewOrgID,
 		OwnerPrincipalID:      renewOwnerID,
 		TaskID:                renewTaskID,
 		SessionID:             renewSession,
 		AuthorizationRevision: 12,
-		ReplayPolicy:          codefly.WorkContextReplaySingleUse,
+		ReplayPolicy:          workcontext.WorkContextReplaySingleUse,
 		AuthorityScopes: []*basev0.WorkScopeV1{{
 			ResourceKind: "evidence",
 			Actions:      []string{"append"},
@@ -679,14 +679,14 @@ func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	renewed, err := codefly.ParseWorkContextToken(issued.GetToken())
+	renewed, err := workcontext.ParseWorkContextToken(issued.GetToken())
 	require.NoError(t, err)
-	renewedClaims, err := server.verifier.Verify(renewed, codefly.WorkContextExpectations{
+	renewedClaims, err := server.verifier.Verify(renewed, workcontext.WorkContextExpectations{
 		Issuer:   "accounts.test",
 		TenantID: renewOrgID,
 	})
 	require.NoError(t, err)
-	require.Equal(t, codefly.WorkContextReplaySingleUse, renewedClaims.GetReplayPolicy())
+	require.Equal(t, workcontext.WorkContextReplaySingleUse, renewedClaims.GetReplayPolicy())
 }
 
 func TestVerifyActorParentBindsCallerToCurrentActor(t *testing.T) {
@@ -709,14 +709,14 @@ func TestVerifyActorParentBindsCallerToCurrentActor(t *testing.T) {
 
 func TestVerifyActorParentRejectsOwnerOnlyContext(t *testing.T) {
 	server := newRenewTestServer(t)
-	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              "tool.test",
 		TenantID:              renewOrgID,
 		OwnerPrincipalID:      renewOwnerID,
 		TaskID:                renewTaskID,
 		SessionID:             renewSession,
 		AuthorizationRevision: 12,
-		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
 		AuthorityScopes: []*basev0.WorkScopeV1{{
 			ResourceKind: "evidence",
 			Actions:      []string{"append"},
@@ -796,16 +796,16 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 // given Session — the capability a StartRootSession call derives from.
 func mintOwnedContext(
 	t *testing.T, server *WorkContextAuthorityServer, sessionID string,
-) codefly.WorkContextToken {
+) workcontext.WorkContextToken {
 	t.Helper()
-	token, _, err := server.signer.StartTask(codefly.StartTaskInput{
+	token, _, err := server.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              "tool.test",
 		TenantID:              renewOrgID,
 		OwnerPrincipalID:      renewActorID,
 		TaskID:                renewTaskID,
 		SessionID:             sessionID,
 		AuthorizationRevision: 12,
-		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		ReplayPolicy:          workcontext.WorkContextReplayIdempotent,
 		AuthorityScopes: []*basev0.WorkScopeV1{{
 			ResourceKind: "evidence",
 			Actions:      []string{"append", "read"},
@@ -824,7 +824,7 @@ func TestStartRootSessionGeneratesFreshRootSession(t *testing.T) {
 	service = svc
 	t.Cleanup(func() { service = previous })
 
-	request := func(parent codefly.WorkContextToken, sessionID string) *gen.StartRootSessionWorkContextRequest {
+	request := func(parent workcontext.WorkContextToken, sessionID string) *gen.StartRootSessionWorkContextRequest {
 		return &gen.StartRootSessionWorkContextRequest{
 			OrgId:                  renewOrgID,
 			ParentWorkContextToken: parent.Encoded(),

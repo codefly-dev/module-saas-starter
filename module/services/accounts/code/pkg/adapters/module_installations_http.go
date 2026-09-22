@@ -12,7 +12,7 @@ import (
 
 	"accounts/pkg/business"
 
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 )
 
 const moduleInstallationPrefix = "/v1/module-installations/"
@@ -103,7 +103,7 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 		h.token(w, r, policy)
 		return
 	}
-	headers := r.Header.Values(codefly.WorkContextHeaderName)
+	headers := r.Header.Values(workcontext.WorkContextHeaderName)
 	if len(headers) != 1 || headers[0] == "" {
 		installerError(w, http.StatusUnauthorized, "module work context required")
 		return

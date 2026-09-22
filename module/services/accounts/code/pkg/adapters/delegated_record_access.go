@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"connectrpc.com/connect"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -25,15 +25,15 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(codefly.WorkContextHeaderName)
+	values := md.Get(workcontext.WorkContextHeaderName)
 	if len(values) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
 	}
-	token, err := codefly.ParseWorkContextToken(values[0])
+	token, err := workcontext.ParseWorkContextToken(values[0])
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
-	claims, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer})
+	claims, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
@@ -44,7 +44,7 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if claims.GetTenantId() == "" || claims.GetOwnerPrincipalId() == "" {
 		return nil, status.Error(codes.PermissionDenied, "tenant viewer required")
 	}
-	if err = codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: req.ResourceType, Action: req.Action, ResourceID: req.ResourceId}); err != nil {
+	if err = workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: req.ResourceType, Action: req.Action, ResourceID: req.ResourceId}); err != nil {
 		return nil, status.Error(codes.PermissionDenied, "record scope required")
 	}
 	if len(claims.GetActorChain()) > 0 && authority.journal == nil {
@@ -76,7 +76,7 @@ func (h *moduleCapabilitiesConnectHandler) CheckWorkContextRecordAccess(ctx cont
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(codefly.WorkContextHeaderName, req.Header().Values(codefly.WorkContextHeaderName)...)
+	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
 	out, err := h.inner.CheckWorkContextRecordAccess(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

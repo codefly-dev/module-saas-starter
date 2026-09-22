@@ -27,7 +27,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -208,8 +208,8 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 			resource, verb, _ := strings.Cut(permission, ":")
 			scopes = append(scopes, &basev0.WorkScopeV1{ResourceKind: resource, Actions: []string{verb}})
 		}
-		token, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: audience, TenantID: readOrg, OwnerPrincipalID: readOwner,
-			TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222", AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: codefly.WorkContextReplayIdempotent,
+		token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: audience, TenantID: readOrg, OwnerPrincipalID: readOwner,
+			TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222", AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
 			AuthorityScopes: scopes})
 		require.NoError(t, err)
 		return token.Encoded()
@@ -218,7 +218,7 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 }
 func sourceReadRequest(token string) *connect.Request[gen.ListReadableSourceCollectionsRequest] {
 	r := connect.NewRequest(&gen.ListReadableSourceCollectionsRequest{PageSize: 1})
-	r.Header().Set(codefly.WorkContextHeaderName, token)
+	r.Header().Set(workcontext.WorkContextHeaderName, token)
 	r.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return r
 }
@@ -269,7 +269,7 @@ func TestSourceReadRejectsUntrustedAuthorityBeforeStorage(t *testing.T) {
 				r.Header().Del("x-codefly-internal-token")
 			}
 			if test.duplicate {
-				r.Header().Add(codefly.WorkContextHeaderName, test.token)
+				r.Header().Add(workcontext.WorkContextHeaderName, test.token)
 			}
 			r.Header().Set("x-tenant-id", readOrg)
 			r.Header().Set("x-user-id", readOwner)

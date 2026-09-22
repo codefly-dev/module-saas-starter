@@ -15,7 +15,7 @@ import (
 	"time"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,16 +55,16 @@ func jwksServer(t *testing.T, document string, hits *int64) *httptest.Server {
 	return server
 }
 
-func mintWorkContext(t *testing.T, kid string, priv ed25519.PrivateKey, now func() time.Time) codefly.WorkContextToken {
+func mintWorkContext(t *testing.T, kid string, priv ed25519.PrivateKey, now func() time.Time) workcontext.WorkContextToken {
 	t.Helper()
-	signer, err := codefly.NewWorkContextSigner(codefly.WorkContextSignerOptions{
+	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
 		Issuer:     "saas-starter",
 		KeyID:      kid,
 		PrivateKey: priv,
 		Now:        now,
 	})
 	require.NoError(t, err)
-	token, _, err := signer.StartTask(codefly.StartTaskInput{
+	token, _, err := signer.StartTask(workcontext.StartTaskInput{
 		Audience:         "solution:demo",
 		TenantID:         "tenant-1",
 		OwnerPrincipalID: "user-1",
@@ -97,7 +97,7 @@ func TestWorkContextVerifier_ForgedSignatureFailsClosed(t *testing.T) {
 	verifier := newWorkContextVerifier(server.URL)
 	// Claims the published key id but is signed by a key the JWKS never lists.
 	err := verifier.Verify(context.Background(), mintWorkContext(t, kid, attacker, nil))
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
 }
 
 func TestWorkContextVerifier_ExpiredTokenFailsClosed(t *testing.T) {
@@ -108,7 +108,7 @@ func TestWorkContextVerifier_ExpiredTokenFailsClosed(t *testing.T) {
 	past := func() time.Time { return time.Now().Add(-time.Hour) }
 	verifier := newWorkContextVerifier(server.URL)
 	err := verifier.Verify(context.Background(), mintWorkContext(t, kid, priv, past))
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
 }
 
 func TestWorkContextVerifier_JWKSUnreachableFailsClosed(t *testing.T) {
@@ -121,7 +121,7 @@ func TestWorkContextVerifier_JWKSUnreachableFailsClosed(t *testing.T) {
 	err := verifier.Verify(context.Background(), mintWorkContext(t, "key-1", priv, nil))
 	// An upstream outage must read as the same invalid sentinel, not a distinct
 	// transport error class that would leak the dependency being down.
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
 }
 
 func TestWorkContextVerifier_UnknownKeyIDDoesNotStampede(t *testing.T) {
@@ -134,7 +134,7 @@ func TestWorkContextVerifier_UnknownKeyIDDoesNotStampede(t *testing.T) {
 	ctx := context.Background()
 	for i := 0; i < 5; i++ {
 		err := verifier.Verify(ctx, mintWorkContext(t, "rotated-away", other, nil))
-		require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+		require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
 	}
 	// One warm fetch plus at most one unknown-key probe within the cache window.
 	require.LessOrEqual(t, atomic.LoadInt64(&hits), int64(2))
@@ -224,7 +224,7 @@ func TestWorkContextVerifier_RefreshFailsClosedWhenUnreachable(t *testing.T) {
 	server.Close()
 
 	verifier := newWorkContextVerifier(url)
-	require.ErrorIs(t, verifier.Refresh(context.Background()), codefly.ErrWorkContextInvalid)
+	require.ErrorIs(t, verifier.Refresh(context.Background()), workcontext.ErrWorkContextInvalid)
 }
 
 func TestParseJWKS_RejectsEmptyKeySet(t *testing.T) {
@@ -248,7 +248,7 @@ func TestWorkContextVerifier_MalformedJWKSFailsClosedAsInvalid(t *testing.T) {
 			server := jwksServer(t, document, nil)
 			verifier := newWorkContextVerifier(server.URL)
 			err := verifier.Verify(context.Background(), mintWorkContext(t, "key-1", priv, nil))
-			require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+			require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
 		})
 	}
 }
@@ -279,7 +279,7 @@ func TestWorkContextVerifier_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
 	// One presented capability names a key id nobody publishes.
 	_, attacker := mustEd25519(t)
 	require.ErrorIs(t, verifier.Verify(ctx, mintWorkContext(t, "rotated-away", attacker, nil)),
-		codefly.ErrWorkContextInvalid)
+		workcontext.ErrWorkContextInvalid)
 
 	// The rotation lands while the cache is still fresh.
 	rotated := jwksDocument(map[string]ed25519.PublicKey{"key-1": current, "key-2": next})
@@ -310,7 +310,7 @@ func TestGateway_InvalidWorkContextReturns401(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(codefly.WorkContextHeaderName, "not-a-valid-work-context")
+	req.Header.Set(workcontext.WorkContextHeaderName, "not-a-valid-work-context")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -328,13 +328,13 @@ func TestGateway_ValidWorkContextForwards(t *testing.T) {
 	token := mintWorkContext(t, kid, wcPriv, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(codefly.WorkContextHeaderName, token.Encoded())
+	req.Header.Set(workcontext.WorkContextHeaderName, token.Encoded())
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, apiFake.lastHeaders)
-	require.Equal(t, token.Encoded(), apiFake.lastHeaders.Get(codefly.WorkContextHeaderName),
+	require.Equal(t, token.Encoded(), apiFake.lastHeaders.Get(workcontext.WorkContextHeaderName),
 		"a verified Work Context is forwarded unchanged to the callee")
 }
 

@@ -7,9 +7,10 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/core v0.4.2
-	github.com/codefly-dev/sdk-go v0.1.65
-	github.com/codefly-dev/service-postgres v0.0.129
+	github.com/codefly-dev/core v0.4.4-0.20260922090214-83b3904dd07e
+	github.com/codefly-dev/sdk-go v0.1.69-0.20260922100356-a647f16915d4
+	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260922100356-a647f16915d4
+	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260915032422-272301033aed
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -57,6 +58,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
+	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -78,6 +80,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.0 // indirect
 	github.com/gofrs/flock v0.13.1 // indirect
+	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-github/v89 v89.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
@@ -124,4 +127,6 @@ require (
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
+	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
+	sigs.k8s.io/yaml v1.6.0 // indirect
 )

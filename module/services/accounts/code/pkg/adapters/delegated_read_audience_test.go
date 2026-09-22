@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -47,7 +47,7 @@ func readExchangeRequest(t *testing.T, parent string) *connect.Request[gen.Modul
 	token, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
 	require.NoError(t, err)
 	req := connect.NewRequest(&gen.ModuleExchangeDelegatedReadAudienceRequest{BindingId: "proof", ParentWorkContextToken: parent})
-	req.Header().Set(codefly.WorkContextHeaderName, token.Encoded())
+	req.Header().Set(workcontext.WorkContextHeaderName, token.Encoded())
 	req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return req
 }
@@ -57,9 +57,9 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 	parent := mint("example", "results", "read", "unrelated:write")
 	out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 	require.NoError(t, err)
-	token, err := codefly.ParseWorkContextToken(out.Msg.Token)
+	token, err := workcontext.ParseWorkContextToken(out.Msg.Token)
 	require.NoError(t, err)
-	child, err := workContextSingleton.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: "accounts.test", Audience: "example-producer"})
+	child, err := workContextSingleton.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: "accounts.test", Audience: "example-producer"})
 	require.NoError(t, err)
 	require.Equal(t, readOwner, child.OwnerPrincipalId)
 	require.Equal(t, readOrg, child.TenantId)
@@ -75,13 +75,13 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 			r.Header().Del("x-codefly-internal-token")
 		}},
 		{"forged module", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
-			r.Header().Set(codefly.WorkContextHeaderName, "forged")
+			r.Header().Set(workcontext.WorkContextHeaderName, "forged")
 		}},
 		{"parent is not module credential", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
-			r.Header().Set(codefly.WorkContextHeaderName, parent)
+			r.Header().Set(workcontext.WorkContextHeaderName, parent)
 		}},
 		{"duplicate carrier", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
-			r.Header().Add(codefly.WorkContextHeaderName, r.Header().Get(codefly.WorkContextHeaderName))
+			r.Header().Add(workcontext.WorkContextHeaderName, r.Header().Get(workcontext.WorkContextHeaderName))
 		}},
 		{"forged parent", func(r *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest]) {
 			r.Msg.ParentWorkContextToken = "forged"
@@ -111,10 +111,10 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *testing.T) {
 	_, facts, client, _ := sourceReadFixture(t)
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
-	parentToken, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{
+	parentToken, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{
 		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
 		TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222",
-		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: codefly.WorkContextReplayIdempotent,
+		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
 		AuthorityScopes: []*basev0.WorkScopeV1{
 			{ResourceKind: "receipts", Actions: []string{"append", "read"}},
 			{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}},
@@ -128,28 +128,28 @@ func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *t
 			return nil, err
 		}
 		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: lookup})
-		req.Header().Set(codefly.WorkContextHeaderName, module.Encoded())
+		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
 		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 		out, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		if err != nil {
 			return nil, err
 		}
-		token, err := codefly.ParseWorkContextToken(out.Msg.Token)
+		token, err := workcontext.ParseWorkContextToken(out.Msg.Token)
 		if err != nil {
 			return nil, err
 		}
-		return workContextSingleton.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: "accounts.test"})
+		return workContextSingleton.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: "accounts.test"})
 	}
 
 	invoked, err := exchange("generate", false)
 	require.NoError(t, err)
 	require.Equal(t, "example-producer", invoked.Audience)
-	require.NoError(t, codefly.RequireWorkContextScope(invoked, codefly.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
+	require.NoError(t, workcontext.RequireWorkContextScope(invoked, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
 
 	lookup, err := exchange("generate", true)
 	require.NoError(t, err)
-	require.Error(t, codefly.RequireWorkContextScope(lookup, codefly.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
-	require.NoError(t, codefly.RequireWorkContextScope(lookup, codefly.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "read", RequireExplicitResource: true}))
+	require.Error(t, workcontext.RequireWorkContextScope(lookup, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
+	require.NoError(t, workcontext.RequireWorkContextScope(lookup, workcontext.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "read", RequireExplicitResource: true}))
 
 	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(false))
 	_, err = exchange("generate", false)
@@ -157,7 +157,7 @@ func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *t
 	recorded, err := exchange("record", false)
 	require.NoError(t, err)
 	require.Equal(t, "example-receipts", recorded.Audience)
-	require.NoError(t, codefly.RequireWorkContextScope(recorded, codefly.WorkContextScopeRequirement{ResourceKind: "receipts", ResourceID: "any", Action: "append"}))
+	require.NoError(t, workcontext.RequireWorkContextScope(recorded, workcontext.WorkContextScopeRequirement{ResourceKind: "receipts", ResourceID: "any", Action: "append"}))
 }
 
 func TestDelegatedOperationExchangeAuditsVerifiedAttributionAndOutcome(t *testing.T) {
@@ -171,7 +171,7 @@ func TestDelegatedOperationExchangeAuditsVerifiedAttributionAndOutcome(t *testin
 		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
 		require.NoError(t, err)
 		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: true})
-		req.Header().Set(codefly.WorkContextHeaderName, module.Encoded())
+		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
 		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 		_, err = client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		return err
@@ -248,16 +248,16 @@ func TestDelegatedReadExchangePreservesChainAndRechecksAuthority(t *testing.T) {
 	workContextSingleton.journal = journal
 	scopes := []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}}}
 	actors := []*basev0.WorkActorV1{{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes}, {PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}
-	token, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: actors})
+	token, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes, ActorChain: actors})
 	require.NoError(t, err)
 	invoke := func() (*connect.Response[gen.IssuedWorkContext], error) {
 		return client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, token.Encoded()))
 	}
 	out, err := invoke()
 	require.NoError(t, err)
-	childToken, err := codefly.ParseWorkContextToken(out.Msg.Token)
+	childToken, err := workcontext.ParseWorkContextToken(out.Msg.Token)
 	require.NoError(t, err)
-	child, err := workContextSingleton.verifier.Verify(childToken, codefly.WorkContextExpectations{Audience: "example-producer"})
+	child, err := workContextSingleton.verifier.Verify(childToken, workcontext.WorkContextExpectations{Audience: "example-producer"})
 	require.NoError(t, err)
 	require.Len(t, child.ActorChain, 2)
 	for i, actor := range actors {
@@ -307,12 +307,12 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 			if kind == "" {
 				kind = "results"
 			}
-			parent, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: tc.audience, TenantID: tc.tenant, OwnerPrincipalID: tc.owner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
+			parent, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{Audience: tc.audience, TenantID: tc.tenant, OwnerPrincipalID: tc.owner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
 			require.NoError(t, err)
 			module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID(tc.module), Tenant: tc.moduleTenant})
 			require.NoError(t, err)
 			req := readExchangeRequest(t, parent.Encoded())
-			req.Header().Set(codefly.WorkContextHeaderName, module.Encoded())
+			req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
 			out, err := client.ExchangeDelegatedReadAudience(context.Background(), req)
 			require.Error(t, err)
 			require.Nil(t, out)

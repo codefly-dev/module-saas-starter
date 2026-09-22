@@ -15,7 +15,7 @@ import (
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/wool"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
 
 	accountsauth "accounts/pkg/auth"
@@ -43,8 +43,8 @@ type WorkContextAuthorityServer struct {
 	gen.UnimplementedWorkContextServiceServer
 
 	issuer       string
-	signer       *codefly.WorkContextSigner
-	verifier     *codefly.WorkContextVerifier
+	signer       *workcontext.WorkContextSigner
+	verifier     *workcontext.WorkContextVerifier
 	authority    business.WorkContextAuthorityStore
 	consumer     business.WorkContextConsumerAuthorityStore
 	journal      business.ActorChainJournal
@@ -75,7 +75,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 		return
 	}
 	privateKey := append(ed25519.PrivateKey(nil), config.PrivateKey...)
-	signer, err := codefly.NewWorkContextSigner(codefly.WorkContextSignerOptions{
+	signer, err := workcontext.NewWorkContextSigner(workcontext.WorkContextSignerOptions{
 		Issuer:     s.issuer,
 		KeyID:      config.KeyID,
 		PrivateKey: privateKey,
@@ -89,7 +89,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 		s.configureErr = errors.New("work-context signing key has no Ed25519 public key")
 		return
 	}
-	verifier, err := codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{
+	verifier, err := workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{
 		PublicKeys: map[string]ed25519.PublicKey{config.KeyID: publicKey},
 	})
 	if err != nil {
@@ -289,7 +289,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 			GrantedScopes: cloneWorkScopes(scopes),
 		}}
 	}
-	token, signed, err := s.signer.StartTask(codefly.StartTaskInput{
+	token, signed, err := s.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              req.GetAudience(),
 		TenantID:              req.GetOrgId(),
 		OwnerPrincipalID:      ownerID,
@@ -358,7 +358,7 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 		DelegationId:  uuid.NewString(),
 		GrantedScopes: cloneWorkScopes(scopes),
 	}}
-	token, signed, err := s.signer.StartTask(codefly.StartTaskInput{
+	token, signed, err := s.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              req.GetAudience(),
 		TenantID:              req.GetOrgId(),
 		OwnerPrincipalID:      facts.OwnerPrincipalID,
@@ -410,11 +410,11 @@ var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is 
 // principals — and the durable record is the issuance audit event instead.
 func (s *WorkContextAuthorityServer) StartModuleTask(
 	authority business.ModuleWorkContextAuthority,
-) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+) (workcontext.WorkContextToken, *basev0.WorkContextV1, error) {
 	if s == nil || s.configureErr != nil || s.signer == nil {
-		return codefly.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
+		return workcontext.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
 	}
-	return s.signer.StartTask(codefly.StartTaskInput{
+	return s.signer.StartTask(workcontext.StartTaskInput{
 		Audience:         ModuleWorkContextAudience,
 		TenantID:         authority.Tenant,
 		OwnerPrincipalID: authority.PrincipalID,
@@ -425,7 +425,7 @@ func (s *WorkContextAuthorityServer) StartModuleTask(
 			PrincipalKind: business.PrincipalKindService,
 			DelegationId:  uuid.NewString(),
 		}},
-		TTL: codefly.WorkContextMaxTTL,
+		TTL: workcontext.WorkContextMaxTTL,
 	})
 }
 
@@ -437,11 +437,11 @@ func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(encoded string) (bu
 	if s == nil || s.configureErr != nil || s.verifier == nil {
 		return business.ModuleCaller{}, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
-	token, err := codefly.ParseWorkContextToken(encoded)
+	token, err := workcontext.ParseWorkContextToken(encoded)
 	if err != nil {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
 	}
-	verified, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+	verified, err := s.verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:   s.issuer,
 		Audience: ModuleWorkContextAudience,
 	})
@@ -513,7 +513,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
-	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
+	token, signed, err := s.signer.StartSession(parentToken, workcontext.StartRootSessionInput{
 		SessionID:    uuid.NewString(),
 		Audience:     req.GetAudience(),
 		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
@@ -548,7 +548,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 // exchangeVerifiedParent runs AFTER the caller's authentication and
 // current-parent checks.
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
-	parentToken codefly.WorkContextToken, parent *basev0.WorkContextV1,
+	parentToken workcontext.WorkContextToken, parent *basev0.WorkContextV1,
 	actor *business.Principal, req *gen.ExchangeWorkContextAudienceRequest,
 ) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
@@ -567,7 +567,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	}
 	token, signed, err := s.signer.ExchangeWorkContextAudience(
 		parentToken,
-		codefly.ExchangeWorkContextAudienceInput{
+		workcontext.ExchangeWorkContextAudienceInput{
 			Audience:         req.GetAudience(),
 			ReplayPolicy:     workContextReplayPolicy(req.GetReplayPolicy()),
 			TTL:              workContextTTL(req.GetTtlSeconds()),
@@ -619,7 +619,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	token, signed, err := s.signer.StartChildSession(parentToken, codefly.StartChildSessionInput{
+	token, signed, err := s.signer.StartChildSession(parentToken, workcontext.StartChildSessionInput{
 		SessionID: req.GetSessionId(),
 		Audience:  req.GetAudience(),
 		Actor: &basev0.WorkActorV1{
@@ -693,7 +693,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	}
 	token, signed, err := s.signer.ExchangeWorkContextAudience(
 		parentToken,
-		codefly.ExchangeWorkContextAudienceInput{
+		workcontext.ExchangeWorkContextAudienceInput{
 			Audience:         audience,
 			ReplayPolicy:     replayPolicy,
 			TTL:              workContextTTL(req.GetTtlSeconds()),
@@ -850,22 +850,22 @@ func (s *WorkContextAuthorityServer) verifyParent(
 	orgID string,
 	ownerID string,
 	encoded string,
-) (codefly.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
-	token, err := codefly.ParseWorkContextToken(encoded)
+) (workcontext.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
+	token, err := workcontext.ParseWorkContextToken(encoded)
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
 	}
-	parent, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+	parent, err := s.verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:           s.issuer,
 		TenantID:         orgID,
 		OwnerPrincipalID: ownerID,
 	})
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
+		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
 	}
 	actor, err := s.requireCurrentAuthority(ctx, orgID, parent)
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, nil, err
+		return workcontext.WorkContextToken{}, nil, nil, err
 	}
 	return token, parent, actor, nil
 }
@@ -880,34 +880,34 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 	orgID string,
 	actorID string,
 	encoded string,
-) (codefly.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
-	token, err := codefly.ParseWorkContextToken(encoded)
+) (workcontext.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
+	token, err := workcontext.ParseWorkContextToken(encoded)
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
 	}
-	parent, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+	parent, err := s.verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:   s.issuer,
 		TenantID: orgID,
 	})
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
+		return workcontext.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
 	actors := parent.GetActorChain()
 	if len(actors) == 0 {
-		return codefly.WorkContextToken{}, nil, nil, status.Error(
+		return workcontext.WorkContextToken{}, nil, nil, status.Error(
 			codes.PermissionDenied,
 			"only a delegated actor may renew a Work Context",
 		)
 	}
 	if actors[len(actors)-1].GetPrincipalId() != actorID {
-		return codefly.WorkContextToken{}, nil, nil, status.Error(
+		return workcontext.WorkContextToken{}, nil, nil, status.Error(
 			codes.PermissionDenied,
 			"caller is not the current actor of this Work Context",
 		)
 	}
 	actor, err := s.requireCurrentAuthority(ctx, orgID, parent)
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, nil, err
+		return workcontext.WorkContextToken{}, nil, nil, err
 	}
 	return token, parent, actor, nil
 }
@@ -1124,9 +1124,9 @@ func cloneWorkScopes(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
 
 func workContextReplayPolicy(value gen.WorkContextReplayPolicy) string {
 	if value == gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE {
-		return codefly.WorkContextReplaySingleUse
+		return workcontext.WorkContextReplaySingleUse
 	}
-	return codefly.WorkContextReplayIdempotent
+	return workcontext.WorkContextReplayIdempotent
 }
 
 func workContextTTL(seconds int32) time.Duration {
@@ -1137,7 +1137,7 @@ func workContextTTL(seconds int32) time.Duration {
 }
 
 func issuedWorkContext(
-	token codefly.WorkContextToken,
+	token workcontext.WorkContextToken,
 	signed *basev0.WorkContextV1,
 ) *gen.IssuedWorkContext {
 	currentActor := signed.GetOwnerPrincipalId()
@@ -1170,7 +1170,7 @@ func issuedWorkContext(
 }
 
 func mapWorkContextError(err error) error {
-	if errors.Is(err, codefly.ErrWorkContextInvalid) {
+	if errors.Is(err, workcontext.ErrWorkContextInvalid) {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	return status.Error(codes.Internal, "cannot issue Work Context")

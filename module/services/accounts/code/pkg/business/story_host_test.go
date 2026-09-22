@@ -15,7 +15,7 @@ import (
 	"accounts/pkg/infra"
 
 	"github.com/codefly-dev/core/wool"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -45,7 +45,7 @@ func TestStory_HOST_ID_001(t *testing.T) {
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	verifier, err := codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{
+	verifier, err := workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{
 		PublicKeys: map[string]ed25519.PublicKey{storyWorkContextKeyID: publicKey},
 	})
 	require.NoError(t, err)
@@ -71,9 +71,9 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	require.NoError(t, err)
 
 	// Then the module receives a signed Work Context naming the person and tenant A.
-	token, err := codefly.ParseWorkContextToken(issued.GetToken())
+	token, err := workcontext.ParseWorkContextToken(issued.GetToken())
 	require.NoError(t, err)
-	claims, err := verifier.Verify(token, codefly.WorkContextExpectations{
+	claims, err := verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:   storyWorkContextIssuer,
 		Audience: "documents",
 		TenantID: tenantA,
@@ -83,7 +83,7 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	require.Equal(t, personID, claims.GetOwnerPrincipalId())
 
 	// And a Work Context minted for another audience is refused.
-	_, err = verifier.Verify(token, codefly.WorkContextExpectations{
+	_, err = verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:   storyWorkContextIssuer,
 		Audience: "billing",
 		TenantID: tenantA,
@@ -91,7 +91,7 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	require.Error(t, err, "a context minted for one module may not be presented to another")
 
 	// The same holds for another tenant's expectation of the same token.
-	_, err = verifier.Verify(token, codefly.WorkContextExpectations{
+	_, err = verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:   storyWorkContextIssuer,
 		Audience: "documents",
 		TenantID: uuid.NewString(),

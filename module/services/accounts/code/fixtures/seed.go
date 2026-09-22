@@ -182,7 +182,7 @@ func writeEmbeddedFixtures() (string, error) {
 // which one the runtime selected. Consumers add YAML only; Starter never reads
 // Codefly runtime environment variables or hard-codes product fixture names.
 func SelectedName() (string, error) {
-	selected := strings.TrimSpace(codefly.Fixture())
+	selected := strings.TrimSpace(string(codefly.Fixture()))
 	if selected == "" {
 		return "", nil
 	}

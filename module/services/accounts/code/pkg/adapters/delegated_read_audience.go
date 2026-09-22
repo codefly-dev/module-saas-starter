@@ -11,7 +11,7 @@ import (
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -36,7 +36,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		return nil, err
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get(codefly.WorkContextHeaderName)) != 1 {
+	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
 	}
 	authority := WorkContextSingleton()
@@ -47,11 +47,11 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	token, err := codefly.ParseWorkContextToken(encodedParent)
+	token, err := workcontext.ParseWorkContextToken(encodedParent)
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, "invalid delegated parent")
 	}
-	verified, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer})
+	verified, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
 	if err != nil || verified.TenantId == "" || verified.OwnerPrincipalId == "" {
 		return nil, status.Error(codes.PermissionDenied, "invalid delegated parent")
 	}
@@ -165,7 +165,7 @@ func (h *moduleCapabilitiesConnectHandler) ExchangeDelegatedReadAudience(ctx con
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(codefly.WorkContextHeaderName, req.Header().Values(codefly.WorkContextHeaderName)...)
+	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
 	out, err := h.inner.ExchangeDelegatedReadAudience(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -177,7 +177,7 @@ func (h *moduleCapabilitiesConnectHandler) ExchangeDelegatedOperationAudience(ct
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(codefly.WorkContextHeaderName, req.Header().Values(codefly.WorkContextHeaderName)...)
+	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
 	out, err := h.inner.ExchangeDelegatedOperationAudience(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

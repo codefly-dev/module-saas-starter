@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -31,11 +31,11 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(codefly.WorkContextHeaderName)
+	values := md.Get(workcontext.WorkContextHeaderName)
 	if len(values) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
 	}
-	token, err := codefly.ParseWorkContextToken(values[0])
+	token, err := workcontext.ParseWorkContextToken(values[0])
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
@@ -43,7 +43,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	// module the capability was minted for, and that module's own declaration
 	// says which permission resource types its content is governed by. A host
 	// that spelled one here would answer "no access" for every other consumer.
-	claims, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer})
+	claims, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
@@ -57,7 +57,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	}
 	var resources []string
 	for _, resource := range declared {
-		if codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: resource, Action: "read"}) == nil {
+		if workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: resource, Action: "read"}) == nil {
 			resources = append(resources, resource)
 		}
 	}
@@ -78,7 +78,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	// every one of them, so a revoked permission fails the whole call rather
 	// than quietly widening what the next page shows.
 	seals := func(resource, action string) bool {
-		return codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: resource, Action: action}) == nil
+		return workcontext.RequireWorkContextScope(claims, workcontext.WorkContextScopeRequirement{ResourceKind: resource, Action: action}) == nil
 	}
 	disclosure := business.CollectionMetadataDisclosure{
 		Grants:        seals("roles", "read"),
@@ -93,7 +93,7 @@ func (h *moduleCapabilitiesConnectHandler) ListReadableSourceCollections(ctx con
 	ctx = connectCtx(ctx, req.Header())
 	md, _ := metadata.FromIncomingContext(ctx)
 	md = md.Copy()
-	md.Set(codefly.WorkContextHeaderName, req.Header().Values(codefly.WorkContextHeaderName)...)
+	md.Set(workcontext.WorkContextHeaderName, req.Header().Values(workcontext.WorkContextHeaderName)...)
 	response, err := h.inner.ListReadableSourceCollections(metadata.NewIncomingContext(ctx, md), req.Msg)
 	if err != nil {
 		return nil, translateGRPCError(err)

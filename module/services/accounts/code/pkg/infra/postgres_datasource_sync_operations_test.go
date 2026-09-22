@@ -78,7 +78,7 @@ func enqueueDatasourceOperationJob(
 		Queue:     queue, Topic: topic, Source: source,
 		IdempotencyKey: uuid.NewString(), SchemaVersion: 1,
 		Payload: []byte(`{}`), ContentType: "application/json",
-		Attributes: attributes, MaxAttempts: 4,
+		Attributes: attributes, Priority: 100, MaxAttempts: 4,
 	}})
 	require.NoError(t, err)
 	return response.GetJobId()

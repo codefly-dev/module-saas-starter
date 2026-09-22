@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 )
 
 // accountsJWKSPath is the standards-named endpoint accounts publishes its
@@ -34,7 +34,7 @@ const workContextJWKSCacheTTL = 5 * time.Minute
 // the key set expires. The access-token path makes the opposite call (see
 // accessJWKS), because losing it would take authentication down entirely.
 type workContextVerifier struct {
-	cache *jwksCache[*codefly.WorkContextVerifier]
+	cache *jwksCache[*workcontext.WorkContextVerifier]
 }
 
 func newWorkContextVerifier(accountsBaseURL string) *workContextVerifier {
@@ -42,8 +42,8 @@ func newWorkContextVerifier(accountsBaseURL string) *workContextVerifier {
 		strings.TrimSuffix(accountsBaseURL, "/")+accountsJWKSPath,
 		workContextJWKSCacheTTL,
 		0,
-		func(keys map[string]ed25519.PublicKey) (*codefly.WorkContextVerifier, error) {
-			return codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{PublicKeys: keys})
+		func(keys map[string]ed25519.PublicKey) (*workcontext.WorkContextVerifier, error) {
+			return workcontext.NewWorkContextVerifier(workcontext.WorkContextVerifierOptions{PublicKeys: keys})
 		},
 		invalidWorkContext,
 	)
@@ -60,7 +60,7 @@ func (v *workContextVerifier) Refresh(ctx context.Context) error {
 // Verify establishes trust for a presented Work Context. It confirms the
 // signature, freshness, and attenuation of the token against the published
 // keys; audience and scope are the callee's concern and are not asserted here.
-func (v *workContextVerifier) Verify(ctx context.Context, token codefly.WorkContextToken) error {
+func (v *workContextVerifier) Verify(ctx context.Context, token workcontext.WorkContextToken) error {
 	keyID, err := workContextTokenKeyID(token)
 	if err != nil {
 		return err
@@ -69,16 +69,16 @@ func (v *workContextVerifier) Verify(ctx context.Context, token codefly.WorkCont
 	if err != nil {
 		return err
 	}
-	if _, err := verifier.Verify(token, codefly.WorkContextExpectations{}); err != nil {
+	if _, err := verifier.Verify(token, workcontext.WorkContextExpectations{}); err != nil {
 		return invalidWorkContext(err)
 	}
 	return nil
 }
 
-func workContextTokenKeyID(token codefly.WorkContextToken) (string, error) {
+func workContextTokenKeyID(token workcontext.WorkContextToken) (string, error) {
 	segment, _, found := strings.Cut(token.Encoded(), ".")
 	if !found {
-		return "", fmt.Errorf("%w: malformed token", codefly.ErrWorkContextInvalid)
+		return "", fmt.Errorf("%w: malformed token", workcontext.ErrWorkContextInvalid)
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(segment)
 	if err != nil {
@@ -91,7 +91,7 @@ func workContextTokenKeyID(token codefly.WorkContextToken) (string, error) {
 		return "", invalidWorkContext(err)
 	}
 	if probe.KeyID == "" {
-		return "", fmt.Errorf("%w: token is missing a key id", codefly.ErrWorkContextInvalid)
+		return "", fmt.Errorf("%w: token is missing a key id", workcontext.ErrWorkContextInvalid)
 	}
 	return probe.KeyID, nil
 }
@@ -99,5 +99,5 @@ func workContextTokenKeyID(token codefly.WorkContextToken) (string, error) {
 // invalidWorkContext folds an arbitrary underlying failure into the single
 // invalid sentinel, so callers see one error class regardless of cause.
 func invalidWorkContext(err error) error {
-	return fmt.Errorf("%w: %v", codefly.ErrWorkContextInvalid, err)
+	return fmt.Errorf("%w: %v", workcontext.ErrWorkContextInvalid, err)
 }

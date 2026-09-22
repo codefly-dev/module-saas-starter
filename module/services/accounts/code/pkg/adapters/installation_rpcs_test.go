@@ -9,7 +9,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	codefly "github.com/codefly-dev/sdk-go"
+	workcontext "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -88,9 +88,9 @@ func TestStartInstallationTaskMintsUnderOwnerOfRecordWithAgentActor(t *testing.T
 
 	// The signed capability itself carries the same owner and a single actor hop
 	// naming the agent — the attributable, provable-on-behalf-of write.
-	token, err := codefly.ParseWorkContextToken(issued.GetToken())
+	token, err := workcontext.ParseWorkContextToken(issued.GetToken())
 	require.NoError(t, err)
-	claims, err := server.verifier.Verify(token, codefly.WorkContextExpectations{
+	claims, err := server.verifier.Verify(token, workcontext.WorkContextExpectations{
 		Issuer:           "accounts.test",
 		TenantID:         installOrgID,
 		OwnerPrincipalID: installOwnerID,
