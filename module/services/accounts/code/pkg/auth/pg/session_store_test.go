@@ -68,7 +68,7 @@ func runSessionStoreTests(m *testing.M) int {
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),
 	)
-	setupDone(err != nil)
+	setupDone(err != nil, err)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
@@ -109,7 +109,7 @@ func runSessionStoreTests(m *testing.M) int {
 
 	executionDone := testdb.Measure("auth-db", "test-execution", nil, 0)
 	exitCode := m.Run()
-	executionDone(exitCode != 0)
+	executionDone(exitCode != 0, nil)
 	return exitCode
 }
 

@@ -148,7 +148,7 @@ func TestSignedReleaseVerifiesAndMaterializesThroughCore(t *testing.T) {
 		Signature:  signature,
 	}, manifest.ID, manifest.Version, corecomposition.TrustPolicy{
 		Repositories: map[string]string{manifest.ID: PackageRepository},
-		Signers:      map[string]ed25519.PublicKey{"test-signer": publicKey},
+		Signers:      map[string]map[string]ed25519.PublicKey{manifest.ID: {"test-signer": publicKey}},
 	})
 	if err != nil {
 		t.Fatalf("Core rejected signed release: %v", err)
@@ -198,8 +198,8 @@ func TestSignedReleasePublishesTheTrustPolicyCoreVerifiesWith(t *testing.T) {
 	}
 	var published struct {
 		ModuleTrust struct {
-			Repositories map[string]string `yaml:"repositories"`
-			Signers      map[string]string `yaml:"signers"`
+			Repositories map[string]string            `yaml:"repositories"`
+			Signers      map[string]map[string]string `yaml:"signers"`
 		} `yaml:"module-trust"`
 	}
 	if err := yaml.Unmarshal(mustRead(t, filepath.Join(releaseDir, TrustName)), &published); err != nil {
@@ -209,13 +209,16 @@ func TestSignedReleasePublishesTheTrustPolicyCoreVerifiesWith(t *testing.T) {
 		t.Fatalf("published repository for %s = %q, want %q", manifest.ID,
 			published.ModuleTrust.Repositories[manifest.ID], PackageRepository)
 	}
-	signers := map[string]ed25519.PublicKey{}
-	for identity, encoded := range published.ModuleTrust.Signers {
+	if len(published.ModuleTrust.Signers) != 1 || len(published.ModuleTrust.Signers[manifest.ID]) != 1 {
+		t.Fatal("published signing authority must be scoped to this package only")
+	}
+	signers := map[string]map[string]ed25519.PublicKey{manifest.ID: {}}
+	for identity, encoded := range published.ModuleTrust.Signers[manifest.ID] {
 		decoded, decodeErr := base64.StdEncoding.DecodeString(encoded)
 		if decodeErr != nil {
 			t.Fatalf("published signer %q: %v", identity, decodeErr)
 		}
-		signers[identity] = decoded
+		signers[manifest.ID][identity] = decoded
 	}
 	if _, err := corecomposition.VerifyRelease(&corecomposition.Release{
 		Repository: PackageRepository,

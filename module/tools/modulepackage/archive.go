@@ -347,8 +347,8 @@ type trustDocument struct {
 }
 
 type trustPolicy struct {
-	Repositories map[string]string `yaml:"repositories"`
-	Signers      map[string]string `yaml:"signers"`
+	Repositories map[string]string            `yaml:"repositories"`
+	Signers      map[string]map[string]string `yaml:"signers"`
 }
 
 func encodeTrust(packageID, repository, identity string, publicKey ed25519.PublicKey) ([]byte, error) {
@@ -359,7 +359,7 @@ func encodeTrust(packageID, repository, identity string, publicKey ed25519.Publi
 	encoder.SetIndent(2)
 	document := trustDocument{ModuleTrust: trustPolicy{
 		Repositories: map[string]string{packageID: repository},
-		Signers:      map[string]string{identity: base64.StdEncoding.EncodeToString(publicKey)},
+		Signers:      map[string]map[string]string{packageID: {identity: base64.StdEncoding.EncodeToString(publicKey)}},
 	}}
 	if err := encoder.Encode(document); err != nil {
 		return nil, fmt.Errorf("encode module trust policy: %w", err)
