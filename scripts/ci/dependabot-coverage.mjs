@@ -3,23 +3,18 @@
 // Two failure modes motivate this gate, and neither is visible by reading the
 // config alone.
 //
-// A configured manifest that is hashed in module/tools/base-manifest.json
-// produces a pull request that can NEVER merge. Dependabot bumps the manifest,
-// the hash in base-manifest.json goes stale, and `base-integrity` — a gate in
-// REQUIRED_GATES — fails. Dependabot cannot run `base-integrity.mjs gen`, and a
-// workflow that regenerates the manifest onto Dependabot's own branch does not
-// rescue it: a commit pushed with GITHUB_TOKEN starts no new workflow run, so
-// the required checks never report against the new head. The unmergeable pull
-// request then consumes that ecosystem's open-pull-requests-limit and blocks
-// every later update behind it. The symptom is one stale red bot pull request,
-// which reads exactly like ordinary bot noise.
+// A dependency manifest under module/ ships with the module release: its
+// declared versions are owned by the canonical module and move with a module
+// tag, not with this repository's bots. A Dependabot entry over one opens pull
+// requests that race the module's own dependency policy and, at the
+// ecosystem's open-pull-requests-limit, crowd out the updates that matter.
 //
-// The mirror failure is silence: a manifest that is neither base-tracked nor
+// The mirror failure is silence: a manifest that is neither module-owned nor
 // configured receives no updates at all and reports nothing at all.
 //
-// So: every non-generated, non-base-tracked dependency manifest must be configured, every
-// base-tracked one must not be, and no entry may point at a directory holding
-// no manifest of its ecosystem.
+// So: every non-generated, non-module dependency manifest must be configured,
+// every module-owned one must not be, and no entry may point at a directory
+// holding no manifest of its ecosystem.
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
@@ -30,7 +25,9 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const REPOSITORY_ROOT = resolve(dirname(SCRIPT_PATH), "..", "..");
 
 export const CONFIG_PATH = ".github/dependabot.yml";
-export const BASE_MANIFEST_PATH = "module/tools/base-manifest.json";
+
+// Dependency manifests under this prefix are released with the module.
+export const MODULE_PREFIX = "module/";
 
 // Which filenames declare dependencies for which Dependabot ecosystem.
 export const MANIFEST_MATCHERS = [
@@ -87,14 +84,8 @@ export function dependabotEntries(text) {
   });
 }
 
-// The base-file paths as repository-relative paths. base-manifest.json keys are
-// relative to module/, the directory the manifest describes.
-export function baseTrackedPaths(root = REPOSITORY_ROOT) {
-  const path = join(root, BASE_MANIFEST_PATH);
-  if (!existsSync(path)) throw new Error(`${BASE_MANIFEST_PATH} is missing under ${root}`);
-  const { files } = JSON.parse(readFileSync(path, "utf8"));
-  return new Set(Object.keys(files ?? {}).map((relative) => `module/${relative}`));
-}
+// A manifest the module release owns: everything under module/.
+export const isModuleOwned = (manifest) => manifest.path.startsWith(MODULE_PREFIX);
 
 // Every dependency manifest in the tree as { ecosystem, directory, path }.
 export function discoverManifests(root = REPOSITORY_ROOT) {
@@ -127,7 +118,7 @@ export const isGeneratedRecipe = (manifest) =>
 const key = (ecosystem, directory) => `${ecosystem} ${directory}`;
 const spell = (directory) => (directory === "" ? "/" : `/${directory}`);
 
-export function coverageErrors({ entries, manifests, baseTracked, hasWorkflows }) {
+export function coverageErrors({ entries, manifests, hasWorkflows }) {
   const errors = [];
   const configured = new Set();
   for (const { ecosystem, directories } of entries) {
@@ -166,25 +157,24 @@ export function coverageErrors({ entries, manifests, baseTracked, hasWorkflows }
       }
       for (const manifest of here) {
         if (isGeneratedRecipe(manifest)) {
-          errors.push(`${manifest.path} is agent-generated; update the owning service agent, then topology bindings (see RELEASE_GATES.md)`);
+          errors.push(`${manifest.path} is agent-generated; update the owning service agent in its service.codefly.yaml (see RELEASE_GATES.md)`);
           continue;
         }
-        if (!baseTracked.has(manifest.path)) continue;
+        if (!isModuleOwned(manifest)) continue;
         errors.push(
           `${CONFIG_PATH}: ${ecosystem} is configured at ${spell(directory)}, whose ${manifest.path} ` +
-            `is hashed in ${BASE_MANIFEST_PATH}; bumping it leaves that manifest stale and fails the ` +
-            "required base-integrity gate, which Dependabot cannot repair, so the pull request can " +
-            "never merge and blocks every later update in this ecosystem behind it",
+            "is released with the module; its declared versions move with a module tag, not with " +
+            "this repository's bots, and the entry would crowd out the updates that matter",
         );
       }
     }
   }
 
   for (const manifest of manifests) {
-    if (baseTracked.has(manifest.path) || isGeneratedRecipe(manifest)) continue;
+    if (isModuleOwned(manifest) || isGeneratedRecipe(manifest)) continue;
     if (configured.has(key(manifest.ecosystem, manifest.directory))) continue;
     errors.push(
-      `${CONFIG_PATH}: ${manifest.path} is not base-tracked and no ${manifest.ecosystem} entry ` +
+      `${CONFIG_PATH}: ${manifest.path} is not module-owned and no ${manifest.ecosystem} entry ` +
         `covers ${spell(manifest.directory)}; it would receive no updates and report nothing`,
     );
   }
@@ -214,7 +204,6 @@ export function dependabotCoverageErrors(root = REPOSITORY_ROOT) {
   return coverageErrors({
     entries,
     manifests: discoverManifests(root),
-    baseTracked: baseTrackedPaths(root),
     hasWorkflows,
   });
 }
@@ -225,14 +214,14 @@ function check() {
     console.error("dependabot-coverage: the configuration does not match the tree:");
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
-      `\nFAIL: ${errors.length} coverage defect(s). Every non-generated, non-base-tracked dependency manifest must ` +
-        "be configured, every base-tracked one must not be, and no entry may point at a directory " +
+      `\nFAIL: ${errors.length} coverage defect(s). Every non-generated, non-module dependency manifest must ` +
+        "be configured, every module-owned one must not be, and no entry may point at a directory " +
         "holding no manifest of its ecosystem.",
     );
     process.exit(1);
   }
   console.log(
-    "dependabot-coverage: every updatable manifest is configured and no base file is.",
+    "dependabot-coverage: every updatable manifest is configured and no module-owned file is.",
   );
 }
 

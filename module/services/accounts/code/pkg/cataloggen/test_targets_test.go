@@ -65,24 +65,17 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 	require.Equal(t, 1, catalog.SchemaVersion)
 	require.Equal(t, "whole-service-and-dependency-closure", catalog.Fallback)
 	require.Len(t, catalog.Targets, 5)
-	topologyData, err := os.ReadFile("../../../../../deployment/topology.bindings.codefly.yaml")
+	accountsManifest, err := os.ReadFile("../../../service.codefly.yaml")
 	require.NoError(t, err)
-	var topology struct {
-		Services []struct {
-			Name         string `yaml:"name"`
-			Dependencies []struct {
-				Service string `yaml:"service"`
-			} `yaml:"dependencies"`
-		} `yaml:"services"`
+	var manifest struct {
+		ServiceDependencies []struct {
+			Name string `yaml:"name"`
+		} `yaml:"service-dependencies"`
 	}
-	require.NoError(t, yaml.Unmarshal(topologyData, &topology))
+	require.NoError(t, yaml.Unmarshal(accountsManifest, &manifest))
 	var dependencies []string
-	for _, service := range topology.Services {
-		if service.Name == "accounts" {
-			for _, dependency := range service.Dependencies {
-				dependencies = append(dependencies, dependency.Service)
-			}
-		}
+	for _, dependency := range manifest.ServiceDependencies {
+		dependencies = append(dependencies, dependency.Name)
 	}
 	require.NotEmpty(t, dependencies)
 	harnesses := map[string]string{
@@ -99,7 +92,7 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 			"module/services/store/migrations/1_baseline.up.sql",
 			"module/contracts/api/accounts/connect/proto/saas/accounts/v1/audit.proto",
 			"module/tools/composition/composition.go",
-			"module/deployment/topology.bindings.codefly.yaml",
+			"module/services/accounts/service.codefly.yaml",
 		} {
 			covered := false
 			for _, root := range target.InputRoots {

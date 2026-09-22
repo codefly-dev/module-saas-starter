@@ -346,57 +346,26 @@ Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — d
 ## Composing this module into a workspace
 
 A downstream workspace does not fork or copy saas-starter. It **composes** the
-module: Codefly writes a copy into the consumer under `modules/<name>/`, records
-where that copy came from, and enforces that the consumer only ever ADDS files
-beside the base — never edits the base in place. All paths below are relative to
-that composed module root (the `modules/<name>/` directory), the same root the
-base-integrity tooling runs against.
+module: Codefly resolves a pinned, content-addressed release into the consumer
+under `modules/<name>/`, and the consumer only ever ADDS files beside the base —
+never edits the base in place. All paths below are relative to that composed
+module root (the `modules/<name>/` directory).
 
-### Two-step compose
+### Composing
 
 ```bash
-# 1. Create the empty shell (no base files yet).
 codefly add module --agent saas-starter <name>
-
-# 2. Pull the base in from an immutable upstream tag. Dry-run is the default;
-#    review the plan, then re-run with --apply.
-codefly sync module <name> \
-  --source https://github.com/codefly-dev/module-saas-starter.git \
-  --to <tag> \
-  --subdir module
-codefly sync module <name> \
-  --source https://github.com/codefly-dev/module-saas-starter.git \
-  --to <tag> \
-  --subdir module \
-  --apply
 ```
 
-`--subdir module` selects saas-starter's composed subtree (this repo ships the
-module under `module/`, not at the repository root). Never compose with `rsync`,
-a directory copy, or a hand-edited manifest — Codefly owns the transaction so
-the result has reproducible provenance.
-
-### The pin and the lock
-
-`--to` takes an **immutable semantic-version tag**, never a branch or a moving
-ref. On `--apply`, Codefly writes the consumer-owned lock `tools/base-source.json`
-recording the repository, tag, peeled commit, and subdir. That file is the
-consumer's provenance and belongs in its git history; sync never overwrites it
-with anything but a newer applied pin.
-
-Once the source is pinned, later updates need only the new tag — source and
-subdir are read back from the lock:
-
-```bash
-codefly sync module <name> --to <newtag>            # dry-run
-codefly sync module <name> --to <newtag> --apply
-```
+That creates the consumer's module shell; the base itself is never copied by
+hand. Never compose with `rsync`, a directory copy, or a hand-edited manifest —
+Codefly resolves the pinned release so the result has reproducible provenance.
+Which release, and who must have signed it, is the pin below.
 
 ### Pinning the package by identity
 
-A workspace can skip the sync-into-the-consumer route and resolve the published
-module package at run time instead. The reference names the source repository
-and a package version rather than a path:
+A workspace resolves the published module package at run time. The reference
+names the source repository and a package version rather than a path:
 
 ```yaml
 modules:
@@ -432,39 +401,18 @@ and review changes to it as you would any other credential in your repository.
 
 Codefly then fetches the release, checks its detached signature and archive
 digest against this policy, and materializes it into a content-addressed cache.
-Nothing is written into the consumer's tree, so there is no base manifest to
-keep fresh and no sibling checkout to arrange — which is what makes this the
-CI-portable route. Overlay discipline below applies to the sync route.
+Nothing is written into the consumer's tree and no sibling checkout is needed —
+which is what makes this the CI-portable route.
 
 ### Overlay discipline
 
-Base files are **upstream-owned**. Every base file's `sha256` is recorded in
-`tools/base-manifest.json`, shipped into the consumer at sync time. A consumer
-composes by ADDING files on the side — a product plugin package, extra services,
-integration tests — never by editing a base file in place. `codefly verify`
-(and `node tools/base-integrity.mjs check`) re-hash every manifest file in the
-consumer and fail on any drift; files absent from the manifest are legal
-side-additions. Anything indispensable to the product — plugin entry points,
-composition roots, contract tests — should be listed under `requiredAdditions`
-in `tools/base-integrity-allow.json` so verify fails if an update ever leaves
-one missing.
-
-### When a base file genuinely must change
-
-In-place edits fail closed. Resolve the conflict deliberately, preferring the
-option earliest in this list:
-
-1. **Promote it upstream (preferred).** Land the change in canonical
-   saas-starter, cut a new tag, and `sync --to` it down. The base gets stronger
-   and every consumer benefits.
-2. **Accept the upstream version.** When sync reports a base file you diverged
-   on and you want canonical's copy, pin it with `--accept-upstream <path>` to
-   discard the local edit for that path. There is no flag that forces a
-   consumer edit back over upstream — the base only moves via a new tag.
-3. **Whitelist the divergence (last resort).** Add the path to
-   `tools/base-integrity-allow.json` with a human-readable reason. This is
-   logged loudly on every check and is tech debt — prefer a config seam or a
-   side-module.
+Base files are **upstream-owned**: the package is the exact set of files the
+release ships, and the base only moves via a new tag. A consumer composes by
+ADDING files on the side — a product plugin package, extra services,
+integration tests — never by editing a base file in place; the next compose
+replaces an in-place edit with the base's copy. A change a base file genuinely
+needs goes upstream: land it in canonical saas-starter, cut a new tag, and pin
+it. The base gets stronger and every consumer benefits.
 
 ### Composing a subset of services
 

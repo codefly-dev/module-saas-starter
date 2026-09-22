@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.160}"
+version="${CODEFLY_VERSION:-0.1.161}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -23,6 +23,12 @@ case "${version}" in
     # go-grpc >= 0.1.43, nextjs >= 0.0.157, postgres >= 0.0.137, redis >= 0.0.92,
     # vault >= 0.0.33. Refuses the previous pins outright.
     checksum=7d68805935e942309406aeec385ea2f3135fa9a6fec06760df6b2370ff48b5c1
+    ;;
+  0.1.161)
+    # Core v0.5.1: `latest` resolves to the newest published release (cli#785);
+    # cli#786 removed `codefly verify`, `codefly sync module` and the `verify`
+    # CI phase, so this tree carries no base manifest and plans `sync-drift` alone.
+    checksum=47e133cebd8f72fc44e2c1c3f76b375377ba946818fcbbdcee1f126c12a7fd5c
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2

@@ -448,18 +448,12 @@ process.stdout.write(JSON.stringify({
 		expect(dockerignore).toContain("code/packages/*/node_modules");
 		expect(dockerignore).toContain("code/packages/*/dist");
 
-		const integrityPolicy = readFileSync(
-			join(codeDir, "../../../tools/base-integrity.mjs"),
+		const verifyPolicy = readFileSync(
+			join(codeDir, "../../../tools/module-verify.mjs"),
 			"utf8",
 		);
-		expect(integrityPolicy).toContain(
-			'rel === "services/frontend/code/package-lock.json"',
-		);
-		expect(integrityPolicy).toContain(
-			"/^services\\/[^/]+\\/service\\.codefly\\.yaml$/.test(rel)",
-		);
-		expect(integrityPolicy).toContain("function workspaceInstallGraphErrors(");
-		expect(integrityPolicy).toContain(
+		expect(verifyPolicy).toContain("function workspaceInstallGraphErrors(");
+		expect(verifyPolicy).toContain(
 			"frontend package-lock.json workspace metadata is stale",
 		);
 	});

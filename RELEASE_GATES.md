@@ -22,8 +22,8 @@ For a service concern, the rule is unchanged: extend the generic Codefly/Core
 contract and the applicable plugin; never add a service-specific implementation
 to provider YAML.
 
-Quality phases run in four independent matrix jobs: `verify,sync-drift`,
-`lint`, `compile`, and `test`. Each uses a fresh checkout and the same affected
+Quality phases run in four independent matrix jobs: `sync-drift`, `lint`,
+`compile`, and `test`. Each uses a fresh checkout and the same affected
 service plan. All four must succeed for `codefly-quality` to succeed; matrix
 fail-fast is disabled so one failed phase does not cancel the other evidence.
 The release aggregate still requires the complete quality result. Disk setup
@@ -107,7 +107,7 @@ no per-track exemption.
 
 | Gate | `v*` (deploy counter) | `module-package/v*` | Note |
 | --- | --- | --- | --- |
-| `base-integrity` | required | required | canonical manifest freshness |
+| `base-integrity` | required | required | module verification and the migration gates |
 | `authz-coverage` | required | required | RBAC, audit, and no-broadening |
 | `release-contract` | required | required | this gating graph itself |
 | `docs-sync` | required | required | interface docs and story tests |
@@ -181,15 +181,9 @@ convention had to become a rule.
 `release-contract` also runs `scripts/ci/dependabot-coverage.mjs check`, which
 compares `.github/dependabot.yml` against the manifests actually in the tree.
 
-A dependency manifest hashed in `module/tools/base-manifest.json` must **not** be
-configured. Dependabot would bump it, the recorded hash would go stale, and
-`base-integrity` — mandatory — would fail with no way for Dependabot to repair
-it: it cannot run `base-integrity.mjs gen`, and regenerating the manifest onto
-its branch from a workflow does not help, because a commit pushed with
-`GITHUB_TOKEN` starts no workflow run and the required checks would never report
-against the new head. The pull request could never merge, and it would hold that
-ecosystem's `open-pull-requests-limit` open indefinitely, silently starving every
-later update behind it. That is why npm, pip and the five in-module `go.mod`
+A dependency manifest under `module/` must **not** be configured: it ships with
+the module release, so its declared versions move with a module tag, not with
+this repository's bots. That is why npm, pip and the five in-module `go.mod`
 files are absent: they are base files, owned by the canonical module.
 
 The mirror rule closes the other gap: a non-generated manifest that is *not*
@@ -214,8 +208,8 @@ access; it does not qualify or automatically adopt an upgrade.
 To upgrade an image:
 
 1. Update the owning service agent's template/constants and qualify its release.
-2. Adopt that release in `module/deployment/topology.bindings.codefly.yaml`,
-   regenerate service manifests, refresh the base manifest, and update the
+2. Adopt that release in the owning `services/<svc>/service.codefly.yaml`
+   (`codefly update workspace` moves every service at once) and update the
    expected images in `scripts/ci/build-images.json` in the same PR.
 3. Run `codefly ci run --all` and boot the graph with `codefly run service`
    before adopting a runtime/compiler major. A successful build alone does not
@@ -435,7 +429,7 @@ reverse, fails the `release-contract` job.
 
 | Job | What it guards | What it runs |
 | --- | --- | --- |
-| `base-integrity` | the canonical base manifest that seeds every consumer sync, plus the RLS-migration, migration-pairing, reference-aware migration upgrade, and generated-pin gates | `node --test` for each gate's own suite, then `node module/tools/<gate>.mjs check`; migration reference validation runs on every candidate, with PostgreSQL upgrade and clean-install replay scoped to migration/runner inputs (see [migration policy](module/services/store/migrations/README.md)) |
+| `base-integrity` | the frontend workspace install graph and public-claim scan (`module-verify.mjs`), plus the RLS-migration, migration-pairing, reference-aware migration upgrade, and generated-pin gates | `node --test` for each gate's own suite, then `node module/tools/<gate>.mjs check`; migration reference validation runs on every candidate, with PostgreSQL upgrade and clean-install replay scoped to migration/runner inputs (see [migration policy](module/services/store/migrations/README.md)) |
 | `authz-coverage` | the generated authorization catalog: RBAC coverage, audit coverage, and permission no-broadening against `main` | `node module/tools/authz-coverage-gate.mjs`, plus `go test` for the gateway header-lockstep and adapter enforcement tests |
 | `release-contract` | this gating graph itself, and the Dependabot configuration that feeds it | `node --test scripts/ci/release-gates.test.mjs`, `node --test scripts/ci/dependabot-coverage.test.mjs`, `node scripts/ci/release-gates.mjs check`, `node scripts/ci/dependabot-coverage.mjs check` |
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
@@ -484,21 +478,6 @@ So `--fail-on-vuln=false` narrows *what blocks*, never *what is looked at*: the
 evidence report is the wider of the two, and the enforcement step is the
 narrower. A finding in a first-party dependency is un-mergeable; a finding in a
 vendor runtime image is recorded and triaged.
-
-## Canonical manifest freshness
-
-Phase 1 verifies that base files match `tools/base-manifest.json` — it trusts
-the committed manifest as the source of truth. That protects consumers, but it
-cannot catch the manifest itself drifting from the canonical tree it was
-generated from: a base file edited without re-running
-`node tools/base-integrity.mjs gen` ships a stale digest, and every consumer
-sync then aborts on an unreconcilable source-path mismatch (v0.0.32).
-
-Provider CI closes that gap with `base-integrity.mjs verify`, which re-derives
-the manifest from the tree and fails on any changed, unrecorded, or removed base
-file. It guards the canonical artifact that seeds every other consumer, so it
-must run here rather than in a consumer copy — the same reason every job in
-[Repository-specific gates](#repository-specific-gates) lives in provider YAML.
 
 ## Commit identity
 
@@ -740,13 +719,13 @@ are views of the same plugin-owned gate, not alternate test pipelines.
 
 ## Release cadence and ownership
 
-`codefly sync module` pins an **immutable semver tag** in the consumer's
-`base-source.json` lock. Consumers advance only when they deliberately re-pin,
-so this repository's tag rhythm bounds every consumer's update rhythm.
+A consumer pins an **immutable semver tag** of this module. Consumers advance
+only when they deliberately re-pin, so this repository's tag rhythm bounds every
+consumer's update rhythm.
 
 Tags are cut by the saas-starter maintainers **on demand** — whenever
-consumer-relevant base changes have landed on `main` and pass `codefly ci run`
-plus `base-integrity.mjs verify`. There is no fixed calendar; a release is a
+consumer-relevant base changes have landed on `main` and pass `codefly ci run`.
+There is no fixed calendar; a release is a
 maintainer decision that the current base tree is a good pin, not a scheduled
 event. Consumers that need to move faster than tags are cut should open an issue
 rather than pin an untagged revision.
@@ -755,8 +734,7 @@ Two independent tag tracks share this repository, on two different version
 axes. They are not interchangeable:
 
 - **Deploy counter** — the `v0.0.x` tag series a downstream deployment
-  repository and its per-environment deploy jobs adopt via `codefly sync module
-  --to <tag>`. The tag itself is the
+  repository and its per-environment deploy jobs pin. The tag itself is the
   counter; `agent.codefly.yaml`'s `version:` is the module agent's own version
   and may lag the tags (it is bumped when the agent changes, not on every tag).
 - **Immutable module package** — `module-package/vX.Y.Z`, sourced from

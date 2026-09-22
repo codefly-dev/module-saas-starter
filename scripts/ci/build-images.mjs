@@ -7,7 +7,8 @@ import { discoverManifests, isGeneratedRecipe } from './dependabot-coverage.mjs'
 const root = resolve(import.meta.dirname, '../..');
 const read = path => readFileSync(resolve(root, path), 'utf8');
 const inventoryPath = 'scripts/ci/build-images.json';
-const bindingsPath = 'module/deployment/topology.bindings.codefly.yaml';
+const moduleManifestPath = 'module/module.codefly.yaml';
+const serviceManifestPath = name => `module/services/${name}/service.codefly.yaml`;
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 const normalize = ref => ref.replace(/^docker\.io\/library\//, '').replace(/^docker\.io\//, '');
 
@@ -118,15 +119,15 @@ function check(inventory, services) {
     const changed = git('diff', '--name-only', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n');
     const proposals = git('diff', '--name-only', '--diff-filter=ACMRT', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n');
     for (const path of proposals.filter(path => isGeneratedRecipe({ ecosystem: 'docker', path }))) {
-      errors.push(`${path}: generated recipes are not upgrade inputs; adopt an agent through topology bindings and update the image contract`);
+      errors.push(`${path}: generated recipes are not upgrade inputs; adopt an agent in its service.codefly.yaml and update the image contract`);
     }
-    if (changed.includes(inventoryPath) && !changed.includes(bindingsPath) &&
+    if (changed.includes(inventoryPath) && !changed.some(path => /^module\/services\/[^/]+\/service\.codefly\.yaml$/.test(path)) &&
         git('ls-tree', '--name-only', process.env.CODEFLY_BASE, inventoryPath).trim()) {
       // Adding monitoring metadata does not require repinning an unchanged agent.
       const previous = JSON.parse(git('show', `${process.env.CODEFLY_BASE}:${inventoryPath}`));
       for (const [agent, config] of Object.entries(inventory)) {
         if (JSON.stringify(config.images) !== JSON.stringify(previous[agent]?.images)) {
-          errors.push(`${agent}: image upgrades require an agent release adopted through topology bindings`);
+          errors.push(`${agent}: image upgrades require an agent release adopted in a service.codefly.yaml`);
         }
       }
     }
@@ -191,7 +192,7 @@ function registryDigest(ref) {
 
 export function monitor(inventory, digest = registryDigest) {
   const errors = [];
-  const lines = ['# Effective build image updates', '', 'Update the owning agent source, publish a qualified release, then adopt it through topology bindings.', ''];
+  const lines = ['# Effective build image updates', '', 'Update the owning agent source, publish a qualified release, then adopt it in the owning service.codefly.yaml.', ''];
   for (const [agent, config] of Object.entries(inventory)) {
     if (config.coverage === 'codefly-vendor-audit') continue;
     lines.push(`## ${agent}`, '', config.source, '');
@@ -227,7 +228,10 @@ export function monitor(inventory, digest = registryDigest) {
 if (resolve(process.argv[1] ?? '') === resolve(import.meta.filename)) {
   try {
     const inventory = JSON.parse(read(inventoryPath));
-    const services = parseWorkflowYaml(read(bindingsPath)).services;
+    // The manifests are the model: module.codefly.yaml lists the services and
+    // each service.codefly.yaml names the agent it runs.
+    const services = (parseWorkflowYaml(read(moduleManifestPath)).services ?? []).map(({ name }) =>
+      ({ name, agent: parseWorkflowYaml(read(serviceManifestPath(name))).agent }));
     const command = process.argv[2];
     if (command === 'snapshot') {
       mkdirSync(resolve(root, '.codefly/ci'), { recursive: true });

@@ -137,14 +137,15 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Repository layout
 
-- `module/` — the canonical module source that ships to consumers. **This is
-  the tree the base-integrity tooling and CI run against.** See
-  [module/AGENTS.md](./module/AGENTS.md) before editing anything under it.
+- `module/` — the canonical module source that ships to consumers, as an
+  immutable package. See [module/AGENTS.md](./module/AGENTS.md) before editing
+  anything under it.
 - `modules/saas-starter` — a symlink to `module/` (the workspace-composed view
   Codefly expects under `modules/<name>/`).
 - `main.go` / `gitops.go` — this repo is itself the `saas-starter` **module agent**
-  binary; composing the module runs this code to regenerate the per-service
-  manifests. `agent.codefly.yaml` carries its name, publisher and version.
+  binary; composing the module runs this code to copy the manifests into the
+  consumer and render its GitOps bundle from them. `agent.codefly.yaml` carries
+  its name, publisher and version.
 
 ## Where the depth lives
 
@@ -156,24 +157,23 @@ Depth sits with the code that owns it:
 | File | Covers |
 | --- | --- |
 | [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the six Go modules and how to test each, configuration groups |
-| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the bindings file as source of truth, and changing an agent version pin |
+| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the manifests as the model, `spec.deployment`, and moving an agent version |
 | [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
 | [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
 | [module/services/frontend/AGENTS.md](./module/services/frontend/AGENTS.md) | the registration route, public vs internal projections, remote loading and CSP, the published kit |
 
 Skills in `.claude/skills/`, loaded when the task calls for them:
-`run-the-starter-locally`, `land-a-pull-request`, `refresh-base-manifest`,
-`pin-a-service-agent`, `cut-a-release`.
+`run-the-starter-locally`, `land-a-pull-request`, `cut-a-release`.
 
 ## Building, testing, and CI
 
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
-- Beside it, CI runs nine repository-specific gates that no service owns — base-file
-  integrity, authorization coverage, the release-gate contract, interface docs and
-  story tests, the kit's version, provider shims, marketing isolation, the SDK
-  boundary, the immutable module package. [RELEASE_GATES.md § Repository-specific
+- Beside it, CI runs nine repository-specific gates that no service owns — the
+  module verification job, authorization coverage, the release-gate contract,
+  interface docs and story tests, the kit's version, provider shims, marketing
+  isolation, the SDK boundary, the immutable module package. [RELEASE_GATES.md § Repository-specific
   gates](./RELEASE_GATES.md#repository-specific-gates) says what each runs, and
   `release-gates.test.mjs` holds this prose to the enforced set.
 - More checks run as *steps* inside the `base-integrity` job than as gates of their
@@ -182,10 +182,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   such a list with a count: nothing enforces one, so two changes that each add a
   step and each bump the same number merge cleanly into a total that is silently
   wrong.
-- Editing any base file means refreshing `module/tools/base-manifest.json` — the
-  easiest gate here to trip ([module/AGENTS.md § Base-file integrity
-  manifest](./module/AGENTS.md#base-file-integrity-manifest)). Go suites live in six
-  independent Go modules with no `go.work`
+- Go suites live in six independent Go modules with no `go.work`
   ([module/AGENTS.md](./module/AGENTS.md#go-suites)).
 - Vulnerability policy: the complete audit runs non-blocking so vendor-image
   findings stay in the evidence report, while a separate fail-closed step enforces
@@ -200,7 +197,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 ## Cutting a release
 
 Two tag tracks share this repository on separate version axes: the **`v0.0.N`
-deploy counter** consumers adopt via `codefly sync module`, and the **immutable
+deploy counter** consumers pin, and the **immutable
 module package** (`module-package/vX.Y.Z`, from
 `module/module.package.codefly.yaml`) — only the second triggers the
 module-package publication job. Cutting a tag here does **not** publish a Go or
@@ -209,6 +206,20 @@ those under their own tags. It *does* publish the TypeScript client:
 `@codefly-dev/saas-sdk` goes to GitHub Packages on every deploy-counter tag, so a
 contract change reaching that tree needs a `version:` bump in its `package.json`
 or the release fails. Recipes and traps: the `cut-a-release` skill.
+
+**Rolling a Core release through the fleet** is three CLI verbs, not a hand
+procedure, and this repo is the last stop: `codefly agent deps --dir <agent-repo>
+--pin vX.Y.Z` moves an agent's Core pin (every lock it owns, standalone build
+verified); `codefly publish patch` in a clean, synced `main` releases that repo
+(release PR, tag, and for a service agent the release-grade CI and loader
+assets); `codefly publish all` does the same over every manifest-bearing repo
+under a workspace root in dependency order, and moves no pins. In **this** repo
+`codefly publish` bumps the module agent's own version in `agent.codefly.yaml`,
+not the `v0.0.N` deploy counter — that tag is cut by hand on the merged `main`
+commit. `codefly update workspace` is the one command that moves this repo's
+service-agent versions. When you meet a
+`codefly` verb this file does not name, add it here or to the CLI's
+`docs/commands.md` in the same change.
 
 ## Doc index
 

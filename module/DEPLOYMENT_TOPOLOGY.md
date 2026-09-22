@@ -2,27 +2,28 @@
 
 Status: active (`P1-GEN-007` and `P1-NET-006`, complete).
 
-`deployment/topology.bindings.codefly.yaml` is the single module-level source
-for Codefly services, endpoints, endpoint-scoped dependencies, module exports,
-deployment ports, and public egress. The runtime `module.codefly.yaml` and every
-`services/*/service.codefly.yaml` are generated outputs and must not be edited.
+The manifests are the model. `module.codefly.yaml` declares the service list and
+the module interface; each `services/*/service.codefly.yaml` declares its agent,
+endpoints, endpoint-scoped dependencies and, under `spec.deployment`, the
+deployment ports, public egress, cluster-internal HTTP routes and bootstrap Jobs.
+Both are authored. The topology below is assembled from them and never restated
+anywhere else.
 
 ## Owned artifacts
 
 | Artifact | Purpose |
 | --- | --- |
-| `deployment/topology.bindings.codefly.yaml` | Strict authored topology and non-topology service settings required to render complete manifests. |
-| `deployment/application.bindings.codefly.yaml` | Optional application-owned side file for narrowly typed Postgres migration sources; absent in the generic Starter. |
-| `deployment/generated/service-topology.json` | Typed `saas.deployment.topology.v1` inventory. |
-| `module.codefly.yaml` | Generated Codefly module interface and service list. |
-| `services/*/service.codefly.yaml` | Generated agents, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, and specs. |
+| `module.codefly.yaml` | Authored module identity, service list and interface. |
+| `services/*/service.codefly.yaml` | Authored agent, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, spec, and `spec.deployment` (endpoint ports, public egress, internal HTTP routes, bootstrap Jobs, Kubernetes identity). |
+| `deployment/jobs.codefly.yaml` | Authored store-writing deploy steps; no manifest field expresses a one-shot command. |
+| `deployment/generated/service-topology.json` | Typed `saas.deployment.topology.v1` inventory, rendered from the manifests. |
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
 | `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + the internal-authority and internal-HTTP AuthorizationPolicies + waypoint); mirrors those resources from the per-environment GitOps mesh baseline, not the whole of it — the namespace `default-deny` and the L4 internal policies are rendered there only. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains eleven services, 16 endpoints,
-nine dependency edges, three module-interface endpoints, and four explicit
-public-egress grants. The accounts descriptor catalog is an input: if its RPCs
+The normalized inventory currently contains eight services, twelve endpoints,
+eight dependency edges, four module-interface endpoints, and four explicit
+public-egress grants (`deployment_topology_test.go` pins the counts). The accounts descriptor catalog is an input: if its RPCs
 use gRPC, Connect, or REST without a corresponding accounts endpoint,
 generation fails.
 
@@ -249,7 +250,8 @@ go generate ./pkg/business
 go generate ./pkg/cataloggen
 ```
 
-The compiler rejects unknown YAML fields and schema versions, invalid or
+The compiler rejects an unknown key under `spec.deployment`, an endpoint with
+no port, a port for an endpoint the manifest does not declare, invalid or
 unsorted services/endpoints/dependencies, unknown endpoint references,
 dependency cycles, invalid visibility/API/ports, mismatched module-interface
 exports, and missing descriptor-required accounts protocols.
@@ -263,23 +265,11 @@ consumer-owned GitOps tree, render an environment with:
 kubectl kustomize modules/<module>/deployment/kustomize/overlays/<environment>
 ```
 
-CI regenerates and clean-diff checks the normalized catalog, module manifest,
-all eleven service manifests, and NetworkPolicy file. A separate CI job copies
+CI regenerates and clean-diff checks the normalized catalog and the policy
+goldens; the manifests are authored and are never an output. A separate CI job copies
 only marketing into an isolated build context, installs its own dependency
 lock, and runs unit, content, boundary, build, budget, and degraded-product
 smoke checks.
-
-Applications that install backend products may add
-`deployment/application.bindings.codefly.yaml` without editing Starter topology:
-
-```yaml
-version: v1
-module_name: installed-saas
-postgres_migration_sources:
-  - service: store
-    name: product_name
-    path: ../../../product/services/backend/migrations
-```
 
 The optional `module_name` is the installed application identity. The compiler
 otherwise accepts only named sources targeting a Starter Postgres service;

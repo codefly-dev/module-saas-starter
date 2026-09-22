@@ -231,9 +231,8 @@ First, disambiguate two "catalogs" the issue elides:
   `codefly/saas/permissions-contribution/v1`) into
   `deployment/generated/contributed-permissions.json` and the generated Go
   catalog `pkg/permissioncatalog/catalog_gen.go`. This is a build-time artifact,
-  and it **is base** — both files are base-manifest-tracked
-  (`tools/base-manifest.json:75,701`), so a consumer cannot hand-edit them; a
-  permission arrives only via contribution → regeneration.
+  and it **is base**, so a consumer cannot hand-edit them; a permission
+  arrives only via contribution → regeneration.
 - The **built-in RBAC *role* catalog** — a versioned `roles.json` (roles +
   `resource:action` grants) that `cmd/role-catalog-import` diff-applies into the
   Postgres `roles` / `role_permissions` tables under the audited

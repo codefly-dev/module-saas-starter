@@ -45,7 +45,7 @@ type gatewayCompatibilityAlias struct {
 
 // BuildGatewayRouteCatalog derives the complete public protobuf edge surface.
 // Internal procedures are deliberately omitted rather than marked protected.
-func BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument []byte) (*catalogv1.GatewayRouteCatalog, error) {
+func BuildGatewayRouteCatalog(serviceDocument, bindingDocument []byte, documents DeploymentDocuments) (*catalogv1.GatewayRouteCatalog, error) {
 	serviceCatalog := &catalogv1.ServiceCatalog{}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(serviceDocument, serviceCatalog); err != nil {
 		return nil, fmt.Errorf("decode service catalog: %w", err)
@@ -57,7 +57,7 @@ func BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument
 	if err != nil {
 		return nil, err
 	}
-	endpoints, err := gatewayEndpointsFromDeployment(serviceCatalog, topologyDocument)
+	endpoints, err := gatewayEndpointsFromDeployment(serviceCatalog, documents)
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +177,8 @@ func decodeGatewayBindings(document []byte) (gatewayBindings, error) {
 	return bindings, nil
 }
 
-func gatewayEndpointsFromDeployment(serviceCatalog *catalogv1.ServiceCatalog, document []byte) (gatewayEndpoints, error) {
-	bindings, err := decodeDeploymentBindings(document)
+func gatewayEndpointsFromDeployment(serviceCatalog *catalogv1.ServiceCatalog, documents DeploymentDocuments) (gatewayEndpoints, error) {
+	bindings, err := assembleDeploymentBindings(documents)
 	if err != nil {
 		return gatewayEndpoints{}, err
 	}

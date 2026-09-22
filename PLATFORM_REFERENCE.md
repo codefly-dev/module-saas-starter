@@ -249,8 +249,8 @@ there.
   endpoint resolution + generated deployment topology + a kustomize `overlays/aws`
   patch** that swaps stateful services for managed RDS / ElastiCache / external
   Vault ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)).
-- **The seam-integrity analog exists (↔).** The **base-integrity manifest guard**
-  (`module/tools/base-integrity.mjs`, CI `verify`) plus the SDK-boundary CI job
+- **The seam-integrity analog exists (↔).** The immutable module package plus
+  the SDK-boundary CI job
   ("reject direct Codefly runtime-carrier access") play the seam-guard role at
   the module boundary rather than at each cloud SDK call.
 - **Postgres-first everywhere (✅).** Identity, sessions, RBAC, orgs/teams, API
@@ -290,7 +290,7 @@ as designed, not proven, until exercised end to end.
 2. **Enforce-by-default, deny-by-default** — no fail-open shadow mode; missing
    policy fails generation. This is the audit's #1 mistake pre-avoided.
 3. **Structural CI gates over review discipline** — authz/audit coverage, RLS
-   coverage, permission no-broadening, header lockstep, base-integrity (§5).
+   coverage, permission no-broadening, header lockstep (§5).
 4. **Two-token S2S** with attenuating, audience-bound, hash-chained actor
    capabilities that can only narrow across hops.
 5. **Impersonation authority-stripped server-side** (empty platform role in the
@@ -327,7 +327,7 @@ starter already follows.
 
 - **Structural gates shipped (✅):** `authz-coverage-gate.mjs` (RBAC + audit
   coverage, permission no-broadening), `rls-migration-gate.mjs` (tenant RLS
-  coverage), gateway header-lockstep, base-integrity manifest, and clean-diff
+  coverage), gateway header-lockstep, and clean-diff
   checks on every generated catalog. Each gate has its own `--test` suite in CI
   (`.github/workflows/ci.yml`) — the audit's "test the guards themselves".
 - **Security-core tests (✅):** `pkg/business/rls_*_test.go` prove cross-tenant

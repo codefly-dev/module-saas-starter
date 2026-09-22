@@ -29,7 +29,7 @@ func twoQueueContribution() EventsContribution {
 // alone calls them equal — and sort.Slice, which is not stable, is then free to
 // emit them in either order. Nothing about the inputs would have changed when
 // the bytes did: event-catalog.json, catalog_gen.go, asyncapi.json and
-// communication.md are all base-manifest-tracked, so the drift surfaces as a
+// communication.md are all committed, so the drift surfaces as a
 // "Base manifest integrity" CI failure with an empty-looking cause. Sorting on
 // the queue (and then delivery) leaves no pair tied.
 func TestBuildEventCatalogOrdersTiedConsumesByQueue(t *testing.T) {

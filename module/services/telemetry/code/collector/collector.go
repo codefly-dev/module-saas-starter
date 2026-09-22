@@ -86,7 +86,7 @@ func New(config Config) (*Collector, error) {
 		// Plaintext is allowed only to loopback, which never leaves the pod and so
 		// is governed by no network policy. Everything else must be HTTPS, because
 		// that is the only egress this module actually grants telemetry:
-		// deployment/topology.bindings.codefly.yaml declares public_egress_ports
+		// services/telemetry/service.codefly.yaml declares spec.deployment.public-egress-ports
 		// [443], which renders allow-telemetry-public-egress — TCP 443 to public IP
 		// space with 10/8, 172.16/12, 192.168/16 and fc00::/7 excepted — on top of a
 		// namespace-wide default-deny that has no allow-intra-namespace rule.

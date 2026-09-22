@@ -1,8 +1,6 @@
 import type { FrontendServiceAllowlist } from "@codefly/saas-plugin-contract";
 import { load } from "js-yaml";
 
-const GENERATED_SOURCE =
-	"deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json";
 const CODEFLY_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
 export interface PluginServiceDependency {
@@ -62,12 +60,9 @@ export function expectedPluginServiceDependencies(
 function readExternalDependencies(
 	manifestText: string,
 ): PluginServiceDependency[] {
-	assertDependency(
-		manifestText.startsWith(
-			`# Code generated from ${GENERATED_SOURCE}. DO NOT EDIT.\n`,
-		),
-		"frontend service manifest was not generated from the topology and plugin allowlist",
-	);
+	// The manifest is authored; a consumer composition appends the external
+	// (module-qualified) dependencies its installed plugins reach, and this
+	// policy holds that set to the allowlist that produced it.
 	const manifest = load(manifestText);
 	assertDependency(
 		isRecord(manifest),
@@ -154,6 +149,6 @@ export function assertPluginServiceDependenciesCurrent(
 	const actual = readExternalDependencies(manifestText);
 	assertDependency(
 		JSON.stringify(actual) === JSON.stringify(expected),
-		"frontend service manifest does not exactly match the generated plugin allowlist; run npm run generate:plugin-codefly-dependencies",
+		"frontend service manifest does not exactly match the generated plugin allowlist; recompose the module so its agent appends the allowlisted dependencies",
 	);
 }

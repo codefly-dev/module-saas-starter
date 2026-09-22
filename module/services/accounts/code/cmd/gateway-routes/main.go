@@ -12,19 +12,22 @@ import (
 func main() {
 	catalogPath := flag.String("catalog", "", "path to normalized service catalog JSON")
 	configPath := flag.String("config", "", "path to gateway bindings YAML")
-	topologyPath := flag.String("topology", "", "path to deployment topology bindings YAML")
+	moduleDir := flag.String("module-dir", "", "module root holding module.codefly.yaml and services/*/service.codefly.yaml")
 	routeOutput := flag.String("route-output", "", "path for normalized gateway route JSON")
 	goOutput := flag.String("go-output", "", "path for auth-gateway generated Go routes")
 	flag.Parse()
 
-	if *catalogPath == "" || *configPath == "" || *topologyPath == "" || *routeOutput == "" || *goOutput == "" {
+	if *catalogPath == "" || *configPath == "" || *moduleDir == "" || *routeOutput == "" || *goOutput == "" {
 		_, _ = fmt.Fprintln(os.Stderr, "compile gateway routes: all input and output flags are required")
 		os.Exit(2)
 	}
 	serviceDocument := mustRead(*catalogPath, "service catalog")
 	bindingDocument := mustRead(*configPath, "gateway bindings")
-	topologyDocument := mustRead(*topologyPath, "deployment topology bindings")
-	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
+	documents, err := cataloggen.LoadDeploymentDocuments(*moduleDir)
+	if err != nil {
+		fatal("load module manifests", err)
+	}
+	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, documents)
 	if err != nil {
 		fatal("compile gateway routes", err)
 	}

@@ -280,6 +280,6 @@ So a `version` bump is not self-contained: bump it only together with the matchi
 pin bump in the app's `package.json`, the `@codefly-dev/saas-sdk` peer/dev ranges in
 `packages/saas-ui/package.json`, and a regenerated `package-lock.json`, in the same
 change — otherwise `npm ci` fails. The `workspaceLinkSatisfaction` half of
-`module/tools/base-integrity.mjs` gates exactly this, so a missed pin fails in
+`module/tools/module-verify.mjs` gates exactly this, so a missed pin fails in
 seconds at PR time rather than several minutes into `npm ci`. Additive, backward-compatible surface changes therefore stay on the current
 version until a release actually needs to move it.

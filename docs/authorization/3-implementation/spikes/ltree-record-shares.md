@@ -442,8 +442,7 @@ the binding once, when it creates or moves the record.
 Per `DATABASE_AUTHORITY.md`'s fail-closed migration rule and the CI gates, a
 real PR must additionally:
 
-- Give the migration its **real next number**, add the **down** migration, and
-  regenerate **`module/tools/base-manifest.json`** from a clean worktree (base-integrity gate).
+- Give the migration its **real next number** and add the **down** migration.
 - Classify the **four** tables (`scope_nodes`, `scope_grants`, `record_shares`,
   `record_scopes`) as **tenant** relations in the executable scope/RLS inventory and
   the **exact grant matrix**, or the accounts infra suite's "every public table is

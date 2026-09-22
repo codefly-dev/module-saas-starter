@@ -1,36 +1,24 @@
 #!/usr/bin/env node
-// base-integrity — enforce that a saas-starter consumer ADDS files, never MODIFIES base ones.
+// module-verify — the release checks over this module tree that no service
+// owns and no hash can express:
 //
-// The base (this module) is composed into each consumer by codefly install/sync — a copy.
-// A copy is only as disciplined as the team editing it, so this guard makes the discipline
-// mechanical: every base file's sha256 is recorded in `base-manifest.json` (generated FROM
-// canonical at sync time and shipped into the consumer). The checker re-hashes those files in
-// the consumer and fails on any drift. Files NOT in the manifest are legal side-additions.
+//   - the frontend workspace install graph: package-lock.json must carry the
+//     exact root/workspace dependency metadata and link every packages/*
+//     workspace, or a downstream `npm ci` fails minutes in;
+//   - production truth: the public capability manifest holds definitions only,
+//     and customer-visible text makes no claim the platform cannot back.
 //
-//   node tools/base-integrity.mjs gen      # (run against CANONICAL) regenerate the manifest
-//   node tools/base-integrity.mjs check    # (run in a CONSUMER) fail on any base-file drift
+//   node tools/module-verify.mjs      # fails on either
 //
-// The module root is the parent of tools/ — so this works identically in canonical's `module/`
-// and a consumer's `modules/<name>/`, no path config needed. The script hashes itself, so
-// tampering with the guard is itself caught.
+// The module root is the parent of tools/ — so this works identically in
+// canonical's `module/` and a consumer's `modules/<name>/`, no path config needed.
 
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { rlsGateErrors } from "./rls-migration-gate.mjs";
-import { migrationPairingErrors } from "./migration-pairing-gate.mjs";
-
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
-const MANIFEST_PATH = join(MODULE_ROOT, "tools", "base-manifest.json");
-const MANIFEST_NOTE =
-  "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by "
-  + "`node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add "
-  + "files on the side. Regenerated on every codefly sync from canonical.";
-const ALLOW_PATH = join(MODULE_ROOT, "tools", "base-integrity-allow.json");
 const CAPABILITY_MANIFEST_REL =
   "services/frontend/code/src/features/trust/capability-manifest.json";
 const CAPABILITY_STATES = [
@@ -79,19 +67,11 @@ const UNSUPPORTED_PUBLIC_CLAIMS = [
   ],
 ];
 
-// Directory names pruned wholesale (build output, deps, VCS) and per-file patterns that are
-// generated or inherently per-consumer. Generated files are excluded because base code produces
-// them; the application-owned frontend.config.ts is excluded because consumers explicitly list
-// their installed compile-time plugin packages there. The frontend lockfile is reproducibly
-// regenerated from the protected root manifest plus additive packages/* workspaces. The frontend
-// service manifest is generated from protected topology plus the application plugin allowlist.
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
   ".git", "vendor", "__pycache__", ".codefly", ".cache", ".nix-cache", "test-results", "playwright-report",
 ]);
-export const isExcludedFile = (rel) =>
-  rel === "tools/base-manifest.json" ||      // the manifest can't hash itself
-  rel === "tools/base-integrity-allow.json" || // consumer-local escape hatch (logged, not hashed)
+const isExcludedFile = (rel) =>
   rel === "module.codefly.yaml" ||           // consumer identity and exact service inventory
   rel === "deployment/generated/service-topology.json" || // generated from the consumer topology
   rel.startsWith("deployment/kustomize/") || // generated from workspace/environment GitOps inputs
@@ -120,61 +100,6 @@ function walk(dir, out = [], base = MODULE_ROOT) {
     }
   }
   return out;
-}
-
-const sha = (abs) => createHash("sha256").update(readFileSync(abs)).digest("hex");
-
-// What ships is what git tracks, not what happens to be on the release engineer's
-// disk: a gitignored build product under the module tree would otherwise enter the
-// manifest as a base file no consumer can restore. The index is therefore the
-// authority for the base-file set, and a tree whose index cannot be read is not a
-// tree a release may be cut from.
-//
-// Keyed by NFC because the two sides can disagree about spelling: git records a
-// precomposed path where macOS hands readdir the decomposed bytes that created it.
-// The value is the spelling git recorded, which is the key the manifest carries.
-function trackedFiles(moduleRoot) {
-  const { status, stdout, stderr, error } = spawnSync(
-    "git",
-    ["ls-files", "-z"],
-    { cwd: moduleRoot, encoding: "utf8", maxBuffer: Infinity },
-  );
-  if (status !== 0) {
-    throw new Error(
-      `base-integrity: cannot read git's index in ${moduleRoot} — gen and verify ` +
-        `determine what ships from it, so they run against canonical's checkout: ` +
-        (error?.message ?? stderr?.trim() ?? `git ls-files exited ${status}`),
-    );
-  }
-  return new Map(
-    stdout
-      .split("\0")
-      .filter((rel) => rel !== "")
-      .map((rel) => [rel.normalize("NFC"), rel]),
-  );
-}
-
-// Base candidates on disk that git does not track. `gen` records only what git
-// tracks, so a new file that has not been added yet would be left out of the
-// manifest with nothing said — and surface only in a consumer as an unrecorded
-// base file. Reporting them makes the omission visible where it happens.
-export function untrackedBaseCandidates(moduleRoot = MODULE_ROOT) {
-  const tracked = trackedFiles(moduleRoot);
-  return walk(moduleRoot, [], moduleRoot)
-    .filter((onDisk) => !tracked.has(onDisk.normalize("NFC")))
-    .sort();
-}
-
-// The base files: every path on disk that git tracks and the exclusions admit,
-// as a Map from the spelling git recorded to the spelling on disk.
-function baseFiles(moduleRoot) {
-  const tracked = trackedFiles(moduleRoot);
-  const pairs = [];
-  for (const onDisk of walk(moduleRoot, [], moduleRoot)) {
-    const recorded = tracked.get(onDisk.normalize("NFC"));
-    if (recorded !== undefined) pairs.push([recorded, onDisk]);
-  }
-  return new Map(pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 const FRONTEND_CODE_ROOT = join(MODULE_ROOT, "services", "frontend", "code");
@@ -565,33 +490,6 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   return errors;
 }
 
-// Consumer additions are intentionally outside the canonical hash manifest,
-// but a product may still require selected composition roots to exist after a
-// base sync. The application-owned allow file is the durable contract because
-// sync never replaces it. Values are human-readable reasons for the requirement.
-export function requiredAdditionsErrors(moduleRoot, allow = {}) {
-  const required = allow.requiredAdditions;
-  if (required === undefined) return [];
-  if (!required || Array.isArray(required) || typeof required !== "object") {
-    return ["base-integrity-allow.json requiredAdditions must be a path-to-reason object"];
-  }
-
-  const errors = [];
-  for (const [rel, reason] of Object.entries(required)) {
-    const abs = resolve(moduleRoot, rel);
-    const local = relative(moduleRoot, abs);
-    if (!rel || local.startsWith("..") || resolve(abs) === resolve(moduleRoot)) {
-      errors.push(`required addition path escapes the module: ${rel || "<empty>"}`);
-      continue;
-    }
-    if (typeof reason !== "string" || !reason.trim()) {
-      errors.push(`required addition ${rel} must declare a non-empty reason`);
-    }
-    if (!existsSync(abs)) errors.push(`required consumer addition is missing: ${rel}`);
-  }
-  return errors;
-}
-
 export function capabilityManifestErrors(manifest) {
   if (!manifest || Array.isArray(manifest) || typeof manifest !== "object") {
     return ["capability manifest must be a JSON object"];
@@ -862,141 +760,13 @@ function composedServices(moduleRoot = MODULE_ROOT) {
   return svcs.size ? svcs : null;
 }
 
-// The service a base file belongs to, or null for module-level files (always enforced).
-const serviceOf = (rel) => {
-  const segments = rel.split("/");
-  return segments[0] === "services" && segments.length > 2 ? segments[1] : null;
-};
-
-// Re-derive the manifest a fresh `gen` would write for `moduleRoot`, without touching disk.
-// `gen` persists this; the release gate compares it against the committed manifest.
-//
-// The manifest deliberately records no file count. Derived from `files`, it could disagree with
-// the tree only by being written outside `gen` — and a lone scalar is exactly what a three-way
-// merge corrupts in silence: two branches that each add a base file write the same new value,
-// git merges it without a conflict, and the count is then one short of the tree it describes,
-// rejecting a manifest whose every hash merged correctly. Derive it at print time instead.
-export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
-  const hashes = {};
-  for (const [rel, onDisk] of baseFiles(moduleRoot)) hashes[rel] = sha(join(moduleRoot, onDisk));
-  return { note: MANIFEST_NOTE, files: hashes };
-}
-
-// The canonical release gate: the committed manifest must equal a fresh regeneration of the
-// tree — every field `gen` writes, so a passing `verify` proves `gen` is a no-op. `check`
-// re-hashes only the paths already in the manifest, so a base file changed without a `gen`
-// (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the stale
-// digest is exactly what `check` trusts. Comparing against a fresh recomputation catches changed,
-// unrecorded, and removed base files, plus a note or a field set that drifted from the tree.
-// Canonical-only: a consumer legitimately adds files, so this must never run against a consumer tree.
-export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
-  const manifestPath = join(moduleRoot, "tools", "base-manifest.json");
-  if (!existsSync(manifestPath)) {
-    return ["tools/base-manifest.json is missing — run `node tools/base-integrity.mjs gen`."];
-  }
-  let committed;
-  try {
-    committed = JSON.parse(readFileSync(manifestPath, "utf8"));
-  } catch (error) {
-    return [`tools/base-manifest.json is not valid JSON: ${error.message}`];
-  }
-  if (typeof committed !== "object" || committed === null) {
-    return ["tools/base-manifest.json is not a JSON object"];
-  }
-  const fresh = computeBaseManifest(moduleRoot);
-  const errors = [];
-  // Compare the SHAPE `gen` writes, not a list of field names this function happens to know:
-  // that equality is what makes a passing `verify` proof that `gen` is a no-op. A field `gen`
-  // no longer writes otherwise survives a mis-resolved conflict with every hash correct, and
-  // no other step runs `gen` to notice — the manifest then ships carrying it. Reported alone,
-  // because a wrong shape would otherwise arrive buried under one line per base file.
-  const freshKeys = Object.keys(fresh);
-  for (const key of Object.keys(committed)) {
-    if (!freshKeys.includes(key)) errors.push(`unexpected field: ${key}`);
-  }
-  for (const key of freshKeys) {
-    if (!(key in committed)) errors.push(`missing field: ${key}`);
-  }
-  if (errors.length) return errors;
-
-  // Presence is not kind: `files: null` satisfies the key check and then throws in the comparison
-  // below rather than reporting anything. The manifest is read off disk, so this is the boundary.
-  const committedFiles = committed.files;
-  if (typeof committedFiles !== "object" || committedFiles === null) {
-    return ["files is not the object of hashes gen writes"];
-  }
-  for (const [rel, want] of Object.entries(fresh.files)) {
-    if (!(rel in committedFiles)) errors.push(`unrecorded base file: ${rel}`);
-    else if (committedFiles[rel] !== want) errors.push(`stale hash: ${rel}`);
-  }
-  for (const rel of Object.keys(committedFiles)) {
-    if (!(rel in fresh.files)) errors.push(`manifest lists a removed file: ${rel}`);
-  }
-  if (committed.note !== fresh.note) {
-    errors.push("note does not match the canonical manifest note");
-  }
-  return errors;
-}
-
-function gen() {
-  const truthErrors = productionTruthErrors();
-  if (truthErrors.length) {
-    truthErrors.forEach((error) => console.error(`production-truth: ${error}`));
-    process.exit(1);
-  }
-  const installGraphErrors = workspaceInstallGraphErrors();
-  if (installGraphErrors.length) {
-    installGraphErrors.forEach((error) => console.error(`base-integrity: ${error}`));
-    process.exit(1);
-  }
-  const migrationErrors = migrationPairingErrors();
-  if (migrationErrors.length) {
-    migrationErrors.forEach((error) => console.error(`migration-pairing-gate: ${error}`));
-    process.exit(1);
-  }
-  const rlsErrors = rlsGateErrors();
-  if (rlsErrors.length) {
-    rlsErrors.forEach((error) => console.error(`rls-migration-gate: ${error}`));
-    process.exit(1);
-  }
-  const untracked = untrackedBaseCandidates();
-  if (untracked.length) {
-    console.error(
-      `base-integrity: ${untracked.length} file(s) under the module tree are not tracked by git, `
-      + "so gen would leave them out of the manifest; `git add` them (or ignore them) first:",
-    );
-    untracked.forEach((rel) => console.error(`    ${rel}`));
-    process.exit(1);
-  }
-  const manifest = computeBaseManifest();
-  writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
-  console.log(
-    `base-integrity: wrote ${Object.keys(manifest.files).length} base-file hashes `
-    + "to tools/base-manifest.json",
-  );
-}
-
-// verify is the canonical release gate (Base manifest integrity CI job, on
-// pull requests, pushes to main, and release tags). baseManifestFreshnessErrors
-// catches drift in every HASHED base file; the migration, RLS, and
-// production-truth gates read only hashed inputs, so a violation there changes a
-// file hash, trips freshness, and is already blocked — they need not be repeated
-// here. The frontend package-lock.json is the SOLE base file excluded from the
-// hash manifest (it is regenerated per consumer), so its drift changes no hash
-// and is invisible to freshness. verify must therefore validate it semantically,
-// exactly as gen and check do, or a lock out of sync with the protected
-// package.json and packages/* workspaces (the failure a downstream `npm ci`
-// hits) ships silently. Any future base file added to isExcludedFile that a gate
-// validates must be added below for the same reason. verifyErrors is the single
-// enumerated list of what verify enforces, kept pure so tests can exercise it.
+// verifyErrors is the single enumerated list of what verify enforces, kept
+// pure so tests can exercise it: the frontend install graph (a lock out of sync
+// with the protected package.json and packages/* workspaces is the failure a
+// downstream `npm ci` hits) and the production-truth scan over customer-visible
+// text and the capability manifest.
 export function verifyErrors(moduleRoot = MODULE_ROOT) {
   return [
-    {
-      message:
-        "base-manifest.json does not match the canonical tree — regenerate it "
-        + "with `node tools/base-integrity.mjs gen` and commit the result:",
-      errors: baseManifestFreshnessErrors(moduleRoot),
-    },
     {
       message:
         "frontend package-lock.json is out of sync with the protected "
@@ -1006,6 +776,10 @@ export function verifyErrors(moduleRoot = MODULE_ROOT) {
         join(moduleRoot, "services", "frontend", "code"),
       ),
     },
+    {
+      message: "customer-visible text or the capability manifest carries an unsupported claim:",
+      errors: productionTruthErrors(moduleRoot),
+    },
   ];
 }
 
@@ -1013,78 +787,14 @@ function verify() {
   const failed = verifyErrors().filter((group) => group.errors.length);
   if (failed.length) {
     for (const group of failed) {
-      console.error(`base-integrity: ${group.message}`);
+      console.error(`module-verify: ${group.message}`);
       group.errors.forEach((error) => console.error(`    ${error}`));
     }
     process.exit(1);
   }
-  const { files } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  console.log(
-    `✓ base-manifest.json matches the canonical tree (${Object.keys(files).length} base files); `
-    + "frontend workspace install graph is in sync.",
-  );
-}
-
-function check() {
-  if (!existsSync(MANIFEST_PATH)) {
-    console.error("base-integrity: no base-manifest.json — run `gen` against canonical first.");
-    process.exit(2);
-  }
-  const { files } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  const allow = existsSync(ALLOW_PATH) ? JSON.parse(readFileSync(ALLOW_PATH, "utf8")) : {};
-  const composed = composedServices();
-
-  const modified = [], missing = [];
-  let omitted = 0;
-  const omittedSvcs = new Set();
-  for (const [rel, want] of Object.entries(files)) {
-    const svc = serviceOf(rel);
-    if (composed && svc && !composed.has(svc)) { omitted++; omittedSvcs.add(svc); continue; }
-    const abs = join(MODULE_ROOT, rel);
-    if (!existsSync(abs)) { missing.push(rel); continue; }
-    if (sha(abs) !== want) modified.push(rel);
-  }
-  if (omitted) console.log(`  composed subset: skipped ${omitted} base files for ${omittedSvcs.size} non-composed service(s): ${[...omittedSvcs].sort().join(", ")}`);
-
-  // Anything on disk that isn't a known base file is a legal side-addition.
-  const manifestSet = new Set(Object.keys(files).map((r) => r.normalize("NFC")));
-  const additions = walk(MODULE_ROOT).filter((r) => !manifestSet.has(r.normalize("NFC")));
-
-  // The allowlist is an escape hatch for genuinely per-consumer base files — kept loud so it can
-  // never hide drift silently. Entries here are tech debt: prefer a config seam or a side-module.
-  const allowed = (list) => list.filter((r) => {
-    if (allow[r]) { console.warn(`  ALLOWED (divergence whitelisted: ${allow[r]}): ${r}`); return false; }
-    return true;
-  });
-  const badModified = allowed(modified);
-  const badMissing = allowed(missing);
-  const installGraphErrors = workspaceInstallGraphErrors();
-  const migrationErrors = migrationPairingErrors();
-  const rlsErrors = rlsGateErrors();
-  const additionErrors = requiredAdditionsErrors(MODULE_ROOT, allow);
-  const truthErrors = productionTruthErrors();
-
-  console.log(`base-integrity: ${Object.keys(files).length} base files, ${additions.length} side-additions.`);
-  if (badMissing.length) { console.error(`\n✗ MISSING base files (do not delete base files):`); badMissing.forEach((r) => console.error(`    ${r}`)); }
-  if (badModified.length) { console.error(`\n✗ MODIFIED base files (add on the side, never edit the base):`); badModified.forEach((r) => console.error(`    ${r}`)); }
-  if (installGraphErrors.length) { console.error(`\n✗ INVALID frontend workspace install graph:`); installGraphErrors.forEach((error) => console.error(`    ${error}`)); }
-  if (migrationErrors.length) { console.error(`\n✗ ORPHANED OR DUPLICATED migration versions (see tools/migration-pairing-gate.mjs):`); migrationErrors.forEach((error) => console.error(`    ${error}`)); }
-  if (rlsErrors.length) { console.error(`\n✗ UNPROTECTED tenant-scoped tables (see tools/rls-migration-gate.mjs):`); rlsErrors.forEach((error) => console.error(`    ${error}`)); }
-  if (additionErrors.length) { console.error(`\n✗ MISSING OR INVALID required consumer additions:`); additionErrors.forEach((error) => console.error(`    ${error}`)); }
-  if (truthErrors.length) { console.error(`\n✗ INVALID production capability claims:`); truthErrors.forEach((error) => console.error(`    ${error}`)); }
-
-  if (badModified.length || badMissing.length || installGraphErrors.length || migrationErrors.length || rlsErrors.length || additionErrors.length || truthErrors.length) {
-    console.error(`\nFAIL: ${badModified.length} modified, ${badMissing.length} missing, ${installGraphErrors.length} invalid install-graph checks, ${migrationErrors.length} orphaned/duplicated migration-version checks, ${rlsErrors.length} unprotected tenant-table checks, ${additionErrors.length} invalid required-addition checks, ${truthErrors.length} invalid production-truth checks. `
-      + `Move your change upstream into canonical (making the original stronger), or express it as a side-addition.`);
-    process.exit(1);
-  }
-  console.log("✓ base intact — every base file matches canonical; all consumer changes are additions.");
+  console.log("✓ frontend workspace install graph is in sync; no unsupported public claim.");
 }
 
 if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
-  const cmd = process.argv[2];
-  if (cmd === "gen") gen();
-  else if (cmd === "check") check();
-  else if (cmd === "verify") verify();
-  else { console.error("usage: base-integrity.mjs <gen|check|verify>"); process.exit(2); }
+  verify();
 }

@@ -100,8 +100,8 @@ type deploymentInternalHTTPRoute struct {
 }
 
 type kubernetesIdentityBinding struct {
-	ServiceName string `yaml:"service_name"`
-	AppLabel    string `yaml:"app_label"`
+	ServiceName string `yaml:"service-name"`
+	AppLabel    string `yaml:"app-label"`
 }
 
 type deploymentAgentBinding struct {
@@ -132,20 +132,19 @@ type deploymentDependencyBinding struct {
 	Endpoints []string `yaml:"endpoints"`
 }
 
-// DeploymentArtifacts contains every checked-in projection of the topology
-// binding. The actual Codefly manifests are outputs, not parallel sources.
+// DeploymentArtifacts contains every checked-in projection of the manifests.
+// The manifests themselves are authored and are never an output.
 type DeploymentArtifacts struct {
-	Catalog          *catalogv1.DeploymentCatalog
-	CatalogJSON      []byte
-	ModuleManifest   []byte
-	ServiceManifests map[string][]byte
-	NetworkPolicy    []byte
-	MeshPolicy       []byte
+	Catalog       *catalogv1.DeploymentCatalog
+	CatalogJSON   []byte
+	NetworkPolicy []byte
+	MeshPolicy    []byte
 }
 
-// BuildDeploymentArtifacts validates the descriptor-owned accounts API and a
-// strict module topology before rendering Codefly and Kubernetes consumers.
-func BuildDeploymentArtifacts(serviceDocument, bindingDocument []byte) (*DeploymentArtifacts, error) {
+// BuildDeploymentArtifacts validates the descriptor-owned accounts API and the
+// topology assembled from the authored manifests before rendering the
+// Kubernetes and mesh consumers.
+func BuildDeploymentArtifacts(serviceDocument []byte, documents DeploymentDocuments) (*DeploymentArtifacts, error) {
 	serviceCatalog := &catalogv1.ServiceCatalog{}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(serviceDocument, serviceCatalog); err != nil {
 		return nil, fmt.Errorf("decode service catalog: %w", err)
@@ -154,7 +153,7 @@ func BuildDeploymentArtifacts(serviceDocument, bindingDocument []byte) (*Deploym
 		return nil, fmt.Errorf("validate service catalog: %w", err)
 	}
 
-	bindings, err := decodeDeploymentBindings(bindingDocument)
+	bindings, err := assembleDeploymentBindings(documents)
 	if err != nil {
 		return nil, err
 	}
@@ -170,26 +169,11 @@ func BuildDeploymentArtifacts(serviceDocument, bindingDocument []byte) (*Deploym
 	if err != nil {
 		return nil, err
 	}
-	moduleManifest, err := renderModuleManifest(bindings)
-	if err != nil {
-		return nil, err
-	}
-	serviceManifests := make(map[string][]byte, len(bindings.Services))
-	for _, service := range bindings.Services {
-		manifest, err := renderServiceManifest(service)
-		if err != nil {
-			return nil, err
-		}
-		serviceManifests[service.Name] = manifest
-	}
-
 	return &DeploymentArtifacts{
-		Catalog:          catalog,
-		CatalogJSON:      catalogJSON,
-		ModuleManifest:   moduleManifest,
-		ServiceManifests: serviceManifests,
-		NetworkPolicy:    renderNetworkPolicy(bindings),
-		MeshPolicy:       renderMeshPolicy(bindings, serviceCatalog),
+		Catalog:       catalog,
+		CatalogJSON:   catalogJSON,
+		NetworkPolicy: renderNetworkPolicy(bindings),
+		MeshPolicy:    renderMeshPolicy(bindings, serviceCatalog),
 	}, nil
 }
 
@@ -202,19 +186,6 @@ func internalMethodProcedures(serviceCatalog *catalogv1.ServiceCatalog) []string
 	}
 	sort.Strings(procedures)
 	return procedures
-}
-
-func decodeDeploymentBindings(document []byte) (deploymentBindings, error) {
-	var bindings deploymentBindings
-	decoder := yaml.NewDecoder(bytes.NewReader(document))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&bindings); err != nil {
-		return deploymentBindings{}, fmt.Errorf("decode deployment topology bindings: %w", err)
-	}
-	if bindings.Version != "v1" {
-		return deploymentBindings{}, fmt.Errorf("unsupported deployment topology bindings version %q", bindings.Version)
-	}
-	return bindings, nil
 }
 
 func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindings deploymentBindings) error {
@@ -252,10 +223,10 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 	for _, service := range bindings.Services {
 		if !endpointNamePattern.MatchString(service.Name) || service.Version == "" || service.Agent.Kind == "" ||
 			service.Agent.Name == "" || service.Agent.Version == "" || service.Agent.Publisher == "" || len(service.Endpoints) == 0 {
-			return fmt.Errorf("service %q manifest identity is incomplete", service.Name)
+			return fmt.Errorf("service %q manifest identity is incomplete (name, version, agent kind/name/version/publisher, endpoints)", service.Name)
 		}
 		if previousService != "" && service.Name <= previousService {
-			return fmt.Errorf("deployment services are not strictly sorted at %q", service.Name)
+			return fmt.Errorf("module.codefly.yaml services are not strictly sorted at %q", service.Name)
 		}
 		previousService = service.Name
 		services[service.Name] = service
@@ -686,42 +657,6 @@ func renderDeploymentCatalogJSON(catalog *catalogv1.DeploymentCatalog) ([]byte, 
 	return formatted.Bytes(), nil
 }
 
-type moduleManifest struct {
-	Kind         string                  `yaml:"kind"`
-	Name         string                  `yaml:"name"`
-	Description  string                  `yaml:"description"`
-	Agent        *deploymentAgentBinding `yaml:"agent,omitempty"`
-	ServiceEntry string                  `yaml:"service-entry"`
-	Interface    moduleManifestInterface `yaml:"interface"`
-	Services     []manifestServiceRef    `yaml:"services"`
-}
-
-type moduleManifestInterface struct {
-	Endpoints []manifestInterfaceEndpoint `yaml:"endpoints"`
-}
-
-type manifestInterfaceEndpoint struct {
-	Service    string `yaml:"service"`
-	Endpoint   string `yaml:"endpoint"`
-	Visibility string `yaml:"visibility"`
-}
-
-type manifestServiceRef struct {
-	Name string `yaml:"name"`
-}
-
-type serviceManifest struct {
-	Name                               string                       `yaml:"name"`
-	Version                            string                       `yaml:"version"`
-	Description                        string                       `yaml:"description,omitempty"`
-	Agent                              deploymentAgentBinding       `yaml:"agent"`
-	ServiceDependencies                []manifestServiceDependency  `yaml:"service-dependencies,omitempty"`
-	WorkspaceConfigurationDependencies []string                     `yaml:"workspace-configuration-dependencies,omitempty"`
-	SecretServiceConfigurations        []secretServiceConfiguration `yaml:"secret-service-configurations,omitempty"`
-	Endpoints                          []manifestEndpoint           `yaml:"endpoints"`
-	Spec                               map[string]any               `yaml:"spec,omitempty"`
-}
-
 type manifestServiceDependency struct {
 	Name      string                      `yaml:"name"`
 	Module    string                      `yaml:"module,omitempty"`
@@ -736,60 +671,6 @@ type manifestEndpoint struct {
 	Name       string `yaml:"name"`
 	Visibility string `yaml:"visibility,omitempty"`
 	API        string `yaml:"api,omitempty"`
-}
-
-func renderModuleManifest(bindings deploymentBindings) ([]byte, error) {
-	manifest := moduleManifest{
-		Kind: "module", Name: bindings.Module.Name, Description: bindings.Module.Description,
-		Agent: bindings.Module.Agent, ServiceEntry: bindings.Module.ServiceEntry,
-	}
-	for _, exposed := range bindings.Interface {
-		manifest.Interface.Endpoints = append(manifest.Interface.Endpoints, manifestInterfaceEndpoint(exposed))
-	}
-	for _, service := range bindings.Services {
-		manifest.Services = append(manifest.Services, manifestServiceRef{Name: service.Name})
-	}
-	return marshalGeneratedYAML("deployment/topology.bindings.codefly.yaml", manifest)
-}
-
-func renderServiceManifest(service deploymentServiceBinding) ([]byte, error) {
-	return renderServiceManifestWithExternalDependencies(
-		service,
-		nil,
-		"deployment/topology.bindings.codefly.yaml",
-	)
-}
-
-func renderServiceManifestWithExternalDependencies(
-	service deploymentServiceBinding,
-	external []manifestServiceDependency,
-	source string,
-) ([]byte, error) {
-	manifest := serviceManifest{
-		Name: service.Name, Version: service.Version, Description: service.Description, Agent: service.Agent,
-		WorkspaceConfigurationDependencies: append([]string(nil), service.WorkspaceConfigurationDependencies...),
-		SecretServiceConfigurations:        append([]secretServiceConfiguration(nil), service.SecretServiceConfigurations...),
-		Spec:                               service.Spec,
-	}
-	for _, dependency := range service.Dependencies {
-		entry := manifestServiceDependency{Name: dependency.Service}
-		for _, endpoint := range dependency.Endpoints {
-			entry.Endpoints = append(entry.Endpoints, manifestEndpointReference{Name: endpoint})
-		}
-		manifest.ServiceDependencies = append(manifest.ServiceDependencies, entry)
-	}
-	manifest.ServiceDependencies = append(manifest.ServiceDependencies, external...)
-	for _, endpoint := range service.Endpoints {
-		entry := manifestEndpoint{Name: endpoint.Name}
-		if endpoint.API != endpoint.Name {
-			entry.API = endpoint.API
-		}
-		if endpoint.Visibility != "private" {
-			entry.Visibility = endpoint.Visibility
-		}
-		manifest.Endpoints = append(manifest.Endpoints, entry)
-	}
-	return marshalGeneratedYAML(source, manifest)
 }
 
 func marshalGeneratedYAML(source string, value any) ([]byte, error) {
@@ -895,7 +776,7 @@ const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgate
 func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) []byte {
 	namespace := bindings.Module.Namespace
 	var source strings.Builder
-	source.WriteString("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
+	source.WriteString("# Code generated from " + topologySource + ". DO NOT EDIT.\n")
 	fmt.Fprintf(&source, `---
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
@@ -1100,7 +981,7 @@ func renderNetworkPolicy(bindings deploymentBindings) []byte {
 	}
 
 	var source strings.Builder
-	source.WriteString("# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.\n")
+	source.WriteString("# Code generated from " + topologySource + ". DO NOT EDIT.\n")
 	writeStaticNetworkPolicies(&source, bindings)
 	for _, target := range sortedMapKeys(byTarget) {
 		writeDependencyIngressPolicy(&source, bindings.Module.Namespace, target, byTarget[target][0].TargetApp, byTarget[target])

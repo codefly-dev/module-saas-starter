@@ -172,20 +172,43 @@ type authorizationPolicy struct {
 // name of a consumer; a flip to DENY would mean the surface had become
 // allow-by-default for every principal the rule forgot to list.
 func TestInternalAuthorityAllowlistNamesOnlyThisModulesServices(t *testing.T) {
+	var module struct {
+		Name     string `yaml:"name"`
+		Services []struct {
+			Name string `yaml:"name"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(readModuleFile(t, "module.codefly.yaml")), &module); err != nil {
+		t.Fatalf("parse module.codefly.yaml: %v", err)
+	}
 	var bindings struct {
 		Module struct {
-			Namespace string `yaml:"namespace"`
-		} `yaml:"module"`
+			Namespace string
+		}
 		Services []struct {
 			Spec struct {
 				ServiceAccount struct {
 					Name string `yaml:"name"`
 				} `yaml:"service-account"`
 			} `yaml:"spec"`
-		} `yaml:"services"`
+		}
 	}
-	if err := yaml.Unmarshal([]byte(readModuleFile(t, topologyBindingFile)), &bindings); err != nil {
-		t.Fatalf("parse %s: %v", topologyBindingFile, err)
+	// The namespace is the module's name; each service's ServiceAccount is what
+	// its own manifest declares.
+	bindings.Module.Namespace = module.Name
+	for _, reference := range module.Services {
+		var manifest struct {
+			Spec struct {
+				ServiceAccount struct {
+					Name string `yaml:"name"`
+				} `yaml:"service-account"`
+			} `yaml:"spec"`
+		}
+		path := "services/" + reference.Name + "/service.codefly.yaml"
+		if err := yaml.Unmarshal([]byte(readModuleFile(t, path)), &manifest); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		bindings.Services = append(bindings.Services, manifest)
 	}
 	// Only explicitly declared service accounts. The renderer falls back to
 	// `default` for a service that declares none, but six of this module's

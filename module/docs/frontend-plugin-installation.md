@@ -65,8 +65,8 @@ The projection contains:
   package versions used to generate the disposable npm install graph;
 - `services/frontend/code/src/generated/frontend-contributions.ts`, the only
   generated bridge imported by the Starter host;
-- normalized logical topology bindings used by the allowlist and deployment
-  compilers.
+- the external service dependencies the allowlist names, appended to the
+  consumer's copy of the frontend manifest.
 
 Running without contribution arguments writes an empty, runnable composition.
 Installing, uninstalling, and reinstalling produces the same deterministic

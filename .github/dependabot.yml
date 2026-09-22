@@ -4,22 +4,15 @@
 # `scripts/ci/dependabot-coverage.mjs` enforces both rules below on every pull
 # request rather than leaving them to this comment.
 #
-# 1. A manifest hashed in module/tools/base-manifest.json must NOT be listed.
-#    Bumping one leaves that manifest stale, which fails `base-integrity` — a
-#    gate in REQUIRED_GATES — and Dependabot cannot repair it: it has no way to
-#    run `base-integrity.mjs gen`. Regenerating the manifest from a workflow and
-#    pushing onto Dependabot's branch does not rescue it either, because a commit
-#    pushed with GITHUB_TOKEN starts no new workflow run, so the required checks
-#    would sit unreported against the new head. Such an entry yields a pull
-#    request that can never merge, and open-pull-requests-limit then blocks every
-#    later update in that ecosystem behind it.
+# 1. A manifest under module/ must NOT be listed. It ships with the module
+#    release: its declared versions are owned by the canonical module and move
+#    with a module tag, not with this repository's bots, and an entry over one
+#    would crowd out the updates that matter at open-pull-requests-limit.
 #
 #    This is why npm (all 11 package.json), pip (the accounts pyproject.toml) and
-#    the five in-module go.mod files are absent. They are base files: their
-#    declared versions are owned by the canonical module, not by this
-#    repository's bots.
+#    the five in-module go.mod files are absent.
 #
-# 2. Every non-generated dependency manifest that is NOT base-tracked must be
+# 2. Every non-generated dependency manifest that is NOT under module/ must be
 #    listed. Agent-generated builder Dockerfiles are not update inputs. Their
 #    effective images are checked by scripts/ci/build-images.mjs and monitored
 #    weekly by build-images.yml; upgrades belong in the owning service agent.

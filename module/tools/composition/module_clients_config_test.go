@@ -19,10 +19,8 @@ import (
 // Client GENERATION policy lives in module/clients.codefly.yaml, which the CLI
 // reads directly (cli/pkg/generators/module_clients.go,
 // LoadModuleClientsConfig). It is deliberately NOT part of
-// module.codefly.yaml's generated `interface:` block: that file is rendered
-// from deployment/topology.bindings.codefly.yaml, so an inline block there is
-// replaced on the next regeneration — and, worse, is silently ignored, because
-// nothing in the CLI reads it.
+// module.codefly.yaml's `interface:` block: nothing in the CLI reads a clients
+// block there, so an inline one would be silently ignored.
 //
 // These constants and structs mirror the CLI's loader, including its strict
 // field checking. That duplication is the point: the gate reads exactly the

@@ -89,9 +89,8 @@ wiring may import the singleton directly.
 
 Loose `project-plugins/` discovery ends with FP-003/FP-018; installed package
 exports are listed directly in this file. The file
-is intentionally excluded from base-integrity hashing so a composed application
-can own it without whitelisting changes to generic starter source. All other
-starter frontend files remain protected.
+is application-owned, so a composed application edits it without touching
+generic starter source. All other starter frontend files remain base.
 
 The generated plugin service allowlist is also the application input to the
 frontend Codefly service-manifest compiler. The service manifest is excluded

@@ -228,9 +228,6 @@ test("machine-generated skips apply in canonical, where paths carry a module/ pr
     join(moduleRoot, "tools", "naming-terms.json"),
     JSON.stringify({ terms: TERMS.map(({ term, modes }) => ({ h: digest(term), modes })) }),
   );
-  // Matched as whole paths these skips never fired in canonical, so the manifest was scanned
-  // and its recorded paths reported as violations in their own right.
-  writeFileSync(join(moduleRoot, "tools", "base-manifest.json"), '{"zorpco/a.md":"deadbeef"}\n');
   try {
     assert.deepEqual(namingErrors(moduleRoot, repo), []);
   } finally {
