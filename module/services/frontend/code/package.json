@@ -21,7 +21,7 @@
 		"lint": "npm run build:plugin-packages && eslint",
 		"format": "biome format --write .",
 		"fix": "biome check --write .",
-		"test": "npm run prepare:frontend && vitest run",
+		"test": "npm run prepare:frontend && vitest run --reporter=default",
 		"test:pure": "npm run prepare:frontend && vitest run --project pure",
 		"test:integration": "npm run prepare:frontend && vitest run --project pipeline",
 		"test:plugin-contract": "npm run test --workspace @codefly/saas-plugin-contract",
