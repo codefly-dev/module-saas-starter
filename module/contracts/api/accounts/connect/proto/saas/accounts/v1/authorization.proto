@@ -548,7 +548,7 @@ service PermissionService {
       rate_limit: RATE_LIMIT_CLASS_SENSITIVE
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
       impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/roles/{id}"};

@@ -5009,7 +5009,7 @@
         "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
@@ -5020,7 +5020,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/authorization.proto",
-      "policy_sha256": "229e99a95ccc28baf0d960b55fcae0b6d542106fbcd4f9b88f2df6e2bbac5822",
+      "policy_sha256": "a192703848f2d870f2f75d7c2eff3580ed06506d939df898dfc149b209fa3b2a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

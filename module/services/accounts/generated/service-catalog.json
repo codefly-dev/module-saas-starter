@@ -6760,7 +6760,7 @@
         "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
