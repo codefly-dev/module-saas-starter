@@ -10,7 +10,8 @@
 // Rewriting is a disclosure decision, deliberately not taken here (CLAIM_INVENTORY.md records it).
 // This gate is the other half — it stops the count growing.
 //
-//   node tools/commit-identity-gate.mjs check <base> [head]   # every commit in <base>..<head>
+//   node tools/commit-identity-gate.mjs check <base> [head]    # every commit in <base>..<head>, on a pull request
+//   node tools/commit-identity-gate.mjs report <base> [head]   # the same range post-merge on main, as a report
 //
 // The rule is an ALLOWLIST, not a denylist of forbidden domains, and that is the whole point.
 // A denylist only catches the domains someone remembered to list, so the next contributor's
@@ -25,6 +26,15 @@
 //
 // Scoped to <base>..HEAD, so it judges only what a change proposes to add. History is out of
 // reach by construction, which is what makes this the step with no blast radius.
+//
+// `check` cannot see the one identity it most needs to: the squash merge produces. GitHub takes a
+// squash commit's AUTHOR from the merging account's profile email, not from the commit it squashes,
+// so a branch whose every commit `check` passed still lands a personal address on `main` when that
+// account has "Keep my email address private" switched off. That object does not exist until the
+// merge is performed, after every required check has reported, so nothing on the pull request can
+// catch it. `report` is that missing half: run on `push` over the range the push added, it cannot
+// stop the commit — landed, and its identity can no longer be scrubbed — but it turns the growth
+// the gate measures into a visible failure instead of a count that rises unseen.
 
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -121,11 +131,33 @@ function check(base, tip) {
   console.log(`✓ ${range.length} commit(s) carry a GitHub no-reply identity.`);
 }
 
+// The post-merge counterpart. Its remediation is not `check`'s — the commit is already on `main`
+// and cannot be rewritten, so telling the contributor to rebase the branch would be advice for a
+// thing that no longer exists. The address is still withheld: this log is public too.
+function report(base, tip) {
+  const range = commits(base, tip);
+  const errors = identityErrors(range);
+  if (errors.length) {
+    console.error("commit-identity-gate: an email address this repository cannot retract has landed on main:");
+    errors.forEach((error) => console.error(`    ${error}`));
+    console.error(
+      `\nFAIL: ${errors.length} identity field(s) already published on main. The commit is landed ` +
+        `and its identity can no longer be scrubbed, so this reports the growth rather than ` +
+        `preventing it. GitHub takes a squash commit's author from the merging account's profile ` +
+        `email, so pointing user.email at the no-reply address is not enough on its own — also turn ` +
+        `on Settings → Emails → "Keep my email addresses private" before the next merge.`,
+    );
+    process.exit(1);
+  }
+  console.log(`✓ ${range.length} commit(s) landed on main carry a GitHub no-reply identity.`);
+}
+
 if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
   const [cmd, base, tip] = process.argv.slice(2);
-  if (cmd !== "check" || !base) {
-    console.error("usage: commit-identity-gate.mjs check <base> [head]");
+  const run = { check, report }[cmd];
+  if (!run || !base) {
+    console.error("usage: commit-identity-gate.mjs <check|report> <base> [head]");
     process.exit(2);
   }
-  check(base, tip);
+  run(base, tip);
 }

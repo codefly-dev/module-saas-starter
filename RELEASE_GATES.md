@@ -519,8 +519,23 @@ the decision.
 the count growing. Every non-merge commit in `<base>..<head>` must carry a GitHub
 no-reply address — `<id>+<login>@users.noreply.github.com`, or the bare
 `noreply@github.com` GitHub itself commits as for a squash, a web edit or a
-merge-queue entry. It runs on `pull_request` only; against `main` it would fail
-on what is already published.
+merge-queue entry.
+
+Setting `user.email` to that address is necessary but, with squash merging, not
+sufficient: GitHub writes the squash commit's author from the *merging account's*
+profile email, not from the commit it squashes, so a branch every check passed
+still lands a personal address on `main` unless that account also has **Settings →
+Emails → "Keep my email address private"** switched on. Set both.
+
+The gate runs on `pull_request`, from the *current* base tip to the head sha; over
+that range it fails, because those commits are still the contributor's to rewrite.
+It also runs on `push` to `main`, over `${{ github.event.before }}..${{ github.sha
+}}` — the commits that push added, never history — as `report` rather than `check`.
+That run cannot stop the squash it inspects: the object does not exist until the
+merge is performed, after every required check has reported. It is a tripwire, not
+a barrier — it turns the growth the gate measures into a visible failure on `main`
+instead of a count that rises unseen, and its remediation is the account setting
+above, because the landed commit can no longer be rewritten.
 
 Two exclusions, both load-bearing — get either wrong and the gate fails pull
 requests on commits their authors cannot rewrite.
