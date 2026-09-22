@@ -249,7 +249,11 @@ test('a real build record pins the elapsed field the export parser strips',
 
       const naming = log.match(/^#\d+ naming to .+$/m)[0];
       assert.deepEqual(buildImages(`${naming}\n`), [image]);
-      assert.deepEqual(buildImages(`${naming.replace(/( done)?$/, `${timed[0]}$1`)}\n`), [image]);
+      // Under load the naming line already carries its own elapsed field; strip
+      // it before attaching the sampled one, or the line ends up with two and
+      // the parser (rightly) strips only the last.
+      const bare = naming.replace(/(?: \d+\.\d+s)?( done)?$/, '$1');
+      assert.deepEqual(buildImages(`${bare.replace(/( done)?$/, `${timed[0]}$1`)}\n`), [image]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       spawnSync('docker', ['image', 'rm', image], { stdio: 'ignore' });
