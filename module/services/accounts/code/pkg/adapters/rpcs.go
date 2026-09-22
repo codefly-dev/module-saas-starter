@@ -544,7 +544,7 @@ func (s *TeamServer) DeleteTeam(ctx context.Context, req *gen.DeleteTeamRequest)
 // on the target org (or platform super_admin bypass).
 func requireRoleScope(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
-		return requirePlatformAdmin(ctx, actorID)
+		return requirePlatformRole(ctx, actorID, "super_admin")
 	}
 	return requireOrgAdmin(ctx, actorID, orgID)
 }
@@ -601,11 +601,11 @@ func (s *PermServer) DeleteRole(ctx context.Context, req *gen.DeleteRoleRequest)
 		return nil, err
 	}
 	// DeleteRole only carries the role id — we can't resolve its org scope
-	// cheaply here, so require platform admin as the safe default. Org-scoped
+	// cheaply here, so require platform super admin as the safe default. Org-scoped
 	// role deletion can be added once the proto is extended with org_id.
 	// TODO(saas-starter): add org_id to DeleteRoleRequest + regen for finer
 	// authz.
-	if err := requirePlatformAdmin(ctx, actorID); err != nil {
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
 	if err := service.DeleteRole(ctx, actorID, req); err != nil {

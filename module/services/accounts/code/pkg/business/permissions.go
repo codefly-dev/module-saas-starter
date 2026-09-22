@@ -39,7 +39,7 @@ func (s *Service) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (*ge
 // DeleteRole deletes a custom role (built-in roles cannot be deleted).
 //
 // req only carries the role id — we don't know the role's org without
-// a lookup. Handler authz already required platform_admin (see
+// a lookup. Handler authz already required platform super_admin (see
 // adapters/rpcs.go DeleteRole), so the caller is privileged-by-policy
 // and WithControlPlane is the right wrapper.
 func (s *Service) DeleteRole(ctx context.Context, actorID string, req *gen.DeleteRoleRequest) error {
