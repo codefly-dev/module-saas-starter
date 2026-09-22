@@ -5,9 +5,10 @@ package business_test
 import (
 	"accounts/pkg/business"
 	"context"
-	"github.com/google/uuid"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/stretchr/testify/require"
 
