@@ -22,7 +22,10 @@ export function useCreateAPIKey() {
 				scopes: scopes ?? [],
 				environment: environment ?? 1,
 			}),
-		onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
+		// Reveal the one-time secret immediately, even if refreshing the list is slow.
+		onSuccess: () => {
+			void qc.invalidateQueries({ queryKey: ["api-keys"] });
+		},
 	});
 }
 
@@ -30,7 +33,8 @@ export function useRevokeAPIKey() {
 	const svc = useAPIKeyService();
 	const qc = useQueryClient();
 	return useMutation({
-		mutationFn: (id: string) => svc.revokeAPIKey({ id }),
+		mutationFn: (input: { id: string; organizationId: string }) =>
+			svc.revokeAPIKey(input),
 		onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys"] }),
 	});
 }

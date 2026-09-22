@@ -4,6 +4,60 @@
 	"status": "Implementation in progress; story coverage and closure evidence incomplete",
 	"families": [
 		{
+			"source": "src/components/optional-product-feature.tsx",
+			"imports": ["next/link","react","@/lib/product-features"],
+			"owner": "host",
+			"disposition": "keep feature-local",
+			"reason": "Default-hidden product screens without mounting API consumers.",
+			"stories": [],
+			"coverage": "missing"
+		},
+		{
+			"source": "src/components/resource-label.tsx",
+			"imports": ["@tanstack/react-query","@/lib/auth","@/lib/hooks/use-api-client","./user-label"],
+			"owner": "host",
+			"disposition": "keep feature-local",
+			"reason": "Tenant-aware resource names for product records.",
+			"stories": [],
+			"coverage": "missing"
+		},
+		{
+			"source": "src/components/user-label.tsx",
+			"imports": ["@tanstack/react-query","@/lib/auth","@/lib/hooks/use-api-client"],
+			"owner": "host",
+			"disposition": "keep feature-local",
+			"reason": "Authorized identity display with an unavailable fallback.",
+			"stories": [],
+			"coverage": "missing"
+		},
+		{
+			"source": "src/components/user-picker.tsx",
+			"imports": ["@tanstack/react-query","react","@/lib/hooks/use-api-client","@/shared/ui"],
+			"owner": "host",
+			"disposition": "keep feature-local",
+			"reason": "Tenant and platform identity selection for product forms.",
+			"stories": [],
+			"coverage": "missing"
+		},
+		{
+			"source": "src/features/teams/ui/team-details-page.tsx",
+			"imports": ["@tanstack/react-query","next/link","react","sonner","@/gen/saas/accounts/v1/common_pb","@/components/org-selector","@/lib/auth","@/shared/lib/utils","@/shared/ui","../model/transforms","../model/types","../service/queries","../service/mutations","./team-form","./team-members-panel","./team-roles","@/gen/saas/accounts/v1/frontend_catalog","@/lib/permissions"],
+			"owner": "host",
+			"disposition": "keep feature-local",
+			"reason": "Team management with explicit membership and elevated access.",
+			"stories": [],
+			"coverage": "missing"
+		},
+		{
+			"source": "src/features/teams/ui/team-roles.tsx",
+			"imports": ["lucide-react","next/link","react","sonner","@/features/roles/service/mutations","@/features/roles/service/queries","@/gen/saas/accounts/v1/common_pb","@/shared/ui"],
+			"owner": "host",
+			"disposition": "keep feature-local",
+			"reason": "Organization RBAC role grants to teams.",
+			"stories": [],
+			"coverage": "missing"
+		},
+		{
 			"source": "packages/codefly-ui/src/chat/chat.tsx",
 			"imports": [
 				"react",

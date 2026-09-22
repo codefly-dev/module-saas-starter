@@ -13,6 +13,10 @@ vi.mock("@/lib/auth", () => ({
 
 import { AuditPage } from "./audit-page";
 
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({ platformRole: "super_admin", organizationId: "org-1" }),
+}));
+
 afterEach(cleanup);
 
 function auditEvent(overrides: Record<string, unknown> = {}) {
@@ -34,6 +38,12 @@ function auditEvent(overrides: Record<string, unknown> = {}) {
 describe("AuditPage admin container", () => {
 	it("renders the audit events the service returns", async () => {
 		server.use(
+			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+				HttpResponse.json({ eventTypes: [] }),
+			),
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [] }),
+			),
 			http.post(rpc("AuditService", "QueryAuditLog"), () =>
 				HttpResponse.json({ events: [auditEvent()], totalCount: 1 }),
 			),
@@ -75,7 +85,7 @@ describe("AuditPage admin container", () => {
 					principals: [
 						{
 							id: "a3f81c2e-0000-4000-8000-000000000001",
-							displayName: "Ada Lovelace",
+							displayName: "Jane Doe",
 							kind: "PRINCIPAL_KIND_HUMAN",
 						},
 					],
@@ -84,14 +94,14 @@ describe("AuditPage admin container", () => {
 			),
 		);
 		renderInApp(<AuditPage />);
-		expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
+		expect(await screen.findByText("Jane Doe")).toBeTruthy();
 		expect(screen.queryByText("a3f81c2e...")).toBeNull();
 		// actor_type stays beside the name: an agent's action must not read as
 		// a person's.
 		expect(screen.getByText("user")).toBeTruthy();
 	});
 
-	it("falls back to the truncated id for a principal the directory misses", async () => {
+	it("shows an unavailable label for a principal the directory misses", async () => {
 		server.use(
 			http.post(rpc("AuditService", "QueryAuditLog"), () =>
 				HttpResponse.json({
@@ -101,7 +111,7 @@ describe("AuditPage admin container", () => {
 			),
 		);
 		renderInApp(<AuditPage />);
-		expect(await screen.findByText("a3f81c2e...")).toBeTruthy();
+		expect(await screen.findByText("Actor unavailable")).toBeTruthy();
 		expect(screen.getByText("agent")).toBeTruthy();
 	});
 

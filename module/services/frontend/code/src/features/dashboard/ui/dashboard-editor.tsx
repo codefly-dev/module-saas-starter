@@ -34,6 +34,7 @@ import {
 	useDashboardAuthoring,
 } from "../service/use-dashboard-authoring";
 import { Dashboard } from "./dashboard";
+import { formatAuditAction } from "@/features/audit/model/transforms";
 
 // The subset of group dimensions the structural editor offers. The spec permits
 // payload fields too, but those need a key the audit registry doesn't enumerate,
@@ -251,6 +252,13 @@ export function DashboardEditor({
 						<Label htmlFor="widget-event">Event</Label>
 						<Select
 							value={form.eventType}
+							items={[
+								{ value: ALL_EVENTS, label: "All events" },
+								...events.map((entry) => ({
+									value: entry.name,
+									label: formatAuditAction(entry.name),
+								})),
+							]}
 							onValueChange={(value) =>
 								update("eventType", value ?? ALL_EVENTS)
 							}
@@ -262,7 +270,7 @@ export function DashboardEditor({
 								<SelectItem value={ALL_EVENTS}>All events</SelectItem>
 								{events.map((entry) => (
 									<SelectItem key={entry.name} value={entry.name}>
-										{entry.name}
+										{formatAuditAction(entry.name)}
 									</SelectItem>
 								))}
 							</SelectContent>
@@ -273,6 +281,7 @@ export function DashboardEditor({
 						<Label htmlFor="widget-group">Group by</Label>
 						<Select
 							value={form.groupBy}
+							items={GROUP_BY_OPTIONS}
 							onValueChange={(value) => {
 								if (value) update("groupBy", value as Dimension);
 							}}
@@ -295,6 +304,7 @@ export function DashboardEditor({
 							<Label htmlFor="widget-bucket">Interval</Label>
 							<Select
 								value={form.bucket}
+								items={BUCKET_OPTIONS}
 								onValueChange={(value) => {
 									if (value) update("bucket", value as Bucket);
 								}}
@@ -317,6 +327,7 @@ export function DashboardEditor({
 						<Label htmlFor="widget-chart">Chart</Label>
 						<Select
 							value={form.chart}
+							items={CHART_OPTIONS}
 							onValueChange={(value) => {
 								if (value) update("chart", value as ChartKind);
 							}}

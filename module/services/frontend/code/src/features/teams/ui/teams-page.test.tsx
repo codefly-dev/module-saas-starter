@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 // TeamsPage reads the active tenant from the signed access token via useAuth,
 // which throws outside an AuthProvider. Supply a stable org so the page can
 // issue its ListTeams query. OrgSelector consumes the same mocked hook.

@@ -26,6 +26,8 @@ export function DataTable<T>({
 	emptyMessage = "No results.",
 	onRowClick,
 }: DataTableProps<T>) {
+	"use no memo";
+	// TanStack keeps the instance stable while its row model changes.
 	if (isLoading) {
 		return (
 			<div className="rounded-md border" aria-busy aria-label="Loading table">

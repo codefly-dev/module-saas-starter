@@ -3157,6 +3157,10 @@
         "role": {
           "$ref": "#/definitions/v1OrgRole"
         },
+        "userEmail": {
+          "description": "Tenant-scoped directory label. Empty for deleted or unavailable accounts.",
+          "type": "string"
+        },
         "userId": {
           "type": "string"
         }
@@ -4344,6 +4348,10 @@
           "$ref": "#/definitions/v1TeamRole"
         },
         "teamId": {
+          "type": "string"
+        },
+        "userEmail": {
+          "description": "Tenant-scoped directory label. Empty for deleted or unavailable accounts.",
           "type": "string"
         },
         "userId": {

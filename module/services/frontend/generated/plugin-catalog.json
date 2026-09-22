@@ -153,13 +153,13 @@
       "path": "/admin/teams",
       "source_path": "src/app/admin/teams/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
       "path": "/admin/teams/{teamId}",
       "source_path": "src/app/admin/teams/[teamId]/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
     {
       "path": "/admin/users",
@@ -382,7 +382,7 @@
       "path": "/admin/teams",
       "icon": "UsersRound",
       "group": "Users & Access",
-      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED",
       "permission": "teams:read",
       "surfaces": [
         "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",

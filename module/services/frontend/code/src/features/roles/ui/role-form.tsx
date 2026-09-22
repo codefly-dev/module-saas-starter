@@ -3,6 +3,7 @@
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConnectError } from "@connectrpc/connect";
 import {
 	Badge,
 	Button,
@@ -19,6 +20,7 @@ import {
 import { useCreateRole } from "../service/mutations";
 
 export function RoleForm({ orgId }: { orgId: string }) {
+	const [error, setError] = useState<string | null>(null);
 	const [open, setOpen] = useState(false);
 	const [name, setName] = useState("");
 	const [description, setDescription] = useState("");
@@ -32,6 +34,16 @@ export function RoleForm({ orgId }: { orgId: string }) {
 
 	function addPermission() {
 		if (!permResource.trim() || !permAction.trim()) return;
+		if (
+			permissions.some(
+				(p) =>
+					p.resource === permResource.trim() && p.action === permAction.trim(),
+			)
+		) {
+			setError("This permission has already been added.");
+			return;
+		}
+		setError(null);
 		setPermissions((prev) => [
 			...prev,
 			{ resource: permResource.trim(), action: permAction.trim() },
@@ -45,6 +57,7 @@ export function RoleForm({ orgId }: { orgId: string }) {
 	}
 
 	function reset() {
+		setError(null);
 		setName("");
 		setDescription("");
 		setPermissions([]);
@@ -53,7 +66,8 @@ export function RoleForm({ orgId }: { orgId: string }) {
 	}
 
 	function handleSubmit() {
-		if (!name.trim()) return;
+		if (!name.trim() || createRole.isPending) return;
+		setError(null);
 		createRole.mutate(
 			{
 				name: name.trim(),
@@ -67,13 +81,20 @@ export function RoleForm({ orgId }: { orgId: string }) {
 					reset();
 					setOpen(false);
 				},
-				onError: () => toast.error("Failed to create role"),
+				onError: (cause) => setError(ConnectError.from(cause).rawMessage),
 			},
 		);
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
+		<Dialog
+			open={open}
+			onOpenChange={(value) => {
+				if (createRole.isPending) return;
+				if (!value) reset();
+				setOpen(value);
+			}}
+		>
 			<DialogTrigger render={<Button />}>
 				<Plus className="mr-2 h-4 w-4" />
 				Create Role
@@ -87,6 +108,11 @@ export function RoleForm({ orgId }: { orgId: string }) {
 							: "Define a global role with custom permissions."}
 					</DialogDescription>
 				</DialogHeader>
+				{error && (
+					<p role="alert" className="text-sm text-destructive">
+						{error}
+					</p>
+				)}
 
 				<div className="space-y-4 py-4">
 					<div className="space-y-2">
@@ -115,7 +141,7 @@ export function RoleForm({ orgId }: { orgId: string }) {
 							<div className="flex flex-wrap gap-1">
 								{permissions.map((p, i) => (
 									<Badge
-										key={i}
+										key={`${p.resource}:${p.action}`}
 										variant="secondary"
 										className="font-mono text-xs gap-1"
 									>
@@ -161,6 +187,7 @@ export function RoleForm({ orgId }: { orgId: string }) {
 				<DialogFooter>
 					<Button
 						variant="outline"
+						disabled={createRole.isPending}
 						onClick={() => {
 							reset();
 							setOpen(false);

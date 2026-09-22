@@ -270,7 +270,8 @@ func (s *PostgresStore) ListTeamMembers(ctx context.Context, teamID string) ([]*
 	executor := s.getQueryExecutor(ctx)
 
 	rows, err := executor.Query(ctx, `
-		SELECT team_id, user_id, role, joined_at
+		SELECT team_id, user_id, role, joined_at,
+		       COALESCE(public.organization_member_primary_email(user_id), '')
 		FROM team_members WHERE team_id = $1
 		ORDER BY joined_at`, teamID,
 	)
@@ -284,7 +285,7 @@ func (s *PostgresStore) ListTeamMembers(ctx context.Context, teamID string) ([]*
 		var m gen.TeamMembership
 		var role string
 		var joinedAt time.Time
-		if err := rows.Scan(&m.TeamId, &m.UserId, &role, &joinedAt); err != nil {
+		if err := rows.Scan(&m.TeamId, &m.UserId, &role, &joinedAt, &m.UserEmail); err != nil {
 			return nil, w.Wrapf(err, "failed to scan team member")
 		}
 		m.Role = parseTeamRole(role)

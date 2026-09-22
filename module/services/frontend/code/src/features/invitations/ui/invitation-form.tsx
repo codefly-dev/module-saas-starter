@@ -77,14 +77,18 @@ export function InvitationForm({ orgId }: { orgId: string }) {
 					</div>
 
 					<div className="space-y-2">
-						<Label>Role</Label>
+						<Label htmlFor="inv-role">Role</Label>
 						<Select
+							items={{
+								[String(InvitationRole.MEMBER)]: "Member",
+								[String(InvitationRole.ADMIN)]: "Admin",
+							}}
 							value={String(role)}
 							onValueChange={(v) => {
 								if (v) setRole(Number(v) as InvitationRole);
 							}}
 						>
-							<SelectTrigger>
+							<SelectTrigger id="inv-role">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>

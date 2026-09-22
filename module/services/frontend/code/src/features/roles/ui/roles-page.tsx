@@ -4,6 +4,7 @@ import { OrgSelector } from "@/components/org-selector";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission, isSuperAdmin } from "@/lib/permissions";
+import { Button } from "@/shared/ui";
 import type { Role } from "../model/types";
 import { useRoles } from "../service/queries";
 import { RoleForm } from "./role-form";
@@ -28,13 +29,15 @@ function RolesPageForOrganization({
 	orgId: string;
 	canCreate: boolean;
 }) {
-	const { data: roles = [], isLoading } = useRoles(orgId);
+	const { data: roles = [], isLoading, isError, refetch } = useRoles(orgId);
 
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 data-slot="page-title" className="type-page-title">Roles</h1>
+					<h1 data-slot="page-title" className="type-page-title">
+						Roles
+					</h1>
 					<p className="text-muted-foreground">
 						{orgId
 							? "Manage roles and permissions for the selected organization."
@@ -47,7 +50,19 @@ function RolesPageForOrganization({
 				</div>
 			</div>
 
-			<RolesTable roles={roles as Role[]} isLoading={isLoading} />
+			{!orgId && (
+				<p>Select an organization to create or manage its custom roles.</p>
+			)}
+			{isError ? (
+				<div role="alert">
+					Couldn&apos;t load roles.{" "}
+					<Button variant="outline" onClick={() => refetch()}>
+						Try again
+					</Button>
+				</div>
+			) : (
+				<RolesTable roles={roles as Role[]} isLoading={isLoading} />
+			)}
 		</div>
 	);
 }

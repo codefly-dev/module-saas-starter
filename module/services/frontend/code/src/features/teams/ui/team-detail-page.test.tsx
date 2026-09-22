@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
@@ -32,7 +38,14 @@ function serveTeam() {
 		),
 		http.post(rpc("TeamService", "ListMembers"), () =>
 			HttpResponse.json({
-				members: [{ teamId: "team-1", userId: "user-1", role: 1 }],
+				members: [
+					{
+						teamId: "team-1",
+						userId: "user-1",
+						userEmail: "user@example.com",
+						role: 1,
+					},
+				],
 			}),
 		),
 		http.post(rpc("PermissionService", "ListRoles"), () =>
@@ -115,12 +128,15 @@ describe("TeamDetailPage", () => {
 
 		renderInApp(<TeamDetailPage teamId="team-1" />);
 
-		const memberRow = (
-			await screen.findByRole("link", { name: "user-1" })
-		).closest("tr");
-		const remove = memberRow?.querySelector("button");
-		expect(remove).toBeTruthy();
-		fireEvent.click(remove as HTMLButtonElement);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Remove user@example.com" }),
+		);
+		expect(removals).toHaveLength(0);
+		fireEvent.click(
+			within(await screen.findByRole("dialog")).getByRole("button", {
+				name: "Remove member",
+			}),
+		);
 
 		await waitFor(() => expect(removals).toHaveLength(1));
 		expect(removals[0]).toEqual({ teamId: "team-1", userId: "user-1" });

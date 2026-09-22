@@ -53,18 +53,6 @@ export function OrganizationsTable({
 					</span>
 				),
 			}),
-			col.accessor("id", {
-				header: "ID",
-				cell: (info) => (
-					<span
-						className="select-all font-mono text-xs text-muted-foreground"
-						title={info.getValue()}
-					>
-						{info.getValue()}
-					</span>
-				),
-				enableSorting: false,
-			}),
 			col.accessor("createdAt", {
 				header: "Created",
 				cell: (info) => (

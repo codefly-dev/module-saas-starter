@@ -10,7 +10,8 @@ import {
 import { LogOut, MoreHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { UserLabel } from "@/components/user-label";
+import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -38,7 +39,12 @@ import { useActiveSessions } from "../service/queries";
 const col = createColumnHelper<SessionInfo>();
 
 export function SessionsPage() {
-	const { data: sessions = [], isLoading } = useActiveSessions();
+	const {
+		data: sessions = [],
+		isLoading,
+		isError,
+		refetch,
+	} = useActiveSessions();
 	const [revokeTarget, setRevokeTarget] = useState<SessionInfo | null>(null);
 	const revoke = useRevokeSession();
 
@@ -46,11 +52,7 @@ export function SessionsPage() {
 		() => [
 			col.accessor("userId", {
 				header: "User",
-				cell: (info) => (
-					<span className="font-mono text-xs">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
+				cell: (info) => <UserLabel userId={info.getValue()} />,
 			}),
 			col.accessor("actingAsUserId", {
 				header: "Type",
@@ -61,7 +63,7 @@ export function SessionsPage() {
 					}
 					return (
 						<Badge variant="outline" className="text-xs">
-							Impersonating {truncateUUID(target)}
+							Impersonating <UserLabel userId={target} />
 						</Badge>
 					);
 				},
@@ -152,17 +154,26 @@ export function SessionsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 data-slot="page-title" className="type-page-title">Active Sessions</h1>
+				<h1 data-slot="page-title" className="type-page-title">
+					Active Sessions
+				</h1>
 				<p className="text-muted-foreground">
 					View and monitor active user sessions.
 				</p>
 			</div>
 
-			<DataTable
-				table={table}
-				isLoading={isLoading}
-				emptyMessage="No active sessions"
-			/>
+			{isError ? (
+				<div role="alert">
+					Unable to load active sessions.{" "}
+					<Button onClick={() => void refetch()}>Retry</Button>
+				</div>
+			) : (
+				<DataTable
+					table={table}
+					isLoading={isLoading}
+					emptyMessage="No active sessions"
+				/>
+			)}
 
 			{revokeTarget && (
 				<AlertDialog open onOpenChange={(o) => !o && setRevokeTarget(null)}>
@@ -171,10 +182,8 @@ export function SessionsPage() {
 							<AlertDialogTitle>Force logout?</AlertDialogTitle>
 							<AlertDialogDescription>
 								This revokes the session for user{" "}
-								<span className="font-mono">
-									{truncateUUID(revokeTarget.userId)}
-								</span>
-								. They&apos;ll be signed out on that device immediately.
+								<UserLabel userId={revokeTarget.userId} />. They&apos;ll be
+								signed out on that device immediately.
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<AlertDialogFooter>

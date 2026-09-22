@@ -235,6 +235,12 @@ func nextPageRoute(sourcePath string) (*catalogv1.FrontendRoute, error) {
 	if len(pathParts) > 1 && pathParts[0] == "admin" && pathParts[1] == "platform" {
 		access = catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN
 	}
+	// Team rosters are tenant-visible and team admins need not be org admins.
+	// The frontend shell admits authenticated tenant members on these routes;
+	// team mutations remain authorized by the backend's requireTeamAdmin gate.
+	if len(pathParts) > 1 && pathParts[0] == "admin" && pathParts[1] == "teams" {
+		access = catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED
+	}
 	if access == catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_UNSPECIFIED {
 		return nil, fmt.Errorf("page %q has no recognized access boundary", sourcePath)
 	}

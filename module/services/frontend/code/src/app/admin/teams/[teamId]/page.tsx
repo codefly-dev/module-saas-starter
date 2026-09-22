@@ -1,4 +1,4 @@
-import { TeamDetailPage } from "@/features/teams/ui/team-detail-page";
+import { TeamDetailsPage } from "@/features/teams/ui/team-details-page";
 
 export default async function Page({
 	params,
@@ -6,5 +6,5 @@ export default async function Page({
 	params: Promise<{ teamId: string }>;
 }) {
 	const { teamId } = await params;
-	return <TeamDetailPage teamId={teamId} />;
+	return <TeamDetailsPage teamId={teamId} />;
 }

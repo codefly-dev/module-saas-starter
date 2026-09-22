@@ -7,7 +7,6 @@ import { orgQueries } from "@/features/organizations/service/queries";
 import { useEffectivePermissions } from "@/features/permissions/service/effective";
 import { useRoles } from "@/features/roles/service/queries";
 import { useAuth } from "@/lib/auth";
-import { truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
 	Page as PageBody,
@@ -157,6 +156,10 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 					<Stack direction="row" gap={4} className="flex-wrap">
 						<Select
 							value={subjectId}
+							items={(members?.members ?? []).map((member) => ({
+								value: member.userId,
+								label: member.userEmail || "User unavailable",
+							}))}
 							onValueChange={(value) => setSubjectId(value ?? "")}
 						>
 							<SelectTrigger className="w-72">
@@ -165,13 +168,17 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 							<SelectContent>
 								{(members?.members ?? []).map((member) => (
 									<SelectItem key={member.userId} value={member.userId}>
-										{truncateUUID(member.userId)}
+										{member.userEmail || "User unavailable"}
 									</SelectItem>
 								))}
 							</SelectContent>
 						</Select>
 						<Select
 							value={permission}
+							items={(info?.capabilities?.permissions ?? []).map((entry) => ({
+								value: permissionLabel(entry),
+								label: permissionLabel(entry),
+							}))}
 							onValueChange={(value) => setPermission(value ?? "")}
 						>
 							<SelectTrigger className="w-72">

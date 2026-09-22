@@ -63,7 +63,10 @@ describe("useRevokeAPIKey", () => {
 		const { result } = renderHook(() => useRevokeAPIKey(), {
 			wrapper: createWrapper(),
 		});
-		const response = await result.current.mutateAsync("key-1");
+		const response = await result.current.mutateAsync({
+			id: "key-1",
+			organizationId: "org-1",
+		});
 		expect(response).toBeDefined();
 	});
 });

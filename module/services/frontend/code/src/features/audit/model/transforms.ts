@@ -1,6 +1,5 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { AuditEvent as ProtoAuditEvent } from "@/gen/saas/accounts/v1/audit_pb";
-import { truncateUUID } from "@/shared/lib/utils";
 import type { AuditEvent, PrincipalDirectory } from "./types";
 
 // toAuditEvent maps a wire (protobuf-es) audit event to the pure domain model.
@@ -60,7 +59,7 @@ export interface ResolvedActor {
 // resolveActor renders an audit row's actor as a person, service, or agent
 // rather than as an opaque id. A principal that is revoked, cross-org, or past
 // the directory's page walk is absent from the map, so the fallback is the
-// truncated id: an unresolved actor must still read as *an* actor.
+// unavailable label: normal screens must not expose opaque identifiers.
 export function resolveActor(
 	actorId: string,
 	directory: PrincipalDirectory,
@@ -70,7 +69,7 @@ export function resolveActor(
 	// A row with no actor id is automated work the server attributed to no
 	// principal; truncating "" would leave the cell blank.
 	if (!actorId) return { label: "System", resolved: false };
-	return { label: truncateUUID(actorId), resolved: false };
+	return { label: "Actor unavailable", resolved: false };
 }
 
 // formatActorType renders the audit row's actor_type facet — one of user,

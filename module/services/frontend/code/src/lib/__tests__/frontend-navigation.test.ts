@@ -44,7 +44,6 @@ describe("generated frontend navigation", () => {
 		expect(groups[0]?.items.map((item) => item.href)).toEqual([
 			"/admin/users",
 			"/admin/organizations",
-			"/admin/teams",
 			"/admin/roles",
 			"/admin/permissions",
 			"/admin/invitations",

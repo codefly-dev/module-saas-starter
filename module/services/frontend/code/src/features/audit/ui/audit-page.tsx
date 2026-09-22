@@ -291,6 +291,13 @@ export function AuditPage() {
 			</DropdownMenu>
 			<Select
 				value={categoryFilter}
+				items={[
+					{ value: "all", label: "All categories" },
+					...categories.map((value) => ({
+						value,
+						label: formatAuditAction(value),
+					})),
+				]}
 				onValueChange={(v) => {
 					if (v) {
 						setCategoryFilter(v);
@@ -305,13 +312,17 @@ export function AuditPage() {
 					<SelectItem value="all">All categories</SelectItem>
 					{categories.map((c) => (
 						<SelectItem key={c} value={c}>
-							{c}
+							{formatAuditAction(c)}
 						</SelectItem>
 					))}
 				</SelectContent>
 			</Select>
 			<Select
 				value={namespaceFilter}
+				items={[
+					{ value: "all", label: "All namespaces" },
+					...namespaces.map((n) => ({ value: n, label: n })),
+				]}
 				onValueChange={(v) => {
 					if (v) {
 						setNamespaceFilter(v);
@@ -333,6 +344,13 @@ export function AuditPage() {
 			</Select>
 			<Select
 				value={eventTypeFilter}
+				items={[
+					{ value: "all", label: "All event types" },
+					...visibleEventTypes.map((t) => ({
+						value: t.name,
+						label: formatAuditAction(t.name),
+					})),
+				]}
 				onValueChange={(v) => {
 					if (v) setEventTypeFilter(v);
 				}}
@@ -344,7 +362,7 @@ export function AuditPage() {
 					<SelectItem value="all">All event types</SelectItem>
 					{visibleEventTypes.map((t) => (
 						<SelectItem key={t.name} value={t.name}>
-							{t.name}
+							{formatAuditAction(t.name)}
 						</SelectItem>
 					))}
 				</SelectContent>

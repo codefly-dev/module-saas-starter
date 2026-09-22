@@ -8935,6 +8935,10 @@
         "joinedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Tenant-scoped directory label. Empty for deleted or unavailable accounts."
         }
       }
     },
@@ -10124,6 +10128,10 @@
         "joinedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Tenant-scoped directory label. Empty for deleted or unavailable accounts."
         }
       }
     },

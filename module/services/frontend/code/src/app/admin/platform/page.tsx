@@ -7,6 +7,7 @@ import {
 	Workflow,
 } from "lucide-react";
 import Link from "next/link";
+import { isProductRouteEnabled } from "@/lib/product-features";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/shared/ui";
 
 const sections = [
@@ -61,24 +62,26 @@ export default function PlatformPage() {
 				</p>
 			</div>
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				{sections.map((s) => {
-					const Icon = s.icon;
-					return (
-						<Link key={s.href} href={s.href}>
-							<Card className="hover:bg-accent/50 transition-colors cursor-pointer">
-								<CardHeader>
-									<div className="flex items-center gap-3">
-										<Icon className="h-5 w-5 text-muted-foreground" />
-										<div>
-											<CardTitle className="text-base">{s.title}</CardTitle>
-											<CardDescription>{s.description}</CardDescription>
+				{sections
+					.filter((s) => isProductRouteEnabled(s.href))
+					.map((s) => {
+						const Icon = s.icon;
+						return (
+							<Link key={s.href} href={s.href}>
+								<Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+									<CardHeader>
+										<div className="flex items-center gap-3">
+											<Icon className="h-5 w-5 text-muted-foreground" />
+											<div>
+												<CardTitle className="text-base">{s.title}</CardTitle>
+												<CardDescription>{s.description}</CardDescription>
+											</div>
 										</div>
-									</div>
-								</CardHeader>
-							</Card>
-						</Link>
-					);
-				})}
+									</CardHeader>
+								</Card>
+							</Link>
+						);
+					})}
 			</div>
 		</div>
 	);

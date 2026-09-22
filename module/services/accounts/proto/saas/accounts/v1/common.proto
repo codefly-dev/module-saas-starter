@@ -76,6 +76,8 @@ message OrgMembership {
   string user_id = 2;
   OrgRole role = 3;
   google.protobuf.Timestamp joined_at = 4;
+  // Tenant-scoped directory label. Empty for deleted or unavailable accounts.
+  string user_email = 5;
 }
 
 enum OrgRole {
@@ -113,6 +115,8 @@ message TeamMembership {
   string user_id = 2;
   TeamRole role = 3;
   google.protobuf.Timestamp joined_at = 4;
+  // Tenant-scoped directory label. Empty for deleted or unavailable accounts.
+  string user_email = 5;
 }
 
 enum TeamRole {

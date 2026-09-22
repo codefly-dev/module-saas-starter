@@ -10,7 +10,9 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { UserLabel } from "@/components/user-label";
+import { UserPicker } from "@/components/user-picker";
+import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -30,7 +32,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-	Input,
 	Label,
 	Select,
 	SelectContent,
@@ -48,6 +49,12 @@ import {
 import { usePlatformAdmins } from "../service/queries";
 
 const col = createColumnHelper<PlatformAdmin>();
+
+const platformRoleLabels: Record<string, string> = {
+	super_admin: "Super admin",
+	billing: "Billing",
+	support: "Support",
+};
 
 export function AdminsPage() {
 	const { data: admins = [], isLoading } = usePlatformAdmins();
@@ -76,12 +83,8 @@ export function AdminsPage() {
 	const columns = useMemo(
 		() => [
 			col.accessor("userId", {
-				header: "User ID",
-				cell: (info) => (
-					<span className="font-mono text-xs">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
+				header: "User",
+				cell: (info) => <UserLabel userId={info.getValue()} />,
 			}),
 			col.accessor("platformRole", {
 				header: "Role",
@@ -99,9 +102,10 @@ export function AdminsPage() {
 			col.accessor("grantedBy", {
 				header: "Granted By",
 				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
+					<UserLabel
+						userId={info.getValue()}
+						fallback={info.getValue() ? "User unavailable" : "System"}
+					/>
 				),
 			}),
 			col.accessor("grantedAt", {
@@ -165,7 +169,9 @@ export function AdminsPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 data-slot="page-title" className="type-page-title">Platform Admins</h1>
+					<h1 data-slot="page-title" className="type-page-title">
+						Platform Admins
+					</h1>
 					<p className="text-muted-foreground">
 						Grant and revoke platform-level admin roles.
 					</p>
@@ -185,18 +191,16 @@ export function AdminsPage() {
 						</DialogHeader>
 						<div className="space-y-4 py-4">
 							<div className="space-y-2">
-								<Label htmlFor="admin-user">User ID</Label>
-								<Input
-									id="admin-user"
-									placeholder="User UUID"
-									value={userId}
-									onChange={(e) => setUserId(e.target.value)}
-								/>
+								<UserPicker value={userId} onChange={setUserId} />
 							</div>
 							<div className="space-y-2">
 								<Label>Role</Label>
 								<Select
 									value={role}
+									items={PLATFORM_ROLES.map((value) => ({
+										value,
+										label: platformRoleLabels[value] ?? value,
+									}))}
 									onValueChange={(v) => {
 										if (v) setRole(v);
 									}}
@@ -207,7 +211,7 @@ export function AdminsPage() {
 									<SelectContent>
 										{PLATFORM_ROLES.map((r) => (
 											<SelectItem key={r} value={r}>
-												{r}
+												{platformRoleLabels[r] ?? r}
 											</SelectItem>
 										))}
 									</SelectContent>

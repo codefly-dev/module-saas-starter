@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { OrgSelector } from "@/components/org-selector";
+import { useAuth } from "@/lib/auth";
 import {
 	Button,
 	Card,
@@ -51,8 +53,27 @@ function useUpdateOrgSettings(orgId: string) {
 	});
 }
 
-export function OrgSettingsPage({ orgId = "default" }: { orgId?: string }) {
-	const { data: settings, isLoading } = useOrgSettings(orgId);
+export function OrgSettingsPage() {
+	const { organizationId } = useAuth();
+	return (
+		<div className="space-y-6">
+			<div className="flex items-center justify-between">
+				<h1 className="text-2xl font-bold tracking-tight">
+					Organization Settings
+				</h1>
+				<OrgSelector />
+			</div>
+			{organizationId ? (
+				<OrgSettingsForm key={organizationId} orgId={organizationId} />
+			) : (
+				<p>Select an organization to edit its settings.</p>
+			)}
+		</div>
+	);
+}
+
+function OrgSettingsForm({ orgId }: { orgId: string }) {
+	const { data: settings, isLoading, isError, refetch } = useOrgSettings(orgId);
 	const updateMutation = useUpdateOrgSettings(orgId);
 
 	const form = useForm<OrgSettingsValues>({
@@ -74,21 +95,24 @@ export function OrgSettingsPage({ orgId = "default" }: { orgId?: string }) {
 		return (
 			<div className="space-y-6">
 				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Organization Settings
-					</h1>
 					<p className="text-muted-foreground">Loading...</p>
 				</div>
 			</div>
 		);
 	}
+	if (isError)
+		return (
+			<div role="alert">
+				Couldn&apos;t load organization settings.{" "}
+				<Button variant="outline" onClick={() => refetch()}>
+					Try again
+				</Button>
+			</div>
+		);
 
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 data-slot="page-title" className="type-page-title">
-					Organization Settings
-				</h1>
 				<p className="text-muted-foreground">
 					Customize branding and domain settings for your organization.
 				</p>

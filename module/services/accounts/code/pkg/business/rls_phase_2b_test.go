@@ -133,6 +133,8 @@ func TestRLS_OrganizationMembers_CrossTenantBlocked(t *testing.T) {
 		mine, err := testStore.ListOrgMembers(ctx, orgA)
 		require.NoError(t, err)
 		require.Len(t, mine, 1, "org A should see its own owner row")
+		require.Equal(t, "alice-om@rls-test.com", mine[0].UserEmail,
+			"member labels must resolve through the tenant-scoped directory")
 		return nil
 	}))
 

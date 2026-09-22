@@ -381,8 +381,10 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 	// sessions.user_id is a uuid column, so an unparseable id reaches Postgres
 	// as a failed cast rather than an empty result — an internal error where the
 	// caller supplied bad input.
-	if _, err := ParseID(req.UserId); err != nil {
-		return nil, w.Wrapf(err, "invalid user id")
+	if req.UserId != "" {
+		if _, err := ParseID(req.UserId); err != nil {
+			return nil, w.Wrapf(err, "invalid user id")
+		}
 	}
 
 	var sessions []*Session
@@ -524,6 +526,7 @@ func (s *Service) ListPlatformAdmins(ctx context.Context, actorID string) (*gen.
 			UserId:       a.UserID,
 			PlatformRole: a.PlatformRole,
 			GrantedBy:    a.GrantedBy,
+			GrantedAt:    timestamppb.New(a.GrantedAt),
 		})
 	}
 

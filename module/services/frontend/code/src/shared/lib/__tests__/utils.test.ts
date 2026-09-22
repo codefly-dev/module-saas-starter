@@ -37,10 +37,9 @@ describe("formatDate", () => {
 			seconds: BigInt(1),
 			nanos: 0,
 		};
-		// @ts-expect-error — deliberately passing the wrong shape a cast could leak.
 		const result = formatDate(timestampLike);
 		expect(typeof result).toBe("string");
-		expect(result).toBe("-");
+		expect(result).toBe(formatDate("1970-01-01T00:00:01Z"));
 	});
 });
 
@@ -83,6 +82,11 @@ describe("formatLimit", () => {
 
 	it("handles bigint input", () => {
 		expect(formatLimit(BigInt(-1))).toBe("Unlimited");
+	});
+	it("preserves int64 precision", () => {
+		expect(formatLimit(BigInt("9223372036854775807"))).toBe(
+			"9,223,372,036,854,775,807",
+		);
 	});
 
 	it("formats large numbers with commas", () => {

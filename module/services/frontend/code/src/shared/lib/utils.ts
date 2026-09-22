@@ -5,7 +5,9 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
-export function formatDate(dateString: string | undefined): string {
+export function formatDate(
+	dateString: string | { seconds: bigint; nanos: number } | undefined,
+): string {
 	if (!dateString) return "-";
 	try {
 		return new Intl.DateTimeFormat("en-US", {
@@ -14,7 +16,13 @@ export function formatDate(dateString: string | undefined): string {
 			day: "numeric",
 			hour: "2-digit",
 			minute: "2-digit",
-		}).format(new Date(dateString));
+		}).format(
+			new Date(
+				typeof dateString === "string"
+					? dateString
+					: Number(dateString.seconds) * 1000 + dateString.nanos / 1e6,
+			),
+		);
 	} catch {
 		// Never return the raw input: callers render this straight into JSX, and
 		// a non-string (e.g. a protobuf Timestamp object leaked past the model
@@ -29,8 +37,7 @@ export function truncateUUID(uuid: string): string {
 }
 
 export function formatLimit(limit: number | bigint): string {
-	const n = Number(limit);
-	if (n === -1) return "Unlimited";
-	if (n === 0) return "Disabled";
-	return n.toLocaleString();
+	if (limit === -1 || limit === BigInt(-1)) return "Unlimited";
+	if (limit === 0 || limit === BigInt(0)) return "Disabled";
+	return limit.toLocaleString();
 }

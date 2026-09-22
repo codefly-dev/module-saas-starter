@@ -48,6 +48,8 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_PUBLIC, byPath["/auth/login"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/settings/mfa"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_ADMIN, byPath["/admin/users"].GetAccess())
+	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams"].GetAccess())
+	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams/{teamId}"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/jobs"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/events"].GetAccess())

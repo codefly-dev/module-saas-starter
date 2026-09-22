@@ -51,7 +51,7 @@ navigation:
     path: /admin/teams
     icon: UsersRound
     group: Users & Access
-    access: admin
+    access: authenticated
     permission: teams:read
     surfaces:
       - command_palette

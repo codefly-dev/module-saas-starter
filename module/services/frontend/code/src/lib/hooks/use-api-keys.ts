@@ -48,7 +48,8 @@ export function useRevokeAPIKey() {
 	const svc = useAPIKeyService();
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (id: string) => svc.revokeAPIKey({ id }),
+		mutationFn: (input: { id: string; organizationId: string }) =>
+			svc.revokeAPIKey(input),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["api-keys"] });
 			toast.success("API key revoked");

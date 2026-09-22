@@ -26,6 +26,7 @@ import {
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import type { Entitlement } from "../model/types";
+import { parseEntitlementLimit } from "../model/limit";
 import { useOverrideEntitlement } from "../service/mutations";
 import { useOrgEntitlements } from "../service/queries";
 
@@ -63,14 +64,23 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 	);
 	const [limitValue, setLimitValue] = useState("");
 	const [reason, setReason] = useState("");
+	const [error, setError] = useState("");
 
 	function handleOverride() {
 		if (!orgId || !overrideTarget || !limitValue) return;
+		const limit = parseEntitlementLimit(limitValue);
+		if (limit === null) {
+			setError(
+				"Enter a whole number from -1 to 9223372036854775807 (-1 means unlimited).",
+			);
+			return;
+		}
+		setError("");
 		overrideEntitlement.mutate(
 			{
 				orgId,
 				feature: overrideTarget,
-				limitValue: BigInt(limitValue),
+				limitValue: limit,
 				reason: reason.trim() || undefined,
 			},
 			{
@@ -122,7 +132,8 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 						size="sm"
 						onClick={() => {
 							setOverrideTarget(row.original.feature);
-							setLimitValue(String(Number(row.original.limit)));
+							setLimitValue(String(row.original.limit));
+							setError("");
 						}}
 					>
 						Override
@@ -145,7 +156,9 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-4">
 					<div>
-						<h1 data-slot="page-title" className="type-page-title">Entitlements</h1>
+						<h1 data-slot="page-title" className="type-page-title">
+							Entitlements
+						</h1>
 						<p className="text-muted-foreground">
 							View and override organization entitlements.
 						</p>
@@ -180,6 +193,11 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-4">
+						{error && (
+							<p role="alert" className="text-sm text-destructive">
+								{error}
+							</p>
+						)}
 						<div className="space-y-2">
 							<Label htmlFor="ent-limit">New Limit</Label>
 							<Input

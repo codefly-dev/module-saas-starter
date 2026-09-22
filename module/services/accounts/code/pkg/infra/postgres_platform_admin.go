@@ -11,9 +11,10 @@ import (
 	"encoding/json"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// SearchUsers searches users by email or UUID prefix across all orgs.
+// SearchUsers searches users by name, email, or UUID across all orgs.
 func (s *PostgresStore) SearchUsers(ctx context.Context, query string, pageSize int32, pageToken string) ([]*gen.User, string, error) {
 	w := wool.Get(ctx).In("SearchUsers")
 	executor := s.getQueryExecutor(ctx)
@@ -25,9 +26,11 @@ func (s *PostgresStore) SearchUsers(ctx context.Context, query string, pageSize 
 	likeQuery := "%" + query + "%"
 
 	rows, err := executor.Query(ctx, `
-		SELECT uuid, primary_email, status, profile, created_at, updated_at
+		SELECT uuid, primary_email, status, profile, created_at, updated_at, email_verified, last_login
 		FROM users
 		WHERE primary_email ILIKE $1 OR uuid::text LIKE $2
+		   OR profile->>'name' ILIKE $1
+		   OR concat_ws(' ', profile->>'first_name', profile->>'last_name') ILIKE $1
 		ORDER BY created_at DESC
 		LIMIT $3`,
 		likeQuery, likeQuery, pageSize+1,
@@ -42,11 +45,17 @@ func (s *PostgresStore) SearchUsers(ctx context.Context, query string, pageSize 
 		var u gen.User
 		var profile []byte
 		var createdAt, updatedAt time.Time
+		var lastLogin *time.Time
 		var statusStr string
-		if err := rows.Scan(&u.Uuid, &u.PrimaryEmail, &statusStr, &profile, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&u.Uuid, &u.PrimaryEmail, &statusStr, &profile, &createdAt, &updatedAt, &u.EmailVerified, &lastLogin); err != nil {
 			return nil, "", w.Wrapf(err, "failed to scan user")
 		}
 		u.Status = parseUserStatus(statusStr)
+		u.CreatedAt = timestamppb.New(createdAt)
+		u.UpdatedAt = timestamppb.New(updatedAt)
+		if lastLogin != nil {
+			u.LastLogin = timestamppb.New(*lastLogin)
+		}
 		if len(profile) > 0 {
 			u.Profile = make(map[string]string)
 			_ = json.Unmarshal(profile, &u.Profile)
@@ -60,7 +69,7 @@ func (s *PostgresStore) SearchUsers(ctx context.Context, query string, pageSize 
 		nextToken = users[len(users)-1].Uuid
 	}
 
-	return users, nextToken, nil
+	return users, nextToken, rows.Err()
 }
 
 // UpdateUserStatus changes a user's status (active, suspended, deleted).
@@ -96,7 +105,7 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, p
 		       COALESCE(refresh_token_hash, ''), family_id, COALESCE(ip_address, ''), device_info,
 		       created_at, last_active_at, idle_expires_at, expires_at
 		FROM sessions
-		WHERE user_id = $1
+		WHERE (NULLIF($1, '')::uuid IS NULL OR user_id = NULLIF($1, '')::uuid)
 		  AND revoked_at IS NULL
 		  AND expires_at > CURRENT_TIMESTAMP
 		  AND idle_expires_at > CURRENT_TIMESTAMP
@@ -125,7 +134,7 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context, userID string, p
 		}
 		sessions = append(sessions, &sess)
 	}
-	return sessions, nil
+	return sessions, rows.Err()
 }
 
 // parseUserStatus is defined in postgres.go

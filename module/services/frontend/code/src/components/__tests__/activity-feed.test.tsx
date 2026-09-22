@@ -127,7 +127,7 @@ describe("ActivityFeed actors", () => {
 		expect(screen.queryByText("Someone")).toBeNull();
 	});
 
-	it("falls back to the truncated id, never to a blank actor", () => {
+	it("shows an unavailable label instead of an opaque actor id", () => {
 		useAuditLogMock.mockReturnValue({
 			data: {
 				events: [
@@ -139,7 +139,7 @@ describe("ActivityFeed actors", () => {
 
 		render(<ActivityFeed />);
 
-		expect(screen.getByText("b7c22d10...")).toBeTruthy();
+		expect(screen.getByText("Actor unavailable")).toBeTruthy();
 	});
 
 	it("tags a non-human actor so its action does not read as a person's", () => {

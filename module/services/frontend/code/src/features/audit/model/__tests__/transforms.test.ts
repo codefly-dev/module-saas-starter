@@ -54,7 +54,7 @@ describe("auditEventAction", () => {
 
 describe("resolveActor", () => {
 	const directory = new Map([
-		["a3f81c2e-0000-4000-8000-000000000001", "Ada Lovelace"],
+		["a3f81c2e-0000-4000-8000-000000000001", "Jane Doe"],
 		["a3f81c2e-0000-4000-8000-000000000002", "deploy-bot"],
 		// principals.display_name is NOT NULL but carries no non-empty CHECK.
 		["a3f81c2e-0000-4000-8000-000000000004", ""],
@@ -63,7 +63,7 @@ describe("resolveActor", () => {
 	it("renders a resolved principal by its display name", () => {
 		expect(
 			resolveActor("a3f81c2e-0000-4000-8000-000000000001", directory),
-		).toEqual({ label: "Ada Lovelace", resolved: true });
+		).toEqual({ label: "Jane Doe", resolved: true });
 	});
 
 	it("resolves a non-human principal by name too", () => {
@@ -73,12 +73,12 @@ describe("resolveActor", () => {
 	});
 
 	// A revoked or cross-org principal is absent from the directory. The row
-	// must still read as an actor, so it falls back to the truncated id rather
+	// must still read as an actor, so it shows an unavailable label rather
 	// than to a blank cell.
-	it("falls back to the truncated id for an unresolved principal", () => {
+	it("shows an unavailable label for an unresolved principal", () => {
 		expect(
 			resolveActor("b7c22d10-0000-4000-8000-000000000003", directory),
-		).toEqual({ label: "b7c22d10...", resolved: false });
+		).toEqual({ label: "Actor unavailable", resolved: false });
 	});
 
 	// The bug this pins: `directory.has(id)` says "resolved" for an empty
@@ -87,7 +87,7 @@ describe("resolveActor", () => {
 	it("reports an empty display name as unresolved, not as a name", () => {
 		expect(
 			resolveActor("a3f81c2e-0000-4000-8000-000000000004", directory),
-		).toEqual({ label: "a3f81c2e...", resolved: false });
+		).toEqual({ label: "Actor unavailable", resolved: false });
 	});
 
 	it("names an actor-less row rather than rendering blank", () => {
@@ -100,7 +100,7 @@ describe("resolveActor", () => {
 	it("falls back when the directory has not landed yet", () => {
 		expect(
 			resolveActor("a3f81c2e-0000-4000-8000-000000000001", new Map()).label,
-		).toBe("a3f81c2e...");
+		).toBe("Actor unavailable");
 	});
 });
 
