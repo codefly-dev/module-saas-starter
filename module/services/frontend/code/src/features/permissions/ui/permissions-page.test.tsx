@@ -140,9 +140,10 @@ describe("PermissionsPage — check a grant", () => {
 		await pick("Pick a member…", `${MEMBER.slice(0, 8)}...`);
 		await pick("Pick a permission…", "audit:read");
 		if (scope !== undefined) {
-			fireEvent.change(screen.getByLabelText("Scope"), {
-				target: { value: scope },
-			});
+			const box = screen.getByLabelText("Scope");
+			fireEvent.change(box, { target: { value: scope } });
+			// The question is asked on submit, not on every keystroke.
+			fireEvent.keyDown(box, { key: "Enter" });
 		}
 	}
 
@@ -230,5 +231,136 @@ describe("PermissionsPage — check a grant", () => {
 		expect(
 			await screen.findByText(/a role assigned\s+globally grants it/),
 		).toBeTruthy();
+	});
+});
+
+// The scope half of the control: what is typed, what is asked, and what the
+// answer is allowed to claim. Each of these pins a way the page could tell an
+// administrator something untrue about access.
+describe("PermissionsPage — the scope a question carries", () => {
+	const MEMBER = "11111111-1111-4111-8111-111111111111";
+
+	function serve(
+		onExplain: (body: Record<string, string>) => void,
+		assignments: unknown[] = [],
+	) {
+		serveVocabulary();
+		server.use(
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({ members: [{ userId: MEMBER }] }),
+			),
+			http.post(rpc("TeamService", "ListTeams"), () =>
+				HttpResponse.json({ teams: [] }),
+			),
+			http.post(rpc("PermissionService", "ListRoleAssignments"), () =>
+				HttpResponse.json({ assignments }),
+			),
+			http.post(
+				rpc("PermissionService", "ExplainPermission"),
+				async ({ request }) => {
+					onExplain((await request.json()) as Record<string, string>);
+					return HttpResponse.json({
+						allowed: false,
+						reason: "no matching permission found",
+						grantingScopes: ["project-42"],
+					});
+				},
+			),
+		);
+	}
+
+	async function choose() {
+		const open = async (placeholder: string, option: string) => {
+			fireEvent.click(
+				(await screen.findByText(placeholder)).closest("button") as HTMLElement,
+			);
+			const item = await screen.findByRole("option", { name: option });
+			fireEvent.pointerDown(item, { pointerType: "mouse" });
+			fireEvent.click(item);
+		};
+		await open("Pick a member…", `${MEMBER.slice(0, 8)}...`);
+		await open("Pick a permission…", "audit:read");
+	}
+
+	// Without this, the scope box could be wired to nothing at all: the badge
+	// text is rendered from local state, so every other assertion still passes
+	// while the service is asked the organization-wide question.
+	it("sends the scope on the wire, not just into the badge", async () => {
+		const asked: Record<string, string>[] = [];
+		serve((body) => asked.push(body));
+
+		renderInApp(<PermissionsPage />);
+		await choose();
+		const box = screen.getByLabelText("Scope");
+		fireEvent.change(box, { target: { value: "project-42" } });
+		fireEvent.keyDown(box, { key: "Enter" });
+
+		await screen.findByText("Not allowed in project-42");
+		expect(asked.map((body) => body.scope ?? "")).toContain("project-42");
+	});
+
+	// Typing is not asking. Every intermediate string would otherwise be a
+	// question, and each answer a confident denial for a scope that does not
+	// exist.
+	it("asks once on submit rather than once per keystroke", async () => {
+		const asked: Record<string, string>[] = [];
+		serve((body) => asked.push(body));
+
+		renderInApp(<PermissionsPage />);
+		await choose();
+		await screen.findByText("Not allowed organization-wide");
+		const before = asked.length;
+
+		const box = screen.getByLabelText("Scope");
+		for (const value of ["p", "pr", "pro", "proj", "project-42"]) {
+			fireEvent.change(box, { target: { value } });
+		}
+		expect(screen.queryByText(/^Not allowed in/)).toBeNull();
+		expect(asked.length).toBe(before);
+
+		fireEvent.keyDown(box, { key: "Enter" });
+		await screen.findByText("Not allowed in project-42");
+		expect(asked.length).toBe(before + 1);
+		expect(asked.map((body) => body.scope ?? "")).not.toContain("pro");
+	});
+
+	// A scope the service can never match, because of whitespace the
+	// administrator cannot see, would read as a plain denial.
+	it("asks about the trimmed scope", async () => {
+		const asked: Record<string, string>[] = [];
+		serve((body) => asked.push(body));
+
+		renderInApp(<PermissionsPage />);
+		await choose();
+		const box = screen.getByLabelText("Scope");
+		fireEvent.change(box, { target: { value: "  project-42\n" } });
+		fireEvent.keyDown(box, { key: "Enter" });
+
+		await screen.findByText("Not allowed in project-42");
+		expect(asked.map((body) => body.scope ?? "")).toContain("project-42");
+	});
+
+	// The regression this whole pass exists for: a role scoped elsewhere is not
+	// a path that explains an organization-wide denial.
+	it("does not offer a scoped grant as the path behind an org-wide denial", async () => {
+		serve(() => {}, [
+			{ subjectId: MEMBER, roleId: "role-auditor", scope: "project-42" },
+		]);
+
+		renderInApp(<PermissionsPage />);
+		await choose();
+
+		expect(
+			await screen.findByText("Not allowed organization-wide"),
+		).toBeTruthy();
+		// Where the subject IS entitled is the honest answer, and it comes from
+		// the service's own granting_scopes.
+		expect(screen.getByText("Granted, but only in")).toBeTruthy();
+		// No path list of any wording: asserting on one label would pass the
+		// moment the denial's wording changed, while the scoped grant was still
+		// being offered as an explanation.
+		expect(screen.queryByText("auditor in project-42")).toBeNull();
+		expect(screen.queryByText("Through")).toBeNull();
+		expect(screen.queryByText(/despite these assignments/)).toBeNull();
 	});
 });

@@ -135,7 +135,7 @@ describe("sourcesGranting", () => {
 		});
 		expect(effective.map((entry) => entry.permission)).toEqual(["*:*"]);
 		expect(
-			sourcesGranting({ resource: "webhooks", action: "write" }, effective),
+			sourcesGranting({ resource: "webhooks", action: "write" }, effective, ""),
 		).toEqual([
 			{ via: "direct", roleId: "role-super", roleName: "super", scope: "" },
 		]);
@@ -143,8 +143,81 @@ describe("sourcesGranting", () => {
 
 	it("reports no source when nothing grants it", () => {
 		expect(
-			sourcesGranting({ resource: "webhooks", action: "write" }, []),
+			sourcesGranting({ resource: "webhooks", action: "write" }, [], ""),
 		).toEqual([]);
+	});
+
+	// The store answers an unscoped check from NULL-scope assignments alone
+	// (postgres_permissions.go, CheckPermission). A scoped grant returned here
+	// would be rendered as a path explaining an organization-wide verdict that
+	// the service denies — a path list contradicting the decision beside it.
+	it("does not answer an organization-wide question with a scoped grant", () => {
+		const effective = resolveEffectivePermissions({
+			subjectId: "user-1",
+			roles: [auditor],
+			assignments: [
+				{ subjectId: "user-1", roleId: "role-auditor", scope: "project-42" },
+			],
+			teams: [],
+		});
+		expect(
+			sourcesGranting({ resource: "users", action: "read" }, effective, ""),
+		).toEqual([]);
+	});
+
+	// ...and the same grant is the answer once the question names its scope.
+	it("answers a scoped question with that scope's grant", () => {
+		const effective = resolveEffectivePermissions({
+			subjectId: "user-1",
+			roles: [auditor],
+			assignments: [
+				{ subjectId: "user-1", roleId: "role-auditor", scope: "project-42" },
+			],
+			teams: [],
+		});
+		expect(
+			sourcesGranting(
+				{ resource: "users", action: "read" },
+				effective,
+				"project-42",
+			),
+		).toEqual([
+			{
+				via: "direct",
+				roleId: "role-auditor",
+				roleName: "auditor",
+				scope: "project-42",
+			},
+		]);
+		// A different scope is not an answer either.
+		expect(
+			sourcesGranting(
+				{ resource: "users", action: "read" },
+				effective,
+				"project-7",
+			),
+		).toEqual([]);
+	});
+
+	// The store matches `ra.scope IS NULL OR ra.scope = $n` on a scoped check,
+	// so an organization-wide grant answers a scoped question too. Dropping it
+	// would hide the only path that explains an allowed verdict.
+	it("answers a scoped question with an organization-wide grant", () => {
+		const effective = resolveEffectivePermissions({
+			subjectId: "user-1",
+			roles: [auditor],
+			assignments: [{ subjectId: "user-1", roleId: "role-auditor" }],
+			teams: [],
+		});
+		expect(
+			sourcesGranting(
+				{ resource: "users", action: "read" },
+				effective,
+				"project-42",
+			),
+		).toEqual([
+			{ via: "direct", roleId: "role-auditor", roleName: "auditor", scope: "" },
+		]);
 	});
 });
 

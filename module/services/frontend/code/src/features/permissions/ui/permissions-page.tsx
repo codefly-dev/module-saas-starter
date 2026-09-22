@@ -141,7 +141,17 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 function CheckAGrant({ orgId }: { orgId: string }) {
 	const [subjectId, setSubjectId] = useState("");
 	const [permission, setPermission] = useState("");
+	// The scope being typed and the scope being asked about are two different
+	// things. Querying the first would put a decision for "pro" on screen on
+	// the way to "project-42" — an authoritative denial for a scope nobody
+	// asked about, from a control whose whole purpose is to be believed.
+	const [scopeDraft, setScopeDraft] = useState("");
 	const [scope, setScope] = useState("");
+	const commitScope = () => setScope(scopeDraft.trim());
+	// A pasted scope carries whitespace the service can never match, so the
+	// question is asked trimmed — and the draft is compared trimmed too, or
+	// trailing whitespace alone would read as an unasked question forever.
+	const pending = scopeDraft.trim() !== scope;
 	const { data: members } = useQuery(orgQueries.members(orgId));
 	const { data: info } = useQuery(permissionQueries.serviceInfo());
 	const { permissions } = useEffectivePermissions(orgId, subjectId);
@@ -154,7 +164,10 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 			action: permission.slice(separator + 1),
 		};
 	})();
-	const sources = wanted ? sourcesGranting(wanted, permissions) : [];
+	// Scoped by the same scope the question carries: a path granted only in
+	// another scope does not explain this verdict, and rendering it beside one
+	// is how a denial acquires a list of reasons it was granted.
+	const sources = wanted ? sourcesGranting(wanted, permissions, scope) : [];
 	const decision = useExplainPermission(orgId, subjectId, wanted, scope);
 
 	return (
@@ -208,15 +221,28 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 						</Select>
 						<Input
 							className="w-72"
-							value={scope}
-							onChange={(event) => setScope(event.target.value)}
+							value={scopeDraft}
+							onChange={(event) => setScopeDraft(event.target.value)}
+							onBlur={commitScope}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") commitScope();
+							}}
 							placeholder="Scope (empty asks organization-wide)"
 							aria-label="Scope"
 						/>
 					</Stack>
-					{subjectId && wanted && (
-						<Verdict decision={decision} scope={scope} sources={sources} />
-					)}
+					{subjectId &&
+						wanted &&
+						(pending ? (
+							// The box and the verdict would otherwise disagree: one reading
+							// the scope being typed, the other answering the last one asked.
+							<span className="text-sm text-muted-foreground">
+								Press Enter to ask about{" "}
+								{scopeDraft.trim() || "the whole organization"}.
+							</span>
+						) : (
+							<Verdict decision={decision} scope={scope} sources={sources} />
+						))}
 				</Stack>
 			</Panel>
 		</Section>
@@ -281,7 +307,16 @@ function Verdict({
 			<Stack direction="row" gap={2} align="center" className="flex-wrap">
 				{sources.length > 0 ? (
 					<>
-						<span className="text-sm text-muted-foreground">Through</span>
+						{/* Only an allowed verdict is explained by these paths. Scope
+						    filtering keeps a grant from another scope out, so a path
+						    beside a denial means the assignments moved between the two
+						    reads — reported as the disagreement it is, never as a
+						    reason the denial happened. */}
+						<span className="text-sm text-muted-foreground">
+							{allowed
+								? "Through"
+								: "The service denies this despite these assignments, which may have just changed:"}
+						</span>
 						{sources.map((source) => (
 							<GrantSourceBadge key={sourceKey(source)} source={source} />
 						))}
