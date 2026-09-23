@@ -171,12 +171,15 @@ function Sidebar({
 	if (isMobile) {
 		return (
 			<Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+				{/* The sheet keeps the kit's close button. It used to be hidden with a
+				    `[&>button]:hidden` class, a way round `showCloseButton` the type
+				    cannot see, which left an overlay tap as the only way out. */}
 				<SheetContent
 					dir={dir}
 					data-sidebar="sidebar"
 					data-slot="sidebar"
 					data-mobile="true"
-					className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+					className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground"
 					style={
 						{
 							"--sidebar-width": SIDEBAR_WIDTH_MOBILE,

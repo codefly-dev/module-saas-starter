@@ -4,6 +4,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -91,6 +92,55 @@ describe("ConsentBanner", () => {
 		await waitFor(() => expect(replace).toHaveBeenCalledWith("/auth/login"));
 		expect(logout).toHaveBeenCalledTimes(1);
 		vi.unstubAllGlobals();
+	});
+
+	it("keeps Sign out enabled, first and reachable when Terms cannot be accepted", async () => {
+		authState.isAuthenticated = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+
+		render(<ConsentBanner legalConfigured={false} />);
+
+		const notice = await screen.findByRole("dialog", {
+			name: "Review the current Terms",
+		});
+		expect(notice.getAttribute("aria-modal")).toBe("false");
+		const buttons = within(notice).getAllByRole("button");
+		expect(buttons.map((button) => button.textContent)).toEqual([
+			"Sign out",
+			"Accept Terms",
+		]);
+		const signOut = buttons[0];
+		expect(signOut.hasAttribute("disabled")).toBe(false);
+		signOut.focus();
+		expect(document.activeElement).toBe(signOut);
+		// The Terms state has no "later": its only way out is leaving the session.
+		expect(
+			within(notice).queryByRole("button", { name: "Decide later" }),
+		).toBeNull();
+	});
+
+	it("lets a user put the preferences notice away for later", async () => {
+		clients.acquisition.getAcquisitionStatus.mockResolvedValue({
+			consentPolicyVersion: "policy-v2",
+		});
+
+		render(<ConsentBanner legalConfigured={legalState.configured} />);
+
+		const notice = await screen.findByRole("dialog", {
+			name: "Your privacy choices",
+		});
+		fireEvent.click(
+			within(notice).getByRole("button", { name: "Decide later" }),
+		);
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		expect(
+			window.localStorage.getItem("saas-starter:consent-preferences"),
+		).toBeNull();
 	});
 
 	it("allows Terms acceptance once legal content is configured", async () => {

@@ -111,3 +111,4 @@ export {
 } from "@codefly-dev/ui/dashboard";
 
 export { Banner } from "@codefly-dev/ui/layout";
+export { Notice } from "@codefly-dev/ui/layout";

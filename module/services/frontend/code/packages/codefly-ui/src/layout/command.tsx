@@ -11,6 +11,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "./dialog.js";
+import type { EscapeProps } from "./escape.js";
 import { InputGroup, InputGroupAddon } from "./input-group.js";
 
 // Built on Base UI's Autocomplete, the primitive its docs point to for search
@@ -63,20 +64,27 @@ function Command({
 	);
 }
 
+// The palette shows the kit's close button like every other dialog. It used to
+// hide it by default, leaving Escape as the only way out and nothing to press on
+// a touch screen; hiding it now takes an `escape`, exactly as `DialogContent`.
 function CommandDialog({
 	title = "Command Palette",
 	description = "Search for a command to run...",
 	children,
 	className,
-	showCloseButton = false,
+	showCloseButton,
+	escape: escapeAffordance,
 	...props
 }: Omit<React.ComponentProps<typeof Dialog>, "children"> & {
 	title?: string;
 	description?: string;
 	className?: string;
-	showCloseButton?: boolean;
 	children: React.ReactNode;
-}) {
+} & EscapeProps) {
+	const closeAffordance: EscapeProps =
+		showCloseButton === false
+			? { showCloseButton, escape: escapeAffordance }
+			: {};
 	return (
 		<Dialog {...props}>
 			<DialogHeader className="sr-only">
@@ -88,7 +96,7 @@ function CommandDialog({
 					"top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0",
 					className,
 				)}
-				showCloseButton={showCloseButton}
+				{...closeAffordance}
 			>
 				{children}
 			</DialogContent>

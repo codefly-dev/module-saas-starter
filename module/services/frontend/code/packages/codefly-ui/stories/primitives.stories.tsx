@@ -45,6 +45,7 @@ import {
 	DropdownMenuSeparator,
 	EmptyState,
 	ErrorState,
+	Notice,
 } from "../src/layout/index.js";
 
 export default { title: "Shared UI/Primitives" };
@@ -236,6 +237,26 @@ export const NotificationBanner = {
 			</Banner>
 		) : (
 			<Button onClick={() => setVisible(true)}>Show notification</Button>
+		);
+	},
+};
+
+// A decision the user may not be able to make still has a way out: the escape
+// is a required prop the kit always renders.
+export const DecisionNotice = {
+	render: function NoticeExample() {
+		const [visible, setVisible] = useState(true);
+		return visible ? (
+			<Notice
+				placement="inline"
+				title="Review the updated terms"
+				escape={{ label: "Sign out", onSelect: () => setVisible(false) }}
+				actions={<Button disabled>Accept terms</Button>}
+			>
+				Accepting is unavailable until the terms are published.
+			</Notice>
+		) : (
+			<Button onClick={() => setVisible(true)}>Show notice</Button>
 		);
 	},
 };

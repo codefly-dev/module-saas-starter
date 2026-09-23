@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react";
 import type * as React from "react";
 import { Button } from "./button.js";
 import { cn } from "./cn.js";
+import type { EscapeProps } from "./escape.js";
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
 	return <SheetPrimitive.Root data-slot="sheet" {...props} />;
@@ -35,16 +36,20 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
 	);
 }
 
+/**
+ * A modal sheet. Like `DialogContent`, it always has a way out: the kit's close
+ * button, or the `escape` a caller must supply to hide it (see `EscapeProps`).
+ */
 function SheetContent({
 	className,
 	children,
 	side = "right",
 	showCloseButton = true,
+	escape: escapeAffordance,
 	...props
 }: SheetPrimitive.Popup.Props & {
 	side?: "top" | "right" | "bottom" | "left";
-	showCloseButton?: boolean;
-}) {
+} & EscapeProps) {
 	return (
 		<SheetPortal>
 			<SheetOverlay />
@@ -58,7 +63,7 @@ function SheetContent({
 				{...props}
 			>
 				{children}
-				{showCloseButton && (
+				{showCloseButton ? (
 					<SheetPrimitive.Close
 						data-slot="sheet-close"
 						render={
@@ -72,6 +77,10 @@ function SheetContent({
 						<XIcon />
 						<span className="sr-only">Close</span>
 					</SheetPrimitive.Close>
+				) : (
+					<div data-slot="sheet-escape" className="contents">
+						{escapeAffordance}
+					</div>
 				)}
 			</SheetPrimitive.Popup>
 		</SheetPortal>

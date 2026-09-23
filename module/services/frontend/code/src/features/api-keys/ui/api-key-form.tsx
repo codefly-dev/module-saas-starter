@@ -2,7 +2,7 @@
 
 import { ConnectError } from "@connectrpc/connect";
 import { Check, Copy, Plus } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
 import {
@@ -80,6 +80,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 	const [error, setError] = useState<string | null>(null);
 
 	const createKey = useCreateAPIKey();
+	const formId = useId();
 
 	function reset() {
 		setKeyName("");
@@ -151,6 +152,36 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 		setOpen(false);
 	}
 
+	// The footer is this dialog's way out, so the kit renders it in place of its
+	// close button. It is briefly disabled while the key is being created, and
+	// until the secret is confirmed saved — the checkbox above it is what
+	// confirms that, and it is always operable.
+	const closeAffordance = plaintextKey ? (
+		<DialogFooter>
+			<Button onClick={handleClose} disabled={!copied}>
+				{copied ? "Done" : "Copy the key first"}
+			</Button>
+		</DialogFooter>
+	) : (
+		<DialogFooter>
+			<Button
+				type="button"
+				variant="outline"
+				onClick={handleClose}
+				disabled={createKey.isPending}
+			>
+				Cancel
+			</Button>
+			<Button
+				type="submit"
+				form={formId}
+				disabled={createKey.isPending || !keyName.trim() || !orgId}
+			>
+				{createKey.isPending ? "Creating..." : "Create Key"}
+			</Button>
+		</DialogFooter>
+	);
+
 	return (
 		<Dialog
 			open={open}
@@ -166,7 +197,8 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 			</DialogTrigger>
 			<DialogContent
 				className="sm:max-w-md"
-				showCloseButton={!createKey.isPending && (!plaintextKey || copied)}
+				showCloseButton={false}
+				escape={closeAffordance}
 			>
 				{plaintextKey ? (
 					<>
@@ -206,14 +238,10 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 								I have saved this key securely
 							</label>
 						</div>
-						<DialogFooter>
-							<Button onClick={handleClose} disabled={!copied}>
-								{copied ? "Done" : "Copy the key first"}
-							</Button>
-						</DialogFooter>
 					</>
 				) : (
 					<form
+						id={formId}
 						aria-label="Create API key"
 						onSubmit={(event) => {
 							event.preventDefault();
@@ -305,22 +333,6 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 								</p>
 							</div>
 						</div>
-						<DialogFooter>
-							<Button
-								type="button"
-								variant="outline"
-								onClick={handleClose}
-								disabled={createKey.isPending}
-							>
-								Cancel
-							</Button>
-							<Button
-								type="submit"
-								disabled={createKey.isPending || !keyName.trim() || !orgId}
-							>
-								{createKey.isPending ? "Creating..." : "Create Key"}
-							</Button>
-						</DialogFooter>
 					</form>
 				)}
 			</DialogContent>
