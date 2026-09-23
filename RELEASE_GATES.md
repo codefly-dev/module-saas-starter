@@ -216,8 +216,11 @@ To upgrade an image:
    establish runtime compatibility. Do not bump Node or Go majors by editing a
    generated recipe.
 
-CI rejects edits to generated recipes; deleting obsolete generated copies is
-allowed. Image proposals belong in the image contract alongside topology adoption.
+CI rejects generated-recipe proposals without a change to their owning service
+input. Regenerated recipes accompanying that input must match the pinned agent's
+effective build recipe byte-for-byte; an unselected, missing, ambiguous or
+different recipe fails the build-evidence gate. Deleting obsolete generated
+copies is allowed. Image proposals belong in the image contract alongside topology adoption.
 Every topology service must declare image coverage, even if its recipe is absent
 from the checkout. Redis and Vault explicitly use the existing Codefly vendor
 image audit; an unknown agent is an error.

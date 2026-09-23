@@ -119,7 +119,9 @@ function check(inventory, services) {
     const changed = git('diff', '--name-only', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n');
     const proposals = git('diff', '--name-only', '--diff-filter=ACMRT', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n');
     for (const path of proposals.filter(path => isGeneratedRecipe({ ecosystem: 'docker', path }))) {
-      errors.push(`${path}: generated recipes are not upgrade inputs; adopt an agent in its service.codefly.yaml and update the image contract`);
+      if (!changed.includes(serviceManifestPath(path.split('/')[2]))) {
+        errors.push(`${path}: generated recipes are not upgrade inputs; change the owning service.codefly.yaml and regenerate`);
+      }
     }
     if (changed.includes(inventoryPath) && !changed.some(path => /^module\/services\/[^/]+\/service\.codefly\.yaml$/.test(path)) &&
         git('ls-tree', '--name-only', process.env.CODEFLY_BASE, inventoryPath).trim()) {
@@ -133,6 +135,18 @@ function check(inventory, services) {
     }
   }
   return errors;
+}
+
+export function verifyRecipeProposals(service, proposals, recipes, committed) {
+  const prefix = `module/services/${service.name}/`;
+  return proposals.filter(path => path.startsWith(prefix)).flatMap(path => {
+    // Compare the proposed Git bytes with the recipe freshly emitted by the
+    // pinned agent and consumed by this build, not with an editable snapshot.
+    const matches = recipes.filter(recipe => path === `${prefix}builder/${recipe.dockerfile}` ||
+      path === `${prefix}build-recipes/${service.agent.version}/${recipe.dockerfile}`);
+    if (matches.length !== 1) return [`${path}: no unique effective generated recipe`];
+    return committed(path) === matches[0].content ? [] : [`${path}: committed recipe differs from the pinned agent's build output`];
+  });
 }
 
 function evidence(inventory, services) {
@@ -150,6 +164,14 @@ function evidence(inventory, services) {
   const records = [];
   const errors = coverageErrors(inventory, services,
     discoverManifests(root).filter(isGeneratedRecipe).map(manifest => manifest.path));
+  const proposals = process.env.CODEFLY_BASE
+    ? git('diff', '--name-only', '--diff-filter=ACMRT', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n')
+      .filter(path => isGeneratedRecipe({ ecosystem: 'docker', path })) : [];
+  for (const path of proposals) {
+    if (!selected.some(service => service.name === path.split('/')[2])) {
+      errors.push(`${path}: changed generated recipe was not selected for build verification`);
+    }
+  }
   for (const service of selected) {
     const config = inventory[service.agent.name];
     if (!config?.images?.length) {
@@ -163,6 +185,7 @@ function evidence(inventory, services) {
         throw new Error('Build recipe metadata does not match the pinned agent');
       }
       const recipes = manifest.recipes.map(recipe => ({ ...recipe, content: read(`${directory}/${recipe.dockerfile}`) }));
+      errors.push(...verifyRecipeProposals(service, proposals, recipes, path => git('show', `HEAD:${path}`)));
       const evidence = recipes.map(recipe => {
         if (!recipe.image) throw new Error(`Build recipe ${recipe.name ?? recipe.dockerfile} does not name the image it produces`);
         const image = normalize(recipe.image);
