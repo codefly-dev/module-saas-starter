@@ -20,6 +20,7 @@ import {
 import { useAppearance } from "@/lib/appearance-provider";
 import {
 	availableProviders,
+	type IdentityConfig,
 	isHeaderInjectedProvider,
 	useAuth,
 } from "@/lib/auth";
@@ -31,7 +32,7 @@ interface FixtureResponse {
 	users: FixtureUser[];
 }
 
-export function LoginPage() {
+export function LoginPage({ identity }: { identity: IdentityConfig }) {
 	const { signInWith, login, loginWithHeaderInjected } = useAuth();
 	const { branding } = useAppearance();
 	const router = useRouter();
@@ -40,8 +41,11 @@ export function LoginPage() {
 		() => publicHandoffDestination(searchParams),
 		[searchParams],
 	);
-	const providers = useMemo(() => availableProviders(), []);
-	const headerInjected = useMemo(() => isHeaderInjectedProvider(), []);
+	const providers = useMemo(() => availableProviders(identity), [identity]);
+	const headerInjected = useMemo(
+		() => isHeaderInjectedProvider(identity),
+		[identity],
+	);
 	const [error, setError] = useState<string | null>(null);
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
@@ -309,7 +313,7 @@ export function LoginPage() {
 											onClick={async () => {
 												setError(null);
 												try {
-													await signInWith(p.id, destination);
+													await signInWith(p, destination);
 												} catch (err) {
 													// A failed `begin` leaves the button on-screen with no
 													// redirect, so the click otherwise looks dead. Log the

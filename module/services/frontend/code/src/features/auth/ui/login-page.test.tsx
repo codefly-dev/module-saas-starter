@@ -91,7 +91,7 @@ afterEach(cleanup);
 
 describe("LoginPage", () => {
 	it("does not present authentication as Terms acceptance", () => {
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		expect(screen.getByText(/Continuing starts authentication/)).toBeTruthy();
 		expect(screen.queryByText(/By continuing, you agree/)).toBeNull();
@@ -102,7 +102,7 @@ describe("LoginPage", () => {
 		h.providers = [];
 		h.loginWithHeaderInjected.mockResolvedValue(true);
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		expect(screen.getByText(/Signing you in/)).toBeTruthy();
 		expect(h.loginWithHeaderInjected).toHaveBeenCalledTimes(1);
@@ -112,7 +112,7 @@ describe("LoginPage", () => {
 	it("surfaces a message when the provider begin call fails, instead of a dead button", async () => {
 		h.signInWith.mockRejectedValue(new Error("BeginOAuth failed: 500"));
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		fireEvent.click(
 			screen.getByRole("button", { name: /Continue with Provider/ }),
@@ -128,7 +128,7 @@ describe("LoginPage", () => {
 		h.query = clientQuery();
 		h.validateClientAuthorization.mockResolvedValue("Example Add-in");
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		await waitFor(() =>
 			expect(screen.getByText(/to continue to Example Add-in/)).toBeTruthy(),
@@ -143,7 +143,7 @@ describe("LoginPage", () => {
 		h.query = clientQuery();
 		h.validateClientAuthorization.mockReturnValue(new Promise(() => {}));
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		expect(screen.getByText(/Checking the application/)).toBeTruthy();
 		expect(
@@ -157,7 +157,7 @@ describe("LoginPage", () => {
 			new Error("This application is not registered to sign in here."),
 		);
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		await waitFor(() =>
 			expect(screen.getByText(/not registered to sign in here/)).toBeTruthy(),
@@ -175,7 +175,7 @@ describe("LoginPage", () => {
 		h.query = clientQuery({ client_id: "nobody" });
 		h.validateClientAuthorization.mockRejectedValue(new Error("refused"));
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		await waitFor(() => expect(screen.getByText(/refused/)).toBeTruthy());
 		expect(h.loginWithHeaderInjected).not.toHaveBeenCalled();
@@ -189,7 +189,7 @@ describe("LoginPage", () => {
 			new Error("Access not granted for your account."),
 		);
 
-		render(<LoginPage />);
+		render(<LoginPage identity={{}} />);
 
 		await waitFor(() =>
 			expect(screen.getByText(/Access not granted/)).toBeTruthy(),

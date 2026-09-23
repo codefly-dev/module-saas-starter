@@ -113,9 +113,10 @@ values (e.g. `IDENTITY_PROVIDER=okta` and `IDENTITY_PROVIDER=ping`) so they do
 not share one `(provider, provider_id)` namespace. A non-preset name is a
 generic provider only when you also set `IDENTITY_GENERIC_OIDC=true`; without
 that opt-in an unrecognized value (such as a typo of `workos`) fails startup
-closed rather than silently building a mismatched stack. The value must match
-`NEXT_PUBLIC_IDENTITY_PROVIDER` so the browser, the OAuth request policy, and the
-validated token all agree on the provider — a disagreement is rejected at login.
+closed rather than silently building a mismatched stack. The frontend reads the
+same `identity` group at request time, so the browser, the OAuth request policy,
+and the validated token all agree on the provider — a disagreement is rejected at
+login.
 
 `user_identities.provider` is a foreign key into the `identity_providers`
 reference catalog, so the provider name must be seeded there or login fails.
@@ -138,7 +139,10 @@ Required Codefly `identity` configuration keys:
 | `IDENTITY_AUDIENCE`     | no       | Enforced `aud` (defaults to `IDENTITY_CLIENT_ID`, per standard OIDC) |
 | `IDENTITY_EMAIL_CLAIM`  | no       | Email claim name (default `email`)                                 |
 | `IDENTITY_ORG_CLAIM`    | no       | Organization-id claim name (default `organization_id`)            |
-| `NEXT_PUBLIC_IDENTITY_DISPLAY_NAME` | no | Sign-in button label (frontend)                             |
+| `IDENTITY_AUTHORIZE_URL` | yes (frontend) | Hosted authorize endpoint the sign-in button sends the browser to |
+| `IDENTITY_AUTHORIZE_SELECTOR` | no  | WorkOS AuthKit selector (default `authkit`)                   |
+| `IDENTITY_DISPLAY_NAME` | no       | Sign-in button label (frontend)                                    |
+| `IDENTITY_SCOPE`        | no       | Authorize scope (default `openid profile email`)                   |
 
 Missing issuer, client id, or client secret fails startup with a precise error
 rather than at first login.
@@ -667,11 +671,12 @@ authorization service. Prometheus can alternatively scrape `/metrics` on each
 service's private REST endpoint; neither route is a module or public interface
 endpoint.
 
-Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle):
+Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle
+when the image is built, so a deployed image carries only what its build saw; identity is
+not among them — the login page reads the `identity` group at request time):
 
 | Var                          | Used for                                                    |
 |------------------------------|-------------------------------------------------------------|
-| `NEXT_PUBLIC_IDENTITY_*`     | Non-secret projection of the selected Codefly `identity` configuration |
 | `NEXT_PUBLIC_LEGAL_ENTITY_NAME` | Operator named in configured legal content                |
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |

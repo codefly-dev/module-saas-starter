@@ -88,9 +88,8 @@ export default defineConfig({
 			// alternate one.
 			PRODUCT_GATEWAY_INTERNAL: productGateway,
 			// Force the Codefly fixture identity adapter for this browser suite.
-			NEXT_PUBLIC_IDENTITY_PROVIDER: "fixture",
-			NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL: "",
-			NEXT_PUBLIC_IDENTITY_CLIENT_ID: "",
+			// The login page reads the `identity` group at request time.
+			CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__IDENTITY_PROVIDER: "fixture",
 			NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Codefly E2E",
 			NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "legal@example.test",
 			NEXT_PUBLIC_LEGAL_TERMS_CONTENT:
