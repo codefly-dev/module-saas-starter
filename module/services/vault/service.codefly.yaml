@@ -3,7 +3,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: vault
-    version: 0.0.35
+    version: 0.0.36
     publisher: codefly.dev
 secret-service-configurations:
     - name: vault

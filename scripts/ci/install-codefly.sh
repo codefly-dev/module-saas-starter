@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.161}"
+version="${CODEFLY_VERSION:-0.1.162}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -29,6 +29,13 @@ case "${version}" in
     # cli#786 removed `codefly verify`, `codefly sync module` and the `verify`
     # CI phase, so this tree carries no base manifest and plans `sync-drift` alone.
     checksum=47e133cebd8f72fc44e2c1c3f76b375377ba946818fcbbdcee1f126c12a7fd5c
+    ;;
+  0.1.162)
+    # cli#799: committed `module-resolution`, CODEFLY_MODULE_CACHE, per-module
+    # render namespaces; `generate contracts` skips an exported REST endpoint
+    # that carries no OpenAPI document instead of failing, which is what lets
+    # this tree export the gateway's REST endpoint at all.
+    checksum=9ffdb661f448332c8a0edab90c16006683289ce51f97c9067de8e974e8bdb679
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2

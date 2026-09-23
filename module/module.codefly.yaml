@@ -10,6 +10,9 @@ interface:
         - service: auth-gateway
           endpoint: grpc
           visibility: module
+        - service: auth-gateway
+          endpoint: rest
+          visibility: module
         - service: frontend
           endpoint: http
           visibility: public

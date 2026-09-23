@@ -65,7 +65,7 @@
         {
           "name": "rest",
           "api": "CODEFLY_API_REST",
-          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
           "port": 8080
         }
       ],
@@ -182,6 +182,11 @@
     {
       "service": "auth-gateway",
       "endpoint": "grpc",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
+    {
+      "service": "auth-gateway",
+      "endpoint": "rest",
       "visibility": "ENDPOINT_VISIBILITY_MODULE"
     },
     {
