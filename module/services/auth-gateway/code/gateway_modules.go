@@ -455,13 +455,7 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 	defer cancel()
 	issued, err := g.authz.mintModuleRegistration(ctx, payload.Prefix, secret)
 	if err != nil {
-		// accounts answers unknown-prefix and wrong-secret identically, so
-		// relaying its refusal reveals nothing about what a composition declared.
-		if status.Code(err) == codes.PermissionDenied {
-			httpError(w, http.StatusUnauthorized, "unauthorized")
-			return true
-		}
-		httpError(w, http.StatusBadGateway, "registration token unavailable")
+		writeRegistrationExchangeFailure(w, err)
 		return true
 	}
 

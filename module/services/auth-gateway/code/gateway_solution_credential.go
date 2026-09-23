@@ -207,13 +207,7 @@ func (g *Gateway) handleSolutionRegistrationToken(w http.ResponseWriter, r *http
 	defer cancel()
 	issued, err := g.authz.mintSolutionRegistration(ctx, payload.ID, secret)
 	if err != nil {
-		// accounts answers undeclared-solution and wrong-secret identically, so
-		// relaying its refusal reveals nothing about what a composition declared.
-		if status.Code(err) == codes.PermissionDenied {
-			httpError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		httpError(w, http.StatusBadGateway, "registration token unavailable")
+		writeRegistrationExchangeFailure(w, err)
 		return
 	}
 	body, err := json.Marshal(map[string]string{
@@ -229,6 +223,37 @@ func (g *Gateway) handleSolutionRegistrationToken(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
+
+// writeRegistrationExchangeFailure answers a credential exchange (module or
+// solution) that accounts did not complete, keeping three outcomes apart that a
+// registrant has to act on differently:
+//
+//   - 401: accounts refused the secret. It answers an undeclared identity and a
+//     wrong secret identically, so relaying its refusal reveals nothing about
+//     what a composition declared — and this is the ONLY answer that means
+//     "check provisioning".
+//   - 503 with Retry-After: accounts could not be reached or did not answer in
+//     time — a rollout, a restart, a network partition. Nothing about the
+//     registrant is wrong and the next attempt may succeed; reporting it as a
+//     refusal sends an operator to re-provision a secret that was correct.
+//   - 502: accounts answered with an error that is neither (it failed to sign,
+//     or to record the mint). The issuer is broken, not the registrant.
+func writeRegistrationExchangeFailure(w http.ResponseWriter, err error) {
+	switch status.Code(err) {
+	case codes.PermissionDenied:
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+	case codes.Unavailable, codes.DeadlineExceeded:
+		w.Header().Set("Retry-After", registrationExchangeRetryAfter)
+		httpError(w, http.StatusServiceUnavailable, "registration token issuer unavailable: retry")
+	default:
+		httpError(w, http.StatusBadGateway, "registration token issuer failed")
+	}
+}
+
+// registrationExchangeRetryAfter is the Retry-After, in seconds, on an exchange
+// the issuer could not serve. A registrant's heartbeat backs off on its own; this
+// only tells one that does not when trying again is reasonable.
+const registrationExchangeRetryAfter = "5"
 
 // authorizeSolutionRegistration verifies the presented registration credential
 // and burns its single use. It writes the refusal itself and reports ok=false,

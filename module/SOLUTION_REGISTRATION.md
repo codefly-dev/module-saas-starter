@@ -85,6 +85,16 @@ reuses its issuer rather than adding a second one:
    `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
    withdraws it.
 
+The exchange keeps three outcomes apart, because a registrant acts differently
+on each: `401` means accounts refused the secret — the only answer that means
+"check `SOLUTION_REGISTRATION_SECRETS` and the provisioned secret"; `503` with
+`Retry-After` means accounts could not be reached or did not answer in time (a
+rollout, a restart) and the next attempt may succeed; `502` means accounts
+answered with an error that is neither. The frontend likewise answers `503`, not
+`401`, when it cannot reach the key set it verifies the token against. A
+registrant must not read any 5xx — including a `502` from an ingress or mesh in
+front of a restarting gateway — as a provisioning fault.
+
 `SOLUTION_REGISTRATION_SECRETS` is declared **separately** from
 `MODULE_REGISTRATION_SECRETS`, and the two credentials carry different
 audiences. A module credential federates a REST prefix; a solution credential
