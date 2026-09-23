@@ -12,20 +12,11 @@ import {
 import { WaitlistService } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
-import { legalContentConfigured } from "@/lib/legal-config";
 import { Button, Switch } from "@/shared/ui";
 
 const STORAGE_KEY = "saas-starter:consent-preferences";
 const client = createClient(ConsentService, apiTransport);
 const acquisitionClient = createClient(WaitlistService, apiTransport);
-
-// The terms gate requires configured legal content. legalContentConfig already
-// supplies dev placeholders when the build opts in (NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER,
-// set from the fixture boundary), so this stays usable in the local stack without
-// a separate fixture-mode escape hatch here.
-function termsAcceptanceEnabled(): boolean {
-	return legalContentConfigured();
-}
 
 type Choices = { analytics: boolean; marketing: boolean };
 type Banner =
@@ -55,10 +46,17 @@ function notifyConsent(choices: Choices, policyVersion: string) {
 	);
 }
 
-export function ConsentBanner() {
-	const { isAuthenticated, isLoading } = useAuth();
+// The terms gate requires configured legal content. The root layout resolves it
+// on the server at request time (dev placeholders included when the build opts
+// in) and passes only whether it is complete.
+export function ConsentBanner({
+	legalConfigured,
+}: {
+	legalConfigured: boolean;
+}) {
+	const { isAuthenticated, isLoading, logout } = useAuth();
 	const [banner, setBanner] = useState<Banner>({ kind: "hidden" });
-	const termsEnabled = termsAcceptanceEnabled();
+	const termsEnabled = legalConfigured;
 
 	useEffect(() => {
 		if (isLoading) return;
@@ -254,6 +252,20 @@ export function ConsentBanner() {
 				)}
 			</div>
 			<div className="mt-4 flex flex-wrap justify-end gap-2">
+				{banner.kind === "terms" && (
+					// The Terms banner covers the account menu, so it carries its own
+					// way out: a user who cannot, or will not, accept must still be
+					// able to leave the session.
+					<Button
+						variant="outline"
+						onClick={async () => {
+							await logout();
+							window.location.replace("/auth/login");
+						}}
+					>
+						Sign out
+					</Button>
+				)}
 				{banner.kind === "terms" ? (
 					<Button
 						disabled={!termsEnabled}

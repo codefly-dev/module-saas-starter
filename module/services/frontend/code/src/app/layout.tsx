@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { ConsentBanner } from "@/components/consent-banner";
 import { appearanceStyleProperties } from "@/lib/appearance";
+import { legalContentConfigured } from "@/lib/legal-config";
+import { readLegalContent } from "@/lib/legal-content";
 import { Providers } from "@/lib/providers";
 import { resolveSkin, shouldResolveHost, sourcesFromEnv } from "@/lib/skin";
 import "./fonts";
@@ -44,6 +46,7 @@ export default async function RootLayout({
 	children: React.ReactNode;
 }) {
 	const skin = await currentSkin();
+	const legalConfigured = legalContentConfigured(await readLegalContent());
 	return (
 		<html
 			lang="en"
@@ -60,7 +63,7 @@ export default async function RootLayout({
 					}}
 				>
 					{children}
-					<ConsentBanner />
+					<ConsentBanner legalConfigured={legalConfigured} />
 				</Providers>
 			</body>
 		</html>

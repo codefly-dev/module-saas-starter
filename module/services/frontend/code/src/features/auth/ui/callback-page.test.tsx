@@ -7,8 +7,13 @@ const h = vi.hoisted(() => ({
 	completeOAuth: vi.fn(),
 }));
 
+// A fresh function each render, as the real completeOAuth becomes once sign-in
+// stores its tokens.
 vi.mock("@/lib/auth", () => ({
-	useAuth: () => ({ completeOAuth: h.completeOAuth }),
+	useAuth: () => ({
+		completeOAuth: (code: string, state: string) =>
+			h.completeOAuth(code, state),
+	}),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -26,6 +31,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("CallbackPage", () => {
+	it("redeems the authorization code once even when completeOAuth changes identity", () => {
+		const { rerender } = render(<CallbackPage />);
+		rerender(<CallbackPage />);
+		rerender(<CallbackPage />);
+
+		expect(h.completeOAuth).toHaveBeenCalledTimes(1);
+		expect(h.completeOAuth).toHaveBeenCalledWith("the-code", "the-state");
+	});
+
 	it("renders friendly copy plus an operator reference when the exchange fails", async () => {
 		h.completeOAuth.mockRejectedValue(
 			new AuthError(

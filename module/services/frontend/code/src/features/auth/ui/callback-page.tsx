@@ -2,7 +2,7 @@
 
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { AuthError, operatorReference } from "@/lib/auth-errors";
 import {
@@ -49,8 +49,16 @@ function CallbackHandler() {
 		return null;
 	}, [providerError, providerErrorDescription, code, state]);
 
+	// An authorization code is redeemable once. completeOAuth's identity changes
+	// as sign-in stores its tokens, which re-runs this effect with the same code;
+	// the second run found the one-shot state already cleared and flashed
+	// "Sign-in failed" until the first run's navigation landed.
+	const redeemed = useRef<string | null>(null);
+
 	useEffect(() => {
 		if (parameterError || !code || !state) return;
+		if (redeemed.current === code) return;
+		redeemed.current = code;
 
 		completeOAuth(code, state).catch((e) => {
 			if (e instanceof AuthError) {
