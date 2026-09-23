@@ -328,6 +328,21 @@
 			"remaining": "Verify interactive accessibility and rendering under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/layout/notice.tsx",
+			"imports": ["lucide-react", "react", "./button.js", "./cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Floating non-modal decision notice whose escape is a required, always-rendered prop; host owns the decision and its data.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/primitives.stories.tsx",
+					"export": "DecisionNotice"
+				}
+			],
+			"coverage": "owner stories and render tests; browser/skin verification pending",
+			"remaining": "Verify rendering under external skins."
+		},
+		{
 			"source": "packages/codefly-ui/src/layout/button.tsx",
 			"imports": [
 				"@base-ui/react/button",

@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react";
 import type * as React from "react";
 import { Button } from "./button.js";
 import { cn } from "./cn.js";
+import type { EscapeProps } from "./escape.js";
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
 	return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -38,14 +39,18 @@ function DialogOverlay({
 	);
 }
 
+/**
+ * A modal dialog. It always has a way out: the kit's close button, or — when a
+ * caller sets `showCloseButton={false}` — the `escape` it must supply instead
+ * (see `EscapeProps`).
+ */
 function DialogContent({
 	className,
 	children,
 	showCloseButton = true,
+	escape: escapeAffordance,
 	...props
-}: DialogPrimitive.Popup.Props & {
-	showCloseButton?: boolean;
-}) {
+}: DialogPrimitive.Popup.Props & EscapeProps) {
 	return (
 		<DialogPortal>
 			<DialogOverlay />
@@ -58,7 +63,7 @@ function DialogContent({
 				{...props}
 			>
 				{children}
-				{showCloseButton && (
+				{showCloseButton ? (
 					<DialogPrimitive.Close
 						data-slot="dialog-close"
 						render={
@@ -72,6 +77,10 @@ function DialogContent({
 						<XIcon />
 						<span className="sr-only">Close</span>
 					</DialogPrimitive.Close>
+				) : (
+					<div data-slot="dialog-escape" className="contents">
+						{escapeAffordance}
+					</div>
 				)}
 			</DialogPrimitive.Popup>
 		</DialogPortal>

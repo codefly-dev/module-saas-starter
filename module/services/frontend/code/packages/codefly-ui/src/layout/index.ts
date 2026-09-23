@@ -227,3 +227,15 @@ export {
 } from "./page.js";
 
 export { Banner, type BannerProps } from "./banner.js";
+
+// A floating, non-modal notice that asks for a decision. Its `escape` is
+// required, so it cannot trap the user behind it.
+export {
+	Notice,
+	type NoticeEscape,
+	type NoticeProps,
+} from "./notice.js";
+
+// The way out of a blocking surface: hiding the close button of `DialogContent`,
+// `SheetContent` or `CommandDialog` requires naming what replaces it.
+export type { EscapeProps } from "./escape.js";

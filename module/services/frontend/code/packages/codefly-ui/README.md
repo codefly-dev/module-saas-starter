@@ -32,7 +32,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
   home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
   `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Avatar`, `Table`,
-  `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`, `Tooltip`,
+  `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
@@ -152,3 +152,29 @@ and skipped so the compiled default always renders.
 
 `Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
 optional actions and dismissal. The caller owns data, authorization and read state.
+
+## Every blocking surface has a way out
+
+A surface that covers the page must always let the user leave it, and the kit
+makes the alternative impossible to write rather than a matter of review:
+
+- `DialogContent`, `SheetContent` and `CommandDialog` show the kit's close button
+  by default. Hiding it takes an `escape` — `showCloseButton={false}` alone, or a
+  computed `showCloseButton={someBoolean}`, does not compile (`EscapeProps`). The
+  `escape` is a `ReactElement` (so not `null`) that the kit renders inside the
+  popup: a `DialogClose`, a footer whose button closes it, a sign-out action.
+- `Notice` is the floating, non-modal notice that asks for a decision — accept
+  updated terms, choose tracking preferences. Its `escape` (`{ label, onSelect,
+  presentation? }`) is required, and the kit always renders it as an enabled
+  button in the notice's tab order, before the notice's own actions. There is no
+  way to pass a disabled one: when the decision is unavailable, the escape is
+  what keeps the user from being trapped behind the notice.
+- `AlertDialog` closes on Escape and composes an `AlertDialogCancel`. The cancel
+  is a child, which no type can see, so the host's
+  `escapable-surfaces-contract` test refuses an `AlertDialogContent` without one
+  — and refuses a raw `role="dialog"`/`role="alertdialog"` element anywhere in
+  application source.
+
+What no type or test can see is an `escape` a caller keeps disabled forever, or
+an `onOpenChange` that refuses every close. Those stay the caller's to get
+right.
