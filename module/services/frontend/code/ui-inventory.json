@@ -999,6 +999,16 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/app/(auth)/auth/logout/page.tsx",
+			"imports": ["@/features/auth/ui/logout-page"],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/app/(auth)/auth/magic-link/magic-link-client.tsx",
 			"imports": [
 				"lucide-react",
@@ -2559,6 +2569,16 @@
 				"@/lib/fixtures/types",
 				"@/lib/public-handoff"
 			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the auth workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
+			"source": "src/features/auth/ui/logout-page.tsx",
+			"imports": ["react", "@/lib/auth"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the auth workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
