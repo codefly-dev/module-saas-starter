@@ -139,7 +139,7 @@ Required Codefly `identity` configuration keys:
 | `IDENTITY_AUDIENCE`     | no       | Enforced `aud` (defaults to `IDENTITY_CLIENT_ID`, per standard OIDC) |
 | `IDENTITY_EMAIL_CLAIM`  | no       | Email claim name (default `email`)                                 |
 | `IDENTITY_ORG_CLAIM`    | no       | Organization-id claim name (default `organization_id`)            |
-| `IDENTITY_AUTHORIZE_URL` | yes (frontend) | Hosted authorize endpoint the sign-in button sends the browser to |
+| `IDENTITY_AUTHORIZE_URL` | no       | Override the authorize endpoint the sign-in button sends the browser to; discovered from `IDENTITY_ISSUER` when unset |
 | `IDENTITY_AUTHORIZE_SELECTOR` | no  | WorkOS AuthKit selector (default `authkit`)                   |
 | `IDENTITY_DISPLAY_NAME` | no       | Sign-in button label (frontend)                                    |
 | `IDENTITY_SCOPE`        | no       | Authorize scope (default `openid profile email`)                   |
