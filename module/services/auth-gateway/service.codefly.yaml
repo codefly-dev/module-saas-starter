@@ -30,6 +30,7 @@ endpoints:
     - name: grpc
       visibility: module
     - name: rest
+      visibility: module
 spec:
     hot-reload: true
     protocol-output-dirs:
