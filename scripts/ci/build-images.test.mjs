@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { materialImages, verifyImages, coverageErrors, monitor, selectBuild, buildImages, buildLog } from './build-images.mjs';
+import { materialImages, verifyImages, coverageErrors, monitor, selectBuild, buildImages, buildLog, verifyRecipeProposals } from './build-images.mjs';
 import { parseWorkflowYaml } from './workflow-yaml.mjs';
 
 const digest = `sha256:${'a'.repeat(64)}`;
@@ -141,11 +141,27 @@ test('Git proposal checks allow deleting obsolete recipes and removing services 
     const base = git('rev-parse', 'HEAD').trim();
     put(recipe, ` FROM ${image}\n`); commit();
     assert.match(check(base).stderr, /generated recipes are not upgrade inputs/);
+    put(manifest, 'name: example\nagent:\n  name: example\n  version: 1.0.0\nspec:\n  build-args:\n    EXAMPLE: ""\n'); commit();
+    assert.equal(check(base).status, 0, check(base).stderr);
     rmSync(join(dir, recipe)); commit();
     assert.equal(check(base).status, 0, check(base).stderr);
     put('module/module.codefly.yaml', 'kind: module\nname: example\nservices: []\n'); rmSync(join(dir, manifest)); commit();
     assert.equal(check(base).status, 0, check(base).stderr);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a changed service input only admits recipes reproduced by the effective build', () => {
+  const service = { name: 'example', agent: { version: '1.0.0' } };
+  const path = 'module/services/example/builder/Dockerfile';
+  const content = `FROM ${image}\n`;
+  const recipes = [{ dockerfile: 'Dockerfile', content }];
+  assert.deepEqual(verifyRecipeProposals(service, [path], recipes, () => content), []);
+  assert.match(verifyRecipeProposals(service, [path], recipes, () => 'FROM bad:latest\n').join('\n'), /differs from the pinned agent/);
+  assert.match(verifyRecipeProposals(service, [path], [], () => content).join('\n'), /no unique/);
+  assert.match(verifyRecipeProposals(service, [path], [...recipes, ...recipes], () => content).join('\n'), /no unique/);
+  assert.match(verifyRecipeProposals(service, [path.replace('builder', 'build-recipes/0.9.0')], recipes, () => content).join('\n'), /no unique/);
+  const evidence = workflow.jobs['codefly-build'].steps.find(step => step.run === 'node scripts/ci/build-images.mjs evidence');
+  assert.equal(evidence.env.CODEFLY_BASE, '${{ needs.codefly-plan.outputs.base }}');
 });
 
 test('evidence refuses missing coverage and excludes records from before this build attempt', () => {

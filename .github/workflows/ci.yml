@@ -991,6 +991,7 @@ jobs:
         env:
           SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           AFFECTED_SERVICES: ${{ needs.codefly-plan.outputs.services }}
+          CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
         run: node scripts/ci/build-images.mjs evidence
       - name: Retain build image evidence
         if: ${{ !cancelled() }}
