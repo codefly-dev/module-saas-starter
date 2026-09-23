@@ -104,6 +104,7 @@ describe("PermissionsPage", () => {
 // client-side reading of the role rows would have said.
 describe("PermissionsPage — check a grant", () => {
 	const MEMBER = "11111111-1111-4111-8111-111111111111";
+	const MEMBER_EMAIL = "member@example.com";
 
 	function serveCheckable(
 		explain: (body: Record<string, unknown>) => Response,
@@ -112,7 +113,9 @@ describe("PermissionsPage — check a grant", () => {
 		serveVocabulary();
 		server.use(
 			http.post(rpc("OrganizationService", "ListMembers"), () =>
-				HttpResponse.json({ members: [{ userId: MEMBER }] }),
+				HttpResponse.json({
+					members: [{ userId: MEMBER, userEmail: MEMBER_EMAIL }],
+				}),
 			),
 			http.post(rpc("TeamService", "ListTeams"), () =>
 				HttpResponse.json({ teams: [] }),
@@ -137,7 +140,7 @@ describe("PermissionsPage — check a grant", () => {
 	}
 
 	async function ask(scope?: string) {
-		await pick("Pick a member…", `${MEMBER.slice(0, 8)}...`);
+		await pick("Pick a member…", MEMBER_EMAIL);
 		await pick("Pick a permission…", "audit:read");
 		if (scope !== undefined) {
 			const box = screen.getByLabelText("Scope");
@@ -239,6 +242,7 @@ describe("PermissionsPage — check a grant", () => {
 // administrator something untrue about access.
 describe("PermissionsPage — the scope a question carries", () => {
 	const MEMBER = "11111111-1111-4111-8111-111111111111";
+	const MEMBER_EMAIL = "member@example.com";
 
 	function serve(
 		onExplain: (body: Record<string, string>) => void,
@@ -247,7 +251,9 @@ describe("PermissionsPage — the scope a question carries", () => {
 		serveVocabulary();
 		server.use(
 			http.post(rpc("OrganizationService", "ListMembers"), () =>
-				HttpResponse.json({ members: [{ userId: MEMBER }] }),
+				HttpResponse.json({
+					members: [{ userId: MEMBER, userEmail: MEMBER_EMAIL }],
+				}),
 			),
 			http.post(rpc("TeamService", "ListTeams"), () =>
 				HttpResponse.json({ teams: [] }),
@@ -278,7 +284,7 @@ describe("PermissionsPage — the scope a question carries", () => {
 			fireEvent.pointerDown(item, { pointerType: "mouse" });
 			fireEvent.click(item);
 		};
-		await open("Pick a member…", `${MEMBER.slice(0, 8)}...`);
+		await open("Pick a member…", MEMBER_EMAIL);
 		await open("Pick a permission…", "audit:read");
 	}
 
