@@ -54,7 +54,7 @@ export function ConsentBanner({
 }: {
 	legalConfigured: boolean;
 }) {
-	const { isAuthenticated, isLoading } = useAuth();
+	const { isAuthenticated, isLoading, logout } = useAuth();
 	const [banner, setBanner] = useState<Banner>({ kind: "hidden" });
 	const termsEnabled = legalConfigured;
 
@@ -252,6 +252,20 @@ export function ConsentBanner({
 				)}
 			</div>
 			<div className="mt-4 flex flex-wrap justify-end gap-2">
+				{banner.kind === "terms" && (
+					// The Terms banner covers the account menu, so it carries its own
+					// way out: a user who cannot, or will not, accept must still be
+					// able to leave the session.
+					<Button
+						variant="outline"
+						onClick={async () => {
+							await logout();
+							window.location.replace("/auth/login");
+						}}
+					>
+						Sign out
+					</Button>
+				)}
 				{banner.kind === "terms" ? (
 					<Button
 						disabled={!termsEnabled}

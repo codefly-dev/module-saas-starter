@@ -27,10 +27,13 @@ const clients = vi.hoisted(() => ({
 	},
 }));
 
+const logout = vi.hoisted(() => vi.fn(async () => undefined));
+
 vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({
 		isAuthenticated: authState.isAuthenticated,
 		isLoading: authState.isLoading,
+		logout,
 	}),
 }));
 
@@ -69,6 +72,25 @@ describe("ConsentBanner", () => {
 			name: "Accept Terms",
 		});
 		expect(acceptTerms.getAttribute("disabled")).not.toBeNull();
+	});
+
+	it("offers a way to sign out while the Terms are pending", async () => {
+		authState.isAuthenticated = true;
+		clients.consent.getStatus.mockResolvedValue({
+			currentTermsVersion: "terms-v1",
+			termsAcceptedVersion: "",
+			policyVersion: "policy-v2",
+			purposes: [],
+		});
+		const replace = vi.fn();
+		vi.stubGlobal("location", { ...window.location, replace });
+
+		render(<ConsentBanner legalConfigured={legalState.configured} />);
+
+		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+		await waitFor(() => expect(replace).toHaveBeenCalledWith("/auth/login"));
+		expect(logout).toHaveBeenCalledTimes(1);
+		vi.unstubAllGlobals();
 	});
 
 	it("allows Terms acceptance once legal content is configured", async () => {
