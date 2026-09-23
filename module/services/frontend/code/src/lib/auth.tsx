@@ -180,20 +180,32 @@ export function expiredSessionLoginTarget(location: {
 	return `/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`;
 }
 
-// Identity-provider configuration is supplied by the Codefly `identity`
-// workspace configuration. The Next.js agent exposes only its non-secret
-// IDENTITY_* values to the browser as NEXT_PUBLIC_IDENTITY_*.
+// Identity-provider configuration is the Codefly `identity` workspace
+// configuration, resolved by the server at request time (readIdentityConfig in
+// ./identity-config) and handed to the login page as props. It is never read
+// from NEXT_PUBLIC_*: those are inlined when the image is built, and a deployed
+// image is built once and configured per environment, so an inlined provider is
+// always empty there and the login page offers no way to sign in.
 //
-// Required:
-//   NEXT_PUBLIC_IDENTITY_PROVIDER       — workos | auth0 | google | oidc
-//   NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL  — hosted authorize endpoint
-//   NEXT_PUBLIC_IDENTITY_CLIENT_ID      — OAuth client id
+// Required for an OAuth provider (IDENTITY_* keys of the group):
+//   provider      IDENTITY_PROVIDER        — workos | auth0 | google | oidc
+//   authorizeURL  IDENTITY_AUTHORIZE_URL   — hosted authorize endpoint
+//   clientID      IDENTITY_CLIENT_ID       — OAuth client id
 // Optional:
-//   NEXT_PUBLIC_IDENTITY_DISPLAY_NAME
-//   NEXT_PUBLIC_IDENTITY_SCOPE
-//   NEXT_PUBLIC_IDENTITY_AUTHORIZE_SELECTOR — WorkOS AuthKit selector
+//   displayName        IDENTITY_DISPLAY_NAME
+//   scope              IDENTITY_SCOPE
+//   authorizeSelector  IDENTITY_AUTHORIZE_SELECTOR — WorkOS AuthKit selector
 //
-// The client secret lives ONLY on the backend. Never put it in NEXT_PUBLIC_*.
+// The client secret lives ONLY on the backend and is never part of this shape.
+export interface IdentityConfig {
+	provider?: string;
+	authorizeURL?: string;
+	clientID?: string;
+	displayName?: string;
+	scope?: string;
+	authorizeSelector?: string;
+}
+
 export interface ProviderPreset {
 	id: string;
 	displayName: string;
@@ -203,13 +215,13 @@ export interface ProviderPreset {
 	authorizeParams?: Readonly<Record<string, string>>;
 }
 
-function readIdentityProvider(): ProviderPreset | null {
-	const id = process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase();
+function identityProvider(config: IdentityConfig): ProviderPreset | null {
+	const id = config.provider?.trim().toLowerCase();
 	if (!id || id === "fixture" || id === "dev") return null;
-	const authorizeURL = process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL;
-	const clientID = process.env.NEXT_PUBLIC_IDENTITY_CLIENT_ID;
+	const authorizeURL = config.authorizeURL?.trim();
+	const clientID = config.clientID?.trim();
 	if (!authorizeURL || !clientID) return null;
-	const selector = process.env.NEXT_PUBLIC_IDENTITY_AUTHORIZE_SELECTOR?.trim();
+	const selector = config.authorizeSelector?.trim();
 	// Force upstream account selection so a user with several accounts (e.g.
 	// multiple Google identities) chooses which one to sign in with, instead of
 	// the IdP silently reusing whichever is already active. WorkOS AuthKit
@@ -221,8 +233,7 @@ function readIdentityProvider(): ProviderPreset | null {
 	return {
 		id,
 		displayName:
-			process.env.NEXT_PUBLIC_IDENTITY_DISPLAY_NAME?.trim() ||
-			id[0].toUpperCase() + id.slice(1),
+			config.displayName?.trim() || id[0].toUpperCase() + id.slice(1),
 		authorizeURL,
 		clientID,
 		// Default to the standard OIDC scopes so a minimally-configured provider
@@ -230,14 +241,13 @@ function readIdentityProvider(): ProviderPreset | null {
 		// omits scope entirely and accounts rejects the callback with
 		// ErrMissingEmail. `groups` stays out: WorkOS AuthKit rejects it as
 		// invalid_scope.
-		scope:
-			process.env.NEXT_PUBLIC_IDENTITY_SCOPE?.trim() || "openid profile email",
+		scope: config.scope?.trim() || "openid profile email",
 		authorizeParams,
 	};
 }
 
-export function availableProviders(): ProviderPreset[] {
-	const provider = readIdentityProvider();
+export function availableProviders(config: IdentityConfig): ProviderPreset[] {
+	const provider = identityProvider(config);
 	return provider ? [provider] : [];
 }
 
@@ -246,11 +256,8 @@ export function availableProviders(): ProviderPreset[] {
 // OAuth ceremony and no button to click — the app POSTs to /v1/auth/authenticate
 // on load and the accounts login route resolves the header into a session. The
 // header is read server-side; the browser only triggers the exchange.
-export function isHeaderInjectedProvider(): boolean {
-	return (
-		process.env.NEXT_PUBLIC_IDENTITY_PROVIDER?.trim().toLowerCase() ===
-		"header-jwt"
-	);
+export function isHeaderInjectedProvider(config: IdentityConfig): boolean {
+	return config.provider?.trim().toLowerCase() === "header-jwt";
 }
 
 // Build the provider's authorize URL for the authorization-code flow.
@@ -367,7 +374,7 @@ interface AuthContextType extends AuthState {
 	// browser to the provider's hosted login. The callback page completes
 	// the handshake. Async because we mint a server-signed state via
 	// BeginOAuth before the redirect.
-	signInWith: (providerID: string, destination?: string) => Promise<void>;
+	signInWith: (preset: ProviderPreset, destination?: string) => Promise<void>;
 	// Completes the OAuth flow from /auth/callback: POSTs the code to the
 	// backend, stores the returned tokens, redirects to the post-login
 	// destination (or "/").
@@ -615,12 +622,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	// (so a stolen code can't be redeemed elsewhere).
 	//
 	const signInWith = useCallback(
-		async (providerID: string, destination?: string) => {
-			const presets = availableProviders();
-			const preset = presets.find((p) => p.id === providerID);
-			if (!preset) {
-				throw new Error(`OAuth provider not configured: ${providerID}`);
-			}
+		async (preset: ProviderPreset, destination?: string) => {
+			const providerID = preset.id;
 			const redirectURI = `${window.location.origin}/auth/callback`;
 			const pkce = await newPkce();
 

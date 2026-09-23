@@ -1,6 +1,9 @@
 import { Suspense } from "react";
 import { LoginPage } from "@/features/auth/ui/login-page";
-export default function Page() {
+import { readIdentityConfig } from "@/lib/identity-config";
+
+export default async function Page() {
+	const identity = await readIdentityConfig();
 	return (
 		<Suspense
 			fallback={
@@ -9,7 +12,7 @@ export default function Page() {
 				</p>
 			}
 		>
-			<LoginPage />
+			<LoginPage identity={identity} />
 		</Suspense>
 	);
 }
