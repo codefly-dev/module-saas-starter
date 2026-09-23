@@ -350,10 +350,10 @@ temporary_secret="${temporary_dir}/identity.secret.env"
 # drifts from the provider is how a login fails after a successful code exchange.
 #
 # The authorize endpoint is different: the browser redirects the user there to
-# begin the flow, and the browser never performs OIDC discovery — it only sees
-# the non-secret IDENTITY_* values the Next.js agent exposes as
-# NEXT_PUBLIC_IDENTITY_*. So the authorize URL must be written for the frontend;
-# without it readIdentityProvider() returns null and the sign-in button vanishes.
+# begin the flow, and the browser never performs OIDC discovery — the login page
+# reads only the non-secret IDENTITY_* values of this group, at request time. So
+# the authorize URL must be written for the frontend; without it the login page
+# has no provider to offer and the sign-in button vanishes.
 printf '%s\n' \
   "IDENTITY_PROVIDER=workos" \
   "IDENTITY_DISPLAY_NAME=${display_name}" \
