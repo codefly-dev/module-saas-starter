@@ -1,15 +1,18 @@
 import Link from "next/link";
 import {
-	legalContentConfig,
+	type LegalContentConfig,
 	legalContentConfigured,
 } from "@/lib/legal-config";
 
-export function LegalDocument({ kind }: { kind: "terms" | "privacy" }) {
-	const configured = legalContentConfigured();
-	const content =
-		kind === "terms"
-			? legalContentConfig.termsContent
-			: legalContentConfig.privacyContent;
+export function LegalDocument({
+	kind,
+	legal,
+}: {
+	kind: "terms" | "privacy";
+	legal: LegalContentConfig;
+}) {
+	const configured = legalContentConfigured(legal);
+	const content = kind === "terms" ? legal.termsContent : legal.privacyContent;
 
 	return (
 		<main className="mx-auto min-h-screen max-w-3xl px-5 py-12 sm:py-20">
@@ -30,25 +33,24 @@ export function LegalDocument({ kind }: { kind: "terms" | "privacy" }) {
 					<h2 className="font-semibold">Legal content is not configured</h2>
 					<p className="mt-2 text-sm leading-6">
 						This starter cannot supply production legal terms. Set the
-						<code className="mx-1">legal</code> Codefly configuration group
-						for this environment (
+						<code className="mx-1">legal</code> Codefly configuration group for
+						this environment (
 						<code className="mx-1">configurations/&lt;env&gt;/legal.env</code>,
 						or the per-environment config in your fleet repo) with{" "}
 						<code className="mx-1">NEXT_PUBLIC_LEGAL_ENTITY_NAME</code>,
 						<code className="mx-1">NEXT_PUBLIC_LEGAL_CONTACT_EMAIL</code>,
 						<code className="mx-1">NEXT_PUBLIC_LEGAL_TERMS_CONTENT</code>, and
-						<code className="mx-1">NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT</code>,
-						and obtain jurisdiction-specific legal review before launch.
+						<code className="mx-1">NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT</code>, and
+						obtain jurisdiction-specific legal review before launch.
 					</p>
 				</section>
 			) : (
 				<div className="mt-8 space-y-8 leading-7">
 					<div className="whitespace-pre-wrap">{content}</div>
 					<p className="border-t pt-5 text-sm text-muted-foreground">
-						This content was supplied by {legalContentConfig.entityName}.
+						This content was supplied by {legal.entityName}.
 						Jurisdiction-specific legal review remains the operator&apos;s
-						responsibility. Questions may be sent to{" "}
-						{legalContentConfig.contactEmail}.
+						responsibility. Questions may be sent to {legal.contactEmail}.
 					</p>
 				</div>
 			)}

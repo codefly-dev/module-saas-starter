@@ -672,8 +672,9 @@ service's private REST endpoint; neither route is a module or public interface
 endpoint.
 
 Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle
-when the image is built, so a deployed image carries only what its build saw; identity is
-not among them — the login page reads the `identity` group at request time):
+when the image is built, so a deployed image carries only what its build saw; identity and
+legal content are not among them — the server reads the `identity` and `legal` groups at
+request time, and the `legal` group keeps its `NEXT_PUBLIC_LEGAL_*` key names):
 
 | Var                          | Used for                                                    |
 |------------------------------|-------------------------------------------------------------|

@@ -34,10 +34,6 @@ vi.mock("@/lib/auth", () => ({
 	}),
 }));
 
-vi.mock("@/lib/legal-config", () => ({
-	legalContentConfigured: () => legalState.configured,
-}));
-
 vi.mock("@connectrpc/connect", () => ({
 	createClient: vi.fn((service: { typeName: string }) =>
 		service.typeName.endsWith("ConsentService")
@@ -67,7 +63,7 @@ describe("ConsentBanner", () => {
 			purposes: [],
 		});
 
-		render(<ConsentBanner />);
+		render(<ConsentBanner legalConfigured={legalState.configured} />);
 
 		const acceptTerms = await screen.findByRole("button", {
 			name: "Accept Terms",
@@ -89,7 +85,7 @@ describe("ConsentBanner", () => {
 			purposes: [],
 		});
 
-		render(<ConsentBanner />);
+		render(<ConsentBanner legalConfigured={legalState.configured} />);
 
 		const acceptTerms = await screen.findByRole("button", {
 			name: "Accept Terms",
@@ -111,7 +107,7 @@ describe("ConsentBanner", () => {
 			consentPolicyVersion: "policy-v2",
 		});
 
-		render(<ConsentBanner />);
+		render(<ConsentBanner legalConfigured={legalState.configured} />);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Reject optional" }),
 		);
