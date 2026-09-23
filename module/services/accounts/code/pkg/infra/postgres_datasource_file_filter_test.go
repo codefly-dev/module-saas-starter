@@ -53,3 +53,41 @@ func TestPostgresDatasourceFileFilterPersistsAcrossReaders(t *testing.T) {
 		return nil
 	}))
 }
+
+// A public source's credential-less record survives a reload by both readers,
+// and writing an envelope drops it in the same statement — so a source that is
+// later given a PAT or moved onto the App is never read as both.
+func TestPostgresDatasourcePublicCredentialKindPersistsAndClearsWithAnEnvelope(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	template := installationSourceByID(t, seedDatasourceSource(t, org))
+
+	source := *template
+	source.ID = business.NewIDString()
+	source.CredentialSecretRef = ""
+	source.GitHubInstallationID = ""
+	source.GitHubCredentialKind = "public"
+	source.FileExtensions = []string{".md"}
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.InsertDatasourceSource(ctx, &source)
+	}))
+
+	reloaded := installationSourceByID(t, source.ID)
+	require.Equal(t, "public", reloaded.GitHubCredentialKind)
+	require.Empty(t, reloaded.CredentialSecretRef)
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		got, err := testStore.GetDatasourceSource(ctx, org, source.ID)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		require.Equal(t, "public", got.GitHubCredentialKind)
+		return nil
+	}))
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.UpdateDatasourceSourceCredential(ctx, org, source.ID, "vault:v1:envelope")
+	}))
+	updated := installationSourceByID(t, source.ID)
+	require.Empty(t, updated.GitHubCredentialKind, "an envelope write must drop the credential-less record")
+	require.Equal(t, "vault:v1:envelope", updated.CredentialSecretRef)
+	require.Equal(t, []string{".md"}, updated.FileExtensions, "the rest of the config is untouched")
+}

@@ -98,7 +98,11 @@ export interface ConnectGitHubInput {
 	branch: string;
 	targetCollection: string;
 	boundaryNodeId?: string;
-	/** Omitted connects through the App: the host resolves the installation. */
+	/**
+	 * Omitted connects without a token: through the App when an installation
+	 * this organization claimed covers the repository, otherwise with no
+	 * credential at all when GitHub reports the repository public.
+	 */
 	accessToken?: string;
 	webhookSecret: string;
 }

@@ -474,13 +474,17 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created.", webhookAdminFields...), webhookAdminVersion),
 	revised(mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...), webhookAdminVersion),
 	revised(mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...), webhookAdminVersion),
-	mutation(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
+	// v2 records how a GitHub source authenticates — including `public`, a
+	// source connected with no credential at all — and declares the `provider`
+	// the provider-agnostic connect has always written, which v1 dropped.
+	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
+		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
 	mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
 		str("installation_id")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
-		str("repo"), enum("credential_kind", "pat", "app")), 2),
+		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),

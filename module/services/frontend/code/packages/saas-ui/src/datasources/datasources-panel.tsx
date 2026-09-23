@@ -198,8 +198,16 @@ function DatasourcesPanelView({
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
-				accessToken: values.method === "app" ? undefined : values.accessToken,
-				webhookSecret: values.webhookSecret ?? "",
+				// Neither the App nor a public repository sends a token: the host
+				// resolves the installation, or confirms with GitHub that the
+				// repository is public. A public source takes no webhook either, so
+				// a secret typed on another path before switching is not sent.
+				accessToken:
+					values.method === "app" || values.method === "public"
+						? undefined
+						: values.accessToken,
+				webhookSecret:
+					values.method === "public" ? "" : (values.webhookSecret ?? ""),
 			},
 			{
 				onSuccess: () => {

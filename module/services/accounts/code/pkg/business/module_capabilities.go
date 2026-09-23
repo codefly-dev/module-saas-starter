@@ -937,6 +937,15 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, "", status.Errorf(codes.FailedPrecondition, "blob exceeds the %d-byte fetch limit", maxContentTicketBytes)
 		}
+		// A public source reads GitHub unauthenticated, so its blob fetches share
+		// the IP's hourly limit; say so, rather than calling it an internal fault
+		// the module should not retry.
+		if errors.Is(err, github.ErrUnauthenticatedRateLimited) {
+			return nil, "", status.Error(codes.ResourceExhausted, githubUnauthenticatedRateLimitMessage)
+		}
+		if errors.Is(err, github.ErrRateLimited) {
+			return nil, "", status.Error(codes.ResourceExhausted, "GitHub rate limited the blob fetch. Retry later.")
+		}
 		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "fetch blob").Error())
 	}
 	// Record the data access on the source's own tenant spine. Each fetch is a

@@ -48,6 +48,8 @@ func githubValidationError(err error) error {
 		return status.Error(codes.FailedPrecondition, "GitHub rejected the access token (401). Check that the PAT is valid and has not expired or been revoked, then reconnect the source.")
 	case errors.Is(err, github.ErrForbidden):
 		return status.Error(codes.FailedPrecondition, "GitHub denied access (403). Check repository permissions and organization SSO authorization.")
+	case errors.Is(err, github.ErrUnauthenticatedRateLimited):
+		return status.Error(codes.ResourceExhausted, githubUnauthenticatedRateLimitMessage)
 	case errors.Is(err, github.ErrRateLimited):
 		return status.Error(codes.Unavailable, "GitHub rate limited the request (403/429). Retry later.")
 	case errors.Is(err, github.ErrNotFound):

@@ -20,6 +20,8 @@ import (
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Datasource providers and lifecycle statuses. The provider string is recorded
@@ -287,6 +289,11 @@ type DatasourceSource struct {
 	// It is a routing index only — the envelope stays the sole authority for
 	// minting a token. Empty for a PAT-backed source.
 	GitHubInstallationID string
+	// GitHubCredentialKind is githubCredentialKindPublic for a GitHub source
+	// connected to a public repository with no credential — it then holds no
+	// credential envelope and reads GitHub unauthenticated — and empty for every
+	// other source, whose envelope names its own kind.
+	GitHubCredentialKind string
 	Status               string
 	// StatusReason explains a non-active status (the degrade reason for a source
 	// the compiler parked); empty for an active source.
@@ -340,6 +347,9 @@ type GitHubContentClient interface {
 	GetFileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
 	Compare(ctx context.Context, repo, base, head string) (*github.Comparison, error)
 	GetBlob(ctx context.Context, repo, blobSHA string, max int64) ([]byte, error)
+	// RepositoryIsPublic is asked of a client holding no token, to prove a
+	// repository may be connected without a credential.
+	RepositoryIsPublic(ctx context.Context, repo string) (bool, error)
 }
 
 // APIContentClient is the subset of the generic API connector the Service needs.
@@ -484,8 +494,11 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 
-	credentialPlaintext, installationID, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, input.AccessToken)
+	credential, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, input.AccessToken)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseWebhookOnPublicSource(credential, input.WebhookSecret); err != nil {
 		return nil, err
 	}
 
@@ -502,16 +515,14 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		// Written with the row rather than after it: a source that is App-backed
 		// from birth must be resolvable by installation the moment it exists, or
 		// an App-level delivery cannot reach it. Empty for a PAT source.
-		GitHubInstallationID: installationID,
+		GitHubInstallationID: credential.InstallationID,
 	}
 	nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
 	source.NextReconcileAt = &nextReconcile
 
-	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credentialPlaintext)
-	if err != nil {
+	if err := s.sealGitHubConnectCredential(ctx, source, credential); err != nil {
 		return nil, w.Wrapf(err, "encrypt credential")
 	}
-	source.CredentialSecretRef = credentialRef
 
 	if secret := strings.TrimSpace(input.WebhookSecret); secret != "" {
 		webhookRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceWebhookSecretPurpose(source.ID), secret)
@@ -531,11 +542,44 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 			return err
 		}
 		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-			map[string]any{"repo": source.Repo})
+			map[string]any{"repo": source.Repo, "provider": source.Provider, "credential_kind": credential.Kind})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
 	return source, nil
+}
+
+// refuseWebhookOnPublicSource refuses a webhook signing secret for a source
+// connected with no credential. Registering a webhook needs administration of
+// the repository, which nothing about a public read establishes, so a secret
+// here would be stored for deliveries that never come while the source is
+// actually kept current by the periodic reconcile. Connecting with a PAT or the
+// App is how a source gets live updates.
+func refuseWebhookOnPublicSource(credential githubConnectCredential, webhookSecret string) error {
+	if credential.Kind == githubCredentialKindPublic && strings.TrimSpace(webhookSecret) != "" {
+		return status.Error(codes.InvalidArgument,
+			"A public repository connected without a credential is kept current by periodic sync and takes no webhook secret. Remove the webhook secret, or connect with a fine-grained PAT or through the GitHub App to receive webhook deliveries.")
+	}
+	return nil
+}
+
+// sealGitHubConnectCredential records how a new GitHub source authenticates. A
+// PAT or App binding is encrypted into the source's credential envelope; a
+// public source stores no envelope — nothing is sent to the secret provider —
+// and records its kind on the non-secret config instead, which is what
+// githubClientForSource requires before it reads unauthenticated.
+func (s *Service) sealGitHubConnectCredential(ctx context.Context, source *DatasourceSource, credential githubConnectCredential) error {
+	if credential.Kind == githubCredentialKindPublic {
+		source.CredentialSecretRef = ""
+		source.GitHubCredentialKind = githubCredentialKindPublic
+		return nil
+	}
+	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credential.Plaintext)
+	if err != nil {
+		return err
+	}
+	source.CredentialSecretRef = credentialRef
+	return nil
 }
 
 // AddSourceInput is the provider-agnostic connect input. Provider selects the
@@ -600,6 +644,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	}
 
 	credential := strings.TrimSpace(input.Credential)
+	// How a GitHub source authenticates, for the audit record; empty for the
+	// other providers.
+	var credentialKind string
 
 	switch input.Provider {
 	case DatasourceProviderGitHub:
@@ -611,12 +658,21 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		// repository-scoped PAT, and none connects through the deployment's App.
 		// Sharing it keeps the provider-agnostic call from refusing a connect the
 		// GitHub-specific one accepts.
-		resolved, installationID, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, credential)
+		resolved, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, credential)
 		if err != nil {
 			return nil, err
 		}
-		credential = resolved
-		source.GitHubInstallationID = installationID
+		if err := refuseWebhookOnPublicSource(resolved, input.WebhookSecret); err != nil {
+			return nil, err
+		}
+		// A public source resolves to no plaintext, so the shared sealing below
+		// stores no envelope for it; its kind goes on the non-secret config.
+		credential = resolved.Plaintext
+		credentialKind = resolved.Kind
+		if resolved.Kind == githubCredentialKindPublic {
+			source.GitHubCredentialKind = githubCredentialKindPublic
+		}
+		source.GitHubInstallationID = resolved.InstallationID
 		source.Repo = repo
 		source.Paths = normalizePaths(input.Paths)
 		source.FileExtensions, err = normalizeFileExtensions(input.FileExtensions)
@@ -702,8 +758,12 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-			map[string]any{"provider": source.Provider})
+		payload := map[string]any{"provider": source.Provider}
+		if source.Provider == DatasourceProviderGitHub {
+			payload["repo"] = source.Repo
+			payload["credential_kind"] = credentialKind
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
@@ -999,6 +1059,10 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 				if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted); err != nil {
 					return err
 				}
+				// A public source given a PAT is a PAT source from here on; the
+				// store dropped its credential-less marker with this write.
+				source.CredentialSecretRef = encrypted
+				source.GitHubCredentialKind = ""
 				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID,
 					map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindPAT})
 			}); err != nil {

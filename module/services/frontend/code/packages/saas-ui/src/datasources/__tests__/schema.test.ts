@@ -67,11 +67,20 @@ describe("connectGitHubSchema", () => {
 		).toBe(false);
 	});
 
-	it("waives the token only for the App method", () => {
+	it("waives the token only for the App and public methods", () => {
 		expect(
 			connectGitHubSchema.safeParse({
 				...valid,
 				method: "app",
+				accessToken: undefined,
+			}).success,
+		).toBe(true);
+		// The host still refuses a repository GitHub does not report public; the
+		// form only stops demanding a token it would not send.
+		expect(
+			connectGitHubSchema.safeParse({
+				...valid,
+				method: "public",
 				accessToken: undefined,
 			}).success,
 		).toBe(true);

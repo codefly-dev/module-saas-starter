@@ -2,7 +2,8 @@
 // resolve a repository's default branch, enumerate the files under a set of
 // path prefixes at a ref, and fetch one file's bytes. It authenticates with a
 // per-source token supplied by the caller (a PAT or a GitHub App installation
-// token) and holds no persistence or crypto concerns of its own.
+// token) — or with none at all, for a public repository — and holds no
+// persistence or crypto concerns of its own.
 package github
 
 import (
@@ -30,6 +31,14 @@ var ErrNotFound = errors.New("github: not found")
 var ErrUnauthorized = errors.New("github: unauthorized")
 var ErrForbidden = errors.New("github: forbidden")
 var ErrRateLimited = errors.New("github: rate limited")
+
+// ErrUnauthenticatedRateLimited is ErrRateLimited for a client holding no token.
+// GitHub meters unauthenticated requests per source IP address — 60 an hour on
+// github.com — rather than per credential, so the remedy differs: waiting for
+// the window to reset, or connecting the repository with a credential. It wraps
+// ErrRateLimited, so a caller that only asks "was this rate limited?" still
+// matches it.
+var ErrUnauthenticatedRateLimited = fmt.Errorf("%w: unauthenticated request limit exhausted", ErrRateLimited)
 
 // ErrFileTooLarge is returned when a file exceeds what the contents API can
 // return inline (GitHub caps it at 1 MiB; files above that come back with
@@ -78,7 +87,9 @@ type Comparison struct {
 	Truncated bool
 }
 
-// Client talks to a single GitHub deployment with a single token.
+// Client talks to a single GitHub deployment with a single token. An empty
+// token sends no Authorization header at all, which GitHub serves only for
+// public repositories.
 type Client struct {
 	baseURL string
 	token   string
@@ -109,6 +120,29 @@ func (c *Client) DefaultBranch(ctx context.Context, repo string) (string, error)
 		return "", fmt.Errorf("github: repo %q has no default branch", repo)
 	}
 	return out.DefaultBranch, nil
+}
+
+// RepositoryIsPublic reports whether GitHub describes repo as public. It is
+// meant to be asked by a client holding no token, where the answer is also a
+// proof: GitHub answers an unauthenticated request for a private or missing
+// repository with the same 404, which surfaces as ErrNotFound and never as
+// "public".
+//
+// Public is only ever an affirmative answer. A response that omits the `private`
+// flag, or names any visibility other than public (an Enterprise "internal"
+// repository), is reported as not public rather than guessed at.
+func (c *Client) RepositoryIsPublic(ctx context.Context, repo string) (bool, error) {
+	var out struct {
+		Private    *bool  `json:"private"`
+		Visibility string `json:"visibility"`
+	}
+	if err := c.getJSON(ctx, "/repos/"+repo, &out); err != nil {
+		return false, err
+	}
+	if out.Private == nil || *out.Private {
+		return false, nil
+	}
+	return out.Visibility == "" || out.Visibility == "public", nil
 }
 
 // ResolveCommit returns the commit SHA that ref currently points at. It is
@@ -223,10 +257,10 @@ func (c *Client) GetBlob(ctx context.Context, repo, blobSHA string, max int64) (
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, ErrNotFound
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
+	if err := c.classify(resp, body); err != nil {
+		if !errors.Is(err, errUnexpectedStatus) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("github: GET blob %s: unexpected status %d", blobSHA, resp.StatusCode)
 	}
 	var out struct {
@@ -305,6 +339,26 @@ func (c *Client) getJSON(ctx context.Context, path string, into any) error {
 	if err != nil {
 		return err
 	}
+	if err := c.classify(resp, body); err != nil {
+		if !errors.Is(err, errUnexpectedStatus) {
+			return err
+		}
+		return fmt.Errorf("github: %s %s: unexpected status %d", req.Method, path, resp.StatusCode)
+	}
+	if err := json.Unmarshal(body, into); err != nil {
+		return fmt.Errorf("github: decode %s response: %w", path, err)
+	}
+	return nil
+}
+
+// errUnexpectedStatus marks a non-2xx status classify has no sentinel for; each
+// caller reports it with its own request context.
+var errUnexpectedStatus = errors.New("github: unexpected status")
+
+// classify maps a response status onto the package's sentinels, or nil for a
+// success. Every request goes through it, so a rate limit reads the same whether
+// it hit a JSON read or a blob fetch.
+func (c *Client) classify(resp *http.Response, body []byte) error {
 	// Secondary limits can omit Retry-After; GitHub identifies those in its
 	// structured message. Inspect it for classification only, never expose it.
 	var failure struct {
@@ -320,16 +374,16 @@ func (c *Client) getJSON(ctx context.Context, path string, into any) error {
 		(resp.StatusCode == http.StatusForbidden &&
 			(resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0" ||
 				strings.Contains(strings.ToLower(failure.Message), "rate limit"))):
+		if c.token == "" {
+			return ErrUnauthenticatedRateLimited
+		}
 		return ErrRateLimited
 	case resp.StatusCode == http.StatusForbidden:
 		return ErrForbidden
 	case resp.StatusCode == http.StatusNotFound:
 		return ErrNotFound
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return fmt.Errorf("github: %s %s: unexpected status %d", req.Method, path, resp.StatusCode)
-	}
-	if err := json.Unmarshal(body, into); err != nil {
-		return fmt.Errorf("github: decode %s response: %w", path, err)
+		return errUnexpectedStatus
 	}
 	return nil
 }
