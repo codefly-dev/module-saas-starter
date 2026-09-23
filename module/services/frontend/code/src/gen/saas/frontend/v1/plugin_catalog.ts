@@ -71,6 +71,7 @@ export const FRONTEND_ROUTES = [
   { path: "/admin/{*slug}", sourcePath: "src/app/admin/[...slug]/page.tsx", match: "catch_all", access: "admin" },
   { path: "/auth/callback", sourcePath: "src/app/(auth)/auth/callback/page.tsx", match: "exact", access: "public" },
   { path: "/auth/login", sourcePath: "src/app/(auth)/auth/login/page.tsx", match: "exact", access: "public" },
+  { path: "/auth/logout", sourcePath: "src/app/(auth)/auth/logout/page.tsx", match: "exact", access: "public" },
   { path: "/auth/magic-link", sourcePath: "src/app/(auth)/auth/magic-link/page.tsx", match: "exact", access: "public" },
   { path: "/auth/mfa", sourcePath: "src/app/(auth)/auth/mfa/page.tsx", match: "exact", access: "public" },
   { path: "/dashboards", sourcePath: "src/app/(dashboard)/dashboards/page.tsx", match: "exact", access: "authenticated" },

@@ -198,6 +198,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
     },
     {
+      "path": "/auth/logout",
+      "source_path": "src/app/(auth)/auth/logout/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_PUBLIC"
+    },
+    {
       "path": "/auth/magic-link",
       "source_path": "src/app/(auth)/auth/magic-link/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",

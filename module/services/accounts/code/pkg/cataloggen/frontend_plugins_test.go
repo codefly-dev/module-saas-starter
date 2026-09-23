@@ -40,12 +40,14 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 52)
+	require.Len(t, routes, 53)
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route
 	}
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_PUBLIC, byPath["/auth/login"].GetAccess())
+	// Public so a user stuck behind a blocking surface can always end the session.
+	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_PUBLIC, byPath["/auth/logout"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/settings/mfa"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_ADMIN, byPath["/admin/users"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams"].GetAccess())
