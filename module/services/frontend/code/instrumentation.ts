@@ -24,9 +24,25 @@ export async function register() {
 		resolveAccountsBindings();
 	}
 
+	// On Node the deployment's `error-tracking` group is read through the Codefly
+	// SDK: a deployed pod carries it under its CODEFLY__ name, never as a bare
+	// ERROR_TRACKING_MODE / SENTRY_DSN, so reading only process.env left server
+	// error tracking off in every deployment. The bare variables stay as the
+	// fallback for a process started outside Codefly. The edge runtime cannot
+	// load the SDK and keeps reading process.env.
+	const group =
+		process.env.NEXT_RUNTIME === "nodejs"
+			? await import("codefly").then(
+					({ getWorkspaceValue }) =>
+						(key: string) =>
+							getWorkspaceValue("error-tracking", key)?.trim() || undefined,
+				)
+			: () => undefined;
+	const setting = (key: string) => group(key) ?? process.env[key];
+
 	const configuration = configuredErrorTracking(
-		process.env.ERROR_TRACKING_MODE,
-		process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,
+		setting("ERROR_TRACKING_MODE"),
+		setting("SENTRY_DSN") || setting("NEXT_PUBLIC_SENTRY_DSN"),
 	);
 	if (!configuration.enabled) return;
 	const dsn = configuration.dsn;
@@ -35,15 +51,15 @@ export async function register() {
 		Sentry.init({
 			dsn,
 			environment:
-				process.env.SENTRY_ENVIRONMENT ||
-				process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ||
+				setting("SENTRY_ENVIRONMENT") ||
+				setting("NEXT_PUBLIC_SENTRY_ENVIRONMENT") ||
 				process.env.NODE_ENV,
 			release:
 				process.env.SENTRY_RELEASE || process.env.NEXT_PUBLIC_SENTRY_RELEASE,
 			tracesSampleRate: 0,
 			enableLogs: false,
 			skipOpenTelemetrySetup: true,
-			sendDefaultPii: process.env.SENTRY_SEND_PII === "1",
+			sendDefaultPii: setting("SENTRY_SEND_PII") === "1",
 		});
 	}
 

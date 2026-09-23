@@ -22,6 +22,7 @@ import {
 	lazy,
 	type ReactNode,
 	Suspense,
+	useSyncExternalStore,
 } from "react";
 import * as ReactJSXRuntime from "react/jsx-runtime";
 import * as ReactDOM from "react-dom";
@@ -379,6 +380,25 @@ class SolutionErrorBoundary extends Component<
 	}
 }
 
+const subscribeToNothing = () => () => {};
+
+/**
+ * True only once rendering in the browser. A remote is fetched and evaluated by
+ * the browser's module loader; the server has no business doing either. Left to
+ * React.lazy, a server render would try to load the manifest from Node — where a
+ * host-served, root-relative manifest URL resolves against nothing, and each
+ * failed attempt is retried with backoff while the response waits.
+ */
+function useInBrowser(): boolean {
+	return useSyncExternalStore(
+		subscribeToNothing,
+		() => true,
+		() => false,
+	);
+}
+
+const LOADING = <div className="p-6 text-sm opacity-70">Loading solution…</div>;
+
 export function SolutionOutlet({
 	remote,
 	pageProps,
@@ -397,23 +417,24 @@ export function SolutionOutlet({
 	>;
 	authoring: DashboardAuthoring;
 }) {
-	const Remote = remoteComponent(remote);
+	const inBrowser = useInBrowser();
+	const Remote = inBrowser ? remoteComponent(remote) : null;
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
-			<Suspense
-				fallback={
-					<div className="p-6 text-sm opacity-70">Loading solution…</div>
-				}
-			>
-				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
-				<Remote
-					{...pageProps}
-					getAccessToken={getToken}
-					refreshAccessToken={refreshToken}
-					authedFetch={authedFetch}
-					dashboardAuthoring={authoring}
-				/>
+			<Suspense fallback={LOADING}>
+				{Remote ? (
+					// eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders.
+					<Remote
+						{...pageProps}
+						getAccessToken={getToken}
+						refreshAccessToken={refreshToken}
+						authedFetch={authedFetch}
+						dashboardAuthoring={authoring}
+					/>
+				) : (
+					LOADING
+				)}
 			</Suspense>
 		</SolutionErrorBoundary>
 	);

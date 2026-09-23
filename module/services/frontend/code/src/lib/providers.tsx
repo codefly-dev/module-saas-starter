@@ -13,6 +13,11 @@ import {
 import { ThemePreferenceProvider } from "@/features/user-settings/ui/theme-preference-provider";
 import { AnalyticsProvider } from "@/lib/analytics/provider";
 import { AppearanceProvider } from "@/lib/appearance-provider";
+import {
+	type PublicRuntimeConfig,
+	UNCONFIGURED_PUBLIC_RUNTIME_CONFIG,
+} from "@/lib/public-runtime-config";
+import { PublicRuntimeConfigProvider } from "@/lib/public-runtime-config-provider";
 import { ThemeProvider } from "@/lib/theme-provider";
 import applicationFrontendConfig from "../../frontend.config";
 import { AuthProvider, useAuth } from "./auth";
@@ -87,35 +92,40 @@ function AuthorityQueries({ children }: { children: ReactNode }) {
 export function Providers({
 	children,
 	frontendConfig = applicationFrontendConfig,
+	publicRuntimeConfig = UNCONFIGURED_PUBLIC_RUNTIME_CONFIG,
 }: {
 	children: ReactNode;
 	frontendConfig?: FrontendReactConfig;
+	/** The deployment's browser-safe configuration, read per request. */
+	publicRuntimeConfig?: PublicRuntimeConfig;
 }) {
+	// ThemeProvider wraps everything below the configuration so cmd+K, toasts,
+	// and the admin chrome all read the same theme. attribute="class" behavior
+	// matches the .dark CSS variant in globals.css. defaultTheme "system"
+	// honours the OS preference until the user picks one.
 	return (
-		// ThemeProvider wraps everything so cmd+K, toasts, and the
-		// admin chrome all read the same theme. attribute="class"
-		// behavior matches the .dark CSS variant in globals.css. defaultTheme
-		// "system" honours the OS preference until the user picks one.
-		<ThemeProvider
-			defaultTheme={frontendConfig.appearance.defaultTheme}
-			enableSystem
-			disableTransitionOnChange
-		>
-			<AuthProvider>
-				<AuthorityBoundary>
-					<AnalyticsProvider>
-						<FrontendConfigProvider config={frontendConfig}>
-							<AppearanceProvider config={frontendConfig}>
-								<ThemePreferenceProvider>
-									<PluginRuntimeProvider runtime={hostPluginRuntime}>
-										{children}
-									</PluginRuntimeProvider>
-								</ThemePreferenceProvider>
-							</AppearanceProvider>
-						</FrontendConfigProvider>
-					</AnalyticsProvider>
-				</AuthorityBoundary>
-			</AuthProvider>
-		</ThemeProvider>
+		<PublicRuntimeConfigProvider config={publicRuntimeConfig}>
+			<ThemeProvider
+				defaultTheme={frontendConfig.appearance.defaultTheme}
+				enableSystem
+				disableTransitionOnChange
+			>
+				<AuthProvider>
+					<AuthorityBoundary>
+						<AnalyticsProvider>
+							<FrontendConfigProvider config={frontendConfig}>
+								<AppearanceProvider config={frontendConfig}>
+									<ThemePreferenceProvider>
+										<PluginRuntimeProvider runtime={hostPluginRuntime}>
+											{children}
+										</PluginRuntimeProvider>
+									</ThemePreferenceProvider>
+								</AppearanceProvider>
+							</FrontendConfigProvider>
+						</AnalyticsProvider>
+					</AuthorityBoundary>
+				</AuthProvider>
+			</ThemeProvider>
+		</PublicRuntimeConfigProvider>
 	);
 }

@@ -44,23 +44,37 @@ export const runtime = "nodejs";
  * Verify the presented credential and burn its single use. The jti is burned
  * per process, so the same credential still authorizes the gateway's own check
  * on the write this route forwards.
+ *
+ * Answers a Response when the credential is not accepted: `401` when it was
+ * judged and refused, `503` when this host could not reach the key set to judge
+ * it. A registrant told `401` for the second goes looking for a provisioning or
+ * ownership fault that does not exist; told `503`, it retries.
  */
 async function authorize(
 	request: Request,
-): Promise<SolutionRegistrationClaims | null> {
-	const claims = await verifySolutionRegistration(
+): Promise<SolutionRegistrationClaims | Response> {
+	const verdict = await verifySolutionRegistration(
 		request.headers.get(SOLUTION_REGISTRATION_HEADER),
 	);
-	if (!claims) {
-		return null;
+	if (verdict === "unavailable") {
+		console.error(
+			"solution registration: the registration key set is unreachable; answering 503 rather than refusing the credential",
+		);
+		return Response.json(
+			{ error: "registration_authority_unavailable" },
+			{ status: 503, headers: { "retry-after": "5" } },
+		);
 	}
-	return consumeRegistrationToken(claims) ? claims : null;
+	if (verdict === "invalid" || !consumeRegistrationToken(verdict)) {
+		return Response.json({ error: "unauthorized" }, { status: 401 });
+	}
+	return verdict;
 }
 
 export async function POST(request: Request): Promise<Response> {
 	const claims = await authorize(request);
-	if (!claims) {
-		return Response.json({ error: "unauthorized" }, { status: 401 });
+	if (claims instanceof Response) {
+		return claims;
 	}
 	let body: unknown;
 	try {
@@ -136,8 +150,8 @@ function writeFailure(
 
 export async function DELETE(request: Request): Promise<Response> {
 	const claims = await authorize(request);
-	if (!claims) {
-		return Response.json({ error: "unauthorized" }, { status: 401 });
+	if (claims instanceof Response) {
+		return claims;
 	}
 	const id = new URL(request.url).searchParams.get("id");
 	if (!id) {

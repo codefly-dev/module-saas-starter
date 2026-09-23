@@ -62,7 +62,21 @@ function decodeSegment(segment: string): unknown {
 interface JwksState {
 	keys: Map<string, KeyObject>;
 	fetchedAt: number;
+	/**
+	 * Whether the most recent fetch failed to read the key set. An unknown key
+	 * id after a SUCCESSFUL read is a token this cluster never signed; after a
+	 * failed one it is a question this host could not answer, and the two are
+	 * reported differently (see verifySolutionRegistration).
+	 */
+	lastFetchFailed: boolean;
 }
+
+/**
+ * Why a presented credential was not accepted, when it was not: `invalid` is a
+ * verdict about the credential, `unavailable` is this host failing to reach the
+ * key set it verifies against — a restarting gateway, not a wrong registrant.
+ */
+export type SolutionRegistrationRefusal = "invalid" | "unavailable";
 
 const globalForJwks = globalThis as typeof globalThis & {
 	__solutionRegistrationJwks?: JwksState;
@@ -147,17 +161,20 @@ async function fetchKeys(): Promise<Map<string, KeyObject> | null> {
 /**
  * The verification key for `kid`, refetching at most once per probe interval
  * when the id is unrecognised — which is what a key rotation looks like from
- * here. Returns null when the key set cannot be reached, so verification fails
- * closed rather than falling back to an older trust decision.
+ * here. Answers `unavailable` when the key set could not be read and holds no
+ * such key, so verification fails closed rather than falling back to an older
+ * trust decision — and says why, rather than calling the credential invalid.
  */
-async function keyFor(kid: string): Promise<KeyObject | null> {
+async function keyFor(
+	kid: string,
+): Promise<KeyObject | SolutionRegistrationRefusal> {
 	const cached = globalForJwks.__solutionRegistrationJwks;
 	const hit = cached?.keys.get(kid);
 	if (hit) {
 		return hit;
 	}
 	if (cached && Date.now() - cached.fetchedAt < JWKS_PROBE_INTERVAL_MS) {
-		return null;
+		return cached.lastFetchFailed ? "unavailable" : "invalid";
 	}
 	let fetched: Map<string, KeyObject> | null = null;
 	try {
@@ -172,8 +189,12 @@ async function keyFor(kid: string): Promise<KeyObject | null> {
 	// a successful fetch replaces the set outright, which is what a rotation
 	// needs.
 	const keys = fetched ?? cached?.keys ?? new Map<string, KeyObject>();
-	globalForJwks.__solutionRegistrationJwks = { keys, fetchedAt: Date.now() };
-	return keys.get(kid) ?? null;
+	globalForJwks.__solutionRegistrationJwks = {
+		keys,
+		fetchedAt: Date.now(),
+		lastFetchFailed: fetched === null,
+	};
+	return keys.get(kid) ?? (fetched === null ? "unavailable" : "invalid");
 }
 
 /**
@@ -181,10 +202,22 @@ async function keyFor(kid: string): Promise<KeyObject | null> {
  * missing or malformed token, an algorithm other than EdDSA, an unknown or
  * unreachable key, a bad signature, the wrong issuer or audience, an expired or
  * not-yet-valid token, or a token with no jti, subject, or solution binding.
+ *
+ * Every refusal is `invalid` except one: a key this host could not look up
+ * because the key set was unreachable is `unavailable`. The registrant cannot
+ * fix that one and must not be told its credential was refused — it was never
+ * judged.
  */
 export async function verifySolutionRegistration(
 	token: string | null,
-): Promise<SolutionRegistrationClaims | null> {
+): Promise<SolutionRegistrationClaims | SolutionRegistrationRefusal> {
+	const verdict = await judge(token);
+	return verdict ?? "invalid";
+}
+
+async function judge(
+	token: string | null,
+): Promise<SolutionRegistrationClaims | SolutionRegistrationRefusal | null> {
 	if (!token) {
 		return null;
 	}
@@ -207,8 +240,8 @@ export async function verifySolutionRegistration(
 		return null;
 	}
 	const key = await keyFor(header.kid);
-	if (!key) {
-		return null;
+	if (typeof key === "string") {
+		return key;
 	}
 	let signatureValid = false;
 	try {

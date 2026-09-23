@@ -7,11 +7,15 @@
 // next.config.mjs (no nonce, no strict-dynamic, no solution origins), so a
 // directive changed here does not change it there.
 //
-// Next bakes `headers()` into the routes manifest at BUILD time, so this reads
-// build-time env only. Every widening below is keyed off the same build-time
-// signal that gates the code needing it — a NEXT_PUBLIC_* flag for a bundled
-// feature, or NODE_ENV for React's development-only eval() — so the CSP can
-// never drift out of sync with the code that needs it.
+// Every widening below is keyed off the same signal that gates the code needing
+// it, so the CSP can never drift out of sync with that code. For the analytics
+// ingestion origin and Turnstile that signal is the deployment's own Codefly
+// groups (`product-analytics`, `abuse-protection`), read PER REQUEST — by the
+// proxy for the CSP (resolveRuntimeCspInputs) and by the root layout for the
+// client that calls them — because an image is built once and configured per
+// environment, and a build-time value is empty in every deployed image. NODE_ENV
+// (React's development-only eval()) and FRONTEND_SOLUTION_ORIGINS stay
+// build-time: they describe the build, not the environment.
 //
 // Module Federation is the exception: solutions self-register at RUNTIME (see
 // src/solutions/registry.ts), so their origins are not knowable when the
@@ -24,12 +28,12 @@
 // FRONTEND_SOLUTION_ORIGINS entry. Every DOCUMENT gets the full registered set,
 // not just /s/:id: a CSP is document-scoped and the sidebar reaches a solution
 // by client-side navigation, which keeps the starting document's policy (#545).
-// Today the runtime registers the solution's own origin (cross-origin), which
-// this covers. Serving a solution's assets same-origin through the host proxy —
-// so `'self'` alone covers it — is the intended direction but depends on the
-// gateway serving them unauthenticated (tracked separately) and is not yet the
-// default. FRONTEND_SOLUTION_ORIGINS remains a build-time escape hatch for
-// origins the host must trust before any registration.
+// A solution that registers its manifest as a path on its own backend is served
+// same-origin through the host's solution proxy (the gateway serves its /assets
+// without a bearer), so `'self'` alone covers it and it adds no origin here. An
+// absolute manifest URL still loads from its own origin, which this admits.
+// FRONTEND_SOLUTION_ORIGINS remains a build-time escape hatch for origins the
+// host must trust before any registration.
 
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
@@ -78,6 +82,38 @@ function turnstileEnabled(env) {
 		.trim()
 		.toLowerCase();
 	return mode !== "" && mode !== "disabled";
+}
+
+/**
+ * The request-time half of the CSP inputs: the analytics ingestion origin and
+ * Turnstile, from the same Codefly groups the root layout hands the client
+ * (src/lib/public-runtime-config.ts), so the policy a document is served with
+ * admits exactly the hosts that document's code will call.
+ *
+ * Throws on a malformed analytics host, as the build did; the proxy reports it
+ * and serves the policy without that origin rather than failing every page.
+ *
+ * @param {(group: string, key: string) => string | undefined} read
+ */
+export function resolveRuntimeCspInputs(read) {
+	const env = {
+		NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE: read(
+			"product-analytics",
+			"NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE",
+		),
+		NEXT_PUBLIC_POSTHOG_HOST: read(
+			"product-analytics",
+			"NEXT_PUBLIC_POSTHOG_HOST",
+		),
+		NEXT_PUBLIC_ABUSE_PROTECTION_MODE: read(
+			"abuse-protection",
+			"NEXT_PUBLIC_ABUSE_PROTECTION_MODE",
+		),
+	};
+	return {
+		analyticsOrigin: posthogOrigin(env),
+		turnstile: turnstileEnabled(env),
+	};
 }
 
 /**

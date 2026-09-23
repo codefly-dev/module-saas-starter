@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // presents it on the internal detail lookup. vi.mock is hoisted above module
 // init, so the stub must be created with vi.hoisted.
 const {
+	getWorkspaceConfiguration,
 	getWorkspaceSecret,
 	getCurrentModule,
 	getCurrentService,
@@ -15,8 +16,11 @@ const {
 	getCurrentModule: vi.fn<() => string>(),
 	getCurrentService: vi.fn<() => string>(),
 	getEndpoints: vi.fn<() => unknown[]>(),
+	getWorkspaceConfiguration:
+		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
 vi.mock("codefly", () => ({
+	getWorkspaceConfiguration,
 	getWorkspaceSecret,
 	getCurrentModule,
 	getCurrentService,
@@ -162,6 +166,7 @@ describe("proxy solution CSP", () => {
 		getCurrentModule.mockReset();
 		getCurrentService.mockReset();
 		getEndpoints.mockReset();
+		getWorkspaceConfiguration.mockReset();
 	});
 
 	it("allows a registered cross-origin remote without a build-time env", async () => {
@@ -357,17 +362,26 @@ describe("proxy solution CSP", () => {
 		expect(console.error).toHaveBeenCalledOnce();
 	});
 
-	it("keeps build-time analytics/allowlist hosts from the snapshot, not runtime env", async () => {
-		// The snapshot carries the analytics host and a build-time allowlist entry;
-		// no NEXT_PUBLIC_* is present in process.env. If the proxy re-read env
-		// instead of the snapshot, these would silently drop.
+	it("keeps the build-time allowlist from the snapshot and reads analytics per request", async () => {
+		// The allowlist describes the build and stays in the snapshot. The
+		// analytics host is the deployment's: the client reads it from the
+		// product-analytics group per request, so the policy must too — the
+		// snapshot's value is what an image build saw, which is nothing.
 		vi.stubEnv(
 			"SOLUTION_CSP_INPUTS",
 			JSON.stringify({
 				solutionOrigins: ["https://trusted.example"],
-				analyticsOrigin: "https://eu.i.posthog.com",
+				analyticsOrigin: "https://stale.build.example",
 				turnstile: false,
 			}),
+		);
+		getWorkspaceConfiguration.mockImplementation((group, key) =>
+			group === "product-analytics"
+				? {
+						NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE: "posthog",
+						NEXT_PUBLIC_POSTHOG_HOST: "https://eu.i.posthog.com",
+					}[key]
+				: undefined,
 		);
 		stubListing([AUDIT]);
 
@@ -376,6 +390,39 @@ describe("proxy solution CSP", () => {
 		);
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' https://trusted.example http://localhost:8091 https://eu.i.posthog.com",
+		);
+	});
+
+	it("admits Turnstile when the deployment's abuse-protection group enables it", async () => {
+		getWorkspaceConfiguration.mockImplementation((group, key) =>
+			group === "abuse-protection" &&
+			key === "NEXT_PUBLIC_ABUSE_PROTECTION_MODE"
+				? "turnstile"
+				: undefined,
+		);
+		stubListing([]);
+
+		const csp = cspOf(await proxy(authedDocument("https://app.example/")));
+		expect(directive(csp, "frame-src")).toBe(
+			"frame-src 'self' https://challenges.cloudflare.com",
+		);
+	});
+
+	it("leaves a malformed analytics host out rather than failing the document", async () => {
+		getWorkspaceConfiguration.mockImplementation((group, key) =>
+			group === "product-analytics"
+				? {
+						NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE: "posthog",
+						NEXT_PUBLIC_POSTHOG_HOST: "not a url",
+					}[key]
+				: undefined,
+		);
+		stubListing([]);
+
+		const csp = cspOf(await proxy(authedDocument("https://app.example/")));
+		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringContaining("NEXT_PUBLIC_POSTHOG_HOST"),
 		);
 	});
 

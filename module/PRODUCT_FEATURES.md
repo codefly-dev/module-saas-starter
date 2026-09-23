@@ -1,7 +1,8 @@
 # Optional product screens and entitlement enforcement
 
-Subscription management, Single Sign-On, and Entitlements are hidden by default. Enable each
-independently in the frontend's build/development environment:
+Subscription management, Single Sign-On, and Entitlements are hidden by default.
+Enable each independently in the deployment's `product-features` Codefly
+configuration group:
 
 ```dotenv
 NEXT_PUBLIC_ENABLE_SUBSCRIPTIONS=true
@@ -9,9 +10,12 @@ NEXT_PUBLIC_ENABLE_SSO=true
 NEXT_PUBLIC_ENABLE_ENTITLEMENTS=true
 ```
 
-Restart development after changing these values. Production Next.js public
-environment values are bundled at build time: rebuild/redeploy to change them.
-Only the literal `true` enables a feature. These switches contain no secrets.
+The frontend reads the group per request through the Codefly SDK and hands it
+to the browser, so a change takes effect without rebuilding the image — a
+deployed image is built once and configured per environment, and a value inlined
+at build time was empty in every one of them. The keys keep their `NEXT_PUBLIC_`
+names only so an existing group keeps working; nothing inlines them. Only the
+literal `true` (any case) enables a feature. These switches contain no secrets.
 
 Disabled screens are removed from the shared navigation selector (sidebar,
 command palette, and plugin registry). Direct visits to `/admin/billing`,

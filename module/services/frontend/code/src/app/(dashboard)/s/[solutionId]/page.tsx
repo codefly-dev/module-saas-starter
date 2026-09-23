@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 
 import { SolutionDashboards } from "@/solutions/SolutionDashboard";
 import { SolutionRuntime } from "@/solutions/SolutionRuntime";
-import { findSolution } from "@/solutions/registry";
+import {
+	browserManifestUrl,
+	findSolution,
+	solutionProxyBase,
+} from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +39,9 @@ export default async function SolutionPage({
 			<SolutionRuntime
 				remote={{
 					id: solution.id,
-					manifestUrl: solution.frontend.manifestUrl,
+					// A backend-relative registration is served through this host's
+					// own origin; the browser is never handed a pod-local address.
+					manifestUrl: browserManifestUrl(solution),
 					exposedModule: solution.frontend.exposedModule,
 				}}
 				pageProps={{
@@ -45,7 +51,7 @@ export default async function SolutionPage({
 					// procedure reaches the API gateway's root (the host's own
 					// services, e.g. the DatasourceService `<DatasourcesPanel>`
 					// calls), anything else reaches this solution's upstream.
-					apiBase: `/api/solutions/${solution.id}/proxy`,
+					apiBase: solutionProxyBase(solution.id),
 				}}
 			/>
 		</div>

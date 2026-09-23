@@ -17,7 +17,7 @@ export function configuredAbuseProtection(
 	}
 	if (normalized !== "turnstile") {
 		throw new Error(
-			"NEXT_PUBLIC_ABUSE_PROTECTION_MODE must be disabled or turnstile",
+			"NEXT_PUBLIC_ABUSE_PROTECTION_MODE (abuse-protection group) must be disabled or turnstile",
 		);
 	}
 	if (!siteKey?.trim()) {

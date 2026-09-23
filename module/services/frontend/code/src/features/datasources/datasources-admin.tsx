@@ -5,11 +5,18 @@ import { HardDriveDownload } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
+import { useMemo } from "react";
 import { useAuth } from "@/lib/auth";
-import { datasourceClient } from "./datasource-client";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { createDatasourceClient } from "./datasource-client";
 
 export function DatasourcesAdmin() {
 	const { organizationId: orgId = "" } = useAuth();
+	const { collectionContentResource } = usePublicRuntimeConfig();
+	const client = useMemo(
+		() => createDatasourceClient(collectionContentResource),
+		[collectionContentResource],
+	);
 
 	return (
 		<div className="space-y-6">
@@ -21,7 +28,7 @@ export function DatasourcesAdmin() {
 			{orgId ? (
 				<DatasourcesPanel
 					key={orgId}
-					client={datasourceClient}
+					client={client}
 					orgId={orgId}
 					onSyncEnqueued={(jobId) =>
 						toast.success("Sync enqueued", { description: `Job ${jobId}` })

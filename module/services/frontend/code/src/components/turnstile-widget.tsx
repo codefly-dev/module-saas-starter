@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { configuredAbuseProtection } from "@/lib/abuse-protection";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 
 declare global {
 	interface Window {
@@ -57,9 +58,10 @@ export function TurnstileWidget({
 	onTokenChange(token: string): void;
 }) {
 	const container = useRef<HTMLDivElement>(null);
+	const { abuseProtection } = usePublicRuntimeConfig();
 	const configuration = configuredAbuseProtection(
-		process.env.NEXT_PUBLIC_ABUSE_PROTECTION_MODE,
-		process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+		abuseProtection.mode,
+		abuseProtection.siteKey,
 	);
 	const enabled = configuration.enabled;
 	const siteKey = enabled ? configuration.siteKey : "";

@@ -16,7 +16,9 @@ gateway** (`POST /solutions/_frontend`).
 
 The route **relays the registry's own answer**: `409` for a revision conflict,
 `403` when the id belongs to another publisher, `503` when the registry cannot be
-reached. A registrant is never told it is serving when it is not. Re-registering
+reached — and `503` (not `401`) when the key set it verifies the credential
+against cannot be reached, because a credential that was never judged was not
+refused. A registrant is never told it is serving when it is not. Re-registering
 a deregistered solution requires an explicit `reactivate: true`. The frontend
 additionally enforces the declared runtime compatibility requirements before
 activating a remote.
@@ -52,7 +54,19 @@ activating a remote.
 
 `/s/[solutionId]` (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the
 remote via `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`,
-read in-process from the registry.
+read in-process from the registry. An unknown or non-serving id renders the
+segment's `not-found.tsx` inside the product shell; an unreadable registry is an
+error, not a 404.
+
+`manifestUrl` is either an absolute http(s) URL — loaded from that origin, which
+the browser must be able to reach — or a **root-relative path on the solution's
+own backend** (`/assets/mf-manifest.json`), which the host serves same-origin as
+`/api/solutions/<id>/proxy/assets/mf-manifest.json` (`browserManifestUrl` in
+`src/solutions/registry.ts`). The gateway serves a solution's `/assets` and
+`/.well-known` without a bearer for exactly this, so a pod never has to know an
+address the browser can reach — and a remote registered as `http://localhost:…`
+can never load in a deployed cell. The remote is fetched in the browser only: a
+server render shows the loading state instead of loading it from Node.
 
 `src/proxy.ts` **cannot** read that registry — Next runs the proxy in a context
 that shares no module singletons with route handlers — so it asks the internal

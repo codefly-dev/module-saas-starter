@@ -239,6 +239,54 @@ describe("solutions register route auth", () => {
 		});
 	});
 
+	it("answers 503, not a refusal, when the key set it verifies against is unreachable", async () => {
+		// A restarting gateway is not a wrong credential. Told 401, a registrant
+		// goes looking for a provisioning or ownership fault that does not exist.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("upstream restarting", { status: 502 })),
+		);
+		const res = await POST(postRequest(manifestBody(), TOKEN));
+		expect(res.status).toBe(503);
+		expect(res.headers.get("retry-after")).toBeTruthy();
+		await expect(res.json()).resolves.toEqual({
+			error: "registration_authority_unavailable",
+		});
+	});
+
+	it("still refuses a credential signed by a key the readable key set lacks", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const { privateKey: stranger } = generateKeyPairSync("ed25519");
+		const now = Math.floor(Date.now() / 1000);
+		const head = base64url({ alg: "EdDSA", typ: "JWT", kid: "unknown-key" });
+		const payload = base64url({
+			iss: "saas-starter",
+			sub: "solution:audit",
+			aud: ["solution-registration"],
+			solution: "audit",
+			exp: now + 300,
+			jti: "jti-stranger",
+		});
+		const signature = sign(
+			null,
+			Buffer.from(`${head}.${payload}`, "utf8"),
+			stranger,
+		).toString("base64url");
+		const res = await POST(
+			new Request("http://frontend/api/solutions/register", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-codefly-solution-registration": `${head}.${payload}.${signature}`,
+				},
+				body: JSON.stringify(manifestBody()),
+			}),
+		);
+		expect(res.status).toBe(401);
+	});
+
 	it("relays a registry conflict rather than reporting success", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		vi.stubGlobal("fetch", registryAnswering(new Response("conflict", { status: 409 })));

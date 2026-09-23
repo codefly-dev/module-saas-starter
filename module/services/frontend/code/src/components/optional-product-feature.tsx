@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { productFeatures, type ProductFeature } from "@/lib/product-features";
+import type { ProductFeature } from "@/lib/product-features";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 
 const featureLabels: Record<ProductFeature, string> = {
 	subscriptions: "Subscriptions",
@@ -17,6 +18,7 @@ export function OptionalProductFeature({
 	feature: ProductFeature;
 	children: ReactNode;
 }) {
+	const { productFeatures } = usePublicRuntimeConfig();
 	if (productFeatures[feature]) return children;
 	return (
 		<div className="space-y-3">

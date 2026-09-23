@@ -194,6 +194,11 @@ const globals = {
 for (const [name, value] of Object.entries(globals)) {
   Object.defineProperty(globalThis, name, { configurable: true, value, writable: true });
 }
+// The root layout publishes the error-tracking group it read for the request.
+const meta = browser.document.createElement("meta");
+meta.setAttribute("name", "codefly-error-tracking");
+meta.setAttribute("content", JSON.stringify({ mode: "sentry", dsn: "https://public@example.invalid/1" }));
+browser.document.head.appendChild(meta);
 await import(${instrumentation});
 const Sentry = await import("@sentry/nextjs");
 const client = Sentry.getClient();
@@ -206,13 +211,7 @@ process.stdout.write(JSON.stringify({
 await Sentry.close(0);
 browser.close();
 process.exit(0);`,
-			{
-				condition: "browser",
-				env: {
-					NEXT_PUBLIC_ERROR_TRACKING_MODE: "sentry",
-					NEXT_PUBLIC_SENTRY_DSN: "https://public@example.invalid/1",
-				},
-			},
+			{ condition: "browser", env: {} },
 		);
 
 		expect(JSON.parse(output)).toEqual({

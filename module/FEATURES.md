@@ -671,25 +671,33 @@ authorization service. Prometheus can alternatively scrape `/metrics` on each
 service's private REST endpoint; neither route is a module or public interface
 endpoint.
 
-Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client bundle
-when the image is built, so a deployed image carries only what its build saw; identity and
-legal content are not among them — the server reads the `identity` and `legal` groups at
-request time, and the `legal` group keeps its `NEXT_PUBLIC_LEGAL_*` key names):
+Frontend browser configuration. The server reads each value from its Codefly group per
+request (`identity`, `legal`, `product-features`, `product-analytics`, `error-tracking`,
+`abuse-protection`) and hands it to the browser — a deployed image is built once and
+configured per environment, so nothing below is inlined at build time except where noted.
+The keys keep their `NEXT_PUBLIC_*` names only so an existing group keeps working. The CSP
+admits the analytics origin and Turnstile from the same per-request read. A restricted
+render refuses a plain key named like a credential, so `NEXT_PUBLIC_SENTRY_DSN` may be
+provisioned in the `error-tracking` group's secret half; it is the only secret-namespace
+key the frontend hands to a browser, and it is public by design:
 
 | Var                          | Used for                                                    |
 |------------------------------|-------------------------------------------------------------|
+| `NEXT_PUBLIC_ENABLE_SUBSCRIPTIONS` / `_SSO` / `_ENTITLEMENTS` | `product-features`: show the optional screens ([PRODUCT_FEATURES.md](./PRODUCT_FEATURES.md)) |
+| `NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE` | `product-features`: permission resource collection content is governed by; empty means undeclared |
 | `NEXT_PUBLIC_LEGAL_ENTITY_NAME` | Operator named in configured legal content                |
 | `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Legal/privacy contact; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_TERMS_CONTENT` | Operator-supplied Terms; required before Terms acceptance |
 | `NEXT_PUBLIC_LEGAL_PRIVACY_CONTENT` | Operator-supplied Privacy Policy; required before Terms acceptance |
-| `NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` | Opt-in dev legal placeholders; defaults from the fixture boundary via `next.config.mjs`, off for real deploys |
+| `NEXT_PUBLIC_LEGAL_DEV_PLACEHOLDER` | Build-time: opt-in dev legal placeholders; defaults from the fixture boundary via `next.config.mjs`, off for real deploys |
 | `NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE` | Explicit `disabled` or `posthog` browser analytics mode |
 | `NEXT_PUBLIC_POSTHOG_KEY`      | Public PostHog capture key in PostHog mode                    |
 | `NEXT_PUBLIC_POSTHOG_HOST`   | Browser capture origin                                      |
 | `NEXT_PUBLIC_ERROR_TRACKING_MODE` | Explicit `disabled` or `sentry` browser mode            |
 | `NEXT_PUBLIC_SENTRY_DSN`     | Required browser DSN in Sentry mode                         |
 | `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | Environment tag for browser error grouping               |
-| `NEXT_PUBLIC_SENTRY_RELEASE` | Correlates frontend errors with a release                    |
+| `NEXT_PUBLIC_SENTRY_RELEASE` | Build-time: correlates frontend errors with a release       |
+| `NEXT_PUBLIC_SENTRY_SEND_PII` | `1` sends IPs / cookies / search params to Sentry           |
 | `NEXT_PUBLIC_ABUSE_PROTECTION_MODE` | Explicit `disabled` or `turnstile` widget mode          |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile widget key                              |
 

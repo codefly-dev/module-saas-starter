@@ -111,9 +111,11 @@ describe("shared presentation authorization", () => {
 				"plugin_registry",
 			] as const) {
 				expect(
-					selectNavigation(config, surface, principal).map(
-						(item) => item.label,
-					),
+					selectNavigation(config, surface, principal, {
+						subscriptions: false,
+						sso: false,
+						entitlements: false,
+					}).map((item) => item.label),
 				).toEqual([
 					...(admin ? ["Admin"] : []),
 					...(superAllowed ? ["Super"] : []),

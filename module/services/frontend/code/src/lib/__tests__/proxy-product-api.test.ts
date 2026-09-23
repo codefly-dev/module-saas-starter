@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // here so each test decides what the composition resolved. vi.mock is hoisted
 // above module init, so the stubs must be created with vi.hoisted.
 const {
+	getWorkspaceConfiguration,
 	getWorkspaceSecret,
 	getCurrentModule,
 	getCurrentService,
@@ -19,8 +20,11 @@ const {
 	getCurrentModule: vi.fn<() => string>(),
 	getCurrentService: vi.fn<() => string>(),
 	getEndpoints: vi.fn<() => unknown[]>(),
+	getWorkspaceConfiguration:
+		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
 vi.mock("codefly", () => ({
+	getWorkspaceConfiguration,
 	getWorkspaceSecret,
 	getCurrentModule,
 	getCurrentService,

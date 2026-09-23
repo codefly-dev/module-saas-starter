@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { isProductRouteEnabled } from "@/lib/product-features";
+import { readPublicRuntimeConfig } from "@/lib/read-public-runtime-config";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/shared/ui";
 
 const sections = [
@@ -50,7 +51,8 @@ const sections = [
 	},
 ];
 
-export default function PlatformPage() {
+export default async function PlatformPage() {
+	const { productFeatures } = await readPublicRuntimeConfig();
 	return (
 		<div className="space-y-6">
 			<div>
@@ -63,7 +65,7 @@ export default function PlatformPage() {
 			</div>
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				{sections
-					.filter((s) => isProductRouteEnabled(s.href))
+					.filter((s) => isProductRouteEnabled(s.href, productFeatures))
 					.map((s) => {
 						const Icon = s.icon;
 						return (

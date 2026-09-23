@@ -47,6 +47,7 @@ import { sessionDisplayLabel } from "@/lib/auth-session";
 import { getNavigationIcon } from "@/lib/navigation-icons";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 import { cn } from "@/lib/utils";
 import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 
@@ -114,10 +115,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const config = useFrontendConfig();
 	const { branding } = useAppearance();
 	const principal = { isAuthenticated, platformRole, orgRole };
+	const { productFeatures } = usePublicRuntimeConfig();
 
 	const showAdmin = canPresent({ access: "admin" }, principal);
 
-	const visibleSidebar = selectNavigation(config, "sidebar", principal);
+	const visibleSidebar = selectNavigation(
+		config,
+		"sidebar",
+		principal,
+		productFeatures,
+	);
 	const userNav = visibleSidebar.filter(
 		(item) =>
 			!item.requiredRole &&
@@ -147,7 +154,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 	const [adminOpen, setAdminOpen] = useState(
 		pathname === "/admin" || (onAdminRoute && !onPrimaryRoute),
 	);
-	const userMenu = selectNavigation(config, "user_menu", principal);
+	const userMenu = selectNavigation(
+		config,
+		"user_menu",
+		principal,
+		productFeatures,
+	);
 	const registeredSolutions = useRegisteredSolutions();
 
 	const userLabel = sessionDisplayLabel(user);

@@ -37,6 +37,7 @@ import { getNavigationIcon } from "@/lib/navigation-icons";
 import { isSuperAdmin } from "@/lib/permissions";
 import { selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 
 export function CommandPalette() {
 	const [open, setOpen] = useState(false);
@@ -59,11 +60,13 @@ export function CommandPalette() {
 	}, []);
 
 	const superAdmin = isSuperAdmin(platformRole);
-	const visibleNav = selectNavigation(config, "command_palette", {
-		isAuthenticated,
-		platformRole,
-		orgRole,
-	});
+	const { productFeatures } = usePublicRuntimeConfig();
+	const visibleNav = selectNavigation(
+		config,
+		"command_palette",
+		{ isAuthenticated, platformRole, orgRole },
+		productFeatures,
+	);
 
 	// Async user search — only when we have a query AND the caller is
 	// platform-admin enough to use it. Saves a wasted RPC for everyone
