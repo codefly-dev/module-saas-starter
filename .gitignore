@@ -12,6 +12,7 @@ dist/
 
 # Codefly CI reports and generated evidence (machine-local)
 .codefly/
+module/services/*/build-recipes/
 
 # build artifacts inside embedded module
 module/services/*/code/backend

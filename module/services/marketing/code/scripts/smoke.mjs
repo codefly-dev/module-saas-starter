@@ -51,6 +51,12 @@ try {
     enabled: true,
   });
 
+  // Exercise the actual URL used by the pinned agent's Kubernetes probes.
+  const probeResponse = await fetch(`${origin}/api/healthz`);
+  assert.equal(probeResponse.status, 200);
+  assert.match(probeResponse.headers.get("cache-control") ?? "", /no-store/);
+  assert.deepEqual(await probeResponse.json(), health);
+
   const home = await fetch(origin);
   assert.equal(home.status, 200);
   assert.doesNotMatch(

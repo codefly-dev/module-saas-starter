@@ -13,6 +13,10 @@ endpoints:
     - name: http
       visibility: public
 spec:
+    # Declare the argument at its source so regeneration preserves the opt-in
+    # production-readiness gate; an empty default does not force it off.
+    build-args:
+        MARKETING_STRICT_READINESS: ""
     execution-profiles:
         local: development
         production: production
