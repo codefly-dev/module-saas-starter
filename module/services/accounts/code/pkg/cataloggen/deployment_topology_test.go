@@ -71,7 +71,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetServices(), 8)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 4)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 5)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
@@ -80,6 +80,14 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, 12, endpointCount)
 	require.Equal(t, 8, dependencyCount)
+	// The accounts REST surface is reachable only through the gateway; the
+	// gateway's REST surface is module-visible because composed modules and
+	// solutions use it (Work Context minting, solution registration) and the
+	// interface exports it to them.
+	restVisibility := map[string]catalogv1.EndpointVisibility{
+		"accounts":     catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_PRIVATE,
+		"auth-gateway": catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_MODULE,
+	}
 	privateREST := map[string]bool{"accounts": false, "auth-gateway": false}
 	authGatewayTelemetry := false
 	for _, service := range first.Catalog.GetServices() {
@@ -88,7 +96,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		}
 		for _, endpoint := range service.GetEndpoints() {
 			if endpoint.GetName() == "rest" {
-				require.Equal(t, catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_PRIVATE, endpoint.GetVisibility())
+				require.Equal(t, restVisibility[service.GetName()], endpoint.GetVisibility())
 				privateREST[service.GetName()] = true
 			}
 		}
@@ -103,17 +111,18 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, map[string]bool{"accounts": true, "auth-gateway": true}, privateREST)
 	require.True(t, authGatewayTelemetry)
-	accountsConnectExposed := false
+	accountsConnectExposed, gatewayRESTExposed := false, false
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
 		if endpoint.GetService() == "accounts" && endpoint.GetEndpoint() == "connect" {
 			accountsConnectExposed = true
 		}
-		require.False(t,
-			(endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect") ||
-				(endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest"),
-		)
+		if endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest" {
+			gatewayRESTExposed = true
+		}
+		require.False(t, endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect")
 	}
 	require.True(t, accountsConnectExposed)
+	require.True(t, gatewayRESTExposed)
 	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	for _, name := range []string{
