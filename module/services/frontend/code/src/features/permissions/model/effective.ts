@@ -159,16 +159,28 @@ export function rolesGranting(
 	);
 }
 
-// Does this subject hold the permission, and by which paths? Answered from the
-// effective set so a wildcard grant counts, which plain membership of the list
-// would miss.
+// Does this subject hold the permission at this scope, and by which paths?
+// Answered from the effective set so a wildcard grant counts, which plain
+// membership of the list would miss.
+//
+// scope is required rather than defaulted: a source carries the scope its
+// assignment was granted at, so ignoring the question's scope returns paths
+// that do not answer it — a role scoped to one project reported as an
+// organization-wide grant. A caller that means "organization-wide" says so.
+//
+// The matching rule mirrors the store's (postgres_permissions.go, CheckPermission):
+// an organization-wide assignment answers every question, and a scoped one
+// answers only its own scope exactly. Diverging from it here would put a path
+// list on screen beside a verdict that contradicts it.
 export function sourcesGranting(
 	wanted: Permission,
 	effective: readonly EffectivePermission[],
+	scope: string,
 ): GrantSource[] {
 	return effective
 		.filter((entry) => grantCovers(entry, wanted))
-		.flatMap((entry) => entry.sources);
+		.flatMap((entry) => entry.sources)
+		.filter((source) => source.scope === "" || source.scope === scope);
 }
 
 export interface PermissionGroup {
