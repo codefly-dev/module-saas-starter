@@ -62,6 +62,30 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"non-namespaced dashboard event type": (m) => {
 		arr(rec(m.dashboard).events)[0].type = "triggered";
 	},
+	"declared event type with two segments": (m) => {
+		arr(rec(m.dashboard).events)[2].type = "guardrail.reviewed";
+	},
+	"declared event type in the reserved namespace": (m) => {
+		arr(rec(m.dashboard).events)[2].type = "saas.review.completed";
+	},
+	"declared field with an unsupported kind": (m) => {
+		arr(arr(rec(m.dashboard).events)[2].fields)[1].kind = "decimal";
+	},
+	"declared field named solution": (m) => {
+		arr(arr(rec(m.dashboard).events)[2].fields)[1].name = "solution";
+	},
+	"declared field not snake_case": (m) => {
+		arr(arr(rec(m.dashboard).events)[2].fields)[1].name = "Confidence";
+	},
+	"enum field without values": (m) => {
+		delete arr(arr(rec(m.dashboard).events)[2].fields)[0].values;
+	},
+	"values on a non-enum field": (m) => {
+		arr(arr(rec(m.dashboard).events)[2].fields)[1].values = ["high"];
+	},
+	"unknown key on a declared field": (m) => {
+		arr(arr(rec(m.dashboard).events)[2].fields)[2].required = true;
+	},
 	"unsupported metric group_by": (m) => {
 		arr(rec(m.dashboard).metrics)[0].groupBy = "region";
 	},

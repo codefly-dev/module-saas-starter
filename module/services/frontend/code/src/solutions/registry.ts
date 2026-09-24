@@ -545,11 +545,18 @@ function invalidateSnapshot(): void {
 /**
  * The outcome of a registration write. `conflict` is the registry refusing a
  * stale or resurrecting write — the caller must re-read and retry, not retry
- * blindly.
+ * blindly. `rejected` is the registry refusing the registration itself as
+ * inadmissible — today, audit event types its dashboard declares that the
+ * audit registry will not admit, such as a namespace another solution owns or a
+ * field an earlier declaration admitted and this one drops. No retry of the
+ * same manifest can succeed, so it must not read as an outage.
  */
 export type SolutionWriteResult =
 	| { ok: true; revision: number; status: string }
-	| { ok: false; reason: "unavailable" | "conflict" | "forbidden" };
+	| {
+			ok: false;
+			reason: "unavailable" | "conflict" | "forbidden" | "rejected";
+	  };
 
 async function writeToGateway(
 	path: string,
@@ -589,6 +596,12 @@ async function writeToGateway(
 	}
 	if (response.status === 409) return { ok: false, reason: "conflict" };
 	if (response.status === 403) return { ok: false, reason: "forbidden" };
+	if (response.status === 400) {
+		console.error(
+			"solution registry: the registry refused the registration as invalid",
+		);
+		return { ok: false, reason: "rejected" };
+	}
 	if (!response.ok) {
 		console.error(`solution registry: write answered ${response.status}`);
 		return { ok: false, reason: "unavailable" };
@@ -615,7 +628,11 @@ async function writeToGateway(
  * what a re-registration cannot be recognised by — assuming it was is what made
  * every heartbeat advance the revision and churn every replica's cache. What
  * recognises a renewal is JSON-value equality, in the registry's own
- * sameManifest (accounts, pkg/business/solution_registry.go).
+ * sameManifest (accounts, pkg/business/solution_registry.go). When the manifest
+ * changes, the registry reads the one part of it that is also a registration of
+ * its own: the audit event types the dashboard graph declares (events carrying
+ * `fields`), which it admits into the audit catalog in the same write, refusing
+ * the whole write when it will not.
  */
 export function registerSolution(
 	manifest: SolutionManifest,

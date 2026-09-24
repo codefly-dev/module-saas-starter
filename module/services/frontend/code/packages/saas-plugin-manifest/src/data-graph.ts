@@ -6,7 +6,9 @@
  * carries data, credentials, or deployment addresses.
  *
  * The graph has three node kinds forming a directed acyclic reference chain:
- * an event is named and bound to an audit event type; a source metric filters
+ * an event is named and bound to an audit event type — or, carrying `fields`,
+ * declares a type the solution owns, which the host admits at registration so
+ * the declaration and the registration are one document; a source metric filters
  * one event and compiles to an `AggregateAuditLog` query; a derived metric
  * combines other metrics; a dashboard binds widgets to metrics. Referential
  * integrity — every reference resolves and the derived-metric graph is
@@ -60,14 +62,47 @@ export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 export type DashboardLayout = "grid" | "stack";
 
 /**
+ * The kind of one field of a solution-declared audit event payload. These are
+ * the host audit registry's own kinds; `number` is a finite number (a fraction,
+ * a score, a ratio) and `int` is a count. `enum` names its allowed values.
+ */
+export type EventFieldKind =
+	| "string"
+	| "uuid"
+	| "int"
+	| "number"
+	| "bool"
+	| "enum"
+	| "string_array";
+
+/** One typed payload field of a solution-declared audit event. */
+export interface EventFieldDeclaration {
+	name: string;
+	kind: EventFieldKind;
+	/** The allowed values; required for, and only for, `kind: "enum"`. */
+	values?: readonly string[];
+}
+
+/**
  * A named audit event a metric can filter on. `name` is graph-local (metrics
  * reference it); `type` is the audit event type it binds to, e.g.
- * `user.signed_in.v1`.
+ * `acme.item.created`.
+ *
+ * Without `fields` the event binds a type that already exists — a platform type
+ * or one this solution declared elsewhere in the graph. With `fields` (even an
+ * empty list) the event **declares** `type` as one the solution owns, with those
+ * typed payload fields: the host admits it into its audit registry when the
+ * solution registers, so declaring the event is registering it. A declared type
+ * is `<namespace>.<aggregate>.<event>`, lives outside the reserved `saas`
+ * namespace, and never declares `solution`, which the host stamps on every
+ * emitted payload. Whether the namespace is free, and whether a re-declaration
+ * only adds fields, is checked by the host at registration.
  */
 export interface EventDeclaration {
 	name: string;
 	type: string;
 	description?: string;
+	fields?: readonly EventFieldDeclaration[];
 }
 
 /**
@@ -154,6 +189,28 @@ export interface DataGraph {
 
 const LOGICAL_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const EVENT_TYPE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/;
+// A declared type is the shape the host audit log admits: at least three
+// segments, each starting with a letter, and at most the length an emission may
+// name.
+const DECLARED_EVENT_TYPE = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,}$/;
+const DECLARED_EVENT_TYPE_MAX_LENGTH = 128;
+const RESERVED_EVENT_NAMESPACES: readonly string[] = ["saas"];
+const EVENT_FIELD_NAME = /^[a-z][a-z0-9_]*$/;
+const EVENT_FIELD_NAME_MAX_LENGTH = 64;
+const HOST_STAMPED_EVENT_FIELD = "solution";
+const MAX_EVENT_FIELDS = 32;
+const MAX_EVENT_ENUM_VALUES = 64;
+const MAX_DECLARED_EVENT_TYPES = 64;
+const MAX_DECLARED_TEXT_LENGTH = 1024;
+const EVENT_FIELD_KIND: readonly EventFieldKind[] = [
+	"string",
+	"uuid",
+	"int",
+	"number",
+	"bool",
+	"enum",
+	"string_array",
+];
 // A group dimension is one of the fixed audit columns or a payload field
 // addressed as `payload:<key>` with a non-empty key.
 const FIXED_GROUP_BY = ["event_type", "category", "actor", "time"] as const;
@@ -244,9 +301,52 @@ function assertUnique(values: readonly string[], kind: string): void {
 	}
 }
 
+function validateEventField(
+	value: unknown,
+	context: string,
+): asserts value is EventFieldDeclaration {
+	assertGraph(isObject(value), `${context} field must be an object`);
+	assertExactKeys(value, ["name", "kind", "values"], `${context} field`);
+	assertGraph(
+		typeof value.name === "string" &&
+			EVENT_FIELD_NAME.test(value.name) &&
+			value.name.length <= EVENT_FIELD_NAME_MAX_LENGTH,
+		`${context} field '${String(value.name)}' must be lowercase snake_case`,
+	);
+	assertGraph(
+		value.name !== HOST_STAMPED_EVENT_FIELD,
+		`${context} may not declare '${HOST_STAMPED_EVENT_FIELD}': the host stamps it`,
+	);
+	const field = `${context} field '${value.name}'`;
+	assertGraph(
+		EVENT_FIELD_KIND.includes(value.kind as EventFieldKind),
+		`${field} kind '${String(value.kind)}' is unsupported`,
+	);
+	if (value.kind !== "enum") {
+		assertGraph(
+			value.values === undefined,
+			`${field} declares values but is not an enum`,
+		);
+		return;
+	}
+	assertGraph(
+		Array.isArray(value.values) &&
+			value.values.length > 0 &&
+			value.values.length <= MAX_EVENT_ENUM_VALUES &&
+			value.values.every(
+				(item) =>
+					typeof item === "string" &&
+					item.trim().length > 0 &&
+					item.length <= MAX_DECLARED_TEXT_LENGTH,
+			),
+		`${field} must list between 1 and ${MAX_EVENT_ENUM_VALUES} non-empty values`,
+	);
+	assertUnique(value.values as string[], `${field} value`);
+}
+
 function validateEvent(value: unknown): asserts value is EventDeclaration {
 	assertGraph(isObject(value), "event must be an object");
-	assertExactKeys(value, ["name", "type", "description"], "event");
+	assertExactKeys(value, ["name", "type", "description", "fields"], "event");
 	assertLogicalId(value.name, "event name");
 	assertGraph(
 		typeof value.type === "string" && EVENT_TYPE.test(value.type),
@@ -255,6 +355,37 @@ function validateEvent(value: unknown): asserts value is EventDeclaration {
 	assertOptionalText(
 		value.description,
 		`event '${String(value.name)}' description`,
+	);
+	if (value.fields === undefined) return;
+	const context = `event '${value.name}'`;
+	const type = value.type as string;
+	assertGraph(
+		DECLARED_EVENT_TYPE.test(type) &&
+			type.length <= DECLARED_EVENT_TYPE_MAX_LENGTH,
+		`${context} declares type '${type}', which must be <namespace>.<aggregate>.<event> in lowercase snake_case segments`,
+	);
+	assertGraph(
+		value.description === undefined ||
+			(value.description as string).length <= MAX_DECLARED_TEXT_LENGTH,
+		`${context} description exceeds ${MAX_DECLARED_TEXT_LENGTH} characters`,
+	);
+	const namespace = type.split(".")[0];
+	assertGraph(
+		!RESERVED_EVENT_NAMESPACES.includes(namespace),
+		`${context} declares type '${type}' in the reserved namespace '${namespace}'`,
+	);
+	assertGraph(
+		Array.isArray(value.fields),
+		`${context} fields must be an array`,
+	);
+	assertGraph(
+		value.fields.length <= MAX_EVENT_FIELDS,
+		`${context} declares more than ${MAX_EVENT_FIELDS} fields`,
+	);
+	for (const field of value.fields) validateEventField(field, context);
+	assertUnique(
+		(value.fields as EventFieldDeclaration[]).map((field) => field.name),
+		`${context} field`,
 	);
 }
 
@@ -531,6 +662,16 @@ export function assertDataGraph(value: unknown): asserts value is DataGraph {
 	);
 	assertUnique(eventNameList, "event name");
 	const eventNames = new Set(eventNameList);
+	// A type is declared — given fields — at most once; other events may still
+	// bind it by name without fields.
+	const declaredTypes = (value.events as EventDeclaration[])
+		.filter((event) => event.fields !== undefined)
+		.map((event) => event.type);
+	assertUnique(declaredTypes, "declared event type");
+	assertGraph(
+		declaredTypes.length <= MAX_DECLARED_EVENT_TYPES,
+		`dashboard declares more than ${MAX_DECLARED_EVENT_TYPES} event types`,
+	);
 
 	for (const metric of value.metrics) validateMetric(metric);
 	const metricIdList = (value.metrics as Metric[]).map((metric) => metric.id);

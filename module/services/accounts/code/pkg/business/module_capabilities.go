@@ -725,9 +725,11 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // ---------------------------------------------------------------------------
 
 // ModuleEmitAuditEvent emits a registered audit event onto the tenant's audit
-// spine. The event type must be registered in the code-owned catalog;
-// unregistered types are rejected, not stored free-form. An empty tenant emits a
-// system-scoped event and requires the cross-tenant grant.
+// spine. The event type must be registered — in the code-owned catalog, or as a
+// type the emitting solution declared at registration
+// (validateModuleAuditEvent); unregistered types are rejected, not stored
+// free-form. An empty tenant emits a system-scoped event and requires the
+// cross-tenant grant.
 //
 // actor is resolved to a principal id, because that is what the spine's actor
 // column holds (resolveModuleAuditActor). A module that acted for a subject
@@ -764,8 +766,8 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// unknown/mistyped field is rejected, not stored free-form. (Downstream
 	// registry validation is only advisory; this is where the module's typed-
 	// fields contract is actually enforced.)
-	if err := ValidatePayload(EventType(eventType), payload); err != nil {
-		return status.Error(codes.InvalidArgument, err.Error())
+	if err := s.validateModuleAuditEvent(ctx, grant, EventType(eventType), solution, payload); err != nil {
+		return err
 	}
 	// entry_id is optional on the request because the surface is shared: types
 	// that record something about a whole solution have no entry to name. A type
@@ -934,6 +936,55 @@ func opaqueAuditEntryID(ctx context.Context, entryID string) string {
 		}
 	}
 	return entryID
+}
+
+// validateModuleAuditEvent checks one module-emitted event against the schema
+// that governs its type. A code-owned type is checked against the catalog, as
+// it always was. Any other type must be one a registered solution declared, and
+// then three things must hold:
+//
+//   - the event is emitted as that solution: the `solution` scope — stamped into
+//     the payload and written as the row's resource — names the type's owner,
+//     so a solution can never emit, or be credited with, another's type;
+//   - the calling principal may publish into the type's namespace
+//     (MODULE_PRINCIPALS `namespaces`), the same composition-declared authority
+//     domain-event publishing already requires, so the `solution` label alone —
+//     which the caller supplies — authorizes nothing;
+//   - the payload matches the declared fields.
+//
+// Attribution is unchanged by the type's origin: the row is written exactly as
+// a catalog type's is.
+func (s *Service) validateModuleAuditEvent(ctx context.Context, grant ModulePrincipalGrant, eventType EventType, solution string, payload map[string]any) error {
+	if _, registered := LookupAuditEvent(eventType); registered {
+		if err := ValidatePayload(eventType, payload); err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil
+	}
+	unregistered := status.Errorf(codes.InvalidArgument, "audit: unregistered event type %q", eventType)
+	// A type no solution could have declared is refused before any read.
+	if !isDeclarableAuditEventType(eventType) {
+		return unregistered
+	}
+	declared, err := s.lookupDeclaredAuditEventType(ctx, eventType)
+	if err != nil {
+		return status.Error(codes.Internal, "audit: cannot resolve declared event type")
+	}
+	if declared == nil {
+		return unregistered
+	}
+	if declared.SolutionID != solution {
+		return status.Errorf(codes.PermissionDenied,
+			"audit: event type %q is declared by another solution", eventType)
+	}
+	if !grant.allowsNamespace(declared.Namespace) {
+		return status.Errorf(codes.PermissionDenied,
+			"audit: principal may not emit into namespace %q", declared.Namespace)
+	}
+	if err := validatePayloadFields(eventType, declared.validationFields(), payload); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

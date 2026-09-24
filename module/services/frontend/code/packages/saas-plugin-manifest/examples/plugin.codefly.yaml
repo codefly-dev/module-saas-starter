@@ -74,6 +74,19 @@ dashboard:
       description: A guardrail policy blocked or flagged an action.
     - name: user_created
       type: identity.user.created.v1
+    # Carrying `fields` declares a type this plugin owns; the host admits it into
+    # its audit registry when the solution registers.
+    - name: review_completed
+      type: guardrail.review.completed
+      description: A reviewer settled a flagged action.
+      fields:
+        - name: outcome
+          kind: enum
+          values: [upheld, overturned]
+        - name: confidence
+          kind: number
+        - name: minutes_to_review
+          kind: int
   metrics:
     - id: triggers_over_time
       kind: source

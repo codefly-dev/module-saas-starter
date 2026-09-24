@@ -1344,7 +1344,14 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 	if _, err := requireAuth(ctx); err != nil {
 		return nil, err
 	}
-	defs := business.AuditEventCatalog()
+	// The code-owned catalog plus every type a registered solution declared,
+	// each declared type labelled by its owner (`solution:<id>`). An unreadable
+	// declared set fails the call rather than answering with the catalog alone,
+	// which a reader could not tell from "no solution declares anything".
+	defs, err := service.AuditEventTypes(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "audit event types unavailable")
+	}
 	out := make([]*gen.AuditEventType, 0, len(defs))
 	for _, d := range defs {
 		out = append(out, &gen.AuditEventType{

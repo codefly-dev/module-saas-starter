@@ -12,6 +12,11 @@ import (
 // projection table. Run under the control plane at startup so the DB facet and
 // the Go registry never drift. Types no longer in the catalog are marked
 // deprecated rather than deleted, so historical rows keep a resolvable type.
+//
+// The table also holds the types registered solutions declared, owned by
+// "solution:<id>" (business.SolutionAuditOwnerPrefix). They were never in the
+// code catalog, so the sync leaves them alone: deprecating them at every boot
+// would retire a live solution's vocabulary.
 func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business.AuditEventDefinition) error {
 	q := s.getQueryExecutor(ctx)
 	names := make([]string, 0, len(defs))
@@ -34,8 +39,9 @@ func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business
 		}
 	}
 	_, err := q.Exec(ctx,
-		`UPDATE audit_event_types SET deprecated = TRUE, updated_at = NOW() WHERE name <> ALL($1)`,
-		names)
+		`UPDATE audit_event_types SET deprecated = TRUE, updated_at = NOW()
+		 WHERE name <> ALL($1) AND NOT starts_with(owner, $2)`,
+		names, business.SolutionAuditOwnerPrefix)
 	return err
 }
 
