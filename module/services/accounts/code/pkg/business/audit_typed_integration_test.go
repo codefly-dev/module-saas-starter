@@ -46,7 +46,9 @@ func TestAuditEventTypes_Parity(t *testing.T) {
 // The namespace column is the collision key a composed workspace relies on, and
 // migration 116 constrains every name to sit under it. After a startup sync the
 // projection must carry it for every registered type, with nothing left over
-// from the pre-cutover vocabulary.
+// from the pre-cutover vocabulary. Types a registered solution declared share
+// the table under their own namespace and owner; the sync leaves them alone, so
+// the platform assertions below are held to the code-owned rows only.
 func TestSyncAuditEventTypesProjectsNamespace(t *testing.T) {
 	ctx := testCtx
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -62,10 +64,15 @@ func TestSyncAuditEventTypesProjectsNamespace(t *testing.T) {
 
 	active := 0
 	for _, r := range rows {
-		require.Equal(t, business.AuditNamespace, r.Namespace,
-			"projected type %q carries no namespace", r.Name)
 		require.Truef(t, strings.HasPrefix(r.Name, r.Namespace+"."),
 			"projected type %q does not sit under its namespace", r.Name)
+		if _, declared := business.SolutionIDFromAuditOwner(r.Owner); declared {
+			require.NotEqual(t, business.AuditNamespace, r.Namespace,
+				"solution-declared type %q sits in the platform namespace", r.Name)
+			continue
+		}
+		require.Equal(t, business.AuditNamespace, r.Namespace,
+			"projected type %q carries no namespace", r.Name)
 		if !r.Deprecated {
 			active++
 		}

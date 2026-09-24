@@ -64,7 +64,9 @@ const (
 )
 
 // SolutionFrontendHalf is the stored frontend registration. Manifest is the
-// document the frontend validated; nothing here parses it.
+// document the frontend validated, stored verbatim. The one part of it read
+// here is the audit event types its dashboard graph declares, which the audit
+// registry admits when the half is written (solution_audit_events.go).
 type SolutionFrontendHalf struct {
 	Revision        int64
 	Manifest        string
@@ -174,6 +176,22 @@ func (s *Service) PutSolutionRegistration(ctx context.Context, write SolutionReg
 		next, changed, err := planSolutionRegistrationWrite(current, write, now)
 		if err != nil {
 			return err
+		}
+		// The manifest's dashboard graph is also the solution's declaration of
+		// the audit event types it owns (solution_audit_events.go). They are
+		// admitted in this transaction, so a declaration the audit registry
+		// refuses refuses the whole write and the last admitted registration
+		// keeps serving. A renewal carries a manifest already admitted, and is
+		// deliberately not re-read: a rule tightened by a later release must
+		// not stop a working registration from renewing.
+		if changed && write.Frontend != nil {
+			declared, err := ParseDeclaredAuditEventTypes(write.SolutionID, write.Frontend.Manifest)
+			if err != nil {
+				return err
+			}
+			if err := s.admitDeclaredAuditEventTypes(ctx, write.SolutionID, declared); err != nil {
+				return err
+			}
 		}
 		if changed {
 			revision, err := s.store.NextSolutionRegistryRevision(ctx)

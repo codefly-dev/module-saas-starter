@@ -3,6 +3,7 @@ package business
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -28,17 +29,26 @@ const (
 	CategoryOrganization AuditCategory = "organization"
 	CategoryLifecycle    AuditCategory = "lifecycle"
 	CategorySystem       AuditCategory = "system"
+	// CategorySolution groups the event types a registered solution declared in
+	// its own registration manifest (solution_audit_events.go). No code-owned
+	// type carries it.
+	CategorySolution AuditCategory = "solution"
 )
 
 // FieldKind is the declared type of one payload field. Payloads are validated
 // against these at the emit choke point; the JSON Schema projection stored in
 // audit_event_types.payload_schema is generated from the same fields.
+//
+// FieldNumber is a finite IEEE-754 double — a fraction, a score, a ratio — and
+// is the kind to declare for any value that is not a count. NaN and ±Inf are
+// rejected: no aggregate over them means anything, and jsonb cannot store them.
 type FieldKind string
 
 const (
 	FieldString      FieldKind = "string"
 	FieldUUID        FieldKind = "uuid"
 	FieldInt         FieldKind = "int"
+	FieldNumber      FieldKind = "number"
 	FieldBool        FieldKind = "bool"
 	FieldEnum        FieldKind = "enum"
 	FieldStringArray FieldKind = "string_array"
@@ -623,8 +633,16 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 	if !ok {
 		return fmt.Errorf("audit: unregistered event type %q", t)
 	}
-	fields := make(map[string]PayloadField, len(d.Fields))
-	for _, f := range d.Fields {
+	return validatePayloadFields(t, d.Fields, payload)
+}
+
+// validatePayloadFields checks a payload against one declared field set. It is
+// the single typed-field check both the code-owned catalog and a
+// solution-declared type go through, so a kind means the same thing whichever
+// registry declared it.
+func validatePayloadFields(t EventType, declared []PayloadField, payload map[string]any) error {
+	fields := make(map[string]PayloadField, len(declared))
+	for _, f := range declared {
 		fields[f.Name] = f
 	}
 	for name := range payload {
@@ -632,7 +650,7 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 			return fmt.Errorf("audit: event %q has no registered field %q", t, name)
 		}
 	}
-	for _, f := range d.Fields {
+	for _, f := range declared {
 		v, present := payload[f.Name]
 		if !present {
 			if f.Required {
@@ -670,10 +688,35 @@ func validateField(t EventType, f PayloadField, v any) error {
 		}
 		return fmt.Errorf("audit: event %q field %q value %q not in enum %v", t, f.Name, s, f.Enum)
 	case FieldInt:
-		switch v.(type) {
-		case int, int32, int64, float64:
+		switch value := v.(type) {
+		case int, int32, int64:
+		case float64:
+			// A non-finite value cannot be stored: jsonb has no NaN or ±Inf, and
+			// the audit insert would record the event with its payload dropped.
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				return fmt.Errorf("audit: event %q field %q expects a finite int", t, f.Name)
+			}
 		default:
 			return fmt.Errorf("audit: event %q field %q expects an int", t, f.Name)
+		}
+	case FieldNumber:
+		var n float64
+		switch value := v.(type) {
+		case int:
+			n = float64(value)
+		case int32:
+			n = float64(value)
+		case int64:
+			n = float64(value)
+		case float32:
+			n = float64(value)
+		case float64:
+			n = value
+		default:
+			return fmt.Errorf("audit: event %q field %q expects a number", t, f.Name)
+		}
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return fmt.Errorf("audit: event %q field %q expects a finite number", t, f.Name)
 		}
 	case FieldBool:
 		if _, ok := v.(bool); !ok {
@@ -753,6 +796,8 @@ func (d AuditEventDefinition) payloadJSONSchema() map[string]any {
 			prop["enum"] = f.Enum
 		case FieldInt:
 			prop["type"] = "integer"
+		case FieldNumber:
+			prop["type"] = "number"
 		case FieldBool:
 			prop["type"] = "boolean"
 		case FieldStringArray:

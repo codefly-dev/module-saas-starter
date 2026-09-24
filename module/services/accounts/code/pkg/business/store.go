@@ -590,6 +590,28 @@ type Store interface {
 	SaveSolutionRegistration(ctx context.Context, record *SolutionRegistration) error
 	ListSolutionRegistrations(ctx context.Context, includeTombstoned bool) ([]*SolutionRegistration, int64, error)
 
+	// Solution-declared audit event types (solution_audit_events.go). They are
+	// rows of audit_event_types owned by "solution:<id>" — the table
+	// audit_events.event_type is a foreign key into — so every method runs under
+	// WithControlPlane, which alone may write that table.
+	//
+	//   - LockAuditEventNamespace serializes admissions into one namespace for
+	//     the rest of the caller's transaction, so two solutions cannot both
+	//     observe a namespace as unowned and claim it together.
+	//   - ListAuditEventNamespaceOwners returns the distinct owners of every type
+	//     registered under a namespace, code-owned or declared.
+	//   - GetDeclaredAuditEventType returns nil when the type is absent or is not
+	//     owned by a solution.
+	//   - ListDeclaredAuditEventTypes returns every solution-declared type,
+	//     sorted by type.
+	//   - PutDeclaredAuditEventType inserts or replaces a declared type, and
+	//     refuses (ErrSolutionAuditNamespaceOwned) a row another owner holds.
+	LockAuditEventNamespace(ctx context.Context, namespace string) error
+	ListAuditEventNamespaceOwners(ctx context.Context, namespace string) ([]string, error)
+	GetDeclaredAuditEventType(ctx context.Context, eventType EventType) (*DeclaredAuditEventType, error)
+	ListDeclaredAuditEventTypes(ctx context.Context) ([]DeclaredAuditEventType, error)
+	PutDeclaredAuditEventType(ctx context.Context, declared DeclaredAuditEventType) error
+
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
 	UpsertOrgSettings(ctx context.Context, settings *OrgSettings) error

@@ -322,3 +322,135 @@ it("validates the configuration-only scoped dashboard", async () => {
 	);
 	expect(() => assertDataGraph(value)).not.toThrow();
 });
+
+// An event carrying `fields` declares a type the solution owns. These are the
+// rules the host can check without its registry; namespace ownership and the
+// additive-only rule are the registry's, at registration.
+describe("assertDataGraph — declared event types", () => {
+	const declaring = (
+		event: Record<string, unknown>,
+		extra: Record<string, unknown>[] = [],
+	): unknown => ({
+		events: [event, ...extra],
+		metrics: [],
+		dashboards: [],
+	});
+	const itemCreated = {
+		name: "item_created",
+		type: "acme.item.created",
+		description: "An item was created.",
+		fields: [
+			{ name: "stage", kind: "enum", values: ["draft", "final"] },
+			{ name: "score", kind: "number" },
+			{ name: "count", kind: "int" },
+			{ name: "owner_id", kind: "uuid" },
+			{ name: "label", kind: "string" },
+			{ name: "tags", kind: "string_array" },
+			{ name: "archived", kind: "bool" },
+		],
+	};
+
+	it("accepts a typed declaration beside events that only bind", () => {
+		expect(() =>
+			assertDataGraph(
+				declaring(itemCreated, [
+					{ name: "login", type: "saas.auth.login" },
+					{ name: "item_created_again", type: "acme.item.created" },
+					{ name: "item_closed", type: "acme.item.closed", fields: [] },
+				]),
+			),
+		).not.toThrow();
+	});
+
+	it("keeps an event without fields exactly as before", () => {
+		expect(() =>
+			assertDataGraph(declaring({ name: "viewed", type: "acme.viewed" })),
+		).not.toThrow();
+	});
+
+	const rejections: Record<string, [Record<string, unknown>, RegExp]> = {
+		"a two-segment declared type": [
+			{ ...itemCreated, type: "acme.created" },
+			/<namespace>\.<aggregate>\.<event>/,
+		],
+		"a digit-leading segment": [
+			{ ...itemCreated, type: "acme.item.1created" },
+			/<namespace>\.<aggregate>\.<event>/,
+		],
+		"an overlong declared type": [
+			{ ...itemCreated, type: `acme.item.${"x".repeat(128)}` },
+			/<namespace>\.<aggregate>\.<event>/,
+		],
+		"the reserved namespace": [
+			{ ...itemCreated, type: "saas.item.created" },
+			/reserved namespace 'saas'/,
+		],
+		"fields that are not an array": [
+			{ ...itemCreated, fields: { name: "count" } },
+			/fields must be an array/,
+		],
+		"an unknown field kind": [
+			{ ...itemCreated, fields: [{ name: "amount", kind: "decimal" }] },
+			/kind 'decimal' is unsupported/,
+		],
+		"the host-stamped field": [
+			{ ...itemCreated, fields: [{ name: "solution", kind: "string" }] },
+			/may not declare 'solution'/,
+		],
+		"a field that is not snake_case": [
+			{ ...itemCreated, fields: [{ name: "Amount", kind: "int" }] },
+			/must be lowercase snake_case/,
+		],
+		"a duplicate field": [
+			{
+				...itemCreated,
+				fields: [
+					{ name: "count", kind: "int" },
+					{ name: "count", kind: "number" },
+				],
+			},
+			/field 'count' is declared more than once/,
+		],
+		"an enum without values": [
+			{ ...itemCreated, fields: [{ name: "stage", kind: "enum" }] },
+			/must list between 1 and/,
+		],
+		"an enum repeating a value": [
+			{
+				...itemCreated,
+				fields: [{ name: "stage", kind: "enum", values: ["a", "a"] }],
+			},
+			/value 'a' is declared more than once/,
+		],
+		"values on a non-enum": [
+			{
+				...itemCreated,
+				fields: [{ name: "count", kind: "int", values: ["1"] }],
+			},
+			/declares values but is not an enum/,
+		],
+		"an unknown key on a field": [
+			{
+				...itemCreated,
+				fields: [{ name: "count", kind: "int", required: true }],
+			},
+			/unknown field 'required'/,
+		],
+	};
+	it.each(Object.keys(rejections))("rejects %s", (name) => {
+		const [event, message] = rejections[name];
+		expect(() => assertDataGraph(declaring(event))).toThrow(message);
+	});
+
+	it("rejects a type declared twice", () => {
+		expect(() =>
+			assertDataGraph(
+				declaring(itemCreated, [
+					{ name: "item_created_twice", type: "acme.item.created", fields: [] },
+				]),
+			),
+		).toThrow(
+			/declared event type 'acme.item.created' is declared more than once/,
+		);
+	});
+});

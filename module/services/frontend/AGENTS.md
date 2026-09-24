@@ -15,8 +15,16 @@ manifest — `id`, `nav`, `frontend.manifestUrl` + `exposedModule`, optional
 gateway** (`POST /solutions/_frontend`).
 
 The route **relays the registry's own answer**: `409` for a revision conflict,
-`403` when the id belongs to another publisher, `503` when the registry cannot be
-reached. A registrant is never told it is serving when it is not. Re-registering
+`403` when the id belongs to another publisher, `422` (`registration_rejected`)
+when the registry will not admit the manifest, `503` when the registry cannot be
+reached. A registrant is never told it is serving when it is not.
+
+A dashboard event carrying `fields` declares an audit event type the solution
+owns (`packages/saas-plugin-manifest/src/data-graph.ts`). `assertDataGraph`
+checks its shape here; accounts admits it into the audit registry in the same
+write as the frontend half, and refuses the write — the `422` above — when the
+namespace belongs to another producer or a changed field set drops or retypes
+an admitted field. Re-registering
 a deregistered solution requires an explicit `reactivate: true`. The frontend
 additionally enforces the declared runtime compatibility requirements before
 activating a remote.

@@ -251,6 +251,74 @@ describe("solutions register route auth", () => {
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(403);
 	});
 
+	it("relays a refused declaration as a manifest to change, not an outage", async () => {
+		// The registry answers 400 when the audit catalog will not admit the
+		// event types a manifest declares — a namespace another solution owns,
+		// a field an earlier declaration admitted and this one drops. Retrying
+		// the same manifest can never succeed, so it is 422, never 503.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("invalid registration", { status: 400 })),
+		);
+		const res = await POST(postRequest(manifestBody(), TOKEN));
+		expect(res.status).toBe(422);
+		await expect(res.json()).resolves.toEqual({
+			error: "registration_rejected",
+		});
+	});
+
+	it("forwards declared audit event types verbatim for the registry to admit", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const gateway = fakeGateway();
+		vi.stubGlobal("fetch", gateway);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [
+				{
+					name: "item_created",
+					type: "acme.item.created",
+					fields: [
+						{ name: "score", kind: "number" },
+						{ name: "stage", kind: "enum", values: ["draft", "final"] },
+					],
+				},
+			],
+			metrics: [],
+			dashboards: [],
+		};
+		const res = await POST(postRequest(body, TOKEN));
+		expect(res.status).toBe(200);
+		const write = gateway.mock.calls.find(
+			([input]) => new URL(String(input)).pathname === "/solutions/_frontend",
+		);
+		const sent = JSON.parse(String(write?.[1]?.body));
+		expect(JSON.parse(sent.manifest).dashboard.events[0].fields).toEqual([
+			{ name: "score", kind: "number" },
+			{ name: "stage", kind: "enum", values: ["draft", "final"] },
+		]);
+	});
+
+	it("refuses a malformed declaration before any registry write", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const gateway = fakeGateway();
+		vi.stubGlobal("fetch", gateway);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [{ name: "e", type: "saas.item.created", fields: [] }],
+			metrics: [],
+			dashboards: [],
+		};
+		const res = await POST(postRequest(body, TOKEN));
+		expect(res.status).toBe(422);
+		expect(
+			gateway.mock.calls.some(
+				([input]) =>
+					new URL(String(input)).pathname === "/solutions/_frontend",
+			),
+		).toBe(false);
+	});
+
 	it("reports a registry outage instead of a phantom success", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		vi.stubGlobal(
