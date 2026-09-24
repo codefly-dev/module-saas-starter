@@ -105,6 +105,12 @@ undeclared prefix, the same tenant existence check — and the request adds only
   service that decides from the token alone. Removing a binding's
   `headless_scopes` stops the next mint; an issued child outlives it by at most
   a minute.
+- It is sealed with a non-zero authorization revision — a digest of the module's
+  whole `MODULE_PRINCIPALS` entry — and `CheckAuthorizationRevision` confirms it
+  from that declaration rather than the database: owner a declared module
+  principal, its declared tenant, the current entry's digest, only the module
+  principal as subject, scopes within one binding's `headless_scopes`. Anything
+  else is `PermissionDenied`. Changing the entry revokes outstanding contexts.
 - `saas.module.operation_context_minted` records every issuance with the
   binding, audience and each granted `kind:action[:resource]`, written after the
   capability exists and withholding it when the record cannot be committed.
