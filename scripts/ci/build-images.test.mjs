@@ -228,9 +228,16 @@ test('a real build record pins the elapsed field the export parser strips',
       assert.ok(timed.length, 'BuildKit should time the export of a 64MB layer');
       for (const field of timed) assert.match(field, /^ \d+\.\d+s$/);
 
+      // The real line may already carry the field — that is exactly the loaded
+      // runner this test exists for — so take it back to its untimed form before
+      // splicing a real token on. Appending to an already-timed line built
+      // `naming to <ref> 0.0s 0.0s done`, which BuildKit never prints, and failed
+      // this test precisely when the field it pins was present.
       const naming = log.match(/^#\d+ naming to .+$/m)[0];
+      const untimed = naming.replace(/ \d+\.\d+s( done)?$/, '$1');
       assert.deepEqual(buildImages(`${naming}\n`), [image]);
-      assert.deepEqual(buildImages(`${naming.replace(/( done)?$/, `${timed[0]}$1`)}\n`), [image]);
+      assert.deepEqual(buildImages(`${untimed}\n`), [image]);
+      assert.deepEqual(buildImages(`${untimed.replace(/( done)?$/, `${timed[0]}$1`)}\n`), [image]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       spawnSync('docker', ['image', 'rm', image], { stdio: 'ignore' });

@@ -136,9 +136,14 @@ process.stdout.write(JSON.stringify({ providerAccepted }));
 process.exit(0);`,
 			{
 				env: {
-					ERROR_TRACKING_MODE: "sentry",
+					// The deployment's error-tracking group, as Codefly injects it.
+					// Set explicitly: a test run under Codefly inherits the local
+					// group, which disables tracking.
+					CODEFLY__WORKSPACE_CONFIGURATION__ERROR_TRACKING__ERROR_TRACKING_MODE:
+						"sentry",
+					CODEFLY__WORKSPACE_SECRET_CONFIGURATION__ERROR_TRACKING__SENTRY_DSN:
+						"https://public@example.invalid/1",
 					NEXT_RUNTIME: "nodejs",
-					SENTRY_DSN: "https://public@example.invalid/1",
 					// register() gates server startup on the product API gateway, and
 					// this runtime is outside the module graph.
 					PRODUCT_GATEWAY_INTERNAL: "http://auth-gateway.example.invalid",
@@ -147,6 +152,30 @@ process.exit(0);`,
 		);
 
 		expect(JSON.parse(output)).toEqual({ providerAccepted: true });
+	}, 15_000);
+
+	it("takes server error tracking from the group alone when the group sets it", () => {
+		// A mode from the group and a DSN from a stray process variable is a
+		// configuration nobody wrote; mixing them refused to boot.
+		const instrumentation = JSON.stringify(
+			pathToFileURL(join(codeDir, "instrumentation.ts")).href,
+		);
+		const output = runIsolatedRuntime(
+			`await import(${instrumentation}).then((module) => module.register());
+process.stdout.write(JSON.stringify({ booted: true }));
+process.exit(0);`,
+			{
+				env: {
+					CODEFLY__WORKSPACE_CONFIGURATION__ERROR_TRACKING__ERROR_TRACKING_MODE:
+						"disabled",
+					SENTRY_DSN: "https://public@example.invalid/1",
+					NEXT_RUNTIME: "nodejs",
+					PRODUCT_GATEWAY_INTERNAL: "http://auth-gateway.example.invalid",
+				},
+			},
+		);
+
+		expect(JSON.parse(output)).toEqual({ booted: true });
 	}, 15_000);
 
 	it("leaves Edge OpenTelemetry available to the designated APM owner", () => {
@@ -194,6 +223,11 @@ const globals = {
 for (const [name, value] of Object.entries(globals)) {
   Object.defineProperty(globalThis, name, { configurable: true, value, writable: true });
 }
+// The root layout publishes the error-tracking group it read for the request.
+const meta = browser.document.createElement("meta");
+meta.setAttribute("name", "codefly-error-tracking");
+meta.setAttribute("content", JSON.stringify({ mode: "sentry", dsn: "https://public@example.invalid/1" }));
+browser.document.head.appendChild(meta);
 await import(${instrumentation});
 const Sentry = await import("@sentry/nextjs");
 const client = Sentry.getClient();
@@ -206,13 +240,7 @@ process.stdout.write(JSON.stringify({
 await Sentry.close(0);
 browser.close();
 process.exit(0);`,
-			{
-				condition: "browser",
-				env: {
-					NEXT_PUBLIC_ERROR_TRACKING_MODE: "sentry",
-					NEXT_PUBLIC_SENTRY_DSN: "https://public@example.invalid/1",
-				},
-			},
+			{ condition: "browser", env: {} },
 		);
 
 		expect(JSON.parse(output)).toEqual({

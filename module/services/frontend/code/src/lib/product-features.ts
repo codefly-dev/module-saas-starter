@@ -1,15 +1,16 @@
-/** Product presentation switches, not authorization or entitlement bypasses. */
-export const productFeatures = {
-	subscriptions: process.env.NEXT_PUBLIC_ENABLE_SUBSCRIPTIONS === "true",
-	sso: process.env.NEXT_PUBLIC_ENABLE_SSO === "true",
-	entitlements: process.env.NEXT_PUBLIC_ENABLE_ENTITLEMENTS === "true",
-};
+import type { ProductFeatures } from "./public-runtime-config";
 
-export type ProductFeature = keyof typeof productFeatures;
+export type { ProductFeature, ProductFeatures } from "./public-runtime-config";
 
+/**
+ * Whether an optional product surface is presented. The switches are the
+ * deployment's `product-features` group, read per request (see
+ * readPublicRuntimeConfig) — a presentation choice, never an authorization or
+ * entitlement bypass.
+ */
 export function isProductRouteEnabled(
 	path: string,
-	features = productFeatures,
+	features: ProductFeatures,
 ): boolean {
 	if (path === "/admin/entitlements" || path.startsWith("/admin/entitlements/"))
 		return features.entitlements;

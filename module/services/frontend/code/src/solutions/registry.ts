@@ -154,12 +154,40 @@ function isSafeAbsolutePath(path: string): boolean {
 }
 
 /**
+ * The same-origin base through which this host serves one solution's backend:
+ * the solution proxy route (`app/api/solutions/[id]/proxy/[...path]`), which
+ * forwards to the gateway's `/solutions/{alias}/…` passthrough — and that
+ * passthrough serves `/assets` and `/.well-known` without a bearer precisely so a
+ * browser can load a remote from here.
+ */
+export function solutionProxyBase(id: string): string {
+	return `/api/solutions/${encodeURIComponent(id)}/proxy`;
+}
+
+/**
  * A manifest URL is handed to the Module Federation runtime, which fetches and
- * executes the script it points at inside the host origin. It must be an
- * absolute http(s) URL with no embedded credentials — never a relative,
- * `javascript:`, `data:`, or `file:` value.
+ * executes the script it points at inside the host origin. It is one of:
+ *
+ * - an absolute http(s) URL with no embedded credentials: a remote served from
+ *   an origin the BROWSER can reach, loaded from there;
+ * - a root-relative path on the solution's own backend (`/assets/…`): the host
+ *   serves it same-origin through the solution proxy, so the registrant never
+ *   has to know an address the browser can reach — which a pod cannot know,
+ *   and which a `localhost` default gets wrong in every deployment.
+ *
+ * Never a protocol-relative, `javascript:`, `data:`, or `file:` value, and never
+ * a path that climbs out of the solution's own namespace.
  */
 function isSafeManifestUrl(value: string): boolean {
+	if (value.startsWith("/")) {
+		return (
+			isSafeAbsolutePath(value) &&
+			!value
+				.split(/[?#]/, 1)[0]
+				.split("/")
+				.some((segment) => segment === ".." || segment === ".")
+		);
+	}
 	try {
 		const parsed = new URL(value);
 		return (
@@ -170,6 +198,28 @@ function isSafeManifestUrl(value: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Where the browser loads a registered remote's manifest from. An absolute URL
+ * is used as registered; a root-relative one is a path on the solution's backend
+ * and is served through this host's own origin (see solutionProxyBase), so
+ * `'self'` covers it in the CSP and nothing pod-local ever reaches a browser.
+ *
+ * A path already under this solution's proxy base is taken as is, so a
+ * registrant that spells the host-served form out lands on the same URL.
+ */
+export function browserManifestUrl(
+	manifest: Pick<SolutionManifest, "id" | "frontend">,
+): string {
+	const registered = manifest.frontend.manifestUrl;
+	if (!registered.startsWith("/")) {
+		return registered;
+	}
+	const base = solutionProxyBase(manifest.id);
+	return registered.startsWith(`${base}/`)
+		? registered
+		: `${base}${registered}`;
 }
 
 /**
@@ -598,6 +648,7 @@ export function navProjection(manifest: SolutionManifest): SolutionNav {
 export function surfacesProjection(
 	manifest: SolutionManifest,
 	client: string,
+	hostOrigin?: string,
 ): SolutionClientSurfaces | null {
 	const surfaces = (manifest.surfaces ?? []).filter(
 		(surface) => surface.client === client,
@@ -605,6 +656,17 @@ export function surfacesProjection(
 	if (surfaces.length === 0) {
 		return null;
 	}
+	// A solution served through this host has no origin of its own a client can
+	// reach: its modules are paths on its backend, which this host serves under
+	// the solution's proxy base. Without the host's own origin there is nothing
+	// to resolve them against, so the solution is left out rather than answered
+	// with an address that cannot work.
+	const servedByHost = manifest.frontend.manifestUrl.startsWith("/");
+	if (servedByHost && !hostOrigin) {
+		return null;
+	}
+	const modulePath = (module: string) =>
+		servedByHost ? `${solutionProxyBase(manifest.id)}${module}` : module;
 	return {
 		id: manifest.id,
 		title: manifest.nav.title,
@@ -613,13 +675,16 @@ export function surfacesProjection(
 		// here the way the manifest path is: the client fetches the module from
 		// it directly, and every signed-in document already carries it in the
 		// CSP that admits the same origin's code.
-		origin: new URL(manifest.frontend.manifestUrl).origin,
+		origin: servedByHost
+			? (hostOrigin as string)
+			: new URL(manifest.frontend.manifestUrl).origin,
 		// A shallow copy would share `applies.tagged` and `events` with the
 		// cached snapshot, which outlives this response and is read by every
 		// later caller — including other client kinds, which read the same
 		// manifest objects.
 		surfaces: surfaces.map((surface) => ({
 			...surface,
+			module: modulePath(surface.module),
 			applies:
 				typeof surface.applies === "object"
 					? { tagged: [...surface.applies.tagged] }

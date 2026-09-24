@@ -12,6 +12,7 @@ import {
 } from "@/gen/saas/accounts/v1/waitlist_pb";
 import { apiTransport } from "@/lib/connect/transport";
 import { configuredAbuseProtection } from "@/lib/abuse-protection";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 import {
 	Button,
 	Card,
@@ -37,9 +38,10 @@ export function WaitlistPage() {
 	const [policyVersion, setPolicyVersion] = useState("");
 	const [turnstileToken, setTurnstileToken] = useState("");
 	const [turnstileAttempt, setTurnstileAttempt] = useState(0);
+	const runtimeConfig = usePublicRuntimeConfig();
 	const abuseProtection = configuredAbuseProtection(
-		process.env.NEXT_PUBLIC_ABUSE_PROTECTION_MODE,
-		process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+		runtimeConfig.abuseProtection.mode,
+		runtimeConfig.abuseProtection.siteKey,
 	);
 	const updateTurnstileToken = useCallback((token: string) => {
 		setTurnstileToken(token);

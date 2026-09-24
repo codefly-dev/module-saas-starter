@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -162,6 +163,19 @@ func (v *VaultClient) DecryptSecret(ctx context.Context, purpose, envelope strin
 }
 
 func (v *VaultClient) request(ctx context.Context, method, path, body string) (map[string]interface{}, error) {
+	data, err := v.requestOnce(ctx, method, path, body)
+	var refused *vaultHTTPError
+	if v.connection != nil && errors.As(err, &refused) && refused.status == http.StatusForbidden {
+		// Vault refused the token itself (revoked, or its lease ended early):
+		// a Kubernetes-auth connection logs in again and this call is retried
+		// once. A second refusal is a policy answer and is returned as is.
+		v.connection.Invalidate()
+		return v.requestOnce(ctx, method, path, body)
+	}
+	return data, err
+}
+
+func (v *VaultClient) requestOnce(ctx context.Context, method, path, body string) (map[string]interface{}, error) {
 	var bodyReader io.Reader
 	if body != "" {
 		bodyReader = strings.NewReader(body)

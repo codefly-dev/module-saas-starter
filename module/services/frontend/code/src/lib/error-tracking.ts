@@ -26,3 +26,36 @@ export function configuredErrorTracking(
 	}
 	return { enabled: true, dsn: normalizedDSN };
 }
+
+/**
+ * Name of the `<meta>` the root layout renders with the deployment's browser
+ * error-tracking configuration. instrumentation-client.ts runs before React, so
+ * it cannot be handed a prop; it reads this instead — the value the server read
+ * from the `error-tracking` group for this request, not one inlined at build.
+ */
+export const ERROR_TRACKING_META_NAME = "codefly-error-tracking";
+
+export interface BrowserErrorTrackingConfig {
+	mode?: string;
+	dsn?: string;
+	environment?: string;
+	sendDefaultPii?: boolean;
+}
+
+/** The configuration the root layout published, or none (tracking off). */
+export function readBrowserErrorTrackingConfig(
+	doc: Pick<Document, "querySelector">,
+): BrowserErrorTrackingConfig {
+	const content = doc
+		.querySelector(`meta[name="${ERROR_TRACKING_META_NAME}"]`)
+		?.getAttribute("content");
+	if (!content) return {};
+	try {
+		const parsed = JSON.parse(content) as unknown;
+		return typeof parsed === "object" && parsed !== null
+			? (parsed as BrowserErrorTrackingConfig)
+			: {};
+	} catch {
+		return {};
+	}
+}

@@ -114,3 +114,17 @@ func TestProjectionPermissionsAndContents(t *testing.T) {
 		t.Fatal("multiline token accepted")
 	}
 }
+
+func TestCleartextOnlyToLoopbackUnlessAsserted(t *testing.T) {
+	if _, err := New(Config{Address: "http://vault.example.internal:8200", Token: "fixture"}); err == nil {
+		t.Fatal("cleartext to a non-loopback Vault accepted without the operator's assertion")
+	}
+	if _, err := New(Config{Address: "http://vault.example.internal:8200", Token: "fixture", AllowInsecureHTTP: true}); err != nil {
+		t.Fatalf("asserted out-of-band protection refused: %v", err)
+	}
+	for _, address := range []string{"http://localhost:8200", "http://127.0.0.1:8200", "http://[::1]:8200"} {
+		if _, err := New(Config{Address: address, Token: "fixture"}); err != nil {
+			t.Fatalf("loopback %s refused: %v", address, err)
+		}
+	}
+}

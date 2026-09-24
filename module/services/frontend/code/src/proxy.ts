@@ -22,8 +22,12 @@ import {
 	expectedInternalToken,
 	INTERNAL_TOKEN_HEADER,
 } from "@/lib/internal-token";
+import { getWorkspaceConfiguration } from "codefly";
 import { resolveAccountsBindings } from "../server/accounts-bindings.mjs";
-import { contentSecurityPolicyFromInputs } from "../server/security-headers.mjs";
+import {
+	contentSecurityPolicyFromInputs,
+	resolveRuntimeCspInputs,
+} from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
@@ -159,6 +163,35 @@ function baselineCspInputs(): {
 	return JSON.parse(snapshot);
 }
 
+let reportedRuntimeCspInputs = "";
+
+// The analytics origin and Turnstile, from the deployment's groups on THIS
+// request: the root layout reads the same groups for the client, so the policy
+// admits exactly what the document's code calls. The build-time snapshot's
+// values for these two are always empty in a deployed image and are not used.
+// A malformed analytics host is reported (once per distinct message) and left
+// out, so one bad value narrows the policy rather than failing every document.
+function runtimeCspInputs(): {
+	analyticsOrigin: string | null;
+	turnstile: boolean;
+} {
+	const read = (group: string, key: string) =>
+		getWorkspaceConfiguration(group, key);
+	try {
+		return resolveRuntimeCspInputs(read);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message !== reportedRuntimeCspInputs) {
+			reportedRuntimeCspInputs = message;
+			console.error(`CSP: ignoring the analytics origin: ${message}`);
+		}
+		const turnstile = resolveRuntimeCspInputs((group, key) =>
+			group === "product-analytics" ? undefined : read(group, key),
+		).turnstile;
+		return { analyticsOrigin: null, turnstile };
+	}
+}
+
 // A browser enforces the CSP of the DOCUMENT that is executing. Every
 // subresource, XHR, Connect RPC and RSC payload fetch runs under the policy of
 // the document that issued it and never carries one of its own, so deriving the
@@ -235,6 +268,9 @@ function reportListingRecovered(): void {
 }
 
 /** Origin of an absolute http(s) URL, or null for anything unparseable. */
+// A root-relative manifest is a path on the solution's backend that this host
+// serves same-origin (browserManifestUrl in src/solutions/registry.ts), which
+// 'self' already admits: it parses to no origin here and adds none.
 function manifestOrigin(value: unknown): string | null {
 	if (typeof value !== "string") {
 		return null;
@@ -427,7 +463,7 @@ async function contentSecurityPolicyFor(
 	nonce: string,
 	internalToken: string | null,
 ): Promise<string> {
-	const inputs = baselineCspInputs();
+	const inputs = { ...baselineCspInputs(), ...runtimeCspInputs() };
 	const csp = contentSecurityPolicyFromInputs(
 		inputs,
 		await registeredSolutionOrigins(req, pathname, internalToken),

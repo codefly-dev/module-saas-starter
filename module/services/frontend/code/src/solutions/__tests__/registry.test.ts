@@ -14,6 +14,7 @@ const { getEndpoints, getWorkspaceSecret } = vi.hoisted(() => ({
 vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
 
 import {
+  browserManifestUrl,
   findSolution,
   loadSolutions,
   parseManifest,
@@ -68,9 +69,14 @@ describe("parseManifest", () => {
     }
   });
 
-  it("rejects a manifest URL that is not an absolute http(s) URL", () => {
+  it("rejects a manifest URL that is neither absolute http(s) nor a backend path", () => {
     for (const manifestUrl of [
-      "/relative/mf-manifest.json",
+      "relative/mf-manifest.json", // neither absolute nor root-relative
+      "//evil.example/mf-manifest.json", // protocol-relative: another origin
+      "/assets/../api/internal/solutions", // climbs out of the solution
+      "/./assets/mf-manifest.json",
+      "/assets/mf manifest.json", // whitespace
+      "/assets\\mf-manifest.json", // backslash
       "javascript:alert(1)",
       "data:text/javascript,alert(1)",
       "file:///etc/passwd",
@@ -286,6 +292,48 @@ describe("parseManifest client surfaces", () => {
         }),
       ),
     ).not.toBeNull();
+  });
+});
+
+describe("browserManifestUrl", () => {
+  function withManifestUrl(manifestUrl: string) {
+    const manifest = baseManifest();
+    (manifest.frontend as Record<string, unknown>).manifestUrl = manifestUrl;
+    const parsed = parseManifest(manifest);
+    if (parsed === null) throw new Error(`${manifestUrl} must parse`);
+    return parsed;
+  }
+
+  it("serves a backend-relative manifest through this host's own origin", () => {
+    // A pod cannot know an address the browser reaches; its backend path it
+    // does know, and the host serves that same-origin through the proxy.
+    expect(browserManifestUrl(withManifestUrl("/assets/mf-manifest.json"))).toBe(
+      "/api/solutions/audit/proxy/assets/mf-manifest.json",
+    );
+  });
+
+  it("takes the host-served form as registered", () => {
+    expect(
+      browserManifestUrl(
+        withManifestUrl("/api/solutions/audit/proxy/assets/mf-manifest.json"),
+      ),
+    ).toBe("/api/solutions/audit/proxy/assets/mf-manifest.json");
+  });
+
+  it("does not let one solution's path borrow another's proxy base", () => {
+    expect(
+      browserManifestUrl(
+        withManifestUrl("/api/solutions/other/proxy/assets/mf-manifest.json"),
+      ),
+    ).toBe(
+      "/api/solutions/audit/proxy/api/solutions/other/proxy/assets/mf-manifest.json",
+    );
+  });
+
+  it("loads an absolute manifest from where it was registered", () => {
+    expect(
+      browserManifestUrl(withManifestUrl("https://cdn.example/mf-manifest.json")),
+    ).toBe("https://cdn.example/mf-manifest.json");
   });
 });
 
@@ -695,5 +743,37 @@ describe("registry snapshot", () => {
       ok: true,
       revision: 4,
     });
+  });
+});
+
+describe("surfacesProjection for a solution served through the host", () => {
+  const manifest = (() => {
+    const candidate = baseManifest({
+      surfaces: [
+        {
+          id: "footnote",
+          client: "word",
+          title: "Footnote",
+          module: "/assets/surfaces/footnote.js",
+          contract: 1,
+        },
+      ],
+    });
+    (candidate.frontend as Record<string, unknown>).manifestUrl =
+      "/assets/mf-manifest.json";
+    const parsed = parseManifest(candidate);
+    if (parsed === null) throw new Error("fixture manifest must parse");
+    return parsed;
+  })();
+
+  it("resolves modules against this host's origin, under the solution's proxy", () => {
+    expect(surfacesProjection(manifest, "word", "https://app.example")).toMatchObject({
+      origin: "https://app.example",
+      surfaces: [{ module: "/api/solutions/audit/proxy/assets/surfaces/footnote.js" }],
+    });
+  });
+
+  it("leaves the solution out when there is no host origin to resolve against", () => {
+    expect(surfacesProjection(manifest, "word")).toBeNull();
   });
 });

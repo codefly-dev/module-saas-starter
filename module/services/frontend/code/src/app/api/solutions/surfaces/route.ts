@@ -1,3 +1,4 @@
+import { requestPublicOrigin } from "@/lib/public-origin";
 import {
 	isClientKind,
 	loadSolutions,
@@ -45,9 +46,12 @@ export async function GET(request: Request): Promise<Response> {
 	if (registered === "unavailable") {
 		return Response.json({ error: "registry_unavailable" }, { status: 503 });
 	}
+	// A solution served through this host resolves its modules against this
+	// host's own public origin (see surfacesProjection).
+	const hostOrigin = requestPublicOrigin(request);
 	return Response.json({
 		solutions: registered
-			.map((manifest) => surfacesProjection(manifest, client))
+			.map((manifest) => surfacesProjection(manifest, client, hostOrigin))
 			.filter((projected) => projected !== null),
 	});
 }

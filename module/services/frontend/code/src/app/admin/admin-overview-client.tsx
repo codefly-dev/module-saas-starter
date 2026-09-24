@@ -7,16 +7,19 @@ import { useAuth } from "@/lib/auth";
 import { getNavigationIcon } from "@/lib/navigation-icons";
 import { groupNavigation, selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 
 export default function AdminOverviewClient() {
 	const config = useFrontendConfig();
 	const { isAuthenticated, platformRole, orgRole } = useAuth();
+	const { productFeatures } = usePublicRuntimeConfig();
 	const groups = groupNavigation(
-		selectNavigation(config, "plugin_registry", {
-			isAuthenticated,
-			platformRole,
-			orgRole,
-		}),
+		selectNavigation(
+			config,
+			"plugin_registry",
+			{ isAuthenticated, platformRole, orgRole },
+			productFeatures,
+		),
 	);
 
 	return (

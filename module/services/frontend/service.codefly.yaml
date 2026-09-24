@@ -16,6 +16,7 @@ workspace-configuration-dependencies:
     - internal-auth
     - legal
     - product-analytics
+    - product-features
 endpoints:
     - name: http
       visibility: public

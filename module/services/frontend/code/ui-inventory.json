@@ -5,7 +5,7 @@
 	"families": [
 		{
 			"source": "src/components/optional-product-feature.tsx",
-			"imports": ["next/link","react","@/lib/product-features"],
+			"imports": ["next/link","react","@/lib/product-features","@/lib/public-runtime-config-provider"],
 			"owner": "host",
 			"disposition": "keep feature-local",
 			"reason": "Default-hidden product screens without mounting API consumers.",
@@ -1598,7 +1598,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/page.tsx",
-			"imports": ["lucide-react", "next/link", "@/shared/ui"],
+			"imports": ["lucide-react", "next/link", "@/lib/product-features", "@/lib/read-public-runtime-config", "@/shared/ui"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1707,6 +1707,26 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/app/not-found.tsx",
+			"imports": ["lucide-react", "next/link", "@/components/empty-state", "@/shared/ui"],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
+			"source": "src/app/(dashboard)/s/[solutionId]/not-found.tsx",
+			"imports": ["lucide-react", "next/link", "@/components/empty-state", "@/shared/ui"],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/app/global-error.tsx",
 			"imports": ["@sentry/nextjs", "next/error", "react"],
 			"owner": "SaaS application",
@@ -1733,7 +1753,11 @@
 				"next/headers",
 				"@/components/consent-banner",
 				"@/lib/appearance",
+				"@/lib/error-tracking",
+				"@/lib/legal-config",
+				"@/lib/legal-content",
 				"@/lib/providers",
+				"@/lib/read-public-runtime-config",
 				"@/lib/skin",
 				"../../frontend.config"
 			],
@@ -2092,7 +2116,7 @@
 		},
 		{
 			"source": "src/components/turnstile-widget.tsx",
-			"imports": ["react", "@/lib/abuse-protection"],
+			"imports": ["react", "@/lib/abuse-protection", "@/lib/public-runtime-config-provider"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
@@ -2761,10 +2785,12 @@
 			"imports": [
 				"@codefly-dev/saas-ui",
 				"lucide-react",
+				"react",
 				"sonner",
 				"@/components/empty-state",
 				"@/components/org-selector",
 				"@/lib/auth",
+				"@/lib/public-runtime-config-provider",
 				"./datasource-client"
 			],
 			"owner": "SaaS application",

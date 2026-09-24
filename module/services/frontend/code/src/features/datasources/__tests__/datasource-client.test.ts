@@ -1,14 +1,12 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { datasourceClient } from "../datasource-client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDatasourceClient } from "../datasource-client";
 
 // The composition declares which permission resource its collection content is
 // governed by; the host has no noun of its own to fall back on. A generic stand-in
 // is enough here — these tests assert the value is threaded, not what it is.
 const CONTENT_RESOURCE = "example-records";
 
-beforeAll(() => {
-	process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = CONTENT_RESOURCE;
-});
+const datasourceClient = createDatasourceClient(CONTENT_RESOURCE);
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -133,23 +131,23 @@ it("propagates permission-service failure rather than reporting no grants", asyn
 it("leaves read access unresolved when the composition declares no content resource", async () => {
  // An empty scope list would state that the viewer is refused; with no declared
  // resource there is no question to ask, so the lookup rejects instead.
- const previous = process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
- delete process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
- try {
-  await expect(datasourceClient.listAccessibleScopes!("org-1")).rejects.toThrow(/no collection content resource is declared/);
- } finally {
-  process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = previous;
- }
+ await expect(createDatasourceClient(undefined).listAccessibleScopes!("org-1")).rejects.toThrow(/no collection content resource is declared/);
 });
 
 it("refuses to grant when the composition declares no content resource", async () => {
- const previous = process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
- delete process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
+ await expect(
+  createDatasourceClient(undefined).grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"}),
+ ).rejects.toThrow(/no collection content resource is declared/);
+});
+
+it("ignores a content resource inlined into the build", async () => {
+ // The declaration arrives from the deployment's configuration at request
+ // time; a build-time variable is empty in every deployed image and must not
+ // decide what this client asks.
+ process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = "from-the-build";
  try {
-  await expect(
-   datasourceClient.grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"}),
-  ).rejects.toThrow(/no collection content resource is declared/);
+  await expect(createDatasourceClient(undefined).listAccessibleScopes!("org-1")).rejects.toThrow(/no collection content resource is declared/);
  } finally {
-  process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = previous;
+  delete process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
  }
 });

@@ -5,6 +5,8 @@ import { appearanceStyleProperties } from "@/lib/appearance";
 import { legalContentConfigured } from "@/lib/legal-config";
 import { readLegalContent } from "@/lib/legal-content";
 import { Providers } from "@/lib/providers";
+import { ERROR_TRACKING_META_NAME } from "@/lib/error-tracking";
+import { readPublicRuntimeConfig } from "@/lib/read-public-runtime-config";
 import { resolveSkin, shouldResolveHost, sourcesFromEnv } from "@/lib/skin";
 import "./fonts";
 import "./globals.css";
@@ -47,6 +49,7 @@ export default async function RootLayout({
 }) {
 	const skin = await currentSkin();
 	const legalConfigured = legalContentConfigured(await readLegalContent());
+	const publicRuntimeConfig = await readPublicRuntimeConfig();
 	return (
 		<html
 			lang="en"
@@ -55,7 +58,15 @@ export default async function RootLayout({
 			style={appearanceStyleProperties(skin.appearance)}
 		>
 			<body className="antialiased">
+				{/* The browser error-tracking SDK initializes before React does
+				    (instrumentation-client.ts), so it cannot take a prop: it
+				    reads this deployment's configuration from here instead. */}
+				<meta
+					name={ERROR_TRACKING_META_NAME}
+					content={JSON.stringify(publicRuntimeConfig.errorTracking)}
+				/>
 				<Providers
+					publicRuntimeConfig={publicRuntimeConfig}
 					frontendConfig={{
 						...frontendConfig,
 						branding: skin.branding,

@@ -2,6 +2,7 @@ import { getEndpoints } from "codefly";
 
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
+import { requestPublicOrigin } from "@/lib/public-origin";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -12,24 +13,6 @@ const MAX_RESUME_BYTES = 1024;
 
 interface RouteContext {
 	params: Promise<{ id: string; path?: string[] }>;
-}
-
-// The public browser origin, preferring the ingress-set forwarded pair over the
-// pod-local request URL — the same resolution src/proxy.ts uses, because behind
-// a TLS-terminating ingress the pod sees plaintext `http` and its own host.
-function callerOrigin(request: Request): string {
-	const url = new URL(request.url);
-	const forwardedProto = request.headers
-		.get("x-forwarded-proto")
-		?.split(",")[0]
-		?.trim();
-	const forwardedHost = request.headers
-		.get("x-forwarded-host")
-		?.split(",")[0]
-		?.trim();
-	const protocol = forwardedProto ? `${forwardedProto}:` : url.protocol;
-	const host = forwardedHost || url.host;
-	return `${protocol}//${host}`;
 }
 
 // This route forwards the caller's cookies to the gateway under a trusted
@@ -134,7 +117,9 @@ async function handler(
 	// First-party trust headers, resolved server-side from Codefly config — the
 	// gateway rejects solution traffic that lacks them even with a valid user
 	// identity. Set from a fresh Headers so a caller can never spoof them.
-	const gatewayContext = resolveCodeflyGatewayContext(callerOrigin(request));
+	const gatewayContext = resolveCodeflyGatewayContext(
+		requestPublicOrigin(request),
+	);
 	if (gatewayContext) {
 		headers.set(INTERNAL_TOKEN_HEADER, gatewayContext.internalToken);
 		headers.set(PUBLIC_ORIGIN_HEADER, gatewayContext.publicOrigin);

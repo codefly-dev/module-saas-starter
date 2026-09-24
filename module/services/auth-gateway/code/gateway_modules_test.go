@@ -774,6 +774,25 @@ func TestGateway_ModuleRegistrationToken_UnavailableAuthority(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, w.Code)
 }
 
+// An issuer that cannot be reached is neither a refusal nor a broken issuer: it
+// is transient, and the answer has to say so, or a module reads a restarting
+// accounts as a secret it must re-provision.
+func TestGateway_ModuleRegistrationToken_UnreachableAuthorityIsRetryable(t *testing.T) {
+	for _, code := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded} {
+		t.Run(code.String(), func(t *testing.T) {
+			gw, mint, _ := newExchangeHarness(t)
+			mint.code = code
+
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+
+			require.Equal(t, http.StatusServiceUnavailable, w.Code)
+			require.NotEmpty(t, w.Header().Get("Retry-After"))
+			require.Contains(t, w.Body.String(), "unavailable")
+		})
+	}
+}
+
 func TestGateway_ModuleRegistrationToken_MethodNotAllowed(t *testing.T) {
 	gw, _, _ := newExchangeHarness(t)
 

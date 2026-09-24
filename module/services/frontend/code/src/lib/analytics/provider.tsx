@@ -9,6 +9,7 @@ import {
 	useRef,
 } from "react";
 import { useAuth } from "@/lib/auth";
+import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 import type { BrowserEventName } from "./browser";
 import {
 	createBrowserAnalytics,
@@ -27,12 +28,15 @@ const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
 export function AnalyticsProvider({ children }: { children: ReactNode }) {
 	const analytics = useRef<BrowserAnalyticsRuntime | null>(null);
 	const { isAuthenticated, isLoading, organizationId, user } = useAuth();
+	// The deployment's product-analytics group, read per request by the root
+	// layout — never the build, which for a deployed image saw nothing.
+	const { mode, host, apiKey } = usePublicRuntimeConfig().productAnalytics;
 
 	useEffect(() => {
 		analytics.current = createBrowserAnalytics({
-			mode: process.env.NEXT_PUBLIC_PRODUCT_ANALYTICS_MODE,
-			host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-			apiKey: process.env.NEXT_PUBLIC_POSTHOG_KEY,
+			mode,
+			host,
+			apiKey,
 			storage: window.localStorage,
 			route: window.location.pathname,
 			release: process.env.NEXT_PUBLIC_RELEASE,
@@ -42,7 +46,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 			analytics.current?.reset();
 			analytics.current = null;
 		};
-	}, []);
+	}, [mode, host, apiKey]);
 
 	useEffect(() => {
 		if (isLoading || !analytics.current) return;
