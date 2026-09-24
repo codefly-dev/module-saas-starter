@@ -97,6 +97,13 @@ has three node kinds:
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
 
+On a registered solution's page the host renders every declared dashboard, and
+each viewer can arrange it for themselves: reorder, remove, and add tiles. The
+declared widgets, in declared order, are where every viewer starts, and a widget
+declared later reaches viewers who already rearranged. A viewer can add any
+metric in `metrics`, including one no widget draws, so a metric declared only as
+a derived metric's input is still one a viewer can put on the page.
+
 The schema owns the per-node field formats — including the two shape rules that
 cross fields: a metric carries a `bucket` exactly when it groups by `time`, and
 a `ratio`/`difference` takes exactly two inputs (`sum` takes two or more). The

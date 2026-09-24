@@ -1,5 +1,5 @@
 import type { DataGraph } from "@codefly/saas-plugin-manifest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -7,16 +7,29 @@ import { server } from "@/test/setup";
 import { SolutionDashboards } from "../SolutionDashboard";
 
 // Auth state is mutable so a test can drop the org context and assert the
-// pre-org window renders as loading, not as an empty dashboard.
+// pre-org window renders as loading, not as an empty dashboard, or switch the
+// viewer to show a layout belongs to one user.
 const { authState } = vi.hoisted(() => ({
-	authState: { organizationId: "org-1" as string | undefined },
+	authState: {
+		organizationId: "org-1" as string | undefined,
+		user: { id: "user-1" },
+	},
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
+// Where the viewer's layout of the "activity" dashboard is kept.
+const LAYOUT_KEY = "solution-dashboard:layout:example:activity:org-1:user-1";
+
 beforeEach(() => {
 	authState.organizationId = "org-1";
+	authState.user = { id: "user-1" };
+	window.localStorage.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+	window.localStorage.clear();
+});
 
 // The acceptance data graph: a registered solution ships only this declaration —
 // logins-over-time line, top-event-types bar, total-logins stat — and no
@@ -45,6 +58,15 @@ const graph: DataGraph = {
 			filter: { event: "login" },
 			groupBy: "time",
 			bucket: "day",
+			aggregation: "count",
+		},
+		// Declared but drawn by no widget: only a viewer can put it on the page.
+		{
+			id: "logins_by_category",
+			kind: "source",
+			title: "Logins by category",
+			filter: { event: "login" },
+			groupBy: "category",
 			aggregation: "count",
 		},
 	],
@@ -90,6 +112,30 @@ function aggregateHandler(
 			});
 		},
 	);
+}
+
+const DEFAULT_ORDER = ["Logins over time", "Top event types", "Total logins"];
+
+// The tile titles, in the order the dashboard shows them.
+function tileTitles(): string[] {
+	return screen
+		.getAllByRole("listitem")
+		.map(
+			(tile) =>
+				tile.querySelector('[data-slot="card-title"]')?.textContent ?? "",
+		);
+}
+
+function tile(title: string): HTMLElement {
+	const found = screen
+		.getAllByRole("listitem")
+		.find((item) => item.textContent?.includes(title));
+	if (!found) throw new Error(`no tile titled ${title}`);
+	return found;
+}
+
+function renderDashboards() {
+	return renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 }
 
 describe("SolutionDashboards", () => {
@@ -163,5 +209,183 @@ describe("SolutionDashboards", () => {
 		expect(screen.getByText("Total logins")).toBeTruthy();
 		expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
 		expect(screen.queryByText("8")).toBeNull();
+	});
+});
+
+describe("a viewer's layout", () => {
+	beforeEach(() => {
+		server.use(
+			aggregateHandler(
+				[
+					{ key: "2026-08-01", count: "3" },
+					{ key: "2026-08-02", count: "5" },
+				],
+				[{ key: "saas.auth.login", count: "42" }],
+			),
+		);
+	});
+
+	it("starts from the declared widgets in declared order", () => {
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+	});
+
+	it("removes a tile, and it stays removed after a remount", () => {
+		const { unmount } = renderDashboards();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Top event types" }),
+		);
+		expect(tileTitles()).toEqual(["Logins over time", "Total logins"]);
+
+		unmount();
+		renderDashboards();
+		expect(tileTitles()).toEqual(["Logins over time", "Total logins"]);
+	});
+
+	it("adds a removed widget and an undrawn metric back from the + menu", async () => {
+		renderDashboards();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Top event types" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Add a metric to Activity" }),
+		);
+		const items = await screen.findAllByRole("menuitem");
+		expect(items.map((item) => item.textContent)).toEqual([
+			"Top event types",
+			"Logins by category",
+		]);
+
+		fireEvent.click(screen.getByRole("menuitem", { name: "Top event types" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Add a metric to Activity" }),
+		);
+		fireEvent.click(
+			await screen.findByRole("menuitem", { name: "Logins by category" }),
+		);
+
+		expect(tileTitles()).toEqual([
+			"Logins over time",
+			"Total logins",
+			"Top event types",
+			"Logins by category",
+		]);
+		// The added metric resolves through the same path as a declared widget:
+		// a category count, shown as a single number (3 + 5).
+		expect(
+			await within(tile("Logins by category")).findByText("8"),
+		).toBeTruthy();
+	});
+
+	it("reflows while a tile is dragged and saves the order on drop", () => {
+		const { unmount } = renderDashboards();
+		const dragged = tile("Logins over time");
+		fireEvent.dragStart(dragged, { dataTransfer: {} });
+		fireEvent.dragOver(tile("Total logins"), { dataTransfer: {} });
+		// The other tiles shift while the drag is still in flight...
+		expect(tileTitles()).toEqual([
+			"Top event types",
+			"Total logins",
+			"Logins over time",
+		]);
+		// ...and nothing is saved until the drop.
+		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+
+		fireEvent.drop(tile("Logins over time"), { dataTransfer: {} });
+		fireEvent.dragEnd(dragged, { dataTransfer: {} });
+		expect(tileTitles()).toEqual([
+			"Top event types",
+			"Total logins",
+			"Logins over time",
+		]);
+
+		unmount();
+		renderDashboards();
+		expect(tileTitles()).toEqual([
+			"Top event types",
+			"Total logins",
+			"Logins over time",
+		]);
+	});
+
+	it("keeps the new order when a tile is dropped in the gap between tiles", () => {
+		renderDashboards();
+		const dragged = tile("Total logins");
+		fireEvent.dragStart(dragged, { dataTransfer: {} });
+		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
+		fireEvent.drop(screen.getByRole("list"), { dataTransfer: {} });
+		fireEvent.dragEnd(dragged, { dataTransfer: {} });
+		expect(tileTitles()).toEqual([
+			"Total logins",
+			"Logins over time",
+			"Top event types",
+		]);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).not.toBeNull();
+	});
+
+	it("reverts a cancelled drag", () => {
+		renderDashboards();
+		const dragged = tile("Total logins");
+		fireEvent.dragStart(dragged, { dataTransfer: {} });
+		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
+		expect(tileTitles()[0]).toBe("Total logins");
+
+		fireEvent.dragEnd(dragged, { dataTransfer: {} });
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+	});
+
+	// happy-dom keeps focus on a node React moves, where a browser drops it, so
+	// the grip taking focus back after a move is not observable here.
+	it("moves a tile with the arrow keys on its grip", () => {
+		renderDashboards();
+		const grip = screen.getByRole("button", {
+			name: "Move Logins over time: drag the tile, or use the arrow keys",
+		});
+		grip.focus();
+		fireEvent.keyDown(grip, { key: "ArrowDown" });
+		expect(tileTitles()).toEqual([
+			"Top event types",
+			"Logins over time",
+			"Total logins",
+		]);
+
+		fireEvent.keyDown(grip, { key: "ArrowUp" });
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+	});
+
+	it("keeps each viewer's layout to themselves", () => {
+		const { unmount } = renderDashboards();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Total logins" }),
+		);
+		unmount();
+
+		authState.user = { id: "user-2" };
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+	});
+
+	it("falls back to the declared layout when the saved one is unreadable", () => {
+		window.localStorage.setItem(LAYOUT_KEY, "{ not json");
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+	});
+
+	it("falls back when storage is blocked, and still applies the viewer's change", () => {
+		vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+			throw new Error("SecurityError");
+		});
+		vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+			throw new Error("QuotaExceededError");
+		});
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Logins over time" }),
+		);
+		expect(tileTitles()).toEqual(["Top event types", "Total logins"]);
 	});
 });
