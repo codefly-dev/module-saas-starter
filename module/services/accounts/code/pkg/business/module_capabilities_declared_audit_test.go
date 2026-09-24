@@ -136,6 +136,10 @@ func TestModuleEmitAuditEvent_DeclaredPayloadTyped(t *testing.T) {
 		"undeclared field":    {"colour": "blue"},
 		"string for an int":   {"count": "3"},
 		"NaN for an int":      {"count": math.NaN()},
+		// A Struct carries every number as a double, so only its value says
+		// whether it is an int.
+		"fraction for an int":      {"count": 1.5},
+		"inexact float for an int": {"count": float64(1 << 53)},
 	} {
 		value, err := structpb.NewStruct(fields)
 		if err != nil {

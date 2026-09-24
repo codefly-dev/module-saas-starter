@@ -189,6 +189,31 @@ func TestValidatePayloadFields_NumberIsFinite(t *testing.T) {
 	}
 }
 
+// An int arrives as a float64 whenever it crossed a protobuf Struct or JSON, so
+// the float64 must be whole and inside the range a float64 counts exactly.
+func TestValidatePayloadFields_IntIsWhole(t *testing.T) {
+	fields := DeclaredAuditEventType{Fields: []PayloadField{{Name: "count", Kind: FieldInt}}}.validationFields()
+	const maxSafe = 1<<53 - 1
+	for name, value := range map[string]any{
+		"int": 2, "int64": int64(2), "whole float": 2.0, "negative whole float": -7.0, "zero": 0.0,
+		"largest safe float": float64(maxSafe), "smallest safe float": -float64(maxSafe),
+		"int64 beyond 2^53": int64(1) << 60,
+	} {
+		if err := validatePayloadFields("acme.item.created", fields, map[string]any{"solution": "acme", "count": value}); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
+	}
+	for name, value := range map[string]any{
+		"fraction": 1.5, "negative fraction": -0.5, "tiny fraction": 1e-9,
+		"2^53 float": float64(1 << 53), "-2^53 float": -float64(1 << 53), "huge float": 1e300,
+		"NaN": math.NaN(), "+Inf": math.Inf(1), "string": "2", "bool": true,
+	} {
+		if err := validatePayloadFields("acme.item.created", fields, map[string]any{"solution": "acme", "count": value}); err == nil {
+			t.Errorf("%s: accepted, want refused", name)
+		}
+	}
+}
+
 // declaredAuditStore is an in-memory Store for the registration write and the
 // declared-type methods. WithControlPlane restores the prior state when fn
 // fails, which is the rollback the admission contract depends on.
