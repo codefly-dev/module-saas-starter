@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"accounts/pkg/eventcatalog"
 )
 
 // Admission rules for solution-declared audit event types, exercised without a
@@ -402,6 +404,42 @@ func TestPutSolutionRegistration_RefusesAnotherProducersNamespace(t *testing.T) 
 	store.rows["legacy.item.created"] = declaredAuditRow{owner: "accounts", namespace: "legacy"}
 	if _, err := registerDeclaring(t, svc, "third", nil, `{"name":"e","type":"legacy.item.other","fields":[]}`); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
 		t.Fatalf("code-owned namespace: err = %v, want refused", err)
+	}
+}
+
+// A namespace the composed event catalog publishes domain events under already
+// has its producer, even though no audit_event_types row names it.
+func TestPutSolutionRegistration_RefusesPublishedEventNamespaces(t *testing.T) {
+	store := newDeclaredAuditStore()
+	svc, err := NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// installation and scope are the platform's own domain-event namespaces;
+	// every other namespace in the catalog has a producer just the same. saas is
+	// left out: it is reserved, and refused before ownership is consulted.
+	namespaces := []string{"installation", "scope"}
+	for _, published := range eventcatalog.Published() {
+		if published.Namespace != AuditNamespace {
+			namespaces = append(namespaces, published.Namespace)
+		}
+	}
+	for _, namespace := range namespaces {
+		_, err := registerDeclaring(t, svc, "acme", nil,
+			`{"name":"e","type":"`+namespace+`.item.created","fields":[]}`)
+		if !errors.Is(err, ErrSolutionAuditNamespaceOwned) || !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
+			t.Fatalf("%s: err = %v, want the namespace refused", namespace, err)
+		}
+		if _, stored := store.registrations["acme"]; stored {
+			t.Fatalf("%s: a refused declaration must not store the registration", namespace)
+		}
+		if len(store.rows) != 0 {
+			t.Fatalf("%s: a refused declaration admitted %d types", namespace, len(store.rows))
+		}
+	}
+	// A namespace no producer publishes under is still free.
+	if _, err := registerDeclaring(t, svc, "acme", nil, `{"name":"e","type":"acme.item.created","fields":[]}`); err != nil {
+		t.Fatalf("unpublished namespace: %v", err)
 	}
 }
 
