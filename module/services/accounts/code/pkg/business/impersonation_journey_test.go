@@ -39,8 +39,8 @@ type impersonationFixture struct {
 // behind aborts the next test's cleanup transaction wholesale.
 func grantPlatformRole(t *testing.T, userID, role, grantedBy string) {
 	t.Helper()
-	require.NoError(t, testStore.GrantPlatformRole(testCtx, userID, role, grantedBy))
-	t.Cleanup(func() { _ = testStore.RevokePlatformRole(testCtx, userID) })
+	require.NoError(t, controlPlaneGrantPlatformRole(testCtx, userID, role, grantedBy))
+	t.Cleanup(func() { _ = controlPlaneRevokePlatformRole(testCtx, userID) })
 }
 
 func seedImpersonationFixture(t *testing.T, name string) impersonationFixture {
@@ -577,4 +577,19 @@ func TestImpersonationFailureDoesNotEchoTheJustification(t *testing.T) {
 		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), impersonationReason)
+}
+
+// controlPlaneGrantPlatformRole and controlPlaneRevokePlatformRole write
+// platform_admins the way PlatformAdminService does: on the control plane. The
+// tenant role may read that table but never write it.
+func controlPlaneGrantPlatformRole(ctx context.Context, userID, role, grantedBy string) error {
+	return testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		return testStore.GrantPlatformRole(ctx, userID, role, grantedBy)
+	})
+}
+
+func controlPlaneRevokePlatformRole(ctx context.Context, userID string) error {
+	return testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		return testStore.RevokePlatformRole(ctx, userID)
+	})
 }

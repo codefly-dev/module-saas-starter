@@ -464,6 +464,17 @@ func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {
 //     joined_at — so Bob (a "member" in the fixture intent) logs in as
 //     OWNER of his Personal org and the role-gate UI grants him admin
 //     surface he should not see.
+// grantFixturePlatformRole grants a fixture user its platform role as a
+// self-grant (granted_by references users(uuid), so it carries the user's own
+// id). platform_admins is written only on the control plane — the tenant role
+// may read it but not write it — which is also where PlatformAdminService and
+// the first-login bootstrap claim write it.
+func grantFixturePlatformRole(ctx context.Context, service *business.Service, userID, role string) error {
+	return service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+		return service.Store().GrantPlatformRole(ctx, userID, role, userID)
+	})
+}
+
 func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, users []fixtureUser) (map[string]string, error) {
 	userIDs := make(map[string]string, len(users))
 	for _, u := range users {
@@ -500,12 +511,7 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			// platform role on every activation so authentication and admin
 			// authorization cannot disagree for the same fixture identity.
 			if u.Role == "super_admin" {
-				if err := service.Store().GrantPlatformRole(
-					ctx,
-					existing.Uuid,
-					u.Role,
-					existing.Uuid,
-				); err != nil {
+				if err := grantFixturePlatformRole(ctx, service, existing.Uuid, u.Role); err != nil {
 					return nil, w.Wrapf(
 						err,
 						"cannot converge platform role for fixture user %s",
@@ -570,7 +576,7 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 		// pass the user's own uuid so the row represents a self-grant at
 		// fixture time. "fixture-seed" as a string fails the uuid cast.
 		if u.Role == "super_admin" {
-			if err := service.Store().GrantPlatformRole(ctx, userID, u.Role, userID); err != nil {
+			if err := grantFixturePlatformRole(ctx, service, userID, u.Role); err != nil {
 				return nil, w.Wrapf(err, "cannot grant platform role for fixture user %s", u.Email)
 			}
 		}

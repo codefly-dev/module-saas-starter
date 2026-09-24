@@ -57,3 +57,18 @@ func TestContentTicketRejectsTamperAndForeignKey(t *testing.T) {
 		}
 	}
 }
+
+// TestAttack_UnsetTicketKeyDisablesTickets: an unset seed used to produce the
+// key sha256("datasource-content-ticket\x00") — a constant anyone can compute,
+// so anyone could mint a ticket for any tenant's source. An unset key must
+// leave content tickets disabled, which minting and redemption already treat
+// as unavailable.
+func TestAttack_UnsetTicketKeyDisablesTickets(t *testing.T) {
+	for _, seed := range [][]byte{nil, {}} {
+		s := &Service{}
+		s.SetDatasourceTicketKey(seed)
+		if s.datasourceTicketSigner != nil {
+			t.Fatalf("SetDatasourceTicketKey(%q) installed a signer keyed by a public constant", seed)
+		}
+	}
+}
