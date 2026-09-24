@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:8d4595c0faa0b3dbaf007e41ad8724f98c6b6dceb70ed9a08e68c9ceec06e50f",
+      "digest": "sha256:b12e68d2e7b43e80c176dfe3b6739d3381395ca517eff22501f888d05d0a507d",
       "services": [
         {
           "name": "APIKeyService",
@@ -199,6 +199,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",

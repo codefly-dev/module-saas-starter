@@ -41,6 +41,7 @@ const (
 	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
 	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
+	ModuleCapabilitiesService_MintModuleOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext"
 	ModuleCapabilitiesService_PublishEvent_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
 	ModuleCapabilitiesService_Subscribe_FullMethodName                          = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
 	ModuleCapabilitiesService_Unsubscribe_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -114,6 +115,13 @@ type ModuleCapabilitiesServiceClient interface {
 	// from its registration prefix. Authorized by the module's own registration
 	// secret, like the credential exchange above.
 	MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error)
+	// MintModuleOperationContext issues, with no person present, a Work Context
+	// addressed to one of the calling module's installed operation audiences.
+	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// and sole actor are the module service principal, the tenant is the one its
+	// principal declares, and the scopes are exactly the binding's declared
+	// headless scopes. A binding declaring none is refused.
+	MintModuleOperationContext(ctx context.Context, in *ModuleMintOperationContextRequest, opts ...grpc.CallOption) (*ModuleMintOperationContextResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -343,6 +351,16 @@ func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Cont
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) MintModuleOperationContext(ctx context.Context, in *ModuleMintOperationContextRequest, opts ...grpc.CallOption) (*ModuleMintOperationContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleMintOperationContextResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintModuleOperationContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModulePublishEventResponse)
@@ -459,6 +477,13 @@ type ModuleCapabilitiesServiceServer interface {
 	// from its registration prefix. Authorized by the module's own registration
 	// secret, like the credential exchange above.
 	MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error)
+	// MintModuleOperationContext issues, with no person present, a Work Context
+	// addressed to one of the calling module's installed operation audiences.
+	// Authorized by the module's identity secret like MintModuleWorkContext; owner
+	// and sole actor are the module service principal, the tenant is the one its
+	// principal declares, and the scopes are exactly the binding's declared
+	// headless scopes. A binding declaring none is refused.
+	MintModuleOperationContext(context.Context, *ModuleMintOperationContextRequest) (*ModuleMintOperationContextResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -538,6 +563,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) MintSolutionRegistration(con
 }
 func (UnimplementedModuleCapabilitiesServiceServer) MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintModuleWorkContext not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintModuleOperationContext(context.Context, *ModuleMintOperationContextRequest) (*ModuleMintOperationContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintModuleOperationContext not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
@@ -929,6 +957,24 @@ func _ModuleCapabilitiesService_MintModuleWorkContext_Handler(srv interface{}, c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_MintModuleOperationContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleMintOperationContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleOperationContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintModuleOperationContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleOperationContext(ctx, req.(*ModuleMintOperationContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModulePublishEventRequest)
 	if err := dec(in); err != nil {
@@ -1101,6 +1147,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MintModuleWorkContext",
 			Handler:    _ModuleCapabilitiesService_MintModuleWorkContext_Handler,
+		},
+		{
+			MethodName: "MintModuleOperationContext",
+			Handler:    _ModuleCapabilitiesService_MintModuleOperationContext_Handler,
 		},
 		{
 			MethodName: "PublishEvent",

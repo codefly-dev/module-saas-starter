@@ -217,6 +217,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The headless operation exchange (/modules/_operation-context): the same
+	// perimeter as the Work Context exchange, for a context addressed to one of
+	// the module's installed operation audiences.
+	if g.handleModuleOperationContext(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)

@@ -374,6 +374,162 @@ func (x *ModuleMintWorkContextResponse) GetTenant() string {
 	return ""
 }
 
+// ModuleMintOperationContextRequest asks for a Work Context addressed to one of
+// the calling module's installed operation audiences, with no person present —
+// the capability background work (a journal replay, a scheduled refresh) uses to
+// call another module's service. It authenticates exactly like
+// ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+//
+// The caller names only the binding. Audience, scopes, tenant, actor and
+// lifetime are deployment policy: the binding's `headless_scopes`, the tenant
+// declared for the module principal, and a short fixed lifetime. A binding that
+// declares no headless scopes cannot be minted this way at all.
+type ModuleMintOperationContextRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Prefix        string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	Binding       string                 `protobuf:"bytes,3,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModuleMintOperationContextRequest) Reset() {
+	*x = ModuleMintOperationContextRequest{}
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleMintOperationContextRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleMintOperationContextRequest) ProtoMessage() {}
+
+func (x *ModuleMintOperationContextRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleMintOperationContextRequest.ProtoReflect.Descriptor instead.
+func (*ModuleMintOperationContextRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_registration_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ModuleMintOperationContextRequest) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextRequest) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextRequest) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
+// ModuleMintOperationContextResponse carries the signed capability and what it
+// asserts, so a module can attribute and route its call without parsing it.
+type ModuleMintOperationContextResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	PrincipalId   string                 `protobuf:"bytes,3,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	Tenant        string                 `protobuf:"bytes,4,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	Audience      string                 `protobuf:"bytes,5,opt,name=audience,proto3" json:"audience,omitempty"`
+	Binding       string                 `protobuf:"bytes,6,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModuleMintOperationContextResponse) Reset() {
+	*x = ModuleMintOperationContextResponse{}
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleMintOperationContextResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleMintOperationContextResponse) ProtoMessage() {}
+
+func (x *ModuleMintOperationContextResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleMintOperationContextResponse.ProtoReflect.Descriptor instead.
+func (*ModuleMintOperationContextResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_registration_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ModuleMintOperationContextResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *ModuleMintOperationContextResponse) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextResponse) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextResponse) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextResponse) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
 var File_saas_accounts_v1_module_registration_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
@@ -405,7 +561,21 @@ const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
 	"\fprincipal_id\x18\x03 \x01(\tR\vprincipalId\x12\x16\n" +
-	"\x06tenant\x18\x04 \x01(\tR\x06tenantB\xc3\x01\n" +
+	"\x06tenant\x18\x04 \x01(\tR\x06tenant\"\xb3\x01\n" +
+	"!ModuleMintOperationContextRequest\x12D\n" +
+	"\x06prefix\x18\x01 \x01(\tB,\xbaH)r'\x10\x01\x18?2!^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$R\x06prefix\x12\"\n" +
+	"\x06secret\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x06secret\x12$\n" +
+	"\abinding\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\abinding\"\xe6\x01\n" +
+	"\"ModuleMintOperationContextResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
+	"\fprincipal_id\x18\x03 \x01(\tR\vprincipalId\x12\x16\n" +
+	"\x06tenant\x18\x04 \x01(\tR\x06tenant\x12\x1a\n" +
+	"\baudience\x18\x05 \x01(\tR\baudience\x12\x18\n" +
+	"\abinding\x18\x06 \x01(\tR\abindingB\xc3\x01\n" +
 	"\x14com.saas.accounts.v1B\x17ModuleRegistrationProtoP\x01Z0auth-gateway/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -420,25 +590,28 @@ func file_saas_accounts_v1_module_registration_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_module_registration_proto_rawDescData
 }
 
-var file_saas_accounts_v1_module_registration_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_saas_accounts_v1_module_registration_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_saas_accounts_v1_module_registration_proto_goTypes = []any{
-	(*ModuleMintRegistrationRequest)(nil),    // 0: saas.accounts.v1.ModuleMintRegistrationRequest
-	(*ModuleMintRegistrationResponse)(nil),   // 1: saas.accounts.v1.ModuleMintRegistrationResponse
-	(*SolutionMintRegistrationRequest)(nil),  // 2: saas.accounts.v1.SolutionMintRegistrationRequest
-	(*SolutionMintRegistrationResponse)(nil), // 3: saas.accounts.v1.SolutionMintRegistrationResponse
-	(*ModuleMintWorkContextRequest)(nil),     // 4: saas.accounts.v1.ModuleMintWorkContextRequest
-	(*ModuleMintWorkContextResponse)(nil),    // 5: saas.accounts.v1.ModuleMintWorkContextResponse
-	(*timestamppb.Timestamp)(nil),            // 6: google.protobuf.Timestamp
+	(*ModuleMintRegistrationRequest)(nil),      // 0: saas.accounts.v1.ModuleMintRegistrationRequest
+	(*ModuleMintRegistrationResponse)(nil),     // 1: saas.accounts.v1.ModuleMintRegistrationResponse
+	(*SolutionMintRegistrationRequest)(nil),    // 2: saas.accounts.v1.SolutionMintRegistrationRequest
+	(*SolutionMintRegistrationResponse)(nil),   // 3: saas.accounts.v1.SolutionMintRegistrationResponse
+	(*ModuleMintWorkContextRequest)(nil),       // 4: saas.accounts.v1.ModuleMintWorkContextRequest
+	(*ModuleMintWorkContextResponse)(nil),      // 5: saas.accounts.v1.ModuleMintWorkContextResponse
+	(*ModuleMintOperationContextRequest)(nil),  // 6: saas.accounts.v1.ModuleMintOperationContextRequest
+	(*ModuleMintOperationContextResponse)(nil), // 7: saas.accounts.v1.ModuleMintOperationContextResponse
+	(*timestamppb.Timestamp)(nil),              // 8: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_module_registration_proto_depIdxs = []int32{
-	6, // 0: saas.accounts.v1.ModuleMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	6, // 1: saas.accounts.v1.SolutionMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	6, // 2: saas.accounts.v1.ModuleMintWorkContextResponse.expires_at:type_name -> google.protobuf.Timestamp
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	8, // 0: saas.accounts.v1.ModuleMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8, // 1: saas.accounts.v1.SolutionMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8, // 2: saas.accounts.v1.ModuleMintWorkContextResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8, // 3: saas.accounts.v1.ModuleMintOperationContextResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_module_registration_proto_init() }
@@ -452,7 +625,7 @@ func file_saas_accounts_v1_module_registration_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_module_registration_proto_rawDesc), len(file_saas_accounts_v1_module_registration_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

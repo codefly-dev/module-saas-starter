@@ -392,6 +392,61 @@
       }
     },
     {
+      "id": "registration.module.operation-context",
+      "documentation": "WORK_CONTEXTS.md",
+      "dependencies": [
+        "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
+        "behavior/configuration.federation-secrets"
+      ],
+      "contract": {
+        "exchange": {
+          "method": "POST",
+          "path": "/modules/_operation-context",
+          "headers": {
+            "X-Codefly-Internal-Token": "cluster-internal perimeter check",
+            "X-Codefly-Module-Secret": "the module's identity secret"
+          },
+          "body": {
+            "prefix": "<module-prefix>",
+            "binding": "<operation_audiences key>"
+          },
+          "response": {
+            "work_context": "<work context>",
+            "expires_at": "<RFC 3339>",
+            "principal_id": "<module service principal>",
+            "tenant": "<declared tenant>",
+            "audience": "<binding audience>",
+            "binding": "<operation_audiences key>"
+          },
+          "refusals": {
+            "401": "the module is not proven: internal token, identity secret, or module declaration",
+            "403": "the proven module's binding is undeclared or declares no headless_scopes"
+          }
+        },
+        "broker": {
+          "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext",
+          "exposure": "EXPOSURE_INTERNAL",
+          "authorizedAgainst": "MODULE_IDENTITY_SECRETS entry for that exact prefix",
+          "audit": "saas.module.operation_context_minted"
+        },
+        "token": {
+          "audience": "the binding's audience",
+          "scopes": "exactly the binding's headless_scopes",
+          "owner": "the module service principal",
+          "actor": "the module service principal",
+          "tenant": "the tenant MODULE_PRINCIPALS declares for the module",
+          "ttlSeconds": 60,
+          "replayPolicy": "idempotent"
+        },
+        "rules": [
+          "A binding without headless_scopes cannot be minted with no person present; invoke_scopes are never reused implicitly.",
+          "headless_scopes must be a subset of the binding's invoke_scopes.",
+          "The caller names only the binding. Audience, scopes, tenant, actor and lifetime are deployment policy.",
+          "The gateway mints nothing and adds no authority of its own."
+        ]
+      }
+    },
+    {
       "id": "authorization.solution.installation-authority",
       "documentation": "SOLUTION_REGISTRATION.md",
       "contract": {

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **217 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **218 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -95,6 +95,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List source collections the verified viewer may currently read. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List the subjects whose rows a viewer may read in a tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List the calling principal's live event subscriptions. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.operation_context_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a composed module, with no person present, a Work Context for one of its installed operation audiences. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.registration_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a composed module the signed credential it registers its gateway REST prefix with. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.work_context_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a composed module the Work Context its service principal calls this surface with. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.registration_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a solution the signed credential it registers its gateway upstream and frontend remote with. |
@@ -229,7 +230,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 44
+- `internal`: 45
 - `mfa`: 3
 - `org_admin`: 46
 - `org_member`: 39

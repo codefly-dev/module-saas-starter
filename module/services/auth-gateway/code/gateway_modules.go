@@ -554,6 +554,100 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 	return true
 }
 
+// moduleOperationContextPath serves the headless operation exchange: a module
+// presents its identity secret and one of its installed operation bindings, and
+// receives a short-lived Work Context addressed to that binding's audience, for
+// work no person is present for.
+const moduleOperationContextPath = "/modules/_operation-context"
+
+// mintModuleOperationContextMethod is accounts' headless operation mint.
+// EXPOSURE_INTERNAL like the two exchanges above.
+const mintModuleOperationContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext"
+
+// handleModuleOperationContext serves POST /modules/_operation-context. It
+// returns true when it has handled the request.
+//
+// It brokers exactly as handleModuleWorkContext does, on the same perimeter
+// (cluster-internal token plus the module's identity secret), and decides
+// nothing: accounts alone knows which bindings a module declared and which of
+// them may be minted with no person present. Unlike that exchange the outcome
+// has two refusals worth telling apart — an unproven module (401) and a proven
+// module naming a binding it may not mint headless (403).
+func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != moduleOperationContextPath {
+		return false
+	}
+	if r.Method != http.MethodPost {
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return true
+	}
+
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return true
+	}
+	secret := r.Header.Get(moduleSecretHeader)
+	if secret == "" {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return true
+	}
+
+	var payload struct {
+		Prefix  string `json:"prefix"`
+		Binding string `json:"binding"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
+		httpError(w, http.StatusBadRequest, "invalid json")
+		return true
+	}
+	if !validCatalogIdentity(payload.Prefix) {
+		httpError(w, http.StatusBadRequest, "invalid prefix")
+		return true
+	}
+	if payload.Binding == "" || len(payload.Binding) > 128 {
+		httpError(w, http.StatusBadRequest, "invalid binding")
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	defer cancel()
+	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, secret, payload.Binding)
+	if err != nil {
+		switch status.Code(err) {
+		case codes.Unauthenticated:
+			httpError(w, http.StatusUnauthorized, "unauthorized")
+		case codes.PermissionDenied:
+			httpError(w, http.StatusForbidden, "forbidden")
+		case codes.InvalidArgument:
+			httpError(w, http.StatusBadRequest, "invalid request")
+		default:
+			httpError(w, http.StatusBadGateway, "operation context unavailable")
+		}
+		return true
+	}
+
+	// The field names are this exchange's own wire contract with its consumers
+	// (snake_case, `work_context` rather than a bare `token`): the capability is
+	// a Work Context for another service, not a credential for this gateway.
+	body, err := json.Marshal(map[string]string{
+		"work_context": issued.GetToken(),
+		"expires_at":   issued.GetExpiresAt().AsTime().UTC().Format(time.RFC3339),
+		"principal_id": issued.GetPrincipalId(),
+		"tenant":       issued.GetTenant(),
+		"audience":     issued.GetAudience(),
+		"binding":      issued.GetBinding(),
+	})
+	if err != nil {
+		httpError(w, http.StatusBadGateway, "operation context unavailable")
+		return true
+	}
+	w.Header().Set("content-type", "application/json")
+	w.Header().Set("cache-control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+	return true
+}
+
 // mintModuleRegistration runs the internal leg over the existing accounts
 // connection, presenting the gateway's own cluster-internal credential. There is
 // no vendored client stub for ModuleCapabilitiesService, so the method is
@@ -583,6 +677,21 @@ func (s *ExtAuthz) mintModuleWorkContext(
 	response := &accountsv1.ModuleMintWorkContextResponse{}
 	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, Secret: secret}
 	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (s *ExtAuthz) mintModuleOperationContext(
+	ctx context.Context, prefix, secret, binding string,
+) (*accountsv1.ModuleMintOperationContextResponse, error) {
+	if s.backendConn == nil {
+		return nil, fmt.Errorf("accounts connection not configured")
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	response := &accountsv1.ModuleMintOperationContextResponse{}
+	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, Secret: secret, Binding: binding}
+	if err := s.backendConn.Invoke(ctx, mintModuleOperationContextMethod, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil

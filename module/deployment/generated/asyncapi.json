@@ -922,6 +922,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.module.operation_context_minted": {
+      "address": "saas.module.operation_context_minted",
+      "title": "saas.module.operation_context_minted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module.operation_context_minted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.module.registration_minted": {
       "address": "saas.module.registration_minted",
       "title": "saas.module.registration_minted",
@@ -2230,6 +2241,13 @@
       },
       "title": "saas publishes saas.module.delegated_audience_exchange"
     },
+    "send:saas.module.operation_context_minted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module.operation_context_minted"
+      },
+      "title": "saas publishes saas.module.operation_context_minted"
+    },
     "send:saas.module.registration_minted": {
       "action": "send",
       "channel": {
@@ -3265,6 +3283,13 @@
       "saas.module.delegated_audience_exchange": {
         "name": "saas.module.delegated_audience_exchange",
         "title": "saas.module.delegated_audience_exchange",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module.operation_context_minted": {
+        "name": "saas.module.operation_context_minted",
+        "title": "saas.module.operation_context_minted",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

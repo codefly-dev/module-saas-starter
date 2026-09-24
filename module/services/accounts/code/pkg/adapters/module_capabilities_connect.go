@@ -24,6 +24,10 @@ func (h *moduleCapabilitiesConnectHandler) MintModuleWorkContext(ctx context.Con
 	return unary(ctx, req, h.inner.MintModuleWorkContext)
 }
 
+func (h *moduleCapabilitiesConnectHandler) MintModuleOperationContext(ctx context.Context, req *connect.Request[gen.ModuleMintOperationContextRequest]) (*connect.Response[gen.ModuleMintOperationContextResponse], error) {
+	return unary(ctx, req, h.inner.MintModuleOperationContext)
+}
+
 func (h *moduleCapabilitiesConnectHandler) MintSolutionRegistration(ctx context.Context, req *connect.Request[gen.SolutionMintRegistrationRequest]) (*connect.Response[gen.SolutionMintRegistrationResponse], error) {
 	return unary(ctx, req, h.inner.MintSolutionRegistration)
 }

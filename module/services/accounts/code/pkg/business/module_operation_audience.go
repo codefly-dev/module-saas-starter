@@ -16,10 +16,17 @@ import (
 // ModuleOperationAudience is immutable deployment policy. A caller selects the
 // installed binding and whether it is invoking or only looking up a receipt; it
 // never supplies an audience, scope, resource, action, or lifetime.
+//
+// HeadlessScopes is the separate, optional grant for work no person is present
+// for (MintModuleOperationContext). It is never derived from InvokeScopes: a
+// binding that declares none cannot be minted headless at all, and one that
+// declares some is bounded by InvokeScopes, so the module acting alone can never
+// do more with an audience than it could on a person's behalf.
 type ModuleOperationAudience struct {
-	Audience     string                 `json:"audience"`
-	InvokeScopes []ModuleOperationScope `json:"invoke_scopes"`
-	LookupScopes []ModuleOperationScope `json:"lookup_scopes"`
+	Audience       string                 `json:"audience"`
+	InvokeScopes   []ModuleOperationScope `json:"invoke_scopes"`
+	LookupScopes   []ModuleOperationScope `json:"lookup_scopes"`
+	HeadlessScopes []ModuleOperationScope `json:"headless_scopes,omitempty"`
 }
 
 type ModuleOperationScope struct {
@@ -110,6 +117,11 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) || binding.Audience == prefix || !validOperationScopes(binding.InvokeScopes, false) || !validOperationScopes(binding.LookupScopes, true) || !operationScopesSubset(binding.LookupScopes, binding.InvokeScopes) {
 			return fmt.Errorf("invalid installed module operation audience binding")
 		}
+		// Absent is the fail-closed default (no headless mint); present but empty
+		// is a misconfiguration rather than a second spelling of absent.
+		if binding.HeadlessScopes != nil && (!validOperationScopes(binding.HeadlessScopes, false) || !operationScopesSubset(binding.HeadlessScopes, binding.InvokeScopes)) {
+			return fmt.Errorf("invalid installed module operation audience headless scopes")
+		}
 	}
 	return nil
 }
@@ -137,6 +149,10 @@ func (b ModuleOperationAudience) WireScopes(lookup bool) []*gen.WorkContextScope
 	if lookup {
 		scopes = b.LookupScopes
 	}
+	return wireOperationScopes(scopes)
+}
+
+func wireOperationScopes(scopes []ModuleOperationScope) []*gen.WorkContextScope {
 	out := make([]*gen.WorkContextScope, 0, len(scopes))
 	for _, scope := range scopes {
 		out = append(out, &gen.WorkContextScope{ResourceKind: scope.ResourceKind, Actions: append([]string(nil), scope.Actions...), ResourceIds: append([]string(nil), scope.ResourceIDs...)})

@@ -48,6 +48,10 @@ if (!bindingsOnly) {
 // Explicit rather than a postgenerate lifecycle hook: npm ignore-scripts must
 // not leave a facade whose imported descriptors were never generated. Both steps
 // read the exported snapshot, never the mutable service proto source.
+//
+// The plugin runs inside Codefly's pinned proto companion, which mounts only
+// `--output`: the template writes into this package, a sibling of accounts, so
+// the mount is the services directory and the template is named from there.
 run(
 	[
 		"generate",
@@ -55,10 +59,9 @@ run(
 		"--proto",
 		"../../contracts/api/accounts/connect/proto",
 		"--output",
-		".",
-		"--local",
+		"..",
 		"--template",
-		"buf.gen.sdk.yaml",
+		"accounts/buf.gen.sdk.yaml",
 	],
 	accounts,
 );

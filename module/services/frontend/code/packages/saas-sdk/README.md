@@ -180,30 +180,34 @@ test asserts the shipped `dist` gen tree equals that reachable closure and never
 contains an internal surface.
 
 `npm run generate -- --force` refreshes the vendored contract and facade, then
-its explicit generator script runs Codefly's local proto generation with
-`services/accounts/buf.gen.sdk.yaml`. That template uses the lockfile-pinned
-TypeScript plugin and `include_imports: true` to generate the complete import
-closure, including buf/validate and google/api. It avoids CLI-dependent foreign
-import omissions and never repairs generated files by hand. The public package
-still compiles only the closure reachable from its public SDK sources.
+its explicit generator script runs Codefly's proto generation with
+`services/accounts/buf.gen.sdk.yaml`. That template uses the proto companion's
+pinned TypeScript plugin and `include_imports: true` to generate the complete
+import closure, including buf/validate and google/api. It avoids CLI-dependent
+foreign import omissions and never repairs generated files by hand. The public
+package still compiles only the closure reachable from its public SDK sources.
 
-**Install the frontend workspace before regenerating.** That template reaches the
-pinned plugin through `npx --no-install`, so
-`npm ci --prefix module/services/frontend/code` has to have run first. Without it
-the buf step exits non-zero *after* the client step has already rewritten the
-vendored contract, the facade and `library.codefly.yaml`, leaving a
-half-regenerated tree. Install the workspace and re-run, or `git checkout` the
-`generated` directory to get back to a known state.
+**The binding step runs inside the proto companion.** `codefly generate proto`
+executes every plugin in the pinned companion image and mounts only its
+`--output` directory, so the step runs from `services/accounts` with `--output
+..` and `--template accounts/buf.gen.sdk.yaml` — the template writes into this
+package, a sibling of accounts. The template used to reach the plugin through
+`npx --prefix ../frontend/code`, which resolves against nothing inside the image:
+the buf step then exits non-zero *after* the client step has already rewritten
+the vendored contract, the facade and `library.codefly.yaml`, leaving a
+half-regenerated tree. If a run fails that way, `git checkout` the `generated`
+directory to get back to a known state.
 
 **Regenerate through the script, never the client step alone.** Which `codefly`
 you run decides what the *client* step emits — the generation recipe is
 `//go:embed`-ed into the CLI through the core it vendors, and a build that calls
 `MarkForeignImports` suppresses foreign-namespace files. The buf step that
 follows is what makes the result reproducible anyway: it regenerates the whole
-import closure through the `@bufbuild/protoc-gen-es` version
-`module/services/frontend/code/package.json` pins, so the committed bindings sit
-on that pin. Run the client step by itself and they sit on whatever the
-companion image carries instead — which is how this tree once landed on a
+import closure through the companion's `@bufbuild/protoc-gen-es`, which must
+equal the version `module/services/frontend/code/package.json` pins — the
+composition gate compares every binding's stamp with that pin, so a companion
+that moved alone fails there rather than landing silently. Run the client step
+by itself and the bindings sit on whatever the client recipe emits instead — which is how this tree once landed on a
 generator this repository does not pin, together with a foreign descriptor set
 that did not match it (#728), with nothing local catching either because `tsc`
 compiles from `src` only.
