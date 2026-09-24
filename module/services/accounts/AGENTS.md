@@ -21,6 +21,14 @@ survives a restart and reaches every replica, and is only served when it is
 
 - Writes are **compare-and-swap on the revision**, so a stale publisher cannot
   overwrite newer state.
+- A frontend-half write that changes the manifest also **admits the audit event
+  types its dashboard graph declares** (events carrying `fields`), in the same
+  transaction (`pkg/business/solution_audit_events.go`). An admitted type is an
+  `audit_event_types` row owned by `solution:<id>`; a namespace belongs to one
+  producer, a re-declaration may only add fields, and a refusal rolls the whole
+  write back. `ModuleEmitAuditEvent` accepts a declared type only when the
+  `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
+  lists its namespace.
 - A deregistration leaves a **tombstone**, so a retiring deployment's delayed
   heartbeat cannot resurrect it.
 - accounts serves this as `SolutionRegistryService` on the **internal listener**;

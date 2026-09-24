@@ -114,12 +114,14 @@ export async function POST(request: Request): Promise<Response> {
 /**
  * Registration is a write to a shared, versioned record, so it can fail in ways
  * a caller must tell apart: `conflict` means re-read and retry, `forbidden`
- * means the id belongs to someone else, `unavailable` means back off. Answering
- * 200 for any of these would let a solution believe it is serving when it is
- * not — the exact incoherence this registry exists to prevent.
+ * means the id belongs to someone else, `rejected` means the registry will not
+ * admit this manifest — change it, do not retry it — and `unavailable` means
+ * back off. Answering 200 for any of these would let a solution believe it is
+ * serving when it is not — the exact incoherence this registry exists to
+ * prevent.
  */
 function writeFailure(
-	reason: "unavailable" | "conflict" | "forbidden",
+	reason: "unavailable" | "conflict" | "forbidden" | "rejected",
 ): Response {
 	switch (reason) {
 		case "conflict":
@@ -129,6 +131,12 @@ function writeFailure(
 				{ error: "not_registration_owner" },
 				{ status: 403 },
 			);
+		case "rejected":
+			// The declared audit event types are the one part of a manifest only
+			// the registry can judge (whether a namespace is free, whether a
+			// changed field set only grows), so this is the same class of answer
+			// as invalid_manifest: the registrant must change what it sends.
+			return Response.json({ error: "registration_rejected" }, { status: 422 });
 		default:
 			return Response.json({ error: "registry_unavailable" }, { status: 503 });
 	}

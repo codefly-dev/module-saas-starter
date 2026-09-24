@@ -50,6 +50,12 @@ func solutionRegistryError(err error) error {
 		return status.Error(codes.InvalidArgument, "solution registration must carry exactly one half")
 	case errors.Is(err, business.ErrSolutionRegistrationIdentityRequired):
 		return status.Error(codes.InvalidArgument, "solution registration requires a solution id and publisher")
+	case errors.Is(err, business.ErrSolutionAuditDeclarationRejected):
+		// InvalidArgument, not FailedPrecondition or PermissionDenied: the
+		// registrant must change its declaration, and no retry of this manifest
+		// — nor a re-read of the revision — will ever succeed. The message
+		// names the event and the rule it broke.
+		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		return err
 	}
