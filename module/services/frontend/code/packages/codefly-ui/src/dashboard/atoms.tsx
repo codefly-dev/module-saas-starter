@@ -82,7 +82,12 @@ function stride(count: number, max: number): Set<number> {
 	const step = Math.ceil(count / max);
 	const shown = new Set<number>();
 	for (let i = 0; i < count; i += step) shown.add(i);
-	shown.add(count - 1);
+	// The stride label before the last can sit less than one step from it, and
+	// two labels that close draw over each other, so the last takes its place.
+	const last = count - 1;
+	const lastStride = last - (last % step);
+	if (lastStride !== last && lastStride > 0) shown.delete(lastStride);
+	shown.add(last);
 	return shown;
 }
 
@@ -114,7 +119,9 @@ export function Axis({ plot, x, y }: { plot: Plot; x?: XAxis; y?: YAxis }) {
 						key={key}
 						x={scaleX(i, x.keys.length, plot)}
 						y={plot.bottom + 14}
-						textAnchor="middle"
+						// The last bucket sits on the plot's right edge, where a
+						// centred label is clipped by the viewBox; it ends there.
+						textAnchor={i === x.keys.length - 1 && i > 0 ? "end" : "middle"}
 						className="fill-muted-foreground type-chart-label"
 					>
 						{formatKey(key)}

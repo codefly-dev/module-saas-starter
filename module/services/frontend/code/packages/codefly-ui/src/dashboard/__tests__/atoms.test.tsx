@@ -53,4 +53,25 @@ describe("Axis", () => {
 		expect(shown.length).toBeLessThanOrEqual(6);
 		expect(shown).toContain("cat-19");
 	});
+
+	// Thirty daily buckets stride every fifth, which left cat-25 one bucket
+	// short of a full step from cat-29: the two labels drew over each other.
+	it("never draws the last x label on top of the stride label before it", () => {
+		const keys = Array.from({ length: 30 }, (_, i) => `cat-${i}`);
+		const shown = byTag(Axis({ plot, x: { keys } }), "text").map((t) => t.text);
+		expect(shown).toContain("cat-29");
+		expect(shown).not.toContain("cat-25");
+		expect(shown.length).toBeLessThanOrEqual(6);
+	});
+
+	// Centred on the plot's right edge, the last label was clipped ("Sep 2").
+	it("ends the last x label at the plot's edge instead of centring it", () => {
+		const keys = ["a", "b", "c"];
+		const texts = byTag(Axis({ plot, x: { keys } }), "text");
+		expect(texts.map((t) => t.props.textAnchor)).toEqual([
+			"middle",
+			"middle",
+			"end",
+		]);
+	});
 });
