@@ -436,7 +436,8 @@
           "actor": "the module service principal",
           "tenant": "the tenant MODULE_PRINCIPALS declares for the module",
           "ttlSeconds": 60,
-          "replayPolicy": "idempotent"
+          "replayPolicy": "idempotent",
+          "authorizationRevision": "a non-zero digest of the module's MODULE_PRINCIPALS entry; CheckAuthorizationRevision confirms it against the current entry and answers PermissionDenied on any mismatch"
         },
         "rules": [
           "A binding without headless_scopes cannot be minted with no person present; invoke_scopes are never reused implicitly.",

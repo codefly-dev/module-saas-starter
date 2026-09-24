@@ -141,3 +141,34 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 	_, err = s.ModuleAuthorizeOperationContext("unknown", "example-secret", "model")
 	require.ErrorIs(t, err, ErrModuleRegistrationDenied)
 }
+
+func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testing.T) {
+	raw := `{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","queues":["a"],"operation_audiences":{` +
+		`"model":{"audience":"other","invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
+		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
+		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`
+	first, err := ParseModulePrincipalRegistry(raw)
+	require.NoError(t, err)
+	second, err := ParseModulePrincipalRegistry(raw)
+	require.NoError(t, err)
+	id := ModulePrincipalID("example")
+	revision := ModuleOperationContextRevision(first[id])
+	require.NotZero(t, revision)
+	require.Less(t, revision, uint64(1)<<63)
+	for range 20 { // map iteration order must not matter
+		require.Equal(t, revision, ModuleOperationContextRevision(second[id]))
+	}
+
+	changed := second[id]
+	changed.Queues = []string{"b"}
+	require.NotEqual(t, revision, ModuleOperationContextRevision(changed))
+
+	s := &Service{modulePrincipals: first}
+	owner := []ModuleOperationRevisionSubject{{PrincipalID: id, Scopes: []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"invoke"}, ResourceIDs: []string{"p-1"}}}}}
+	handled, err := s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", id, revision, owner)
+	require.True(t, handled)
+	require.NoError(t, err)
+	handled, err = s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", "019fec91-1000-7000-8000-000000000002", revision, owner)
+	require.False(t, handled)
+	require.NoError(t, err)
+}

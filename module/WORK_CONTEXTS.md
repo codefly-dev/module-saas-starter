@@ -142,7 +142,22 @@ The host mints a child Work Context with:
   `headless_scopes`;
 - owner and sole actor = the module's own service principal (kind `service`);
 - tenant = the tenant `MODULE_PRINCIPALS` declares for that principal;
-- a 60-second lifetime and the idempotent replay policy.
+- a 60-second lifetime and the idempotent replay policy;
+- an authorization revision that is a digest of the module's whole
+  `MODULE_PRINCIPALS` entry (`business.ModuleOperationContextRevision`, never
+  zero).
+
+A consumer confirms such a context with `WorkContextService/CheckAuthorizationRevision`
+like any other. A module principal has no row-backed authority to resolve, so
+accounts answers from the declaration instead: the owner must be a declared
+module principal, the tenant its declared tenant, the revision the digest of its
+**current** entry, every subject the module principal itself (as owner and as
+its sole actor hop), and every subject's scopes within one binding's
+`headless_scopes`. Any mismatch is `PermissionDenied` — a denial, never an
+outage a consumer should retry. Because the revision covers the whole entry, any
+change to it (once the deployment picks it up) revokes every outstanding
+operation context of that module. Contexts owned by a person or an installation
+take the row-backed check unchanged.
 
 `headless_scopes` is an optional list on each operation binding, in the same
 canonical shape as `invoke_scopes`, and it must be a subset of them — acting

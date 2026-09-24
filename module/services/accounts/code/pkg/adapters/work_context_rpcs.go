@@ -114,12 +114,18 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
-	if s == nil || s.consumer == nil {
-		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
-	}
 	if len(req.GetSubjects()) == 0 ||
 		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
 		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
+	}
+	// A context owned by a declared module's service principal has no
+	// row-backed authority to resolve: it is confirmed against the module's
+	// current declaration instead. Every other owner takes the store path below.
+	if handled, err := checkModuleOperationContextRevision(req); handled {
+		return nil, err
+	}
+	if s == nil || s.consumer == nil {
+		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
 	}
 	seen := make(map[string]struct{}, len(req.GetSubjects()))
 	subjects := make([]business.WorkContextRevisionSubject, 0, len(req.GetSubjects()))
@@ -157,6 +163,43 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		return nil, mapConsumerAuthorityError(err)
 	}
 	return &emptypb.Empty{}, nil
+}
+
+// checkModuleOperationContextRevision confirms a context MintModuleOperationContext
+// issued. Its owner and sole actor are the same module principal, so — unlike
+// the store path — the owner legitimately appears twice among the subjects
+// (once with the authority scopes, once as the actor hop with its granted
+// scopes). Every refusal is PermissionDenied: a consumer must read a changed or
+// forged module context as denied, never as an authority outage it may retry.
+func checkModuleOperationContextRevision(req *gen.CheckAuthorizationRevisionRequest) (bool, error) {
+	if service == nil {
+		return false, nil
+	}
+	subjects := make([]business.ModuleOperationRevisionSubject, 0, len(req.GetSubjects()))
+	for _, subject := range req.GetSubjects() {
+		scopes := make([]business.ModuleOperationScope, 0, len(subject.GetScopes()))
+		for _, scope := range subject.GetScopes() {
+			scopes = append(scopes, business.ModuleOperationScope{
+				ResourceKind: scope.GetResourceKind(),
+				Actions:      append([]string(nil), scope.GetActions()...),
+				ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+			})
+		}
+		subjects = append(subjects, business.ModuleOperationRevisionSubject{
+			PrincipalID: subject.GetPrincipalId(),
+			Scopes:      scopes,
+		})
+	}
+	handled, err := service.CheckModuleOperationContextRevision(
+		req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
+	)
+	if !handled {
+		return false, nil
+	}
+	if err != nil {
+		return true, status.Error(codes.PermissionDenied, business.ErrModuleOperationContextStale.Error())
+	}
+	return true, nil
 }
 
 func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
@@ -452,6 +495,9 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	if authority.Audience == "" || authority.Audience == ModuleWorkContextAudience {
 		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context audience", codefly.ErrWorkContextInvalid)
 	}
+	if authority.Revision == 0 {
+		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context revision", codefly.ErrWorkContextInvalid)
+	}
 	_, scopes, err := workContextScopes(authority.WireScopes())
 	if err != nil || len(scopes) == 0 {
 		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context scopes", codefly.ErrWorkContextInvalid)
@@ -462,8 +508,12 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 		OwnerPrincipalID: authority.PrincipalID,
 		TaskID:           uuid.NewString(),
 		SessionID:        uuid.NewString(),
-		ReplayPolicy:     codefly.WorkContextReplayIdempotent,
-		AuthorityScopes:  scopes,
+		// Sealed so a consumer's CheckAuthorizationRevision can confirm the
+		// context against the module's current declaration (see
+		// checkModuleOperationContextRevision); zero is not a revision.
+		AuthorizationRevision: authority.Revision,
+		ReplayPolicy:          codefly.WorkContextReplayIdempotent,
+		AuthorityScopes:       scopes,
 		ActorChain: []*basev0.WorkActorV1{{
 			PrincipalId:   authority.PrincipalID,
 			PrincipalKind: business.PrincipalKindService,
