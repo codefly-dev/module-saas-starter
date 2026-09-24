@@ -19,12 +19,14 @@ interface RouteContext {
 // internal token, so it must reject cross-site requests itself — cookies ride
 // along automatically on a forged cross-origin call, and the gateway cannot tell
 // a CSRF-driven request from a legitimate one once the internal token is
-// attached. Mirrors the same-origin guard on the sibling plugin BFF route.
+// attached. The browser's Origin is compared with the request's PUBLIC origin:
+// behind a TLS-terminating ingress the pod-local request URL is plaintext http,
+// so comparing with it rejected every same-origin write a deployed cell served.
 function sameOrigin(request: Request): boolean {
 	const origin = request.headers.get("origin");
 	if (origin) {
 		try {
-			if (new URL(origin).origin !== new URL(request.url).origin) return false;
+			if (new URL(origin).origin !== requestPublicOrigin(request)) return false;
 		} catch {
 			return false;
 		}

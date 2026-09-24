@@ -97,7 +97,12 @@ function rawRequest(
 	method: string,
 	headers: Record<string, string>,
 ): Request {
-	return { method, url, headers: new Headers(headers) } as unknown as Request;
+	return {
+		method,
+		url,
+		headers: new Headers(headers),
+		arrayBuffer: async () => new ArrayBuffer(0),
+	} as unknown as Request;
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -345,6 +350,47 @@ describe("solution proxy passthrough", () => {
 
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	// Behind a TLS-terminating ingress the pod sees plaintext http and its own
+	// host, while the browser's Origin is the public https origin. A same-origin
+	// write (every Connect call and chat turn is a POST) must still pass.
+	it("allows a same-origin POST behind a TLS-terminating ingress", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				authorization: "Bearer caller-token",
+				origin: "https://app.example.com",
+				"sec-fetch-site": "same-origin",
+				"x-forwarded-proto": "https",
+				"x-forwarded-host": "app.example.com",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects a cross-site Origin behind a TLS-terminating ingress", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				origin: "https://evil.example",
+				"x-forwarded-proto": "https",
+				"x-forwarded-host": "app.example.com",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("never leaks arbitrary caller headers to the upstream", async () => {
