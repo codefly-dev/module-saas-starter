@@ -25,8 +25,9 @@ survives a restart and reaches every replica, and is only served when it is
   types its dashboard graph declares** (events carrying `fields`), in the same
   transaction (`pkg/business/solution_audit_events.go`). An admitted type is an
   `audit_event_types` row owned by `solution:<id>`; a namespace belongs to one
-  producer, a re-declaration may only add fields, and a refusal rolls the whole
-  write back. `ModuleEmitAuditEvent` accepts a declared type only when the
+  producer (one the composed event catalog publishes domain events under is
+  already held), a re-declaration may only add fields, and a refusal rolls the
+  whole write back. `ModuleEmitAuditEvent` accepts a declared type only when the
   `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
   lists its namespace.
 - A deregistration leaves a **tombstone**, so a retiring deployment's delayed

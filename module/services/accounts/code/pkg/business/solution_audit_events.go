@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"accounts/pkg/eventcatalog"
 )
 
 // Solution-declared audit event types.
@@ -40,8 +42,10 @@ import (
 //   - A reserved namespace is refused: `saas`, the platform's own.
 //   - A namespace belongs to one producer. The first solution to admit a type
 //     into it owns it; another solution, or the code catalog, holding any type
-//     there refuses the declaration. This is the naming law domain events
-//     already follow (EVENTS.md): two producers can never mint the same name.
+//     there refuses the declaration, and so does a namespace the composed event
+//     catalog publishes domain events under (eventcatalog.IsPublishedNamespace).
+//     This is the naming law domain events already follow (EVENTS.md): two
+//     producers can never mint the same name.
 //   - A type is declared at most once in one declaration.
 //   - Field names are snake_case, unique within the type, and never `solution`,
 //     which the host stamps on every emitted payload.
@@ -470,6 +474,12 @@ func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID s
 	// taking the locks in that order is what keeps two admissions spanning the
 	// same namespaces from deadlocking.
 	for _, namespace := range namespaces {
+		// A namespace the composed event catalog publishes domain events under
+		// has its producer already, though no audit_event_types row may name it.
+		if eventcatalog.IsPublishedNamespace(namespace) {
+			return fmt.Errorf("%w: %w: namespace %q is published by a producer in the composed event catalog",
+				ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceOwned, namespace)
+		}
 		if err := s.store.LockAuditEventNamespace(ctx, namespace); err != nil {
 			return err
 		}

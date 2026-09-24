@@ -43,6 +43,27 @@ func TestLookupPublishedReportsCatalogMembership(t *testing.T) {
 	}
 }
 
+// TestIsPublishedNamespace pins that the namespace set is the generated table's:
+// every namespace a published type sits under is held, and one no contribution
+// declares is not.
+func TestIsPublishedNamespace(t *testing.T) {
+	for _, e := range Published() {
+		if !IsPublishedNamespace(e.Namespace) {
+			t.Fatalf("%s is published under %q, which must report as held", e.Type, e.Namespace)
+		}
+	}
+	for _, namespace := range []string{"installation", "scope", PlatformAuditNamespace} {
+		if !IsPublishedNamespace(namespace) {
+			t.Fatalf("%q must be published by the composed catalog", namespace)
+		}
+	}
+	for _, namespace := range []string{"acme", "", "installation.created"} {
+		if IsPublishedNamespace(namespace) {
+			t.Fatalf("%q is not a published namespace", namespace)
+		}
+	}
+}
+
 // TestLookupFollowable pins the resolution the follows fan-out runs for every
 // delivered event: a type answers with the one resource type whose followers it
 // concerns, and the host then matches on (ResourceType, envelope subject). No
