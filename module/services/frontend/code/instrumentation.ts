@@ -27,9 +27,13 @@ export async function register() {
 	// On Node the deployment's `error-tracking` group is read through the Codefly
 	// SDK: a deployed pod carries it under its CODEFLY__ name, never as a bare
 	// ERROR_TRACKING_MODE / SENTRY_DSN, so reading only process.env left server
-	// error tracking off in every deployment. The bare variables stay as the
-	// fallback for a process started outside Codefly. The edge runtime cannot
-	// load the SDK and keeps reading process.env.
+	// error tracking off in every deployment. The bare variables are the source
+	// only for a process the group does not reach (started outside Codefly, or
+	// the edge runtime, which cannot load the SDK).
+	//
+	// One source or the other, never a key-by-key mix: a mode from the group and
+	// a DSN from a stray variable is a configuration nobody wrote, and it refuses
+	// to boot ("DSN is present while disabled").
 	const group =
 		process.env.NEXT_RUNTIME === "nodejs"
 			? await import("codefly").then(
@@ -38,7 +42,9 @@ export async function register() {
 							getWorkspaceValue("error-tracking", key)?.trim() || undefined,
 				)
 			: () => undefined;
-	const setting = (key: string) => group(key) ?? process.env[key];
+	const fromGroup = group("ERROR_TRACKING_MODE") !== undefined;
+	const setting = (key: string) =>
+		fromGroup ? group(key) : process.env[key];
 
 	const configuration = configuredErrorTracking(
 		setting("ERROR_TRACKING_MODE"),
