@@ -134,7 +134,13 @@ function xTickIndices(count: number): Set<number> {
 	const stride = Math.ceil(count / MAX_X_LABELS);
 	const shown = new Set<number>();
 	for (let i = 0; i < count; i += stride) shown.add(i);
-	shown.add(count - 1);
+	// The last label always shows. The stride label before it can sit less than
+	// one stride away, and two labels that close draw over each other, so the
+	// last label takes that one's place.
+	const last = count - 1;
+	const lastStride = last - (last % stride);
+	if (lastStride !== last && lastStride > 0) shown.delete(lastStride);
+	shown.add(last);
 	return shown;
 }
 
