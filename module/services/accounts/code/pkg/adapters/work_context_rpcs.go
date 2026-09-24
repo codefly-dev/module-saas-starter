@@ -429,6 +429,51 @@ func (s *WorkContextAuthorityServer) StartModuleTask(
 	})
 }
 
+// StartModuleOperationTask mints the capability a composed module presents, with
+// no person present, to the service behind one of its installed operation
+// audiences. Owner and sole actor are the module's service principal, the tenant
+// is the one its principal declares, and the authority is exactly the binding's
+// headless scopes — sealed here, unlike StartModuleTask, because the audience is
+// another service that decides from the token alone. The lifetime is the short
+// operation-context ceiling rather than the Work Context maximum.
+//
+// As with StartModuleTask nothing is resolved from the database and no actor
+// hop is journaled: a module principal is declared by the deployment, not
+// registered, and the durable record is the issuance audit event.
+func (s *WorkContextAuthorityServer) StartModuleOperationTask(
+	authority business.ModuleOperationContextAuthority,
+) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+	if s == nil || s.configureErr != nil || s.signer == nil {
+		return codefly.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
+	}
+	// A binding addressed to the capability surface itself would yield a token
+	// that surface accepts as the module's own identity, sealed with scopes it
+	// never reads; refuse rather than mint two spellings of one capability.
+	if authority.Audience == "" || authority.Audience == ModuleWorkContextAudience {
+		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context audience", codefly.ErrWorkContextInvalid)
+	}
+	_, scopes, err := workContextScopes(authority.WireScopes())
+	if err != nil || len(scopes) == 0 {
+		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context scopes", codefly.ErrWorkContextInvalid)
+	}
+	return s.signer.StartTask(codefly.StartTaskInput{
+		Audience:         authority.Audience,
+		TenantID:         authority.Tenant,
+		OwnerPrincipalID: authority.PrincipalID,
+		TaskID:           uuid.NewString(),
+		SessionID:        uuid.NewString(),
+		ReplayPolicy:     codefly.WorkContextReplayIdempotent,
+		AuthorityScopes:  scopes,
+		ActorChain: []*basev0.WorkActorV1{{
+			PrincipalId:   authority.PrincipalID,
+			PrincipalKind: business.PrincipalKindService,
+			DelegationId:  uuid.NewString(),
+			GrantedScopes: cloneWorkScopes(scopes),
+		}},
+		TTL: business.ModuleOperationContextTTL,
+	})
+}
+
 // VerifyModuleWorkContext authenticates a module capability token and returns
 // the principal it names with the tenant it is bound to. The signature, issuer,
 // audience, and expiry are all checked; the actor chain names the acting

@@ -45,6 +45,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections
               - /saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility
               - /saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions
+              - /saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext
               - /saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration
               - /saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext
               - /saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration

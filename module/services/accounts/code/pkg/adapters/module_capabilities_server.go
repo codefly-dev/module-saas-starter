@@ -100,6 +100,60 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	}, nil
 }
 
+// MintModuleOperationContext issues, with no person present, a Work Context
+// addressed to one of the calling module's installed operation audiences — the
+// capability background work uses to call another module's service. It
+// authenticates exactly like MintModuleWorkContext, then the business layer
+// decides from deployment policy alone which audience and scopes the named
+// binding yields; the caller supplies neither.
+//
+// Codes: Unauthenticated when the module's identity is not proven (unknown
+// prefix, wrong secret, no identity digests); PermissionDenied when the proven
+// module names a binding it may not mint headless; FailedPrecondition when the
+// declared tenant is missing or the issuer is unconfigured.
+func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Context, req *gen.ModuleMintOperationContextRequest) (*gen.ModuleMintOperationContextResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	authority, err := service.ModuleAuthorizeOperationContext(req.GetPrefix(), req.GetSecret(), req.GetBinding())
+	if err != nil {
+		switch {
+		case errors.Is(err, business.ErrModuleRegistrationDenied):
+			return nil, status.Error(codes.Unauthenticated, "module operation context denied")
+		case errors.Is(err, business.ErrModuleOperationContextRefused):
+			return nil, status.Error(codes.PermissionDenied, "operation binding is not mintable without a person present")
+		}
+		return nil, err
+	}
+	// The same tenant existence check MintModuleWorkContext runs: the capability
+	// seals the tenant, and nothing downstream would notice one that is not there.
+	if err := service.VerifyModuleTenant(ctx, authority.ModuleWorkContextAuthority); err != nil {
+		if errors.Is(err, business.ErrModuleTenantUnknown) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, err
+	}
+	token, signed, err := WorkContextSingleton().StartModuleOperationTask(authority)
+	if err != nil {
+		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, mapWorkContextError(err)
+	}
+	// Written once the capability exists; withheld when it cannot be committed.
+	if err := service.RecordModuleOperationContextMint(ctx, req.GetPrefix(), authority); err != nil {
+		return nil, err
+	}
+	return &gen.ModuleMintOperationContextResponse{
+		Token:       token.Encoded(),
+		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
+		PrincipalId: authority.PrincipalID,
+		Tenant:      authority.Tenant,
+		Audience:    authority.Audience,
+		Binding:     authority.BindingID,
+	}, nil
+}
+
 // MintModuleRegistration issues the credential a composed module presents to the
 // gateway to federate its REST prefix. Unlike every other method here it takes
 // no Work Context: a module registers at startup, before any user request

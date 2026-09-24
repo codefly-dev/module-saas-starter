@@ -105,6 +105,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/ListSubscriptions": "events",
   "ModuleCapabilitiesService/MintModuleRegistration": "authorization",
   "ModuleCapabilitiesService/MintModuleWorkContext": "authorization",
+  "ModuleCapabilitiesService/MintModuleOperationContext": "authorization",
   "ModuleCapabilitiesService/MintSolutionRegistration": "authorization",
   "ModuleCapabilitiesService/NackJob": "jobs",
   "ModuleCapabilitiesService/NotifyUser": "notifications",

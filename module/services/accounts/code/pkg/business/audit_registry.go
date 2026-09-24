@@ -171,6 +171,7 @@ const (
 	EventAPIKeyCreated               EventType = "saas.api_key.created"
 	EventModuleRegistrationMint      EventType = "saas.module.registration_minted"
 	EventModuleWorkContextMint       EventType = "saas.module.work_context_minted"
+	EventModuleOperationContextMint  EventType = "saas.module.operation_context_minted"
 	EventDelegatedAudienceExchange   EventType = "saas.module.delegated_audience_exchange"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
@@ -345,6 +346,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
 	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
 	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
+	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
+		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
 	observation(EventDelegatedAudienceExchange, CategoryAccess, "A composed module's installed delegated-audience exchange was issued or refused.",
 		PayloadField{Name: "owner_principal_id", Kind: FieldUUID, Required: true},
 		PayloadField{Name: "actor_principal_id", Kind: FieldUUID, Required: true},

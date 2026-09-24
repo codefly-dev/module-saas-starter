@@ -132,3 +132,15 @@ authorizes it against an independent digest and owns every rule about what the
 resulting capability may do — see
 [../accounts/AGENTS.md](../accounts/AGENTS.md). The gateway mints nothing itself
 and adds no authority of its own.
+
+`POST /modules/_operation-context` is its headless sibling, on the same
+perimeter: the cluster-internal token in `X-Codefly-Internal-Token`, the module's
+**identity** secret in `X-Codefly-Module-Secret`, and body
+`{"prefix": "<module>", "binding": "<operation_audiences key>"}`. The gateway
+brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
+`{work_context, expires_at, principal_id, tenant, audience, binding}` (RFC 3339
+`expires_at`) with `cache-control: no-store` — snake_case, unlike the camelCase
+`/modules/_work-context`, because consumers were built against this shape. It relays two distinct refusals: `401` when the module is not proven
+(bad internal token, missing or wrong secret, undeclared module) and `403` when a
+proven module names a binding it may not mint with no person present. What the
+binding yields — audience, scopes, lifetime — is accounts' decision alone.

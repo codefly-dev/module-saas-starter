@@ -9,7 +9,8 @@ import "google/protobuf/timestamp.proto";
 //
 // These messages live in their own file, with deliberately minimal imports, so
 // the auth-gateway can generate the same types from the same source proto and
-// call MintModuleRegistration / MintSolutionRegistration / MintModuleWorkContext (all declared on
+// call MintModuleRegistration / MintSolutionRegistration / MintModuleWorkContext /
+// MintModuleOperationContext (all declared on
 // ModuleCapabilitiesService) over the internal listener. Sharing the generated
 // definition rather than restating the wire shape is what keeps the two sides
 // from drifting.
@@ -93,4 +94,41 @@ message ModuleMintWorkContextResponse {
   google.protobuf.Timestamp expires_at = 2;
   string principal_id = 3;
   string tenant = 4;
+}
+
+// ModuleMintOperationContextRequest asks for a Work Context addressed to one of
+// the calling module's installed operation audiences, with no person present —
+// the capability background work (a journal replay, a scheduled refresh) uses to
+// call another module's service. It authenticates exactly like
+// ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+//
+// The caller names only the binding. Audience, scopes, tenant, actor and
+// lifetime are deployment policy: the binding's `headless_scopes`, the tenant
+// declared for the module principal, and a short fixed lifetime. A binding that
+// declares no headless scopes cannot be minted this way at all.
+message ModuleMintOperationContextRequest {
+  string prefix = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+  }];
+  string secret = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 512
+  }];
+  string binding = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+}
+
+// ModuleMintOperationContextResponse carries the signed capability and what it
+// asserts, so a module can attribute and route its call without parsing it.
+message ModuleMintOperationContextResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string principal_id = 3;
+  string tenant = 4;
+  string audience = 5;
+  string binding = 6;
 }

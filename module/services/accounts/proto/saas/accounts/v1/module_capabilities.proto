@@ -958,6 +958,28 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
+  // MintModuleOperationContext issues, with no person present, a Work Context
+  // addressed to one of the calling module's installed operation audiences.
+  // Authorized by the module's identity secret like MintModuleWorkContext; owner
+  // and sole actor are the module service principal, the tenant is the one its
+  // principal declares, and the scopes are exactly the binding's declared
+  // headless scopes. A binding declaring none is refused.
+  rpc MintModuleOperationContext(ModuleMintOperationContextRequest) returns (ModuleMintOperationContextResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.operation_context_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
   // PublishEvent appends one domain event to the outbox for the caller's tenant.
   rpc PublishEvent(ModulePublishEventRequest) returns (ModulePublishEventResponse) {
     option (saas.policy.v1.method_policy) = {

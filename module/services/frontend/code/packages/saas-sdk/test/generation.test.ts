@@ -114,7 +114,7 @@ it("binds both generation steps to the exported contract, ignoring mutable servi
 	expect(calls).toHaveLength(2);
 	expect(calls[0].args.slice(0, 2)).toEqual(["generate", "client"]);
 	expect(calls[1].args.slice(0, 2)).toEqual(["generate", "proto"]);
-	expect(flag(calls[1], "--template")).toBe("buf.gen.sdk.yaml");
+	expect(flag(calls[1], "--template")).toBe("accounts/buf.gen.sdk.yaml");
 	expect(calls[0].args).toContain("--force");
 	const exported = resolve(
 		calls[0].cwd,

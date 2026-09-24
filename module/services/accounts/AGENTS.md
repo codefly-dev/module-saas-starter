@@ -48,7 +48,7 @@ Its authority is declared in the `module-capabilities` group's
 | `namespaces` | event publish |
 | `resources` | the permission resource types its own content is governed by, bounding both the content reads this host authorizes for it and the records it may place at a scope node |
 | `read_audiences` | installed read-only bindings from a retained parent to a fixed audience and canonical scopes |
-| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, and a read-only lookup subset |
+| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, a read-only lookup subset, and optional `headless_scopes` (a subset of the invoke scopes) that alone may be minted with no person present |
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
@@ -82,6 +82,35 @@ once the capability exists. The response carries
 See [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md) and
 [../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md) for the other
 exchanges that produce one.
+
+## Minting an operation context with no person present
+
+`ModuleCapabilitiesService/MintModuleOperationContext` (`EXPOSURE_INTERNAL`,
+brokered by the gateway's `/modules/_operation-context`) is the headless
+counterpart of the delegated operation exchange: background work calling another
+module's service when nobody is signed in. It authenticates exactly like
+`MintModuleWorkContext` — the same identity secret, the same refusal of an
+undeclared prefix, the same tenant existence check — and the request adds only a
+`binding`, a key of that module's `operation_audiences`.
+
+- The child is addressed to the binding's `audience` and carries **exactly** its
+  `headless_scopes`, as both the authority scopes and the module actor's granted
+  scopes. Owner and sole actor are the module's service principal; the tenant is
+  the declared one. It lives 60 seconds (`business.ModuleOperationContextTTL`,
+  the exchanged-operation ceiling) with the idempotent replay policy.
+- A binding without `headless_scopes` is refused (`PermissionDenied`); the invoke
+  scopes are never reused implicitly. An unproven module is `Unauthenticated`.
+  A binding addressed to `module-capabilities` is refused at signing.
+- Unlike a module Work Context the scopes **are** sealed: the audience is another
+  service that decides from the token alone. Removing a binding's
+  `headless_scopes` stops the next mint; an issued child outlives it by at most
+  a minute.
+- `saas.module.operation_context_minted` records every issuance with the
+  binding, audience and each granted `kind:action[:resource]`, written after the
+  capability exists and withholding it when the record cannot be committed.
+
+The worked example and the configuration shape are in
+[../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-with-no-person-present).
 
 ## Subject visibility is a projection, not a module's own vocabulary
 
