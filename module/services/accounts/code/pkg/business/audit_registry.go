@@ -39,6 +39,10 @@ const (
 // against these at the emit choke point; the JSON Schema projection stored in
 // audit_event_types.payload_schema is generated from the same fields.
 //
+// FieldInt is a whole number. A Go int of any width is one; a float64 — the
+// form every number takes after a protobuf Struct or JSON — is one only when it
+// is whole and within ±maxExactFloatInt.
+//
 // FieldNumber is a finite IEEE-754 double — a fraction, a score, a ratio — and
 // is the kind to declare for any value that is not a count. NaN and ±Inf are
 // rejected: no aggregate over them means anything, and jsonb cannot store them.
@@ -53,6 +57,11 @@ const (
 	FieldEnum        FieldKind = "enum"
 	FieldStringArray FieldKind = "string_array"
 )
+
+// maxExactFloatInt is 2^53-1, the largest magnitude at which every int has its
+// own float64. Beyond it a float64 stands for more than one int, so a FieldInt
+// that arrived as a float64 cannot be trusted to be the value that was sent.
+const maxExactFloatInt = 1<<53 - 1
 
 // PayloadField declares one field of a typed audit payload. PII marks a field
 // as personally identifying: it is stripped from every export path so audit
@@ -691,10 +700,18 @@ func validateField(t EventType, f PayloadField, v any) error {
 		switch value := v.(type) {
 		case int, int32, int64:
 		case float64:
-			// A non-finite value cannot be stored: jsonb has no NaN or ±Inf, and
-			// the audit insert would record the event with its payload dropped.
+			// A protobuf Struct and decoded JSON carry every number as a float64,
+			// so the value itself must be an int. A non-finite value cannot be
+			// stored: jsonb has no NaN or ±Inf, and the audit insert would record
+			// the event with its payload dropped.
 			if math.IsNaN(value) || math.IsInf(value, 0) {
 				return fmt.Errorf("audit: event %q field %q expects a finite int", t, f.Name)
+			}
+			if value != math.Trunc(value) {
+				return fmt.Errorf("audit: event %q field %q expects an int, not a fraction", t, f.Name)
+			}
+			if math.Abs(value) > maxExactFloatInt {
+				return fmt.Errorf("audit: event %q field %q expects an int within ±%d", t, f.Name, int64(maxExactFloatInt))
 			}
 		default:
 			return fmt.Errorf("audit: event %q field %q expects an int", t, f.Name)
