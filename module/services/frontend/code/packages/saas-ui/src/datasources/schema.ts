@@ -6,15 +6,17 @@ import { parsePaths } from "./util.js";
 export const connectGitHubSchema = z
 	.object({
 		// How the source authenticates. The App path sends no token at all —
-		// the host resolves the installation covering the repository — so the
-		// token bound below is conditional rather than a flat `min(1)`.
+		// the host resolves the installation covering the repository — and
+		// neither does the public path, which the host accepts only once GitHub
+		// confirms the repository is public. So the token bound below is
+		// conditional rather than a flat `min(1)`.
 		//
 		// Optional rather than defaulted because this schema is exported: a
 		// default lands in the inferred output type as a *required* field, which
 		// would force every external caller constructing these values to name a
 		// mode that did not exist before. Absent therefore reads as the pre-App
-		// rule everywhere — only `app` relaxes the token.
-		method: z.enum(["app", "pat"]).optional(),
+		// rule everywhere — only `app` and `public` relax the token.
+		method: z.enum(["app", "public", "pat"]).optional(),
 		repo: z
 			.string()
 			.max(255, "Repository name too long")
@@ -54,7 +56,11 @@ export const connectGitHubSchema = z
 		webhookSecret: z.string().max(1024, "Webhook secret too long").optional(),
 	})
 	.superRefine((values, ctx) => {
-		if (values.method !== "app" && !values.accessToken) {
+		if (
+			values.method !== "app" &&
+			values.method !== "public" &&
+			!values.accessToken
+		) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ["accessToken"],

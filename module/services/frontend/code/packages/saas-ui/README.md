@@ -34,6 +34,13 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   shown above live provenance. Loading/error/empty are first-class.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
+  Its Authentication choice always offers **Public repository (no token)**: the
+  host connects it only once GitHub reports the repository public to an
+  unauthenticated request, stores no credential, registers no webhook (the form
+  hides the webhook secret), and keeps it current by periodic sync under
+  GitHub's unauthenticated limit of 60 requests an hour per IP address. When the
+  App is installed on that repository for the organization, the host uses the
+  App instead.
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a

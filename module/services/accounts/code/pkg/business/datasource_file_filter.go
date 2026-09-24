@@ -8,10 +8,16 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// GitHubFileFilter occupies the source's existing non-secret config envelope.
-// Empty (including legacy NULL config) preserves the all-file-types behavior.
-type GitHubFileFilter struct {
+// GitHubSourceConfig is a GitHub source's non-secret config envelope. Empty
+// (including legacy NULL config) preserves the all-file-types behavior and an
+// envelope-backed credential.
+type GitHubSourceConfig struct {
 	FileExtensions []string `json:"file_extensions,omitempty"`
+	// CredentialKind is set only for a source that holds no credential envelope
+	// at all, and then names why: githubCredentialKindPublic. A source with an
+	// envelope leaves it empty — the envelope names its own kind — and the store
+	// clears it whenever an envelope is written, so the two never disagree.
+	CredentialKind string `json:"credential_kind,omitempty"`
 }
 
 var fileExtensionPattern = regexp.MustCompile(`^\.[a-z0-9][a-z0-9._-]{0,31}$`)

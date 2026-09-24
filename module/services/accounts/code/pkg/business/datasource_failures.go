@@ -26,6 +26,10 @@ func datasourceProcessingError(err error) error {
 	switch {
 	case errors.Is(err, github.ErrUnauthorized):
 		return jobs.NewProcessingError("datasource.github_unauthorized", "GitHub rejected the PAT (401). Reconnect with a valid token. This sync job will not retry.", false)
+	// Before the generic rate limit it wraps: a public source's limit is the
+	// IP's, not a credential's, and only naming it tells a tenant the remedy.
+	case errors.Is(err, github.ErrUnauthenticatedRateLimited):
+		return jobs.NewProcessingError("datasource.github_unauthenticated_rate_limited", githubUnauthenticatedRateLimitMessage+" This job may retry.", true)
 	case errors.Is(err, github.ErrRateLimited):
 		return jobs.NewProcessingError("datasource.github_rate_limited", "GitHub rate limited the request (403/429). This job may retry.", true)
 	case errors.Is(err, github.ErrForbidden):
@@ -41,6 +45,12 @@ func datasourceFailureFields(err error, repo, trigger string) map[string]any {
 	var safe *jobs.ProcessingError
 	if errors.As(datasourceProcessingError(err), &safe) {
 		fields["reason"], fields["code"], fields["retryable"] = safe.Failure.Message, safe.Failure.Code, safe.Retryable
+	} else if st, ok := status.FromError(err); ok && st.Code() == codes.ResourceExhausted &&
+		st.Message() == status.Convert(githubValidationError(github.ErrUnauthenticatedRateLimited)).Message() {
+		// The preflight of a public source ran into the IP's unauthenticated limit.
+		fields["reason"] = st.Message()
+		fields["code"] = "datasource.github_unauthenticated_rate_limited"
+		fields["retryable"] = true
 	} else if st, ok := status.FromError(err); ok && (st.Code() == codes.FailedPrecondition || st.Code() == codes.Unavailable) {
 		// Only our fixed GitHub validation messages are eligible, never arbitrary upstream text.
 		for _, cause := range []error{github.ErrUnauthorized, github.ErrForbidden, github.ErrNotFound} {

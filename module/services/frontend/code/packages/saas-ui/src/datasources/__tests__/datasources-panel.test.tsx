@@ -753,6 +753,7 @@ describe("GitHub App onboarding", () => {
 		expect(screen.queryByLabelText("Access token")).toBeNull();
 		expect([...method.options].map((option) => option.textContent)).toEqual([
 			"GitHub App (recommended)",
+			"Public repository (no token)",
 			"Fine-grained personal access token",
 		]);
 	});
@@ -765,8 +766,91 @@ describe("GitHub App onboarding", () => {
 			await screen.findByRole("button", { name: /connect github/i }),
 		);
 
-		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		const method = screen.getByLabelText("Authentication") as HTMLSelectElement;
+		expect(method.value).toBe("pat");
+		expect([...method.options].map((option) => option.value)).toEqual([
+			"public",
+			"pat",
+		]);
 		expect(screen.getByLabelText("Access token")).toBeTruthy();
+	});
+
+	it("connects a public repository with no token and no webhook secret", async () => {
+		const client = fakeClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+		// A secret typed on the token path must not ride along after switching.
+		fireEvent.change(screen.getByLabelText("Webhook secret (optional)"), {
+			target: { value: "whsec" },
+		});
+		fireEvent.change(screen.getByLabelText("Authentication"), {
+			target: { value: "public" },
+		});
+
+		// No token to paste, and no webhook to configure on a repository the
+		// tenant may not administer; the trade-off is spelled out instead.
+		expect(screen.queryByLabelText("Access token")).toBeNull();
+		expect(screen.queryByLabelText("Webhook secret (optional)")).toBeNull();
+		expect(
+			screen.getByText(/60 unauthenticated requests an hour/),
+		).toBeTruthy();
+
+		fireEvent.change(screen.getByLabelText("Repository"), {
+			target: { value: "codefly-dev/module-saas-starter" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: /^connect public repository$/i }),
+		);
+
+		await waitFor(() =>
+			expect(client.addGitHubSource).toHaveBeenCalledTimes(1),
+		);
+		expect(client.addGitHubSource).toHaveBeenCalledWith({
+			orgId: "org-1",
+			repo: "codefly-dev/module-saas-starter",
+			paths: [],
+			fileExtensions: [],
+			branch: "",
+			targetCollection: "docs",
+			accessToken: undefined,
+			webhookSecret: "",
+		});
+	});
+
+	it("surfaces the host's refusal of a repository that is not public", async () => {
+		const client = fakeClient({
+			addGitHubSource: vi.fn(async () => {
+				throw new ConnectError(
+					"No access token was supplied and that repository is not public.",
+					Code.FailedPrecondition,
+				);
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+		fireEvent.change(screen.getByLabelText("Authentication"), {
+			target: { value: "public" },
+		});
+		fireEvent.change(screen.getByLabelText("Repository"), {
+			target: { value: "acme/private" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: /^connect public repository$/i }),
+		);
+
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toContain("not public");
+		expect(screen.getByLabelText("Repository")).toBeTruthy();
 	});
 
 	it("sends the browser to the install URL the host minted", async () => {
@@ -1164,7 +1248,10 @@ describe("GitHub App onboarding", () => {
 			await screen.findByRole("button", { name: /connect github/i }),
 		);
 
-		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		const method = screen.getByLabelText("Authentication") as HTMLSelectElement;
+		expect([...method.options].map((option) => option.value)).not.toContain(
+			"app",
+		);
 		expect(
 			screen.queryByRole("button", {
 				name: /install or select repositories/i,

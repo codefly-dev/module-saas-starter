@@ -156,6 +156,9 @@ func (*blobStreamGitHub) GetFileContent(context.Context, string, string, string)
 func (*blobStreamGitHub) Compare(context.Context, string, string, string) (*github.Comparison, error) {
 	return nil, errors.New("unused")
 }
+func (*blobStreamGitHub) RepositoryIsPublic(context.Context, string) (bool, error) {
+	return false, errors.New("unused")
+}
 func (g *blobStreamGitHub) GetBlob(_ context.Context, repo, blobSHA string, _ int64) ([]byte, error) {
 	if repo != g.repo {
 		return nil, errors.New("blob fetched from the wrong repo: " + repo)

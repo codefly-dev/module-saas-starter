@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"accounts/pkg/datasource/github"
 	"accounts/pkg/githubconnector"
 )
 
@@ -331,37 +333,99 @@ func (s *Service) listGitHubAppRepositories(ctx context.Context, orgID, installa
 	return repositories, nil
 }
 
+// githubConnectCredential is how a new GitHub source will authenticate, as
+// resolved and proven at connect time.
+type githubConnectCredential struct {
+	// Kind is githubCredentialKindPAT, githubCredentialKindApp or
+	// githubCredentialKindPublic.
+	Kind string
+	// Plaintext is what to seal into the source's credential envelope. Empty for
+	// a public source, which stores no envelope at all.
+	Plaintext string
+	// InstallationID is the App installation backing an App connect, empty
+	// otherwise. The caller stamps it onto the source as the routing index an
+	// App-level delivery resolves it through: the envelope is encrypted and
+	// cannot be selected on, so a source that is App-backed from birth would
+	// otherwise be invisible to installation events.
+	InstallationID string
+}
+
 // resolveGitHubConnectCredential proves a new source can read its repository and
-// returns the plaintext to seal into its credential envelope.
+// decides how it authenticates.
 //
 // A supplied token is a repository-scoped fine-grained PAT and is stored as-is.
-// An empty one connects through the App, and the installation is resolved from
-// the repository server-side rather than taken from the caller — so no client
-// decides which installation backs a tenant's source — and must already be
-// claimed by this organization, which is what the setup round-trip established.
-// It returns the plaintext to seal into the envelope and, for an App connect,
-// the installation that backs it — empty for a PAT. The caller stamps that onto
-// the source as the routing index an App-level delivery resolves it through:
-// the envelope is encrypted and cannot be selected on, so a source that is
-// App-backed from birth would otherwise be invisible to installation events.
-func (s *Service) resolveGitHubConnectCredential(ctx context.Context, orgID, repo, branch, accessToken string) (plaintext, installationID string, err error) {
+// With none, two credential-less paths are tried in order:
+//
+//  1. The App, when the deployment has one and an installation this
+//     organization claimed covers the repository. It is preferred even for a
+//     public repository: an installation token carries the installation's rate
+//     limit rather than the unauthenticated one every tenant behind this host's
+//     IP address shares. The installation is resolved from the repository
+//     server-side rather than taken from the caller — so no client decides which
+//     installation backs a tenant's source.
+//  2. No credential at all, when GitHub itself says the repository is public to
+//     a request that carries none (resolvePublicGitHubRepository).
+//
+// When neither applies the connect is refused with the reason the App path gave,
+// or, with no App path, with a request for a PAT — a private or missing
+// repository is never connected on a guess.
+func (s *Service) resolveGitHubConnectCredential(ctx context.Context, orgID, repo, branch, accessToken string) (githubConnectCredential, error) {
 	if token := strings.TrimSpace(accessToken); token != "" {
 		if err := s.validateGitHubSource(ctx, repo, branch, token); err != nil {
-			return "", "", err
+			return githubConnectCredential{}, err
 		}
-		return token, "", nil
+		return githubConnectCredential{Kind: githubCredentialKindPAT, Plaintext: token}, nil
 	}
 
-	if !s.GitHubAppConfigured() || s.githubConnector == nil {
-		return "", "", status.Error(codes.FailedPrecondition,
-			"No access token was supplied and this deployment has no GitHub App configured. Supply a repository-scoped fine-grained PAT, or ask an operator to register the App.")
+	appRefusal := status.Error(codes.FailedPrecondition,
+		"No access token was supplied and that repository is not public. Supply a repository-scoped fine-grained PAT, or ask an operator to register the GitHub App.")
+	if s.GitHubAppConfigured() && s.githubConnector != nil {
+		credential, err := s.resolveGitHubAppConnect(ctx, orgID, repo, branch)
+		var declined *githubAppDeclined
+		if !errors.As(err, &declined) {
+			return credential, err
+		}
+		appRefusal = declined.reason
 	}
 
+	public, err := s.resolvePublicGitHubRepository(ctx, repo, branch)
+	if err != nil {
+		return githubConnectCredential{}, err
+	}
+	if !public {
+		return githubConnectCredential{}, appRefusal
+	}
+	return githubConnectCredential{Kind: githubCredentialKindPublic}, nil
+}
+
+// githubAppDeclined is resolveGitHubAppConnect's answer when the App does not
+// cover the repository for this organization. It is not a failure of the
+// connect: the caller may still fall back to a public read, and reports reason
+// only when that does not apply either.
+type githubAppDeclined struct{ reason error }
+
+func (d *githubAppDeclined) Error() string { return d.reason.Error() }
+
+// resolveGitHubAppConnect connects through the deployment's App. It answers
+// with a credential (the App covers the repository for this organization), a
+// *githubAppDeclined (it does not), or any other error, which ends the connect.
+//
+// Only "no installation covers this repository" and "an installation covers it
+// but this organization has not claimed it" decline. Anything else — GitHub
+// failing, the claimed installation denying access — is returned as an error,
+// so a transient App failure never quietly connects the source unauthenticated
+// for good.
+func (s *Service) resolveGitHubAppConnect(ctx context.Context, orgID, repo, branch string) (githubConnectCredential, error) {
 	owner, name, _ := strings.Cut(repo, "/")
-	installationID, err = s.githubConnector.FindRepositoryInstallation(ctx,
+	installationID, err := s.githubConnector.FindRepositoryInstallation(ctx,
 		githubconnector.AppCredential{AppID: s.githubAppID, PrivateKeyPEM: s.githubAppKeyPEM}, owner, name)
 	if err != nil {
-		return "", "", githubInstallationTokenError(err)
+		var apiErr *githubconnector.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return githubConnectCredential{}, &githubAppDeclined{reason: status.Error(codes.FailedPrecondition,
+				"No access token was supplied, the deployment's GitHub App is not installed on that repository, and the repository is not public. Install the App on it from this organization, or supply a repository-scoped fine-grained PAT.")}
+		}
+		return githubConnectCredential{}, githubInstallationTokenError(err)
 	}
 
 	var claimed bool
@@ -369,11 +433,11 @@ func (s *Service) resolveGitHubConnectCredential(ctx context.Context, orgID, rep
 		claimed, err = s.store.GitHubAppInstallationClaimedBy(ctx, installationID, orgID)
 		return err
 	}); err != nil {
-		return "", "", err
+		return githubConnectCredential{}, err
 	}
 	if !claimed {
-		return "", "", status.Error(codes.PermissionDenied,
-			"The GitHub App installation covering that repository is not connected to this organization. Install the App from this organization first, then connect the repository.")
+		return githubConnectCredential{}, &githubAppDeclined{reason: status.Error(codes.PermissionDenied,
+			"The GitHub App installation covering that repository is not connected to this organization. Install the App from this organization first, then connect the repository.")}
 	}
 
 	credential := githubStoredCredential{
@@ -383,14 +447,45 @@ func (s *Service) resolveGitHubConnectCredential(ctx context.Context, orgID, rep
 	}
 	token, err := s.githubToken(ctx, credential, repo)
 	if err != nil {
-		return "", "", err
+		return githubConnectCredential{}, err
 	}
 	if err := validateGitHubAccess(ctx, s.newGitHubClient(token), repo, branch); err != nil {
-		return "", "", err
+		return githubConnectCredential{}, err
 	}
 	blob, err := credential.marshal()
 	if err != nil {
-		return "", "", err
+		return githubConnectCredential{}, err
 	}
-	return blob, installationID, nil
+	return githubConnectCredential{Kind: githubCredentialKindApp, Plaintext: blob, InstallationID: installationID}, nil
+}
+
+// resolvePublicGitHubRepository asks GitHub, with no credential, whether repo is
+// public, and when it is proves the source's branch is readable the same way —
+// the exact requests the source will make for as long as it exists.
+//
+// GitHub answers an unauthenticated request for a private or missing repository
+// with the same 404, so "not found" is "not public" and the caller refuses; it
+// is never read as a reason to connect. Running out of the unauthenticated
+// limit is reported as that, since no other answer would tell the caller that
+// waiting, or supplying a credential, is the fix.
+func (s *Service) resolvePublicGitHubRepository(ctx context.Context, repo, branch string) (bool, error) {
+	if s.newGitHubClient == nil {
+		return false, status.Error(codes.FailedPrecondition, "GitHub connector is not configured")
+	}
+	ctx, cancel := context.WithTimeout(ctx, githubAppSetupProbeTimeout)
+	defer cancel()
+	client := s.newGitHubClient("")
+	public, err := client.RepositoryIsPublic(ctx, repo)
+	switch {
+	case errors.Is(err, github.ErrNotFound):
+		return false, nil
+	case err != nil:
+		return false, githubValidationError(err)
+	case !public:
+		return false, nil
+	}
+	if err := validateGitHubAccess(ctx, client, repo, branch); err != nil {
+		return false, err
+	}
+	return true, nil
 }

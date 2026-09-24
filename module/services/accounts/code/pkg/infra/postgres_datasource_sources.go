@@ -40,11 +40,12 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	if len(config) > 0 {
 		switch d.Provider {
 		case business.DatasourceProviderGitHub:
-			var filter business.GitHubFileFilter
+			var filter business.GitHubSourceConfig
 			if err := json.Unmarshal(config, &filter); err != nil {
 				return nil, err
 			}
 			d.FileExtensions = filter.FileExtensions
+			d.GitHubCredentialKind = filter.CredentialKind
 		case business.DatasourceProviderAPI:
 			var api business.APIDatasourceConfig
 			if err := json.Unmarshal(config, &api); err != nil {
@@ -78,7 +79,7 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	var payload any
 	switch {
 	case source.Provider == business.DatasourceProviderGitHub:
-		payload = business.GitHubFileFilter{FileExtensions: source.FileExtensions}
+		payload = business.GitHubSourceConfig{FileExtensions: source.FileExtensions, CredentialKind: source.GitHubCredentialKind}
 	case source.API != nil:
 		payload = source.API
 	case source.Crawler != nil:
@@ -517,11 +518,20 @@ func (s *PostgresStore) LockDatasourceSourceCredentialRef(ctx context.Context, o
 
 // UpdateDatasourceSourceCredential rotates the stored credential envelope in
 // place, for a connector (OAuth 2.0) that refreshes and re-persists its token
-// set at fetch time. Runs under the caller's WithOrgTx.
+// set at fetch time, and for a GitHub source whose PAT is replaced or which
+// moves onto the App. Runs under the caller's WithOrgTx.
+//
+// Writing an envelope also drops a GitHub source's credential-less marker in
+// the same statement: a public source that is given a credential is a
+// credentialed source from then on, and the marker and the envelope must never
+// both claim to describe how it authenticates.
 func (s *PostgresStore) UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error {
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE datasource_sources
-		   SET credential_secret_ref = $3, updated_at = NOW()
+		   SET credential_secret_ref = $3,
+		       config = CASE WHEN provider = 'github' AND config IS NOT NULL
+		                     THEN config - 'credential_kind' ELSE config END,
+		       updated_at = NOW()
 		 WHERE org_id = $1 AND id = $2`, orgID, id, credentialRef)
 	return err
 }

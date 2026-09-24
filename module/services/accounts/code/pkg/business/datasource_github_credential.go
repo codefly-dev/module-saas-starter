@@ -21,9 +21,16 @@ import (
 // fine-grained token; an `app` source presents an installation token the host
 // mints for each fetch and never stores. These are the only kinds a stored
 // credential may name — anything else is refused rather than interpreted.
+//
+// A `public` source stores no credential at all: it was connected to a
+// repository GitHub proved public to an unauthenticated request, and it reads
+// GitHub unauthenticated. The kind is never written into an envelope — there is
+// none — but onto the source's non-secret config (GitHubSourceConfig), so the
+// absence of a credential is recorded rather than inferred from an empty field.
 const (
-	githubCredentialKindPAT = "pat"
-	githubCredentialKindApp = "app"
+	githubCredentialKindPAT    = "pat"
+	githubCredentialKindApp    = "app"
+	githubCredentialKindPublic = "public"
 )
 
 // githubMigrationProbeTimeout bounds the GitHub round trips a migration makes,
@@ -127,9 +134,26 @@ func (s *Service) appCredentialFor(cred githubStoredCredential, repo string) git
 // recurring reconcile, a webhook-triggered compile, and immutable content
 // fetch — goes through here, so token acquisition and refresh are one
 // behaviour rather than five.
+//
+// A public source is the one kind with no envelope, and it is only honoured
+// when both halves agree: the recorded kind says public *and* no envelope is
+// stored. A source missing its envelope without that record, or carrying both,
+// is refused — never read unauthenticated on the strength of an empty field.
 func (s *Service) githubClientForSource(ctx context.Context, source *DatasourceSource) (GitHubContentClient, error) {
 	w := wool.Get(ctx).In("githubClientForSource")
-	if s.datasourceCipher == nil || s.newGitHubClient == nil {
+	if s.newGitHubClient == nil {
+		return nil, w.NewError("datasource connector is not configured")
+	}
+	public := source.GitHubCredentialKind == githubCredentialKindPublic
+	hasEnvelope := strings.TrimSpace(source.CredentialSecretRef) != ""
+	switch {
+	case public && !hasEnvelope:
+		return s.newGitHubClient(""), nil
+	case public || source.GitHubCredentialKind != "" || !hasEnvelope:
+		return nil, jobs.NewProcessingError("datasource.credential_unreadable",
+			"The stored GitHub credential for this source is not in a form this deployment understands. Reconnect the source. This sync job will not retry.", false)
+	}
+	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource connector is not configured")
 	}
 	plaintext, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
@@ -202,6 +226,13 @@ func githubInstallationTokenError(err error) error {
 	return jobs.NewProcessingError("datasource.github_app_token_unavailable",
 		"Could not obtain a GitHub App installation token. GitHub may be unavailable; this job may retry.", true)
 }
+
+// githubUnauthenticatedRateLimitMessage is the one explanation of GitHub's
+// unauthenticated limit, shared by connect-time validation, the sync job's
+// failure and a module's blob fetch so a tenant reads the same remedy wherever
+// the limit surfaces. It names the limit because that is what makes it
+// actionable: waiting helps only until the next burst, a credential removes it.
+const githubUnauthenticatedRateLimitMessage = "GitHub's rate limit for unauthenticated requests (60 an hour per IP address) is exhausted, so the repository cannot be read without a credential right now. It resets within the hour; to avoid the limit, connect the repository with a fine-grained PAT or through the GitHub App."
 
 // MigrateGitHubSourceToApp re-points a PAT-backed source at the deployment's
 // GitHub App, in place. The source keeps its identity, path scope, boundary,
@@ -303,6 +334,9 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 		}
 		source.CredentialSecretRef = encrypted
 		source.GitHubInstallationID = installationID
+		// The store dropped a public source's credential-less marker with the
+		// envelope write; the returned source must say the same.
+		source.GitHubCredentialKind = ""
 		return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", id, orgID,
 			map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindApp})
 	}); err != nil {

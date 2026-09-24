@@ -13,7 +13,8 @@ interface ConnectGitHubFormProps {
 	collectionError?: boolean;
 	/**
 	 * Sends the browser off to install the App. Absent when the client cannot
-	 * drive App onboarding, which drops the App path and leaves the PAT one.
+	 * drive App onboarding, which drops the App path and leaves the public and
+	 * PAT ones.
 	 */
 	onBeginAppSetup?: () => void;
 	/** Repositories a completed setup returned; undefined until one completes. */
@@ -102,42 +103,50 @@ export function ConnectGitHubForm({
 					className="space-y-4"
 					noValidate
 				>
-					{onBeginAppSetup && (
-						<div className="space-y-2">
-							<Label htmlFor={idFor("method")}>Authentication</Label>
-							<select
-								id={idFor("method")}
-								value={method}
-								onChange={(event) => {
-									const next = event.target.value === "pat" ? "pat" : "app";
-									form.setValue("method", next);
-									// The App path can only connect what the installation
-									// grants, and the picker renders blank for anything else —
-									// leaving a repository typed on the PAT path selected would
-									// submit a repository the reader cannot see chosen.
-									if (
-										next === "app" &&
-										!appRepositories?.some(
-											(candidate) => candidate.repo === form.getValues("repo"),
-										)
-									) {
-										form.setValue("repo", "");
-										// The branch was filled in from the repository, so it
-										// describes one that is no longer selected.
-										form.setValue("branch", "");
-									}
-								}}
-							>
+					<div className="space-y-2">
+						<Label htmlFor={idFor("method")}>Authentication</Label>
+						<select
+							id={idFor("method")}
+							value={method}
+							onChange={(event) => {
+								const next =
+									event.target.value === "app" && onBeginAppSetup
+										? "app"
+										: event.target.value === "public"
+											? "public"
+											: "pat";
+								form.setValue("method", next);
+								// The App path can only connect what the installation
+								// grants, and the picker renders blank for anything else —
+								// leaving a repository typed on another path selected would
+								// submit a repository the reader cannot see chosen.
+								if (
+									next === "app" &&
+									!appRepositories?.some(
+										(candidate) => candidate.repo === form.getValues("repo"),
+									)
+								) {
+									form.setValue("repo", "");
+									// The branch was filled in from the repository, so it
+									// describes one that is no longer selected.
+									form.setValue("branch", "");
+								}
+							}}
+						>
+							{onBeginAppSetup && (
 								<option value="app">GitHub App (recommended)</option>
-								<option value="pat">Fine-grained personal access token</option>
-							</select>
-							<p className="text-xs text-muted-foreground">
-								{method === "app"
-									? "Install the app on repositories you choose. Nothing to create, paste, or rotate."
+							)}
+							<option value="public">Public repository (no token)</option>
+							<option value="pat">Fine-grained personal access token</option>
+						</select>
+						<p className="text-xs text-muted-foreground">
+							{method === "app"
+								? "Install the app on repositories you choose. Nothing to create, paste, or rotate."
+								: method === "public"
+									? "No token needed, but GitHub allows only 60 unauthenticated requests an hour, so large repositories sync slowly — use the App or a token for those."
 									: "For an existing connection, or for development. Restrict the token to this repository with Contents: Read-only."}
-							</p>
-						</div>
-					)}
+						</p>
+					</div>
 
 					{method === "app" && !appRepositories ? (
 						<div className="space-y-2">
@@ -373,7 +382,7 @@ export function ConnectGitHubForm({
 						)}
 					</div>
 
-					{method !== "app" && (
+					{method === "pat" && (
 						<div className="space-y-2">
 							<Label htmlFor={idFor("token")}>Access token</Label>
 							<Input
@@ -400,28 +409,33 @@ export function ConnectGitHubForm({
 						</div>
 					)}
 
-					<div className="space-y-2">
-						<Label htmlFor={idFor("secret")}>Webhook secret (optional)</Label>
-						<Input
-							id={idFor("secret")}
-							aria-invalid={!!errors.webhookSecret}
-							aria-describedby={
-								errors.webhookSecret ? idFor("secret-error") : undefined
-							}
-							type="password"
-							placeholder="Shared secret GitHub signs push deliveries with"
-							{...form.register("webhookSecret")}
-						/>
-						<p className="text-xs text-muted-foreground">
-							Enables live webhook ingestion. Add it later if you don&apos;t
-							have it yet.
-						</p>
-						{errors.webhookSecret && (
-							<p id={idFor("secret-error")} className={errorClass}>
-								{errors.webhookSecret.message}
+					{/* A public repository is read with no credential, and a webhook
+					    needs administration of the repository — the host refuses a
+					    secret there and keeps the source current by periodic sync. */}
+					{method !== "public" && (
+						<div className="space-y-2">
+							<Label htmlFor={idFor("secret")}>Webhook secret (optional)</Label>
+							<Input
+								id={idFor("secret")}
+								aria-invalid={!!errors.webhookSecret}
+								aria-describedby={
+									errors.webhookSecret ? idFor("secret-error") : undefined
+								}
+								type="password"
+								placeholder="Shared secret GitHub signs push deliveries with"
+								{...form.register("webhookSecret")}
+							/>
+							<p className="text-xs text-muted-foreground">
+								Enables live webhook ingestion. Add it later if you don&apos;t
+								have it yet.
 							</p>
-						)}
-					</div>
+							{errors.webhookSecret && (
+								<p id={idFor("secret-error")} className={errorClass}>
+									{errors.webhookSecret.message}
+								</p>
+							)}
+						</div>
+					)}
 
 					{errorMessage && (
 						<p role="alert" className={errorClass}>
@@ -438,7 +452,9 @@ export function ConnectGitHubForm({
 								? "Validating GitHub access…"
 								: method === "app"
 									? "Connect through the GitHub App"
-									: "Validate and connect"}
+									: method === "public"
+										? "Connect public repository"
+										: "Validate and connect"}
 						</Button>
 					</div>
 				</form>

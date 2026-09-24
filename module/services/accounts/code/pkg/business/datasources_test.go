@@ -193,6 +193,8 @@ func (f *datasourceFakeStore) UpdateDatasourceSourceCredential(_ context.Context
 	defer f.mu.Unlock()
 	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
 		s.CredentialSecretRef = credentialRef
+		// Mirrors the store: writing an envelope drops the credential-less marker.
+		s.GitHubCredentialKind = ""
 	}
 	return nil
 }
@@ -517,9 +519,21 @@ type fakeGitHub struct {
 	compareFn     func(base, head string) (*github.Comparison, error)
 	blobs         map[string][]byte
 	blobErrs      map[string]error
+	// public is what GitHub says about the repository's visibility; the zero
+	// value is a repository that is not public, so no test connects one without
+	// a credential unless it says so. publicErr fails the visibility read.
+	public    bool
+	publicErr error
 
 	mu      sync.Mutex
 	fetched []string
+}
+
+func (f *fakeGitHub) RepositoryIsPublic(context.Context, string) (bool, error) {
+	if f.publicErr != nil {
+		return false, f.publicErr
+	}
+	return f.public, nil
 }
 
 func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
