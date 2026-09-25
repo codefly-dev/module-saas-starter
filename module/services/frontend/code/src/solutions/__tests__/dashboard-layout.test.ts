@@ -4,7 +4,6 @@ import {
 	addableTiles,
 	addTile,
 	defaultLayout,
-	dropOn,
 	layoutKey,
 	moveBy,
 	moveTile,
@@ -12,6 +11,7 @@ import {
 	readSavedLayout,
 	removeTile,
 	serializeLayout,
+	swapTiles,
 	tileWidget,
 	writeSavedLayout,
 } from "../dashboard-layout";
@@ -190,12 +190,15 @@ describe("dashboard layout", () => {
 		expect(moveBy(layout, "x", 1)).toEqual(layout);
 	});
 
-	it("puts a dragged tile in the place of the tile it is dragged over", () => {
+	it("swaps a dropped tile with the tile it is dropped on, moving no other", () => {
 		const layout = ["a", "b", "c", "d"];
-		expect(dropOn(layout, "d", "b")).toEqual(["a", "d", "b", "c"]);
-		expect(dropOn(layout, "a", "c")).toEqual(["b", "c", "a", "d"]);
-		expect(dropOn(layout, "a", "a")).toEqual(layout);
-		expect(dropOn(layout, "a", "gone")).toEqual(layout);
+		expect(swapTiles(layout, "a", "b")).toEqual(["b", "a", "c", "d"]);
+		// Two rows down a two-column grid: b and d stay where they are.
+		expect(swapTiles(layout, "a", "c")).toEqual(["c", "b", "a", "d"]);
+		expect(swapTiles(layout, "d", "a")).toEqual(["d", "b", "c", "a"]);
+		expect(swapTiles(layout, "a", "a")).toEqual(layout);
+		expect(swapTiles(layout, "a", "gone")).toEqual(layout);
+		expect(swapTiles(layout, "gone", "a")).toEqual(layout);
 	});
 
 	it("keys a layout by solution and dashboard", () => {

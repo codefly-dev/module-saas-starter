@@ -140,14 +140,24 @@ export function moveBy(
 	return from === -1 ? [...layout] : moveTile(layout, tileId, from + delta);
 }
 
-/** Dragging a tile over another puts it in that tile's place. */
-export function dropOn(
+/**
+ * Dropping a tile on another swaps the two; no other tile moves. On a grid,
+ * moving a tile into another's place instead would shift every tile between
+ * them, which wraps across rows: a sideways drop would move two tiles and a
+ * downward one three.
+ */
+export function swapTiles(
 	layout: readonly string[],
 	draggedId: string,
 	targetId: string,
 ): string[] {
+	const from = layout.indexOf(draggedId);
 	const to = layout.indexOf(targetId);
-	return to === -1 ? [...layout] : moveTile(layout, draggedId, to);
+	const next = [...layout];
+	if (from === -1 || to === -1) return next;
+	next[from] = targetId;
+	next[to] = draggedId;
+	return next;
 }
 
 /**
