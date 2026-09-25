@@ -79,6 +79,13 @@ export {
 	DialogTrigger,
 } from "./dialog.js";
 export {
+	Popover,
+	PopoverContent,
+	PopoverDescription,
+	PopoverTitle,
+	PopoverTrigger,
+} from "./popover.js";
+export {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
