@@ -51,6 +51,7 @@ import {
 	Component,
 	createRef,
 	type ReactNode,
+	type SyntheticEvent,
 	useId,
 	useMemo,
 	useState,
@@ -185,10 +186,28 @@ function SortableTile({
 	// to where the drag began before sliding it on to where it lands.
 	const { setNodeRef, listeners, transform, transition, isDragging } =
 		useSortable({ id, animateLayoutChanges: () => false });
+	// React passes a press inside a portal (a popover or menu opened from the
+	// tile) up through the tile, though the portal is drawn elsewhere on the
+	// page. Only a press on the tile itself starts a drag, so text in such a
+	// panel can still be selected.
+	const pressListeners = useMemo(
+		() =>
+			Object.fromEntries(
+				Object.entries(listeners ?? {}).map(([name, handler]) => [
+					name,
+					(event: SyntheticEvent) => {
+						if (event.currentTarget.contains(event.target as Node)) {
+							handler(event);
+						}
+					},
+				]),
+			),
+		[listeners],
+	);
 	return (
 		<li
 			ref={setNodeRef}
-			{...listeners}
+			{...pressListeners}
 			data-sortable-id={id}
 			data-dragging={isDragging || undefined}
 			className={cn(
