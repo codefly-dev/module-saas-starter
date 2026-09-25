@@ -342,7 +342,7 @@ describe("<Markdown> references and line breaks", () => {
 	it("strips sentinel characters the source smuggled in", () => {
 		const { container } = render(
 			<Markdown references={{ markers: [1], render: render_ }}>
-				{"a 9 b"}
+				{`a ${String.fromCharCode(0xe000)}9${String.fromCharCode(0xe001)} b`}
 			</Markdown>,
 		);
 		expect(container.querySelectorAll("button[data-marker]")).toHaveLength(0);

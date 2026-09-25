@@ -8,6 +8,7 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
 import { type ContentFormat, detectFormat, readJson } from "./detect.js";
+import { markdownFragmentToText } from "./fragment.js";
 
 // An inline rendering is one line, so nothing past a few screens of source can
 // ever show. Bounding the parse keeps a list of large payloads cheap.
@@ -84,6 +85,16 @@ function compactJson(value: unknown): string {
 	}
 }
 
+/** Options for {@link toPlainText}. */
+export interface PlainTextOptions {
+	/**
+	 * The markdown is a slice of a document (a search chunk, a cited passage),
+	 * not a whole one: read it with the line rules in fragment.ts instead of a
+	 * parser, so markup the cut left dangling never shows.
+	 */
+	fragment?: boolean;
+}
+
 /**
  * Any content as one line of plain text: markdown loses its markup, JSON is
  * compacted, and text and code have their whitespace collapsed.
@@ -91,6 +102,7 @@ function compactJson(value: unknown): string {
 export function toPlainText(
 	value: unknown,
 	format: ContentFormat = "auto",
+	options: PlainTextOptions = {},
 ): string {
 	const resolved = format === "auto" ? detectFormat(value) : format;
 	if (resolved === "json") {
@@ -100,6 +112,10 @@ export function toPlainText(
 	}
 	const source =
 		typeof value === "string" ? value : value == null ? "" : compactJson(value);
-	if (resolved === "markdown") return markdownToPlainText(source);
+	if (resolved === "markdown") {
+		return options.fragment
+			? markdownFragmentToText(source.slice(0, INLINE_SOURCE_LIMIT))
+			: markdownToPlainText(source);
+	}
 	return collapse(source.slice(0, INLINE_SOURCE_LIMIT));
 }
