@@ -132,9 +132,13 @@ function hostCollectionAccess(
 					role.permissions[0].action === "read",
 			);
 			if (!role) {
+				// Role names are unique per organization, and another content resource
+				// may already hold a "Collection reader" role (the dev-admin fixture
+				// seeds one for its example resource), so the name carries the
+				// resource this role reads.
 				({ role } = await permissions.createRole({
 					orgId,
-					name: "Collection reader",
+					name: `Collection reader (${resource})`,
 					description: `Read ${resource} in explicitly granted collections`,
 					permissions: [{ resource, action: "read" }],
 				}));
