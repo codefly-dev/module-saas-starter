@@ -548,12 +548,45 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.frozen": {
+      "address": "saas.document.frozen",
+      "title": "saas.document.frozen",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.frozen"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.ingested": {
       "address": "saas.document.ingested",
       "title": "saas.document.ingested",
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.ingested"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.ownership_transferred": {
+      "address": "saas.document.ownership_transferred",
+      "title": "saas.document.ownership_transferred",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.ownership_transferred"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.quarantine_release_refused": {
+      "address": "saas.document.quarantine_release_refused",
+      "title": "saas.document.quarantine_release_refused",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.quarantine_release_refused"
         }
       },
       "x-visibility": "external",
@@ -2003,12 +2036,33 @@
       },
       "title": "saas publishes saas.document.deleted"
     },
+    "send:saas.document.frozen": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.frozen"
+      },
+      "title": "saas publishes saas.document.frozen"
+    },
     "send:saas.document.ingested": {
       "action": "send",
       "channel": {
         "$ref": "#/channels/saas.document.ingested"
       },
       "title": "saas publishes saas.document.ingested"
+    },
+    "send:saas.document.ownership_transferred": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.ownership_transferred"
+      },
+      "title": "saas publishes saas.document.ownership_transferred"
+    },
+    "send:saas.document.quarantine_release_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.quarantine_release_refused"
+      },
+      "title": "saas publishes saas.document.quarantine_release_refused"
     },
     "send:saas.document.quarantine_released": {
       "action": "send",
@@ -3049,9 +3103,30 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.frozen": {
+        "name": "saas.document.frozen",
+        "title": "saas.document.frozen",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.ingested": {
         "name": "saas.document.ingested",
         "title": "saas.document.ingested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.ownership_transferred": {
+        "name": "saas.document.ownership_transferred",
+        "title": "saas.document.ownership_transferred",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.quarantine_release_refused": {
+        "name": "saas.document.quarantine_release_refused",
+        "title": "saas.document.quarantine_release_refused",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

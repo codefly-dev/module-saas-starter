@@ -324,6 +324,15 @@ const (
 	EventDocumentQuarantineReleased EventType = "saas.document.quarantine_released"
 	EventDocumentSubscribed         EventType = "saas.document.subscribed"
 	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
+
+	// Governance actions a document producer takes on an entry: who reassigned
+	// its owner, who put it under boundary governance, and a quarantine release
+	// the producer refused because the approval named another tenant. Each is a
+	// decision about who may see or keep a record, so it belongs on the tenant's
+	// trail; ownership and freeze record the refused attempt too (`outcome`).
+	EventDocumentOwnershipTransferred     EventType = "saas.document.ownership_transferred"
+	EventDocumentFrozen                   EventType = "saas.document.frozen"
+	EventDocumentQuarantineReleaseRefused EventType = "saas.document.quarantine_release_refused"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -528,6 +537,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
 	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
 	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+	mutation(EventDocumentOwnershipTransferred, CategoryAccess, "A document's owner was reassigned, or the attempt was refused.",
+		append(documentGovernanceFields(), str("new_owner_subject_id"))...),
+	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was put under boundary governance, or the attempt was refused.",
+		documentGovernanceFields()...),
+	observation(EventDocumentQuarantineReleaseRefused, CategorySecurity, "A quarantine release was refused because the approval named a different tenant.",
+		append(append([]PayloadField(nil), documentFields...), str("claimed_tenant"))...),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
@@ -563,6 +578,15 @@ var documentFields = []PayloadField{
 	uid("actor_principal_id"),
 	uid("owner_principal_id"),
 	str("initiator"),
+}
+
+// documentGovernanceFields is the payload of a document governance action that
+// is recorded whether it succeeded or was refused: `outcome` says which, and a
+// refusal carries its `reason`. A fresh slice each call, so one event's extra
+// fields can never leak into another's.
+func documentGovernanceFields() []PayloadField {
+	return append(append([]PayloadField(nil), documentFields...),
+		enum("outcome", "success", "failure"), str("reason"))
 }
 
 // Observed read telemetry never carries query text, excerpts or credentials.

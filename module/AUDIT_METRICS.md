@@ -80,6 +80,20 @@ only when measuring attempts. Failed attempts may later complete. Dispatch is
 not completed ingestion. `processed` and `new_versions` do not establish index
 readiness. Summing per-attempt counts is not a deduplicated document total.
 
+Every document producer event carries a nonempty `scope.solution`; the RPC
+refuses one without it. Governance actions a document producer takes on an
+entry have their own types, each emitted with the entry as `entry_id`:
+
+| Type | Recorded when | Payload beyond `solution` |
+| --- | --- | --- |
+| `saas.document.ownership_transferred` | an entry's owner is reassigned, or the attempt is refused | `outcome` (`success`/`failure`), `reason` on a refusal, `new_owner_subject_id` |
+| `saas.document.frozen` | an entry is put under boundary governance, or the attempt is refused | `outcome`, `reason` on a refusal |
+| `saas.document.quarantine_release_refused` | an approved release names a tenant other than the one it was delivered for | `version`, `claimed_tenant` |
+
+Pipeline bookkeeping — snapshot and effect receipts, derived-artifact
+production, stale-change skips — is not audit and has no type here: it is who
+did what to which resource that belongs on the spine, not how an ingest ran.
+
 `saas.document.read` and `saas.document.search` are observational version-1
 contracts. `boundary`, `correlation_id`, and `outcome` are required nonempty
 strings; measurements remain optional. In addition to document provenance they accept:

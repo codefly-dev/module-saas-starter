@@ -40,6 +40,10 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
 	EventDocumentDeleted,
+	// Governance actions a document producer reports through EmitAuditEvent.
+	EventDocumentFrozen,
+	EventDocumentOwnershipTransferred,
+	EventDocumentQuarantineReleaseRefused,
 	EventDocumentIngested,
 	// Module-authenticated document readers emit these observations.
 	EventDocumentRead,

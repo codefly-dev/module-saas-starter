@@ -144,3 +144,29 @@ func TestAuditCatalog_InstallationReasonCodesAreDeclaredOnBothEvents(t *testing.
 	require.ElementsMatch(t, codes, lost,
 		"every code datasourceInstallationReasonCodes can put in a payload must be declared on the event")
 }
+
+// A document producer records its governance actions through EmitAuditEvent,
+// which rejects any payload key the type does not declare. These are the exact
+// payloads the producer sends — success and refusal alike — so a field it
+// relies on can never be silently undeclared here.
+func TestValidatePayload_DocumentGovernanceEvents(t *testing.T) {
+	accepted := []struct {
+		event   EventType
+		payload map[string]any
+	}{
+		{EventDocumentOwnershipTransferred, map[string]any{"solution": "documents", "outcome": "success", "new_owner_subject_id": "subject-2"}},
+		{EventDocumentOwnershipTransferred, map[string]any{"solution": "documents", "outcome": "failure", "reason": "not the owner", "new_owner_subject_id": "subject-2"}},
+		{EventDocumentFrozen, map[string]any{"solution": "documents", "outcome": "success"}},
+		{EventDocumentFrozen, map[string]any{"solution": "documents", "outcome": "failure", "reason": "entry not found"}},
+		{EventDocumentQuarantineReleaseRefused, map[string]any{"solution": "documents", "version": "v1", "claimed_tenant": "other-tenant"}},
+	}
+	for _, c := range accepted {
+		require.NoError(t, ValidatePayload(c.event, c.payload), "%s %v", c.event, c.payload)
+	}
+	require.Error(t, ValidatePayload(EventDocumentFrozen, map[string]any{"solution": "documents", "outcome": "maybe"}),
+		"outcome is success or failure")
+	require.Error(t, ValidatePayload(EventDocumentFrozen, map[string]any{"solution": "documents", "new_owner_subject_id": "subject-2"}),
+		"a field declared on one governance event must not leak into another")
+	require.Error(t, ValidatePayload(EventDocumentQuarantineReleaseRefused, map[string]any{"solution": "documents", "outcome": "failure"}),
+		"a refused release is its own type, not an outcome")
+}
