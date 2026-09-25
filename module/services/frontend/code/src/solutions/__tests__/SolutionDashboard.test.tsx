@@ -274,13 +274,14 @@ describe("where a tile's number comes from", () => {
 		return asked;
 	}
 	const moment = (iso: string, year = true) =>
-		new Date(iso).toLocaleString(undefined, {
+		`${new Date(iso).toLocaleString(undefined, {
 			month: "short",
 			day: "numeric",
 			...(year ? { year: "numeric" } : {}),
 			hour: "numeric",
 			minute: "2-digit",
-		});
+			timeZone: "UTC",
+		})} UTC`;
 
 	it("says what the tile counts, from which events, and when they happened", async () => {
 		auditTrail();
