@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, KeyboardEvent } from "react";
 import {
 	CardRoot as Card,
 	CardContent,
@@ -52,6 +52,16 @@ export interface Metric {
 	/** Freshness/availability — drives the state badge and value fallback. */
 	state?: MetricState;
 	provenance?: ComponentProps<typeof MetricProvenance>;
+	/**
+	 * Makes the tile a filter control: activating it (click, or Enter/Space
+	 * while focused) calls this instead of the tile being purely presentational.
+	 * A `StatTile` renders as a button and gets a focus ring only when this is
+	 * set — a tile with nothing to select stays static.
+	 */
+	onSelect?: () => void;
+	/** Pressed affordance for a tile whose {@link onSelect} names the filter
+	 * currently applied. Meaningless without {@link onSelect}. */
+	selected?: boolean;
 }
 
 // States for which no meaningful number exists, so the value renders as a dash.
@@ -189,8 +199,35 @@ export function StatTile({
 	metric: Metric;
 	className?: string;
 }) {
+	const { onSelect } = metric;
+	// Keyboard activation mirrors what a native <button> gives for free, since
+	// the tile itself is the interactive element (a nested button would be
+	// invalid HTML and steal the click target).
+	function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+		if (!onSelect) return;
+		if (event.key !== "Enter" && event.key !== " ") return;
+		event.preventDefault();
+		onSelect();
+	}
 	return (
-		<Card className={cn("gap-1.5 p-4", className)}>
+		<Card
+			className={cn(
+				"gap-1.5 p-4",
+				onSelect &&
+					"cursor-pointer text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				metric.selected && "ring-2 ring-primary",
+				className,
+			)}
+			{...(onSelect
+				? {
+						role: "button" as const,
+						tabIndex: 0,
+						"aria-pressed": metric.selected,
+						onClick: onSelect,
+						onKeyDown,
+					}
+				: {})}
+		>
 			<div className="flex items-center justify-between gap-2">
 				<span className="type-metric-label text-muted-foreground">
 					{metric.label}
