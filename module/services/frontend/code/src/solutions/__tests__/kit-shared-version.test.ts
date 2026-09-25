@@ -19,6 +19,7 @@ const SHARE_KEY_TO_DIR: Record<keyof typeof CODEFLY_KIT_SHARED, string> = {
 	"@codefly-dev/ui/chat": "codefly-ui",
 	"@codefly-dev/ui/skin": "codefly-ui",
 	"@codefly-dev/ui/table": "codefly-ui",
+	"@codefly-dev/ui/content": "codefly-ui",
 	"@codefly-dev/ui/plugin-host": "codefly-ui",
 	"@codefly-dev/ui/plugin-host/runtime": "codefly-ui",
 	"@codefly-dev/ui/plugin-host/ui": "codefly-ui",

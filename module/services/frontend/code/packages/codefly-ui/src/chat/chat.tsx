@@ -17,6 +17,7 @@ import { Avatar as SharedAvatar, AvatarFallback } from "../layout/avatar.js";
 import { Button } from "../layout/button.js";
 import { Textarea } from "../layout/textarea.js";
 import { Section } from "../layout/page.js";
+import { Markdown } from "../content/markdown.js";
 import { cn } from "./cn.js";
 import type { ChatMessage, ChatRole } from "./types.js";
 
@@ -58,13 +59,18 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 				</span>
 				<div
 					className={cn(
-						"whitespace-pre-wrap rounded-lg px-3 py-2 type-chat-message",
+						"rounded-lg px-3 py-2 type-chat-message",
+						message.format !== "markdown" && "whitespace-pre-wrap",
 						isUser
 							? "bg-primary text-primary-foreground"
 							: "bg-muted text-foreground",
 					)}
 				>
-					{message.content}
+					{message.format === "markdown" ? (
+						<Markdown>{message.content}</Markdown>
+					) : (
+						message.content
+					)}
 					{message.pending && (
 						// Decorative: the log's `aria-busy` already tells assistive tech a
 						// reply is in flight. A `role="status"`/`aria-label` here would be a
