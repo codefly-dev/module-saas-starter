@@ -19,26 +19,32 @@ export function useAccessibleScope(
 	resourceType: string,
 	action: string,
 ): AccessibleScopeState {
-	const [state, setState] = useState<AccessibleScopeState>("loading");
+	// The answer is kept with the question it answers, so a changed question
+	// reads as loading without the effect having to reset anything.
+	const key = JSON.stringify([orgId, resourceType, action]);
+	const [answer, setAnswer] = useState<{
+		key: string;
+		state: AccessibleScopeState;
+	} | null>(null);
 	const { apiBase, getAccessToken, authedFetch } = binding;
 	useEffect(() => {
 		if (!orgId) return;
 		let live = true;
-		setState("loading");
 		createClient(
 			AccessibleScopeService,
 			solutionTransport({ apiBase, getAccessToken, authedFetch }),
 		)
 			.listMyAccessibleScopes({ orgId, resourceType, action, pageSize: 1 })
 			.then((page) => {
-				if (live) setState(page.scopes.length > 0 ? "some" : "none");
+				if (live)
+					setAnswer({ key, state: page.scopes.length > 0 ? "some" : "none" });
 			})
 			.catch(() => {
-				if (live) setState("error");
+				if (live) setAnswer({ key, state: "error" });
 			});
 		return () => {
 			live = false;
 		};
-	}, [apiBase, getAccessToken, authedFetch, orgId, resourceType, action]);
-	return state;
+	}, [apiBase, getAccessToken, authedFetch, orgId, resourceType, action, key]);
+	return answer?.key === key ? answer.state : "loading";
 }
