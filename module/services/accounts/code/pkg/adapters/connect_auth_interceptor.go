@@ -39,7 +39,15 @@ const publicOriginHeader = "X-Codefly-Public-Origin"
 // Forwarding is not trust: everything named here is still stripped before
 // admission unless the request also carried a valid gateway token, exactly as on
 // the direct transports.
+//
+// `Grpc-Metadata-<name>` headers are refused. grpc-gateway's default matcher
+// maps them to `<name>` metadata, which makes the prefix a second spelling of
+// every identity header above: a caller could add its own x-user-id beside the
+// one the gateway stamped, under the gateway token that makes it trusted.
 func restIdentityHeaderMatcher(header string) (string, bool) {
+	if strings.HasPrefix(strings.ToLower(header), "grpc-metadata-") {
+		return "", false
+	}
 	if strings.EqualFold(header, "Authorization") {
 		return "authorization", true
 	}

@@ -553,7 +553,21 @@ func stripAllIdentityHeaders(r *http.Request) {
 	for _, k := range untrustedAuthHeaders {
 		r.Header.Del(k)
 	}
+	// grpc-gateway turns every `Grpc-Metadata-<name>` header into `<name>`
+	// metadata, so on a transcoded upstream this prefix is a second spelling of
+	// every header above. No caller of the gateway has a reason to address an
+	// upstream's gRPC metadata directly, so the whole prefix is dropped rather
+	// than mirrored name by name.
+	for name := range r.Header {
+		if strings.HasPrefix(strings.ToLower(name), grpcMetadataHeaderPrefix) {
+			r.Header.Del(name)
+		}
+	}
 }
+
+// grpcMetadataHeaderPrefix is the prefix grpc-gateway's default header matcher
+// strips to derive a metadata key from an HTTP header.
+const grpcMetadataHeaderPrefix = "grpc-metadata-"
 
 var untrustedAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",

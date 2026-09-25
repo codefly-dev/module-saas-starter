@@ -436,8 +436,13 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 // content tickets a change-set job carries in place of an oversized blob. The
 // seed is the deployment's internal key; the same seed must be present wherever
 // ResolveContentTicket runs so a ticket minted by the compiler verifies at
-// redemption.
+// redemption. An empty seed disables tickets: deriving a key from it would sign
+// with a constant anyone can compute.
 func (s *Service) SetDatasourceTicketKey(seed []byte) {
+	if len(seed) == 0 {
+		s.datasourceTicketSigner = nil
+		return
+	}
 	s.datasourceTicketSigner = newDatasourceTicketSigner(seed)
 }
 

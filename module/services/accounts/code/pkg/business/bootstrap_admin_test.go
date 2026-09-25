@@ -24,10 +24,16 @@ import (
 func wipeBootstrapState(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
-	_, err := testStore.Pool().Exec(ctx, `UPDATE bootstrap_state SET bootstrapped_at = NULL WHERE id = 1`)
-	require.NoError(t, err)
-	_, err = testStore.Pool().Exec(ctx, `DELETE FROM platform_admins`)
-	require.NoError(t, err)
+	// Both relations are platform state that only the control plane writes;
+	// the tenant role reads them and nothing more.
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		if _, err := tx.Exec(ctx, `UPDATE public.bootstrap_state SET bootstrapped_at = NULL WHERE id = 1`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM public.platform_admins`)
+		return err
+	}))
 }
 
 func TestBootstrap_FirstMatchingLoginGrantsSuperAdmin(t *testing.T) {

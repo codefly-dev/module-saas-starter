@@ -20,7 +20,7 @@ func TestPlatformAdminSessionsOptionalUserFilter(t *testing.T) {
 	ctx := testCtx
 	adminID, _ := mustUserAndOrg(t, ctx, "admin-sessions@example.com", "admin-sessions", "Acme")
 	otherID, _ := mustUserAndOrg(t, ctx, "member-sessions@example.com", "member-sessions", "ExampleCorp")
-	require.NoError(t, testStore.GrantPlatformRole(ctx, adminID, "super_admin", adminID))
+	require.NoError(t, controlPlaneGrantPlatformRole(ctx, adminID, "super_admin", adminID))
 	for _, userID := range []string{adminID, otherID} {
 		require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 			return testStore.CreateSession(ctx, &business.Session{
@@ -63,7 +63,7 @@ func TestPlatformAdminSearchUsersEntersControlPlaneScope(t *testing.T) {
 		"target-platform-search",
 		"Target Search Org",
 	)
-	require.NoError(t, testStore.GrantPlatformRole(ctx, adminID, "super_admin", adminID))
+	require.NoError(t, controlPlaneGrantPlatformRole(ctx, adminID, "super_admin", adminID))
 
 	unscoped, _, err := testStore.SearchUsers(
 		context.Background(),
@@ -116,7 +116,7 @@ func TestPlatformAdminSuspendUserEntersControlPlaneScope(t *testing.T) {
 		"target-platform-suspend",
 		"Target Suspend Org",
 	)
-	require.NoError(t, testStore.GrantPlatformRole(ctx, adminID, "super_admin", adminID))
+	require.NoError(t, controlPlaneGrantPlatformRole(ctx, adminID, "super_admin", adminID))
 
 	require.NoError(t, testService.SuspendUser(ctx, adminID, &gen.SuspendUserRequest{
 		UserId: targetID,

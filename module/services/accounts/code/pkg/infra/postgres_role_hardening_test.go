@@ -41,10 +41,10 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"plan_entitlements":       {selectRows: true},
 	"email_templates":         {selectRows: true},
 	"data_retention_policies": {selectRows: true},
-	"bootstrap_state":         {selectRows: true, updateRows: true},
+	"bootstrap_state":         {selectRows: true}, // the bootstrap claim runs on the control plane
 	"feature_flags":           {selectRows: true},
 	"audit_event_types":       {selectRows: true},
-	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"platform_admins":         {selectRows: true}, // granting and revoking run on the control plane
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
 	"event_subscriptions":     {}, // platform relation; request traffic has no direct access

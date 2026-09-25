@@ -280,7 +280,7 @@ func TestSuspendingTheSoleAdministratorProceedsAndRecordsTheConsequence(t *testi
 	admin, _ := mustUserAndOrg(t, testCtx, "admin@example.com", "example-admin", "Acme")
 	target, org := mustUserAndOrg(t, testCtx, "target@example.com", "example-target", "ExampleCorp")
 	mustMember(t, target, org, "member@example.com", "example-member")
-	require.NoError(t, testStore.GrantPlatformRole(testCtx, admin, "super_admin", admin))
+	require.NoError(t, controlPlaneGrantPlatformRole(testCtx, admin, "super_admin", admin))
 
 	require.NoError(t, testService.SuspendUser(testCtx, admin, &gen.SuspendUserRequest{
 		UserId: target, Reason: "credential compromise",
