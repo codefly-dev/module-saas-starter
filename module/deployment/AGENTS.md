@@ -29,3 +29,27 @@ OpenAPI surface via `codefly sync service`, the exported contracts via `codefly
 generate contracts`). Boot the graph (`codefly run service`) before trusting the
 newer agent — "it resolves" is not "it runs" — and say in the pull request body
 if you did not.
+
+## Running unreleased code of this module
+
+A composing workspace receives this module only as a tagged version, resolved
+into its module cache. Unreleased code from this repository reaches it through
+the Codefly CLI's machine-local override, never through an edit to the cache or
+a committed path or version:
+
+- **Locally**, in the composing workspace:
+  `codefly override service <module>/<service> --path <this checkout>/module/services/<service>`
+  (CLI 0.1.162 or later), or a module-level `path:` in its gitignored
+  `codefly.local.yaml`. `--clear` returns to the tag. `<module>` is the
+  workspace's name for this module.
+- **On a hosted cell**, from the composing workspace:
+  `codefly deploy dev <module>/<service> --env <env>` (CLI 0.1.166 or later)
+  ships an image-only change and records its commit and dirty state in the
+  render inventory. A change that also moves what the render writes
+  (configuration, endpoints, a new secret key) goes through that workspace's
+  labelled dev render instead. Either way, push the commit you ship first.
+- **An image's identity is its digest.** Builds are tagged with the service
+  `version`, so a dev build re-pushes that tag. Never read a tag as proof of
+  what runs.
+- **Released** means tagged here, after which the composing workspace moves its
+  `version` and re-renders. A dev deployment is a trial, never the fix.
