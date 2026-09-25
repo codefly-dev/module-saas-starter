@@ -3,6 +3,11 @@
 import {
 	Badge,
 	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
 	Input,
 	Label,
 	Table,
@@ -771,6 +776,8 @@ function StatusCell({ source }: { source: DatasourceView }) {
 
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
+/** Prose cells wrap instead of widening the table past its column. */
+const wrapClass = "min-w-32 whitespace-normal";
 
 function SourcesTable({
 	sources,
@@ -797,13 +804,20 @@ function SourcesTable({
 	onReconnect: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
 }) {
+	// Active rows leave their status cell quiet, so a table of active sources
+	// would carry an empty column; it appears once any row has a state to show.
+	const showStatus = sources.some(
+		(source) => source.status !== "active" || !!source.statusReason,
+	);
 	return (
 		<div className="overflow-x-auto rounded-lg border">
 			<Table className="w-full text-sm">
 				<TableHeader className="border-b bg-muted/40">
 					<TableRow>
 						<TableHead className={headerClass}>Repository</TableHead>
-						<TableHead className={headerClass}>Status</TableHead>
+						{showStatus && (
+							<TableHead className={headerClass}>Status</TableHead>
+						)}
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
@@ -820,9 +834,11 @@ function SourcesTable({
 							<TableCell className={cn(cellClass, "font-mono")}>
 								{source.repo}
 							</TableCell>
-							<TableCell className={cellClass}>
-								<StatusCell source={source} />
-							</TableCell>
+							{showStatus && (
+								<TableCell className={cn(cellClass, wrapClass)}>
+									<StatusCell source={source} />
+								</TableCell>
+							)}
 							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (
 									<span className="text-muted-foreground">All</span>
@@ -838,7 +854,7 @@ function SourcesTable({
 							<TableCell className={cellClass}>
 								{source.branch || "default"}
 							</TableCell>
-							<TableCell className={cellClass}>
+							<TableCell className={cn(cellClass, wrapClass)}>
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
 									permissionsResolved={permissionsResolved}
@@ -850,43 +866,16 @@ function SourcesTable({
 									? "Signing secret configured"
 									: "Not configured"}
 							</TableCell>
-							<TableCell className={cn(cellClass, "text-muted-foreground")}>
+							<TableCell
+								className={cn(cellClass, wrapClass, "text-muted-foreground")}
+							>
 								<LastSyncCell source={source} />
 							</TableCell>
 							<TableCell className={cn(cellClass, "text-right")}>
-								<div className="inline-flex gap-2">
-									{source.provider === "github" && (
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onClick={() => onReconnect(source)}
-										>
-											Reconnect
-										</Button>
-									)}
-									{onMigrateToApp && source.provider === "github" && (
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											disabled={migratingIds.has(source.id)}
-											onClick={() => onMigrateToApp(source)}
-										>
-											{migratingIds.has(source.id)
-												? "Moving to the App…"
-												: "Use GitHub App"}
-										</Button>
-									)}
-									{onActivity && (
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => onActivity(source)}
-										>
-											History
-										</Button>
-									)}
+								{/* Sync is the row's one routine action; the rest sit behind
+								    a menu so the table fits a content column instead of
+								    pushing its last actions out of view. */}
+								<div className="inline-flex items-center gap-2">
 									<Button
 										type="button"
 										variant="outline"
@@ -896,16 +885,50 @@ function SourcesTable({
 									>
 										{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
 									</Button>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										className="text-destructive"
-										disabled={deletingIds.has(source.id)}
-										onClick={() => onDelete(source)}
-									>
-										{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
-									</Button>
+									<DropdownMenu>
+										<DropdownMenuTrigger
+											render={
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													aria-label={`More actions for ${source.repo}`}
+												/>
+											}
+										>
+											More
+										</DropdownMenuTrigger>
+										<DropdownMenuContent align="end" className="w-auto min-w-44">
+											{source.provider === "github" && (
+												<DropdownMenuItem onClick={() => onReconnect(source)}>
+													Reconnect
+												</DropdownMenuItem>
+											)}
+											{onMigrateToApp && source.provider === "github" && (
+												<DropdownMenuItem
+													disabled={migratingIds.has(source.id)}
+													onClick={() => onMigrateToApp(source)}
+												>
+													{migratingIds.has(source.id)
+														? "Moving to the App…"
+														: "Use GitHub App"}
+												</DropdownMenuItem>
+											)}
+											{onActivity && (
+												<DropdownMenuItem onClick={() => onActivity(source)}>
+													History
+												</DropdownMenuItem>
+											)}
+											<DropdownMenuSeparator />
+											<DropdownMenuItem
+												variant="destructive"
+												disabled={deletingIds.has(source.id)}
+												onClick={() => onDelete(source)}
+											>
+												{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
+											</DropdownMenuItem>
+										</DropdownMenuContent>
+									</DropdownMenu>
 								</div>
 							</TableCell>
 						</TableRow>

@@ -166,6 +166,25 @@ describe("DatasourcesPanel", () => {
 		await screen.findByText(sampleSource.repo);
 		expect(screen.queryByText("Active")).toBeNull();
 		expect(screen.queryByText(/pulls have stopped/i)).toBeNull();
+		// A table of quiet rows carries no Status column at all.
+		expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
+	});
+
+	it("shows the Status column once any row has a state to show", async () => {
+		const degraded: DatasourceView = {
+			...sampleSource,
+			id: "ds-2",
+			status: "degraded",
+		};
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource, degraded]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByRole("columnheader", { name: "Status" }),
+		).toBeTruthy();
+		expect(screen.getByText("Degraded")).toBeTruthy();
 	});
 
 	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
@@ -622,6 +641,14 @@ describe("ConnectGitHubForm", () => {
 	});
 });
 
+/** A row's secondary actions live behind its "More actions" menu. */
+async function openRowActions() {
+	fireEvent.click(
+		await screen.findByRole("button", { name: /^More actions for / }),
+	);
+	await screen.findByRole("menu");
+}
+
 it("acknowledges queued sync without claiming ingestion completed", async () => {
 	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
@@ -707,10 +734,30 @@ it.each(["first", "second"])(
 	},
 );
 
+it("keeps Sync on the row and puts the rest behind one menu", async () => {
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	// A row carries two controls, so the table fits a content column rather
+	// than pushing its last actions out of view.
+	await screen.findByRole("button", { name: /^Sync$/ });
+	expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+	expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+	const confirm = vi.fn(() => true);
+	vi.stubGlobal("confirm", confirm);
+	await openRowActions();
+	fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+	expect(confirm).toHaveBeenCalledOnce();
+	await waitFor(() =>
+		expect(client.deleteSource).toHaveBeenCalledWith("org-1", "ds-1"),
+	);
+	vi.unstubAllGlobals();
+});
+
 it("reconnects the same source without creating or deleting a source", async () => {
 	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-	fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+	await openRowActions();
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
 	const token = screen.getByLabelText("New GitHub PAT");
 	expect(token.getAttribute("type")).toBe("password");
 	fireEvent.change(token, { target: { value: "replacement-test-token" } });
@@ -1011,8 +1058,9 @@ describe("GitHub App onboarding", () => {
 			listSources: vi.fn(async () => [sampleSource]),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await openRowActions();
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Use GitHub App" }),
+			await screen.findByRole("menuitem", { name: "Use GitHub App" }),
 		);
 
 		await waitFor(() =>
@@ -1035,8 +1083,11 @@ describe("GitHub App onboarding", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		await screen.findByRole("button", { name: "Reconnect" });
-		expect(screen.queryByRole("button", { name: "Use GitHub App" })).toBeNull();
+		await openRowActions();
+		await screen.findByRole("menuitem", { name: "Reconnect" });
+		expect(
+			screen.queryByRole("menuitem", { name: "Use GitHub App" }),
+		).toBeNull();
 	});
 
 	it("reports a failed migration against the source it names", async () => {
@@ -1050,8 +1101,9 @@ describe("GitHub App onboarding", () => {
 			}),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await openRowActions();
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Use GitHub App" }),
+			await screen.findByRole("menuitem", { name: "Use GitHub App" }),
 		);
 
 		const alert = await screen.findByRole("alert");
