@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -178,5 +184,102 @@ describe("AuditPage admin container", () => {
 		expect(
 			await screen.findByText(/Actor names could not be loaded/),
 		).toBeTruthy();
+	});
+
+	// The summary cards double as filter controls for the tiles whose count
+	// maps onto exactly one existing filter value.
+	describe("clicking a summary card filters the list", () => {
+		it("filters to the security category and marks the tile pressed", async () => {
+			const queryAuditLog = vi.fn();
+			server.use(
+				http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+					HttpResponse.json({ eventTypes: [] }),
+				),
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [] }),
+				),
+				http.post(rpc("AuditService", "QueryAuditLog"), async ({ request }) => {
+					queryAuditLog(await request.json());
+					return HttpResponse.json({ events: [], totalCount: 0 });
+				}),
+			);
+			renderInApp(<AuditPage />);
+
+			const tile = await screen.findByRole("button", {
+				name: /Security events/,
+			});
+			expect(tile.getAttribute("aria-pressed")).toBe("false");
+			// The wire request omits a field left at its proto default, so an
+			// unfiltered category reads as the field being absent, not "".
+			await waitFor(() => expect(queryAuditLog).toHaveBeenCalled());
+			expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBeFalsy();
+
+			fireEvent.click(tile);
+
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBe(
+					"security",
+				),
+			);
+			expect(tile.getAttribute("aria-pressed")).toBe("true");
+		});
+
+		it("the Events tile resets every filter back to unfiltered", async () => {
+			const queryAuditLog = vi.fn();
+			server.use(
+				http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+					HttpResponse.json({ eventTypes: [] }),
+				),
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [] }),
+				),
+				http.post(rpc("AuditService", "QueryAuditLog"), async ({ request }) => {
+					queryAuditLog(await request.json());
+					return HttpResponse.json({ events: [], totalCount: 0 });
+				}),
+			);
+			renderInApp(<AuditPage />);
+
+			const security = await screen.findByRole("button", {
+				name: /Security events/,
+			});
+			fireEvent.click(security);
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBe(
+					"security",
+				),
+			);
+
+			const events = screen.getByRole("button", { name: /^Events/ });
+			fireEvent.click(events);
+
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBeFalsy(),
+			);
+			expect(events.getAttribute("aria-pressed")).toBe("true");
+			expect(security.getAttribute("aria-pressed")).toBe("false");
+		});
+
+		it("the New users and Active actors tiles stay static (no matching single filter value exists)", async () => {
+			server.use(
+				http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+					HttpResponse.json({ eventTypes: [] }),
+				),
+				http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+					HttpResponse.json({ buckets: [] }),
+				),
+				http.post(rpc("AuditService", "QueryAuditLog"), () =>
+					HttpResponse.json({ events: [], totalCount: 0 }),
+				),
+			);
+			renderInApp(<AuditPage />);
+			await screen.findByText("New users");
+			expect(
+				screen.queryByRole("button", { name: /New users/ }),
+			).toBeNull();
+			expect(
+				screen.queryByRole("button", { name: /Active actors/ }),
+			).toBeNull();
+		});
 	});
 });

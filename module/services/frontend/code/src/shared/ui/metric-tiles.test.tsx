@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
 	formatMetricValue,
@@ -115,6 +115,42 @@ describe("StatTile", () => {
 			<StatTile metric={{ label: "MAU", value: 5, series: [5] }} />,
 		);
 		expect(container.querySelector("svg")).toBeNull();
+	});
+
+	it("stays static, with no button role, when onSelect is absent", () => {
+		render(<StatTile metric={{ label: "Events", value: 10 }} />);
+		expect(screen.queryByRole("button")).toBeNull();
+	});
+
+	it("becomes a button that calls onSelect when clicked or activated by keyboard", () => {
+		const onSelect = vi.fn();
+		render(
+			<StatTile metric={{ label: "Security events", value: 3, onSelect }} />,
+		);
+		const tile = screen.getByRole("button", { name: /Security events/ });
+		fireEvent.click(tile);
+		expect(onSelect).toHaveBeenCalledOnce();
+		fireEvent.keyDown(tile, { key: "Enter" });
+		expect(onSelect).toHaveBeenCalledTimes(2);
+		fireEvent.keyDown(tile, { key: " " });
+		expect(onSelect).toHaveBeenCalledTimes(3);
+		// A key the tile does not treat as activation must not fire onSelect.
+		fireEvent.keyDown(tile, { key: "Tab" });
+		expect(onSelect).toHaveBeenCalledTimes(3);
+	});
+
+	it("marks a selected tile pressed for assistive tech", () => {
+		const onSelect = vi.fn();
+		render(
+			<StatTile
+				metric={{ label: "New users", value: 5, onSelect, selected: true }}
+			/>,
+		);
+		expect(
+			screen
+				.getByRole("button", { name: /New users/ })
+				.getAttribute("aria-pressed"),
+		).toBe("true");
 	});
 });
 

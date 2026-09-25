@@ -154,6 +154,37 @@ describe("new users come from the registry, not from a guess", () => {
 		expect(countEventTypes(byType, [])).toBe(0);
 		expect(countEventTypes([], ["saas.user.created"])).toBe(0);
 	});
+
+	// A first sign-in through an org's identity provider (OIDC/WorkOS JIT) never
+	// emits saas.user.registered or saas.user.created: the accounts resolver
+	// provisions and joins that person to the org in one transaction and
+	// records only saas.auth.sso_jit_provisioned (pkg/auth/pg/resolver.go).
+	// Before this event type was added to the allow-list, an org whose users
+	// arrive only through SSO counted zero new users forever.
+	it("counts an SSO just-in-time provisioned sign-in as a new user", () => {
+		expect(
+			newUserEventTypes([
+				{ name: "saas.user.registered" },
+				{ name: "saas.user.created" },
+				{ name: "saas.auth.sso_jit_provisioned" },
+			]),
+		).toEqual([
+			"saas.user.created",
+			"saas.user.registered",
+			"saas.auth.sso_jit_provisioned",
+		]);
+		const byType = [
+			bucket(["saas.auth.sso_jit_provisioned"], 5),
+			bucket(["saas.auth.login"], 200),
+		];
+		expect(
+			countEventTypes(byType, [
+				"saas.user.created",
+				"saas.user.registered",
+				"saas.auth.sso_jit_provisioned",
+			]),
+		).toBe(5);
+	});
 });
 
 // The headline aggregate is one request grouped by category then event type;

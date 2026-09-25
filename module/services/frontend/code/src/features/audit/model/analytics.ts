@@ -154,10 +154,20 @@ export function topGroups(
  * trusted over it: `newUserEventTypes` keeps only the names the registry
  * actually advertises, so a rename on the server empties the tile visibly
  * ("not registered") instead of counting nothing and calling it zero.
+ *
+ * `saas.auth.sso_jit_provisioned` belongs here alongside the two signup
+ * events: an org whose identity provider just-in-time provisions sign-ins
+ * (the OIDC/WorkOS path) never emits `saas.user.registered` or
+ * `saas.user.created` for that person — the accounts resolver provisions
+ * them and joins them to the org inside one transaction
+ * (pkg/auth/pg/resolver.go's `provisionSsoJit`/`provisionSsoInvite`) and
+ * records only the JIT event. Omitting it here undercounts every tenant
+ * whose users arrive through SSO, which reads as "nobody ever joins".
  */
 export const NEW_USER_EVENT_TYPES: readonly string[] = [
 	"saas.user.created",
 	"saas.user.registered",
+	"saas.auth.sso_jit_provisioned",
 ];
 
 /** The new-user names the loaded registry still knows. */

@@ -137,13 +137,31 @@ export function AuditPage() {
 		[eventTypes],
 	);
 
+	// Resetting every filter is what "Events" (the unfiltered total) means as a
+	// selection, and it is also the state the other Selects already reach via
+	// their own "all" option — so the tile reuses that, not a new concept.
+	const resetFilters = () => {
+		setEventTypeFilter("all");
+		setCategoryFilter("all");
+		setNamespaceFilter("all");
+	};
+	const showsSecurityOnly = categoryFilter === SECURITY_CATEGORY;
+	const showsNoFilter =
+		eventTypeFilter === "all" &&
+		categoryFilter === "all" &&
+		namespaceFilter === "all";
+
 	const tiles = useMemo(() => {
 		const tile = (
 			id: string,
 			label: string,
 			now: number,
 			before: number,
-			extra: { higherIsBetter?: boolean } = {},
+			extra: {
+				higherIsBetter?: boolean;
+				onSelect?: () => void;
+				selected?: boolean;
+			} = {},
 		) => ({
 			id,
 			label,
@@ -158,6 +176,15 @@ export function AuditPage() {
 			"New users",
 			countEventTypes(byTypeNow, newUserTypes),
 			countEventTypes(byTypeBefore, newUserTypes),
+			// Not clickable: "new users" is 3 event types spanning 2 registry
+			// categories (saas.user.registered/saas.user.created are
+			// CategoryIdentity, saas.auth.sso_jit_provisioned is
+			// CategorySecurity — module/services/accounts/code/pkg/business/
+			// audit_registry.go), and the wire contract's event_type/category
+			// filters on QueryAuditLogRequest/AggregateAuditLogRequest are each
+			// a single scalar — there is no "event type IN (...)" filter to
+			// drive a click through. Filtering to one of the three types would
+			// misrepresent the tile's own count.
 		);
 		// Say so when the registry no longer knows the names this tile counts:
 		// a zero here would otherwise read as "nobody joined".
@@ -169,6 +196,7 @@ export function AuditPage() {
 				"Events",
 				totalCount(inScopeNow),
 				totalCount(inScopeBefore),
+				{ onSelect: resetFilters, selected: showsNoFilter },
 			),
 			newUsers,
 			tile(
@@ -176,6 +204,10 @@ export function AuditPage() {
 				"Active actors",
 				distinctCount(actorsNow.data ?? []),
 				distinctCount(actorsBefore.data ?? []),
+				// Not clickable: this counts distinct actors, a cardinality with
+				// no corresponding single filter value — there is no "actor
+				// X" the tile could select the way a category or event type
+				// names one.
 			),
 			// A rise in security events is worth a look, not a celebration.
 			tile(
@@ -185,6 +217,13 @@ export function AuditPage() {
 				totalCount(sliceCategory(headlineBefore.data ?? [], SECURITY_CATEGORY)),
 				{
 					higherIsBetter: false,
+					// category is an exact, already-existing filter value, so this
+					// reuses the same Select state the "Category" dropdown drives.
+					onSelect: () => {
+						setCategoryFilter(SECURITY_CATEGORY);
+						setEventTypeFilter("all");
+					},
+					selected: showsSecurityOnly,
 				},
 			),
 		];
@@ -200,6 +239,8 @@ export function AuditPage() {
 		headlineBefore.data,
 		actorsNow.data,
 		actorsBefore.data,
+		showsNoFilter,
+		showsSecurityOnly,
 	]);
 	const tilesLoading = headlineNow.isLoading || actorsNow.isLoading;
 	const tilesError = headlineNow.error ?? actorsNow.error;
