@@ -278,79 +278,80 @@ describe("a viewer's layout", () => {
 		).toBeTruthy();
 	});
 
-	it("outlines the tile a drag is over, and swaps the two on drop", () => {
-		const { unmount } = renderDashboards();
-		const dragged = tile("Logins over time");
-		fireEvent.dragStart(dragged, { dataTransfer: {} });
-		fireEvent.dragOver(tile("Total logins"), { dataTransfer: {} });
-		// Nothing moves while the drag is in flight, and nothing is saved...
-		expect(tileTitles()).toEqual(DEFAULT_ORDER);
-		expect(tile("Total logins").dataset.dropTarget).toBe("true");
-		expect(tile("Top event types").dataset.dropTarget).toBeUndefined();
-		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
-
-		// ...and the drop swaps only the two: the tile between them stays put.
-		fireEvent.drop(tile("Total logins"), { dataTransfer: {} });
-		fireEvent.dragEnd(dragged, { dataTransfer: {} });
-		const swapped = ["Total logins", "Top event types", "Logins over time"];
-		expect(tileTitles()).toEqual(swapped);
-		expect(tile("Total logins").dataset.dropTarget).toBeUndefined();
-
-		unmount();
-		renderDashboards();
-		expect(tileTitles()).toEqual(swapped);
-	});
-
-	it("swaps with the outlined tile when dropped in the gap between tiles", () => {
-		renderDashboards();
-		const dragged = tile("Total logins");
-		fireEvent.dragStart(dragged, { dataTransfer: {} });
-		fireEvent.dragOver(tile("Top event types"), { dataTransfer: {} });
-		fireEvent.drop(screen.getByRole("list"), { dataTransfer: {} });
-		fireEvent.dragEnd(dragged, { dataTransfer: {} });
-		expect(tileTitles()).toEqual([
-			"Logins over time",
-			"Total logins",
-			"Top event types",
-		]);
-		expect(window.localStorage.getItem(LAYOUT_KEY)).not.toBeNull();
-	});
-
-	it("swaps nothing when the drag goes back over the dragged tile", () => {
-		renderDashboards();
-		const dragged = tile("Total logins");
-		fireEvent.dragStart(dragged, { dataTransfer: {} });
-		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
-		fireEvent.dragOver(dragged, { dataTransfer: {} });
-		expect(tile("Logins over time").dataset.dropTarget).toBeUndefined();
-
-		fireEvent.drop(dragged, { dataTransfer: {} });
-		fireEvent.dragEnd(dragged, { dataTransfer: {} });
-		expect(tileTitles()).toEqual(DEFAULT_ORDER);
-		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
-	});
-
-	it("drops the outline when the drag leaves the dashboard", () => {
-		renderDashboards();
-		const dragged = tile("Total logins");
-		fireEvent.dragStart(dragged, { dataTransfer: {} });
-		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
-		fireEvent.dragLeave(screen.getByRole("list"), {
-			dataTransfer: {},
-			relatedTarget: document.body,
+	describe("dragging", () => {
+		// happy-dom lays nothing out, so each tile gets a slot by its place in
+		// the list: two columns of 100×100 cells, 10px apart.
+		const realRect = HTMLElement.prototype.getBoundingClientRect;
+		beforeEach(() => {
+			HTMLElement.prototype.getBoundingClientRect = function (
+				this: HTMLElement,
+			) {
+				const index =
+					this.dataset.sortableId === undefined || !this.parentElement
+						? 0
+						: [...this.parentElement.children].indexOf(this);
+				const left = (index % 2) * 110;
+				const top = Math.floor(index / 2) * 110;
+				return {
+					x: left,
+					y: top,
+					left,
+					top,
+					right: left + 100,
+					bottom: top + 100,
+					width: 100,
+					height: 100,
+					toJSON: () => ({}),
+				} as DOMRect;
+			};
 		});
-		expect(tile("Logins over time").dataset.dropTarget).toBeUndefined();
-	});
+		afterEach(async () => {
+			HTMLElement.prototype.getBoundingClientRect = realRect;
+			// dnd-kit keeps swallowing clicks for 50ms after a drag ends.
+			await new Promise((resolve) => setTimeout(resolve, 60));
+		});
 
-	it("reverts a cancelled drag", () => {
-		renderDashboards();
-		const dragged = tile("Total logins");
-		fireEvent.dragStart(dragged, { dataTransfer: {} });
-		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
-		fireEvent.dragEnd(dragged, { dataTransfer: {} });
-		expect(tileTitles()).toEqual(DEFAULT_ORDER);
-		expect(tile("Logins over time").dataset.dropTarget).toBeUndefined();
-		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+		const middle = (title: string) => {
+			const { left, top } = tile(title).getBoundingClientRect();
+			return { clientX: left + 50, clientY: top + 50 };
+		};
+		// A mouse drag: pressed on the tile, then moved on the document, where
+		// dnd-kit listens once a drag begins. Returns the drop.
+		const drag = (title: string, to: { clientX: number; clientY: number }) => {
+			const from = middle(title);
+			fireEvent.mouseDown(tile(title), { ...from, button: 0 });
+			for (const step of [0.1, 0.5, 1]) {
+				fireEvent.mouseMove(document, {
+					clientX: from.clientX + (to.clientX - from.clientX) * step,
+					clientY: from.clientY + (to.clientY - from.clientY) * step,
+				});
+			}
+			return () => fireEvent.mouseUp(document, to);
+		};
+
+		it("swaps a tile dropped on another, and saves the order on the drop", () => {
+			const { unmount } = renderDashboards();
+			const drop = drag("Logins over time", middle("Total logins"));
+			// Nothing is committed while the drag is in flight...
+			expect(tileTitles()).toEqual(DEFAULT_ORDER);
+			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+
+			// ...and the drop swaps only the two: the tile between them stays put.
+			drop();
+			const swapped = ["Total logins", "Top event types", "Logins over time"];
+			expect(tileTitles()).toEqual(swapped);
+
+			unmount();
+			renderDashboards();
+			expect(tileTitles()).toEqual(swapped);
+		});
+
+		it("changes nothing when a drag ends off the dashboard", () => {
+			renderDashboards();
+			drag("Total logins", { clientX: 900, clientY: 900 })();
+			expect(tileTitles()).toEqual(DEFAULT_ORDER);
+			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+		});
 	});
 
 	// happy-dom keeps focus on a node React moves, where a browser drops it, so
