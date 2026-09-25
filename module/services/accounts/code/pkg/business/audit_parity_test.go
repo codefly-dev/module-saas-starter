@@ -40,6 +40,8 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
 	EventDocumentArchived,
+	// A document module's operator redrive reports this through EmitAuditEvent.
+	EventDocumentDeadLetterRedriven,
 	EventDocumentDeleted,
 	EventDocumentEffectCommitted,
 	EventDocumentFrozen,

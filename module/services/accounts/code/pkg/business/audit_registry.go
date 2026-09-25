@@ -363,6 +363,12 @@ const (
 	EventDocumentEffectCommitted      EventType = "saas.document.effect.committed"
 	EventDocumentProductionCommitted  EventType = "saas.document.production.committed"
 	EventDocumentKnowledgePublished   EventType = "saas.document.knowledge.published"
+
+	// An operator re-queued a document's dead-lettered derivation — the
+	// producer run a document module gave up on — once the cause was fixed. It
+	// is who-did-what-to-which-resource (the entry is re-derived on an operator's
+	// say-so), not pipeline bookkeeping, so it has a type of its own.
+	EventDocumentDeadLetterRedriven EventType = "saas.document.dead_letter_redriven"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -591,6 +597,12 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("solution"), str("effect_key"), str("task_id"), str("digest"), str("producer"), str("producer_version")),
 	mutation(EventDocumentKnowledgePublished, CategoryLifecycle, "A knowledge card was published into a collection as one effect.",
 		append(append([]PayloadField(nil), documentFields...), str("effect_key"), str("run_id"), str("digest"))...),
+	// Required fields are the ones the producer always has: which stage gave up
+	// on which version, and why. A redrive that re-queued nothing records nothing.
+	mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
+		append(append([]PayloadField(nil), documentFields...),
+			PayloadField{Name: "producer", Kind: FieldString, Required: true},
+			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true, Enum: []string{"permanent", "exhausted"}})...),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
