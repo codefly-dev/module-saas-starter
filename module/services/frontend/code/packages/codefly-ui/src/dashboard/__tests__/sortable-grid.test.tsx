@@ -6,6 +6,7 @@ import {
 	render,
 	screen,
 } from "@testing-library/react";
+import { createPortal } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SortableGrid } from "../sortable-grid.js";
 
@@ -155,6 +156,28 @@ describe("SortableGrid", () => {
 		fireEvent.mouseUp(document, center("c"));
 		fireEvent.click(button);
 		expect(onClick).toHaveBeenCalledWith("c");
+		expect(onSwap).not.toHaveBeenCalled();
+	});
+
+	it("starts no drag from a panel a tile opens elsewhere on the page", () => {
+		const onSwap = vi.fn();
+		render(
+			<SortableGrid
+				ids={["a", "b"]}
+				onSwap={onSwap}
+				renderItem={(id) => (
+					<>
+						Tile {id}
+						{id === "a" && createPortal(<p>Text to select</p>, document.body)}
+					</>
+				)}
+			/>,
+		);
+		const panel = screen.getByText("Text to select");
+		fireEvent.mouseDown(panel, { clientX: 10, clientY: 10, button: 0 });
+		fireEvent.mouseMove(document, { clientX: 160, clientY: 50 });
+		expect(tile("a").dataset.dragging).toBeUndefined();
+		fireEvent.mouseUp(document, { clientX: 160, clientY: 50 });
 		expect(onSwap).not.toHaveBeenCalled();
 	});
 
