@@ -144,3 +144,24 @@ func TestAuditCatalog_InstallationReasonCodesAreDeclaredOnBothEvents(t *testing.
 	require.ElementsMatch(t, codes, lost,
 		"every code datasourceInstallationReasonCodes can put in a payload must be declared on the event")
 }
+
+// A document module records each re-queued dead letter with exactly this
+// payload; EmitAuditEvent rejects an undeclared key, so the declaration has to
+// match what the producer sends, and the fields that say what was re-run are
+// required.
+func TestValidatePayload_DocumentDeadLetterRedriven(t *testing.T) {
+	sent := map[string]any{"solution": "documents", "version": "v1", "producer": "embed", "error_class": "exhausted"}
+	require.NoError(t, ValidatePayload(EventDocumentDeadLetterRedriven, sent))
+	require.NoError(t, ValidatePayload(EventDocumentDeadLetterRedriven,
+		map[string]any{"solution": "documents", "version": "v1", "producer": "parse", "error_class": "permanent"}))
+
+	require.Error(t, ValidatePayload(EventDocumentDeadLetterRedriven,
+		map[string]any{"solution": "documents", "version": "v1", "producer": "embed", "error_class": "flaky"}),
+		"error_class is permanent or exhausted")
+	require.Error(t, ValidatePayload(EventDocumentDeadLetterRedriven,
+		map[string]any{"solution": "documents", "version": "v1", "error_class": "exhausted"}),
+		"producer is required")
+	require.Error(t, ValidatePayload(EventDocumentDeadLetterRedriven,
+		map[string]any{"solution": "documents", "version": "v1", "producer": "embed", "error_class": "exhausted", "last_error": "x"}),
+		"the error text is never on the spine")
+}

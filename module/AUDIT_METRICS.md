@@ -105,6 +105,13 @@ and committed-document counts still require confirmed producer events. Do not
 substitute these read events or source dispatch for them. A complete aggregation
 cannot prove that an emitter has reported every operation.
 
+`saas.document.dead_letter_redriven` records an operator re-queuing a
+document's dead-lettered derivation, one event per re-queued producer run, with
+the entry as entry_id. Beyond document provenance it requires `producer` (the
+stage that had given up) and `error_class` (`permanent`: the input was called
+unreadable; `exhausted`: the retry budget was spent). The failure text itself is
+never on the spine. A dry run, and a run the redrive left alone, record nothing.
+
 ## Version acknowledgement
 
 Successful aggregate responses include `scope_contract_version: 1` (Connect JSON:

@@ -324,6 +324,12 @@ const (
 	EventDocumentQuarantineReleased EventType = "saas.document.quarantine_released"
 	EventDocumentSubscribed         EventType = "saas.document.subscribed"
 	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
+
+	// An operator re-queued a document's dead-lettered derivation — the
+	// producer run a document module gave up on — once the cause was fixed. It
+	// is who-did-what-to-which-resource (the entry is re-derived on an operator's
+	// say-so), not pipeline bookkeeping, so it has a type of its own.
+	EventDocumentDeadLetterRedriven EventType = "saas.document.dead_letter_redriven"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -528,6 +534,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
 	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
 	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+	// Required fields are the ones the producer always has: which stage gave up
+	// on which version, and why. A redrive that re-queued nothing records nothing.
+	mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
+		append(append([]PayloadField(nil), documentFields...),
+			PayloadField{Name: "producer", Kind: FieldString, Required: true},
+			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true, Enum: []string{"permanent", "exhausted"}})...),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
