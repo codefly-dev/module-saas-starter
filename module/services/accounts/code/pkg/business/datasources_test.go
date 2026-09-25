@@ -972,13 +972,17 @@ type fakeUploadClient struct {
 	objects    map[string]objectstore.Object
 	fetchErr   map[string]error
 	listErr    error
+	incomplete bool
 	listCalls  int
 	fetchCalls int
 }
 
-func (f *fakeUploadClient) List(context.Context) ([]objectstore.Entry, error) {
+func (f *fakeUploadClient) List(context.Context) (objectstore.Listing, error) {
 	f.listCalls++
-	return f.entries, f.listErr
+	if f.listErr != nil {
+		return objectstore.Listing{}, f.listErr
+	}
+	return objectstore.Listing{Entries: f.entries, Complete: !f.incomplete}, nil
 }
 
 func (f *fakeUploadClient) Fetch(_ context.Context, key string) (objectstore.Object, error) {
@@ -1206,8 +1210,9 @@ func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if enqueued != 2 || len(producer.jobs) != 2 || fake.listCalls != 1 || fake.fetchCalls != 2 {
-		t.Fatalf("enqueued=%d jobs=%d list=%d fetch=%d, want 2/2/1/2", enqueued, len(producer.jobs), fake.listCalls, fake.fetchCalls)
+	// Two object jobs, then the listing that closes the sync.
+	if enqueued != 2 || len(producer.jobs) != 3 || fake.listCalls != 1 || fake.fetchCalls != 2 {
+		t.Fatalf("enqueued=%d jobs=%d list=%d fetch=%d, want 2/3/1/2", enqueued, len(producer.jobs), fake.listCalls, fake.fetchCalls)
 	}
 	if gotSecret != "secretkey" {
 		t.Fatalf("secret handed to connector = %q, want the decrypted secret key", gotSecret)
@@ -1245,6 +1250,9 @@ func TestRunDatasourceSync_UploadPropagatesFetchFailure(t *testing.T) {
 	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
 		t.Fatal("a 403 on every object must fail the sync, not read as an empty bucket")
 	}
+	if listings := uploadListings(t, producer); len(listings) != 0 {
+		t.Fatalf("a sync that could not fetch an object sent a listing %+v; its absence would delete that object", listings)
+	}
 }
 
 // A listed object deleted before its fetch (404) is skipped best-effort while the
@@ -1267,9 +1275,10 @@ func TestRunDatasourceSync_UploadSkipsVanishedAndSurfacesOversized(t *testing.T)
 	if err == nil {
 		t.Fatal("the oversized object must surface as an error")
 	}
-	// The vanished object is skipped and the deliverable one still enqueues.
+	// The vanished object is skipped and the deliverable one still enqueues; the
+	// undeliverable one keeps the sync from sending a listing that omits it.
 	if enqueued != 1 || len(producer.jobs) != 1 || producer.jobs[0].GetAttributes()["upload.key"] != "ok.pdf" {
-		t.Fatalf("enqueued=%d jobs=%d, want only ok.pdf delivered", enqueued, len(producer.jobs))
+		t.Fatalf("enqueued=%d jobs=%d, want only ok.pdf delivered and no listing", enqueued, len(producer.jobs))
 	}
 }
 

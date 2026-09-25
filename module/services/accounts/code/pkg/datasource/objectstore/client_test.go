@@ -72,9 +72,13 @@ func TestFetchHappyPath(t *testing.T) {
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY")
 
-	entries, err := c.List(context.Background())
+	listing, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
+	}
+	entries := listing.Entries
+	if !listing.Complete {
+		t.Fatal("a listing the store did not truncate reported itself incomplete")
 	}
 	if len(entries) != 2 {
 		t.Fatalf("want 2 entries, got %d", len(entries))
@@ -291,5 +295,48 @@ func TestSSRFGuardBlocksLoopback(t *testing.T) {
 	}, "secret")
 	if _, err := c.List(context.Background()); err == nil {
 		t.Fatal("expected an error listing a loopback endpoint, got nil")
+	}
+}
+
+// TestListReportsATruncatedListingIncomplete pins the completeness signal a
+// mirror deletes by: a page the store marks IsTruncated, or one the object cap
+// cut, is never complete, while an untruncated page within the cap is.
+func TestListReportsATruncatedListingIncomplete(t *testing.T) {
+	allowDial(t)
+	truncated := "false"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult><Name>b</Name><IsTruncated>` + truncated + `</IsTruncated>
+  <Contents><Key>docs/a.txt</Key><ETag>"a"</ETag></Contents>
+  <Contents><Key>docs/b.txt</Key><ETag>"b"</ETag></Contents>
+  <Contents><Key>docs/c.txt</Key><ETag>"c"</ETag></Contents>
+</ListBucketResult>`))
+	}))
+	defer srv.Close()
+	client := func(max int) *Client {
+		return New(Config{Endpoint: srv.URL, Region: "us-east-1", Bucket: "b", Prefix: "docs/", AccessKeyID: "AK", MaxObjects: max}, "secret")
+	}
+	for _, tc := range []struct {
+		name      string
+		truncated string
+		max       int
+		entries   int
+		complete  bool
+	}{
+		{"whole listing within the cap", "false", 3, 3, true},
+		{"store truncated the page", "true", 10, 3, false},
+		{"object cap cut the page", "false", 2, 2, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncated = tc.truncated
+			listing, err := client(tc.max).List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(listing.Entries) != tc.entries || listing.Complete != tc.complete {
+				t.Fatalf("entries=%d complete=%v, want %d/%v", len(listing.Entries), listing.Complete, tc.entries, tc.complete)
+			}
+		})
 	}
 }
