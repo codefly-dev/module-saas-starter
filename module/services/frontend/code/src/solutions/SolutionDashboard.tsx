@@ -48,13 +48,13 @@ import {
 import {
 	addableTiles,
 	addTile,
-	dropOn,
 	layoutKey,
 	moveBy,
 	parseLayout,
 	readSavedLayout,
 	removeTile,
 	serializeLayout,
+	swapTiles,
 	tileWidget,
 	writeSavedLayout,
 } from "./dashboard-layout";
@@ -345,31 +345,39 @@ function SolutionDashboard({
 		{ organizationId, userId: user?.id },
 	);
 	const [layout, save] = useDashboardLayout(storageKey, graph, dashboard);
-	// While a tile is dragged the others reflow around it in `order`. The order
-	// is saved on a drop and discarded when the drag is cancelled. `over` is the
-	// tile last entered, so hovering one tile moves the dragged tile once rather
-	// than on every dragover event.
+	// While a tile is dragged nothing moves: `target`, the tile it was last
+	// dragged over, is outlined, and a drop swaps the two. Tiles differ in
+	// height, so moving them under the pointer mid-drag changes which tile the
+	// pointer is over, and the tiles would keep trading places.
 	const [drag, setDrag] = useState<{
 		tileId: string;
-		over: string;
-		order: string[];
+		target: string | null;
 	} | null>(null);
+	const aim = (target: string | null) => {
+		if (drag && drag.target !== target) setDrag({ ...drag, target });
+	};
 
-	// A drop anywhere on the dashboard, the gaps between tiles included, keeps
-	// the new order.
+	// A drop anywhere on the dashboard, the gaps between tiles included, swaps
+	// with the outlined tile.
 	const onDragOver = (event: DragEvent) => {
 		if (!drag) return;
 		event.preventDefault();
 		event.dataTransfer.dropEffect = "move";
 	};
+	const onDragLeave = (event: DragEvent) => {
+		const into = event.relatedTarget;
+		if (!(into instanceof Node && event.currentTarget.contains(into))) {
+			aim(null);
+		}
+	};
 	const onDrop = (event: DragEvent) => {
 		if (!drag) return;
 		event.preventDefault();
-		save(drag.order);
+		if (drag.target) save(swapTiles(layout, drag.tileId, drag.target));
 		setDrag(null);
 	};
 
-	const tiles = (drag?.order ?? layout).flatMap((tileId) => {
+	const tiles = layout.flatMap((tileId) => {
 		const widget = tileWidget(graph, dashboard, tileId);
 		if (!widget) return [];
 		const title = widget.title ?? widget.metric;
@@ -377,22 +385,20 @@ function SolutionDashboard({
 			<li
 				key={tileId}
 				draggable
-				className={cn("cursor-grab", drag?.tileId === tileId && "opacity-50")}
+				data-drop-target={drag?.target === tileId || undefined}
+				className={cn(
+					"cursor-grab rounded-xl",
+					drag?.tileId === tileId && "opacity-50",
+					drag?.target === tileId && "ring-2 ring-primary",
+				)}
 				onDragStart={(event) => {
 					event.dataTransfer.effectAllowed = "move";
 					// Firefox starts a drag only when it carries data.
 					event.dataTransfer.setData("text/plain", tileId);
-					setDrag({ tileId, over: tileId, order: layout });
+					setDrag({ tileId, target: null });
 				}}
-				onDragOver={() => {
-					// Entering another tile takes its place; the rest shift over.
-					if (!drag || drag.over === tileId) return;
-					setDrag({
-						...drag,
-						over: tileId,
-						order: dropOn(drag.order, drag.tileId, tileId),
-					});
-				}}
+				// Back over the dragged tile itself, there is nothing to swap with.
+				onDragOver={() => aim(drag?.tileId === tileId ? null : tileId)}
 				// Fires after a drop too, which has already saved.
 				onDragEnd={() => setDrag(null)}
 			>
@@ -469,6 +475,7 @@ function SolutionDashboard({
 							: "grid grid-cols-1 gap-4 sm:grid-cols-2"
 					}
 					onDragOver={onDragOver}
+					onDragLeave={onDragLeave}
 					onDrop={onDrop}
 				>
 					{tiles}

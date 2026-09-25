@@ -278,50 +278,68 @@ describe("a viewer's layout", () => {
 		).toBeTruthy();
 	});
 
-	it("reflows while a tile is dragged and saves the order on drop", () => {
+	it("outlines the tile a drag is over, and swaps the two on drop", () => {
 		const { unmount } = renderDashboards();
 		const dragged = tile("Logins over time");
 		fireEvent.dragStart(dragged, { dataTransfer: {} });
 		fireEvent.dragOver(tile("Total logins"), { dataTransfer: {} });
-		// The other tiles shift while the drag is still in flight...
-		expect(tileTitles()).toEqual([
-			"Top event types",
-			"Total logins",
-			"Logins over time",
-		]);
-		// ...and nothing is saved until the drop.
+		// Nothing moves while the drag is in flight, and nothing is saved...
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(tile("Total logins").dataset.dropTarget).toBe("true");
+		expect(tile("Top event types").dataset.dropTarget).toBeUndefined();
 		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
 
-		fireEvent.drop(tile("Logins over time"), { dataTransfer: {} });
+		// ...and the drop swaps only the two: the tile between them stays put.
+		fireEvent.drop(tile("Total logins"), { dataTransfer: {} });
 		fireEvent.dragEnd(dragged, { dataTransfer: {} });
-		expect(tileTitles()).toEqual([
-			"Top event types",
-			"Total logins",
-			"Logins over time",
-		]);
+		const swapped = ["Total logins", "Top event types", "Logins over time"];
+		expect(tileTitles()).toEqual(swapped);
+		expect(tile("Total logins").dataset.dropTarget).toBeUndefined();
 
 		unmount();
 		renderDashboards();
-		expect(tileTitles()).toEqual([
-			"Top event types",
-			"Total logins",
-			"Logins over time",
-		]);
+		expect(tileTitles()).toEqual(swapped);
 	});
 
-	it("keeps the new order when a tile is dropped in the gap between tiles", () => {
+	it("swaps with the outlined tile when dropped in the gap between tiles", () => {
+		renderDashboards();
+		const dragged = tile("Total logins");
+		fireEvent.dragStart(dragged, { dataTransfer: {} });
+		fireEvent.dragOver(tile("Top event types"), { dataTransfer: {} });
+		fireEvent.drop(screen.getByRole("list"), { dataTransfer: {} });
+		fireEvent.dragEnd(dragged, { dataTransfer: {} });
+		expect(tileTitles()).toEqual([
+			"Logins over time",
+			"Total logins",
+			"Top event types",
+		]);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).not.toBeNull();
+	});
+
+	it("swaps nothing when the drag goes back over the dragged tile", () => {
 		renderDashboards();
 		const dragged = tile("Total logins");
 		fireEvent.dragStart(dragged, { dataTransfer: {} });
 		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
-		fireEvent.drop(screen.getByRole("list"), { dataTransfer: {} });
+		fireEvent.dragOver(dragged, { dataTransfer: {} });
+		expect(tile("Logins over time").dataset.dropTarget).toBeUndefined();
+
+		fireEvent.drop(dragged, { dataTransfer: {} });
 		fireEvent.dragEnd(dragged, { dataTransfer: {} });
-		expect(tileTitles()).toEqual([
-			"Total logins",
-			"Logins over time",
-			"Top event types",
-		]);
-		expect(window.localStorage.getItem(LAYOUT_KEY)).not.toBeNull();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+	});
+
+	it("drops the outline when the drag leaves the dashboard", () => {
+		renderDashboards();
+		const dragged = tile("Total logins");
+		fireEvent.dragStart(dragged, { dataTransfer: {} });
+		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
+		fireEvent.dragLeave(screen.getByRole("list"), {
+			dataTransfer: {},
+			relatedTarget: document.body,
+		});
+		expect(tile("Logins over time").dataset.dropTarget).toBeUndefined();
 	});
 
 	it("reverts a cancelled drag", () => {
@@ -329,10 +347,9 @@ describe("a viewer's layout", () => {
 		const dragged = tile("Total logins");
 		fireEvent.dragStart(dragged, { dataTransfer: {} });
 		fireEvent.dragOver(tile("Logins over time"), { dataTransfer: {} });
-		expect(tileTitles()[0]).toBe("Total logins");
-
 		fireEvent.dragEnd(dragged, { dataTransfer: {} });
 		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(tile("Logins over time").dataset.dropTarget).toBeUndefined();
 		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
 	});
 
