@@ -464,6 +464,7 @@ func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {
 //     joined_at — so Bob (a "member" in the fixture intent) logs in as
 //     OWNER of his Personal org and the role-gate UI grants him admin
 //     surface he should not see.
+//
 // grantFixturePlatformRole grants a fixture user its platform role as a
 // self-grant (granted_by references users(uuid), so it carries the user's own
 // id). platform_admins is written only on the control plane — the tenant role
