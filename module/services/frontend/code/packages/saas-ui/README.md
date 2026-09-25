@@ -21,6 +21,28 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   auth/transport (e.g. its own token-refresh interceptors) — one adapter, shared with
   the gateway path.
 
+## Solution remotes: the host binding
+
+A solution remote's own backend calls, and the viewer state it keys them on,
+come from the kit too, so no remote carries its own copy:
+
+- `SolutionBinding` — the backend half of the props the host injects into every
+  solution page (`solutionId`, `apiBase`, `getAccessToken`, `refreshAccessToken`,
+  `authedFetch`). The host's `SolutionPageProps` extends it, so a remote types
+  its props against the one definition.
+- `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
+  a request to the solution's own backend at `apiBase + path`, same-origin,
+  through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer
+  stamped. `solutionJson` throws a `SolutionRequestError` carrying the status and
+  the backend's own `{ "error" }` message.
+- `useSolutionJson<T>(binding, path, cache?)` — one JSON resource as
+  `loading | error | ready`, re-read when the viewer, base or path changes; an
+  answer that arrives after the viewer changed is dropped.
+- `viewerIdentity(token)`, `useAccessToken(getAccessToken)`,
+  `useViewerEpoch(getAccessToken)` — who the current credential speaks for,
+  stable across a refresh and changing with the viewer. They partition local UI
+  state; they never authorize anything (the claims are read unverified).
+
 ## Datasources
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
