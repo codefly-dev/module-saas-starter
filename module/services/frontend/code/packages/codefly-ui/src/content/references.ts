@@ -19,10 +19,10 @@
 export const REFERENCE_ELEMENT = "content-reference";
 
 const MARKER = /\[(\d+)\]/g;
-const OPEN = "";
-const CLOSE = "";
-const SENTINEL = /(\d+)/g;
-const SENTINEL_CHARS = /[]/g;
+const OPEN = String.fromCharCode(0xe000);
+const CLOSE = String.fromCharCode(0xe001);
+const SENTINEL = new RegExp("\\uE000(\\d+)\\uE001", "g");
+const SENTINEL_CHARS = new RegExp("[\\uE000\\uE001]", "g");
 const DEFINITION_LINE = /^[ \t]*\[(\d+)\]:[ \t]+\S.*$/gm;
 const INLINE_LINK = /\[(\d+)\]\([^\s()]*(?:[ \t]+"[^"]*")?\)/g;
 

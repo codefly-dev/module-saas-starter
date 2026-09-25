@@ -25,6 +25,11 @@ export {
 	type MarkdownProps,
 	type MarkdownReferences,
 } from "./markdown.js";
-export { markdownToPlainText, toPlainText } from "./plain.js";
+export { markdownFragmentToText } from "./fragment.js";
+export {
+	markdownToPlainText,
+	type PlainTextOptions,
+	toPlainText,
+} from "./plain.js";
 export { TextBlock, type TextBlockProps } from "./text-block.js";
 export { safeImageUrl, safeLinkUrl } from "./url.js";

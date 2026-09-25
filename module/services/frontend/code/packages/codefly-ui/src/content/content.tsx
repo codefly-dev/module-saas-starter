@@ -18,6 +18,12 @@ export interface ContentProps {
 	format?: ContentFormat;
 	/** Default `block`. `inline` is for list rows and excerpts: markup stripped, one line, ellipsis. */
 	variant?: ContentVariant;
+	/**
+	 * Inline only: `value` is a slice of a document (a search chunk, a cited
+	 * passage), read without a parser so markup the cut left dangling never
+	 * shows. Default false.
+	 */
+	fragment?: boolean;
 	/** Inline only: lines shown before the ellipsis. Default 1. */
 	lines?: 1 | 2 | 3;
 	/** Code only: the language to highlight (`ts`, `python`, `json`, ...). */
@@ -52,6 +58,7 @@ export function Content({
 	format = "auto",
 	variant = "block",
 	lines = 1,
+	fragment = false,
 	language,
 	headingLevel,
 	allowImages,
@@ -65,7 +72,7 @@ export function Content({
 	const resolved = format === "auto" ? detectFormat(value) : format;
 
 	if (variant === "inline") {
-		const text = toPlainText(value, resolved);
+		const text = toPlainText(value, resolved, { fragment });
 		return (
 			<span
 				data-slot="content-inline"
