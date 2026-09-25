@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -160,12 +161,19 @@ const (
 	datasourceCrawlerSyncSource = "crawler.sync"
 	datasourceUploadSyncTopic   = "datasource.upload.sync"
 	datasourceUploadSyncSource  = "upload.sync"
+	// datasourceUploadListingTopic closes an upload sync with the complete
+	// listing it delivered, under the sync's ordinal; the documents store
+	// tombstones every entry of the source the listing omits.
+	datasourceUploadListingTopic = "datasource.upload.snapshot"
 
 	attrCrawlerURL        = "crawler.url"
 	attrCrawlerContentSHA = "crawler.content_sha"
 	attrUploadBucket      = "upload.bucket"
 	attrUploadKey         = "upload.key"
 	attrUploadETag        = "upload.etag"
+	// attrUploadOrdinal is the sync's per-source ordinal, stamped on every
+	// object job of the sync and on its listing so the store can rank them.
+	attrUploadOrdinal = "upload.ordinal"
 
 	changeTypeAdded = "added"
 )
@@ -370,7 +378,7 @@ type CrawlerContentClient interface {
 // needs. The Service builds one per Source from its config and decrypted secret
 // access key and drives it item-at-a-time (List then Fetch).
 type UploadContentClient interface {
-	List(ctx context.Context) ([]objectstore.Entry, error)
+	List(ctx context.Context) (objectstore.Listing, error)
 	Fetch(ctx context.Context, key string) (objectstore.Object, error)
 }
 
@@ -1443,12 +1451,26 @@ func crawlerIngestIdempotencyKey(sourceID, pageURL, contentSHA string) string {
 	return "datasource-crawler-sync/" + hex.EncodeToString(digest[:])
 }
 
-// runUploadSync lists the source's objects and fetches each one at a time,
-// enqueuing an ingest delivery per object. Objects are streamed (never all held
-// in memory); a listed object deleted before its fetch is skipped, an object too
-// large to deliver is recorded and surfaced, and any real fetch failure (a
-// permission or transport error) aborts the sync rather than reading as an empty
-// bucket.
+// ErrUploadListingIncomplete reports an upload sync whose listing was not the
+// whole folder: the store truncated it, or the source's object cap cut it. The
+// objects it did list are still delivered, but no listing is sent, so nothing
+// is removed on a partial view; it fails the sync terminally rather than
+// retrying into the same cap.
+var ErrUploadListingIncomplete = errors.New("upload listing is incomplete; removals were not reconciled")
+
+// runUploadSync mirrors the source's folder into the documents store. It lists
+// the source's objects and fetches each one at a time, enqueuing an ingest
+// delivery per object, then closes the sync with the complete listing of every
+// object it delivered, so the store tombstones the entries whose objects are
+// gone. Every job of one sync carries one freshly allocated ordinal, which the
+// store ranks the listing against the writes it covers by.
+//
+// The listing is sent only when the sync saw the whole folder and delivered
+// every object in it: a failed or truncated listing, a fetch failure, or an
+// object too large to deliver ends the sync without one, so a partial view can
+// never delete. A listed object deleted before its fetch is gone, and is left
+// out of the listing. A key ending in "/" is a folder marker, not a file, and
+// is neither delivered nor listed.
 func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
 	w := wool.Get(ctx).In("runUploadSync")
 	if s.newUploadClient == nil {
@@ -1464,18 +1486,26 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	}
 	client := s.newUploadClient(*source.Upload, secretKey)
 
-	entries, err := client.List(ctx)
+	listing, err := client.List(ctx)
 	if err != nil {
 		return 0, w.Wrapf(err, "list objects")
+	}
+	ordinal, err := s.allocateOrdinal(ctx, source.ID)
+	if err != nil {
+		return 0, w.Wrapf(err, "allocate ordinal")
 	}
 
 	enqueued := 0
 	oversized := 0
-	for _, entry := range entries {
+	delivered := make([]uploadListingFile, 0, len(listing.Entries))
+	for _, entry := range listing.Entries {
+		if strings.HasSuffix(entry.Key, "/") {
+			continue
+		}
 		object, err := client.Fetch(ctx, entry.Key)
 		if err != nil {
 			if errors.Is(err, objectstore.ErrObjectNotFound) {
-				// Deleted between listing and fetch; skip best-effort.
+				// Deleted between listing and fetch: it is gone, so it is not listed.
 				w.Warn("skipping vanished object", wool.Field("key", entry.Key))
 				continue
 			}
@@ -1491,9 +1521,11 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 			oversized++
 			continue
 		}
-		if err := s.enqueueUploadIngest(ctx, source, object, uploadFingerprint(object, entry)); err != nil {
+		fingerprint := uploadFingerprint(object, entry)
+		if err := s.enqueueUploadIngest(ctx, source, object, fingerprint, ordinal); err != nil {
 			return enqueued, w.Wrapf(err, "enqueue %s", entry.Key)
 		}
+		delivered = append(delivered, uploadListingFile{Key: object.Key, ETag: fingerprint})
 		enqueued++
 	}
 
@@ -1502,6 +1534,12 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	if oversized > 0 {
 		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
 	}
+	if !listing.Complete {
+		return enqueued, w.Wrapf(ErrUploadListingIncomplete, "listing of %d object(s) under %q", len(listing.Entries), source.Upload.Prefix)
+	}
+	if err := s.enqueueUploadListing(ctx, source, ordinal, delivered); err != nil {
+		return enqueued, w.Wrapf(err, "enqueue listing")
+	}
 
 	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
 		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
@@ -1509,6 +1547,59 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 		return enqueued, w.Wrapf(err, "record sync time")
 	}
 	return enqueued, nil
+}
+
+// uploadListingFile is one delivered object in an upload sync's listing: its
+// key and the fingerprint its own ingest job was versioned by.
+type uploadListingFile struct {
+	Key  string `json:"key"`
+	ETag string `json:"etag"`
+}
+
+// uploadListing is the payload of datasourceUploadListingTopic. Files is always
+// present, empty for an emptied folder, so the store can tell an empty folder
+// from a listing that lost its inventory.
+type uploadListing struct {
+	Bucket  string              `json:"bucket"`
+	Prefix  string              `json:"prefix"`
+	Ordinal int64               `json:"ordinal"`
+	Files   []uploadListingFile `json:"files"`
+}
+
+func (s *Service) enqueueUploadListing(ctx context.Context, source *DatasourceSource, ordinal int64, files []uploadListingFile) error {
+	if source.BoundaryNodeID == "" {
+		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
+	}
+	payload, err := json.Marshal(uploadListing{Bucket: source.Upload.Bucket, Prefix: source.Upload.Prefix, Ordinal: ordinal, Files: files})
+	if err != nil {
+		return err
+	}
+	if len(payload) > maxIngestPayload {
+		return wool.Get(ctx).NewError("upload listing of %d object(s) is %d bytes, over the %d-byte ingest limit", len(files), len(payload), maxIngestPayload)
+	}
+	ordinalText := strconv.FormatInt(ordinal, 10)
+	_, err = s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+		Job: &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:          DatasourceIngestQueue,
+			Topic:          datasourceUploadListingTopic,
+			Source:         datasourceUploadSyncSource,
+			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, "\x00listing", ordinalText),
+			SchemaVersion:  datasourceIngestSchemaVersion,
+			Payload:        payload,
+			ContentType:    "application/json",
+			MaxAttempts:    datasourceIngestMaxAttempts,
+			Attributes: map[string]string{
+				attrSourceID:      source.ID,
+				attrOrgID:         source.OrgID,
+				attrBoundaryID:    source.BoundaryNodeID,
+				attrUploadBucket:  source.Upload.Bucket,
+				attrUploadOrdinal: ordinalText,
+			},
+		},
+	})
+	return err
 }
 
 // uploadFingerprint is the object's content fingerprint used to key delivery
@@ -1525,7 +1616,7 @@ func uploadFingerprint(object objectstore.Object, entry objectstore.Entry) strin
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string) error {
+func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string, ordinal int64) error {
 	if source.BoundaryNodeID == "" {
 		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
 	}
@@ -1540,28 +1631,33 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceUploadSyncTopic,
 			Source:         datasourceUploadSyncSource,
-			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint),
+			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint+"\x00"+strconv.FormatInt(ordinal, 10)),
 			SchemaVersion:  datasourceIngestSchemaVersion,
 			Payload:        object.Body,
 			ContentType:    contentType,
 			MaxAttempts:    datasourceIngestMaxAttempts,
 			Attributes: map[string]string{
-				attrSourceID:     source.ID,
-				attrOrgID:        source.OrgID,
-				attrBoundaryID:   source.BoundaryNodeID,
-				attrUploadBucket: source.Upload.Bucket,
-				attrUploadKey:    object.Key,
-				attrUploadETag:   fingerprint,
-				attrChangeType:   changeTypeAdded,
+				attrSourceID:      source.ID,
+				attrOrgID:         source.OrgID,
+				attrBoundaryID:    source.BoundaryNodeID,
+				attrUploadBucket:  source.Upload.Bucket,
+				attrUploadKey:     object.Key,
+				attrUploadETag:    fingerprint,
+				attrUploadOrdinal: strconv.FormatInt(ordinal, 10),
+				attrChangeType:    changeTypeAdded,
 			},
 		},
 	})
 	return err
 }
 
-// uploadIngestIdempotencyKey is deterministic in (source, key, fingerprint) and
-// bounded: a re-pull of an unchanged object dedupes, while a changed object at
-// the same key keys distinctly and is re-delivered.
+// uploadIngestIdempotencyKey is deterministic in (source, key, version) and
+// bounded. An object job's version is its fingerprint under the sync's ordinal:
+// a retry of one enqueue dedupes, while every sync re-delivers each object —
+// the store confirms an unchanged one by its fingerprint without writing — so
+// an object removed and later put back unchanged is delivered again rather
+// than deduped against the delivery its removal superseded. A listing's
+// version is the sync's ordinal.
 func uploadIngestIdempotencyKey(sourceID, key, fingerprint string) string {
 	digest := sha256.Sum256([]byte(sourceID + "\x00" + key + "\x00" + fingerprint))
 	return "datasource-upload-sync/" + hex.EncodeToString(digest[:])
@@ -1585,6 +1681,10 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 		switch {
 		case err == nil, errors.Is(err, ErrDatasourceSourceNotFound):
 			return nil
+		case errors.Is(err, ErrUploadListingIncomplete):
+			// The folder is larger than one listing reaches; a retry lists the
+			// same page. Fail terminally so it is visible, not retried forever.
+			return jobs.NewProcessingError("datasource.upload_listing_incomplete", err.Error(), false)
 		case errors.Is(err, ErrOAuth2ReauthRequired):
 			// The refresh token is permanently dead; replaying it can never
 			// succeed, so fail the job terminally rather than burning retries.

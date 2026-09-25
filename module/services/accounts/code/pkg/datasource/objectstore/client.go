@@ -155,13 +155,22 @@ type Entry struct {
 	ETag string
 }
 
+// Listing is one List result. Complete is true only when the entries are every
+// object under the prefix: the store answered with IsTruncated false and the
+// object cap cut nothing. A caller that treats absence from a listing as a
+// deletion must act only on a complete one.
+type Listing struct {
+	Entries  []Entry
+	Complete bool
+}
+
 // List issues one ListObjectsV2 request and returns its entries, bounded by the
 // configured object cap. Listing failure (including a non-2xx list) is a returned
 // error so a credential or permission problem surfaces rather than reading as an
 // empty bucket.
-func (c *Client) List(ctx context.Context) ([]Entry, error) {
+func (c *Client) List(ctx context.Context) (Listing, error) {
 	if c.baseErr != nil {
-		return nil, c.baseErr
+		return Listing{}, c.baseErr
 	}
 	u := *c.base
 	u.Path = "/" + c.cfg.Bucket
@@ -172,14 +181,14 @@ func (c *Client) List(ctx context.Context) ([]Entry, error) {
 
 	body, status, _, err := c.do(ctx, &u)
 	if err != nil {
-		return nil, err
+		return Listing{}, err
 	}
 	if status < 200 || status >= 300 {
-		return nil, fmt.Errorf("objectstore: list returned status %d", status)
+		return Listing{}, fmt.Errorf("objectstore: list returned status %d", status)
 	}
 	var parsed listBucketResult
 	if err := xml.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("objectstore: parse listing: %w", err)
+		return Listing{}, fmt.Errorf("objectstore: parse listing: %w", err)
 	}
 	limit := c.cfg.MaxObjects
 	if limit <= 0 {
@@ -195,7 +204,7 @@ func (c *Client) List(ctx context.Context) ([]Entry, error) {
 		}
 		entries = append(entries, Entry{Key: e.Key, ETag: e.ETag})
 	}
-	return entries, nil
+	return Listing{Entries: entries, Complete: !parsed.IsTruncated && len(parsed.Contents) <= limit}, nil
 }
 
 // listEntry is one <Contents> row of a ListBucketResult.
@@ -205,8 +214,9 @@ type listEntry struct {
 }
 
 type listBucketResult struct {
-	XMLName  xml.Name    `xml:"ListBucketResult"`
-	Contents []listEntry `xml:"Contents"`
+	XMLName     xml.Name    `xml:"ListBucketResult"`
+	IsTruncated bool        `xml:"IsTruncated"`
+	Contents    []listEntry `xml:"Contents"`
 }
 
 // Fetch retrieves one object by key. The caller drives it per Entry from List, so

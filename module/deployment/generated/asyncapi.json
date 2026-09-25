@@ -537,6 +537,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.archived": {
+      "address": "saas.document.archived",
+      "title": "saas.document.archived",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.archived"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.deleted": {
       "address": "saas.document.deleted",
       "title": "saas.document.deleted",
@@ -620,6 +631,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.subscribed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.unarchived": {
+      "address": "saas.document.unarchived",
+      "title": "saas.document.unarchived",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.unarchived"
         }
       },
       "x-visibility": "external",
@@ -1996,6 +2018,13 @@
       },
       "title": "saas publishes saas.delegation.requested"
     },
+    "send:saas.document.archived": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.archived"
+      },
+      "title": "saas publishes saas.document.archived"
+    },
     "send:saas.document.deleted": {
       "action": "send",
       "channel": {
@@ -2051,6 +2080,13 @@
         "$ref": "#/channels/saas.document.subscribed"
       },
       "title": "saas publishes saas.document.subscribed"
+    },
+    "send:saas.document.unarchived": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.unarchived"
+      },
+      "title": "saas publishes saas.document.unarchived"
     },
     "send:saas.document.unsubscribed": {
       "action": "send",
@@ -3042,6 +3078,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.archived": {
+        "name": "saas.document.archived",
+        "title": "saas.document.archived",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.deleted": {
         "name": "saas.document.deleted",
         "title": "saas.document.deleted",
@@ -3094,6 +3137,13 @@
       "saas.document.subscribed": {
         "name": "saas.document.subscribed",
         "title": "saas.document.subscribed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.unarchived": {
+        "name": "saas.document.unarchived",
+        "title": "saas.document.unarchived",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
