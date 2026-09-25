@@ -119,6 +119,10 @@ it("uses Accounts to create an exact read role and grant the selected team", asy
  await datasourceClient.grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"});
  expect(calls.map(call => call.url.split("/").at(-1))).toEqual(["ListRoles", "CreateRole", "GrantScope"]);
  expect(calls[1].body.permissions).toEqual([{resource: CONTENT_RESOURCE, action: "read"}]);
+ // Named after its resource: a reader role for another resource (the dev-admin
+ // fixture seeds "Collection reader" for its example resource) must not collide
+ // with the organization-unique role name.
+ expect(calls[1].body.name).toBe(`Collection reader (${CONTENT_RESOURCE})`);
  expect(calls[2].body).toMatchObject({orgId: "org-1", scopePath: "root.example", subjectId: "team-id", subjectKind: "SUBJECT_KIND_TEAM", roleId: "role-id"});
 });
 
