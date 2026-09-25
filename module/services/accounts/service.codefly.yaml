@@ -3,7 +3,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.46
+    version: 0.1.48
     publisher: codefly.dev
 service-dependencies:
     - name: cache
