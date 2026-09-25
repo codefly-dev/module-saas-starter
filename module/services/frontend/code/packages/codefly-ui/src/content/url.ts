@@ -15,14 +15,16 @@ const LINK_PROTOCOLS: ReadonlySet<string> = new Set([
 // opted in to images at all.
 const IMAGE_PROTOCOLS: ReadonlySet<string> = new Set(["https:"]);
 
-function parseAbsolute(url: unknown): URL | undefined {
+function parseAbsolute(url: unknown, base?: string): URL | undefined {
 	if (typeof url !== "string") return undefined;
 	const trimmed = url.trim();
 	if (trimmed === "") return undefined;
 	try {
-		// No base: a relative URL throws and is refused. Untrusted content has no
-		// business pointing at a route of the page that renders it.
-		return new URL(trimmed);
+		// Without a base a relative URL throws and is refused: untrusted content
+		// has no business pointing at a route of the page that renders it. A base
+		// is the CALLER's (a document's own source location), never the content's,
+		// and the result still has to pass the scheme allowlist.
+		return new URL(trimmed, base || undefined);
 	} catch {
 		return undefined;
 	}
@@ -32,10 +34,12 @@ function parseAbsolute(url: unknown): URL | undefined {
  * The normalized href for a link in untrusted content, or `undefined` when the
  * link must not be live: a scheme other than http, https or mailto, a relative
  * URL, or credentials in the authority (`https://bank.example@evil.example`
- * reads as one host and goes to another).
+ * reads as one host and goes to another). With `base`, a relative URL is
+ * resolved against it first — the caller's trusted location for the content,
+ * such as the document's source — and then held to the same rules.
  */
-export function safeLinkUrl(url: unknown): string | undefined {
-	const parsed = parseAbsolute(url);
+export function safeLinkUrl(url: unknown, base?: string): string | undefined {
+	const parsed = parseAbsolute(url, base);
 	if (!parsed || !LINK_PROTOCOLS.has(parsed.protocol)) return undefined;
 	if (parsed.username !== "" || parsed.password !== "") return undefined;
 	return parsed.href;

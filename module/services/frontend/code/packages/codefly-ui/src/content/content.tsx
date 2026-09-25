@@ -30,6 +30,8 @@ export interface ContentProps {
 	language?: string;
 	/** Markdown only: the HTML level a `#` renders as. Default 3. */
 	headingLevel?: HeadingLevel;
+	/** Markdown only: resolve relative links against the content's own source URL. */
+	linkBase?: string;
 	/** Markdown only: a single newline is a line break. Default false. */
 	lineBreaks?: boolean;
 	/** Markdown only: render https images. Default false (alt text, nothing fetched). */
@@ -63,6 +65,7 @@ export function Content({
 	headingLevel,
 	allowImages,
 	lineBreaks,
+	linkBase,
 	expandDepth,
 	copyable,
 	wrap,
@@ -123,6 +126,7 @@ export function Content({
 				headingLevel={headingLevel}
 				allowImages={allowImages}
 				lineBreaks={lineBreaks}
+				linkBase={linkBase}
 				className={className}
 			>
 				{source}

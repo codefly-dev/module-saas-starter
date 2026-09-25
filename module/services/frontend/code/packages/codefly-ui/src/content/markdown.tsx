@@ -61,6 +61,13 @@ export interface MarkdownProps {
 	 */
 	lineBreaks?: boolean;
 	/**
+	 * Resolve relative links against this URL: the content's own source (a
+	 * document's location in its repository), supplied by the caller, never read
+	 * from the content. The resolved link must still be http, https or mailto.
+	 * Default none: a relative link is inert text.
+	 */
+	linkBase?: string;
+	/**
 	 * Numbered references (`[1]`, `[2]`) the caller renders itself, such as a
 	 * citation marker. Only the listed numbers are references; any other `[n]`
 	 * stays markdown. See references.ts for how a model's `[n](url)` and
@@ -297,13 +304,13 @@ function componentsFor(
 	return components;
 }
 
-function transformUrl(allowImages: boolean) {
+function transformUrl(allowImages: boolean, linkBase?: string) {
 	return (url: string, key: string) =>
 		key === "src"
 			? allowImages
 				? safeImageUrl(url)
 				: undefined
-			: safeLinkUrl(url);
+			: safeLinkUrl(url, linkBase);
 }
 
 const URL_TRANSFORMS = {
@@ -327,9 +334,17 @@ export function Markdown({
 	headingLevel = 3,
 	allowImages = false,
 	lineBreaks = false,
+	linkBase,
 	references,
 	className,
 }: MarkdownProps) {
+	const urlTransform = useMemo(
+		() =>
+			linkBase
+				? transformUrl(allowImages, linkBase)
+				: URL_TRANSFORMS[allowImages ? "true" : "false"],
+		[allowImages, linkBase],
+	);
 	const markers = references?.markers;
 	const cited = useMemo(() => (markers ? new Set(markers) : null), [markers]);
 	const source = useMemo(
@@ -352,7 +367,7 @@ export function Markdown({
 				<ReactMarkdown
 					remarkPlugins={[...plugins]}
 					skipHtml
-					urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
+					urlTransform={urlTransform}
 					components={componentsFor(headingLevel, allowImages)}
 				>
 					{source}
