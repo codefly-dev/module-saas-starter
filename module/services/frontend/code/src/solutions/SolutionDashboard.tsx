@@ -25,7 +25,11 @@ import { useQuery } from "@tanstack/react-query";
 import { GripVertical, Info, Plus, X } from "lucide-react";
 import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { useAuditEventTypes } from "@/features/audit/service/queries";
+import { resolveActor } from "@/features/audit/model/transforms";
+import {
+	useAuditEventTypes,
+	usePrincipalDirectory,
+} from "@/features/audit/service/queries";
 import { scopedDashboardDraftKey } from "@/features/dashboard/service/use-dashboard-authoring";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
@@ -61,9 +65,12 @@ import {
 import {
 	ACTIVITY_DASHBOARD,
 	activityGraph,
-	activityRange,
+	activitySummary,
 	describeMetric,
 	formatDay,
+	formatMoment,
+	newestEvents,
+	recentEventsQueries,
 } from "./metric-info";
 
 // One audit-backed SDK client for every solution dashboard, built on the host's
@@ -294,9 +301,14 @@ const ARROW_STEP: Partial<Record<string, number>> = {
 	ArrowRight: 1,
 };
 
+// How many of the newest events the ⓘ lists.
+const RECENT_EVENTS = 5;
+
 // Where a tile's number comes from: what it counts and from which audit
-// events, read from the solution's declaration, and the days those events
-// span, asked of the audit trail only once the viewer opens it.
+// events, read from the solution's declaration; how many events there are and
+// the days they span, from per-day counts; and the newest events themselves,
+// from the audit log. Nothing is asked of the audit trail until the viewer
+// opens it.
 function MetricInfo({
 	graph,
 	widget,
@@ -323,23 +335,52 @@ function MetricInfo({
 				ACTIVITY_DASHBOARD,
 				{ orgId },
 			).then((resolved) =>
-				activityRange(resolved.widgets.map((w) => w.series)),
+				activitySummary(resolved.widgets.map((w) => w.series)),
 			),
 		enabled: open && orgId !== "",
 	});
-	const span = activity.isError
-		? { range: "Unavailable", latest: "Unavailable" }
-		: activity.isPending
-			? { range: "Loading…", latest: "Loading…" }
-			: activity.data === null
-				? { range: "No events yet", latest: "No events yet" }
-				: {
-						range:
-							formatDay(activity.data.first) === formatDay(activity.data.last)
-								? formatDay(activity.data.first)
-								: `${formatDay(activity.data.first)} – ${formatDay(activity.data.last)}`,
-						latest: `Latest event on ${formatDay(activity.data.last)}`,
-					};
+	const searches = recentEventsQueries(graph, widget.metric);
+	const recent = useQuery({
+		queryKey: ["solution-metric-recent", widget.metric, orgId, graph],
+		queryFn: async () =>
+			newestEvents(
+				await Promise.all(
+					(searches ?? []).map((search) =>
+						sdk.audit
+							.queryAuditLog({ orgId, pageSize: RECENT_EVENTS, ...search })
+							.then((response) => response.events),
+					),
+				),
+				RECENT_EVENTS,
+			),
+		enabled: open && orgId !== "" && searches !== null,
+	});
+	const { directory } = usePrincipalDirectory(
+		orgId,
+		recent.data?.map((event) => event.actorId) ?? [],
+	);
+	const who = (actorId: string) => resolveActor(actorId, directory).label;
+
+	const summary = activity.data;
+	const counted = activity.isPending
+		? "Loading…"
+		: activity.isError
+			? "Unavailable"
+			: null;
+	const dayFreshness =
+		counted ??
+		(summary ? `Latest event on ${formatDay(summary.last)}` : "No events yet");
+	// A metric the audit log search cannot narrow like the metric does (by
+	// collection) keeps the day its per-day counts give.
+	const newest = recent.data?.[0];
+	const freshness =
+		searches === null || recent.isError
+			? dayFreshness
+			: recent.isPending
+				? "Loading…"
+				: newest
+					? `${formatMoment(newest.at)}, by ${who(newest.actorId)}`
+					: "No events yet";
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -356,12 +397,12 @@ function MetricInfo({
 			>
 				<Info />
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-80">
+			<PopoverContent align="end" className="w-96">
 				<PopoverTitle>{title}</PopoverTitle>
 				<dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
 					<dt className="text-muted-foreground">Counts</dt>
 					<dd>{counts}</dd>
-					<dt className="text-muted-foreground">Source</dt>
+					<dt className="text-muted-foreground">Counted from</dt>
 					<dd className="space-y-1">
 						{sources.map(({ type, declared }) => {
 							// The audit service's type list holds only the platform's own
@@ -372,12 +413,10 @@ function MetricInfo({
 								declared;
 							return (
 								<p key={type}>
-									<code className="font-mono text-xs">{type}</code>
-									{description && (
-										<span className="block text-muted-foreground">
-											{description}
-										</span>
-									)}
+									{description && <span className="block">{description}</span>}
+									<code className="font-mono text-xs text-muted-foreground">
+										{type}
+									</code>
 								</p>
 							);
 						})}
@@ -386,10 +425,39 @@ function MetricInfo({
 					<dd>Your organization</dd>
 					<dt className="text-muted-foreground">Period</dt>
 					<dd>All time</dd>
+					<dt className="text-muted-foreground">Based on</dt>
+					<dd>
+						{counted ??
+							(summary
+								? `${summary.events.toLocaleString()} ${summary.events === 1 ? "event" : "events"}`
+								: "No events yet")}
+					</dd>
 					<dt className="text-muted-foreground">Data range</dt>
-					<dd>{span.range}</dd>
+					<dd>
+						{counted ??
+							(summary
+								? formatDay(summary.first) === formatDay(summary.last)
+									? formatDay(summary.first)
+									: `${formatDay(summary.first)} – ${formatDay(summary.last)}`
+								: "No events yet")}
+					</dd>
 					<dt className="text-muted-foreground">Freshness</dt>
-					<dd>{span.latest}</dd>
+					<dd>{freshness}</dd>
+					{recent.data && recent.data.length > 0 && (
+						<>
+							<dt className="text-muted-foreground">Recent events</dt>
+							<dd>
+								<ul className="space-y-0.5">
+									{recent.data.map((event) => (
+										<li key={event.id}>
+											{formatMoment(event.at, { year: false })} ·{" "}
+											{who(event.actorId)}
+										</li>
+									))}
+								</ul>
+							</dd>
+						</>
+					)}
 					{note && (
 						<>
 							<dt className="text-muted-foreground">Note</dt>
