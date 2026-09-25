@@ -22,9 +22,10 @@ import {
 	StatChart,
 } from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
-import { GripVertical, Plus, X } from "lucide-react";
+import { GripVertical, Info, Plus, X } from "lucide-react";
 import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
+import { useAuditEventTypes } from "@/features/audit/service/queries";
 import { scopedDashboardDraftKey } from "@/features/dashboard/service/use-dashboard-authoring";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
@@ -38,6 +39,10 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
+	Popover,
+	PopoverContent,
+	PopoverTitle,
+	PopoverTrigger,
 	Skeleton,
 } from "@/shared/ui";
 import {
@@ -53,6 +58,13 @@ import {
 	tileWidget,
 	writeSavedLayout,
 } from "./dashboard-layout";
+import {
+	ACTIVITY_DASHBOARD,
+	activityGraph,
+	activityRange,
+	describeMetric,
+	formatDay,
+} from "./metric-info";
 
 // One audit-backed SDK client for every solution dashboard, built on the host's
 // shared Connect transport so a solution's declared graph resolves through the
@@ -160,6 +172,7 @@ function WidgetCard({
 	dashboardId,
 	orgId,
 	grip,
+	info,
 	remove,
 }: {
 	graph: DataGraph;
@@ -168,6 +181,7 @@ function WidgetCard({
 	dashboardId: string;
 	orgId: string;
 	grip: ReactNode;
+	info: ReactNode;
 	remove: ReactNode;
 }) {
 	// The graph is part of the key so a solution that redeploys with a changed
@@ -200,6 +214,7 @@ function WidgetCard({
 				<CardTitle className="min-w-0 flex-1 text-base">
 					{widget.title ?? widget.metric}
 				</CardTitle>
+				{info}
 				{remove}
 			</CardHeader>
 			<CardContent>
@@ -278,6 +293,114 @@ const ARROW_STEP: Partial<Record<string, number>> = {
 	ArrowDown: 1,
 	ArrowRight: 1,
 };
+
+// Where a tile's number comes from: what it counts and from which audit
+// events, read from the solution's declaration, and the days those events
+// span, asked of the audit trail only once the viewer opens it.
+function MetricInfo({
+	graph,
+	widget,
+	orgId,
+}: {
+	graph: DataGraph;
+	widget: MetricWidget;
+	orgId: string;
+}) {
+	const [open, setOpen] = useState(false);
+	const title = widget.title ?? widget.metric;
+	const { counts, sources, note } = describeMetric(
+		graph,
+		widget.metric,
+		widget.visualization,
+	);
+	const { data: registered } = useAuditEventTypes({ enabled: open });
+	const activity = useQuery({
+		queryKey: ["solution-metric-activity", widget.metric, orgId, graph],
+		queryFn: () =>
+			runDashboard(
+				sdk.audit,
+				activityGraph(graph, widget.metric),
+				ACTIVITY_DASHBOARD,
+				{ orgId },
+			).then((resolved) =>
+				activityRange(resolved.widgets.map((w) => w.series)),
+			),
+		enabled: open && orgId !== "",
+	});
+	const span = activity.isError
+		? { range: "Unavailable", latest: "Unavailable" }
+		: activity.isPending
+			? { range: "Loading…", latest: "Loading…" }
+			: activity.data === null
+				? { range: "No events yet", latest: "No events yet" }
+				: {
+						range:
+							formatDay(activity.data.first) === formatDay(activity.data.last)
+								? formatDay(activity.data.first)
+								: `${formatDay(activity.data.first)} – ${formatDay(activity.data.last)}`,
+						latest: `Latest event on ${formatDay(activity.data.last)}`,
+					};
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger
+				render={
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-xs"
+						className="text-muted-foreground"
+						aria-label={`About ${title}`}
+					/>
+				}
+			>
+				<Info />
+			</PopoverTrigger>
+			<PopoverContent align="end" className="w-80">
+				<PopoverTitle>{title}</PopoverTitle>
+				<dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+					<dt className="text-muted-foreground">Counts</dt>
+					<dd>{counts}</dd>
+					<dt className="text-muted-foreground">Source</dt>
+					<dd className="space-y-1">
+						{sources.map(({ type, declared }) => {
+							// The audit service's type list holds only the platform's own
+							// types, so a type a module registers falls back to what the
+							// solution's declaration says about it.
+							const description =
+								registered?.find((t) => t.name === type)?.description ||
+								declared;
+							return (
+								<p key={type}>
+									<code className="font-mono text-xs">{type}</code>
+									{description && (
+										<span className="block text-muted-foreground">
+											{description}
+										</span>
+									)}
+								</p>
+							);
+						})}
+					</dd>
+					<dt className="text-muted-foreground">Scope</dt>
+					<dd>Your organization</dd>
+					<dt className="text-muted-foreground">Period</dt>
+					<dd>All time</dd>
+					<dt className="text-muted-foreground">Data range</dt>
+					<dd>{span.range}</dd>
+					<dt className="text-muted-foreground">Freshness</dt>
+					<dd>{span.latest}</dd>
+					{note && (
+						<>
+							<dt className="text-muted-foreground">Note</dt>
+							<dd>{note}</dd>
+						</>
+					)}
+				</dl>
+			</PopoverContent>
+		</Popover>
+	);
+}
 
 // Lists what the viewer can put on the dashboard: the declared widgets they
 // removed, and the graph's metrics this dashboard has no widget for.
@@ -381,6 +504,7 @@ function SolutionDashboard({
 						<GripVertical />
 					</Button>
 				}
+				info={<MetricInfo graph={graph} widget={widget} orgId={orgId} />}
 				remove={
 					<Button
 						type="button"

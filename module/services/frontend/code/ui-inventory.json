@@ -699,6 +699,21 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
 		},
 		{
+			"source": "packages/codefly-ui/src/layout/popover.tsx",
+			"imports": ["@base-ui/react/popover", "./cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/primitives.stories.tsx",
+					"export": "PopoverPreview"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
 			"source": "packages/codefly-ui/src/layout/select.tsx",
 			"imports": ["@base-ui/react/select", "lucide-react", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",

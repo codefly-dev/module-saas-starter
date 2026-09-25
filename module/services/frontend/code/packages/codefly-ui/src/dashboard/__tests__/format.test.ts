@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAxisKey, formatAxisValue } from "../format.js";
+import { formatAxisKey, formatAxisValue, parseTimeKey } from "../format.js";
 
 describe("formatAxisValue", () => {
 	it("keeps small numbers plain and compacts large ones", () => {
@@ -42,5 +42,21 @@ describe("formatAxisKey", () => {
 		expect(formatAxisKey("US East")).toBe("US East");
 		expect(formatAxisKey("enterprise")).toBe("enterprise");
 		expect(formatAxisKey("42")).toBe("42");
+	});
+});
+
+describe("parseTimeKey", () => {
+	it("reads a time bucket's key, the bare-hour offset included", () => {
+		expect(parseTimeKey("2026-09-24T00:00:00+00")?.toISOString()).toBe(
+			"2026-09-24T00:00:00.000Z",
+		);
+		expect(parseTimeKey("2026-12-25")?.toISOString()).toBe(
+			"2026-12-25T00:00:00.000Z",
+		);
+	});
+
+	it("is null for a key that is not a time", () => {
+		expect(parseTimeKey("saas.auth.login")).toBeNull();
+		expect(parseTimeKey("42")).toBeNull();
 	});
 });

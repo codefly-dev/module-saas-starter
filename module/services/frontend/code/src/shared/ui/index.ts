@@ -91,6 +91,13 @@ export {
 	TooltipTrigger,
 } from "@codefly-dev/ui/layout";
 export {
+	Popover,
+	PopoverContent,
+	PopoverDescription,
+	PopoverTitle,
+	PopoverTrigger,
+} from "@codefly-dev/ui/layout";
+export {
 	Grid,
 	Layout,
 	Page,

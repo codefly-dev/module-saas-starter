@@ -212,6 +212,74 @@ describe("SolutionDashboards", () => {
 	});
 });
 
+describe("where a tile's number comes from", () => {
+	// Counts every audit aggregate the page asks for, so a test can tell the
+	// ⓘ's own query apart from the tiles'.
+	function countingAggregates() {
+		const seen = { count: 0 };
+		server.use(
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					seen.count += 1;
+					const body = (await request.json()) as { groupBy?: string };
+					return HttpResponse.json({
+						buckets:
+							body.groupBy === "event_type"
+								? [{ key: "saas.auth.login", count: "42" }]
+								: [
+										{ key: "2026-08-01T00:00:00+00", count: "3" },
+										{ key: "2026-08-02T00:00:00+00", count: "5" },
+									],
+					});
+				},
+			),
+			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+				HttpResponse.json({
+					types: [{ name: "auth.login.v1", description: "A user signed in." }],
+				}),
+			),
+		);
+		return seen;
+	}
+
+	it("says what the tile counts, from which events, and the days they span", async () => {
+		countingAggregates();
+		renderDashboards();
+		fireEvent.click(screen.getByRole("button", { name: "About Total logins" }));
+		const panel = await screen.findByRole("dialog");
+
+		// A number tile shows one total, so its per-day grouping goes unsaid.
+		expect(within(panel).getByText("Number of events")).toBeTruthy();
+		expect(within(panel).getByText("auth.login.v1")).toBeTruthy();
+		expect(await within(panel).findByText("A user signed in.")).toBeTruthy();
+		expect(within(panel).getByText("Your organization")).toBeTruthy();
+		expect(within(panel).getByText("All time")).toBeTruthy();
+		expect(
+			await within(panel).findByText("Aug 1, 2026 – Aug 2, 2026"),
+		).toBeTruthy();
+		expect(within(panel).getByText("Latest event on Aug 2, 2026")).toBeTruthy();
+	});
+
+	it("asks the audit trail for the days only once the viewer opens it", async () => {
+		const aggregates = countingAggregates();
+		renderDashboards();
+		// One query per tile, and none for the ⓘ yet.
+		await screen.findByText("8");
+		expect(aggregates.count).toBe(3);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "About Logins over time" }),
+		);
+		expect(
+			await within(await screen.findByRole("dialog")).findByText(
+				"Latest event on Aug 2, 2026",
+			),
+		).toBeTruthy();
+		expect(aggregates.count).toBe(4);
+	});
+});
+
 describe("a viewer's layout", () => {
 	beforeEach(() => {
 		server.use(
