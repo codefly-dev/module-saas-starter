@@ -26,8 +26,8 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 A solution remote's own backend calls, and the viewer state it keys them on,
 come from the kit too, so no remote carries its own copy. They are exported
 from the package root and from `@codefly-dev/saas-ui/solution`, which imports
-nothing but React — a remote that needs only these helpers does not load the
-datasource components or the SDK:
+React, Connect and the SDK's service descriptors but none of the datasource
+components:
 
 - `SolutionBinding` — the backend half of the props the host injects into every
   solution page (`solutionId`, `apiBase`, `getAccessToken`, `refreshAccessToken`,
@@ -41,6 +41,18 @@ datasource components or the SDK:
 - `useSolutionJson<T>(binding, path, cache?)` — one JSON resource as
   `loading | error | ready`, re-read when the viewer, base or path changes; an
   answer that arrives after the viewer changed is dropped.
+- `solutionTransport(binding, path?, onUnauthorized?)` — `solutionFetch`'s
+  twin for generated Connect clients: at `apiBase` it reaches the host's
+  platform procedures, at `apiBase + path` what the solution's backend serves
+  there (on solution-runtime-go, `/modules/<as>` is a consumed module's
+  passthrough). The bearer is stamped, requests go through `authedFetch`, and a
+  refused authority is reported.
+- `useAccessibleScope(binding, orgId, resourceType, action)` — whether the
+  viewer holds an action anywhere in the org (`loading | error | none | some`),
+  from the host's accessible-scope API. It decides what a page offers; owners
+  still authorize every read.
+- `viewerOrganization(token)` — the org the token names: a selector for
+  requests and local state, never authority.
 - `viewerIdentity(token)`, `useAccessToken(getAccessToken)`,
   `useViewerEpoch(getAccessToken)` — who the current credential speaks for,
   stable across a refresh and changing with the viewer. They partition local UI

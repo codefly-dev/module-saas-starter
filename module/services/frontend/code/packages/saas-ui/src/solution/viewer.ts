@@ -38,6 +38,24 @@ export function viewerIdentity(token: string | null): string | null {
 }
 
 /**
+ * The viewer's active organization as the access token names it (its `org`
+ * claim), or "" when it names none. It selects the organization in requests
+ * and partitions local state; it grants nothing, since every owner re-derives
+ * the organization from the viewer's own authority.
+ */
+export function viewerOrganization(token: string | null | undefined): string {
+	try {
+		const body = (token ?? "").split(".")[1] ?? "";
+		const claims = JSON.parse(
+			atob(body.replace(/-/g, "+").replace(/_/g, "/")),
+		) as { org?: unknown };
+		return typeof claims.org === "string" ? claims.org : "";
+	} catch {
+		return "";
+	}
+}
+
+/**
  * The host's current access token, observed. The host's getter is stable while
  * its token store changes underneath it, so the value is re-read on the host's
  * `codefly:auth-changed` event, on focus, on storage, and on a short interval —
