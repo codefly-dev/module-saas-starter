@@ -18,10 +18,20 @@ import (
 // grantPlatformRoleForTest makes userID a platform administrator for the test's
 // lifetime. platform_admins is a global table, so the row is removed on cleanup
 // rather than left to leak authority into every later test on this database.
+// Both writes run on the control plane, as PlatformAdminService's do: the tenant
+// role may read platform_admins but never write it.
 func grantPlatformRoleForTest(t *testing.T, userID, role string) {
 	t.Helper()
-	require.NoError(t, testStore.GrantPlatformRole(testCtx, userID, role, userID))
-	t.Cleanup(func() { _ = testStore.RevokePlatformRole(testCtx, userID) })
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.GrantPlatformRole(ctx, userID, role, userID)
+	}))
+	t.Cleanup(func() { _ = revokePlatformRoleForTest(userID) })
+}
+
+func revokePlatformRoleForTest(userID string) error {
+	return testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.RevokePlatformRole(ctx, userID)
+	})
 }
 
 // platformReadFixture is one tenant with a collection, a record placed in it,
@@ -142,7 +152,7 @@ func TestPlatformSuperAdminReadsWithoutAGrant(t *testing.T) {
 		"the grant sits below root, so root is still reachable only through platform authority")
 
 	// Revoking the platform role withdraws the authority on the next read.
-	require.NoError(t, testStore.RevokePlatformRole(testCtx, admin))
+	require.NoError(t, revokePlatformRoleForTest(admin))
 	answer = f.readAs(t, testCtx, admin, "read")
 	require.NotContains(t, answer.listed, "root")
 	require.Equal(t, gen.AccessBasis_ACCESS_BASIS_GRANT, answer.listed["root.collection"])
