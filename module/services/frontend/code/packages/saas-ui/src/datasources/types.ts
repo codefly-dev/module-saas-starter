@@ -60,6 +60,12 @@ export interface AccessibleScopeView {
 	kind: string;
 	/** Actions the caller holds on the node, e.g. `["read", "write"]`. */
 	actions: string[];
+	/**
+	 * True when no grant or share reaches the node and the caller reads it only
+	 * as a platform administrator, whose read spans every collection. Absent or
+	 * false for access a grant confers, and from a client that cannot tell.
+	 */
+	viaPlatformAdministrator?: boolean;
 }
 
 /**

@@ -32,8 +32,8 @@ type AccessibleScopeServiceClient interface {
 	// enumerates the scope nodes THEY may act on with (resource_type, action)
 	// through the gateway with a normal bearer. The subject is the bearer's own
 	// principal — no subject_id in the request — so it can never be an oracle
-	// about other principals. Same grant + share union and same pagination as the
-	// internal RPC.
+	// about other principals. Same grant + share + platform-administrator union
+	// and same pagination as the internal RPC.
 	ListMyAccessibleScopes(ctx context.Context, in *ListMyAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error)
 }
 
@@ -64,8 +64,8 @@ type AccessibleScopeServiceServer interface {
 	// enumerates the scope nodes THEY may act on with (resource_type, action)
 	// through the gateway with a normal bearer. The subject is the bearer's own
 	// principal — no subject_id in the request — so it can never be an oracle
-	// about other principals. Same grant + share union and same pagination as the
-	// internal RPC.
+	// about other principals. Same grant + share + platform-administrator union
+	// and same pagination as the internal RPC.
 	ListMyAccessibleScopes(context.Context, *ListMyAccessibleScopesRequest) (*ListAccessibleScopesResponse, error)
 	mustEmbedUnimplementedAccessibleScopeServiceServer()
 }

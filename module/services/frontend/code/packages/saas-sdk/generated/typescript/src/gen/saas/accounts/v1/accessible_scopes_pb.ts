@@ -2,8 +2,8 @@
 // @generated from file saas/accounts/v1/accessible_scopes.proto (package saas.accounts.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/accessible_scopes.proto.
  */
 export const file_saas_accounts_v1_accessible_scopes: GenFile = /*@__PURE__*/
-  fileDesc("CihzYWFzL2FjY291bnRzL3YxL2FjY2Vzc2libGVfc2NvcGVzLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIlMKD0FjY2Vzc2libGVTY29wZRIPCgdub2RlX2lkGAEgASgJEhIKCnNjb3BlX3BhdGgYAiABKAkSDAoEa2luZBgDIAEoCRINCgVsYWJlbBgEIAEoCSJqChxMaXN0QWNjZXNzaWJsZVNjb3Blc1Jlc3BvbnNlEjEKBnNjb3BlcxgBIAMoCzIhLnNhYXMuYWNjb3VudHMudjEuQWNjZXNzaWJsZVNjb3BlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSKlAQodTGlzdE15QWNjZXNzaWJsZVNjb3Blc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIeCg1yZXNvdXJjZV90eXBlGAIgASgJQge6SARyAhABEhcKBmFjdGlvbhgDIAEoCUIHukgEcgIQARIdCglwYWdlX3NpemUYBCABKAVCCrpIBxoFGOgHKAASEgoKcGFnZV90b2tlbhgFIAEoCTLZAQoWQWNjZXNzaWJsZVNjb3BlU2VydmljZRK+AQoWTGlzdE15QWNjZXNzaWJsZVNjb3BlcxIvLnNhYXMuYWNjb3VudHMudjEuTGlzdE15QWNjZXNzaWJsZVNjb3Blc1JlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkxpc3RBY2Nlc3NpYmxlU2NvcGVzUmVzcG9uc2UiQ8LzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIXEhUvdjEvYWNjZXNzaWJsZS1zY29wZXNiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_saas_policy_v1_options]);
+  fileDesc("CihzYWFzL2FjY291bnRzL3YxL2FjY2Vzc2libGVfc2NvcGVzLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIoEBCg9BY2Nlc3NpYmxlU2NvcGUSDwoHbm9kZV9pZBgBIAEoCRISCgpzY29wZV9wYXRoGAIgASgJEgwKBGtpbmQYAyABKAkSDQoFbGFiZWwYBCABKAkSLAoFYmFzaXMYBSABKA4yHS5zYWFzLmFjY291bnRzLnYxLkFjY2Vzc0Jhc2lzImoKHExpc3RBY2Nlc3NpYmxlU2NvcGVzUmVzcG9uc2USMQoGc2NvcGVzGAEgAygLMiEuc2Fhcy5hY2NvdW50cy52MS5BY2Nlc3NpYmxlU2NvcGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIqUBCh1MaXN0TXlBY2Nlc3NpYmxlU2NvcGVzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEh4KDXJlc291cmNlX3R5cGUYAiABKAlCB7pIBHICEAESFwoGYWN0aW9uGAMgASgJQge6SARyAhABEh0KCXBhZ2Vfc2l6ZRgEIAEoBUIKukgHGgUY6AcoABISCgpwYWdlX3Rva2VuGAUgASgJKmwKC0FjY2Vzc0Jhc2lzEhwKGEFDQ0VTU19CQVNJU19VTlNQRUNJRklFRBAAEhYKEkFDQ0VTU19CQVNJU19HUkFOVBABEicKI0FDQ0VTU19CQVNJU19QTEFURk9STV9BRE1JTklTVFJBVE9SEAIy2QEKFkFjY2Vzc2libGVTY29wZVNlcnZpY2USvgEKFkxpc3RNeUFjY2Vzc2libGVTY29wZXMSLy5zYWFzLmFjY291bnRzLnYxLkxpc3RNeUFjY2Vzc2libGVTY29wZXNSZXF1ZXN0Gi4uc2Fhcy5hY2NvdW50cy52MS5MaXN0QWNjZXNzaWJsZVNjb3Blc1Jlc3BvbnNlIkPC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCFxIVL3YxL2FjY2Vzc2libGUtc2NvcGVzYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.AccessibleScope
@@ -40,6 +40,14 @@ export type AccessibleScope = Message<"saas.accounts.v1.AccessibleScope"> & {
    * @generated from field: string label = 4;
    */
   label: string;
+
+  /**
+   * Why the subject holds the node. GRANT whenever a grant or share reaches it,
+   * even if platform authority would also admit it.
+   *
+   * @generated from field: saas.accounts.v1.AccessBasis basis = 5;
+   */
+  basis: AccessBasis;
 };
 
 /**
@@ -126,6 +134,41 @@ export const ListMyAccessibleScopesRequestSchema: GenMessage<ListMyAccessibleSco
   messageDesc(file_saas_accounts_v1_accessible_scopes, 2);
 
 /**
+ * AccessBasis says why the subject may act on a scope node, so an access that
+ * no grant confers is distinguishable from one a grant does.
+ *
+ * @generated from enum saas.accounts.v1.AccessBasis
+ */
+export enum AccessBasis {
+  /**
+   * @generated from enum value: ACCESS_BASIS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A scope grant at the node or an ancestor, or a share of the placed record.
+   *
+   * @generated from enum value: ACCESS_BASIS_GRANT = 1;
+   */
+  GRANT = 1,
+
+  /**
+   * No grant or share reaches the node: the subject reads it as a platform
+   * super_admin, whose read spans every organization. Never reported for an
+   * impersonated request, and never for an action other than read.
+   *
+   * @generated from enum value: ACCESS_BASIS_PLATFORM_ADMINISTRATOR = 2;
+   */
+  PLATFORM_ADMINISTRATOR = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.AccessBasis.
+ */
+export const AccessBasisSchema: GenEnum<AccessBasis> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_accessible_scopes, 0);
+
+/**
  * @generated from service saas.accounts.v1.AccessibleScopeService
  */
 export const AccessibleScopeService: GenService<{
@@ -135,8 +178,8 @@ export const AccessibleScopeService: GenService<{
    * enumerates the scope nodes THEY may act on with (resource_type, action)
    * through the gateway with a normal bearer. The subject is the bearer's own
    * principal — no subject_id in the request — so it can never be an oracle
-   * about other principals. Same grant + share union and same pagination as the
-   * internal RPC.
+   * about other principals. Same grant + share + platform-administrator union
+   * and same pagination as the internal RPC.
    *
    * @generated from rpc saas.accounts.v1.AccessibleScopeService.ListMyAccessibleScopes
    */

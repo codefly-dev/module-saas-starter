@@ -91,6 +91,46 @@ grant + share union as `CheckAccess` — a node is returned exactly when
 `CheckAccess` would allow the same `(resource_type, action)` on it — so the two
 never disagree.
 
+## Platform administrators read without a grant
+
+A platform `super_admin` (a `platform_admins` row with that role) reads every
+scope node — every collection and every record placed under one — in any
+organization, with no scope grant or record share. It is a third branch beside
+grant and share in every layered-access read oracle, all in
+`pkg/infra/postgres_layered_access.go` and `postgres_readable_sources.go`, with
+the rule itself in `pkg/infra/platform_read_authority.go`: `CheckAccess`,
+`ListAccessibleScopes` / `ListMyAccessibleScopes`, the point and candidate
+checks behind them, and the module-facing `ListReadableSourceCollections` and
+`CheckWorkContextRecordAccess`. So the host UI, a module acting for a viewer and
+the notification fan-out give one answer.
+
+It is narrow, and fails closed on every other axis:
+
+- **`super_admin` only.** `support` and `billing` gain nothing, and neither does
+  an organization owner or administrator — a flat organization role still never
+  substitutes for a collection grant.
+- **`read` only**, spelled exactly; a wildcard action is not read.
+- **A principal only**, never a team.
+- **Never on an impersonated request**, in either direction: the impersonator's
+  platform role does not reach the subject they act as, and an impersonated
+  administrator's role is not the impersonator's to borrow. A Work Context
+  cannot be minted while impersonating, so a module's forwarded viewer is always
+  someone acting as themselves.
+- **Every delegated subject still reads independently.** A Work Context read
+  intersects the owner and every actor in its chain; an actor with no grant
+  fails the intersection whatever the owner's role.
+- **It replaces the grant, never the declaration.** A module that declares no
+  content resource reads nothing, administrator or not.
+
+The decision says so. `CheckAccess` reports `granted via
+platform_administrator`, and each `AccessibleScope` carries `basis:
+ACCESS_BASIS_PLATFORM_ADMINISTRATOR` when no grant or share reaches the node
+(`ACCESS_BASIS_GRANT` whenever one does). These reads emit no audit event —
+the oracles are `AUDIT_EMISSION_NONE` for grants too — so the basis on the
+decision is the record. Granting or revoking the platform role itself is
+audited, and bumps the authorization revision of every organization the user
+belongs to, which invalidates outstanding Work Contexts and read cursors.
+
 ## Deferred
 
 Boundary-level RLS inside module stores (an `app.current_boundaries` GUC) stays

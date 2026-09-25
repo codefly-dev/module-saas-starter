@@ -13,12 +13,27 @@ import "saas/policy/v1/options.proto";
 // a whole file. authorization.proto imports this file for the shared response
 // and scope shapes; the dependency never runs the other way.
 
+// AccessBasis says why the subject may act on a scope node, so an access that
+// no grant confers is distinguishable from one a grant does.
+enum AccessBasis {
+  ACCESS_BASIS_UNSPECIFIED = 0;
+  // A scope grant at the node or an ancestor, or a share of the placed record.
+  ACCESS_BASIS_GRANT = 1;
+  // No grant or share reaches the node: the subject reads it as a platform
+  // super_admin, whose read spans every organization. Never reported for an
+  // impersonated request, and never for an action other than read.
+  ACCESS_BASIS_PLATFORM_ADMINISTRATOR = 2;
+}
+
 message AccessibleScope {
   string node_id = 1;
   string scope_path = 2;
   string kind = 3;
   // Human-readable boundary name, visible only for caller-accessible scopes.
   string label = 4;
+  // Why the subject holds the node. GRANT whenever a grant or share reaches it,
+  // even if platform authority would also admit it.
+  AccessBasis basis = 5;
 }
 
 // Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal
@@ -55,8 +70,8 @@ service AccessibleScopeService {
   // enumerates the scope nodes THEY may act on with (resource_type, action)
   // through the gateway with a normal bearer. The subject is the bearer's own
   // principal — no subject_id in the request — so it can never be an oracle
-  // about other principals. Same grant + share union and same pagination as the
-  // internal RPC.
+  // about other principals. Same grant + share + platform-administrator union
+  // and same pagination as the internal RPC.
   rpc ListMyAccessibleScopes(ListMyAccessibleScopesRequest) returns (ListAccessibleScopesResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

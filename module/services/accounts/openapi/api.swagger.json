@@ -385,8 +385,22 @@
       },
       "type": "object"
     },
+    "v1AccessBasis": {
+      "default": "ACCESS_BASIS_UNSPECIFIED",
+      "description": "AccessBasis says why the subject may act on a scope node, so an access that\nno grant confers is distinguishable from one a grant does.\n\n - ACCESS_BASIS_GRANT: A scope grant at the node or an ancestor, or a share of the placed record.\n - ACCESS_BASIS_PLATFORM_ADMINISTRATOR: No grant or share reaches the node: the subject reads it as a platform\nsuper_admin, whose read spans every organization. Never reported for an\nimpersonated request, and never for an action other than read.",
+      "enum": [
+        "ACCESS_BASIS_UNSPECIFIED",
+        "ACCESS_BASIS_GRANT",
+        "ACCESS_BASIS_PLATFORM_ADMINISTRATOR"
+      ],
+      "type": "string"
+    },
     "v1AccessibleScope": {
       "properties": {
+        "basis": {
+          "$ref": "#/definitions/v1AccessBasis",
+          "description": "Why the subject holds the node. GRANT whenever a grant or share reaches it,\neven if platform authority would also admit it."
+        },
         "kind": {
           "type": "string"
         },
@@ -5081,7 +5095,7 @@
             }
           }
         },
-        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal PermissionService.ListAccessibleScopes: a signed-in org member\nenumerates the scope nodes THEY may act on with (resource_type, action)\nthrough the gateway with a normal bearer. The subject is the bearer's own\nprincipal — no subject_id in the request — so it can never be an oracle\nabout other principals. Same grant + share union and same pagination as the\ninternal RPC.",
+        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal PermissionService.ListAccessibleScopes: a signed-in org member\nenumerates the scope nodes THEY may act on with (resource_type, action)\nthrough the gateway with a normal bearer. The subject is the bearer's own\nprincipal — no subject_id in the request — so it can never be an oracle\nabout other principals. Same grant + share + platform-administrator union\nand same pagination as the internal RPC.",
         "tags": [
           "AccessibleScopeService"
         ]

@@ -67,7 +67,9 @@ func layeredSubjectPredicate(kind gen.SubjectKind, alias string) (string, error)
 
 // CheckAccess reports whether subject may perform (resourceType, action) on a
 // specific record, via either a hierarchical scope grant at any ancestor of the
-// record's scope path, or a direct per-record share. It is the hierarchical +
+// record's scope path, or a direct per-record share — or, for read alone, a
+// platform super_admin's authority (platform_read_authority.go), which the
+// returned reason names as PlatformReadBasis. It is the hierarchical +
 // per-record companion to CheckPermission; org-wide/flat capability still comes
 // from CheckPermission, which is untouched.
 //
@@ -92,41 +94,53 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 		return false, "", err
 	}
 
-	// $1 subject, $2 resource_type, $3 resource_id, $4 action.
+	// $1 subject, $2 resource_type, $3 resource_id, $4 action, $5 whether a
+	// platform administrator's authority is admissible (platform_read_authority.go).
 	// Scope branch: a grant whose scope_path is an ancestor-or-equal of the
 	// record's resolved path (g.scope_path @> record.scope_path). If the record
 	// has no registered node the CTE is empty and the CROSS JOIN yields no rows,
 	// so the scope branch fails closed while the share branch can still grant.
 	// A NULL-safe wildcard role_permissions ('*') matches, as in CheckPermission.
+	// The platform branch needs the record to be placed too — it reads what is
+	// in the tenant, it does not invent a placement — and ranks last, so a
+	// subject holding a grant as well is reported as reading through the grant.
 	query := `
 		WITH record AS (
 			SELECT scope_path FROM scope_nodes
 			WHERE resource_type = $2 AND resource_id = $3
 			LIMIT 1
 		)
-		SELECT 'scope' AS via
-		FROM scope_grants g
-		JOIN role_permissions rp ON rp.role_id = g.role_id
-		CROSS JOIN record
-		WHERE ` + scopePred + `
-		  AND g.scope_path @> record.scope_path
-		  AND (g.expires_at IS NULL OR g.expires_at > now())
-		  AND (rp.resource = '*' OR rp.resource = $2)
-		  AND (rp.action   = '*' OR rp.action   = $4)
-		UNION ALL
-		SELECT 'share' AS via
-		FROM record_shares sh
-		JOIN role_permissions rp ON rp.role_id = sh.role_id
-		WHERE ` + sharePred + `
-		  AND sh.resource_type = $2
-		  AND sh.resource_id   = $3
-		  AND (sh.expires_at IS NULL OR sh.expires_at > now())
-		  AND (rp.resource = '*' OR rp.resource = $2)
-		  AND (rp.action   = '*' OR rp.action   = $4)
+		SELECT via FROM (
+			SELECT 'scope' AS via, 1 AS rank
+			FROM scope_grants g
+			JOIN role_permissions rp ON rp.role_id = g.role_id
+			CROSS JOIN record
+			WHERE ` + scopePred + `
+			  AND g.scope_path @> record.scope_path
+			  AND (g.expires_at IS NULL OR g.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $4)
+			UNION ALL
+			SELECT 'share' AS via, 2 AS rank
+			FROM record_shares sh
+			JOIN role_permissions rp ON rp.role_id = sh.role_id
+			WHERE ` + sharePred + `
+			  AND sh.resource_type = $2
+			  AND sh.resource_id   = $3
+			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $4)
+			UNION ALL
+			SELECT 'platform_administrator' AS via, 3 AS rank
+			FROM record
+			WHERE ` + platformReadPredicate("$5", "$1") + `
+		) admitted
+		ORDER BY rank
 		LIMIT 1`
 
 	var via string
-	err = executor.QueryRow(ctx, query, subjectID, resourceType, resourceID, action).Scan(&via)
+	err = executor.QueryRow(ctx, query, subjectID, resourceType, resourceID, action,
+		platformReadAdmissible(ctx, subjectKind, action)).Scan(&via)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, "no scope grant or record share", nil
@@ -136,7 +150,14 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 	return true, "granted via " + via, nil
 }
 
-func accessibleScopesQuery(subjectKind gen.SubjectKind, projection, nodePredicate string) (string, error) {
+// accessibleScopesQuery builds the grant + share + platform-administrator union
+// every scope listing and point check resolves through. platformParam names the
+// bound boolean that says whether a platform administrator's authority is
+// admissible (platformReadAdmissible); the caller binds it after its own
+// parameters. The projection may name platform_only, which is true when the node
+// is reachable ONLY through that authority — a node the subject also holds a
+// grant or share on reports the grant.
+func accessibleScopesQuery(subjectKind gen.SubjectKind, projection, nodePredicate, platformParam string) (string, error) {
 	scopePred, err := layeredSubjectPredicate(subjectKind, "g")
 	if err != nil {
 		return "", err
@@ -161,36 +182,50 @@ func accessibleScopesQuery(subjectKind gen.SubjectKind, projection, nodePredicat
 	// authorizing grant/share (g.org_id / sh.org_id), so an ltree ancestor match or
 	// a colliding (resource_type, resource_id) across tenants can never surface
 	// another org's node even if the RLS floor is ever bypassed.
+	// The platform branch admits every node in the org, whatever its kind or
+	// resource_type, exactly as a grant at the org root would; the same explicit
+	// n.org_id gate pins it to the tenant.
 	return `
 		SELECT ` + projection + ` FROM (
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path
-			FROM scope_nodes n
-			JOIN scope_grants g ON g.scope_path @> n.scope_path
-			JOIN role_permissions rp ON rp.role_id = g.role_id
-			WHERE ` + scopePred + `
-			  AND n.org_id = $4
-			  AND g.org_id = $4
-			  AND (g.expires_at IS NULL OR g.expires_at > now())
-			  AND (rp.resource = '*' OR rp.resource = $2)
-			  AND (rp.action   = '*' OR rp.action   = $3)
-			  AND ` + nodePredicate + `
-			UNION
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path
-			FROM scope_nodes n
-			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
-			JOIN role_permissions rp ON rp.role_id = sh.role_id
-			WHERE ` + sharePred + `
-			  AND n.org_id = $4
-			  AND sh.org_id = $4
-			  AND sh.resource_type = $2
-			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
-			  AND (rp.resource = '*' OR rp.resource = $2)
-			  AND (rp.action   = '*' OR rp.action   = $3)
-			  AND ` + nodePredicate + `
+			SELECT node_id, scope_path, kind, label, resource_id, path, bool_and(platform_only) AS platform_only
+			FROM (
+				SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path, false AS platform_only
+				FROM scope_nodes n
+				JOIN scope_grants g ON g.scope_path @> n.scope_path
+				JOIN role_permissions rp ON rp.role_id = g.role_id
+				WHERE ` + scopePred + `
+				  AND n.org_id = $4
+				  AND g.org_id = $4
+				  AND (g.expires_at IS NULL OR g.expires_at > now())
+				  AND (rp.resource = '*' OR rp.resource = $2)
+				  AND (rp.action   = '*' OR rp.action   = $3)
+				  AND ` + nodePredicate + `
+				UNION
+				SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path, false AS platform_only
+				FROM scope_nodes n
+				JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
+				JOIN role_permissions rp ON rp.role_id = sh.role_id
+				WHERE ` + sharePred + `
+				  AND n.org_id = $4
+				  AND sh.org_id = $4
+				  AND sh.resource_type = $2
+				  AND (sh.expires_at IS NULL OR sh.expires_at > now())
+				  AND (rp.resource = '*' OR rp.resource = $2)
+				  AND (rp.action   = '*' OR rp.action   = $3)
+				  AND ` + nodePredicate + `
+				UNION
+				SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.resource_id AS resource_id, n.scope_path AS path, true AS platform_only
+				FROM scope_nodes n
+				WHERE ` + platformReadPredicate(platformParam, "$1") + `
+				  AND n.org_id = $4
+				  AND ` + nodePredicate + `
+			) admitted
+			GROUP BY node_id, scope_path, kind, label, resource_id, path
 		) accessible`, nil
 }
 
-// CanReadScopeNode tests exact membership using the same grants and shares as scope listing.
+// CanReadScopeNode tests exact membership using the same grants, shares and
+// platform-administrator authority as scope listing.
 func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error) {
 	// Compare against `n.id::text`, the exact projection ListAccessibleScopes
 	// returns as node_id, so exact membership is tested against the same set the
@@ -210,12 +245,13 @@ func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID s
 	if parsed, err := uuid.Parse(nodeID); err == nil {
 		node = parsed.String()
 	}
-	query, err := accessibleScopesQuery(subjectKind, "node_id", "n.id::text = $5")
+	query, err := accessibleScopesQuery(subjectKind, "node_id", "n.id::text = $5", "$6")
 	if err != nil {
 		return false, err
 	}
 	var allowed bool
-	err = s.getQueryExecutor(ctx).QueryRow(ctx, "SELECT EXISTS ("+query+")", subjectID, resourceType, action, orgID, node).Scan(&allowed)
+	err = s.getQueryExecutor(ctx).QueryRow(ctx, "SELECT EXISTS ("+query+")", subjectID, resourceType, action, orgID, node,
+		platformReadAdmissible(ctx, subjectKind, action)).Scan(&allowed)
 	return allowed, err
 }
 
@@ -223,7 +259,9 @@ func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID s
 // (resourceType, action) — the list-objects companion to CheckAccess. A node is
 // returned when EITHER a scope grant at an ancestor-or-equal path carries a role
 // permitting (resourceType, action), OR the node is a placed record of that type
-// with a per-record share permitting it. Both branches match roles through the
+// with a per-record share permitting it, OR — for read alone — the subject is a
+// platform super_admin (platform_read_authority.go). Each node's Basis says
+// which: PLATFORM_ADMINISTRATOR only when no grant or share reaches it. Both branches match roles through the
 // same role_permissions rows and the same wildcard rule as CheckAccess, so the
 // set returned here and CheckAccess's per-record verdict never disagree.
 //
@@ -235,7 +273,7 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	w := wool.Get(ctx).In("ListAccessibleScopes")
 	executor := s.getQueryExecutor(ctx)
 
-	query, err := accessibleScopesQuery(subjectKind, "node_id, scope_path, kind, label", "($5::ltree IS NULL OR n.scope_path > $5::ltree)")
+	query, err := accessibleScopesQuery(subjectKind, "node_id, scope_path, kind, label, platform_only", "($5::ltree IS NULL OR n.scope_path > $5::ltree)", "$7")
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +283,8 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	if afterPath != "" {
 		cursor = afterPath
 	}
-	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, orgID, cursor, limit)
+	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, orgID, cursor, limit,
+		platformReadAdmissible(ctx, subjectKind, action))
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list accessible scopes")
 	}
@@ -254,8 +293,13 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	var out []*gen.AccessibleScope
 	for rows.Next() {
 		var node gen.AccessibleScope
-		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind, &node.Label); err != nil {
+		var platformOnly bool
+		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind, &node.Label, &platformOnly); err != nil {
 			return nil, w.Wrapf(err, "failed to scan accessible scope")
+		}
+		node.Basis = gen.AccessBasis_ACCESS_BASIS_GRANT
+		if platformOnly {
+			node.Basis = gen.AccessBasis_ACCESS_BASIS_PLATFORM_ADMINISTRATOR
 		}
 		out = append(out, &node)
 	}
@@ -285,12 +329,13 @@ func (s *PostgresStore) ListAccessibleResourceIDs(ctx context.Context, orgID, su
 	// resource_type is pinned alongside resource_id: the grant branch admits any
 	// node beneath an entitled ancestor, so an opaque module-chosen id matched on
 	// its own would let a same-id record of another type answer for this one.
-	query, err := accessibleScopesQuery(subjectKind, "resource_id", "n.resource_type = $2 AND n.resource_id = ANY($5)")
+	query, err := accessibleScopesQuery(subjectKind, "resource_id", "n.resource_type = $2 AND n.resource_id = ANY($5)", "$6")
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, subjectID, resourceType, action, orgID, candidates)
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, subjectID, resourceType, action, orgID, candidates,
+		platformReadAdmissible(ctx, subjectKind, action))
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list accessible resource ids")
 	}

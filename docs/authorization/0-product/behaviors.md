@@ -8,7 +8,12 @@
 ## Foundational
 
 - **B1 · Default deny.** If nothing explicitly grants access, the answer is no.
-  A caller never learns that a record they can't see even exists.
+  A caller never learns that a record they can't see even exists. The one
+  standing grant that is not a scope grant or share is the platform
+  `super_admin` role, which reads (and only reads) every collection of the
+  organization it is acting in — never through impersonation, and still inside
+  that one tenant's RLS floor (B2) — and every decision it allows says it rests
+  on that role rather than a grant.
 - **B2 · Tenant isolation is absolute.** No grant, share, bug, or agent can ever
   expose one tenant's data to another. This is the floor everything else sits on
   and it is never negotiable. *(Enforced physically by RLS — see `1-spec/invariants.md`.)*

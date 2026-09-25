@@ -25,13 +25,71 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// AccessBasis says why the subject may act on a scope node, so an access that
+// no grant confers is distinguishable from one a grant does.
+type AccessBasis int32
+
+const (
+	AccessBasis_ACCESS_BASIS_UNSPECIFIED AccessBasis = 0
+	// A scope grant at the node or an ancestor, or a share of the placed record.
+	AccessBasis_ACCESS_BASIS_GRANT AccessBasis = 1
+	// No grant or share reaches the node: the subject reads it as a platform
+	// super_admin, whose read spans every organization. Never reported for an
+	// impersonated request, and never for an action other than read.
+	AccessBasis_ACCESS_BASIS_PLATFORM_ADMINISTRATOR AccessBasis = 2
+)
+
+// Enum value maps for AccessBasis.
+var (
+	AccessBasis_name = map[int32]string{
+		0: "ACCESS_BASIS_UNSPECIFIED",
+		1: "ACCESS_BASIS_GRANT",
+		2: "ACCESS_BASIS_PLATFORM_ADMINISTRATOR",
+	}
+	AccessBasis_value = map[string]int32{
+		"ACCESS_BASIS_UNSPECIFIED":            0,
+		"ACCESS_BASIS_GRANT":                  1,
+		"ACCESS_BASIS_PLATFORM_ADMINISTRATOR": 2,
+	}
+)
+
+func (x AccessBasis) Enum() *AccessBasis {
+	p := new(AccessBasis)
+	*p = x
+	return p
+}
+
+func (x AccessBasis) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AccessBasis) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_accessible_scopes_proto_enumTypes[0].Descriptor()
+}
+
+func (AccessBasis) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_accessible_scopes_proto_enumTypes[0]
+}
+
+func (x AccessBasis) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AccessBasis.Descriptor instead.
+func (AccessBasis) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_accessible_scopes_proto_rawDescGZIP(), []int{0}
+}
+
 type AccessibleScope struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	NodeId    string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	ScopePath string                 `protobuf:"bytes,2,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
 	Kind      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Human-readable boundary name, visible only for caller-accessible scopes.
-	Label         string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	Label string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	// Why the subject holds the node. GRANT whenever a grant or share reaches it,
+	// even if platform authority would also admit it.
+	Basis         AccessBasis `protobuf:"varint,5,opt,name=basis,proto3,enum=saas.accounts.v1.AccessBasis" json:"basis,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -92,6 +150,13 @@ func (x *AccessibleScope) GetLabel() string {
 		return x.Label
 	}
 	return ""
+}
+
+func (x *AccessibleScope) GetBasis() AccessBasis {
+	if x != nil {
+		return x.Basis
+	}
+	return AccessBasis_ACCESS_BASIS_UNSPECIFIED
 }
 
 // Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal
@@ -238,13 +303,14 @@ var File_saas_accounts_v1_accessible_scopes_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_accessible_scopes_proto_rawDesc = "" +
 	"\n" +
-	"(saas/accounts/v1/accessible_scopes.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1csaas/policy/v1/options.proto\"s\n" +
+	"(saas/accounts/v1/accessible_scopes.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1csaas/policy/v1/options.proto\"\xa8\x01\n" +
 	"\x0fAccessibleScope\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
 	"scope_path\x18\x02 \x01(\tR\tscopePath\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x14\n" +
-	"\x05label\x18\x04 \x01(\tR\x05label\"\x81\x01\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\x123\n" +
+	"\x05basis\x18\x05 \x01(\x0e2\x1d.saas.accounts.v1.AccessBasisR\x05basis\"\x81\x01\n" +
 	"\x1cListAccessibleScopesResponse\x129\n" +
 	"\x06scopes\x18\x01 \x03(\v2!.saas.accounts.v1.AccessibleScopeR\x06scopes\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd7\x01\n" +
@@ -255,7 +321,11 @@ const file_saas_accounts_v1_accessible_scopes_proto_rawDesc = "" +
 	"\tpage_size\x18\x04 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x05 \x01(\tR\tpageToken2\xd9\x01\n" +
+	"page_token\x18\x05 \x01(\tR\tpageToken*l\n" +
+	"\vAccessBasis\x12\x1c\n" +
+	"\x18ACCESS_BASIS_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12ACCESS_BASIS_GRANT\x10\x01\x12'\n" +
+	"#ACCESS_BASIS_PLATFORM_ADMINISTRATOR\x10\x022\xd9\x01\n" +
 	"\x16AccessibleScopeService\x12\xbe\x01\n" +
 	"\x16ListMyAccessibleScopes\x12/.saas.accounts.v1.ListMyAccessibleScopesRequest\x1a..saas.accounts.v1.ListAccessibleScopesResponse\"C\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/accessible-scopesB\xbd\x01\n" +
@@ -273,21 +343,24 @@ func file_saas_accounts_v1_accessible_scopes_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_accessible_scopes_proto_rawDescData
 }
 
+var file_saas_accounts_v1_accessible_scopes_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_saas_accounts_v1_accessible_scopes_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_saas_accounts_v1_accessible_scopes_proto_goTypes = []any{
-	(*AccessibleScope)(nil),               // 0: saas.accounts.v1.AccessibleScope
-	(*ListAccessibleScopesResponse)(nil),  // 1: saas.accounts.v1.ListAccessibleScopesResponse
-	(*ListMyAccessibleScopesRequest)(nil), // 2: saas.accounts.v1.ListMyAccessibleScopesRequest
+	(AccessBasis)(0),                      // 0: saas.accounts.v1.AccessBasis
+	(*AccessibleScope)(nil),               // 1: saas.accounts.v1.AccessibleScope
+	(*ListAccessibleScopesResponse)(nil),  // 2: saas.accounts.v1.ListAccessibleScopesResponse
+	(*ListMyAccessibleScopesRequest)(nil), // 3: saas.accounts.v1.ListMyAccessibleScopesRequest
 }
 var file_saas_accounts_v1_accessible_scopes_proto_depIdxs = []int32{
-	0, // 0: saas.accounts.v1.ListAccessibleScopesResponse.scopes:type_name -> saas.accounts.v1.AccessibleScope
-	2, // 1: saas.accounts.v1.AccessibleScopeService.ListMyAccessibleScopes:input_type -> saas.accounts.v1.ListMyAccessibleScopesRequest
-	1, // 2: saas.accounts.v1.AccessibleScopeService.ListMyAccessibleScopes:output_type -> saas.accounts.v1.ListAccessibleScopesResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0, // 0: saas.accounts.v1.AccessibleScope.basis:type_name -> saas.accounts.v1.AccessBasis
+	1, // 1: saas.accounts.v1.ListAccessibleScopesResponse.scopes:type_name -> saas.accounts.v1.AccessibleScope
+	3, // 2: saas.accounts.v1.AccessibleScopeService.ListMyAccessibleScopes:input_type -> saas.accounts.v1.ListMyAccessibleScopesRequest
+	2, // 3: saas.accounts.v1.AccessibleScopeService.ListMyAccessibleScopes:output_type -> saas.accounts.v1.ListAccessibleScopesResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_accessible_scopes_proto_init() }
@@ -300,13 +373,14 @@ func file_saas_accounts_v1_accessible_scopes_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_accessible_scopes_proto_rawDesc), len(file_saas_accounts_v1_accessible_scopes_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_saas_accounts_v1_accessible_scopes_proto_goTypes,
 		DependencyIndexes: file_saas_accounts_v1_accessible_scopes_proto_depIdxs,
+		EnumInfos:         file_saas_accounts_v1_accessible_scopes_proto_enumTypes,
 		MessageInfos:      file_saas_accounts_v1_accessible_scopes_proto_msgTypes,
 	}.Build()
 	File_saas_accounts_v1_accessible_scopes_proto = out.File

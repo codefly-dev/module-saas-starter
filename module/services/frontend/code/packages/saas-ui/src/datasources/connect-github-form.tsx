@@ -352,7 +352,8 @@ export function ConnectGitHubForm({
 						<p className="text-sm">
 							Connecting grants no read access to the creator or a default team.
 							Organization administrators explicitly grant members or teams read
-							access.
+							access. Platform administrators read every collection without a
+							grant.
 						</p>
 						{collectionError ? (
 							<p role="alert">Couldn’t inspect collection grants.</p>

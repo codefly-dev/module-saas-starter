@@ -1,5 +1,6 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import {
+	AccessBasis,
 	accounts,
 	type Datasource,
 	DatasourceProvider,
@@ -94,6 +95,8 @@ export function datasourceClientOverTransport(
 						label: scope.label,
 						kind: scope.kind,
 						actions: ["read"],
+						viaPlatformAdministrator:
+							scope.basis === AccessBasis.PLATFORM_ADMINISTRATOR,
 					})),
 				);
 				pageToken = page.nextPageToken;
