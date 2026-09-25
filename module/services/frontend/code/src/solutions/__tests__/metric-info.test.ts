@@ -128,6 +128,75 @@ describe("describeMetric", () => {
 	});
 });
 
+describe("reading each event once", () => {
+	const closes: DataGraph = {
+		events: [{ name: "closed", type: "example.deal.closed" }],
+		metrics: [
+			{
+				id: "won",
+				kind: "source",
+				filter: { event: "closed", payloadContains: { outcome: "won" } },
+				groupBy: "category",
+				aggregation: "count",
+			},
+			{
+				id: "closed",
+				kind: "source",
+				filter: { event: "closed" },
+				groupBy: "category",
+				aggregation: "count",
+			},
+			{
+				id: "lost",
+				kind: "source",
+				filter: { event: "closed", payloadContains: { outcome: "lost" } },
+				groupBy: "category",
+				aggregation: "count",
+			},
+			{
+				id: "win_rate",
+				kind: "derived",
+				operation: "ratio",
+				inputs: ["won", "closed"],
+			},
+			{
+				id: "won_vs_lost",
+				kind: "derived",
+				operation: "difference",
+				inputs: ["won", "lost"],
+			},
+			{
+				id: "closed_twice",
+				kind: "derived",
+				operation: "sum",
+				inputs: ["closed", "closed"],
+			},
+		],
+		dashboards: [],
+	};
+
+	it("drops a source another one covers, so a win rate counts each close once", () => {
+		expect(
+			activityGraph(closes, "win_rate").metrics.map(
+				(m) => m.kind === "source" && m.filter,
+			),
+		).toEqual([{ event: "closed" }]);
+		expect(recentEventsQueries(closes, "win_rate")).toHaveLength(1);
+	});
+
+	it("keeps sources that do not cover each other", () => {
+		expect(
+			activityGraph(closes, "won_vs_lost").metrics.map(
+				(m) => m.kind === "source" && m.filter.payloadContains,
+			),
+		).toEqual([{ outcome: "won" }, { outcome: "lost" }]);
+	});
+
+	it("reads one input twice only once", () => {
+		expect(activityGraph(closes, "closed_twice").metrics).toHaveLength(1);
+	});
+});
+
 describe("activityGraph", () => {
 	it("counts per day the events behind each source, with its filter unchanged", () => {
 		const activity = activityGraph(graph, "deals_per_person");
@@ -247,10 +316,12 @@ it("formats a day bucket as its UTC calendar day", () => {
 	);
 });
 
-it("formats an event's time, with or without the year", () => {
-	const at = new Date(2026, 8, 24, 14, 32);
-	expect(formatMoment(at, { locale: "en-US" })).toBe("Sep 24, 2026, 2:32 PM");
+it("formats an event's time in UTC, with or without the year", () => {
+	const at = new Date("2026-09-24T14:32:00Z");
+	expect(formatMoment(at, { locale: "en-US" })).toBe(
+		"Sep 24, 2026, 2:32 PM UTC",
+	);
 	expect(formatMoment(at, { year: false, locale: "en-US" })).toBe(
-		"Sep 24, 2:32 PM",
+		"Sep 24, 2:32 PM UTC",
 	);
 });

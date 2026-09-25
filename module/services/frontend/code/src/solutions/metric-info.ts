@@ -110,6 +110,39 @@ export function sourceMetrics(
 	return metric.inputs.flatMap((input) => sourceMetrics(graph, input, visited));
 }
 
+// Whether every event `narrower` matches, `broader` matches too: the same event,
+// and each of broader's constraints also one of narrower's.
+function covers(broader: MetricFilter, narrower: MetricFilter): boolean {
+	if (broader.event !== narrower.event) return false;
+	const facets = ["actor", "resource", "resourceId", "collectionId"] as const;
+	return (
+		facets.every(
+			(facet) =>
+				broader[facet] === undefined || broader[facet] === narrower[facet],
+		) &&
+		Object.entries(broader.payloadContains ?? {}).every(
+			([key, value]) => narrower.payloadContains?.[key] === value,
+		)
+	);
+}
+
+// The sources whose events are worth reading once: a source another one
+// already covers is dropped, so a win rate (won deals over closed deals) does
+// not read the won deals twice. Sources that only overlap are both kept.
+function distinctSources(graph: DataGraph, metricId: string): SourceMetric[] {
+	const sources = sourceMetrics(graph, metricId);
+	return sources.filter(
+		(source, i) =>
+			!sources.some(
+				(other, j) =>
+					j !== i &&
+					covers(other.filter, source.filter) &&
+					// Of two identical filters, the first is kept.
+					(!covers(source.filter, other.filter) || j < i),
+			),
+	);
+}
+
 export function describeMetric(
 	graph: DataGraph,
 	metricId: string,
@@ -154,7 +187,7 @@ export const ACTIVITY_DASHBOARD = "activity";
  * that have events, oldest first.
  */
 export function activityGraph(graph: DataGraph, metricId: string): DataGraph {
-	const metrics = sourceMetrics(graph, metricId).map(
+	const metrics = distinctSources(graph, metricId).map(
 		(source, i): SourceMetric => ({
 			id: `activity_${i}`,
 			kind: "source",
@@ -220,7 +253,7 @@ export function recentEventsQueries(
 	metricId: string,
 ): RecentEventsQuery[] | null {
 	const queries: RecentEventsQuery[] = [];
-	for (const { filter } of sourceMetrics(graph, metricId)) {
+	for (const { filter } of distinctSources(graph, metricId)) {
 		if (filter.collectionId !== undefined) return null;
 		const event = graph.events.find((e) => e.name === filter.event);
 		if (!event) continue;
@@ -267,18 +300,24 @@ export function newestEvents(
 		.slice(0, limit);
 }
 
-/** An event's time, in the viewer's own time zone. */
+/**
+ * An event's time in UTC, labelled so: the per-day counts are UTC days, and a
+ * time in the viewer's zone could fall on a different day than the one those
+ * counts put the event in.
+ */
 export function formatMoment(
 	at: Date,
 	{ year = true, locale }: { year?: boolean; locale?: string } = {},
 ): string {
-	return at.toLocaleString(locale, {
+	const time = at.toLocaleString(locale, {
 		month: "short",
 		day: "numeric",
 		...(year ? { year: "numeric" } : {}),
 		hour: "numeric",
 		minute: "2-digit",
+		timeZone: "UTC",
 	});
+	return `${time} UTC`;
 }
 
 /** A day bucket as the audit service keys it: a UTC calendar day. */
