@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.162}"
+version="${CODEFLY_VERSION:-0.1.168}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -36,6 +36,13 @@ case "${version}" in
     # that carries no OpenAPI document instead of failing, which is what lets
     # this tree export the gateway's REST endpoint at all.
     checksum=9ffdb661f448332c8a0edab90c16006683289ce51f97c9067de8e974e8bdb679
+    ;;
+  0.1.168)
+    # Core v0.5.9: the GitOps render classifies configuration names by their
+    # carrier (cli#826), environments admit a configuration profile chain
+    # (cli#827), and workspace endpoint references resolve per consumer and
+    # order the run (cli#828).
+    checksum=d8c6180afdd4ca9b393d0bf5d5a7974c20fa1047023f31c1f03100465889cc02
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2

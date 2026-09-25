@@ -49,6 +49,6 @@ sources:
         - WorkContextService
       as: accounts
 generated-by:
-    codefly: 0.1.162
+    codefly: 0.1.168
     companion: ghcr.io/codefly-dev/proto:0.0.16
     facade: true
