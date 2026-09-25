@@ -537,6 +537,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.dead_letter_redriven": {
+      "address": "saas.document.dead_letter_redriven",
+      "title": "saas.document.dead_letter_redriven",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.dead_letter_redriven"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.deleted": {
       "address": "saas.document.deleted",
       "title": "saas.document.deleted",
@@ -1996,6 +2007,13 @@
       },
       "title": "saas publishes saas.delegation.requested"
     },
+    "send:saas.document.dead_letter_redriven": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.dead_letter_redriven"
+      },
+      "title": "saas publishes saas.document.dead_letter_redriven"
+    },
     "send:saas.document.deleted": {
       "action": "send",
       "channel": {
@@ -3038,6 +3056,13 @@
       "saas.delegation.requested": {
         "name": "saas.delegation.requested",
         "title": "saas.delegation.requested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.dead_letter_redriven": {
+        "name": "saas.document.dead_letter_redriven",
+        "title": "saas.document.dead_letter_redriven",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
