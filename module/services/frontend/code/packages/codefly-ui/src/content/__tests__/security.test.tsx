@@ -199,3 +199,42 @@ describe("url allowlist", () => {
 		expect(safeImageUrl("mailto:user@example.com")).toBeUndefined();
 	});
 });
+
+describe("a caller's link base", () => {
+	it("resolves a relative link against the caller's base, then holds it to the allowlist", () => {
+		const { container } = render(
+			<Markdown linkBase="https://example.com/repo/blob/main/docs/guide.md">
+				{
+					"[sibling](./other.md) [up](../README.md) [js](javascript:alert(1)) [data](data:text/html,x)"
+				}
+			</Markdown>,
+		);
+		assertInert(container);
+		expect(
+			[...container.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+		).toEqual([
+			"https://example.com/repo/blob/main/docs/other.md",
+			"https://example.com/repo/blob/main/README.md",
+		]);
+	});
+
+	it("never lets a protocol-relative link escape to another host silently", () => {
+		const { container } = render(
+			<Markdown linkBase="https://example.com/docs/">
+				{"[x](//evil.example/p)"}
+			</Markdown>,
+		);
+		// It resolves to https://evil.example/p: an absolute https link, which is
+		// allowed, and shown as exactly that host.
+		expect(container.querySelector("a")?.getAttribute("href")).toBe(
+			"https://evil.example/p",
+		);
+	});
+
+	it("ignores a javascript: base", () => {
+		const { container } = render(
+			<Markdown linkBase="javascript:alert(1)">{"[x](./a)"}</Markdown>,
+		);
+		expect(container.querySelectorAll("a")).toHaveLength(0);
+	});
+});
