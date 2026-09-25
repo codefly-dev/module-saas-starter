@@ -20,9 +20,9 @@ it("shows a remote's toast in the host's Toaster through the shared kit", async 
 	expect(shared.shareConfig.singleton).toBe(true);
 	const layout = shared.lib() as typeof import("@codefly-dev/ui/layout");
 	await act(async () => {
-		layout.toast.error("Couldn't delete this chat: HTTP 503. Try again.");
+		layout.toast.error("Couldn't delete this item: HTTP 503. Try again.");
 	});
 	expect(
-		await screen.findByText("Couldn't delete this chat: HTTP 503. Try again."),
+		await screen.findByText("Couldn't delete this item: HTTP 503. Try again."),
 	).toBeTruthy();
 });
