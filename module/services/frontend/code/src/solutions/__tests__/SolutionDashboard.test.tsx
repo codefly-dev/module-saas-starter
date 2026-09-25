@@ -1,5 +1,5 @@
 import type { DataGraph } from "@codefly/saas-plugin-manifest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -7,16 +7,29 @@ import { server } from "@/test/setup";
 import { SolutionDashboards } from "../SolutionDashboard";
 
 // Auth state is mutable so a test can drop the org context and assert the
-// pre-org window renders as loading, not as an empty dashboard.
+// pre-org window renders as loading, not as an empty dashboard, or switch the
+// viewer to show a layout belongs to one user.
 const { authState } = vi.hoisted(() => ({
-	authState: { organizationId: "org-1" as string | undefined },
+	authState: {
+		organizationId: "org-1" as string | undefined,
+		user: { id: "user-1" },
+	},
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
+// Where the viewer's layout of the "activity" dashboard is kept.
+const LAYOUT_KEY = "solution-dashboard:layout:example:activity:org-1:user-1";
+
 beforeEach(() => {
 	authState.organizationId = "org-1";
+	authState.user = { id: "user-1" };
+	window.localStorage.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+	window.localStorage.clear();
+});
 
 // The acceptance data graph: a registered solution ships only this declaration —
 // logins-over-time line, top-event-types bar, total-logins stat — and no
@@ -45,6 +58,15 @@ const graph: DataGraph = {
 			filter: { event: "login" },
 			groupBy: "time",
 			bucket: "day",
+			aggregation: "count",
+		},
+		// Declared but drawn by no widget: only a viewer can put it on the page.
+		{
+			id: "logins_by_category",
+			kind: "source",
+			title: "Logins by category",
+			filter: { event: "login" },
+			groupBy: "category",
 			aggregation: "count",
 		},
 	],
@@ -90,6 +112,30 @@ function aggregateHandler(
 			});
 		},
 	);
+}
+
+const DEFAULT_ORDER = ["Logins over time", "Top event types", "Total logins"];
+
+// The tile titles, in the order the dashboard shows them.
+function tileTitles(): string[] {
+	return screen
+		.getAllByRole("listitem")
+		.map(
+			(tile) =>
+				tile.querySelector('[data-slot="card-title"]')?.textContent ?? "",
+		);
+}
+
+function tile(title: string): HTMLElement {
+	const found = screen
+		.getAllByRole("listitem")
+		.find((item) => item.textContent?.includes(title));
+	if (!found) throw new Error(`no tile titled ${title}`);
+	return found;
+}
+
+function renderDashboards() {
+	return renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 }
 
 describe("SolutionDashboards", () => {
@@ -163,5 +209,318 @@ describe("SolutionDashboards", () => {
 		expect(screen.getByText("Total logins")).toBeTruthy();
 		expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
 		expect(screen.queryByText("8")).toBeNull();
+	});
+});
+
+describe("where a tile's number comes from", () => {
+	// Answers the audit trail the ⓘ asks, and counts what the page asks for, so
+	// a test can tell the ⓘ's own requests apart from the tiles'.
+	function auditTrail() {
+		const asked = { aggregates: 0, searches: 0 };
+		server.use(
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					asked.aggregates += 1;
+					const body = (await request.json()) as { groupBy?: string };
+					return HttpResponse.json({
+						buckets:
+							body.groupBy === "event_type"
+								? [{ key: "saas.auth.login", count: "42" }]
+								: [
+										{ key: "2026-08-01T00:00:00+00", count: "3" },
+										{ key: "2026-08-02T00:00:00+00", count: "5" },
+									],
+					});
+				},
+			),
+			http.post(rpc("AuditService", "QueryAuditLog"), () => {
+				asked.searches += 1;
+				return HttpResponse.json({
+					events: [
+						{
+							id: "evt-2",
+							actorId: "person-1",
+							eventType: "auth.login.v1",
+							createdAt: "2026-08-02T14:32:00Z",
+						},
+						{
+							id: "evt-1",
+							actorId: "person-2",
+							eventType: "auth.login.v1",
+							createdAt: "2026-08-01T09:05:00Z",
+						},
+					],
+					totalCount: 8,
+				});
+			}),
+			http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+				HttpResponse.json({
+					principals: [
+						{
+							id: "person-1",
+							displayName: "Jane Doe",
+							kind: "PRINCIPAL_KIND_HUMAN",
+						},
+					],
+				}),
+			),
+			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+				HttpResponse.json({
+					types: [{ name: "auth.login.v1", description: "A user signed in." }],
+				}),
+			),
+		);
+		return asked;
+	}
+	const moment = (iso: string, year = true) =>
+		`${new Date(iso).toLocaleString(undefined, {
+			month: "short",
+			day: "numeric",
+			...(year ? { year: "numeric" } : {}),
+			hour: "numeric",
+			minute: "2-digit",
+			timeZone: "UTC",
+		})} UTC`;
+
+	it("says what the tile counts, from which events, and when they happened", async () => {
+		auditTrail();
+		renderDashboards();
+		fireEvent.click(screen.getByRole("button", { name: "About Total logins" }));
+		const panel = await screen.findByRole("dialog");
+
+		// A number tile shows one total, so its per-day grouping goes unsaid.
+		expect(within(panel).getByText("Number of events")).toBeTruthy();
+		expect(await within(panel).findByText("A user signed in.")).toBeTruthy();
+		expect(within(panel).getByText("auth.login.v1")).toBeTruthy();
+		expect(within(panel).getByText("Your organization")).toBeTruthy();
+		expect(within(panel).getByText("All time")).toBeTruthy();
+		// The per-day counts: 3 + 5 events, over two days.
+		expect(await within(panel).findByText("8 events")).toBeTruthy();
+		expect(within(panel).getByText("Aug 1, 2026 – Aug 2, 2026")).toBeTruthy();
+		// The newest events, named where the directory knows the person.
+		expect(
+			await within(panel).findByText(
+				`${moment("2026-08-02T14:32:00Z")}, by Jane Doe`,
+			),
+		).toBeTruthy();
+		const recent = within(panel).getAllByRole("listitem");
+		expect(recent.map((item) => item.textContent)).toEqual([
+			`${moment("2026-08-02T14:32:00Z", false)} · Jane Doe`,
+			`${moment("2026-08-01T09:05:00Z", false)} · Actor unavailable`,
+		]);
+	});
+
+	it("asks the audit trail nothing until the viewer opens it", async () => {
+		const asked = auditTrail();
+		renderDashboards();
+		// One query per tile, and none for the ⓘ yet.
+		await screen.findByText("8");
+		expect(asked).toEqual({ aggregates: 3, searches: 0 });
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "About Logins over time" }),
+		);
+		expect(
+			await within(await screen.findByRole("dialog")).findByText("8 events"),
+		).toBeTruthy();
+		await within(screen.getByRole("dialog")).findAllByRole("listitem");
+		expect(asked).toEqual({ aggregates: 4, searches: 1 });
+	});
+});
+
+describe("a viewer's layout", () => {
+	beforeEach(() => {
+		server.use(
+			aggregateHandler(
+				[
+					{ key: "2026-08-01", count: "3" },
+					{ key: "2026-08-02", count: "5" },
+				],
+				[{ key: "saas.auth.login", count: "42" }],
+			),
+		);
+	});
+
+	it("starts from the declared widgets in declared order", () => {
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+	});
+
+	it("removes a tile, and it stays removed after a remount", () => {
+		const { unmount } = renderDashboards();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Top event types" }),
+		);
+		expect(tileTitles()).toEqual(["Logins over time", "Total logins"]);
+
+		unmount();
+		renderDashboards();
+		expect(tileTitles()).toEqual(["Logins over time", "Total logins"]);
+	});
+
+	it("adds a removed widget and an undrawn metric back from the + menu", async () => {
+		renderDashboards();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Top event types" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Add a metric to Activity" }),
+		);
+		const items = await screen.findAllByRole("menuitem");
+		expect(items.map((item) => item.textContent)).toEqual([
+			"Top event types",
+			"Logins by category",
+		]);
+
+		fireEvent.click(screen.getByRole("menuitem", { name: "Top event types" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Add a metric to Activity" }),
+		);
+		fireEvent.click(
+			await screen.findByRole("menuitem", { name: "Logins by category" }),
+		);
+
+		expect(tileTitles()).toEqual([
+			"Logins over time",
+			"Total logins",
+			"Top event types",
+			"Logins by category",
+		]);
+		// The added metric resolves through the same path as a declared widget:
+		// a category count, shown as a single number (3 + 5).
+		expect(
+			await within(tile("Logins by category")).findByText("8"),
+		).toBeTruthy();
+	});
+
+	describe("dragging", () => {
+		// happy-dom lays nothing out, so each tile gets a slot by its place in
+		// the list: two columns of 100×100 cells, 10px apart.
+		const realRect = HTMLElement.prototype.getBoundingClientRect;
+		beforeEach(() => {
+			HTMLElement.prototype.getBoundingClientRect = function (
+				this: HTMLElement,
+			) {
+				const index =
+					this.dataset.sortableId === undefined || !this.parentElement
+						? 0
+						: [...this.parentElement.children].indexOf(this);
+				const left = (index % 2) * 110;
+				const top = Math.floor(index / 2) * 110;
+				return {
+					x: left,
+					y: top,
+					left,
+					top,
+					right: left + 100,
+					bottom: top + 100,
+					width: 100,
+					height: 100,
+					toJSON: () => ({}),
+				} as DOMRect;
+			};
+		});
+		afterEach(async () => {
+			HTMLElement.prototype.getBoundingClientRect = realRect;
+			// dnd-kit keeps swallowing clicks for 50ms after a drag ends.
+			await new Promise((resolve) => setTimeout(resolve, 60));
+		});
+
+		const middle = (title: string) => {
+			const { left, top } = tile(title).getBoundingClientRect();
+			return { clientX: left + 50, clientY: top + 50 };
+		};
+		// A mouse drag: pressed on the tile, then moved on the document, where
+		// dnd-kit listens once a drag begins. Returns the drop.
+		const drag = (title: string, to: { clientX: number; clientY: number }) => {
+			const from = middle(title);
+			fireEvent.mouseDown(tile(title), { ...from, button: 0 });
+			for (const step of [0.1, 0.5, 1]) {
+				fireEvent.mouseMove(document, {
+					clientX: from.clientX + (to.clientX - from.clientX) * step,
+					clientY: from.clientY + (to.clientY - from.clientY) * step,
+				});
+			}
+			return () => fireEvent.mouseUp(document, to);
+		};
+
+		it("swaps a tile dropped on another, and saves the order on the drop", () => {
+			const { unmount } = renderDashboards();
+			const drop = drag("Logins over time", middle("Total logins"));
+			// Nothing is committed while the drag is in flight...
+			expect(tileTitles()).toEqual(DEFAULT_ORDER);
+			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+
+			// ...and the drop swaps only the two: the tile between them stays put.
+			drop();
+			const swapped = ["Total logins", "Top event types", "Logins over time"];
+			expect(tileTitles()).toEqual(swapped);
+
+			unmount();
+			renderDashboards();
+			expect(tileTitles()).toEqual(swapped);
+		});
+
+		it("changes nothing when a drag ends off the dashboard", () => {
+			renderDashboards();
+			drag("Total logins", { clientX: 900, clientY: 900 })();
+			expect(tileTitles()).toEqual(DEFAULT_ORDER);
+			expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+		});
+	});
+
+	// happy-dom keeps focus on a node React moves, where a browser drops it, so
+	// the grip taking focus back after a move is not observable here.
+	it("moves a tile with the arrow keys on its grip", () => {
+		renderDashboards();
+		const grip = screen.getByRole("button", {
+			name: "Move Logins over time: drag the tile, or use the arrow keys",
+		});
+		grip.focus();
+		fireEvent.keyDown(grip, { key: "ArrowDown" });
+		expect(tileTitles()).toEqual([
+			"Top event types",
+			"Logins over time",
+			"Total logins",
+		]);
+
+		fireEvent.keyDown(grip, { key: "ArrowUp" });
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+	});
+
+	it("keeps each viewer's layout to themselves", () => {
+		const { unmount } = renderDashboards();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Total logins" }),
+		);
+		unmount();
+
+		authState.user = { id: "user-2" };
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+	});
+
+	it("falls back to the declared layout when the saved one is unreadable", () => {
+		window.localStorage.setItem(LAYOUT_KEY, "{ not json");
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+	});
+
+	it("falls back when storage is blocked, and still applies the viewer's change", () => {
+		vi.spyOn(window.localStorage, "getItem").mockImplementation(() => {
+			throw new Error("SecurityError");
+		});
+		vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+			throw new Error("QuotaExceededError");
+		});
+		renderDashboards();
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove Logins over time" }),
+		);
+		expect(tileTitles()).toEqual(["Top event types", "Total logins"]);
 	});
 });

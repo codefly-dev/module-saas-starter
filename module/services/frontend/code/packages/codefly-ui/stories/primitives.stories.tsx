@@ -38,6 +38,11 @@ import {
 	Tooltip,
 	TooltipTrigger,
 	TooltipContent,
+	Popover,
+	PopoverTrigger,
+	PopoverContent,
+	PopoverTitle,
+	PopoverDescription,
 	DropdownMenu,
 	DropdownMenuTrigger,
 	DropdownMenuContent,
@@ -191,6 +196,17 @@ export const TooltipPreview = {
 			<TooltipTrigger render={<Button />}>Help</TooltipTrigger>
 			<TooltipContent>Workspace help</TooltipContent>
 		</Tooltip>
+	),
+};
+export const PopoverPreview = {
+	render: () => (
+		<Popover>
+			<PopoverTrigger render={<Button />}>About this number</PopoverTrigger>
+			<PopoverContent>
+				<PopoverTitle>Weekly requests</PopoverTitle>
+				<PopoverDescription>Requests received, per week.</PopoverDescription>
+			</PopoverContent>
+		</Popover>
 	),
 };
 export const Menu = {

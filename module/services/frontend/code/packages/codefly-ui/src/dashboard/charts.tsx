@@ -155,9 +155,13 @@ export function StatChart({
 	return (
 		<div className={cn("flex items-end justify-between gap-4", className)}>
 			<span className="type-metric-total tabular-nums">{total.toLocaleString()}</span>
-			<div className="w-[120px]" style={style}>
-				<LineChart points={points} height={40} />
-			</div>
+			{/* A trend needs two points. One point (a single all-time bucket, say)
+			    would draw as a flat line that reads as "no change". */}
+			{points.length >= 2 && (
+				<div className="w-[120px]" style={style}>
+					<LineChart points={points} height={40} />
+				</div>
+			)}
 		</div>
 	);
 }

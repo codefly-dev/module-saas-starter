@@ -31,12 +31,17 @@ function normalizeOffset(iso: string): string {
 // a date ("Sep 1"); a finer bucket keeps its time ("Sep 1, 14:00"). Formatting in
 // UTC matches the bucket boundary the server truncated to and keeps the label
 // stable regardless of the viewer's zone.
-export function formatAxisKey(key: string): string {
+/** A time bucket's key as a Date, or null for a key that is not a time. */
+export function parseTimeKey(key: string): Date | null {
 	const trimmed = key.trim();
-	if (!ISO_TIME.test(trimmed)) return key;
+	if (!ISO_TIME.test(trimmed)) return null;
 	const ms = Date.parse(normalizeOffset(trimmed));
-	if (Number.isNaN(ms)) return key;
-	const date = new Date(ms);
+	return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+export function formatAxisKey(key: string): string {
+	const date = parseTimeKey(key);
+	if (!date) return key;
 	const midnight = date.getUTCHours() === 0 && date.getUTCMinutes() === 0;
 	return date.toLocaleString(undefined, {
 		timeZone: "UTC",
