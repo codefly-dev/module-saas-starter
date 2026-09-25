@@ -1,3 +1,4 @@
+import { type Timestamp, timestampDate } from "@bufbuild/protobuf/wkt";
 import type {
 	DataGraph,
 	MetricFilter,
@@ -180,16 +181,104 @@ export function activityGraph(graph: DataGraph, metricId: string): DataGraph {
 	};
 }
 
-/** The first and last day with events across the series, or null for none. */
-export function activityRange(
-	series: readonly { points: readonly { key: string }[] }[],
-): { first: Date; last: Date } | null {
-	const days = series
-		.flatMap((s) => s.points.map((p) => parseTimeKey(p.key)))
+/**
+ * From the per-day counts: the first and last day with events, and how many
+ * events there are in all. Null when nothing matched.
+ */
+export function activitySummary(
+	series: readonly { points: readonly { key: string; value: number }[] }[],
+): { first: Date; last: Date; events: number } | null {
+	const points = series.flatMap((s) => s.points);
+	const days = points
+		.map((p) => parseTimeKey(p.key))
 		.filter((day): day is Date => day !== null)
 		.sort((a, b) => a.getTime() - b.getTime());
 	if (days.length === 0) return null;
-	return { first: days[0], last: days[days.length - 1] };
+	return {
+		first: days[0],
+		last: days[days.length - 1],
+		events: points.reduce((sum, p) => sum + p.value, 0),
+	};
+}
+
+/** One audit log search, for the events one source of a metric counts. */
+export interface RecentEventsQuery {
+	eventType: string;
+	actorId?: string;
+	resource?: string;
+	resourceId?: string;
+	payloadContains?: Record<string, string>;
+}
+
+/**
+ * The audit log searches that find the events behind a metric, one per source,
+ * with that source's filter. Null when a source narrows by collection, which
+ * the audit log search cannot, so its results would not be the metric's events.
+ */
+export function recentEventsQueries(
+	graph: DataGraph,
+	metricId: string,
+): RecentEventsQuery[] | null {
+	const queries: RecentEventsQuery[] = [];
+	for (const { filter } of sourceMetrics(graph, metricId)) {
+		if (filter.collectionId !== undefined) return null;
+		const event = graph.events.find((e) => e.name === filter.event);
+		if (!event) continue;
+		queries.push({
+			eventType: event.type,
+			actorId: filter.actor,
+			resource: filter.resource,
+			resourceId: filter.resourceId,
+			payloadContains: filter.payloadContains,
+		});
+	}
+	return queries;
+}
+
+export interface RecentEvent {
+	id: string;
+	actorId: string;
+	at: Date;
+}
+
+/**
+ * The newest events across the searches' results, newest first. An event two
+ * searches both found is listed once.
+ */
+export function newestEvents(
+	results: readonly (readonly {
+		id: string;
+		actorId: string;
+		createdAt?: Timestamp;
+	}[])[],
+	limit = 5,
+): RecentEvent[] {
+	const byId = new Map<string, RecentEvent>();
+	for (const event of results.flat()) {
+		if (!event.createdAt || byId.has(event.id)) continue;
+		byId.set(event.id, {
+			id: event.id,
+			actorId: event.actorId,
+			at: timestampDate(event.createdAt),
+		});
+	}
+	return [...byId.values()]
+		.sort((a, b) => b.at.getTime() - a.at.getTime())
+		.slice(0, limit);
+}
+
+/** An event's time, in the viewer's own time zone. */
+export function formatMoment(
+	at: Date,
+	{ year = true, locale }: { year?: boolean; locale?: string } = {},
+): string {
+	return at.toLocaleString(locale, {
+		month: "short",
+		day: "numeric",
+		...(year ? { year: "numeric" } : {}),
+		hour: "numeric",
+		minute: "2-digit",
+	});
 }
 
 /** A day bucket as the audit service keys it: a UTC calendar day. */

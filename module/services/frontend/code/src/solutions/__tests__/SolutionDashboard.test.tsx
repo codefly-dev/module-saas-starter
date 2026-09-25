@@ -213,15 +213,15 @@ describe("SolutionDashboards", () => {
 });
 
 describe("where a tile's number comes from", () => {
-	// Counts every audit aggregate the page asks for, so a test can tell the
-	// ⓘ's own query apart from the tiles'.
-	function countingAggregates() {
-		const seen = { count: 0 };
+	// Answers the audit trail the ⓘ asks, and counts what the page asks for, so
+	// a test can tell the ⓘ's own requests apart from the tiles'.
+	function auditTrail() {
+		const asked = { aggregates: 0, searches: 0 };
 		server.use(
 			http.post(
 				rpc("AuditService", "AggregateAuditLog"),
 				async ({ request }) => {
-					seen.count += 1;
+					asked.aggregates += 1;
 					const body = (await request.json()) as { groupBy?: string };
 					return HttpResponse.json({
 						buckets:
@@ -234,49 +234,97 @@ describe("where a tile's number comes from", () => {
 					});
 				},
 			),
+			http.post(rpc("AuditService", "QueryAuditLog"), () => {
+				asked.searches += 1;
+				return HttpResponse.json({
+					events: [
+						{
+							id: "evt-2",
+							actorId: "person-1",
+							eventType: "auth.login.v1",
+							createdAt: "2026-08-02T14:32:00Z",
+						},
+						{
+							id: "evt-1",
+							actorId: "person-2",
+							eventType: "auth.login.v1",
+							createdAt: "2026-08-01T09:05:00Z",
+						},
+					],
+					totalCount: 8,
+				});
+			}),
+			http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+				HttpResponse.json({
+					principals: [
+						{
+							id: "person-1",
+							displayName: "Jane Doe",
+							kind: "PRINCIPAL_KIND_HUMAN",
+						},
+					],
+				}),
+			),
 			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
 				HttpResponse.json({
 					types: [{ name: "auth.login.v1", description: "A user signed in." }],
 				}),
 			),
 		);
-		return seen;
+		return asked;
 	}
+	const moment = (iso: string, year = true) =>
+		new Date(iso).toLocaleString(undefined, {
+			month: "short",
+			day: "numeric",
+			...(year ? { year: "numeric" } : {}),
+			hour: "numeric",
+			minute: "2-digit",
+		});
 
-	it("says what the tile counts, from which events, and the days they span", async () => {
-		countingAggregates();
+	it("says what the tile counts, from which events, and when they happened", async () => {
+		auditTrail();
 		renderDashboards();
 		fireEvent.click(screen.getByRole("button", { name: "About Total logins" }));
 		const panel = await screen.findByRole("dialog");
 
 		// A number tile shows one total, so its per-day grouping goes unsaid.
 		expect(within(panel).getByText("Number of events")).toBeTruthy();
-		expect(within(panel).getByText("auth.login.v1")).toBeTruthy();
 		expect(await within(panel).findByText("A user signed in.")).toBeTruthy();
+		expect(within(panel).getByText("auth.login.v1")).toBeTruthy();
 		expect(within(panel).getByText("Your organization")).toBeTruthy();
 		expect(within(panel).getByText("All time")).toBeTruthy();
+		// The per-day counts: 3 + 5 events, over two days.
+		expect(await within(panel).findByText("8 events")).toBeTruthy();
+		expect(within(panel).getByText("Aug 1, 2026 – Aug 2, 2026")).toBeTruthy();
+		// The newest events, named where the directory knows the person.
 		expect(
-			await within(panel).findByText("Aug 1, 2026 – Aug 2, 2026"),
+			await within(panel).findByText(
+				`${moment("2026-08-02T14:32:00Z")}, by Jane Doe`,
+			),
 		).toBeTruthy();
-		expect(within(panel).getByText("Latest event on Aug 2, 2026")).toBeTruthy();
+		const recent = within(panel).getAllByRole("listitem");
+		expect(recent.map((item) => item.textContent)).toEqual([
+			`${moment("2026-08-02T14:32:00Z", false)} · Jane Doe`,
+			`${moment("2026-08-01T09:05:00Z", false)} · Actor unavailable`,
+		]);
 	});
 
-	it("asks the audit trail for the days only once the viewer opens it", async () => {
-		const aggregates = countingAggregates();
+	it("asks the audit trail nothing until the viewer opens it", async () => {
+		const asked = auditTrail();
 		renderDashboards();
 		// One query per tile, and none for the ⓘ yet.
 		await screen.findByText("8");
-		expect(aggregates.count).toBe(3);
+		expect(asked).toEqual({ aggregates: 3, searches: 0 });
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "About Logins over time" }),
 		);
 		expect(
-			await within(await screen.findByRole("dialog")).findByText(
-				"Latest event on Aug 2, 2026",
-			),
+			await within(await screen.findByRole("dialog")).findByText("8 events"),
 		).toBeTruthy();
-		expect(aggregates.count).toBe(4);
+		await within(screen.getByRole("dialog")).findAllByRole("listitem");
+		expect(asked).toEqual({ aggregates: 4, searches: 1 });
 	});
 });
 
