@@ -24,6 +24,8 @@ export interface ContentProps {
 	language?: string;
 	/** Markdown only: the HTML level a `#` renders as. Default 3. */
 	headingLevel?: HeadingLevel;
+	/** Markdown only: a single newline is a line break. Default false. */
+	lineBreaks?: boolean;
 	/** Markdown only: render https images. Default false (alt text, nothing fetched). */
 	allowImages?: boolean;
 	/** JSON only: levels open on first render. Default 1. */
@@ -53,6 +55,7 @@ export function Content({
 	language,
 	headingLevel,
 	allowImages,
+	lineBreaks,
 	expandDepth,
 	copyable,
 	wrap,
@@ -112,6 +115,7 @@ export function Content({
 			<Markdown
 				headingLevel={headingLevel}
 				allowImages={allowImages}
+				lineBreaks={lineBreaks}
 				className={className}
 			>
 				{source}

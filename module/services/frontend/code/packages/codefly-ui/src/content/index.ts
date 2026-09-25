@@ -19,7 +19,12 @@ export {
 	readJson,
 } from "./detect.js";
 export { JsonView, type JsonViewProps, stringifyJson } from "./json-view.js";
-export { type HeadingLevel, Markdown, type MarkdownProps } from "./markdown.js";
+export {
+	type HeadingLevel,
+	Markdown,
+	type MarkdownProps,
+	type MarkdownReferences,
+} from "./markdown.js";
 export { markdownToPlainText, toPlainText } from "./plain.js";
 export { TextBlock, type TextBlockProps } from "./text-block.js";
 export { safeImageUrl, safeLinkUrl } from "./url.js";

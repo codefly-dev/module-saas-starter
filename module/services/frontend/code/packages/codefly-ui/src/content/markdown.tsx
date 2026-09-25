@@ -14,7 +14,13 @@
 //      call a URL of its choosing. Off, an image renders as its alt text.
 
 import type { Element, ElementContent } from "hast";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import {
+	type ComponentPropsWithoutRef,
+	createContext,
+	type ReactNode,
+	useContext,
+	useMemo,
+} from "react";
 import ReactMarkdown, {
 	type Components,
 	type ExtraProps,
@@ -22,6 +28,12 @@ import ReactMarkdown, {
 import { cn } from "../layout/cn.js";
 import { CodeBlock } from "./code-block.js";
 import { remarkGfmParse } from "./gfm.js";
+import {
+	protectReferences,
+	REFERENCE_ELEMENT,
+	remarkLineBreaks,
+	remarkReferences,
+} from "./references.js";
 import { safeImageUrl, safeLinkUrl } from "./url.js";
 
 /** A heading level, for mapping markdown's `#` onto the page's outline. */
@@ -43,7 +55,41 @@ export interface MarkdownProps {
 	 * image hosts you trust.
 	 */
 	allowImages?: boolean;
+	/**
+	 * Treat a single newline as a line break (chat and model output are written
+	 * that way). Default false: CommonMark soft wraps.
+	 */
+	lineBreaks?: boolean;
+	/**
+	 * Numbered references (`[1]`, `[2]`) the caller renders itself, such as a
+	 * citation marker. Only the listed numbers are references; any other `[n]`
+	 * stays markdown. See references.ts for how a model's `[n](url)` and
+	 * `[n]: url` forms are handled.
+	 */
+	references?: MarkdownReferences;
 	className?: string;
+}
+
+/** Numbered references rendered by the caller. */
+export interface MarkdownReferences {
+	/** The marker numbers that are references. */
+	markers: Iterable<number>;
+	/** Renders one marker in place of its `[n]`. */
+	render: (marker: number) => ReactNode;
+}
+
+// The reference renderer reaches the (stable, module-level) marker component
+// through context, so a new `render` closure on every streamed update does not
+// remount the tree.
+const ReferenceContext = createContext<((marker: number) => ReactNode) | null>(
+	null,
+);
+
+function Reference({ marker }: { marker?: number | string }) {
+	const render = useContext(ReferenceContext);
+	const number = Number(marker);
+	if (!render || !Number.isInteger(number)) return <>{`[${marker ?? ""}]`}</>;
+	return <>{render(number)}</>;
 }
 
 // The type slot each markdown depth reads as. Depths past three share one:
@@ -110,6 +156,9 @@ function buildComponents(
 	allowImages: boolean,
 ): Components {
 	return {
+		// A custom element name: react-markdown resolves any tag in this map. It is
+		// only ever produced by remarkReferences.
+		...({ [REFERENCE_ELEMENT]: Reference } as unknown as Components),
 		h1: headingFor(1, headingLevel),
 		h2: headingFor(2, headingLevel),
 		h3: headingFor(3, headingLevel),
@@ -261,7 +310,13 @@ const URL_TRANSFORMS = {
 	true: transformUrl(true),
 	false: transformUrl(false),
 } as const;
-const REMARK_PLUGINS = [remarkGfmParse];
+// Plugin lists are stable per combination, like the components.
+const PLUGINS = {
+	plain: [remarkGfmParse],
+	breaks: [remarkGfmParse, remarkLineBreaks],
+	references: [remarkGfmParse, remarkReferences],
+	both: [remarkGfmParse, remarkLineBreaks, remarkReferences],
+} as const;
 
 /**
  * Render markdown (GFM: tables, task lists, strikethrough, autolinks, fenced
@@ -271,21 +326,38 @@ export function Markdown({
 	children,
 	headingLevel = 3,
 	allowImages = false,
+	lineBreaks = false,
+	references,
 	className,
 }: MarkdownProps) {
+	const markers = references?.markers;
+	const cited = useMemo(() => (markers ? new Set(markers) : null), [markers]);
+	const source = useMemo(
+		() => (cited ? protectReferences(children, cited) : children),
+		[children, cited],
+	);
+	const plugins = cited
+		? lineBreaks
+			? PLUGINS.both
+			: PLUGINS.references
+		: lineBreaks
+			? PLUGINS.breaks
+			: PLUGINS.plain;
 	return (
-		<div
-			data-slot="content-markdown"
-			className={cn("min-w-0 break-words", className)}
-		>
-			<ReactMarkdown
-				remarkPlugins={REMARK_PLUGINS}
-				skipHtml
-				urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
-				components={componentsFor(headingLevel, allowImages)}
+		<ReferenceContext.Provider value={references?.render ?? null}>
+			<div
+				data-slot="content-markdown"
+				className={cn("min-w-0 break-words", className)}
 			>
-				{children}
-			</ReactMarkdown>
-		</div>
+				<ReactMarkdown
+					remarkPlugins={[...plugins]}
+					skipHtml
+					urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
+					components={componentsFor(headingLevel, allowImages)}
+				>
+					{source}
+				</ReactMarkdown>
+			</div>
+		</ReferenceContext.Provider>
 	);
 }

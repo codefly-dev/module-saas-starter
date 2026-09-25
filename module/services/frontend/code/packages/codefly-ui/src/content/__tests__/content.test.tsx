@@ -307,3 +307,53 @@ describe("<Chat> renders a markdown answer through the content tier", () => {
 		expect(container.querySelector("strong")?.textContent).toBe("bold");
 	});
 });
+
+describe("<Markdown> references and line breaks", () => {
+	const render_ = (marker: number) => (
+		<button type="button" data-marker={marker}>{`ref ${marker}`}</button>
+	);
+
+	it("renders only the cited markers through the caller", () => {
+		const { container } = render(
+			<Markdown references={{ markers: [1, 2], render: render_ }}>
+				{"Revenue grew [1] and costs fell [2]; see [3]."}
+			</Markdown>,
+		);
+		const refs = [...container.querySelectorAll("button[data-marker]")];
+		expect(refs.map((b) => b.getAttribute("data-marker"))).toEqual(["1", "2"]);
+		expect(container.textContent).toContain("see [3].");
+	});
+
+	it("keeps a marker literal inside code and link text, and drops a cited marker's URL", () => {
+		const { container } = render(
+			<Markdown references={{ markers: [1, 2], render: render_ }}>
+				{
+					"`[1]` and [see [2]](https://example.com) and [1](https://model.example/src)\n\n[2]: https://evil.example"
+				}
+			</Markdown>,
+		);
+		expect(container.querySelector("code")?.textContent).toBe("[1]");
+		expect(container.querySelector("a")?.textContent).toBe("see [2]");
+		expect(container.querySelectorAll("button[data-marker]")).toHaveLength(1);
+		expect(container.innerHTML).not.toContain("model.example");
+		expect(container.innerHTML).not.toContain("evil.example");
+	});
+
+	it("strips sentinel characters the source smuggled in", () => {
+		const { container } = render(
+			<Markdown references={{ markers: [1], render: render_ }}>
+				{"a 9 b"}
+			</Markdown>,
+		);
+		expect(container.querySelectorAll("button[data-marker]")).toHaveLength(0);
+		expect(container.textContent).toBe("a 9 b");
+	});
+
+	it("turns a single newline into a line break only on request", () => {
+		const soft = render(<Markdown>{"one\ntwo"}</Markdown>);
+		expect(soft.container.querySelectorAll("br")).toHaveLength(0);
+		cleanup();
+		const hard = render(<Markdown lineBreaks>{"one\ntwo"}</Markdown>);
+		expect(hard.container.querySelectorAll("br")).toHaveLength(1);
+	});
+});
