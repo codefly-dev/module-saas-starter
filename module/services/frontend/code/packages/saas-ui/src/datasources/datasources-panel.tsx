@@ -381,7 +381,8 @@ function DatasourcesPanelView({
 				) : scopes.isSuccess && !readableCollection ? (
 					<p role="status" className="type-body text-muted-foreground">
 						No readable collection. Ask an organization administrator for read
-						access. Connecting or syncing a source does not grant access.
+						access. Connecting or syncing a source does not grant access; only
+						a platform administrator reads every collection without a grant.
 					</p>
 				) : null}
 				{selectedCollection && (
@@ -492,6 +493,9 @@ function DatasourcesPanelView({
 										scopes.isSuccess && !scopes.isError
 											? boundaries.has(collection.nodeId)
 											: undefined;
+									const asPlatformAdministrator =
+										boundaries.get(collection.nodeId)?.viaPlatformAdministrator ===
+										true;
 									const readers = collection.grants
 										.map((grant) => grant.subjectLabel)
 										.join(", ");
@@ -507,7 +511,9 @@ function DatasourcesPanelView({
 													</span>
 												) : readable ? (
 													<Badge variant="secondary">
-														You can read this collection
+														{asPlatformAdministrator
+															? "You can read this collection (platform administrator)"
+															: "You can read this collection"}
 													</Badge>
 												) : (
 													<Badge variant="outline">
@@ -925,6 +931,7 @@ function BoundaryCell({
 				<div>{scope.label || shortBoundaryId(nodeId)}</div>
 				<div className="text-xs text-muted-foreground">
 					{formatGrants(scope.actions)}
+					{scope.viaPlatformAdministrator && " (platform administrator)"}
 				</div>
 			</div>
 		);

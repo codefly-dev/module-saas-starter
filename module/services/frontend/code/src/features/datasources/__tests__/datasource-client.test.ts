@@ -97,12 +97,14 @@ describe("datasourceClient.listAccessibleScopes", () => {
 				label: "Docs",
 				kind: "collection",
 				actions: ["read"],
+				viaPlatformAdministrator: false,
 			},
 			{
 				nodeId: NODE_B,
 				label: "Specs",
 				kind: "collection",
 				actions: ["read"],
+				viaPlatformAdministrator: false,
 			},
 		]);
 	});

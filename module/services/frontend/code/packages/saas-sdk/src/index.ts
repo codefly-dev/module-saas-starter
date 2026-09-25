@@ -27,6 +27,7 @@ export type {
 //   await accounts.New(gw).datasource().addGitHubSource({ orgId, repo });
 export { accounts } from "../generated/typescript/src/accounts_facade.js";
 export {
+	AccessBasis,
 	type AccessibleScope,
 	AccessibleScopeService,
 	type ListAccessibleScopesResponse,

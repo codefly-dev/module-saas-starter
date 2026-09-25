@@ -8,6 +8,20 @@ scope and RLS posture is in
 [../../DATABASE_AUTHORITY.md](../../DATABASE_AUTHORITY.md). This file covers the
 registration and module-identity records that only accounts may write.
 
+**Regenerating after a proto change** is one command from this directory,
+`codefly generate proto --proto ./proto --output .. --template
+accounts/proto/buf.gen.yaml` (Docker, Codefly CLI ≥ 0.1.160), then the
+`go generate` steps. The `--output . --local --template buf.gen.local.yaml`
+spelling that older docs and the `generated-pins-gate` message still show no
+longer works. The full procedure and why are in
+[../../REST_SURFACE.md](../../REST_SURFACE.md#regeneration).
+
+Who registers a composed module's REST prefix is in
+[../auth-gateway/AGENTS.md](../auth-gateway/AGENTS.md#composed-module-rest-federation):
+the consuming backend, holding the prefix's registration secret. The consumed
+module holds only its identity secret, which is what the Work Context
+exchanges below authenticate.
+
 ## The solution registry is one durable record
 
 Both halves of a solution registration — frontend remote and gateway upstream —

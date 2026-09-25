@@ -468,6 +468,31 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
 	});
 
+	it("says a collection is readable through platform administration, not a grant", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => [ungranted]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: ungranted.nodeId,
+					label: ungranted.label,
+					kind: "collection",
+					actions: ["read"],
+					viaPlatformAdministrator: true,
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByText(
+				"You can read this collection (platform administrator)",
+			),
+		).toBeTruthy();
+		expect(screen.queryByText(/You do not have read access/)).toBeNull();
+		expect(screen.queryByText(/No readable collection/)).toBeNull();
+	});
+
 	it("still names no readable collection when only another scope kind is readable", async () => {
 		// The scope lookup answers for every node kind, and a grant on the solution
 		// node the collections hang under is not read access to any of them.

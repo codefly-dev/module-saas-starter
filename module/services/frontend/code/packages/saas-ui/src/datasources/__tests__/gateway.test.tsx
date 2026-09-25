@@ -554,3 +554,28 @@ it("asks the permission service for the resource the composition declared", asyn
 		action: "read",
 	});
 });
+
+it("reports which scopes the viewer reads only as a platform administrator", async () => {
+	stubFetch({
+		scopes: [
+			{ nodeId: "granted", label: "Granted", kind: "collection", basis: "ACCESS_BASIS_GRANT" },
+			{
+				nodeId: "platform",
+				label: "Platform",
+				kind: "collection",
+				basis: "ACCESS_BASIS_PLATFORM_ADMINISTRATOR",
+			},
+			// A server that predates the basis reports none: that is not platform authority.
+			{ nodeId: "unstated", label: "Unstated", kind: "collection" },
+		],
+	});
+	const client = createDatasourceClient({
+		apiBase: "/api/solutions/example/proxy",
+		getAccessToken: () => "test-token",
+		contentResource: "example-records",
+	});
+	const scopes = await client.listAccessibleScopes!("org-1");
+	expect(
+		Object.fromEntries(scopes.map((scope) => [scope.nodeId, scope.viaPlatformAdministrator])),
+	).toEqual({ granted: false, platform: true, unstated: false });
+});

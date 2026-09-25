@@ -267,6 +267,7 @@ func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
  CREATE TEMP TABLE role_permissions(role_id text,resource text,action text);
  CREATE TEMP TABLE record_shares(org_id text,subject_kind text,subject_id text,role_id text,resource_type text,resource_id text,expires_at timestamptz);
  CREATE TEMP TABLE team_members(team_id text,user_id text);
+ CREATE TEMP TABLE platform_admins(user_id text,platform_role text);
  CREATE TEMP TABLE datasource_sources(id text,org_id text,provider text DEFAULT 'github',repo text,paths text[] DEFAULT '{}',branch text,boundary_node_id text,credential_secret_ref text DEFAULT '',webhook_secret_ref text,status text DEFAULT 'connected',status_reason text,last_synced_at timestamptz,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now(),config jsonb,last_ingested_commit text,last_ingested_at timestamptz,last_delivery_id text,reconcile_interval interval DEFAULT '30 minutes',next_reconcile_at timestamptz,github_installation_id text);
  CREATE TEMP TABLE audit_events(org_id text,resource text,resource_id text,event_type text,actor_id text,created_at timestamptz,payload jsonb);
  INSERT INTO scope_nodes VALUES ('boundary-a','org-a','a','collection','Example collection',NULL,NULL),('boundary-b','org-a','b','collection','Other collection',NULL,NULL),('boundary-other-org','org-b','a','collection','Other org',NULL,NULL);
@@ -319,6 +320,17 @@ func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
 	_, err = tx.Exec(ctx, `DELETE FROM record_shares; UPDATE scope_grants SET subject_kind='principal',subject_id='reader'; UPDATE role_permissions SET resource='*',action='*'`)
 	require.NoError(t, err)
 	parity([]string{"boundary-a"})
+	// A platform super_admin reads every node of the tenant with no grant, and
+	// the point check and the listing still agree; the lesser platform roles
+	// read nothing more than their grants.
+	_, err = tx.Exec(ctx, `INSERT INTO platform_admins VALUES ('reader','super_admin')`)
+	require.NoError(t, err)
+	parity([]string{"boundary-a", "boundary-b", "placed"})
+	_, err = tx.Exec(ctx, `UPDATE platform_admins SET platform_role='support'`)
+	require.NoError(t, err)
+	parity([]string{"boundary-a"})
+	_, err = tx.Exec(ctx, `DELETE FROM platform_admins`)
+	require.NoError(t, err)
 	q := business.AuditQuery{OrgID: "org-a", Resource: "datasource", ResourceID: "existing", EventType: "saas.datasource.sync.completed"}
 	check := func(want codes.Code) {
 		t.Helper()
@@ -425,6 +437,7 @@ func TestCanReadScopeNodeMatchesIDSpellingsAndRefusesGarbage(t *testing.T) {
  CREATE TEMP TABLE role_permissions(role_id text,resource text,action text);
  CREATE TEMP TABLE record_shares(org_id text,subject_kind text,subject_id text,role_id text,resource_type text,resource_id text,expires_at timestamptz);
  CREATE TEMP TABLE team_members(team_id text,user_id text);
+ CREATE TEMP TABLE platform_admins(user_id text,platform_role text);
  INSERT INTO scope_nodes VALUES ('a1b2c3d4-1111-4111-8111-abcdefabcdef','org-a','a','collection','Example collection',NULL,NULL);
  INSERT INTO role_permissions VALUES ('reader-role','documents','read');
  INSERT INTO scope_grants VALUES ('org-a','principal','reader','reader-role','a',NULL);`)

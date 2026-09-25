@@ -78,7 +78,12 @@ source and no error. See `module/configurations/local/github-app.env`.
 Each source binds to a collection scope node. Connecting or creating a collection
 creates **no creator, default-team, or organization-wide read grant**. Accounts
 is the authority for read on the declared content resource; source labels and flat administrative
-roles never substitute for a collection grant.
+roles never substitute for a collection grant. The one exception is a **platform
+administrator** (the platform `super_admin` role), who reads every collection
+without a grant — never while impersonating. `listAccessibleScopes` marks such a
+boundary `viaPlatformAdministrator`, and the panel says the viewer reads it as a
+platform administrator rather than through a grant (see accounts `AUTHZ.md`,
+"Platform administrators read without a grant").
 
 The host's `/admin/datasources` picker lists existing collections, their active
 read grants (including inherited grants), and the creator's current read access.

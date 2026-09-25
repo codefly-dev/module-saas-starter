@@ -78,26 +78,43 @@ from 195 to 194.
 
 ## Regeneration
 
-Run from `module/services/accounts`:
+Run from `module/services/accounts`, with Docker running and a Codefly CLI at
+or above 0.1.160:
 
 ```sh
-codefly generate proto --proto ./proto --output .                                        # companion, only for a REST change
-codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml
+codefly generate proto --proto ./proto --output .. --template accounts/proto/buf.gen.yaml
 cd code
 go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
 
-Run the companion line whenever the change reaches the REST surface — a route
-added, removed or re-annotated, and equally a field added to a message an
-existing route carries, since the document embeds the definitions. It needs
-Docker.
+The first line is the whole proto step. It runs the versioned proto companion
+image with the service's own template, `proto/buf.gen.yaml`, which declares
+every output the service owns: the Go, gRPC, grpc-gateway and Connect bindings
+under `code/pkg/gen`, the raw OpenAPI document under `generated/openapi-raw`,
+and the frontend's TypeScript under `../frontend/code/src/gen`. The companion
+pins every plugin by its image tag and runs `goimports` over the Go it wrote,
+so its output is what `generated-pins-gate` and CI's sync-drift check expect.
+`--output ..` is load-bearing: the companion mounts only the `--output`
+directory, so it must be `module/services` for the template to reach the
+frontend tree beside accounts (a template path is relative to `--output`, and
+runs in its own directory). Run it for every proto change, REST or not; a change
+that does not reach the REST surface simply leaves `generated/openapi-raw`
+byte-identical.
 
-**The companion line is never run alone.** It regenerates far more than the
-OpenAPI document: it rewrites `code/pkg/gen` and the frontend `src/gen` as raw
-plugin output, which `generated-pins-gate` rejects because the image runs no
-`goimports` pass (codefly-dev/core#579). The local line that follows restores
-those trees from the pinned plugins, so the two run in this order or not at
-all.
+**The two-step spelling documented before CLI 0.1.160 no longer works.**
+`codefly generate proto --proto ./proto --output . --local --template
+buf.gen.local.yaml` now runs that template *inside* the companion too
+(`--local` only selects the file). Its `go run …@version` plugins then download
+inside the container and are killed, and its `npx --prefix ../frontend/code`
+plugin cannot see a directory outside the `--output` mount. It fails without
+writing anything. Do not delete `buf.gen.local.yaml`: `generated-pins-gate`
+still reads the plugin versions it checks the generated Go against from it, so
+it must keep naming the versions the companion image runs. (The gate's own
+failure message still prints the old command; follow this section instead.)
+
+Before changing any proto, run the command on the unchanged tree and require
+`git status` to come back clean. That separates "my change churned the tree"
+from "my toolchain does not match CI" (root `AGENTS.md`).
 
 Codefly generation must run first because the REST compiler deliberately reads
 the checked raw generator output instead of trusting a previous public

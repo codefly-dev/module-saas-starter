@@ -87,11 +87,12 @@ export function CollectionGrants({
 			<p className="text-sm">
 				Connecting a source grants no access to its creator or a default team.
 				An administrator explicitly grants read access to a member or team.
+				Platform administrators read every collection without a grant.
 			</p>
 			{collection.grants.length === 0 ? (
 				<p>
-					No collection read grants. Ingestion can proceed, but viewers need a
-					grant to read this collection.
+					No collection read grants. Ingestion can proceed, but viewers other
+					than platform administrators need a grant to read this collection.
 				</p>
 			) : (
 				<ul>

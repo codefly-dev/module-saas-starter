@@ -78,6 +78,12 @@ func (s *PostgresStore) SourceReadRevision(ctx context.Context, org string, subj
 // governed by; it comes from that module's declared grant, because the host
 // holds no domain content and so cannot name the resource itself.
 //
+// Every subject must independently be able to read a collection: through a
+// grant, a share, or — as a platform super_admin — the platform read authority
+// every other read oracle honours (platform_read_authority.go). That authority
+// still needs a declared resource: it replaces the grant, never the module's
+// declaration of what its content is.
+//
 // An empty set authorizes nothing. That needs saying in the query rather than
 // left to the resource comparison: a wildcard ('*') role permission matches
 // every resource type on its own, so without the cardinality guard a module
@@ -113,7 +119,9 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
  AND (rp.resource='*' OR rp.resource=ANY($5::text[])) AND (rp.action='*' OR rp.action='read')
  AND ((sh.subject_kind='principal' AND sh.subject_id=subject.id) OR
  (sh.subject_kind='team' AND sh.subject_id IN (SELECT team_id FROM team_members WHERE user_id=subject.id))))
- )) ORDER BY s.id LIMIT $4`, org, subjects, nullableSourceCursor(after), limit, resources)
+ OR (cardinality($5::text[])>0 AND `+platformReadPredicate("$6", "subject.id")+`)
+ )) ORDER BY s.id LIMIT $4`, org, subjects, nullableSourceCursor(after), limit, resources,
+		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "read"))
 	if err != nil {
 		return nil, err
 	}
