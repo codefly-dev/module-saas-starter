@@ -135,6 +135,17 @@ The version is co-versioned with `@codefly-dev/saas-ui` and with the host's
 `kit-shared-version` test pins all three together, so one bump means three
 edits.
 
+### Notifications from a solution
+
+The host mounts the kit's `<Toaster>`. A remote raises a notification with the
+kit's own `toast` (`import { toast } from "@codefly-dev/ui/layout"`, e.g.
+`toast.error("Couldn't delete this chat: <reason>. Try again.")`). Because
+`@codefly-dev/ui/layout` is a shared singleton, the remote's `toast` is the
+host's copy and writes to the store the mounted Toaster reads. Never import the
+notification library directly in a remote: its bundled copy writes to a store no
+Toaster reads, and the message is lost without a trace. Keep an in-place message
+for anything the person must act on; a toast is a signal, not the record.
+
 ## Skin resolution
 
 ```ts

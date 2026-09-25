@@ -7,7 +7,7 @@ import {
 	OctagonXIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
-import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { Toaster as Sonner, type ToasterProps, toast } from "sonner";
 
 const Toaster = ({ ...props }: ToasterProps) => {
 	return (
@@ -39,4 +39,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
 	);
 };
 
-export { Toaster };
+/**
+ * Raise a notification in the host's `<Toaster>`. It is the same notification
+ * store the Toaster reads, and it reaches a runtime-loaded solution remote
+ * through this kit's shared singleton — so a remote calls `toast.error(…)` from
+ * `@codefly-dev/ui/layout` and the host shows it. A remote that bundled its own
+ * notification library would write to a store no mounted Toaster reads: the
+ * message would be lost without a trace.
+ */
+export { Toaster, toast };
