@@ -77,13 +77,13 @@ describe("solutionFetch", () => {
 	});
 
 	it("falls back to fetch when the host provides no authed fetch", async () => {
-		const original = globalThis.fetch;
 		const fallback = vi.fn(async () => new Response("{}"));
-		globalThis.fetch = fallback as unknown as typeof fetch;
+		// stubGlobal, not assignment: a host test setup may make fetch read-only.
+		vi.stubGlobal("fetch", fallback);
 		try {
 			await solutionFetch({ apiBase: "/base" }, "/x");
 		} finally {
-			globalThis.fetch = original;
+			vi.unstubAllGlobals();
 		}
 		expect(fallback).toHaveBeenCalledOnce();
 	});
