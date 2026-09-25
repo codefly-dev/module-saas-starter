@@ -18,21 +18,16 @@ import {
 	AreaChart,
 	BarList,
 	LineChart,
+	SortableGrid,
 	StatChart,
 } from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { GripVertical, Plus, X } from "lucide-react";
-import {
-	type DragEvent,
-	type ReactNode,
-	useState,
-	useSyncExternalStore,
-} from "react";
+import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { scopedDashboardDraftKey } from "@/features/dashboard/service/use-dashboard-authoring";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
-import { cn } from "@/shared/lib/utils";
 import {
 	Button,
 	Card,
@@ -345,106 +340,62 @@ function SolutionDashboard({
 		{ organizationId, userId: user?.id },
 	);
 	const [layout, save] = useDashboardLayout(storageKey, graph, dashboard);
-	// While a tile is dragged nothing moves: `target`, the tile it was last
-	// dragged over, is outlined, and a drop swaps the two. Tiles differ in
-	// height, so moving them under the pointer mid-drag changes which tile the
-	// pointer is over, and the tiles would keep trading places.
-	const [drag, setDrag] = useState<{
-		tileId: string;
-		target: string | null;
-	} | null>(null);
-	const aim = (target: string | null) => {
-		if (drag && drag.target !== target) setDrag({ ...drag, target });
-	};
-
-	// A drop anywhere on the dashboard, the gaps between tiles included, swaps
-	// with the outlined tile.
-	const onDragOver = (event: DragEvent) => {
-		if (!drag) return;
-		event.preventDefault();
-		event.dataTransfer.dropEffect = "move";
-	};
-	const onDragLeave = (event: DragEvent) => {
-		const into = event.relatedTarget;
-		if (!(into instanceof Node && event.currentTarget.contains(into))) {
-			aim(null);
-		}
-	};
-	const onDrop = (event: DragEvent) => {
-		if (!drag) return;
-		event.preventDefault();
-		if (drag.target) save(swapTiles(layout, drag.tileId, drag.target));
-		setDrag(null);
-	};
-
-	const tiles = layout.flatMap((tileId) => {
+	const shown = layout.flatMap((tileId) => {
 		const widget = tileWidget(graph, dashboard, tileId);
-		if (!widget) return [];
-		const title = widget.title ?? widget.metric;
-		return [
-			<li
-				key={tileId}
-				draggable
-				data-drop-target={drag?.target === tileId || undefined}
-				className={cn(
-					"cursor-grab rounded-xl",
-					drag?.tileId === tileId && "opacity-50",
-					drag?.target === tileId && "ring-2 ring-primary",
-				)}
-				onDragStart={(event) => {
-					event.dataTransfer.effectAllowed = "move";
-					// Firefox starts a drag only when it carries data.
-					event.dataTransfer.setData("text/plain", tileId);
-					setDrag({ tileId, target: null });
-				}}
-				// Back over the dragged tile itself, there is nothing to swap with.
-				onDragOver={() => aim(drag?.tileId === tileId ? null : tileId)}
-				// Fires after a drop too, which has already saved.
-				onDragEnd={() => setDrag(null)}
-			>
-				<WidgetCard
-					graph={graph}
-					widget={widget}
-					solutionId={solutionId}
-					dashboardId={dashboard.id}
-					orgId={orgId}
-					grip={
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-xs"
-							className="cursor-grab text-muted-foreground"
-							aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
-							onKeyDown={(event) => {
-								const step = ARROW_STEP[event.key];
-								if (step === undefined) return;
-								event.preventDefault();
-								const grip = event.currentTarget;
-								// Moving a tile can move its DOM node, which drops focus;
-								// commit first so the grip can take focus back.
-								flushSync(() => save(moveBy(layout, tileId, step)));
-								grip.focus();
-							}}
-						>
-							<GripVertical />
-						</Button>
-					}
-					remove={
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-xs"
-							className="text-muted-foreground"
-							aria-label={`Remove ${title}`}
-							onClick={() => save(removeTile(layout, tileId))}
-						>
-							<X />
-						</Button>
-					}
-				/>
-			</li>,
-		];
+		return widget ? [{ tileId, widget }] : [];
 	});
+	const widgets = new Map(shown.map(({ tileId, widget }) => [tileId, widget]));
+	const titleOf = (tileId: string) => {
+		const widget = widgets.get(tileId);
+		return widget?.title ?? widget?.metric ?? tileId;
+	};
+	const renderTile = (tileId: string) => {
+		const widget = widgets.get(tileId);
+		if (!widget) return null;
+		const title = titleOf(tileId);
+		return (
+			<WidgetCard
+				graph={graph}
+				widget={widget}
+				solutionId={solutionId}
+				dashboardId={dashboard.id}
+				orgId={orgId}
+				grip={
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-xs"
+						className="cursor-grab text-muted-foreground"
+						aria-label={`Move ${title}: drag the tile, or use the arrow keys`}
+						onKeyDown={(event) => {
+							const step = ARROW_STEP[event.key];
+							if (step === undefined) return;
+							event.preventDefault();
+							const grip = event.currentTarget;
+							// Moving a tile can move its DOM node, which drops focus;
+							// commit first so the grip can take focus back.
+							flushSync(() => save(moveBy(layout, tileId, step)));
+							grip.focus();
+						}}
+					>
+						<GripVertical />
+					</Button>
+				}
+				remove={
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-xs"
+						className="text-muted-foreground"
+						aria-label={`Remove ${title}`}
+						onClick={() => save(removeTile(layout, tileId))}
+					>
+						<X />
+					</Button>
+				}
+			/>
+		);
+	};
 
 	return (
 		<section className="space-y-4">
@@ -460,26 +411,25 @@ function SolutionDashboard({
 					onAdd={(tileId) => save(addTile(layout, tileId))}
 				/>
 			</div>
-			{tiles.length === 0 ? (
+			{shown.length === 0 ? (
 				<p className="text-sm text-muted-foreground">
 					No metrics are shown. Add one with the + button.
 				</p>
 			) : (
-				// A list rather than the kit's Grid/Stack, which render a plain div:
-				// the tiles are draggable items, and a list is what they are. The
-				// classes are those Grid cols={2} and Stack draw with.
-				<ul
+				// The kit's SortableGrid rather than its Grid/Stack: the tiles are
+				// dragged onto each other to swap. The classes are those Grid
+				// cols={2} and Stack draw with.
+				<SortableGrid
+					ids={shown.map(({ tileId }) => tileId)}
+					onSwap={(dragged, target) => save(swapTiles(layout, dragged, target))}
+					itemLabel={titleOf}
+					renderItem={renderTile}
 					className={
 						dashboard.layout === "stack"
 							? "flex flex-col gap-4"
 							: "grid grid-cols-1 gap-4 sm:grid-cols-2"
 					}
-					onDragOver={onDragOver}
-					onDragLeave={onDragLeave}
-					onDrop={onDrop}
-				>
-					{tiles}
-				</ul>
+				/>
 			)}
 		</section>
 	);

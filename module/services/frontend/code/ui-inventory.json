@@ -228,6 +228,27 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/dashboard/sortable-grid.tsx",
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Shared owner implementation.",
+			"imports": [
+				"@dnd-kit/core",
+				"@dnd-kit/sortable",
+				"@dnd-kit/utilities",
+				"react",
+				"./cn.js"
+			],
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/composites.stories.tsx",
+					"export": "SortableTiles"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify dragging in the explorer with a mouse and on touch, and visual baselines under external skins."
+		},
+		{
 			"source": "packages/codefly-ui/src/dashboard/sparkline.tsx",
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",

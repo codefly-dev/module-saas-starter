@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Chat, type ChatMessage } from "../src/chat/index.js";
-import { Dashboard, type WidgetVisualization } from "../src/dashboard/index.js";
+import {
+	Dashboard,
+	SortableGrid,
+	type WidgetVisualization,
+} from "../src/dashboard/index.js";
+import { Card } from "../src/layout/index.js";
 export default { title: "Shared UI/Composites" };
 export const Conversation = {
 	render: function ConversationStory() {
@@ -76,4 +81,30 @@ export const EmptyDashboard = {
 	render: () => (
 		<Dashboard data={{ title: "Example dashboard", widgets: [] }} />
 	),
+};
+
+// Drag a tile onto another to swap the two.
+function SortableTilesExample() {
+	const [ids, setIds] = useState(["Requests", "Errors", "Latency", "Users"]);
+	return (
+		<SortableGrid
+			ids={ids}
+			onSwap={(dragged, target) =>
+				setIds((current) =>
+					current.map((id) =>
+						id === dragged ? target : id === target ? dragged : id,
+					),
+				)
+			}
+			className="grid grid-cols-2 gap-4"
+			renderItem={(id) => (
+				<Card>
+					<p>{id}</p>
+				</Card>
+			)}
+		/>
+	);
+}
+export const SortableTiles = {
+	render: () => <SortableTilesExample />,
 };
