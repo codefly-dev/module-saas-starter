@@ -559,12 +559,100 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.effect.committed": {
+      "address": "saas.document.effect.committed",
+      "title": "saas.document.effect.committed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.effect.committed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.frozen": {
+      "address": "saas.document.frozen",
+      "title": "saas.document.frozen",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.frozen"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.ingest_skipped_stale": {
+      "address": "saas.document.ingest_skipped_stale",
+      "title": "saas.document.ingest_skipped_stale",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.ingest_skipped_stale"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.ingested": {
       "address": "saas.document.ingested",
       "title": "saas.document.ingested",
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.ingested"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.knowledge.published": {
+      "address": "saas.document.knowledge.published",
+      "title": "saas.document.knowledge.published",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.knowledge.published"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.ownership_transferred": {
+      "address": "saas.document.ownership_transferred",
+      "title": "saas.document.ownership_transferred",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.ownership_transferred"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.payload_conflict": {
+      "address": "saas.document.payload_conflict",
+      "title": "saas.document.payload_conflict",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.payload_conflict"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.production.committed": {
+      "address": "saas.document.production.committed",
+      "title": "saas.document.production.committed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.production.committed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.quarantine_release_refused": {
+      "address": "saas.document.quarantine_release_refused",
+      "title": "saas.document.quarantine_release_refused",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.quarantine_release_refused"
         }
       },
       "x-visibility": "external",
@@ -620,6 +708,28 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.search"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.snapshot.committed": {
+      "address": "saas.document.snapshot.committed",
+      "title": "saas.document.snapshot.committed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.snapshot.committed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.snapshot.skipped_stale": {
+      "address": "saas.document.snapshot.skipped_stale",
+      "title": "saas.document.snapshot.skipped_stale",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.snapshot.skipped_stale"
         }
       },
       "x-visibility": "external",
@@ -2032,12 +2142,68 @@
       },
       "title": "saas publishes saas.document.deleted"
     },
+    "send:saas.document.effect.committed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.effect.committed"
+      },
+      "title": "saas publishes saas.document.effect.committed"
+    },
+    "send:saas.document.frozen": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.frozen"
+      },
+      "title": "saas publishes saas.document.frozen"
+    },
+    "send:saas.document.ingest_skipped_stale": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.ingest_skipped_stale"
+      },
+      "title": "saas publishes saas.document.ingest_skipped_stale"
+    },
     "send:saas.document.ingested": {
       "action": "send",
       "channel": {
         "$ref": "#/channels/saas.document.ingested"
       },
       "title": "saas publishes saas.document.ingested"
+    },
+    "send:saas.document.knowledge.published": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.knowledge.published"
+      },
+      "title": "saas publishes saas.document.knowledge.published"
+    },
+    "send:saas.document.ownership_transferred": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.ownership_transferred"
+      },
+      "title": "saas publishes saas.document.ownership_transferred"
+    },
+    "send:saas.document.payload_conflict": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.payload_conflict"
+      },
+      "title": "saas publishes saas.document.payload_conflict"
+    },
+    "send:saas.document.production.committed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.production.committed"
+      },
+      "title": "saas publishes saas.document.production.committed"
+    },
+    "send:saas.document.quarantine_release_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.quarantine_release_refused"
+      },
+      "title": "saas publishes saas.document.quarantine_release_refused"
     },
     "send:saas.document.quarantine_released": {
       "action": "send",
@@ -2073,6 +2239,20 @@
         "$ref": "#/channels/saas.document.search"
       },
       "title": "saas publishes saas.document.search"
+    },
+    "send:saas.document.snapshot.committed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.snapshot.committed"
+      },
+      "title": "saas publishes saas.document.snapshot.committed"
+    },
+    "send:saas.document.snapshot.skipped_stale": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.snapshot.skipped_stale"
+      },
+      "title": "saas publishes saas.document.snapshot.skipped_stale"
     },
     "send:saas.document.subscribed": {
       "action": "send",
@@ -3092,9 +3272,65 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.effect.committed": {
+        "name": "saas.document.effect.committed",
+        "title": "saas.document.effect.committed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.frozen": {
+        "name": "saas.document.frozen",
+        "title": "saas.document.frozen",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.ingest_skipped_stale": {
+        "name": "saas.document.ingest_skipped_stale",
+        "title": "saas.document.ingest_skipped_stale",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.ingested": {
         "name": "saas.document.ingested",
         "title": "saas.document.ingested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.knowledge.published": {
+        "name": "saas.document.knowledge.published",
+        "title": "saas.document.knowledge.published",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.ownership_transferred": {
+        "name": "saas.document.ownership_transferred",
+        "title": "saas.document.ownership_transferred",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.payload_conflict": {
+        "name": "saas.document.payload_conflict",
+        "title": "saas.document.payload_conflict",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.production.committed": {
+        "name": "saas.document.production.committed",
+        "title": "saas.document.production.committed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.quarantine_release_refused": {
+        "name": "saas.document.quarantine_release_refused",
+        "title": "saas.document.quarantine_release_refused",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
@@ -3130,6 +3366,20 @@
       "saas.document.search": {
         "name": "saas.document.search",
         "title": "saas.document.search",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.snapshot.committed": {
+        "name": "saas.document.snapshot.committed",
+        "title": "saas.document.snapshot.committed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.snapshot.skipped_stale": {
+        "name": "saas.document.snapshot.skipped_stale",
+        "title": "saas.document.snapshot.skipped_stale",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

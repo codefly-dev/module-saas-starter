@@ -289,6 +289,58 @@ func TestModuleEmitAuditEvent_ArchiveEventsAccepted(t *testing.T) {
 	}
 }
 
+// The documents store audits every entry its ingest writes, tombstones or
+// refuses, the receipts of its atomic effects, and the outcome of its ownership
+// and subscription mutations under these names, with exactly these payloads (the
+// store sends counts as numbers). Each must be accepted, or the store's outbox
+// settles the row as refused and the fact never reaches the spine.
+func TestModuleEmitAuditEvent_DocumentStoreVocabularyAccepted(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	cases := map[string]map[string]any{
+		"saas.document.deleted":                    {"version": "v1", "initiator": "ApplySnapshot"},
+		"saas.document.ingested":                   {"version": "v1", "initiator": "Ingest"},
+		"saas.document.version_minted":             {"version": "v1", "initiator": "Ingest"},
+		"saas.document.renamed":                    {"version": "v1", "initiator": "ApplyEffect"},
+		"saas.document.quarantined":                {"version": "v1", "initiator": "Ingest"},
+		"saas.document.quarantine_released":        {"version": "v1"},
+		"saas.document.subscribed":                 {"outcome": "failure", "reason": "not found"},
+		"saas.document.unsubscribed":               {"outcome": "success"},
+		"saas.document.ownership_transferred":      {"outcome": "success", "new_owner_subject_id": "subject-2"},
+		"saas.document.frozen":                     {"outcome": "failure", "reason": "permission denied"},
+		"saas.document.ingest_skipped_stale":       {"path": "loans/a.xlsx", "ordinal": float64(3), "initiator": "Ingest"},
+		"saas.document.quarantine_release_refused": {"version": "v1", "claimed_tenant": "other", "claimed_solution": "s"},
+		"saas.document.payload_conflict":           {"producer": "parse", "producer_version": "1", "entry": "e", "entry_version": "v", "stored_bytes": float64(10), "offered_bytes": float64(11)},
+		"saas.document.snapshot.committed":         {"digest": "d", "deleted": float64(1), "retained": float64(2), "ordinal": float64(7)},
+		"saas.document.snapshot.skipped_stale":     {"digest": "d", "deleted": float64(0), "retained": float64(0), "ordinal": float64(6)},
+		"saas.document.effect.committed":           {"digest": "d", "applied": float64(1), "deleted": float64(0)},
+		"saas.document.production.committed":       {"effect_key": "k", "task_id": "t", "digest": "d", "producer": "index", "producer_version": "1"},
+		"saas.document.knowledge.published":        {"version": "v1", "effect_key": "k", "run_id": "r", "digest": "d"},
+	}
+	for eventType, payload := range cases {
+		fields, err := structpb.NewStruct(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, eventType, "system:ingest", "example-solution", "entry-1", "", fields); err != nil {
+			t.Fatalf("%s should be accepted: %v", eventType, err)
+		}
+	}
+	// A count sent as a string is the mistake the store's typed delivery exists
+	// to prevent; the registry refuses it rather than storing it free-form.
+	fields, err := structpb.NewStruct(map[string]any{"digest": "d", "deleted": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.snapshot.committed", "system:ingest", "example-solution", "k", "", fields)
+	requireCode(t, err, codes.InvalidArgument)
+	// The name the store used before this vocabulary was registered stays refused.
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "documents.snapshot.committed", "system:ingest", "example-solution", "k", "", nil)
+	requireCode(t, err, codes.InvalidArgument)
+}
+
 func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
