@@ -94,9 +94,13 @@ never disagree.
 ## Platform administrators read without a grant
 
 A platform `super_admin` (a `platform_admins` row with that role) reads every
-scope node — every collection and every record placed under one — in any
-organization, with no scope grant or record share. It is a third branch beside
-grant and share in every layered-access read oracle, all in
+scope node — every collection and every record placed under one — of whichever
+organization the request acts in, with no scope grant or record share. Any
+organization, but one tenant at a time: every oracle still runs under that
+tenant's `app.current_org_id`, so RLS and the queries' explicit `org_id`
+predicates confine the answer to it (behaviour B2), exactly as they do for a
+grant. It is a third branch beside grant and share in every layered-access read
+oracle, all in
 `pkg/infra/postgres_layered_access.go` and `postgres_readable_sources.go`, with
 the rule itself in `pkg/infra/platform_read_authority.go`: `CheckAccess`,
 `ListAccessibleScopes` / `ListMyAccessibleScopes`, the point and candidate

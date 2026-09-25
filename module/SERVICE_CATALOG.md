@@ -35,20 +35,20 @@ additive accounts release does not require a new catalog schema.
 Run the pipeline from `module/services/accounts`:
 
 ```sh
-codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml
+codefly generate proto --proto ./proto --output .. --template accounts/proto/buf.gen.yaml
 cd code
 go generate ./pkg/business
 go generate ./pkg/adapters
 go generate ./pkg/cataloggen
 ```
 
-The first command makes Codefly generate the Go, gRPC, Connect, grpc-gateway,
-and TypeScript bindings using exact local plugin versions. This also
-generates the `saas.catalog.v1` types. The raw OpenAPI document is not in that
-set — the proto companion owns it, and a change reaching the REST surface
-refreshes it by running the companion immediately *before* the first command,
-never alone ([REST_SURFACE.md](./REST_SURFACE.md#regeneration) has the order and
-why). The second command compiles the loaded
+The first command runs the versioned proto companion with the service's own
+template and generates the Go, gRPC, Connect, grpc-gateway and TypeScript
+bindings and the raw OpenAPI document in one pass, with plugins pinned by the
+image. This also generates the `saas.catalog.v1` types. It needs Docker and a
+Codefly CLI at or above 0.1.160; the `--local --template buf.gen.local.yaml`
+spelling it replaces no longer works
+([REST_SURFACE.md](./REST_SURFACE.md#regeneration) has why). The second command compiles the loaded
 descriptor graph into `generated/service-catalog.json` and refreshes
 `AUTHZ_MATRIX.md`. The third joins the catalog with strict Connect
 implementation bindings and emits registration plus interface assertions. The

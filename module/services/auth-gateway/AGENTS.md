@@ -36,17 +36,20 @@ publisher, so a holder can neither claim nor re-point another solution.
 
 ## Composed-module REST federation
 
-A composed module that serves its own `/v1/<module>/*` surface registers it with
-`POST /modules/_register` (`code/gateway_modules.go`), and the gateway proxies
-that prefix **once the generated catalog has no match**. Unlike solution
-registration this is **not** gated on the shared internal token: the caller must
-present a signed, prefix-bound registration token in
-`X-Codefly-Module-Registration`, so a module holding the credential for one
-prefix cannot claim another. The handshake is three calls:
+A composed module that serves its own `/v1/<module>/*` surface is federated
+through `POST /modules/_register` (`code/gateway_modules.go`), and the gateway
+proxies that prefix **once the generated catalog has no match**. The registrant
+is the **consuming** backend — the solution that declares the module's API in
+its `api.consumes` — not the module itself: it registers each consumed prefix at
+the address it resolved for the consumed endpoint. Unlike solution registration
+this is **not** gated on the shared internal token: the caller must present a
+signed, prefix-bound registration token in `X-Codefly-Module-Registration`, so
+a holder of the credential for one prefix cannot claim another. The handshake
+is three calls:
 
 1. `POST /modules/_registration-token` on the auth-gateway, with the
-   cluster-internal token in `X-Codefly-Internal-Token` **and** the module's own
-   registration secret in `X-Codefly-Module-Secret`, body `{prefix}`.
+   cluster-internal token in `X-Codefly-Internal-Token` **and** the registration
+   secret for that prefix in `X-Codefly-Module-Secret`, body `{prefix}`.
 2. The gateway brokers to accounts over the internal listener
    (`ModuleCapabilitiesService/MintModuleRegistration`, `EXPOSURE_INTERNAL`, so
    the generated mesh policy admits the gateway's service account and denies
@@ -58,11 +61,19 @@ prefix cannot claim another. The handshake is three calls:
    event. **Unset means no module may federate.**
 3. `POST /modules/_register` with that token and `{prefix, upstream}`.
 
-Composition provisions the pair: the SHA-256 digest into this host's `federation`
-group, the plaintext into the module. The token is short-lived and fetched **per
-registration attempt**, not cached across a gateway restart. Registration only
-adds a proxy target — every proxied `/v1/<module>/*` request still runs the full
-ext_authz check.
+Composition provisions the pair: the SHA-256 digest into this host's
+`federation` group, and the plaintext **to the consuming backend only** (the
+Codefly CLI hands it over as `CODEFLY__MODULE_REGISTRATION_SECRETS`, a map
+keyed by prefix, which the solution runtime spends). The consumed module itself
+never receives a registration secret: it is given only its **identity** secret,
+which it spends on the Work Context exchange below and which this host checks
+against the separate `MODULE_IDENTITY_SECRETS` digest. Two secrets per prefix
+is what lets this side tell a backend registering a prefix from that prefix's
+own service principal. This host checks only that the secret presented for a
+prefix matches its digest; it neither knows nor cares which process presents
+it. The token is short-lived and fetched **per registration attempt**, not
+cached across a gateway restart. Registration only adds a proxy target — every
+proxied `/v1/<module>/*` request still runs the full ext_authz check.
 
 ## A registered client calls without a proxy
 
