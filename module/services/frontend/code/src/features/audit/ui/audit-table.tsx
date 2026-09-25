@@ -7,6 +7,7 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
+import { JsonView } from "@codefly-dev/ui/content";
 import { useMemo } from "react";
 import { ResourceLabel } from "@/components/resource-label";
 import { formatDate } from "@/shared/lib/utils";
@@ -130,13 +131,11 @@ export function AuditTable({
 							<summary className="cursor-pointer text-sm">
 								Technical details
 							</summary>
-							<pre className="max-w-sm overflow-auto whitespace-pre-wrap break-all text-xs">
-								{JSON.stringify(
-									{ eventId: id, actorId, resourceId, payload },
-									null,
-									2,
-								)}
-							</pre>
+							<JsonView
+								value={{ eventId: id, actorId, resourceId, payload }}
+								label="Technical details"
+								className="mt-1 max-h-80 max-w-sm overflow-auto"
+							/>
 						</details>
 					);
 				},
