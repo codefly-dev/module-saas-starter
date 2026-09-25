@@ -21,6 +21,11 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js",
 			"default": "./dist/index.js"
+		},
+		"./solution": {
+			"types": "./dist/solution/index.d.ts",
+			"import": "./dist/solution/index.js",
+			"default": "./dist/solution/index.js"
 		}
 	},
 	"scripts": {

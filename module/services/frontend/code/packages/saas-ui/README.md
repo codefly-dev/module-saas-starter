@@ -24,7 +24,10 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 ## Solution remotes: the host binding
 
 A solution remote's own backend calls, and the viewer state it keys them on,
-come from the kit too, so no remote carries its own copy:
+come from the kit too, so no remote carries its own copy. They are exported
+from the package root and from `@codefly-dev/saas-ui/solution`, which imports
+nothing but React — a remote that needs only these helpers does not load the
+datasource components or the SDK:
 
 - `SolutionBinding` — the backend half of the props the host injects into every
   solution page (`solutionId`, `apiBase`, `getAccessToken`, `refreshAccessToken`,
