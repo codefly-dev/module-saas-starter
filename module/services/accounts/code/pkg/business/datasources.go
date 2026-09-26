@@ -365,6 +365,9 @@ type GitHubRepository interface {
 	Sizes(ctx context.Context, ids []string) (map[string]int64, error)
 	Read(ctx context.Context, id string, max int64) ([]byte, error)
 	Stream(ctx context.Context, ids []string, visit func(id string, size int64, content io.Reader) error) error
+	// Fetches reports how many network requests this handle made, so every
+	// operation can report what it cost.
+	Fetches() int
 	Close() error
 }
 

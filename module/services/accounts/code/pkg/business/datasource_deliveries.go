@@ -392,6 +392,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 	if err := s.advanceCursor(ctx, source.ID, push.After, deliveryID); err != nil {
 		return "", w.Wrapf(err, "advance cursor")
 	}
+	w.Info("compiled change set", wool.Field("source", source.ID), wool.Field("ops", len(ops)), wool.Field("git_fetches", repo.Fetches()))
 	s.emit(ctx, source.ID, "system", EventDatasourceChangeSetCompiled, "datasource", source.ID, source.OrgID,
 		map[string]any{"base": base, "head": push.After, "ops": len(ops), "mode": "compare", "delivery_id": deliveryID})
 	return DispositionCompiled, nil
@@ -568,6 +569,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, repo
 		s.emit(ctx, source.ID, "system", EventDatasourceForcePushReconciled, "datasource", source.ID, source.OrgID,
 			map[string]any{"head": commit, "delivery_id": deliveryID})
 	}
+	w.Info("compiled snapshot", wool.Field("source", source.ID), wool.Field("files", len(manifest.Files)), wool.Field("git_fetches", repo.Fetches()))
 	s.emit(ctx, source.ID, "system", EventDatasourceChangeSetCompiled, "datasource", source.ID, source.OrgID,
 		map[string]any{"base": "", "head": commit, "ops": len(manifest.Files), "mode": "snapshot", "delivery_id": deliveryID})
 	return DispositionSnapshot, nil
