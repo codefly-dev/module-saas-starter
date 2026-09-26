@@ -44,13 +44,47 @@ export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 export type DashboardLayout = "grid" | "stack";
 
 /**
+ * The kind of one field of a solution-declared audit event payload: the host
+ * audit registry's own kinds. `number` is finite, `int` is whole, and `enum`
+ * names its allowed values.
+ */
+export type EventFieldKind =
+	| "string"
+	| "uuid"
+	| "int"
+	| "number"
+	| "bool"
+	| "enum"
+	| "string_array";
+
+/** One typed payload field of a solution-declared audit event. */
+export interface EventFieldDeclaration {
+	name: string;
+	kind: EventFieldKind;
+	/** The allowed values; required for, and only for, `kind: "enum"`. */
+	values?: readonly string[];
+	/**
+	 * A personally identifying field: the host strips it from every path that
+	 * sends an event outside its audit store. Once admitted as pii it stays so.
+	 */
+	pii?: boolean;
+}
+
+/**
  * A named audit event a metric can filter on. `name` is graph-local; `type` is
- * the audit event type it binds to, e.g. `user.signed_in.v1`.
+ * the audit event type it binds to, e.g. `acme.item.created`.
+ *
+ * Without `fields` the event binds a type that already exists. With `fields`
+ * (even an empty list) it declares `type` as one the solution owns, which the
+ * host admits into its audit registry when the solution registers — into a
+ * namespace the operator bound to the solution. `@codefly/saas-plugin-manifest`
+ * holds the validation; this is its shape.
  */
 export interface EventDeclaration {
 	name: string;
 	type: string;
 	description?: string;
+	fields?: readonly EventFieldDeclaration[];
 }
 
 /** Narrows the audit events a source metric counts. `event` names a declared event. */

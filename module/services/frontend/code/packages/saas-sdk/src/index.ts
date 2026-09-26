@@ -54,6 +54,8 @@ export type {
 	DataGraph,
 	DerivedMetric,
 	EventDeclaration,
+	EventFieldDeclaration,
+	EventFieldKind,
 	Metric,
 	MetricAggregation,
 	MetricBucket,
