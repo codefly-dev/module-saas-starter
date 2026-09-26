@@ -35,7 +35,13 @@ export type {
 	DatasourceView,
 } from "./datasources/types.js";
 export { parsePaths } from "./datasources/util.js";
+// The whole solution surface, so the package root and
+// `@codefly-dev/saas-ui/solution` name the same set. A partial root left
+// `useAccessibleScope` off while re-exporting the `NoReadableCollection` that
+// consumes its "none" answer, which made the README's "exported from the
+// package root" false for half a documented pair.
 export {
+	type AccessibleScopeState,
 	COLLECTION_ACCESS_PATH,
 	NoReadableCollection,
 	type NoReadableCollectionProps,
@@ -45,9 +51,12 @@ export {
 	type SolutionResource,
 	solutionFetch,
 	solutionJson,
+	solutionTransport,
+	useAccessibleScope,
 	useAccessToken,
 	useSolutionJson,
 	useViewerEpoch,
 	viewerAdministersOrganization,
 	viewerIdentity,
+	viewerOrganization,
 } from "./solution/index.js";

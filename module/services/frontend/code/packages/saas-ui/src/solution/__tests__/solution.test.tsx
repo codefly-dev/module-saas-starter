@@ -1,9 +1,17 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	render,
+	renderHook,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { SolutionRequestBinding } from "../index.js";
 import {
 	SolutionRequestError,
 	solutionFetch,
 	solutionJson,
+	useAccessToken,
 	useSolutionJson,
 	useViewerEpoch,
 	viewerIdentity,
@@ -81,12 +89,31 @@ describe("solutionFetch", () => {
 		// stubGlobal, not assignment: a host test setup may make fetch read-only.
 		vi.stubGlobal("fetch", fallback);
 		try {
-			await solutionFetch({ apiBase: "/base" }, "/x");
+			await solutionFetch(
+				{ apiBase: "/base", getAccessToken: () => null },
+				"/x",
+			);
 		} finally {
 			vi.unstubAllGlobals();
 		}
 		expect(fallback).toHaveBeenCalledOnce();
 	});
+});
+
+it("cannot express a binding with no credential at all", () => {
+	// The root `tsc --noEmit` covers these test files, so this @ts-expect-error IS
+	// the regression test: delete `getAccessToken` from SolutionRequestBinding's
+	// required half and the expected error disappears, failing the typecheck.
+	//
+	// Without it a binding carrying neither a token getter nor an authed fetch
+	// sends the request anonymously, and the host's bare `HTTP 401` is
+	// indistinguishable from an expired session — a misconfigured remote
+	// disguised as an ordinary sign-in prompt.
+	const anonymous = {
+		apiBase: "/base",
+		// @ts-expect-error a binding with no credential source is not constructible
+	} satisfies SolutionRequestBinding;
+	expect(anonymous.apiBase).toBe("/base");
 });
 
 describe("solutionJson", () => {
@@ -96,7 +123,7 @@ describe("solutionJson", () => {
 				status: 409,
 			});
 		const failure = await solutionJson(
-			{ apiBase: "", authedFetch },
+			{ apiBase: "", getAccessToken: () => null, authedFetch },
 			"/x",
 		).catch((e: unknown) => e);
 		expect(failure).toBeInstanceOf(SolutionRequestError);
@@ -109,7 +136,7 @@ describe("solutionJson", () => {
 	it("reports the status when the backend sent no message", async () => {
 		const authedFetch = async () => new Response("not json", { status: 502 });
 		const failure = await solutionJson(
-			{ apiBase: "", authedFetch },
+			{ apiBase: "", getAccessToken: () => null, authedFetch },
 			"/x",
 		).catch((e: unknown) => e);
 		expect((failure as SolutionRequestError).message).toBe("HTTP 502");
@@ -171,6 +198,73 @@ describe("useSolutionJson", () => {
 function Epoch({ getAccessToken }: { getAccessToken: () => string | null }) {
 	return <p>epoch {useViewerEpoch(getAccessToken)}</p>;
 }
+
+describe("useAccessToken", () => {
+	it("is told by the host's subscription instead of polling for a rotation", async () => {
+		// The timer is the fallback for a host that cannot notify, and it runs for
+		// as long as the page is open — one per observer. A host that passes
+		// `subscribeToken` must switch it off, not run alongside it, so this pins
+		// that no interval is armed and that the subscription alone drives a
+		// re-read.
+		const intervals: number[] = [];
+		const realSetInterval = window.setInterval;
+		vi.stubGlobal("setInterval", ((
+			handler: TimerHandler,
+			ms?: number,
+			...rest: unknown[]
+		) => {
+			intervals.push(ms ?? 0);
+			return realSetInterval(handler, ms, ...rest);
+		}) as typeof window.setInterval);
+		try {
+			let current = alice;
+			let notify = () => {};
+			const unsubscribed = vi.fn();
+			const subscribeToken = (listener: () => void) => {
+				notify = listener;
+				return unsubscribed;
+			};
+			const { result, unmount } = renderHook(() =>
+				useAccessToken(() => current, subscribeToken),
+			);
+			expect(result.current).toBe(alice);
+			expect(intervals).toEqual([]);
+
+			current = bob;
+			await act(async () => {
+				notify();
+			});
+			expect(result.current).toBe(bob);
+
+			unmount();
+			expect(unsubscribed).toHaveBeenCalledOnce();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("falls back to a timer when the host cannot notify", async () => {
+		// An older host injects no subscription, and then re-reading is the only
+		// way to notice: a rotation replaces neither the getter nor the host's
+		// render, so nothing else would ever tell the remote.
+		const intervals: number[] = [];
+		const realSetInterval = window.setInterval;
+		vi.stubGlobal("setInterval", ((
+			handler: TimerHandler,
+			ms?: number,
+			...rest: unknown[]
+		) => {
+			intervals.push(ms ?? 0);
+			return realSetInterval(handler, ms, ...rest);
+		}) as typeof window.setInterval);
+		try {
+			renderHook(() => useAccessToken(() => alice));
+			expect(intervals.length).toBeGreaterThan(0);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+});
 
 describe("useViewerEpoch", () => {
 	it("advances when the viewer changes and not on a refresh", async () => {

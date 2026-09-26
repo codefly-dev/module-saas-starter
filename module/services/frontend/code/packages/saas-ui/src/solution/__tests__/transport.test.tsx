@@ -52,7 +52,11 @@ describe("solutionTransport", () => {
 		await createClient(
 			AccessibleScopeService,
 			solutionTransport(
-				{ apiBase: "/api", authedFetch: moduleFetch },
+				{
+					apiBase: "/api",
+					getAccessToken: () => null,
+					authedFetch: moduleFetch,
+				},
 				"/modules/m",
 			),
 		).listMyAccessibleScopes({ orgId: "o1" });
@@ -68,6 +72,7 @@ describe("solutionTransport", () => {
 			solutionTransport(
 				{
 					apiBase: "/api",
+					getAccessToken: () => null,
 					authedFetch: scopes(
 						Response.json(
 							{ code: "permission_denied", message: "no" },
@@ -87,6 +92,7 @@ describe("solutionTransport", () => {
 			solutionTransport(
 				{
 					apiBase: "/api",
+					getAccessToken: () => null,
 					authedFetch: scopes(
 						Response.json(
 							{ code: "unavailable", message: "down" },
@@ -130,7 +136,7 @@ describe("useAccessibleScope", () => {
 			const authedFetch = scopes(reply);
 			const { result } = renderHook(() =>
 				useAccessibleScope(
-					{ apiBase: "/api", authedFetch },
+					{ apiBase: "/api", getAccessToken: () => null, authedFetch },
 					"o1",
 					"documents",
 					"read",

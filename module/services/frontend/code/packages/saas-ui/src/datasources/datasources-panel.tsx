@@ -104,9 +104,14 @@ function GatewayBoundPanel({
 }: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
 	// The interceptor reads the token at request time, so the client only needs
 	// rebuilding when the binding itself changes — not on every render.
-	const { apiBase, getAccessToken, refreshAccessToken, contentResource } =
-		gateway;
-	const token = useAccessToken(getAccessToken);
+	const {
+		apiBase,
+		getAccessToken,
+		refreshAccessToken,
+		contentResource,
+		subscribeToken,
+	} = gateway;
+	const token = useAccessToken(getAccessToken, subscribeToken);
 	const client = useMemo(
 		() =>
 			createDatasourceClient({
@@ -437,6 +442,10 @@ function DatasourcesPanelView({
 						<NoReadableCollection
 							canGrant={canManage}
 							subject="ingested documents to show"
+							// A client that can list collections makes this panel the grants
+							// surface, so the notice names the section below rather than
+							// linking to the page the reader is already on.
+							grantsOnThisPage={!!client.listCollections}
 						/>
 					</div>
 				) : null}
@@ -878,11 +887,6 @@ function SourcesTable({
 	onReconnect: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
 }) {
-	// Active rows leave their status cell quiet, so a table of active sources
-	// would carry an empty column; it appears once any row has a state to show.
-	const showStatus = sources.some(
-		(source) => source.status !== "active" || !!source.statusReason,
-	);
 	// A viewer who manages nothing is offered nothing to do but read a row's
 	// history, so the column is there only when there is something in it.
 	const showActions = canManage || !!onActivity;
@@ -892,9 +896,15 @@ function SourcesTable({
 				<TableHeader className="border-b bg-muted/40">
 					<TableRow>
 						<TableHead className={headerClass}>Repository</TableHead>
-						{showStatus && (
-							<TableHead className={headerClass}>Status</TableHead>
-						)}
+						{/* Always present, even when every row is quiet. Deriving the
+						    column from the data made it appear the moment a source
+						    degraded and vanish when it recovered — and `sources` refetches
+						    on an interval, so the table gained or lost a column under
+						    whoever was reading it, shifting every column after Status
+						    sideways at exactly the moment something had just broken. An
+						    always-empty cell costs the column's padding; a shifting table
+						    costs the reader their place. */}
+						<TableHead className={headerClass}>Status</TableHead>
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
@@ -913,11 +923,9 @@ function SourcesTable({
 							<TableCell className={cn(cellClass, "font-mono")}>
 								{source.repo}
 							</TableCell>
-							{showStatus && (
-								<TableCell className={cn(cellClass, wrapClass)}>
-									<StatusCell source={source} />
-								</TableCell>
-							)}
+							<TableCell className={cn(cellClass, wrapClass)}>
+								<StatusCell source={source} />
+							</TableCell>
 							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (
 									<span className="text-muted-foreground">All</span>

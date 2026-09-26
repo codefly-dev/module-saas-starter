@@ -166,25 +166,41 @@ describe("DatasourcesPanel", () => {
 		await screen.findByText(sampleSource.repo);
 		expect(screen.queryByText("Active")).toBeNull();
 		expect(screen.queryByText(/pulls have stopped/i)).toBeNull();
-		// A table of quiet rows carries no Status column at all.
-		expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
+		// The column stays; it is the row that is quiet.
+		expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
 	});
 
-	it("shows the Status column once any row has a state to show", async () => {
+	it("keeps the Status column in place whether or not a row has a state", async () => {
+		// The column used to be derived from the data, so it appeared the moment a
+		// source degraded and vanished when it recovered. `sources` refetches on an
+		// interval, so that shifted every column after Status sideways under
+		// whoever was reading — at exactly the moment something had just broken.
 		const degraded: DatasourceView = {
 			...sampleSource,
 			id: "ds-2",
 			status: "degraded",
 		};
+		const quiet = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		const { unmount } = renderWithClient(
+			<DatasourcesPanel client={quiet} orgId="org-1" />,
+		);
+		await screen.findByText(sampleSource.repo);
+		const columnsWhenQuiet = screen.getAllByRole("columnheader").length;
+		expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
+		unmount();
+
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource, degraded]),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-
 		expect(
 			await screen.findByRole("columnheader", { name: "Status" }),
 		).toBeTruthy();
 		expect(screen.getByText("Degraded")).toBeTruthy();
+		// Same shape either way: no column is gained or lost by the data changing.
+		expect(screen.getAllByRole("columnheader").length).toBe(columnsWhenQuiet);
 	});
 
 	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {

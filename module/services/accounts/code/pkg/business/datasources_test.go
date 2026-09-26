@@ -26,7 +26,10 @@ type datasourceFakeStore struct {
 	business.Store
 	mu          sync.Mutex
 	sources     map[string]*business.DatasourceSource
-	nodes       map[string]bool
+	// id -> label, because the org-scoped datasource reads project the boundary's
+	// label alongside the row. Modelling existence alone let a source come back
+	// with an empty collection name and no test could see it.
+	nodes       map[string]string
 	collections map[string]string // label -> node id
 	ordinals    map[string]int64  // source id -> next ordinal to hand out
 
@@ -43,7 +46,7 @@ type datasourceFakeStore struct {
 func newDatasourceFakeStore() *datasourceFakeStore {
 	return &datasourceFakeStore{
 		sources:     map[string]*business.DatasourceSource{},
-		nodes:       map[string]bool{},
+		nodes:       map[string]string{},
 		collections: map[string]string{},
 		ordinals:    map[string]int64{},
 
@@ -94,7 +97,7 @@ func (f *datasourceFakeStore) GitHubAppInstallationClaimedBy(_ context.Context, 
 func (f *datasourceFakeStore) RegisterScopeNode(_ context.Context, node *gen.ScopeNode) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.nodes[node.Id] = true
+	f.nodes[node.Id] = node.Label
 	return nil
 }
 
@@ -104,7 +107,7 @@ func (f *datasourceFakeStore) GetOrCreateCollectionNode(_ context.Context, node 
 	if id, ok := f.collections[node.Label]; ok {
 		return id, nil
 	}
-	f.nodes[node.Id] = true
+	f.nodes[node.Id] = node.Label
 	f.collections[node.Label] = node.Id
 	return node.Id, nil
 }
@@ -112,7 +115,8 @@ func (f *datasourceFakeStore) GetOrCreateCollectionNode(_ context.Context, node 
 func (f *datasourceFakeStore) ScopeNodeExists(_ context.Context, id string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.nodes[id], nil
+	_, ok := f.nodes[id]
+	return ok, nil
 }
 
 func (f *datasourceFakeStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
@@ -134,6 +138,7 @@ func (f *datasourceFakeStore) ListDatasourceSources(_ context.Context, orgID str
 	for _, s := range f.sources {
 		if s.OrgID == orgID {
 			cp := *s
+			cp.BoundaryLabel = f.nodes[cp.BoundaryNodeID]
 			out = append(out, &cp)
 		}
 	}
@@ -145,11 +150,15 @@ func (f *datasourceFakeStore) GetDatasourceSource(_ context.Context, orgID, id s
 	defer f.mu.Unlock()
 	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
 		cp := *s
+		cp.BoundaryLabel = f.nodes[cp.BoundaryNodeID]
 		return &cp, nil
 	}
 	return nil, nil
 }
 
+// GetDatasourceSourceByID deliberately leaves BoundaryLabel empty: it is the
+// cross-org control-plane read, which runs with no organization scope and so
+// reads the projection that cannot join scope_nodes.
 func (f *datasourceFakeStore) GetDatasourceSourceByID(_ context.Context, id string) (*business.DatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1614,7 +1623,7 @@ func TestAddSource_BoundaryNodeIDMustExist(t *testing.T) {
 		t.Fatal("an unregistered boundary node id must be rejected")
 	}
 
-	fs.nodes[nodeID] = true
+	fs.nodes[nodeID] = "declared-elsewhere"
 	src := addSource(t, svc, business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/a", BoundaryNodeID: nodeID, AccessToken: "t",
 	})

@@ -106,6 +106,25 @@ func publicInput() business.AddGitHubSourceInput {
 	return business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/handbook", CollectionLabel: "handbook"}
 }
 
+// TestAddGitHubSource_ReturnsTheBoundaryLabel pins that the Datasource a write
+// returns names its collection, like the listing and the point read do. It came
+// back empty while ListSources carried "handbook", so a consumer rendering the
+// source it had just created showed a blank collection name and had no way to
+// tell that from a collection with no name.
+func TestAddGitHubSource_ReturnsTheBoundaryLabel(t *testing.T) {
+	h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", commit: "abc", public: true})
+
+	source, err := h.svc.AddGitHubSource(context.Background(), "actor-1", publicInput())
+	require.NoError(t, err)
+	require.Equal(t, "handbook", source.BoundaryLabel,
+		"the write response must name the collection the source writes into")
+
+	// The same field, read back: one projection answers both, so they cannot drift.
+	read, err := h.svc.GetDatasourceSource(context.Background(), testOrg, source.ID)
+	require.NoError(t, err)
+	require.Equal(t, read.BoundaryLabel, source.BoundaryLabel)
+}
+
 func TestAddGitHubSource_PublicRepositoryNeedsNoCredential(t *testing.T) {
 	h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", commit: "abc", public: true})
 

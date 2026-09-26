@@ -30,7 +30,7 @@ export function solutionFetch(
 	path: string,
 	init: RequestInit = {},
 ): Promise<Response> {
-	const bearer = binding.getAccessToken?.();
+	const bearer = binding.getAccessToken();
 	const headers = new Headers(init.headers);
 	if (!headers.has("accept")) headers.set("accept", "application/json");
 	if (bearer) headers.set("authorization", `Bearer ${bearer}`);

@@ -42,6 +42,12 @@ export interface GatewayBinding {
 	/** Reads the current access token (may be null before the first exchange). */
 	getAccessToken: () => string | null;
 	/**
+	 * Optional host-owned notification that the token changed (see the kit's
+	 * `SolutionBinding.subscribeToken`). Without it the panel re-reads the
+	 * credential on a timer to keep `canManage` honest across a rotation.
+	 */
+	subscribeToken?: (listener: () => void) => () => void;
+	/**
 	 * Exchanges the session for a fresh access token when a request comes back
 	 * Unauthenticated — the short-lived token expired, was revoked, or none was
 	 * installed yet. The interceptor retries the call once with the returned

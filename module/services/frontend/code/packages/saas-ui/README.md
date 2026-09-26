@@ -30,9 +30,13 @@ React, Connect and the SDK's service descriptors but none of the datasource
 components:
 
 - `SolutionBinding` — the backend half of the props the host injects into every
-  solution page (`solutionId`, `apiBase`, `getAccessToken`, `refreshAccessToken`,
-  `authedFetch`). The host's `SolutionPageProps` extends it, so a remote types
-  its props against the one definition.
+  solution page (`solutionId`, `apiBase`, `getAccessToken`, `subscribeToken`,
+  `refreshAccessToken`, `authedFetch`). The host's `SolutionPageProps` extends
+  it, so a remote types its props against the one definition. `subscribeToken`
+  is optional but a host that can notify should pass it: the getter stays stable
+  while the token rotates underneath it, so without a subscription the kit
+  re-reads on a short interval — one timer per observer, for as long as the page
+  is open.
 - `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
   a request to the solution's own backend at `apiBase + path`, same-origin,
   through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer
@@ -61,7 +65,9 @@ components:
   no collection (`useAccessibleScope(…) === "none"`): a member is told to ask an
   organization administrator and where the grant is made; an administrator gets
   the link to make it (`COLLECTION_ACCESS_PATH`, the host's
-  `/admin/datasources`).
+  `/admin/datasources`). Pass `grantsOnThisPage` when the caller renders the
+  grants surface itself — the notice then names that section instead of linking
+  to the page the reader is already on.
 - `viewerIdentity(token)`, `useAccessToken(getAccessToken)`,
   `useViewerEpoch(getAccessToken)` — who the current credential speaks for,
   stable across a refresh and changing with the viewer. They partition local UI

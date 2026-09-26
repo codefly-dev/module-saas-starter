@@ -28,7 +28,7 @@ export function solutionTransport(
 			}),
 		interceptors: [
 			(next) => async (request) => {
-				const bearer = binding.getAccessToken?.();
+				const bearer = binding.getAccessToken();
 				if (bearer) request.header.set("authorization", `Bearer ${bearer}`);
 				try {
 					return await next(request);

@@ -1,6 +1,32 @@
+"use client";
+
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { SolutionRequestBinding } from "./binding.js";
 import { solutionJson } from "./request.js";
+
+/**
+ * The access token's claims, unverified, or null when they cannot be read at
+ * all. ONE decoder for every reader below: three hand-rolled copies of this
+ * base64url dance is three places for the padding, the URL alphabet or the
+ * failure behaviour to drift apart, and a reader that drifted would disagree
+ * with its neighbours about who the viewer is.
+ *
+ * Nothing here authorizes anything — the signature is never checked, so a claim
+ * read through this only ever decides what a page offers or how local state is
+ * partitioned.
+ */
+function unverifiedClaims(
+	token: string | null | undefined,
+): Record<string, unknown> | null {
+	try {
+		const body = (token ?? "").split(".")[1] ?? "";
+		return JSON.parse(
+			atob(body.replace(/-/g, "+").replace(/_/g, "/")),
+		) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
 
 /**
  * Who the current credential speaks for, as a stable key: the issuer, subject,
@@ -16,24 +42,19 @@ import { solutionJson } from "./request.js";
  */
 export function viewerIdentity(token: string | null): string | null {
 	if (!token) return null;
-	try {
-		const body = token.split(".")[1] ?? "";
-		const claims = JSON.parse(
-			atob(body.replace(/-/g, "+").replace(/_/g, "/")),
-		) as Record<string, unknown>;
-		if (typeof claims.sub === "string" && claims.sub) {
-			return JSON.stringify([
-				claims.iss,
-				claims.sub,
-				claims.org,
-				claims.auth_time,
-				claims.acting,
-				claims.act,
-			]);
-		}
-	} catch {
-		/* Opaque credentials cannot establish continuity across rotation. */
+	const claims = unverifiedClaims(token);
+	if (claims && typeof claims.sub === "string" && claims.sub) {
+		return JSON.stringify([
+			claims.iss,
+			claims.sub,
+			claims.org,
+			claims.auth_time,
+			claims.acting,
+			claims.act,
+		]);
 	}
+	// Opaque credentials cannot establish continuity across rotation, so one is
+	// its own key.
 	return token;
 }
 
@@ -44,15 +65,8 @@ export function viewerIdentity(token: string | null): string | null {
  * the organization from the viewer's own authority.
  */
 export function viewerOrganization(token: string | null | undefined): string {
-	try {
-		const body = (token ?? "").split(".")[1] ?? "";
-		const claims = JSON.parse(
-			atob(body.replace(/-/g, "+").replace(/_/g, "/")),
-		) as { org?: unknown };
-		return typeof claims.org === "string" ? claims.org : "";
-	} catch {
-		return "";
-	}
+	const org = unverifiedClaims(token)?.org;
+	return typeof org === "string" ? org : "";
 }
 
 /**
@@ -68,43 +82,46 @@ export function viewerOrganization(token: string | null | undefined): string {
 export function viewerAdministersOrganization(
 	token: string | null | undefined,
 ): boolean {
-	try {
-		const body = (token ?? "").split(".")[1] ?? "";
-		const claims = JSON.parse(
-			atob(body.replace(/-/g, "+").replace(/_/g, "/")),
-		) as { or?: unknown; pr?: unknown };
-		return (
-			claims.or === "owner" ||
-			claims.or === "admin" ||
-			claims.pr === "super_admin"
-		);
-	} catch {
-		return false;
-	}
+	const claims = unverifiedClaims(token);
+	return (
+		claims?.or === "owner" ||
+		claims?.or === "admin" ||
+		claims?.pr === "super_admin"
+	);
 }
 
 /**
- * The host's current access token, observed. The host's getter is stable while
- * its token store changes underneath it, so the value is re-read on the host's
- * `codefly:auth-changed` event, on focus, on storage, and on a short interval —
- * a change that neither replaces the getter nor rerenders the host still
- * reaches the remote.
+ * The host's current access token, observed. The getter stays stable while the
+ * token store changes underneath it, so a change that neither replaces the
+ * getter nor rerenders the host still has to reach the remote.
+ *
+ * `subscribeToken` is how the host says it will tell us, and then telling us is
+ * all that happens. Without it there is nothing to be told by, so the value is
+ * re-read on the host's `codefly:auth-changed` event, on focus, on storage —
+ * and, because none of those is guaranteed to exist, on a short interval as a
+ * last resort. That interval is one timer per observer that runs for as long as
+ * the page is open, which is the whole reason a host should pass a subscription.
  */
 export function useAccessToken(
 	getAccessToken?: () => string | null,
+	subscribeToken?: (listener: () => void) => () => void,
 ): string | null {
-	const subscribe = useCallback((changed: () => void) => {
-		const timer = window.setInterval(changed, 250);
-		window.addEventListener("codefly:auth-changed", changed);
-		window.addEventListener("focus", changed);
-		window.addEventListener("storage", changed);
-		return () => {
-			window.clearInterval(timer);
-			window.removeEventListener("codefly:auth-changed", changed);
-			window.removeEventListener("focus", changed);
-			window.removeEventListener("storage", changed);
-		};
-	}, []);
+	const subscribe = useCallback(
+		(changed: () => void) => {
+			if (subscribeToken) return subscribeToken(changed);
+			const timer = window.setInterval(changed, 250);
+			window.addEventListener("codefly:auth-changed", changed);
+			window.addEventListener("focus", changed);
+			window.addEventListener("storage", changed);
+			return () => {
+				window.clearInterval(timer);
+				window.removeEventListener("codefly:auth-changed", changed);
+				window.removeEventListener("focus", changed);
+				window.removeEventListener("storage", changed);
+			};
+		},
+		[subscribeToken],
+	);
 	const snapshot = useCallback(
 		() => getAccessToken?.() ?? null,
 		[getAccessToken],
@@ -117,8 +134,13 @@ export function useAccessToken(
  * Keying a remote's page on it drops every piece of one viewer's state before
  * the next viewer's first render.
  */
-export function useViewerEpoch(getAccessToken?: () => string | null): number {
-	const identity = viewerIdentity(useAccessToken(getAccessToken));
+export function useViewerEpoch(
+	getAccessToken?: () => string | null,
+	subscribeToken?: (listener: () => void) => () => void,
+): number {
+	const identity = viewerIdentity(
+		useAccessToken(getAccessToken, subscribeToken),
+	);
 	const [current, setCurrent] = useState({ identity, epoch: 0 });
 	if (current.identity !== identity) {
 		const next = { identity, epoch: current.epoch + 1 };
@@ -144,8 +166,8 @@ export function useSolutionJson<T>(
 	path: string,
 	cache?: RequestCache,
 ): SolutionResource<T> {
-	const { apiBase, getAccessToken, authedFetch } = binding;
-	const viewer = viewerIdentity(useAccessToken(getAccessToken));
+	const { apiBase, getAccessToken, authedFetch, subscribeToken } = binding;
+	const viewer = viewerIdentity(useAccessToken(getAccessToken, subscribeToken));
 	const [result, setResult] = useState<{
 		viewer: string | null;
 		apiBase: string;

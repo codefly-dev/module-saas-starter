@@ -550,6 +550,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
+		if err := s.fillBoundaryLabel(ctx, source); err != nil {
+			return err
+		}
 		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
 			map[string]any{"repo": source.Repo, "provider": source.Provider, "credential_kind": credential.Kind})
 	}); err != nil {
@@ -767,6 +770,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
+		if err := s.fillBoundaryLabel(ctx, source); err != nil {
+			return err
+		}
 		payload := map[string]any{"provider": source.Provider}
 		if source.Provider == DatasourceProviderGitHub {
 			payload["repo"] = source.Repo
@@ -777,6 +783,28 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
 	return source, nil
+}
+
+// fillBoundaryLabel reads the boundary's name back through the same labelled
+// projection the listing and the point read use, so the Datasource a write
+// returns names its collection exactly as a later read does.
+//
+// Deriving it here instead would give the write path a second source of truth:
+// the mint branch knows the label it asked for, but the branch that names an
+// existing node knows only its id, and a field that carries a name on
+// ListSources and an empty string on AddSource is a contract no consumer can
+// hold — they cannot tell "unnamed" from "this RPC does not fill it".
+//
+// Runs inside the caller's WithOrgTx, against the row just inserted.
+func (s *Service) fillBoundaryLabel(ctx context.Context, source *DatasourceSource) error {
+	stored, err := s.store.GetDatasourceSource(ctx, source.OrgID, source.ID)
+	if err != nil {
+		return err
+	}
+	if stored != nil {
+		source.BoundaryLabel = stored.BoundaryLabel
+	}
+	return nil
 }
 
 // requireBoundarySpec rejects a connect input that names neither or both of a

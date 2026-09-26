@@ -2,15 +2,16 @@
 
 import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly-dev/saas-ui";
-import * as CodeflyLayout from "@codefly-dev/ui/layout";
-import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
+import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
+import * as CodeflyUi from "@codefly-dev/ui";
 import * as CodeflyChat from "@codefly-dev/ui/chat";
-import * as CodeflySkin from "@codefly-dev/ui/skin";
-import * as CodeflyTable from "@codefly-dev/ui/table";
+import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
+import * as CodeflyLayout from "@codefly-dev/ui/layout";
 import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
 import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
 import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
-import * as CodeflyUi from "@codefly-dev/ui";
+import * as CodeflySkin from "@codefly-dev/ui/skin";
+import * as CodeflyTable from "@codefly-dev/ui/table";
 import {
 	createInstance,
 	type ModuleFederation,
@@ -28,7 +29,12 @@ import * as ReactJSXRuntime from "react/jsx-runtime";
 import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
-import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
+import {
+	authedFetch,
+	getToken,
+	refreshToken,
+	subscribeToken,
+} from "@/lib/connect/token-store";
 import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
@@ -111,6 +117,11 @@ export const CODEFLY_KIT_SHARED = {
 	"@codefly-dev/saas-ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUi,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-ui/solution": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => SaasUiSolution,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly-dev/saas-sdk": {
@@ -395,6 +406,7 @@ export function SolutionOutlet({
 					<Remote
 						{...pageProps}
 						getAccessToken={getToken}
+						subscribeToken={subscribeToken}
 						refreshAccessToken={refreshToken}
 						authedFetch={authedFetch}
 						dashboardAuthoring={authoring}

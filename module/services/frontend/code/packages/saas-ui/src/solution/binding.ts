@@ -28,6 +28,19 @@ export interface SolutionBinding {
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
 	/**
+	 * Host-owned change notification: calls `listener` whenever the value
+	 * `getAccessToken` returns changes, and returns an unsubscribe.
+	 *
+	 * Optional because an older host injects none, but a host that can notify
+	 * SHOULD, and the difference is not cosmetic. The getter stays stable while
+	 * the token rotates underneath it, so without this the kit has no way to learn
+	 * that a rotation happened and falls back to re-reading on a short interval —
+	 * a timer per observer that never lets the page idle. Its presence is the
+	 * kit's only evidence that the host will tell it, so supplying it is exactly
+	 * what switches that polling off.
+	 */
+	subscribeToken?: (listener: () => void) => () => void;
+	/**
 	 * Host-owned refresh: exchanges the httpOnly session for a fresh access token
 	 * (single-flight) and resolves to it, or null if the session is gone.
 	 */
@@ -46,10 +59,20 @@ export interface SolutionBinding {
 }
 
 /**
- * The part of the binding the helpers below need. Everything past `apiBase` is
- * optional so a remote mounted by an older host — or rendered in a test —
- * still works: without `authedFetch` a request goes out with `fetch` and the
- * bearer `getAccessToken` returns.
+ * The part of the binding the helpers below need: where to send a request, and
+ * the credential to send with it.
+ *
+ * `authedFetch` alone is optional, so a remote mounted by an older host — or
+ * rendered in a test — still works: the request goes out with plain `fetch` and
+ * the bearer `getAccessToken` returns, losing only the refresh-then-retry
+ * recovery. `getAccessToken` is NOT optional, because a binding missing both
+ * would send the request anonymously and the host would answer a bare `HTTP
+ * 401` — indistinguishable, to the remote and to the person reading it, from a
+ * session that simply expired. A misconfigured binding must not be able to
+ * disguise itself as an ordinary sign-in prompt, so it cannot be expressed.
  */
-export type SolutionRequestBinding = Pick<SolutionBinding, "apiBase"> &
-	Partial<Pick<SolutionBinding, "getAccessToken" | "authedFetch">>;
+export type SolutionRequestBinding = Pick<
+	SolutionBinding,
+	"apiBase" | "getAccessToken"
+> &
+	Partial<Pick<SolutionBinding, "authedFetch" | "subscribeToken">>;

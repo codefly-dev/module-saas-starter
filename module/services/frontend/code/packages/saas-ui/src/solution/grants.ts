@@ -1,3 +1,5 @@
+"use client";
+
 import { AccessibleScopeService } from "@codefly-dev/saas-sdk";
 import { createClient } from "@connectrpc/connect";
 import { useEffect, useState } from "react";

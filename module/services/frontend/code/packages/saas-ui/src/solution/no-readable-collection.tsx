@@ -16,6 +16,13 @@ export interface NoReadableCollectionProps {
 	/** What the page would have shown, ending the first sentence ("…, so there
 	 *  are no documents to show."). Default "documents to show". */
 	subject?: string;
+	/**
+	 * Whether the surface that makes grants is on this same page — the caller
+	 * renders "Collection access" itself. Then the notice names that section
+	 * instead of linking, because a link to the page the reader is already on
+	 * does nothing when clicked: it is a dead end dressed as the way out.
+	 */
+	grantsOnThisPage?: boolean;
 	/** Where grants are made. Default {@link COLLECTION_ACCESS_PATH}. */
 	grantsHref?: string;
 	className?: string;
@@ -34,6 +41,7 @@ export interface NoReadableCollectionProps {
 export function NoReadableCollection({
 	canGrant,
 	subject = "documents to show",
+	grantsOnThisPage = false,
 	grantsHref = COLLECTION_ACCESS_PATH,
 	className,
 }: NoReadableCollectionProps) {
@@ -45,19 +53,31 @@ export function NoReadableCollection({
 			{canGrant ? (
 				<p className="type-body text-muted-foreground">
 					Connecting or syncing a source grants no read access; a grant does.{" "}
-					<a
-						href={grantsHref}
-						className="text-primary underline underline-offset-2"
-					>
-						Grant read access to a collection
-					</a>{" "}
-					to yourself, a member or a team in Data sources → Collection access.
+					{grantsOnThisPage ? (
+						<>
+							Grant read access to a collection to yourself, a member or a team
+							in Collection access, below.
+						</>
+					) : (
+						<>
+							<a
+								href={grantsHref}
+								className="text-primary underline underline-offset-2"
+							>
+								Grant read access to a collection
+							</a>{" "}
+							to yourself, a member or a team in Data sources → Collection
+							access.
+						</>
+					)}
 				</p>
 			) : (
 				<p className="type-body text-muted-foreground">
 					Ask an organization administrator to grant you read access to a
-					collection. Administrators grant it in Admin → Data sources →
-					Collection access.
+					collection. Administrators grant it in{" "}
+					{grantsOnThisPage
+						? "Collection access, below."
+						: "Admin → Data sources → Collection access."}
 				</p>
 			)}
 		</div>
