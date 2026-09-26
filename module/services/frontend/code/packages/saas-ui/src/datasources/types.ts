@@ -37,6 +37,18 @@ export interface DatasourceView {
 	 * keeps compiling without it.
 	 */
 	statusReason?: string | undefined;
+	/**
+	 * False when the source's provider does not yet meet the host's datasource
+	 * connector envelope. Such a source keeps running, but the host takes no
+	 * new source of that provider until it conforms, so the panel flags it.
+	 *
+	 * Optional so that a consumer adapting its own client keeps compiling
+	 * without it; absent is treated as conformant, since only the host can
+	 * say otherwise.
+	 */
+	conformant?: boolean | undefined;
+	/** What keeps a non-conformant provider off the envelope, in the host's words. */
+	conformanceGap?: string | undefined;
 	lastSyncedAt: string | undefined;
 	/**
 	 * When the change-set compiler last durably enqueued a change set — advanced

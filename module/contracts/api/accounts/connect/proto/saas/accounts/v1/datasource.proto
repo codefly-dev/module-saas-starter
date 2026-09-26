@@ -194,13 +194,16 @@ message Datasource {
   // named constructors in the host, so it carries no credential material, token,
   // or signing secret — raw provider error text can never reach this field.
   string status_reason = 17;
-  // The display label of boundary_node_id: the collection's name, as the
-  // organization named it. Any member who may list the organization's sources
-  // reads it, whether or not they may read the collection's content: it names
-  // where the source writes, as repo names what it reads. Carried by
-  // ListSources and GetSource; empty in the other responses that return a
-  // Datasource.
-  string boundary_label = 18;
+  // Whether the source's provider meets the datasource connector envelope and
+  // passes its conformance suite. A source of a non-conformant provider keeps
+  // running, and a client flags it; no new source of that provider can be
+  // connected until it conforms.
+  bool conformant = 18;
+  // What keeps a non-conformant provider off the envelope, in prose. Never
+  // empty for a non-conformant source and always empty for a conformant one,
+  // so a client that must also read an older host, which sends neither field,
+  // can key its flag on this and treat an empty gap as nothing to flag.
+  string conformance_gap = 19;
 }
 
 message AddGitHubSourceRequest {
@@ -322,6 +325,55 @@ message DatasourceConfigField {
   bool required = 4;
 }
 
+// DatasourceConnectorInterface is one of the five connector interfaces a
+// provider is served through. The set is closed; the set of providers is open.
+enum DatasourceConnectorInterface {
+  DATASOURCE_CONNECTOR_INTERFACE_UNSPECIFIED = 0;
+  // Files: bytes with a media type and a path (a repository, a drive, a bucket).
+  DATASOURCE_CONNECTOR_INTERFACE_FILES = 1;
+  // Pages: a rendered body in a parent/child hierarchy (a knowledge base, a crawled site).
+  DATASOURCE_CONNECTOR_INTERFACE_PAGES = 2;
+  // Records: typed rows the provider's schema describes (a CRM, a ticket system).
+  DATASOURCE_CONNECTOR_INTERFACE_RECORDS = 3;
+  // Messages: mail and chat, a body and attachments plus the message itself.
+  DATASOURCE_CONNECTOR_INTERFACE_MESSAGES = 4;
+  // Events: calendar entries.
+  DATASOURCE_CONNECTOR_INTERFACE_EVENTS = 5;
+}
+
+// DatasourceCredentialMode is how a connector authenticates to its provider.
+// The host holds every credential; the mode says which kind a connect asks for.
+enum DatasourceCredentialMode {
+  DATASOURCE_CREDENTIAL_MODE_UNSPECIFIED = 0;
+  // The provider serves the source without a credential.
+  DATASOURCE_CREDENTIAL_MODE_NONE = 1;
+  // An org-level app or installation the host holds.
+  DATASOURCE_CREDENTIAL_MODE_ORG_APP = 2;
+  // A person's own OAuth grant; such a source is readable by that person alone.
+  DATASOURCE_CREDENTIAL_MODE_USER_OAUTH = 3;
+  // A token or key the tenant supplies once.
+  DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET = 4;
+}
+
+// DatasourceReadersModel is how a connector derives each item's readers.
+enum DatasourceReadersModel {
+  DATASOURCE_READERS_MODEL_UNSPECIFIED = 0;
+  // The provider has no per-item access list: every item is readable by
+  // whoever may read the source's boundary.
+  DATASOURCE_READERS_MODEL_SOURCE_SCOPED = 1;
+  // The provider's per-item access lists are translated into host users and
+  // teams; what cannot be translated is readable by the boundary's
+  // administrators only.
+  DATASOURCE_READERS_MODEL_TRANSLATED = 2;
+}
+
+// DatasourceConnectorBudget is the per-call limits a connector serves within.
+message DatasourceConnectorBudget {
+  uint32 max_items_per_call = 1;
+  int64 max_bytes_per_call = 2;
+  int64 max_item_bytes = 3;
+}
+
 // DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
 // offer and configure a provider without provider-specific code.
 message DatasourceProviderDescriptor {
@@ -335,6 +387,22 @@ message DatasourceProviderDescriptor {
   // credential inputs. Empty for a connector with a bespoke credential shape
   // (GitHub: an access token plus an optional webhook secret).
   repeated ApiCredentialKind supported_credential_kinds = 6;
+  // The connector's registry key, e.g. "github".
+  string connector = 7;
+  DatasourceConnectorInterface interface = 8;
+  repeated DatasourceCredentialMode credential_modes = 9;
+  DatasourceReadersModel readers_model = 10;
+  // Unset for a provider that is not conformant.
+  DatasourceConnectorBudget budget = 11;
+  // Whether the provider meets the datasource connector envelope and passes
+  // its conformance suite.
+  bool conformant = 12;
+  // What keeps a non-conformant provider off the envelope; empty otherwise.
+  string conformance_gap = 13;
+  // Whether a new source of this provider may be connected now. False for a
+  // non-conformant provider, and for one that translates provider permissions
+  // while this deployment does not enforce them at read.
+  bool accepts_new_sources = 14;
 }
 
 message GetDatasourceCatalogRequest {}
@@ -650,10 +718,11 @@ service DatasourceService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // GetDatasourceCatalog returns the registry of available provider types and
-  // their per-provider connect metadata, so a client can enumerate and render
-  // the "connect a source" surface without provider-specific code. The catalog
-  // is static, non-secret, and identical for every tenant.
+  // GetDatasourceCatalog returns the host's connector registry: every provider,
+  // its connect metadata, whether it conforms to the datasource connector
+  // envelope, and whether it accepts a new source, so a client can render the
+  // "connect a source" surface without provider-specific code. The catalog is
+  // static, non-secret, and identical for every tenant.
   rpc GetDatasourceCatalog(GetDatasourceCatalogRequest) returns (GetDatasourceCatalogResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

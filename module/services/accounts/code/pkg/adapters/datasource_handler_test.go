@@ -29,26 +29,59 @@ func TestAPICredentialKindRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDatasourceCatalog_OffersOnlyWhatCanBeConnected proves the catalog is the
-// registry's admissible connectors: GitHub, with its config fields, and none of
-// the providers still off the datasource envelope, which take no new source.
-func TestDatasourceCatalog_OffersOnlyWhatCanBeConnected(t *testing.T) {
+// TestDatasourceCatalog_ProjectsTheRegistry proves the catalog is the host's
+// connector registry: GitHub conformant and accepting new sources, with its
+// interface, readers model, budget and config; the providers still off the
+// envelope listed, flagged with their gap, and accepting none.
+func TestDatasourceCatalog_ProjectsTheRegistry(t *testing.T) {
 	svc, _ := business.NewService(nil)
 	svc.SetDatasourceConnector(nil, nil, "")
 	catalog := datasourceCatalog(svc.DatasourceCatalog())
-	if len(catalog.GetProviders()) != 1 {
-		t.Fatalf("catalog = %v, want GitHub alone", catalog.GetProviders())
+	byKey := map[string]*gen.DatasourceProviderDescriptor{}
+	for _, p := range catalog.GetProviders() {
+		byKey[p.GetConnector()] = p
 	}
-	github := catalog.GetProviders()[0]
-	if github.GetProvider() != gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB || !github.GetSupportsWebhook() ||
-		len(github.GetConfigFields()) != 4 || github.GetConfigFields()[0].GetKey() != "repo" || !github.GetConfigFields()[0].GetRequired() {
+	if len(byKey) != 4 {
+		t.Fatalf("catalog = %v, want the four registered providers", catalog.GetProviders())
+	}
+	github := byKey[business.DatasourceProviderGitHub]
+	if github.GetProvider() != gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB || !github.GetConformant() || !github.GetAcceptsNewSources() ||
+		github.GetConformanceGap() != "" ||
+		github.GetInterface() != gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_FILES ||
+		github.GetReadersModel() != gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_SOURCE_SCOPED ||
+		github.GetBudget().GetMaxItemsPerCall() != 1000 || len(github.GetCredentialModes()) != 3 ||
+		len(github.GetConfigFields()) != 4 || github.GetConfigFields()[0].GetKey() != "repo" || !github.GetSupportsWebhook() {
 		t.Fatalf("GitHub entry = %v", github)
 	}
-	if len(github.GetSupportedCredentialKinds()) != 0 {
-		t.Errorf("GitHub is bespoke; it must declare no api credential kinds, got %v", github.GetSupportedCredentialKinds())
+	for _, key := range []string{business.DatasourceProviderAPI, business.DatasourceProviderCrawler, business.DatasourceProviderUpload} {
+		p := byKey[key]
+		if p == nil || p.GetConformant() || p.GetAcceptsNewSources() || p.GetConformanceGap() == "" || p.GetBudget() != nil ||
+			p.GetProvider() == gen.DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED {
+			t.Fatalf("%s entry = %v, want listed, non-conformant, with a gap, accepting no new source", key, p)
+		}
 	}
 	if datasourceCatalog(nil).GetProviders() != nil {
 		t.Fatal("an unconfigured connector offers nothing")
+	}
+}
+
+// TestDatasourceSourceToProto_FlagsNonConformantProviders proves an existing
+// source says whether its provider meets the connector envelope, so a client
+// can flag one that does not (the owner's settled question 7).
+func TestDatasourceSourceToProto_FlagsNonConformantProviders(t *testing.T) {
+	svc, _ := business.NewService(nil)
+	svc.SetDatasourceConnector(nil, nil, "")
+	reg := svc.DatasourceConnectors()
+	gh := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderGitHub}, reg)
+	if !gh.GetConformant() || gh.GetConformanceGap() != "" {
+		t.Fatalf("github source = conformant %v gap %q", gh.GetConformant(), gh.GetConformanceGap())
+	}
+	crawl := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderCrawler, Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "https://docs.example.com/sitemap.xml"}}, reg)
+	if crawl.GetConformant() || crawl.GetConformanceGap() == "" {
+		t.Fatalf("crawler source = conformant %v gap %q, want flagged with its gap", crawl.GetConformant(), crawl.GetConformanceGap())
+	}
+	if unconfigured := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderGitHub}, nil); unconfigured.GetConformant() {
+		t.Fatal("with no registry nothing is reported conformant")
 	}
 }
 
@@ -65,7 +98,7 @@ func TestDatasourceSourceToProto_ProjectsIngestProvenance(t *testing.T) {
 		Status:             business.DatasourceStatusActive,
 		LastIngestedAt:     &ingested,
 		LastIngestedCommit: "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
-	})
+	}, nil)
 
 	if got := out.GetLastIngestedAt().AsTime(); !got.Equal(ingested) {
 		t.Errorf("last_ingested_at = %s, want %s", got, ingested)
@@ -90,7 +123,7 @@ func TestDatasourceSourceToProto_PullProviderKeepsSyncClock(t *testing.T) {
 		Provider:     business.DatasourceProviderAPI,
 		Status:       business.DatasourceStatusActive,
 		LastSyncedAt: &synced,
-	})
+	}, nil)
 
 	if got := out.GetLastSyncedAt().AsTime(); !got.Equal(synced) {
 		t.Errorf("last_synced_at = %s, want %s", got, synced)
@@ -112,7 +145,7 @@ func TestDatasourceSourceToProto_OmitsUnadvancedCursor(t *testing.T) {
 		OrgID:    "22222222-2222-2222-2222-222222222222",
 		Provider: business.DatasourceProviderGitHub,
 		Status:   business.DatasourceStatusActive,
-	})
+	}, nil)
 
 	if out.GetLastIngestedAt() != nil {
 		t.Errorf("last_ingested_at = %v, want unset", out.GetLastIngestedAt())
@@ -136,7 +169,7 @@ func TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason(t *testing.T) {
 		Provider:     business.DatasourceProviderGitHub,
 		Status:       business.DatasourceStatusDegraded,
 		StatusReason: reason,
-	})
+	}, nil)
 
 	if got := out.GetStatus(); got != gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED {
 		t.Errorf("status = %v, want DATASOURCE_STATUS_DEGRADED", got)
@@ -198,7 +231,7 @@ func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
 		Repo:           "acme/docs",
 		Paths:          []string{"docs"},
 		FileExtensions: []string{".md", ".mdx"},
-	})
+	}, nil)
 	got := filtered.GetGithub().GetFileExtensions()
 	if len(got) != 2 || got[0] != ".md" || got[1] != ".mdx" {
 		t.Errorf("file_extensions = %v", got)
@@ -210,7 +243,7 @@ func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
 		Provider: business.DatasourceProviderGitHub,
 		Status:   business.DatasourceStatusActive,
 		Repo:     "acme/docs",
-	})
+	}, nil)
 	// Assert the config block is present before reading through it. The generated
 	// getters are nil-safe, so GetGithub().GetFileExtensions() reads as an empty
 	// allowlist whether the projection carries an unfiltered source or drops its

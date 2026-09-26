@@ -64,9 +64,9 @@ func TestLegacyProvidersAreRegisteredWithTheirGap(t *testing.T) {
 			t.Fatalf("%s: admission = %v, want ErrNonConformant", key, err)
 		}
 	}
-	for _, d := range svc.DatasourceCatalog() {
-		if !d.Conformant {
-			t.Fatalf("the catalog offers %s, which takes no new source", d.Key)
+	for _, e := range svc.DatasourceCatalog() {
+		if e.AcceptsNewSources != (e.Descriptor.Conformant && e.Descriptor.Readers != connector.ReadersTranslated) {
+			t.Fatalf("the catalog says %s accepts new sources = %v", e.Descriptor.Key, e.AcceptsNewSources)
 		}
 	}
 	if d, ok := reg.Descriptor(business.DatasourceProviderGitHub); !ok || !d.Conformant || d.Readers != connector.ReadersSourceScoped {

@@ -45,7 +45,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
 }
 
 func (h *datasourceConnectHandler) AddSource(
@@ -111,7 +111,7 @@ func (h *datasourceConnectHandler) AddSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
 }
 
 func (h *datasourceConnectHandler) GetDatasourceCatalog(
@@ -143,7 +143,7 @@ func (h *datasourceConnectHandler) ListSources(
 	}
 	out := make([]*gen.Datasource, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, datasourceSourceToProto(source))
+		out = append(out, datasourceSourceToProto(source, h.svc.DatasourceConnectors()))
 	}
 	return connect.NewResponse(&gen.ListSourcesResponse{Datasources: out}), nil
 }
@@ -167,7 +167,7 @@ func (h *datasourceConnectHandler) GetSource(
 		}
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
 }
 
 func (h *datasourceConnectHandler) SyncSource(
@@ -320,12 +320,15 @@ func (h *datasourceConnectHandler) MigrateGitHubSourceToApp(
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.MigrateGitHubSourceToAppResponse{
-		Datasource: datasourceSourceToProto(source),
+		Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors()),
 	}), nil
 }
 
-func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource {
+func datasourceSourceToProto(source *business.DatasourceSource, registry *connector.Registry) *gen.Datasource {
+	conformant, gap := business.DatasourceConformance(registry, source.Provider)
 	out := &gen.Datasource{
+		Conformant:         conformant,
+		ConformanceGap:     gap,
 		Id:                 source.ID,
 		OrgId:              source.OrgID,
 		Provider:           datasourceProviderToProto(source.Provider),
@@ -452,23 +455,34 @@ func apiCredentialKindToProto(kind string) gen.ApiCredentialKind {
 }
 
 // datasourceCatalog projects the host's connector registry onto the catalog a
-// client renders the "connect a source" surface from: every connector that
-// admits a new source, and nothing else. A provider off the datasource envelope
-// keeps its existing sources but is not offered.
-func datasourceCatalog(descriptors []connector.Descriptor) *gen.GetDatasourceCatalogResponse {
+// client renders the "connect a source" surface from: every registered
+// provider, whether it conforms to the connector envelope and why not, and
+// whether it accepts a new source. A client offers only those that do.
+func datasourceCatalog(entries []business.DatasourceCatalogEntry) *gen.GetDatasourceCatalogResponse {
 	out := &gen.GetDatasourceCatalogResponse{}
-	for _, d := range descriptors {
-		provider, ok := datasourceProviderEnum[d.Key]
-		if !ok {
-			// The wire still names providers by enum; a connector the enum does
-			// not know cannot be offered until the catalog carries its key.
-			continue
-		}
+	for _, e := range entries {
+		d := e.Descriptor
 		entry := &gen.DatasourceProviderDescriptor{
-			Provider:        provider,
-			DisplayName:     d.DisplayName,
-			Description:     d.Description,
-			SupportsWebhook: d.SupportsWebhook,
+			Provider:          datasourceProviderEnum[d.Key],
+			Connector:         d.Key,
+			DisplayName:       d.DisplayName,
+			Description:       d.Description,
+			SupportsWebhook:   d.SupportsWebhook,
+			Interface:         datasourceInterfaceEnum[d.Interface],
+			ReadersModel:      datasourceReadersModelEnum[d.Readers],
+			Conformant:        d.Conformant,
+			ConformanceGap:    d.Gap,
+			AcceptsNewSources: e.AcceptsNewSources,
+		}
+		for _, m := range d.CredentialModes {
+			entry.CredentialModes = append(entry.CredentialModes, datasourceCredentialModeEnum[m])
+		}
+		if d.Conformant {
+			entry.Budget = &gen.DatasourceConnectorBudget{
+				MaxItemsPerCall: uint32(d.Budget.MaxItemsPerCall),
+				MaxBytesPerCall: d.Budget.MaxBytesPerCall,
+				MaxItemBytes:    d.Budget.MaxItemBytes,
+			}
 		}
 		for _, f := range d.ConfigFields {
 			entry.ConfigFields = append(entry.ConfigFields, &gen.DatasourceConfigField{
@@ -478,6 +492,26 @@ func datasourceCatalog(descriptors []connector.Descriptor) *gen.GetDatasourceCat
 		out.Providers = append(out.Providers, entry)
 	}
 	return out
+}
+
+var datasourceInterfaceEnum = map[connector.Interface]gen.DatasourceConnectorInterface{
+	connector.InterfaceFiles:    gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_FILES,
+	connector.InterfacePages:    gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_PAGES,
+	connector.InterfaceRecords:  gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_RECORDS,
+	connector.InterfaceMessages: gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_MESSAGES,
+	connector.InterfaceEvents:   gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_EVENTS,
+}
+
+var datasourceCredentialModeEnum = map[connector.CredentialMode]gen.DatasourceCredentialMode{
+	connector.CredentialNone:         gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_NONE,
+	connector.CredentialOrgApp:       gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_ORG_APP,
+	connector.CredentialUserOAuth:    gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_USER_OAUTH,
+	connector.CredentialStaticSecret: gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET,
+}
+
+var datasourceReadersModelEnum = map[connector.ReadersModel]gen.DatasourceReadersModel{
+	connector.ReadersSourceScoped: gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_SOURCE_SCOPED,
+	connector.ReadersTranslated:   gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_TRANSLATED,
 }
 
 // datasourceProviderEnum maps a connector's registry key onto the wire's

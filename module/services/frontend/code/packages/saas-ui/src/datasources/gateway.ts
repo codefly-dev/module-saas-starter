@@ -374,6 +374,11 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		webhookConfigured: source.webhookConfigured,
 		status: statusNames[source.status] ?? "unknown",
 		statusReason: source.statusReason || undefined,
+		// Keyed on the gap, which is never empty for a non-conformant source: an
+		// older host sends neither field, and a missing bool decodes as false,
+		// which would flag every source it serves.
+		conformant: source.conformanceGap ? false : undefined,
+		conformanceGap: source.conformanceGap || undefined,
 		lastSyncedAt: source.lastSyncedAt
 			? timestampDate(source.lastSyncedAt).toISOString()
 			: undefined,

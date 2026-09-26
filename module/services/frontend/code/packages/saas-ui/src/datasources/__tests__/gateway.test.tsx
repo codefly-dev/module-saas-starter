@@ -387,6 +387,40 @@ describe("createDatasourceClient", () => {
 		}
 	});
 
+	it("flags a source the host reports off the connector envelope", async () => {
+		const [source] = oneSource.datasources;
+		stubFetch({
+			datasources: [
+				{ ...source, conformant: false, conformanceGap: "no cursor and no deletions" },
+			],
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.conformant).toBe(false);
+		expect(view.conformanceGap).toBe("no cursor and no deletions");
+	});
+
+	it("does not flag a source from a host that sends no conformance", async () => {
+		// Proto3 omits a false bool, so an older host's source decodes with
+		// conformant=false; only the gap says a provider is off the envelope.
+		const [source] = oneSource.datasources;
+		stubFetch({ datasources: [{ ...source }] });
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.conformant).toBeUndefined();
+		expect(view.conformanceGap).toBeUndefined();
+	});
+
 	it("leaves the reason unset for a source that never left active", async () => {
 		// The wire carries an empty string, not an absent field.
 		const [source] = oneSource.datasources;
