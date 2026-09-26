@@ -67,7 +67,18 @@ Accounts dispatch/validation events use row `resource="datasource"` and
 Context and the current tenant-bound `MODULE_PRINCIPALS` declaration. That RPC
 writes row `resource=scope.solution`, `resource_id=scope.entry_id`, and payload
 `solution=scope.solution`; the actor is the attributed actor supplied by the
-emitter. Therefore source completion/failure producers must send
+emitter. `entry_id` is stored verbatim: it is a text column, so an entry id of
+any shape (a ULID, a provider's object id) is the row's resource id. The actor
+is a principal id in its canonical lowercase form, because the actor column is
+a UUID: a module that acted for a subject sends that subject, recorded as
+`actor_type=agent`; a module that acted on its own sends its own principal —
+the `principal_id` `MintModuleWorkContext` returns — recorded as
+`actor_type=system`. Any other actor, such as a process label like
+`system:<process>`, is refused with `InvalidArgument` rather than stored with
+the actor blanked. The directory the audit surfaces name actors from
+(`ListPrincipals`) lists each module that may act in the organization under its
+prefix, so a module's rows read as that module rather than as an unknown actor.
+Therefore source completion/failure producers must send
 `scope.solution="datasource"`, `scope.entry_id=<source-id>`. A different identity
 does not silently match this source filter. Document producers must send the
 actual collection node in `fields.boundary`, with the document entry as entry_id.

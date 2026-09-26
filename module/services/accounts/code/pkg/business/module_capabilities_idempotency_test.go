@@ -47,7 +47,7 @@ func TestModuleEmitAuditEventDedupsRetriedTenantEmit(t *testing.T) {
 	key := "idem-" + business.NewIDString()
 	emit := func(idempotencyKey string) error {
 		return svc.ModuleEmitAuditEvent(testCtx, caller, org, "saas.document.ingested",
-			"actor-1", "sol", "entry-1", idempotencyKey, nil)
+			modulePrincSvc, "sol", "entry-1", idempotencyKey, nil)
 	}
 
 	// First emit writes the event; a retry of the identical key is a duplicate the
@@ -71,4 +71,41 @@ func TestModuleEmitAuditEventDedupsRetriedTenantEmit(t *testing.T) {
 	require.Len(t, buckets, 1, "one event_type group is expected")
 	require.EqualValues(t, 2, buckets[0].Count,
 		"the retried emit must collapse to one row, leaving two document.ingested rows")
+}
+
+// TestModuleEmitAuditEventRowKeepsItsActorAndEntry is the round trip the
+// document producer's rows failed: the spine stored an ingested event with no
+// actor and no resource id, because the writer ran the entry id — a ULID —
+// through the UUID-shape filter meant for the actor column, and the actor was a
+// process label no UUID column can hold. Written through the real store and read
+// back, the row names the module principal as a system actor and keeps the
+// entry, and a resource-id filter finds it by that entry.
+func TestModuleEmitAuditEventRowKeepsItsActorAndEntry(t *testing.T) {
+	clearData(t)
+	_, org := mustUserAndOrg(t, testCtx, "entry@audit-test.com", "entry-audit", "Entry Co")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	require.NoError(t, err)
+	svc.SetAuditEmitter(emitter)
+	backend := &fakeJobBackend{}
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Queues: []string{"documents"}},
+	})
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
+
+	// A document entry id is a ULID: 26 characters, no hyphens.
+	entry := "01M3C1E527S6Z98WFBN1B8VRG4"
+	require.NoError(t, svc.ModuleEmitAuditEvent(testCtx, caller, org, "saas.document.ingested",
+		modulePrincSvc, "documents", entry, "", nil))
+
+	rows, _, _, err := svc.QueryAuditLog(testCtx, business.AuditQuery{
+		OrgID: org, EventType: "saas.document.ingested", Resource: "documents", ResourceID: entry, PageSize: 10,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "the entry is the row's resource id, so filtering on it finds the row")
+	require.Equal(t, entry, rows[0].ResourceID)
+	require.Equal(t, modulePrincSvc, rows[0].ActorID)
+	require.Equal(t, business.ActorTypeSystem, rows[0].ActorType)
 }

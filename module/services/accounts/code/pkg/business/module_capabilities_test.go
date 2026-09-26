@@ -274,9 +274,89 @@ func TestModuleEnqueueJob_OrgScopedHappyPath(t *testing.T) {
 func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", nil)
 	if err != nil {
 		t.Fatalf("registered audit event should be accepted: %v", err)
+	}
+}
+
+// capturingAuditEmitter records every entry the surface hands the spine, so a
+// test can assert what the row would carry without a database.
+type capturingAuditEmitter struct{ entries []business.AuditEntry }
+
+func (c *capturingAuditEmitter) Emit(_ context.Context, e business.AuditEntry) {
+	c.entries = append(c.entries, e)
+}
+
+func (c *capturingAuditEmitter) EmitTx(_ context.Context, e business.AuditEntry) error {
+	c.entries = append(c.entries, e)
+	return nil
+}
+
+// A module attributes the work it did on its own to its own principal. The row
+// names that principal as a system actor, and the entry the event concerns is
+// its resource id — a document entry is a ULID, not a UUID, and it must survive.
+func TestModuleEmitAuditEvent_OwnPrincipalIsASystemActor(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	const entry = "01M3C1E527S6Z98WFBN1B8VRG4"
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", modulePrincSvc, "example-solution", entry, "", nil); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if len(spine.entries) != 1 {
+		t.Fatalf("expected one entry, got %d", len(spine.entries))
+	}
+	got := spine.entries[0]
+	if got.ActorID != modulePrincSvc || got.ActorType != business.ActorTypeSystem {
+		t.Fatalf("actor = %q/%q, want the module principal as a system actor", got.ActorID, got.ActorType)
+	}
+	if got.ResourceID != entry {
+		t.Fatalf("resource id = %q, want the entry %q", got.ResourceID, entry)
+	}
+}
+
+// A module that acted for a subject names the subject, recorded as work done
+// through an agent.
+func TestModuleEmitAuditEvent_SubjectIsAnAgentActor(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", nil); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if got := spine.entries[0]; got.ActorID != moduleUserA || got.ActorType != business.ActorTypeAgent {
+		t.Fatalf("actor = %q/%q, want the subject as an agent actor", got.ActorID, got.ActorType)
+	}
+}
+
+// An actor that is not a principal id has no representation on the spine. It
+// used to be accepted and blanked on write — the row said nobody did it and the
+// module was told it had succeeded — so it is refused, before anything is
+// written. The non-canonical spellings uuid.Parse accepts are refused with it:
+// stored as sent they would never match a lookup on the canonical id.
+func TestModuleEmitAuditEvent_ActorMustBeAPrincipalID(t *testing.T) {
+	for name, actor := range map[string]string{
+		"a process label":  "system:ingest",
+		"a free-form name": "actor-1",
+		"uppercase":        "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+		"braced":           "{" + modulePrincSvc + "}",
+		"urn":              "urn:uuid:" + modulePrincSvc,
+		"unhyphenated":     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+			spine := &capturingAuditEmitter{}
+			svc.SetAuditEmitter(spine)
+			err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+				moduleTenantA, "saas.document.ingested", actor, "example-solution", "entry-1", "", nil)
+			requireCode(t, err, codes.InvalidArgument)
+			if len(spine.entries) != 0 {
+				t.Fatalf("a refused actor reached the spine: %+v", spine.entries)
+			}
+		})
 	}
 }
 
@@ -285,7 +365,7 @@ func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 func TestModuleEmitAuditEvent_LegacyTypeRejected(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+		moduleTenantA, "document.ingested", moduleUserA, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -296,7 +376,7 @@ func TestModuleEmitAuditEvent_WriteFailureSurfaces(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	svc.SetAuditEmitter(&fakeAuditEmitter{emitTxErr: errors.New("audit spine unavailable")})
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.Internal)
 }
 
@@ -402,7 +482,7 @@ func TestModuleNackJob_RetryableRetries(t *testing.T) {
 
 func TestModuleEmitAuditEvent_UnregisteredTypeRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
-	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", "", nil)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", moduleUserA, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
