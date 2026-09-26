@@ -16,7 +16,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-type recordingFilesStream struct{ frames []*gen.FetchDatasourceFilesFrame }
+type recordingFilesStream struct {
+	frames []*gen.FetchDatasourceFilesFrame
+}
 
 func (r *recordingFilesStream) Send(frame *gen.FetchDatasourceFilesFrame) error {
 	r.frames = append(r.frames, frame)

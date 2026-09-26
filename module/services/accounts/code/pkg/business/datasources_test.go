@@ -710,6 +710,8 @@ func (r *fakeRepository) Stream(ctx context.Context, ids []string, visit func(st
 	return nil
 }
 
+func (r *fakeRepository) Fetches() int { return r.gh.fetches() }
+
 func (r *fakeRepository) Close() error { return nil }
 
 // recordingAudit captures emitted audit entries so a test can assert an RPC

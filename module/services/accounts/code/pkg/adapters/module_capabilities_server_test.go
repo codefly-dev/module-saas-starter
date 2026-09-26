@@ -209,6 +209,7 @@ func (r *blobStreamRepository) Stream(_ context.Context, ids []string, visit fun
 	}
 	return nil
 }
+func (*blobStreamRepository) Fetches() int { return 0 }
 func (*blobStreamRepository) Close() error { return nil }
 
 func installBlobStreamService(t *testing.T, store business.Store, cipher business.SecretCipher, gh business.GitHubContentClient, registry business.ModulePrincipalRegistry) {

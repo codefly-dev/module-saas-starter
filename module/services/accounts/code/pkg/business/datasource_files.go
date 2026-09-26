@@ -195,6 +195,7 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 		}
 		return status.Error(codes.Internal, w.Wrapf(err, "stream files").Error())
 	}
+	w.Info("served datasource files", wool.Field("source", source.ID), wool.Field("files", len(refs)), wool.Field("bytes", total), wool.Field("git_fetches", repo.Fetches()))
 	return nil
 }
 
