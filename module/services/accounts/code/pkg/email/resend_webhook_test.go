@@ -172,15 +172,17 @@ func TestResendSenderDeliveryWebhook(t *testing.T) {
 	sender, err := NewResendSender(ResendConfig{APIKey: "re_test", WebhookSecret: "whsec_test"})
 	require.NoError(t, err)
 
-	path, handler, err := sender.DeliveryWebhook(&memoryDeliveryRecorder{})
+	handler, err := sender.DeliveryWebhook(&memoryDeliveryRecorder{})
 	require.NoError(t, err)
-	require.Equal(t, ResendWebhookPath, path)
 	require.NotNil(t, handler)
+	// The route the caller registers the handler at. Held here so the constant
+	// cannot drift away from the path auth-gateway routes.
+	require.Equal(t, "/v1/email/webhook/resend", ResendWebhookPath)
 
 	// Without a signing secret the provider cannot build a verifying handler,
 	// so wiring fails closed rather than serving an unverified route.
 	senderNoSecret, err := NewResendSender(ResendConfig{APIKey: "re_test"})
 	require.NoError(t, err)
-	_, _, err = senderNoSecret.DeliveryWebhook(&memoryDeliveryRecorder{})
+	_, err = senderNoSecret.DeliveryWebhook(&memoryDeliveryRecorder{})
 	require.Error(t, err)
 }

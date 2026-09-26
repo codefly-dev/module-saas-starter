@@ -105,6 +105,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
 		}
 		otelMetricProvider = metricProvider
+		// codefly:gateway-route-exempt the OTEL scrape endpoint; the collector reaches it over the mesh and it must never be public
 		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
 	}
 
@@ -191,6 +192,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure module installer policy: %w", err)
 	}
 	if installerHandler != nil {
+		// codefly:gateway-route-exempt the module-facing capability surface; a caller presents a module Work Context and reaches it over the mesh, never the public edge
 		adapters.RegisterHTTPRoute("/v1/module-installations/", installerHandler)
 	}
 
@@ -720,11 +722,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	if resend, ok := emailSender.(*email.ResendSender); ok {
-		path, resendWebhook, err := resend.DeliveryWebhook(jobStore)
+		resendWebhook, err := resend.DeliveryWebhook(jobStore)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute(path, resendWebhook)
+		adapters.RegisterHTTPRoute(email.ResendWebhookPath, resendWebhook)
 	}
 	emailJobHandler, err := email.NewJobHandler(emailSender)
 	if err != nil {

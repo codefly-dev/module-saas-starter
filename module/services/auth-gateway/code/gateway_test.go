@@ -67,8 +67,10 @@ func testRouteEntries() []*RouteEntry {
 		// Resend delivery webhook (public, signed by Svix)
 		{Service: "accounts", Method: "POST", Path: "/v1/email/webhook/resend", Protected: false},
 		// GitHub push/installation webhooks (public, signed with X-Hub-Signature-256)
-		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/webhook/{source_id}", Protected: false},
-		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/app/webhook", Protected: false},
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/webhook/{source_id}", Protected: false, RateLimitClass: edgeRateLimitClassWebhook},
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/app/webhook", Protected: false, RateLimitClass: edgeRateLimitClassWebhook},
+		// Public status surface (GET, no auth)
+		{Service: "accounts", Method: "GET", Path: "/v1/status", Protected: false},
 		// Health checks
 		{Service: "self", Method: "GET", Path: "/health", Protected: false},
 		{Service: "self", Method: "GET", Path: "/healthz", Protected: false},
@@ -183,6 +185,13 @@ func TestGateway_PublicAuthPath_NoToken_Forwarded(t *testing.T) {
 // so the gateway's whole job is to reach them without a bearer and without
 // touching either: a rewritten body or a dropped header is a delivery that can
 // never verify.
+//
+// Exercised in the shape GitHub actually sends — no bearer, no Origin, and no
+// X-Codefly-Internal-Token. The first cut of this test called
+// authenticateFrontendOrigin, which supplies the frontend proxy's internal token:
+// a credential GitHub does not have. That test passes just as well on a gateway
+// that has come to require a trusted origin on these paths, while every real
+// delivery is refused — so it could not catch the one regression it exists for.
 func TestGateway_GitHubWebhooks_ForwardedUnauthenticatedWithSignature(t *testing.T) {
 	for _, path := range []string{
 		"/v1/datasource/github/app/webhook",
@@ -192,7 +201,7 @@ func TestGateway_GitHubWebhooks_ForwardedUnauthenticatedWithSignature(t *testing
 			gw, apiFake, _, _ := newGatewayHarness(t)
 			body := `{"ref":"refs/heads/main","installation":{"id":1}}`
 			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-			authenticateFrontendOrigin(req, "http://localhost:54321")
+			req.Header.Set("User-Agent", "GitHub-Hookshot/044aadd")
 			req.Header.Set("X-Hub-Signature-256", "sha256=00")
 			req.Header.Set("X-GitHub-Delivery", "delivery-1")
 			req.Header.Set("X-GitHub-Event", "push")
@@ -206,8 +215,61 @@ func TestGateway_GitHubWebhooks_ForwardedUnauthenticatedWithSignature(t *testing
 			require.Equal(t, "delivery-1", apiFake.lastHeaders.Get("X-GitHub-Delivery"))
 			require.Equal(t, "push", apiFake.lastHeaders.Get("X-GitHub-Event"))
 			require.Empty(t, apiFake.lastHeaders.Get("x-user-id"))
+			// Nothing about a tokenless delivery may be read as a verified
+			// browser origin: accounts treats that header as proof.
+			require.Empty(t, apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
 		})
 	}
+}
+
+// A webhook route draws on its own per-client-IP budget, not the anonymous one.
+// Both are keyed on the same client IP here, so before RATE_LIMIT_CLASS_WEBHOOK
+// was honoured, exhausting the anonymous budget exhausted the deliveries too:
+// GitHub delivers every tenant's pushes from one small address pool and retries
+// nothing, so an anonymous burst silently cost real deliveries.
+func TestGateway_GitHubWebhook_BudgetIsolatedFromAnonymousTraffic(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+	// effective anonymous budget = limit(1) + burst(max(1/5,1)=1) = 2 per minute.
+	gw.rateLimiter = NewRateLimiter(1)
+
+	// Spend the anonymous per-IP budget on an unrelated public route.
+	spent := false
+	for range 6 {
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/version", nil))
+		if w.Code == http.StatusTooManyRequests {
+			spent = true
+			break
+		}
+	}
+	require.True(t, spent, "anonymous per-IP budget must be exhaustible for this test to mean anything")
+
+	apiFake.lastPath = ""
+	req := httptest.NewRequest(http.MethodPost, "/v1/datasource/github/app/webhook", strings.NewReader(`{}`))
+	req.Header.Set("X-Hub-Signature-256", "sha256=00")
+	req.Header.Set("X-GitHub-Delivery", "delivery-1")
+	req.Header.Set("X-GitHub-Event", "push")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "a delivery must not pay for anonymous traffic on the same IP")
+	require.Equal(t, "/v1/datasource/github/app/webhook", apiFake.lastPath)
+}
+
+// The public status surface reaches accounts without a session. The product's
+// own /status page fetches it from the browser, and it must answer during an
+// outage of the very auth path a session would need — so an unauthenticated GET
+// is forwarded, carrying no injected identity.
+func TestGateway_Status_ForwardedUnauthenticated(t *testing.T) {
+	gw, apiFake, _, _ := newGatewayHarness(t)
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "/v1/status", apiFake.lastPath)
+	require.Empty(t, apiFake.lastHeaders.Get("x-user-id"))
+	require.Empty(t, apiFake.lastHeaders.Get("x-org-id"))
 }
 
 // ============================================================================
@@ -368,6 +430,7 @@ func TestGateway_UnlistedPath_Returns404(t *testing.T) {
 		{"GET", "/v1/email/webhook/resend"}, // POST only
 		{"GET", "/v1/datasource/github/app/webhook"},
 		{"GET", "/v1/datasource/github/webhook/source-1"},
+		{"POST", "/v1/status"},                        // GET only
 		{"POST", "/v1/datasource/github/webhook"},     // no source id
 		{"POST", "/v1/datasource/github/webhook/a/b"}, // one segment only
 		{"POST", "/v1/datasource/github/app/webhook/extra"},

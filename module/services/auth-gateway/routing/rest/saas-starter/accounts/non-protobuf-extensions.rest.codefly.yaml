@@ -25,13 +25,37 @@ routes:
     # bearer: each receiver in accounts verifies X-Hub-Signature-256 over the
     # exact body (a per-source secret here, the App registration's secret on the
     # App path) and answers 401 before recording anything it cannot verify.
+    #
+    # These two routes are what reserve the `/v1/datasource` prefix against
+    # runtime module registration (ReservedV1Prefixes); reservedV1Prefixes in
+    # routing_rest_test.go pins that consequence so the next route to claim a
+    # new prefix has to say so.
+    #
+    # RATE_LIMIT_CLASS_WEBHOOK moves them off the shared anonymous per-IP budget.
+    # GitHub delivers every tenant's pushes from one small address pool and
+    # retries nothing, so sharing a budget with all other unauthenticated
+    # traffic means an anonymous burst silently costs deliveries their latency
+    # and pushes the work onto the reconcile sweep.
     - path: /v1/datasource/github/webhook/{source_id}
       method: POST
       extension:
         exposed: true
         protected: false
+        rate-limit-class: RATE_LIMIT_CLASS_WEBHOOK
     - path: /v1/datasource/github/app/webhook
       method: POST
+      extension:
+        exposed: true
+        protected: false
+        rate-limit-class: RATE_LIMIT_CLASS_WEBHOOK
+    # The public status surface (accounts/pkg/adapters/status_http.go). The
+    # product's own /status page fetches it from the browser through the
+    # frontend proxy, and it is deliberately reachable without a session: an
+    # outage in auth must not hide the outage from the people reading the status
+    # page. It carries no auth for the same reason, and answers 503 when a
+    # component probe is down.
+    - path: /v1/status
+      method: GET
       extension:
         exposed: true
         protected: false
