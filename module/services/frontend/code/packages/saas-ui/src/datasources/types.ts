@@ -19,6 +19,12 @@ export interface DatasourceView {
 	branch: string;
 	/** The scope node the source's Entries land in (issue #473). */
 	boundaryNodeId: string;
+	/**
+	 * That node's display label — the collection's name — which the host lists
+	 * with the source for any member, whether or not they may read the
+	 * collection. Optional so a consumer adapting its own client keeps compiling.
+	 */
+	boundaryLabel?: string | undefined;
 	webhookConfigured: boolean;
 	status: DatasourceStatusName;
 	/**

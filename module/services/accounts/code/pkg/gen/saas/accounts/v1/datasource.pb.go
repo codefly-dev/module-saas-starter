@@ -654,7 +654,14 @@ type Datasource struct {
 	// empty while it is active. Every value is produced by one of a closed set of
 	// named constructors in the host, so it carries no credential material, token,
 	// or signing secret — raw provider error text can never reach this field.
-	StatusReason  string `protobuf:"bytes,17,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	StatusReason string `protobuf:"bytes,17,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	// The display label of boundary_node_id: the collection's name, as the
+	// organization named it. Any member who may list the organization's sources
+	// reads it, whether or not they may read the collection's content: it names
+	// where the source writes, as repo names what it reads. Carried by
+	// ListSources and GetSource; empty in the other responses that return a
+	// Datasource.
+	BoundaryLabel string `protobuf:"bytes,18,opt,name=boundary_label,json=boundaryLabel,proto3" json:"boundary_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -797,6 +804,13 @@ func (x *Datasource) GetLastIngestedCommit() string {
 func (x *Datasource) GetStatusReason() string {
 	if x != nil {
 		return x.StatusReason
+	}
+	return ""
+}
+
+func (x *Datasource) GetBoundaryLabel() string {
+	if x != nil {
+		return x.BoundaryLabel
 	}
 	return ""
 }
@@ -2509,7 +2523,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12\x1f\n" +
 	"\vmax_objects\x18\x06 \x01(\rR\n" +
-	"maxObjects\"\xfa\x06\n" +
+	"maxObjects\"\xa1\a\n" +
 	"\n" +
 	"Datasource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -2530,7 +2544,8 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeId\x12D\n" +
 	"\x10last_ingested_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0elastIngestedAt\x120\n" +
 	"\x14last_ingested_commit\x18\x10 \x01(\tR\x12lastIngestedCommit\x12#\n" +
-	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReasonJ\x04\b\x04\x10\x05R\x11target_collection\"\x9b\x04\n" +
+	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReason\x12%\n" +
+	"\x0eboundary_label\x18\x12 \x01(\tR\rboundaryLabelJ\x04\b\x04\x10\x05R\x11target_collection\"\x9b\x04\n" +
 	"\x16AddGitHubSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12A\n" +
 	"\x04repo\x18\x02 \x01(\tB-\xbaH*r(\x10\x03\x18\xff\x012!^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$R\x04repo\x12'\n" +

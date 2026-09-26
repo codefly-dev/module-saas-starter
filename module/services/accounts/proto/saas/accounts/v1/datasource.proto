@@ -194,6 +194,13 @@ message Datasource {
   // named constructors in the host, so it carries no credential material, token,
   // or signing secret — raw provider error text can never reach this field.
   string status_reason = 17;
+  // The display label of boundary_node_id: the collection's name, as the
+  // organization named it. Any member who may list the organization's sources
+  // reads it, whether or not they may read the collection's content: it names
+  // where the source writes, as repo names what it reads. Carried by
+  // ListSources and GetSource; empty in the other responses that return a
+  // Datasource.
+  string boundary_label = 18;
 }
 
 message AddGitHubSourceRequest {

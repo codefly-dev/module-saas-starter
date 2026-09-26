@@ -609,6 +609,22 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(screen.queryByText("No access")).toBeNull();
 	});
 
+	it("names the collection a viewer cannot read, never its node id", async () => {
+		// The host lists the boundary's label with the source for any member, so a
+		// member without a grant sees which collection a source writes into.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...sampleSource, boundaryLabel: "handbook" },
+			]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("handbook")).toBeTruthy();
+		expect(await screen.findByText("No read access")).toBeTruthy();
+		expect(screen.queryByText("11111111")).toBeNull();
+	});
+
 	it("degrades to the boundary id when the lookup fails", async () => {
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource]),

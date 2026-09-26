@@ -270,17 +270,21 @@ type UploadDatasourceConfig struct {
 // provider), never plaintext. Repo/Paths/Branch are set for the GitHub provider;
 // API/Crawler/Upload is set for the matching generic provider.
 type DatasourceSource struct {
-	ID                  string
-	OrgID               string
-	Provider            string
-	Repo                string
-	Paths               []string
-	FileExtensions      []string
-	Branch              string
-	API                 *APIDatasourceConfig
-	Crawler             *CrawlerDatasourceConfig
-	Upload              *UploadDatasourceConfig
-	BoundaryNodeID      string
+	ID             string
+	OrgID          string
+	Provider       string
+	Repo           string
+	Paths          []string
+	FileExtensions []string
+	Branch         string
+	API            *APIDatasourceConfig
+	Crawler        *CrawlerDatasourceConfig
+	Upload         *UploadDatasourceConfig
+	BoundaryNodeID string
+	// BoundaryLabel is the display label of BoundaryNodeID (the collection's
+	// name). Read only by the org-scoped listing and point read the
+	// DatasourceService serves; empty on every other read.
+	BoundaryLabel       string
 	CredentialSecretRef string
 	WebhookSecretRef    string
 	// GitHubInstallationID is the App installation this source's credential

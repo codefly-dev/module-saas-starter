@@ -904,6 +904,7 @@ function SourcesTable({
 							<TableCell className={cn(cellClass, wrapClass)}>
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
+									label={source.boundaryLabel}
 									permissionsResolved={permissionsResolved}
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
@@ -1012,16 +1013,19 @@ function SourcesTable({
 function BoundaryCell({
 	permissionsResolved,
 	nodeId,
+	label,
 	scope,
 }: {
 	nodeId: string;
+	/** The collection's name as the host lists it with the source. */
+	label?: string;
 	scope: AccessibleScopeView | undefined;
 	permissionsResolved: boolean;
 }) {
 	if (scope) {
 		return (
 			<div className="space-y-0.5">
-				<div>{scope.label || shortBoundaryId(nodeId)}</div>
+				<div>{scope.label || label || shortBoundaryId(nodeId)}</div>
 				<div className="text-xs text-muted-foreground">
 					{formatGrants(scope.actions)}
 					{scope.viaPlatformAdministrator && " (platform administrator)"}
@@ -1031,7 +1035,11 @@ function BoundaryCell({
 	}
 	return (
 		<div>
-			<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			{label ? (
+				<div>{label}</div>
+			) : (
+				<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			)}
 			<p className="text-xs">
 				{permissionsResolved ? "No read access" : "Read permission unresolved"}
 			</p>

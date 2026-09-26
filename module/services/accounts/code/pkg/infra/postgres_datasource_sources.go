@@ -23,17 +23,45 @@ const datasourceSourceColumns = `
 	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at,
 	COALESCE(github_installation_id, '')`
 
+// datasourceBoundaryLabelColumn is the boundary's display label, appended to
+// the shared projection by the org-scoped reads the DatasourceService serves
+// (scanned with scanDatasourceSourceWithLabel). It is not in the shared
+// projection itself: the cross-org worker reads run without an organization
+// scope, where scope_nodes' row security has no organization to admit.
+const datasourceBoundaryLabelColumn = `,
+	COALESCE((SELECT n.label FROM scope_nodes n
+	           WHERE n.org_id = datasource_sources.org_id
+	             AND n.id = datasource_sources.boundary_node_id), '')`
+
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
+	return scanDatasourceSourceInto(row, nil)
+}
+
+func scanDatasourceSourceWithLabel(row pgx.Row) (*business.DatasourceSource, error) {
+	var label string
+	source, err := scanDatasourceSourceInto(row, &label)
+	if err != nil {
+		return nil, err
+	}
+	source.BoundaryLabel = label
+	return source, nil
+}
+
+func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceSource, error) {
 	var d business.DatasourceSource
 	var config []byte
 	var reconcileIntervalSeconds int64
-	if err := row.Scan(
+	dest := []any{
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
 		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
 		&d.Status, &d.StatusReason, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 		&d.LastIngestedCommit, &d.LastIngestedAt, &d.LastDeliveryID,
 		&reconcileIntervalSeconds, &d.NextReconcileAt, &d.GitHubInstallationID,
-	); err != nil {
+	}
+	if label != nil {
+		dest = append(dest, label)
+	}
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
 	d.ReconcileInterval = time.Duration(reconcileIntervalSeconds) * time.Second
@@ -444,7 +472,7 @@ func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context
 // caller's WithOrgTx.
 func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT `+datasourceSourceColumns+`
+		`SELECT `+datasourceSourceColumns+datasourceBoundaryLabelColumn+`
 		   FROM datasource_sources
 		  WHERE org_id = $1
 		  ORDER BY created_at DESC`, orgID)
@@ -454,7 +482,7 @@ func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string)
 	defer rows.Close()
 	var sources []*business.DatasourceSource
 	for rows.Next() {
-		source, err := scanDatasourceSource(rows)
+		source, err := scanDatasourceSourceWithLabel(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -467,9 +495,9 @@ func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string)
 // matches. Runs under the caller's WithOrgTx.
 func (s *PostgresStore) GetDatasourceSource(ctx context.Context, orgID, id string) (*business.DatasourceSource, error) {
 	row := s.getQueryExecutor(ctx).QueryRow(ctx,
-		`SELECT `+datasourceSourceColumns+`
+		`SELECT `+datasourceSourceColumns+datasourceBoundaryLabelColumn+`
 		   FROM datasource_sources WHERE org_id = $1 AND id = $2`, orgID, id)
-	source, err := scanDatasourceSource(row)
+	source, err := scanDatasourceSourceWithLabel(row)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

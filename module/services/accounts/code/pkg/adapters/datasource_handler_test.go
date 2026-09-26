@@ -162,6 +162,23 @@ func TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason(t *testing.T) {
 	}
 }
 
+func TestDatasourceSourceToProto_ProjectsBoundaryLabel(t *testing.T) {
+	out := datasourceSourceToProto(&business.DatasourceSource{
+		ID:             "11111111-1111-1111-1111-111111111111",
+		OrgID:          "22222222-2222-2222-2222-222222222222",
+		Provider:       business.DatasourceProviderGitHub,
+		Status:         business.DatasourceStatusActive,
+		BoundaryNodeID: "33333333-3333-3333-3333-333333333333",
+		BoundaryLabel:  "guides",
+	})
+	if got := out.GetBoundaryNodeId(); got != "33333333-3333-3333-3333-333333333333" {
+		t.Errorf("boundary_node_id = %q", got)
+	}
+	if got := out.GetBoundaryLabel(); got != "guides" {
+		t.Errorf("boundary_label = %q, want %q", got, "guides")
+	}
+}
+
 // TestDatasourceStatusToProto_MapsEveryStoredStatus pins the whole switch rather
 // than the one arm this change added. A stored status that loses its case falls
 // through to UNSPECIFIED, which on the wire is indistinguishable from "unknown"
