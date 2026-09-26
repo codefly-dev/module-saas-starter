@@ -7,6 +7,12 @@
       "name": "accounts",
       "endpoints": [
         {
+          "name": "authority",
+          "api": "CODEFLY_API_GRPC",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 9091
+        },
+        {
           "name": "connect",
           "api": "CODEFLY_API_CONNECT",
           "visibility": "ENDPOINT_VISIBILITY_MODULE",
@@ -174,6 +180,11 @@
     }
   ],
   "interface_endpoints": [
+    {
+      "service": "accounts",
+      "endpoint": "authority",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
     {
       "service": "accounts",
       "endpoint": "connect",

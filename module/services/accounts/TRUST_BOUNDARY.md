@@ -37,9 +37,9 @@ gate only. `requireInternalCredential` remains the app-layer *identity* gate
 
 The mixed private listener is an in-module implementation detail, not a product
 integration endpoint. It is intentionally absent from the module interface.
-Cross-module installed product services must wait for the generated named
-internal gRPC endpoint in `P1-NET-007`; the public auth-gateway never exposes
-internal methods such as `ConsumeUsage`. The outward-facing half of this
+Cross-module installed product services depend on the named `authority`
+endpoint instead (`P1-NET-007`), which serves only the module surface; the
+public auth-gateway never exposes internal methods such as `ConsumeUsage`. The outward-facing half of this
 listener — what a composed module's client must resolve and must not require —
 is [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).
 

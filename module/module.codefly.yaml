@@ -5,6 +5,9 @@ service-entry: frontend
 interface:
     endpoints:
         - service: accounts
+          endpoint: authority
+          visibility: module
+        - service: accounts
           endpoint: connect
           visibility: module
         - service: auth-gateway

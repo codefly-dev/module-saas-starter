@@ -1,0 +1,585 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/events/v1/operations.proto";
+import "saas/jobs/v1/jobs.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Admin Service (requires admin role)
+// ============================================================================
+
+message SearchUsersRequest {
+  string query = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+}
+
+message SearchUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message SuspendUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2;
+}
+
+message UnsuspendUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ImpersonateUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  // Why the operator is stepping into this account. Recorded on
+  // saas.platform.user_impersonated, which otherwise names only who and whom.
+  // The floor is a length rather than mere presence because a justification
+  // that accepts "." records nothing a reader can act on. The rule below
+  // measures the string as sent; the service applies the same floor to the
+  // value with surrounding whitespace removed, so padding does not satisfy it.
+  string reason = 2 [(buf.validate.field).string = {
+    min_len: 10
+    max_len: 500
+  }];
+}
+
+message ImpersonateUserResponse {
+  string access_token = 1;
+  int64 expires_in = 2;
+}
+
+// StopImpersonation ends the caller's own impersonation session. It carries no
+// target: the session to end is derived from the verified identity, so there is
+// no input by which one operator could end another's window.
+message StopImpersonationRequest {}
+
+message StopImpersonationResponse {
+  // Seconds the impersonation window was open. 0 when it was already closed.
+  int64 duration_seconds = 1;
+  // Whether the window's outstanding access token was actually invalidated.
+  // False means the window is closed durably but its token keeps working until
+  // it expires on its own, which happens when no revocation store is wired or
+  // the marker could not be written — a caller that reports "stopped" without
+  // saying so would overstate what the stop achieved.
+  bool access_token_revoked = 2;
+  // Whether the window had already been closed before this call, so a retry or
+  // a second tab reports the outcome without recording a second end of the same
+  // window.
+  bool already_closed = 3;
+}
+
+message ListActiveSessionsRequest {
+  string user_id = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+}
+
+message SessionInfo {
+  // Stable refresh-family identifier for one device login. Unlike the JWT sid,
+  // it does not change when the refresh token rotates.
+  string id = 1;
+  string user_id = 2;
+  string ip_address = 3;
+  map<string, string> device_info = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp last_active_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  google.protobuf.Timestamp idle_expires_at = 8;
+  // Set only on an impersonation window, naming the user being viewed. An
+  // ordinary login leaves it empty, so a client can tell the two apart rather
+  // than presenting an admin's support session as a device they signed in on.
+  string acting_as_user_id = 9;
+}
+
+message ListActiveSessionsResponse {
+  repeated SessionInfo sessions = 1;
+  string next_page_token = 2;
+}
+
+message RevokeSessionRequest {
+  // SessionInfo.id: the stable device refresh-family identifier.
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2;
+}
+
+message GetOrgEntitlementsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetOrgEntitlementsResponse {
+  string plan_name = 1;
+  repeated EntitlementInfo entitlements = 2;
+}
+
+message EntitlementInfo {
+  string feature = 1;
+  int64 limit = 2; // -1 = unlimited, 0 = disabled
+  int64 used = 3;
+  bool has_override = 4;
+}
+
+message OverrideEntitlementRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string feature = 2 [(buf.validate.field).string.min_len = 1];
+  int64 limit_value = 3;
+  string reason = 4;
+}
+
+message OverrideEntitlementResponse {
+  string id = 1;
+}
+
+// ── Platform admin management messages ──────────────────────────
+
+message GrantPlatformRoleRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  string platform_role = 2 [(buf.validate.field).string = {
+    in: [
+      "super_admin",
+      "support",
+      "billing"
+    ]
+  }];
+}
+
+message RevokePlatformRoleRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListPlatformAdminsRequest {}
+
+message PlatformAdminEntry {
+  string user_id = 1;
+  string platform_role = 2;
+  string granted_by = 3;
+  google.protobuf.Timestamp granted_at = 4;
+}
+
+message ListPlatformAdminsResponse {
+  repeated PlatformAdminEntry admins = 1;
+}
+
+// ── Feature flag messages ───────────────────────────────────────
+
+message ListFeatureFlagsRequest {}
+
+message FeatureFlagEntry {
+  string name = 1;
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+message ListFeatureFlagsResponse {
+  repeated FeatureFlagEntry flags = 1;
+}
+
+// Deprecated: the database-backed flag inventory is read-only while consumers
+// migrate to the provider-neutral feature-flags@1 capability.
+message UpsertFeatureFlagRequest {
+  option deprecated = true;
+
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  bool enabled = 3;
+  int32 rollout_percent = 4;
+  repeated string target_org_ids = 5;
+}
+
+// Deprecated: UpsertFeatureFlag always fails closed and returns no response.
+message UpsertFeatureFlagResponse {
+  option deprecated = true;
+
+  string name = 1;
+}
+
+// PlatformAdminService — cross-tenant operations for platform operators.
+// All RPCs require a platform_role in the JWT claims.
+service PlatformAdminService {
+  // User management (cross-tenant)
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {get: "/v1/platform/users"};
+  }
+  rpc SuspendUser(SuspendUserRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.user.suspended"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/users/{user_id}:suspend"
+      body: "*"
+    };
+  }
+  rpc UnsuspendUser(UnsuspendUserRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.user.unsuspended"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/users/{user_id}:unsuspend"
+      body: "*"
+    };
+  }
+  rpc ImpersonateUser(ImpersonateUserRequest) returns (ImpersonateUserResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "saas.platform.user_impersonated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/users/{user_id}:impersonate"
+      body: "*"
+    };
+  }
+  // StopImpersonation closes the caller's own impersonation window: it revokes
+  // the session's access tokens and records the end of the window.
+  //
+  // platform_role is deliberately NONE. Platform authority is withheld from an
+  // impersonated request by design, so a support-role gate would make this the
+  // one operation an impersonated session can never reach — and ending the
+  // session is precisely what it must be able to do. Being impersonated is
+  // itself the authorization, checked in the handler.
+  rpc StopImpersonation(StopImpersonationRequest) returns (StopImpersonationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.platform.user_impersonation_ended"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/impersonation:stop"
+      body: "*"
+    };
+  }
+
+  // Session visibility
+  rpc ListActiveSessions(ListActiveSessionsRequest) returns (ListActiveSessionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {get: "/v1/platform/sessions"};
+  }
+
+  rpc RevokeSession(RevokeSessionRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.session.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+    option (google.api.http) = {delete: "/v1/platform/sessions/{session_id}"};
+  }
+
+  // Entitlements & billing
+  rpc GetOrgEntitlements(GetOrgEntitlementsRequest) returns (GetOrgEntitlementsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/platform/organizations/{org_id}/entitlements"};
+  }
+  rpc OverrideEntitlement(OverrideEntitlementRequest) returns (OverrideEntitlementResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.entitlement.override"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_ANY
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/organizations/{org_id}/entitlements"
+      body: "*"
+    };
+  }
+
+  // Platform admin management (super_admin only)
+  rpc GrantPlatformRole(GrantPlatformRoleRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "saas.platform.role_granted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/admins"
+      body: "*"
+    };
+  }
+  rpc RevokePlatformRole(RevokePlatformRoleRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "saas.platform.role_revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {delete: "/v1/platform/admins/{user_id}"};
+  }
+  rpc ListPlatformAdmins(ListPlatformAdminsRequest) returns (ListPlatformAdminsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/admins"};
+  }
+
+  // Legacy feature-flag migration inventory (platform-only, read-only)
+  rpc ListFeatureFlags(ListFeatureFlagsRequest) returns (ListFeatureFlagsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/feature-flags"};
+  }
+  // Deprecated: retained for v1 wire compatibility. The legacy inventory is
+  // read-only; this method always returns FAILED_PRECONDITION.
+  rpc UpsertFeatureFlag(UpsertFeatureFlagRequest) returns (UpsertFeatureFlagResponse) {
+    option deprecated = true;
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.feature_flag.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      put: "/v1/platform/feature-flags/{name}"
+      body: "*"
+    };
+  }
+  // Product-neutral durable job operations. Payload bytes never leave the
+  // worker database boundary through these methods.
+  rpc GetJobOperations(saas.jobs.v1.GetJobOperationsRequest) returns (saas.jobs.v1.GetJobOperationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/jobs/operations"};
+  }
+  rpc ListJobs(saas.jobs.v1.ListJobsRequest) returns (saas.jobs.v1.ListJobsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/jobs"};
+  }
+  rpc GetJob(saas.jobs.v1.GetJobRequest) returns (saas.jobs.v1.GetJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/jobs/{job_id}"};
+  }
+  rpc ReplayJob(saas.jobs.v1.ReplayJobRequest) returns (saas.jobs.v1.ReplayJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_RECENT_STEP_UP
+      audit: {
+        events: "saas.job.replayed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/jobs/{source_job_id}:replay"
+      body: "*"
+    };
+  }
+  // Domain-event platform operations (#494 P3). Payload bytes never leave the
+  // durable event boundary through these methods — only counts, timings, and
+  // control-plane subscription metadata do.
+  rpc GetEventOperations(saas.events.v1.GetEventOperationsRequest) returns (saas.events.v1.GetEventOperationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/events/operations"};
+  }
+  rpc ListEventSubscriptions(saas.events.v1.ListEventSubscriptionsRequest) returns (saas.events.v1.ListEventSubscriptionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/events/subscriptions"};
+  }
+}
