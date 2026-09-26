@@ -21,6 +21,20 @@ routes:
       extension:
         exposed: true
         protected: false
+    # GitHub deliveries. Unprotected at the gateway because GitHub carries no
+    # bearer: each receiver in accounts verifies X-Hub-Signature-256 over the
+    # exact body (a per-source secret here, the App registration's secret on the
+    # App path) and answers 401 before recording anything it cannot verify.
+    - path: /v1/datasource/github/webhook/{source_id}
+      method: POST
+      extension:
+        exposed: true
+        protected: false
+    - path: /v1/datasource/github/app/webhook
+      method: POST
+      extension:
+        exposed: true
+        protected: false
     - path: /v1/billing/checkout
       method: POST
       extension:

@@ -32,6 +32,10 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
   reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
   shown above live provenance. Loading/error/empty are first-class.
+  `renderSourceDetail={(source) => …}` renders beneath each repository name: the
+  slot through which a consumer shows what the module that ingests a source's
+  files knows about them (its per-source ingestion progress, say). The host
+  names no such module.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
