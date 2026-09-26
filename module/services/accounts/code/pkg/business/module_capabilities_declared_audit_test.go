@@ -80,8 +80,11 @@ func TestModuleEmitAuditEvent_OwnDeclaredTypeAccepted(t *testing.T) {
 	svc, emitter := newDeclaredEmitService(t, "acme")
 	// The declared field set does not name `solution`; the host stamps it, and a
 	// client-supplied value is overwritten rather than trusted.
+	// The module acts on its own and names its own principal as the actor: the
+	// form both the verbatim actor and a resolved one (a module's own
+	// principal, or system:<process> mapped to it) record identically.
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
-		declaredItemCreated, moduleUserA, "example-solution", "entry-1", "",
+		declaredItemCreated, modulePrincSvc, "example-solution", "entry-1", "",
 		declaredFields(t, map[string]any{"count": 3, "score": 0.75, "stage": "final", "solution": "someone-else"}))
 	if err != nil {
 		t.Fatalf("own declared type: %v", err)
@@ -96,17 +99,35 @@ func TestModuleEmitAuditEvent_OwnDeclaredTypeAccepted(t *testing.T) {
 	if entry.Payload["solution"] != "example-solution" {
 		t.Fatalf("payload solution = %v, want the stamped scope", entry.Payload["solution"])
 	}
-	// No verified person reaches this path, so the emitter-supplied actor id is
-	// recorded as the agent it arrived through — never relabelled as a user.
-	if entry.ActorType != business.ActorTypeAgent || entry.ActorID != moduleUserA {
-		t.Fatalf("attribution = %s/%s, want agent/%s", entry.ActorType, entry.ActorID, moduleUserA)
+	// A declared type is attributed exactly as a catalog type is; the actor
+	// type is the module surface's rule, not this type's, so only the principal
+	// is pinned here.
+	if entry.ActorID != modulePrincSvc {
+		t.Fatalf("actor = %s, want the module's own principal %s", entry.ActorID, modulePrincSvc)
+	}
+	if entry.ActorType == business.ActorTypeUser {
+		t.Fatal("no verified person reaches this path; the row must never claim a user")
+	}
+}
+
+// A process label of the module's own is accepted for a declared type just as
+// for a catalog one.
+func TestModuleEmitAuditEvent_OwnDeclaredTypeAcceptsAProcessLabel(t *testing.T) {
+	svc, emitter := newDeclaredEmitService(t, "acme")
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		declaredItemCreated, "system:ingest", "example-solution", "entry-1", "",
+		declaredFields(t, map[string]any{"count": 1})); err != nil {
+		t.Fatalf("process-label actor: %v", err)
+	}
+	if len(emitter.entries) != 1 {
+		t.Fatalf("wrote %d entries, want 1", len(emitter.entries))
 	}
 }
 
 func TestModuleEmitAuditEvent_AnotherSolutionsDeclaredTypeRejected(t *testing.T) {
 	svc, emitter := newDeclaredEmitService(t, "acme")
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
-		declaredItemCreated, "actor-1", "other-solution", "entry-1", "", nil)
+		declaredItemCreated, modulePrincSvc, "other-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.PermissionDenied)
 	if len(emitter.entries) != 0 {
 		t.Fatal("a refused emission must write nothing")
@@ -116,14 +137,14 @@ func TestModuleEmitAuditEvent_AnotherSolutionsDeclaredTypeRejected(t *testing.T)
 func TestModuleEmitAuditEvent_DeclaredTypeNeedsNamespaceGrant(t *testing.T) {
 	svc, _ := newDeclaredEmitService(t /* no namespaces */)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
-		declaredItemCreated, "actor-1", "example-solution", "entry-1", "", nil)
+		declaredItemCreated, modulePrincSvc, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.PermissionDenied)
 }
 
 func TestModuleEmitAuditEvent_UndeclaredTypeRejected(t *testing.T) {
 	svc, _ := newDeclaredEmitService(t, "acme")
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
-		"acme.item.deleted", "actor-1", "example-solution", "entry-1", "", nil)
+		"acme.item.deleted", modulePrincSvc, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -146,7 +167,7 @@ func TestModuleEmitAuditEvent_DeclaredPayloadTyped(t *testing.T) {
 			t.Fatalf("%s: fields: %v", name, err)
 		}
 		err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
-			declaredItemCreated, "actor-1", "example-solution", "entry-1", "", value)
+			declaredItemCreated, modulePrincSvc, "example-solution", "entry-1", "", value)
 		requireCode(t, err, codes.InvalidArgument)
 	}
 	if len(emitter.entries) != 0 {
