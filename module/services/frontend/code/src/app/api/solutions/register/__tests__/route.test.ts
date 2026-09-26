@@ -239,6 +239,59 @@ describe("solutions register route auth", () => {
 		});
 	});
 
+	it("logs a heartbeat's state changes, never each beat", async () => {
+		// A registrant beats every few seconds for as long as it runs. The route
+		// says when the registration starts, is refused, and recovers — the beats
+		// in between are counted, not printed.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		(globalThis as Record<string, unknown>).__solutionRegistrationLog =
+			undefined;
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const renewing = vi.fn(async (input: string | URL) => {
+			if (
+				new URL(String(input)).pathname === "/v1/auth/.well-known/jwks.json"
+			) {
+				return new Response(JWKS, { status: 200 });
+			}
+			// A renewal keeps the record's revision, as the durable registry does.
+			return Response.json({
+				ok: true,
+				id: "audit",
+				revision: 4,
+				status: "active",
+			});
+		});
+		vi.stubGlobal("fetch", renewing);
+		for (let beat = 0; beat < 20; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+		}
+		expect(info).toHaveBeenCalledTimes(1);
+		expect(String(info.mock.calls[0]?.[0])).toContain(
+			'"audit" registered (revision 4, active)',
+		);
+
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("down", { status: 503 })),
+		);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		for (let beat = 0; beat < 5; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+		}
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(String(warn.mock.calls[0]?.[0])).toContain(
+			'"audit" refused 503 registry unavailable — was registered at revision 4 after 20 beats',
+		);
+
+		vi.stubGlobal("fetch", renewing);
+		await POST(postRequest(manifestBody(), TOKEN));
+		expect(info).toHaveBeenCalledTimes(2);
+		expect(String(info.mock.calls[1]?.[0])).toContain(
+			"recovered from 503 registry unavailable after 5 beats",
+		);
+	});
+
 	it("answers 503, not a refusal, when the key set it verifies against is unreachable", async () => {
 		// A restarting gateway is not a wrong credential. Told 401, a registrant
 		// goes looking for a provisioning or ownership fault that does not exist.
