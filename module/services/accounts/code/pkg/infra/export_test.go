@@ -8,3 +8,11 @@ const IdentityScopeProbe = identityScopeProbe
 
 // ControlPlaneDatabaseRole is the role withControlPlaneTx assumes.
 const ControlPlaneDatabaseRole = controlPlaneDatabaseRole
+
+// UseMemberPermissions replaces the generated catalog's member grant for one
+// test, so the SQL branch is exercised without a composed catalog.
+func UseMemberPermissions(held func(resource, action string) bool) (restore func()) {
+	previous := isMemberPermission
+	isMemberPermission = held
+	return func() { isMemberPermission = previous }
+}

@@ -17,7 +17,11 @@
         "properties": {
           "name": {"type": "string", "pattern": "^[a-z][a-z0-9._-]*:[a-z][a-z0-9._-]*$"},
           "resource": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
-          "action": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"}
+          "action": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
+          "members": {
+            "type": "boolean",
+            "description": "When true, every current member of an organization holds this permission in that organization without a role assignment. Only a person holds it this way: a delegated agent actor still needs its own grant. Organization owners and admins already hold every permission. Omit it for anything an ordinary member must not do."
+          }
         }
       }
     }

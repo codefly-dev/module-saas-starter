@@ -5,10 +5,12 @@ type Permission struct {
 	Name     string
 	Resource string
 	Action   string
+	// Members is true when every organization member holds it.
+	Members bool
 }
 
 var permissions = [...]Permission{
-	{Name: "reference.console:read", Resource: "reference.console", Action: "read"},
+	{Name: "reference.console:read", Resource: "reference.console", Action: "read", Members: false},
 }
 
 func Permissions() []Permission {

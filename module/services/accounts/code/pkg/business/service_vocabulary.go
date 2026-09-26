@@ -74,13 +74,43 @@ func composedPermissionVocabulary(
 			return nil, fmt.Errorf("contributed permission %q collides with the service vocabulary", permission.Name)
 		}
 		seen[permission.Name] = struct{}{}
-		out = append(out, servicePermissionDefinition{
+		definition := servicePermissionDefinition{
 			Permission:  permission.Name,
 			Description: "Contributed permission " + permission.Name + ".",
-		})
+		}
+		if permission.Members {
+			definition.BuiltInRoles = []string{"admin (via membership)", "member (via membership)"}
+		}
+		out = append(out, definition)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Permission < out[j].Permission })
 	return out, nil
+}
+
+// memberPermissions indexes the contributed permissions every current member
+// of an organization holds as a person (a contribution's `members: true`),
+// keyed "resource:action". It is fixed at build time: the composed catalog is
+// generated code, so changing it is a deploy, and a Work Context minted under
+// a default that a later build drops fails its next revision recheck.
+var memberPermissions = memberPermissionIndex(permissioncatalog.Permissions())
+
+func memberPermissionIndex(contributed []permissioncatalog.Permission) map[string]struct{} {
+	index := make(map[string]struct{})
+	for _, permission := range contributed {
+		if permission.Members {
+			index[permission.Resource+":"+permission.Action] = struct{}{}
+		}
+	}
+	return index
+}
+
+// IsMemberPermission reports whether every current member of an organization
+// holds resource:action there without a role assignment. Only an exact
+// contributed pair qualifies: no wildcard, and nothing in the service's own
+// vocabulary, is ever granted this way.
+func IsMemberPermission(resource, action string) bool {
+	_, ok := memberPermissions[resource+":"+action]
+	return ok
 }
 
 func completeServicePermissionVocabulary() []servicePermissionDefinition {

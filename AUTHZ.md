@@ -893,7 +893,19 @@ A consuming solution does not hand-write the catalog. It ships a
    (#415/#416) — this bridge lands the grants, it does not itself transform
    them. Finer-grained roles remain an org's own custom roles, which the
    importer never touches.
-3. Both generated files are **base**. A consumer cannot hand-edit them: a
+3. A permission may declare `members: true`: every current member of an
+   organization then holds it there, as a person, without a role assignment.
+   It is how a contribution gives ordinary members a least-privilege read (a
+   person's own records, say) while an org-wide read stays with the owners
+   and admins, who already hold every permission through their membership.
+   The grant is evaluated only in the Work Context authority check
+   (`workContextPermissionAllowed`), for the mint and the revision recheck
+   alike, and it follows the same membership rule as the owner/admin branch
+   beside it: it never reaches a delegated agent actor, which still needs its
+   own grant, and like a NULL-scope assignment it is organization-wide. It is
+   fixed at build time from the generated catalog, never read from a request.
+   The `<namespace>:catalog` role is unchanged by it.
+4. Both generated files are **base**. A consumer cannot hand-edit them: a
    permission or role reaches a deployment only through contribution →
    regeneration, and editing the generated file without regenerating fails the
    clean-diff regeneration gate.
