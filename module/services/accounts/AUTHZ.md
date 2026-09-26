@@ -149,19 +149,54 @@ least one node. Without this a member granted read on one collection could see
 "Read" on it and still be refused every read, because the mint demanded an
 organization-wide role no collection grant confers.
 
+Every basis is bound to a real node, because the standing admitted here has to
+be standing those oracles would honour. A grant gets that bound from
+`GrantScope`, which refuses a `scope_path` that is not a registered node. A
+share does not — `ShareRecord` writes `resource_id` verbatim, so a share may
+name a record that was never placed — so the share arm joins `scope_nodes` on
+the same `(resource_type, resource_id)` correspondence the share branches of
+`accessibleScopesQuery` and `ListReadableSourcesPage` already apply. A share
+naming nothing authorizes no read, and must therefore confer no standing to
+ask for one.
+
 It is narrow on every other axis (`workContextPermissionAllowed`, flagged by
 the adapters' `markContentReads`):
 
-- **Declared content only** — a resource type some composed module declares
-  under `resources`; the union, because a revision recheck names no audience
-  and mint and recheck must resolve one rule. A host with no declared content
-  widens nothing.
+- **Declared content only**, and at the mint that means the content declared by
+  **the audience this capability is being minted for** — not the composition's
+  union. That audience is the one module that will ever present the capability
+  back, and both module-facing reads already refuse a scope outside its own
+  declaration, so the union would seal scopes no consumer can use and let one
+  module's declaration decide what another module's capability may carry. A
+  host with no declared content widens nothing.
+- **A recheck consults no declaration at all** and admits every unscoped read.
+  It is the superset of every mint on purpose: a recheck issues nothing, so it
+  can admit nothing a mint did not already seal, while a recheck *narrower*
+  than the mint that issued a capability reports a live capability as revoked.
+  That is not hypothetical — the declaration is `MODULE_PRINCIPALS`, read once
+  at process start, so two hosts in one fleet disagree about it for the length
+  of any rollout that changes it. Keeping process-start configuration out of
+  the staleness verdict is what makes a rollout not read as a revocation storm.
 - **`read` only, unscoped only.** Any other action, and any resource-scoped
   ask, still needs a role assignment exactly as before.
 - **The owner only.** A delegated actor's authority is never widened through
   a node grant.
-- **Live.** Revoking or expiring the last grant withdraws it on the next mint
-  and on every recheck of an outstanding capability.
+- **Never a host permission.** `roles` and `audit` are reserved
+  (`IsHostSealedScopeResource`): the host reads those off a sealed capability
+  to decide how much collection metadata to disclose, rather than authorizing
+  them per node, so the per-node justification above does not cover them. A
+  composition declaring one as module content fails to parse, and so fails to
+  boot.
+- **Live — by re-resolution, not by a revision bump.** Revoking or expiring the
+  last grant withdraws the standing on the next mint and on every recheck,
+  because the branch requires a live grant, share or platform role each time it
+  is asked. It does **not** move the authorization revision: unlike
+  `role_assignments`, `scope_grants` and `record_shares` carry only
+  `bump_source_read_revision`, so the sealed `authorization_revision` a
+  capability carries is unchanged by a grant being revoked. A consumer that
+  re-checks by comparing that revision alone will not see the revocation;
+  `CheckAuthorizationRevision` catches it because it re-resolves every
+  permission before it compares revisions at all.
 
 ## Deferred
 

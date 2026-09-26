@@ -588,6 +588,27 @@ func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 	}
 }
 
+// A module's own content types are untouched by the reservation above: only the
+// two the host reads out of a sealed capability are refused.
+func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing.T) {
+	registry, err := business.ParseModulePrincipalRegistry(
+		`{"documents":{"resources":["documents.files","rolesets"],"tenant":"` + moduleTenantA + `"}}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	grant := registry[business.ModulePrincipalID("documents")]
+	if len(grant.Resources) != 2 {
+		t.Fatalf("resources = %v, want both declarations kept", grant.Resources)
+	}
+	if business.IsHostSealedScopeResource("rolesets") || business.IsHostSealedScopeResource("documents.files") {
+		t.Fatal("the reservation must match the exact host resource type, not a prefix of it")
+	}
+	if !business.IsHostSealedScopeResource(business.HostScopeRoles) ||
+		!business.IsHostSealedScopeResource(business.HostScopeAudit) {
+		t.Fatal("both host sealed-scope resources must be reserved")
+	}
+}
+
 func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
 	tests := map[string]string{
 		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
@@ -600,6 +621,16 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 		// registry used to be would otherwise parse into a principal no module can
 		// ever be, denying every call for a reason that names the caller.
 		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+		// `roles` and `audit` are read off a sealed capability by the host itself
+		// (the collection-metadata disclosure) rather than authorized per node, so
+		// the content-read branch's "every read is re-authorized per node"
+		// justification does not cover them. Declaring one as module content would
+		// let a single collection grant mint an unscoped `roles:read` and disclose
+		// who holds a grant on every readable collection, which only an
+		// organization-wide assignment could reach before. The registry is operator
+		// text this host cannot otherwise check, so it is refused at parse time.
+		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"tenant":"` + moduleTenantA + `"}}`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
