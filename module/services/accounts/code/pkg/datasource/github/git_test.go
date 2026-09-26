@@ -40,7 +40,7 @@ func TestDefaultBranchAndResolveCommitOverGit(t *testing.T) {
 	if _, err := c.ResolveCommit(context.Background(), "acme/docs", "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing branch err = %v, want ErrNotFound", err)
 	}
-	if rest, _ := c.Usage(); rest != 0 || gh.restCalls.Load() != 0 {
+	if gh.restCalls.Load() != 0 {
 		t.Fatalf("resolving a branch spent %d REST calls, want 0", gh.restCalls.Load())
 	}
 }

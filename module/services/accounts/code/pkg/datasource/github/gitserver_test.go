@@ -8,20 +8,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 )
 
-func strconvItoa(v int64) string { return strconv.FormatInt(v, 10) }
-
 // fakeGitHub is a local stand-in for github.com: git's own http-backend serves
-// the smart-HTTP transport for repositories under root, and a small REST handler
-// answers the repository visibility read. It counts every request by kind, so a
-// test can hold a sync to a number of calls, and can be told to refuse git with
-// a status or to require a credential.
+// the smart-HTTP transport for repositories under root, and a REST handler
+// counts any REST read — a sync should make none. It counts every request by
+// kind, so a test can hold a sync to a number of calls, and can be told to
+// refuse git with a status or to require a credential.
 type fakeGitHub struct {
 	t      *testing.T
 	root   string
@@ -145,15 +142,15 @@ func (f *fakeGitHub) repo(name string) func(files map[string]*string) string {
 	}
 }
 
-// resetTo force-moves main to an older commit of the working copy.
+// forcePush force-moves main to an older commit of the working copy.
 func (f *fakeGitHub) forcePush(name, commit string) {
 	work := filepath.Join(f.work, name)
 	f.gitCmd(work, "reset", "--quiet", "--hard", commit)
 	f.gitCmd(work, "push", "--quiet", "--force", "origin", "HEAD:main")
 }
 
-// branchFrom commits content on a fresh branch off base, pushes it as main, and
-// returns its head — a history that diverges from whatever main held.
+// divergeFrom commits content on top of base, pushes it as main, and returns its
+// head — a history that diverges from whatever main held.
 func (f *fakeGitHub) divergeFrom(name, base string, files map[string]*string, commit func(map[string]*string) string) string {
 	work := filepath.Join(f.work, name)
 	f.gitCmd(work, "reset", "--quiet", "--hard", base)
