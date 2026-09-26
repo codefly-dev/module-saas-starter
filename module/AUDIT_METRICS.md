@@ -144,11 +144,39 @@ substitute these read events or source dispatch for them. A complete aggregation
 cannot prove that an emitter has reported every operation.
 
 `saas.document.dead_letter_redriven` records an operator re-queuing a
-document's dead-lettered derivation, one event per re-queued producer run, with
-the entry as entry_id. Beyond document provenance it requires `producer` (the
-stage that had given up) and `error_class` (`permanent`: the input was called
-unreadable; `exhausted`: the retry budget was spent). The failure text itself is
-never on the spine. A dry run, and a run the redrive left alone, record nothing.
+document's dead-lettered derivation, one event per re-queued producer run. The
+entry is entry_id and the emission is refused without one. In addition to
+document provenance it requires:
+
+| Field | Meaning |
+| --- | --- |
+| `version` | The document version the re-queued run derives from |
+| `correlation_id` | The operator's whole redrive, repeated on every entry it re-queued |
+| `producer` | The stage that had given up, at most 128 bytes |
+| `error_class` | `permanent`, `exhausted`, `cancelled`, or `unknown` |
+
+`permanent` means a stage called the input unreadable and `exhausted` that the
+retry budget was spent. `cancelled` is a run abandoned with no verdict — dropped
+in flight, or dead-lettered by hand — and `unknown` a dead letter that carries no
+classification. Record what the dead letter says; a run that fits neither of the
+first two is `cancelled` or `unknown`, never filed as unreadable input. All four
+are required nonempty: a blank is refused, not stored as an unnamed stage.
+
+The failure text itself is never on the spine. Unknown payload fields are
+rejected and `producer` is bounded, so there is no field to put it in.
+
+The emission idempotency key is required and is correlation ID, entry and
+producer. Keyed on the operation rather than on the entry alone, a transport
+retry of one re-queue collapses to a single row while a genuinely second redrive
+of the same entry still records. An empty key deduplicates nothing, so the
+emission is refused rather than double-counting a replayed response; the host
+cannot supply the key itself, because only the emitter knows whether two emits
+are one operation retried or two real operations.
+Count distinct `correlation_id` for operator redrive operations and rows for
+re-queued runs; a redrive interrupted part-way leaves the rows it completed, so
+the two counts disagreeing means an incomplete operation, not a small one.
+
+A dry run, and a run the redrive left alone, record nothing.
 
 ## Version acknowledgement
 
