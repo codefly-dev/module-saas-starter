@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"sort"
 	"strings"
 	"time"
 
+	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/github"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
@@ -73,10 +75,6 @@ const (
 	changeTypeRemoved  = "removed"
 	changeTypeRenamed  = "renamed"
 
-	// zeroSHA is GitHub's "no commit" sentinel: a branch-creation push has it as
-	// `before`, so there is no incremental base and the delivery snapshots.
-	zeroSHA = "0000000000000000000000000000000000000000"
-
 	datasourceDeliveryMaxAttempts = 24
 	datasourceReconcileBatchSize  = 100
 )
@@ -118,6 +116,8 @@ type changeOp struct {
 	prevPath   string
 	blobSHA    string
 	changeType string
+	// size is the blob's exact length as the connector listed it.
+	size int64
 }
 
 // changeSetFile is the v2 per-file ingest payload. Content is base64-encoded by
@@ -278,12 +278,17 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 	}
 }
 
-// CompileGitHubDelivery turns one raw push delivery into a change set. It applies
-// the branch filter, drops stale/redelivered/out-of-order deliveries against the
-// cursor, diffs from the cursor (not the delivery's own `before`) so a missed
-// delivery is caught up, and snapshots when a force push or divergence makes an
-// incremental diff impossible. The cursor advances only after every op is
-// durably enqueued.
+// CompileGitHubDelivery turns one raw push delivery into a change set, through
+// the GitHub connector. A delivery is a trigger, not a diff: after the branch
+// filter, the compiler asks the connector for the changes from the source's
+// cursor to the branch's current head, so a missed delivery is caught up and a
+// later push already visible at the source is compiled with it. A redelivered
+// or out-of-order push therefore finds nothing past the cursor and is dropped as
+// stale; one that finds the head has moved compiles to that head, which is the
+// state the stale push was part of. When the connector cannot diff from the
+// cursor (a force push or divergence orphaned it, or the diff passed the cap),
+// the source is snapshotted. The cursor advances to the head compiled, only
+// after every op is durably enqueued.
 func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceSource, delivery []byte, deliveryID string) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("CompileGitHubDelivery")
 	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
@@ -298,17 +303,9 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return "", ErrMalformedDelivery
 	}
 
-	client, err := s.githubClientForSource(ctx, source)
+	conn, src, branch, err := s.githubConnectorSource(ctx, source)
 	if err != nil {
 		return "", err
-	}
-
-	branch := source.Branch
-	if branch == "" {
-		branch, err = client.DefaultBranch(ctx, source.Repo)
-		if err != nil {
-			return "", w.Wrapf(err, "resolve default branch")
-		}
 	}
 	if push.Ref != "refs/heads/"+branch {
 		w.Info("dropping delivery for other branch", wool.Field("ref", push.Ref), wool.Field("disposition", string(DispositionIgnoredBranch)))
@@ -325,77 +322,76 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 	if cursor == push.After {
 		return DispositionStale, nil
 	}
-	repo, err := client.OpenRepository(ctx, githubWorkspace(source), source.Repo)
-	if err != nil {
-		return "", w.Wrapf(err, "open repository mirror")
-	}
-	defer func() { _ = repo.Close() }()
-	if cursor != "" {
-		// after...cursor ahead|identical ⇒ after is an ancestor of the cursor:
-		// a redelivery, an out-of-order delivery, or an already-ingested commit.
-		ancestry, err := repo.Compare(ctx, push.After, cursor)
-		if err == nil && (ancestry.Status == github.CompareStatusAhead || ancestry.Status == github.CompareStatusIdentical) {
-			return DispositionStale, nil
+	if cursor == "" {
+		// Nothing ingested yet, so there is nothing to diff from: the module
+		// needs the whole tree.
+		cs, err := conn.Changes(ctx, src, "")
+		if err != nil {
+			return "", err
 		}
+		return s.snapshotAt(ctx, source, conn, src, cs, branch, deliveryID, "", false)
 	}
 
-	base := cursor
-	if base == "" && !push.Created && push.Before != "" && push.Before != zeroSHA {
-		base = push.Before
-	}
-	if base == "" {
-		return s.snapshotAt(ctx, source, repo, branch, push.After, deliveryID, "", false)
-	}
-
-	comparison, err := repo.Compare(ctx, base, push.After)
-	if err != nil {
-		if errors.Is(err, github.ErrNotFound) {
-			// base commit no longer reachable (force push) — snapshot.
-			return s.snapshotAt(ctx, source, repo, branch, push.After, deliveryID, "", true)
+	cs, err := conn.Changes(ctx, src, cursor)
+	if errors.Is(err, connector.ErrResyncRequired) {
+		full, err := conn.Changes(ctx, src, "")
+		if err != nil {
+			return "", err
 		}
-		return "", w.Wrapf(err, "compare %s...%s", base, push.After)
+		return s.snapshotAt(ctx, source, conn, src, full, branch, deliveryID, "", true)
 	}
-	if comparison.Status == github.CompareStatusDiverged || comparison.Truncated {
-		return s.snapshotAt(ctx, source, repo, branch, push.After, deliveryID, "", true)
+	if err != nil {
+		return "", err
 	}
-	if comparison.Status == github.CompareStatusBehind {
-		// head is an ancestor of the base: a redelivered or out-of-order older
-		// push. The ancestry pre-check should have dropped it, but that check
-		// tolerates a transient Compare error — so guard here too, at the point the
-		// cursor would otherwise move backward. Compiling this diff would re-emit
-		// reverted content as new versions and rewind the cursor, so drop it.
+	if cs.To == cursor {
+		if push.Before == cursor {
+			// The push extends exactly what was ingested, yet the source does not
+			// show it yet: GitHub announced the push before its ref was visible
+			// over git. Retry rather than drop it, or the push waits for the
+			// next reconcile.
+			return "", jobs.NewProcessingError("datasource.head_not_visible",
+				"The pushed commit is not visible at the source yet. This job will retry.", true)
+		}
 		return DispositionStale, nil
 	}
 
-	ops := s.changeOps(comparison.Files, source.Paths, source.FileExtensions)
-	changeSet := base + "..." + push.After
-	// The whole change set's content arrives in one batched fetch; each op then
-	// reads its blob from the mirror.
-	var ids []string
-	for _, op := range ops {
-		if op.changeType != changeTypeRemoved {
-			ids = append(ids, op.blobSHA)
-		}
+	ops := changeOpsFrom(cs.Changes)
+	changeSet := cursor + "..." + cs.To
+	if err := s.enqueueChangeSet(ctx, source, conn, src, cs, ops, branch, changeSet, deliveryID); err != nil {
+		return "", err
 	}
-	if err := repo.Fetch(ctx, ids); err != nil {
-		return "", w.Wrapf(err, "fetch change-set content")
-	}
-	sizes, err := repo.Sizes(ctx, ids)
-	if err != nil {
-		return "", w.Wrapf(err, "size change-set content")
-	}
-	for _, op := range ops {
-		if err := s.enqueueChangeSetFile(ctx, source, repo, sizes, op, branch, push.After, changeSet, deliveryID); err != nil {
-			return "", w.Wrapf(err, "enqueue %s", op.path)
-		}
-	}
-	if err := s.advanceCursor(ctx, source.ID, push.After, deliveryID); err != nil {
+	if err := s.advanceCursor(ctx, source.ID, cs.To, deliveryID); err != nil {
 		return "", w.Wrapf(err, "advance cursor")
 	}
-	w.Info("compiled change set", wool.Field("source", source.ID), wool.Field("ops", len(ops)), wool.Field("git_fetches", repo.Fetches()))
+	w.Info("compiled change set", wool.Field("source", source.ID), wool.Field("ops", len(ops)), wool.Field("head", cs.To))
 	s.emit(ctx, source.ID, "system", EventDatasourceChangeSetCompiled, "datasource", source.ID, source.OrgID,
-		map[string]any{"base": base, "head": push.After, "ops": len(ops), "mode": "compare", "delivery_id": deliveryID})
+		map[string]any{"base": cursor, "head": cs.To, "ops": len(ops), "mode": "compare", "delivery_id": deliveryID})
 	return DispositionCompiled, nil
+}
+
+// githubConnectorSource is the GitHub connector and the envelope's view of the
+// source, with its branch resolved once so the branch filter and the connector
+// agree on it.
+func (s *Service) githubConnectorSource(ctx context.Context, source *DatasourceSource) (connector.FilesConnector, connector.Source, string, error) {
+	conn, ok := s.datasourceConnectors.Files(DatasourceProviderGitHub)
+	if !ok {
+		return nil, connector.Source{}, "", errors.New("the GitHub datasource connector is not registered")
+	}
+	branch := source.Branch
+	if branch == "" {
+		client, err := s.githubClientForSource(ctx, source)
+		if err != nil {
+			return nil, connector.Source{}, "", err
+		}
+		if branch, err = client.DefaultBranch(ctx, source.Repo); err != nil {
+			return nil, connector.Source{}, "", wool.Get(ctx).Wrapf(err, "resolve default branch")
+		}
+	}
+	src := connectorSource(source)
+	cfg := src.Config.(github.SourceConfig)
+	cfg.Branch = branch
+	src.Config = cfg
+	return conn, src, branch, nil
 }
 
 // ReconcileGitHubSource snapshots the source at its current branch head. When
@@ -407,31 +403,22 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
 		return false, w.NewError("datasource connector is not configured")
 	}
-	client, err := s.githubClientForSource(ctx, source)
+	conn, src, branch, err := s.githubConnectorSource(ctx, source)
 	if err != nil {
 		return false, err
 	}
-
-	branch := source.Branch
-	if branch == "" {
-		branch, err = client.DefaultBranch(ctx, source.Repo)
-		if err != nil {
-			return false, w.Wrapf(err, "resolve default branch")
-		}
-	}
-	head, err := client.ResolveCommit(ctx, source.Repo, branch)
+	head, err := conn.Version(ctx, src)
 	if err != nil {
-		return false, w.Wrapf(err, "resolve commit")
+		return false, err
 	}
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	repo, err := client.OpenRepository(ctx, githubWorkspace(source), source.Repo)
+	cs, err := conn.Changes(ctx, src, "")
 	if err != nil {
-		return false, w.Wrapf(err, "open repository mirror")
+		return false, err
 	}
-	defer func() { _ = repo.Close() }()
-	disp, err := s.snapshotAt(ctx, source, repo, branch, head, requestJobID, requestJobID, false)
+	disp, err := s.snapshotAt(ctx, source, conn, src, cs, branch, requestJobID, requestJobID, false)
 	if err != nil {
 		return false, err
 	}
@@ -443,38 +430,27 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	return disp == DispositionSnapshot, nil
 }
 
-// snapshotAt enqueues a full-tree manifest at commit and advances the cursor. It
-// is the reconcile path for a created branch, a force push, a truncated compare,
-// the periodic reconcile, and an explicit "Sync now". forcePush records the
-// force-push audit alongside the change-set audit.
+// snapshotAt enqueues the manifest of a complete change set and advances the
+// cursor to its version. It is the reconcile path for a source with no cursor,
+// a force push, a truncated diff, the periodic reconcile, and an explicit "Sync
+// now". forcePush records the force-push audit alongside the change-set audit.
 //
-// The manifest's in-scope content is fetched here, in one batched request: the
+// The connector made the snapshot's content local when it listed it, so the
 // manifest carries each file's true size, and the module that reads the
-// manifest then pulls the files it does not already hold from the warm mirror
+// manifest pulls the files it does not already hold from the warm mirror
 // through FetchDatasourceFiles, without another trip to GitHub.
-func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, repo GitHubRepository, branch, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
+func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, conn connector.FilesConnector, src connector.Source, cs connector.ChangeSet, branch, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("snapshotAt")
-	files, err := repo.List(ctx, commit, datasourceFileScope(source))
-	if err != nil {
-		return "", w.Wrapf(err, "list tree at %s", commit)
+	if !cs.Complete {
+		return "", w.NewError("a snapshot needs a complete change set")
 	}
-	ids := make([]string, 0, len(files))
-	for _, f := range files {
-		ids = append(ids, f.SHA)
-	}
-	if err := repo.Fetch(ctx, ids); err != nil {
-		return "", w.Wrapf(err, "fetch snapshot content at %s", commit)
-	}
-	sizes, err := repo.Sizes(ctx, ids)
-	if err != nil {
-		return "", w.Wrapf(err, "size snapshot content at %s", commit)
-	}
+	commit := cs.To
 	// Use the branch resolved by the host, not a downstream guess about the
 	// repository default. The authenticated job binding and payload must agree.
 	ref := "refs/heads/" + branch
-	manifest := snapshotManifest{Ref: ref, Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
-	for _, f := range files {
-		manifest.Files = append(manifest.Files, snapshotFile{Path: f.Path, BlobSHA: f.SHA, Size: sizes[f.SHA]})
+	manifest := snapshotManifest{Ref: ref, Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(cs.Changes))}
+	for _, c := range cs.Changes {
+		manifest.Files = append(manifest.Files, snapshotFile{Path: c.Key.ItemID, BlobSHA: c.ItemVersion, Size: c.Size})
 	}
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)
 	if err != nil {
@@ -540,7 +516,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, repo
 				attrCommit:     commit,
 				attrDeliveryID: deliveryID,
 				attrSourceRef:  ref,
-			}, s.snapshotChangeAttributes(ctx, repo, source, commit, len(manifest.Files))),
+			}, s.snapshotChangeAttributes(ctx, conn, src, source, commit, len(manifest.Files))),
 		},
 	}); err != nil {
 		return "", w.Wrapf(err, "enqueue snapshot")
@@ -569,7 +545,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, repo
 		s.emit(ctx, source.ID, "system", EventDatasourceForcePushReconciled, "datasource", source.ID, source.OrgID,
 			map[string]any{"head": commit, "delivery_id": deliveryID})
 	}
-	w.Info("compiled snapshot", wool.Field("source", source.ID), wool.Field("files", len(manifest.Files)), wool.Field("git_fetches", repo.Fetches()))
+	w.Info("compiled snapshot", wool.Field("source", source.ID), wool.Field("files", len(manifest.Files)), wool.Field("head", commit))
 	s.emit(ctx, source.ID, "system", EventDatasourceChangeSetCompiled, "datasource", source.ID, source.OrgID,
 		map[string]any{"base": "", "head": commit, "ops": len(manifest.Files), "mode": "snapshot", "delivery_id": deliveryID})
 	return DispositionSnapshot, nil
@@ -583,54 +559,88 @@ func datasourceFileScope(source *DatasourceSource) func(path string) bool {
 	}
 }
 
-// changeOps maps a compare's files to ingest ops under the source's path prefixes
-// intersected with its file-suffix allowlist. A rename is a rename only when both
-// endpoints are in scope; a rename into scope is an upsert of the new path, a
-// rename out of scope is a delete of the old path. Ops are returned in path order
-// so a crash mid-set replays deterministically.
-func (s *Service) changeOps(files []github.ChangedFile, paths, extensions []string) []changeOp {
-	inScope := func(name string) bool { return pathInScope(name, paths) && fileTypeAllowed(name, extensions) }
-	var ops []changeOp
-	for _, f := range files {
-		switch f.Status {
-		case "added", "modified", "changed", "copied":
-			if inScope(f.Filename) {
-				ops = append(ops, changeOp{path: f.Filename, blobSHA: f.SHA, changeType: upsertChangeType(f.Status)})
-			}
-		case "removed":
-			if inScope(f.Filename) {
-				ops = append(ops, changeOp{path: f.Filename, changeType: changeTypeRemoved})
-			}
-		case "renamed":
-			fromIn := inScope(f.PreviousFilename)
-			toIn := inScope(f.Filename)
-			switch {
-			case fromIn && toIn:
-				ops = append(ops, changeOp{path: f.Filename, prevPath: f.PreviousFilename, blobSHA: f.SHA, changeType: changeTypeRenamed})
-			case toIn:
-				ops = append(ops, changeOp{path: f.Filename, blobSHA: f.SHA, changeType: changeTypeAdded})
-			case fromIn:
-				ops = append(ops, changeOp{path: f.PreviousFilename, changeType: changeTypeRemoved})
-			}
+// changeOpsFrom maps the connector's changes onto ingest ops. The connector
+// already applied the source's scope: a move across its edge arrives as an
+// addition or a deletion, never a move. Ops are returned in path order so a
+// crash mid-set replays deterministically.
+func changeOpsFrom(changes []connector.Change) []changeOp {
+	ops := make([]changeOp, 0, len(changes))
+	for _, c := range changes {
+		op := changeOp{path: c.Key.ItemID, blobSHA: c.ItemVersion, size: c.Size}
+		switch c.Kind {
+		case connector.ChangeAdded:
+			op.changeType = changeTypeAdded
+		case connector.ChangeModified:
+			op.changeType = changeTypeModified
+		case connector.ChangeDeleted:
+			op.changeType, op.blobSHA = changeTypeRemoved, ""
+		case connector.ChangeMoved:
+			op.changeType, op.prevPath = changeTypeRenamed, c.PreviousItemID
+		default:
+			// A files connector reports readers changes on items whose content
+			// did not move; the ingest payload has no such operation yet.
+			continue
 		}
+		ops = append(ops, op)
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].path < ops[j].path })
 	return ops
 }
 
-func upsertChangeType(status string) string {
-	if status == "added" || status == "copied" {
-		return changeTypeAdded
+// enqueueChangeSet emits the change set's per-file ingest jobs. The content of
+// every upsert that fits the inline cap is read in bulk through the connector,
+// in batches within its budget, from the mirror the connector filled when it
+// listed the changes; a larger one carries a signed content ticket the
+// consuming module redeems instead, and a delete carries no content.
+func (s *Service) enqueueChangeSet(ctx context.Context, source *DatasourceSource, conn connector.FilesConnector, src connector.Source, cs connector.ChangeSet, ops []changeOp, branch, changeSet, deliveryID string) error {
+	w := wool.Get(ctx).In("enqueueChangeSet")
+	content := make(map[string][]byte)
+	budget := conn.Descriptor().Budget
+	var batch []connector.FileRef
+	var batchBytes int64
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		err := conn.FetchFiles(ctx, src, cs.To, batch, func(f connector.File, r io.Reader) error {
+			b, err := io.ReadAll(r)
+			if err != nil {
+				return err
+			}
+			content[f.Provenance.GetItemId()] = b
+			return nil
+		})
+		batch, batchBytes = nil, 0
+		return err
 	}
-	return changeTypeModified
+	for _, op := range ops {
+		if op.changeType == changeTypeRemoved || op.size < 0 || op.size > maxIngestPayload {
+			continue
+		}
+		if len(batch) == budget.MaxItemsPerCall || batchBytes+op.size > budget.MaxBytesPerCall {
+			if err := flush(); err != nil {
+				return w.Wrapf(err, "fetch change-set content")
+			}
+		}
+		batch = append(batch, connector.FileRef{ItemID: op.path, ItemVersion: op.blobSHA})
+		batchBytes += op.size
+	}
+	if err := flush(); err != nil {
+		return w.Wrapf(err, "fetch change-set content")
+	}
+	for _, op := range ops {
+		if err := s.enqueueChangeSetFile(ctx, source, content, op, branch, cs.To, changeSet, deliveryID); err != nil {
+			return w.Wrapf(err, "enqueue %s", op.path)
+		}
+	}
+	return nil
 }
 
-// enqueueChangeSetFile emits one v2 per-file ingest job. An upsert/rename carries
-// the blob inline when it fits the payload cap, read from the mirror the change
-// set was fetched into, else omits it and carries a signed content ticket the
-// consuming module redeems through ResolveContentTicket. A delete carries no
-// content.
-func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSource, repo GitHubRepository, sizes map[string]int64, op changeOp, ref, commit, changeSet, deliveryID string) error {
+// enqueueChangeSetFile emits one v2 per-file ingest job. An upsert/rename
+// carries its blob inline when it was read (it fits the payload cap), else a
+// signed content ticket the consuming module redeems through
+// ResolveContentTicket. A delete carries no content.
+func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSource, content map[string][]byte, op changeOp, ref, commit, changeSet, deliveryID string) error {
 	w := wool.Get(ctx).In("enqueueChangeSetFile")
 	file := changeSetFile{
 		Repo:       source.Repo,
@@ -642,18 +652,14 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 		ChangeType: op.changeType,
 	}
 	if op.changeType != changeTypeRemoved {
-		if sizes[op.blobSHA] > maxIngestPayload {
+		if body, ok := content[op.path]; ok {
+			file.Content = &body
+		} else {
 			ticket, err := s.mintContentTicket(source.ID, op.blobSHA)
 			if err != nil {
 				return err
 			}
 			file.ContentTicket = ticket
-		} else {
-			content, err := repo.Read(ctx, op.blobSHA, maxIngestPayload)
-			if err != nil {
-				return w.Wrapf(err, "read content")
-			}
-			file.Content = &content
 		}
 	}
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)

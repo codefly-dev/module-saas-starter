@@ -118,12 +118,15 @@ const (
 
 // Change is one item's change. ItemVersion is the provider's opaque version of
 // the item (empty on DELETED). PreviousItemID is set on MOVED only. Readers is
-// required on every kind but DELETED.
+// required on every kind but DELETED. Size is the item's exact byte length when
+// the connector knows it at listing, and -1 when it does not; it is 0 on
+// DELETED.
 type Change struct {
 	Key            Key
 	Kind           ChangeKind
 	ItemVersion    string
 	PreviousItemID string
+	Size           int64
 	// Locator is the item's path, URL or title, for people. It is not identity.
 	Locator string
 	Readers *accountsv1.DatasourceItemReaders
@@ -167,6 +170,10 @@ type File struct {
 // Connector is what every connector implements whatever its interface.
 type Connector interface {
 	Descriptor() Descriptor
+	// Version is the provider's current opaque version of the source, cheaply:
+	// it lists nothing. Changes from "" to that version is the source's
+	// complete snapshot.
+	Version(ctx context.Context, src Source) (string, error)
 	// Changes returns the changes from version from to the provider's current
 	// version. An empty from returns a complete snapshot. A from the connector
 	// can no longer diff against returns ErrResyncRequired, and the caller asks
@@ -212,7 +219,11 @@ type RateLimitedError struct {
 	Estimated bool
 	// Scope is what the limit meters: "source", "credential" or "deployment".
 	Scope string
+	// Cause is the provider's own error, kept in the chain for the host.
+	Cause error
 }
+
+func (e *RateLimitedError) Unwrap() error { return e.Cause }
 
 func (e *RateLimitedError) Error() string {
 	return fmt.Sprintf("connector: the provider rate limited the %s until %s", e.Scope, e.ResetAt.UTC().Format(time.RFC3339))

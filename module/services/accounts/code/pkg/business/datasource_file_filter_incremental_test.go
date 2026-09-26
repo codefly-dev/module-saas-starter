@@ -18,10 +18,11 @@ import (
 func TestFileExtensionsIncrementalEnqueuesOnlySelectedFiles(t *testing.T) {
 	producer := &recordingProducer{}
 	gh := &fakeGitHub{
+		commit: cB,
 		content: map[string][]byte{
 			"docs/guide.md": []byte("G"), "docs/logo.png": []byte("P"), "docs/notes.txt": []byte("N"),
 		},
-		compareFn: compareBetween("A", "B", []github.ChangedFile{
+		compareFn: compareBetween(cA, cB, []github.ChangedFile{
 			{Filename: "docs/logo.png", Status: "modified", SHA: "sp"},
 			{Filename: "docs/notes.txt", PreviousFilename: "docs/notes.md", Status: "renamed", SHA: "sn"},
 			{Filename: "docs/guide.md", PreviousFilename: "docs/draft.txt", Status: "renamed", SHA: "sg"},
@@ -32,10 +33,10 @@ func TestFileExtensionsIncrementalEnqueuesOnlySelectedFiles(t *testing.T) {
 		OrgID: testOrg, Repo: "acme/docs", Branch: "main", Paths: []string{"docs"},
 		CollectionLabel: "guides", AccessToken: "t", FileExtensions: []string{".md"},
 	})
-	source.LastIngestedCommit = "A"
+	source.LastIngestedCommit = cA
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "d1")
+		pushDelivery("refs/heads/main", cA, cB, false, false), "d1")
 	if err != nil {
 		t.Fatal(err)
 	}

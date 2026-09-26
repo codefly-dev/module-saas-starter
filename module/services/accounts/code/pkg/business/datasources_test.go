@@ -538,6 +538,7 @@ type fakeGitHub struct {
 	fetched    []string
 	shaPaths   map[string]string
 	fetchCalls int
+	local      map[string]bool
 	workspaces []github.Workspace
 }
 
@@ -617,13 +618,24 @@ func (f *fakeGitHub) blob(id string) ([]byte, error) {
 type fakeRepository struct{ gh *fakeGitHub }
 
 // List applies the source scope the compiler passes, exactly as the real
-// mirror does.
+// mirror does. The tree is the configured files plus whatever a diff has so
+// far reported added or changed, so a change set's files are listed at its head
+// the way a real repository lists them.
 func (r *fakeRepository) List(_ context.Context, _ string, match func(string) bool) ([]github.File, error) {
 	var out []github.File
+	seen := map[string]bool{}
 	for _, file := range r.gh.files {
 		if match(file.Path) {
 			file.Size = -1
 			out = append(out, file)
+			seen[file.Path] = true
+		}
+	}
+	r.gh.mu.Lock()
+	defer r.gh.mu.Unlock()
+	for sha, path := range r.gh.shaPaths {
+		if !seen[path] && match(path) {
+			out = append(out, github.File{Path: path, SHA: sha, Size: -1})
 		}
 	}
 	return out, nil
@@ -649,11 +661,31 @@ func (r *fakeRepository) Compare(_ context.Context, base, head string) (*github.
 	return cmp, err
 }
 
+// Fetch counts a request only when it names an object the mirror does not yet
+// hold, as the real mirror makes no request for content already local.
 func (r *fakeRepository) Fetch(_ context.Context, ids []string) error {
 	r.gh.mu.Lock()
+	defer r.gh.mu.Unlock()
+	if r.gh.local == nil {
+		r.gh.local = map[string]bool{}
+	}
+	missing := false
+	for _, id := range ids {
+		if !r.gh.local[id] {
+			missing = true
+		}
+	}
+	if !missing {
+		return nil
+	}
 	r.gh.fetchCalls++
-	r.gh.mu.Unlock()
-	return r.gh.fetchErr
+	if r.gh.fetchErr != nil {
+		return r.gh.fetchErr
+	}
+	for _, id := range ids {
+		r.gh.local[id] = true
+	}
+	return nil
 }
 
 func (r *fakeRepository) Sizes(_ context.Context, ids []string) (map[string]int64, error) {

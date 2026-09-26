@@ -108,13 +108,14 @@ func TestIncrementalChangeSetFetchesItsContentInOneBatch(t *testing.T) {
 		changed = append(changed, github.ChangedFile{Filename: path, Status: "modified", SHA: fmt.Sprintf("s%02d", i)})
 	}
 	changed = append(changed, github.ChangedFile{Filename: "docs/gone.md", Status: "removed"})
-	gh.compareFn = compareBetween("A", "B", changed)
+	gh.compareFn = compareBetween(cA, cB, changed)
+	gh.commit = cB
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	if _, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "d1"); err != nil {
+		pushDelivery("refs/heads/main", cA, cB, false, false), "d1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := gh.fetches(); got != 1 {
