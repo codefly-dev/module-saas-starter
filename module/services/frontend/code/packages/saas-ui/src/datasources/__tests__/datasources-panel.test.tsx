@@ -456,7 +456,9 @@ describe("DatasourcesPanel boundary column", () => {
 			listAccessibleScopes: vi.fn(async () => []),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+		expect(
+			await screen.findByText(/You can’t read any collection yet/),
+		).toBeTruthy();
 	});
 
 	it("keeps the grant explainer off when one listed collection is readable", async () => {
@@ -483,7 +485,7 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(
 			await screen.findByText(/You can read this collection/),
 		).toBeTruthy();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
 	});
 
@@ -509,7 +511,7 @@ describe("DatasourcesPanel boundary column", () => {
 			),
 		).toBeTruthy();
 		expect(screen.queryByText(/You do not have read access/)).toBeNull();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 	});
 
 	it("still names no readable collection when only another scope kind is readable", async () => {
@@ -529,7 +531,9 @@ describe("DatasourcesPanel boundary column", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+		expect(
+			await screen.findByText(/You can’t read any collection yet/),
+		).toBeTruthy();
 	});
 
 	it("asks no one for access to a collection when the organization has none", async () => {
@@ -560,7 +564,7 @@ describe("DatasourcesPanel boundary column", () => {
 		// Only a resolved scope answer turns the source row's boundary cell from
 		// "Read permission unresolved" into a verdict.
 		expect(await screen.findByText("No read access")).toBeTruthy();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 	});
 
 	it("refetches boundaries after a source is connected", async () => {
@@ -1386,5 +1390,79 @@ describe("GitHub App onboarding", () => {
 				"",
 			),
 		);
+	});
+});
+
+describe("DatasourcesPanel for a viewer who manages nothing", () => {
+	it("offers no control the host would refuse, and keeps the history", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+			listActivity: vi.fn(async () => []),
+		});
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(
+			screen.queryByRole("button", { name: /connect github/i }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Sync" })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /More actions for/ }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: "History of codefly-dev/module-saas-starter",
+			}),
+		).toBeTruthy();
+		// What to do instead: whom to ask, and where they grant it.
+		expect(
+			await screen.findByText(
+				/Ask an organization administrator to grant you read access/,
+			),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("link", { name: /Grant read access/ }),
+		).toBeNull();
+	});
+
+	it("drops the actions column when there is not even a history to read", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+	});
+
+	it("does not offer to connect a repository to an empty organization", async () => {
+		renderWithClient(
+			<DatasourcesPanel
+				client={fakeClient()}
+				orgId="org-1"
+				canManage={false}
+			/>,
+		);
+		expect(
+			await screen.findByText(/An organization administrator connects/),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: /connect a repository/i }),
+		).toBeNull();
+	});
+
+	it("gives an administrator with no readable collection the link to grant one", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		const link = await screen.findByRole("link", {
+			name: "Grant read access to a collection",
+		});
+		expect(link.getAttribute("href")).toBe("/admin/datasources");
 	});
 });

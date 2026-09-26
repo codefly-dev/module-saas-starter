@@ -53,6 +53,15 @@ components:
   still authorize every read.
 - `viewerOrganization(token)` — the org the token names: a selector for
   requests and local state, never authority.
+- `viewerAdministersOrganization(token)` — whether the token names an
+  organization owner or admin, or a platform super administrator: the tier the
+  host requires to manage sources and grant read access. It decides what is
+  offered, never what is allowed.
+- `<NoReadableCollection canGrant={…} />` — what to show a viewer who may read
+  no collection (`useAccessibleScope(…) === "none"`): a member is told to ask an
+  organization administrator and where the grant is made; an administrator gets
+  the link to make it (`COLLECTION_ACCESS_PATH`, the host's
+  `/admin/datasources`).
 - `viewerIdentity(token)`, `useAccessToken(getAccessToken)`,
   `useViewerEpoch(getAccessToken)` — who the current credential speaks for,
   stable across a refresh and changing with the viewer. They partition local UI
@@ -68,7 +77,11 @@ components:
   <short commit>` for a github source, whose change sets the compiler enqueues
   (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
   reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
-  shown above live provenance. Loading/error/empty are first-class.
+  shown above live provenance. Loading/error/empty are first-class. Connect,
+  Sync, Reconnect, Use GitHub App and Delete are offered only to a viewer who
+  may use them (`canManage`; with a `gateway`, read from the viewer's
+  credential): anyone else keeps a row's History and is told who connects
+  sources and grants access.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the

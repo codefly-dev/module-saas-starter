@@ -56,6 +56,34 @@ export function viewerOrganization(token: string | null | undefined): string {
 }
 
 /**
+ * Whether the access token names the viewer an administrator of its active
+ * organization — its owner or an admin (`or` claim), or a platform super
+ * administrator (`pr` claim) — the tier the host requires to connect, sync or
+ * remove a data source and to grant read access to a collection.
+ *
+ * Read without verification, like every claim here: it decides only what a
+ * page OFFERS (a control, a link to where grants are made), never what is
+ * allowed. The host refuses a non-administrator's call whatever this says.
+ */
+export function viewerAdministersOrganization(
+	token: string | null | undefined,
+): boolean {
+	try {
+		const body = (token ?? "").split(".")[1] ?? "";
+		const claims = JSON.parse(
+			atob(body.replace(/-/g, "+").replace(/_/g, "/")),
+		) as { or?: unknown; pr?: unknown };
+		return (
+			claims.or === "owner" ||
+			claims.or === "admin" ||
+			claims.pr === "super_admin"
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
  * The host's current access token, observed. The host's getter is stable while
  * its token store changes underneath it, so the value is re-read on the host's
  * `codefly:auth-changed` event, on focus, on storage, and on a short interval —

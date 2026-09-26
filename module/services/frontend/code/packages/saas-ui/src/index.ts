@@ -36,6 +36,9 @@ export type {
 } from "./datasources/types.js";
 export { parsePaths } from "./datasources/util.js";
 export {
+	COLLECTION_ACCESS_PATH,
+	NoReadableCollection,
+	type NoReadableCollectionProps,
 	type SolutionBinding,
 	type SolutionRequestBinding,
 	SolutionRequestError,
@@ -45,5 +48,6 @@ export {
 	useAccessToken,
 	useSolutionJson,
 	useViewerEpoch,
+	viewerAdministersOrganization,
 	viewerIdentity,
 } from "./solution/index.js";

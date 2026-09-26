@@ -26,6 +26,14 @@ import {
 	useQuery,
 } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+	COLLECTION_ACCESS_PATH,
+	NoReadableCollection,
+} from "../solution/no-readable-collection.js";
+import {
+	useAccessToken,
+	viewerAdministersOrganization,
+} from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
@@ -56,6 +64,15 @@ interface DatasourcesPanelBaseProps {
 	orgId: string;
 	/** Called with the durable job id after a sync is enqueued. */
 	onSyncEnqueued?: (jobId: string) => void;
+	/**
+	 * Whether the viewer may connect, sync, reconnect or remove a source and
+	 * grant read access — the host's organization-administrator tier. Without
+	 * it those controls are not offered; the host refuses the calls either way.
+	 * Default: with a `gateway`, read from the viewer's credential
+	 * (`viewerAdministersOrganization`); with an injected `client`, true (the
+	 * consumer's own page decides who reaches the panel).
+	 */
+	canManage?: boolean;
 	className?: string;
 }
 
@@ -89,6 +106,7 @@ function GatewayBoundPanel({
 	// rebuilding when the binding itself changes — not on every render.
 	const { apiBase, getAccessToken, refreshAccessToken, contentResource } =
 		gateway;
+	const token = useAccessToken(getAccessToken);
 	const client = useMemo(
 		() =>
 			createDatasourceClient({
@@ -104,7 +122,11 @@ function GatewayBoundPanel({
 	);
 	return (
 		<QueryClientProvider client={queryClient}>
-			<DatasourcesPanelView client={client} {...rest} />
+			<DatasourcesPanelView
+				client={client}
+				{...rest}
+				canManage={rest.canManage ?? viewerAdministersOrganization(token)}
+			/>
 		</QueryClientProvider>
 	);
 }
@@ -117,6 +139,7 @@ function DatasourcesPanelView({
 	client,
 	orgId,
 	onSyncEnqueued,
+	canManage = true,
 	className,
 }: DatasourcesPanelViewProps) {
 	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
@@ -141,7 +164,7 @@ function DatasourcesPanelView({
 	// only by the organization that began it, so re-firing it after an org switch
 	// would report a rejection for a setup that in fact succeeded.
 	const [appSetupReturn] = useState(() => {
-		if (!completeAppSetup) return null;
+		if (!completeAppSetup || !canManage) return null;
 		const params = readAppSetupReturn();
 		return params && { ...params, orgId };
 	});
@@ -373,9 +396,11 @@ function DatasourcesPanelView({
 							Repositories this organization ingests from.
 						</p>
 					</div>
-					<Button type="button" onClick={() => setShowConnect(true)}>
-						Connect GitHub
-					</Button>
+					{canManage && (
+						<Button type="button" onClick={() => setShowConnect(true)}>
+							Connect GitHub
+						</Button>
+					)}
 				</div>
 
 				{scopes.isError ? (
@@ -384,11 +409,12 @@ function DatasourcesPanelView({
 						no indexed content.
 					</p>
 				) : scopes.isSuccess && !readableCollection ? (
-					<p role="status" className="type-body text-muted-foreground">
-						No readable collection. Ask an organization administrator for read
-						access. Connecting or syncing a source does not grant access; only
-						a platform administrator reads every collection without a grant.
-					</p>
+					<div role="status">
+						<NoReadableCollection
+							canGrant={canManage}
+							subject="ingested documents"
+						/>
+					</div>
 				) : null}
 				{selectedCollection && (
 					<CollectionGrants
@@ -437,19 +463,29 @@ function DatasourcesPanelView({
 				) : sources.length === 0 ? (
 					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
 						<p className="type-emphasis">No data sources connected.</p>
-						<p className="type-body text-muted-foreground">
-							Connect a GitHub repository to start ingesting.
-						</p>
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => setShowConnect(true)}
-						>
-							Connect a repository
-						</Button>
+						{canManage ? (
+							<>
+								<p className="type-body text-muted-foreground">
+									Connect a GitHub repository to start ingesting.
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => setShowConnect(true)}
+								>
+									Connect a repository
+								</Button>
+							</>
+						) : (
+							<p className="type-body text-muted-foreground">
+								An organization administrator connects the repositories this
+								organization ingests from.
+							</p>
+						)}
 					</div>
 				) : (
 					<SourcesTable
+						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onReconnect={(source) => {
 							setReconnectError(undefined);
@@ -499,8 +535,8 @@ function DatasourcesPanelView({
 											? boundaries.has(collection.nodeId)
 											: undefined;
 									const asPlatformAdministrator =
-										boundaries.get(collection.nodeId)?.viaPlatformAdministrator ===
-										true;
+										boundaries.get(collection.nodeId)
+											?.viaPlatformAdministrator === true;
 									const readers = collection.grants
 										.map((grant) => grant.subjectLabel)
 										.join(", ");
@@ -557,19 +593,23 @@ function DatasourcesPanelView({
 						</Table>
 					)}
 				</section>
-			) : (
+			) : canManage ? (
 				<Button
 					type="button"
 					variant="link"
 					size="sm"
-					onClick={() => window.location.assign("/admin/datasources")}
+					onClick={() => window.location.assign(COLLECTION_ACCESS_PATH)}
 				>
-					Manage collection read grants in the host (organization
-					administrators)
+					Manage who can read each collection
 				</Button>
+			) : (
+				<p className="type-body text-muted-foreground">
+					Read access to a collection is granted by an organization
+					administrator, in Admin → Data sources → Collection access.
+				</p>
 			)}
 
-			{reconnecting && (
+			{canManage && reconnecting && (
 				<ReconnectSource
 					source={reconnecting}
 					pending={reconnectPending}
@@ -600,7 +640,7 @@ function DatasourcesPanelView({
 					}}
 				/>
 			)}
-			{showConnect && (
+			{canManage && showConnect && (
 				<ConnectGitHubForm
 					// Both legs or neither: an install the panel cannot redeem on the
 					// way back strands the tenant on a completed GitHub install with
@@ -780,6 +820,7 @@ const cellClass = "px-3 py-2 align-middle";
 const wrapClass = "min-w-32 whitespace-normal";
 
 function SourcesTable({
+	canManage,
 	sources,
 	boundaries,
 	permissionsResolved,
@@ -792,6 +833,7 @@ function SourcesTable({
 	onReconnect,
 	onMigrateToApp,
 }: {
+	canManage: boolean;
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
 	permissionsResolved: boolean;
@@ -809,6 +851,9 @@ function SourcesTable({
 	const showStatus = sources.some(
 		(source) => source.status !== "active" || !!source.statusReason,
 	);
+	// A viewer who manages nothing is offered nothing to do but read a row's
+	// history, so the column is there only when there is something in it.
+	const showActions = canManage || !!onActivity;
 	return (
 		<div className="overflow-x-auto rounded-lg border">
 			<Table className="w-full text-sm">
@@ -823,9 +868,11 @@ function SourcesTable({
 						<TableHead className={headerClass}>Boundary</TableHead>
 						<TableHead className={headerClass}>Webhook</TableHead>
 						<TableHead className={headerClass}>Last sync dispatch</TableHead>
-						<TableHead className={cn(headerClass, "text-right")}>
-							Actions
-						</TableHead>
+						{showActions && (
+							<TableHead className={cn(headerClass, "text-right")}>
+								Actions
+							</TableHead>
+						)}
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -871,66 +918,89 @@ function SourcesTable({
 							>
 								<LastSyncCell source={source} />
 							</TableCell>
-							<TableCell className={cn(cellClass, "text-right")}>
-								{/* Sync is the row's one routine action; the rest sit behind
-								    a menu so the table fits a content column instead of
-								    pushing its last actions out of view. */}
-								<div className="inline-flex items-center gap-2">
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										disabled={syncingIds.has(source.id)}
-										onClick={() => onSync(source)}
-									>
-										{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
-									</Button>
-									<DropdownMenu>
-										<DropdownMenuTrigger
-											render={
-												<Button
-													type="button"
-													variant="ghost"
-													size="sm"
-													aria-label={`More actions for ${source.repo}`}
-												/>
-											}
+							{showActions && (
+								<TableCell className={cn(cellClass, "text-right")}>
+									{!canManage ? (
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											aria-label={`History of ${source.repo}`}
+											onClick={() => onActivity?.(source)}
 										>
-											More
-										</DropdownMenuTrigger>
-										<DropdownMenuContent align="end" className="w-auto min-w-44">
-											{source.provider === "github" && (
-												<DropdownMenuItem onClick={() => onReconnect(source)}>
-													Reconnect
-												</DropdownMenuItem>
-											)}
-											{onMigrateToApp && source.provider === "github" && (
-												<DropdownMenuItem
-													disabled={migratingIds.has(source.id)}
-													onClick={() => onMigrateToApp(source)}
-												>
-													{migratingIds.has(source.id)
-														? "Moving to the App…"
-														: "Use GitHub App"}
-												</DropdownMenuItem>
-											)}
-											{onActivity && (
-												<DropdownMenuItem onClick={() => onActivity(source)}>
-													History
-												</DropdownMenuItem>
-											)}
-											<DropdownMenuSeparator />
-											<DropdownMenuItem
-												variant="destructive"
-												disabled={deletingIds.has(source.id)}
-												onClick={() => onDelete(source)}
+											History
+										</Button>
+									) : (
+										/* Sync is the row's one routine action; the rest sit behind
+								    a menu so the table fits a content column instead of
+								    pushing its last actions out of view. */
+										<div className="inline-flex items-center gap-2">
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												disabled={syncingIds.has(source.id)}
+												onClick={() => onSync(source)}
 											>
-												{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
-											</DropdownMenuItem>
-										</DropdownMenuContent>
-									</DropdownMenu>
-								</div>
-							</TableCell>
+												{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
+											</Button>
+											<DropdownMenu>
+												<DropdownMenuTrigger
+													render={
+														<Button
+															type="button"
+															variant="ghost"
+															size="sm"
+															aria-label={`More actions for ${source.repo}`}
+														/>
+													}
+												>
+													More
+												</DropdownMenuTrigger>
+												<DropdownMenuContent
+													align="end"
+													className="w-auto min-w-44"
+												>
+													{source.provider === "github" && (
+														<DropdownMenuItem
+															onClick={() => onReconnect(source)}
+														>
+															Reconnect
+														</DropdownMenuItem>
+													)}
+													{onMigrateToApp && source.provider === "github" && (
+														<DropdownMenuItem
+															disabled={migratingIds.has(source.id)}
+															onClick={() => onMigrateToApp(source)}
+														>
+															{migratingIds.has(source.id)
+																? "Moving to the App…"
+																: "Use GitHub App"}
+														</DropdownMenuItem>
+													)}
+													{onActivity && (
+														<DropdownMenuItem
+															onClick={() => onActivity(source)}
+														>
+															History
+														</DropdownMenuItem>
+													)}
+													<DropdownMenuSeparator />
+													<DropdownMenuItem
+														variant="destructive"
+														disabled={deletingIds.has(source.id)}
+														onClick={() => onDelete(source)}
+													>
+														{deletingIds.has(source.id)
+															? "Deleting…"
+															: "Delete"}
+													</DropdownMenuItem>
+												</DropdownMenuContent>
+											</DropdownMenu>
+										</div>
+									)}
+								</TableCell>
+							)}
 						</TableRow>
 					))}
 				</TableBody>
