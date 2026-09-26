@@ -2,8 +2,11 @@ package business
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"time"
 )
 
@@ -287,13 +290,50 @@ func solutionHalfPresent(record *SolutionRegistration, write SolutionRegistratio
 func unchangedSolutionHalf(record *SolutionRegistration, write SolutionRegistrationWrite) bool {
 	if write.Frontend != nil {
 		return record.Frontend != nil &&
-			record.Frontend.Manifest == write.Frontend.Manifest &&
+			sameManifest(record.Frontend.Manifest, write.Frontend.Manifest) &&
 			record.Frontend.ContractVersion == write.Frontend.ContractVersion
 	}
 	return record.Backend != nil &&
 		record.Backend.Upstream == write.Backend.Upstream &&
 		record.Backend.ServiceAlias == write.Backend.ServiceAlias &&
 		record.Backend.ContractVersion == write.Backend.ContractVersion
+}
+
+// sameManifest reports whether a stored frontend manifest and a re-sent one are
+// the same JSON value.
+//
+// Comparing the bytes cannot tell: the registry stores the manifest as jsonb,
+// which Postgres re-serializes on read — keys reordered, a space after every
+// colon — so the stored text never equals the compact text the host sends.
+// Compared byte for byte, every heartbeat of an unchanged solution read as a
+// change: a new registry revision, a solution.registration_updated audit event
+// and a registry cache invalidation on every replica, once per beat, forever.
+// Two texts are the same manifest when they decode to equal values (numbers
+// kept as written, so a numeric change is never lost to float rounding). Text
+// that does not decode is compared as bytes, as before.
+func sameManifest(stored, sent string) bool {
+	if stored == sent {
+		return true
+	}
+	storedValue, storedErr := decodeManifest(stored)
+	sentValue, sentErr := decodeManifest(sent)
+	if storedErr != nil || sentErr != nil {
+		return false
+	}
+	return reflect.DeepEqual(storedValue, sentValue)
+}
+
+func decodeManifest(text string) (any, error) {
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	if decoder.More() {
+		return nil, errors.New("trailing data after the manifest")
+	}
+	return value, nil
 }
 
 func renewSolutionHalf(record *SolutionRegistration, write SolutionRegistrationWrite, leaseUntil time.Time) {

@@ -6,6 +6,11 @@ import {
 	verifySolutionRegistration,
 } from "@/solutions/registration-authority";
 import {
+	observeRegistrationBeat,
+	observeRegistrationRemoved,
+	UNVERIFIED_REGISTRANT,
+} from "@/solutions/registration-log";
+import {
 	loadSolutions,
 	navProjection,
 	parseManifest,
@@ -57,9 +62,8 @@ async function authorize(
 		request.headers.get(SOLUTION_REGISTRATION_HEADER),
 	);
 	if (verdict === "unavailable") {
-		console.error(
-			"solution registration: the registration key set is unreachable; answering 503 rather than refusing the credential",
-		);
+		// Logged by the caller, as a change of state: the key set being
+		// unreachable lasts many beats and is one event, not one per beat.
 		return Response.json(
 			{ error: "registration_authority_unavailable" },
 			{ status: 503, headers: { "retry-after": "5" } },
@@ -71,23 +75,84 @@ async function authorize(
 	return verdict;
 }
 
+/**
+ * A registration beat. The heartbeat that calls this is logged by
+ * {@link observeRegistrationBeat} at its state changes only — never per beat —
+ * and the dev server's own per-request line for this path is switched off in
+ * next.config.mjs, so the two together print nothing for a beat that finds the
+ * registration as it left it.
+ */
 export async function POST(request: Request): Promise<Response> {
+	const { solution, response, reason } = await registerBeat(request);
+	if (response.ok) {
+		const body = (await response.clone().json()) as {
+			revision: number;
+			status: string;
+		};
+		observeRegistrationBeat(solution, {
+			ok: true,
+			revision: body.revision,
+			status: body.status,
+		});
+	} else {
+		observeRegistrationBeat(solution, {
+			ok: false,
+			httpStatus: response.status,
+			reason: reason ?? "refused",
+		});
+	}
+	return response;
+}
+
+/**
+ * One beat's answer, with the registrant it is attributed to — the verified
+ * solution id, or {@link UNVERIFIED_REGISTRANT} when the credential was not
+ * accepted — and, for a refusal, the reason an operator reads.
+ */
+async function registerBeat(request: Request): Promise<{
+	solution: string;
+	response: Response;
+	reason?: string;
+}> {
 	const claims = await authorize(request);
 	if (claims instanceof Response) {
-		return claims;
+		return {
+			solution: UNVERIFIED_REGISTRANT,
+			response: claims,
+			reason:
+				claims.status === 503
+					? "registration key set unreachable (answered 503, not a refusal of the credential)"
+					: "credential not accepted",
+		};
 	}
+	const solution = claims.solution;
 	let body: unknown;
 	try {
 		body = await request.json();
 	} catch {
-		return Response.json({ error: "invalid_json" }, { status: 400 });
+		return {
+			solution,
+			response: Response.json({ error: "invalid_json" }, { status: 400 }),
+			reason: "invalid_json",
+		};
 	}
 	const manifest = parseManifest(body);
 	if (!manifest) {
-		return Response.json({ error: "invalid_manifest" }, { status: 422 });
+		return {
+			solution,
+			response: Response.json({ error: "invalid_manifest" }, { status: 422 }),
+			reason: "invalid_manifest",
+		};
 	}
 	if (manifest.id !== claims.solution) {
-		return Response.json({ error: "solution_not_authorized" }, { status: 403 });
+		return {
+			solution,
+			response: Response.json(
+				{ error: "solution_not_authorized" },
+				{ status: 403 },
+			),
+			reason: `solution_not_authorized (manifest names "${manifest.id}")`,
+		};
 	}
 	// Compatibility is enforced BEFORE the write, so an incompatible remote never
 	// reaches a browser and an existing, working registration keeps serving. The
@@ -95,13 +160,14 @@ export async function POST(request: Request): Promise<Response> {
 	// would have nothing to act on.
 	const verdict = checkRuntimeCompatibility(manifest);
 	if (!verdict.compatible) {
-		console.error(
-			`solution registration refused as incompatible: ${manifest.id}: ${verdict.reasons.join("; ")}`,
-		);
-		return Response.json(
-			{ error: "incompatible_runtime", reasons: verdict.reasons },
-			{ status: 409 },
-		);
+		return {
+			solution,
+			response: Response.json(
+				{ error: "incompatible_runtime", reasons: verdict.reasons },
+				{ status: 409 },
+			),
+			reason: `incompatible_runtime: ${verdict.reasons.join("; ")}`,
+		};
 	}
 	// A solution whose registration was deregistered has to say so to come back:
 	// an ordinary retry from a retiring deployment must not resurrect what an
@@ -115,14 +181,21 @@ export async function POST(request: Request): Promise<Response> {
 		credential: request.headers.get(SOLUTION_REGISTRATION_HEADER) ?? undefined,
 	});
 	if (!result.ok) {
-		return writeFailure(result.reason);
+		return {
+			solution,
+			response: writeFailure(result.reason),
+			reason: `registry ${result.reason}`,
+		};
 	}
-	return Response.json({
-		ok: true,
-		id: manifest.id,
-		revision: result.revision,
-		status: result.status,
-	});
+	return {
+		solution,
+		response: Response.json({
+			ok: true,
+			id: manifest.id,
+			revision: result.revision,
+			status: result.status,
+		}),
+	};
 }
 
 /**
@@ -167,6 +240,7 @@ export async function DELETE(request: Request): Promise<Response> {
 	if (!result.ok) {
 		return writeFailure(result.reason);
 	}
+	observeRegistrationRemoved(id, result.revision);
 	return Response.json({ ok: true, revision: result.revision });
 }
 
