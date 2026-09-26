@@ -1352,8 +1352,9 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 			Namespace:   d.Namespace,
 			Version:     int32(d.Version),
 			Category:    string(d.Category),
-			Owner:       d.Owner,
-			Description: d.Description,
+			Owner:           d.Owner,
+			Description:     d.Description,
+			MarksUserJoined: d.MarksUserJoined,
 		})
 	}
 	return &gen.ListAuditEventTypesResponse{Types: out}, nil

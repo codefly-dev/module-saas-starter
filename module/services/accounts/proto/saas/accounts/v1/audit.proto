@@ -189,6 +189,13 @@ message AuditEventType {
   // The module namespace that owns the type: the leading segment of `name`.
   // Distinct from `owner`, which names the emitting service.
   string namespace = 7;
+  // Whether this type records a person joining the tenant for the first time.
+  // The registry owns the meaning so a client counting new users does not have
+  // to hardcode the names: a type renamed, retired or added here changes what
+  // clients count without any of them shipping a new list. `category` cannot
+  // stand in for it — a category groups events for facets, and not every
+  // identity event is a person arriving.
+  bool marks_user_joined = 8;
 }
 
 message ListAuditEventTypesResponse {

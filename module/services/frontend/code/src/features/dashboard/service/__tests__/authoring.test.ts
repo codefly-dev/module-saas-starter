@@ -21,6 +21,7 @@ function fakeEventTypes(): AuditEventTypeInfo[] {
 			category: "authentication",
 			owner: "accounts",
 			deprecated: false,
+			marksUserJoined: false,
 			description: "A user logged in.",
 		},
 		{
@@ -30,6 +31,7 @@ function fakeEventTypes(): AuditEventTypeInfo[] {
 			category: "organization",
 			owner: "accounts",
 			deprecated: false,
+			marksUserJoined: false,
 			description: "An organization was created.",
 		},
 	];

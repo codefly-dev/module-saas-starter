@@ -597,6 +597,10 @@
         "description": {
           "type": "string"
         },
+        "marksUserJoined": {
+          "description": "Whether this type records a person joining the tenant for the first time.\nThe registry owns the meaning so a client counting new users does not have\nto hardcode the names: a type renamed, retired or added here changes what\nclients count without any of them shipping a new list. `category` cannot\nstand in for it — a category groups events for facets, and not every\nidentity event is a person arriving.",
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },

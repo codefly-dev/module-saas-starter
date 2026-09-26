@@ -149,33 +149,25 @@ export function topGroups(
 }
 
 /**
- * Event types that mean a person joined the tenant, by their registered names.
- * The server's registry is the authority; this list is checked against it, not
- * trusted over it: `newUserEventTypes` keeps only the names the registry
- * actually advertises, so a rename on the server empties the tile visibly
- * ("not registered") instead of counting nothing and calling it zero.
+ * The event types that mean a person joined the tenant, as the server's
+ * registry declares them (`marks_user_joined` on AuditEventType).
  *
- * `saas.auth.sso_jit_provisioned` belongs here alongside the two signup
- * events: an org whose identity provider just-in-time provisions sign-ins
- * (the OIDC/WorkOS path) never emits `saas.user.registered` or
- * `saas.user.created` for that person — the accounts resolver provisions
- * them and joins them to the org inside one transaction
- * (pkg/auth/pg/resolver.go's `provisionSsoJit`/`provisionSsoInvite`) and
- * records only the JIT event. Omitting it here undercounts every tenant
- * whose users arrive through SSO, which reads as "nobody ever joins".
+ * The list is not kept here. A client-side list of names has to be edited in
+ * step with the registry, and when it falls behind it undercounts silently —
+ * which is how "new users" read zero for a tenant whose people all arrive
+ * through its identity provider. Asking the registry means a type renamed,
+ * retired or added on the server changes what this counts with no client
+ * release at all.
+ *
+ * A registry that marks nothing — an older server, or a renamed type nothing
+ * carries yet — yields an empty set, and the caller says so on the tile ("no
+ * registered new-user event type") rather than rendering a zero that reads as
+ * "nobody joined".
  */
-export const NEW_USER_EVENT_TYPES: readonly string[] = [
-	"saas.user.created",
-	"saas.user.registered",
-	"saas.auth.sso_jit_provisioned",
-];
-
-/** The new-user names the loaded registry still knows. */
 export function newUserEventTypes(
-	registry: readonly { name: string }[],
+	registry: readonly { name: string; marksUserJoined?: boolean }[],
 ): string[] {
-	const known = new Set(registry.map((t) => t.name));
-	return NEW_USER_EVENT_TYPES.filter((name) => known.has(name));
+	return registry.filter((t) => t.marksUserJoined).map((t) => t.name);
 }
 
 /** Count of the given event types in a by-event-type aggregate. */

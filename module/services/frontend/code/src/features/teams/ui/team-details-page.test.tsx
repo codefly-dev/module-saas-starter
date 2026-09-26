@@ -175,7 +175,8 @@ describe("team details", () => {
 	});
 	it("adds a new member and shows them in the roster", async () => {
 		auth.orgRole = "owner";
-		removed = true;
+		// The roster handler below shadows the beforeEach one, so the empty
+		// roster comes from `added` being null rather than from `removed`.
 		let added: { userId: string; userEmail: string } | null = null;
 		server.use(
 			http.post(rpc("OrganizationService", "ListMembers"), () =>
@@ -214,11 +215,9 @@ describe("team details", () => {
 			await screen.findByRole("button", { name: "newbie@example.com" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
-		await waitFor(() =>
-			expect(
-				screen.getByRole("button", { name: "Add member" }),
-			).toBeTruthy(),
-		);
+		// The mutation has to reach the service before the roster can refetch;
+		// waiting on the button proves nothing, it is there throughout.
+		await waitFor(() => expect(added).not.toBeNull());
 		expect(await screen.findByText("newbie@example.com")).toBeTruthy();
 		expect(screen.getByText("Members (1)")).toBeTruthy();
 	});

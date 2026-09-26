@@ -122,6 +122,7 @@ export const auditEventTypesQuery = (
 			owner: t.owner,
 			deprecated: t.deprecated,
 			description: t.description,
+			marksUserJoined: t.marksUserJoined,
 		}));
 	},
 	staleTime: 5 * 60 * 1000,

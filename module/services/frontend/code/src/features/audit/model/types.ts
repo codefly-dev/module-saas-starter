@@ -47,4 +47,6 @@ export interface AuditEventTypeInfo {
 	owner: string;
 	deprecated: boolean;
 	description: string;
+	/** The registry's own answer to "does this event mean a person joined". */
+	marksUserJoined: boolean;
 }

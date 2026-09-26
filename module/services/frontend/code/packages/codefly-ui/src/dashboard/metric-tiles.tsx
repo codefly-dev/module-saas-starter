@@ -53,14 +53,15 @@ export interface Metric {
 	state?: MetricState;
 	provenance?: ComponentProps<typeof MetricProvenance>;
 	/**
-	 * Makes the tile a filter control: activating it (click, or Enter/Space
-	 * while focused) calls this instead of the tile being purely presentational.
-	 * A `StatTile` renders as a button and gets a focus ring only when this is
-	 * set — a tile with nothing to select stays static.
+	 * Makes the tile a control: activating it (click, or Enter/Space while
+	 * focused) calls this instead of the tile being purely presentational. The
+	 * card renders as a button and gets a focus ring only when this is set — a
+	 * tile with nothing to select stays static. Honoured by every renderer of a
+	 * {@link Metric}, so a metric behaves the same whichever one draws it.
 	 */
 	onSelect?: () => void;
 	/** Pressed affordance for a tile whose {@link onSelect} names the filter
-	 * currently applied. Meaningless without {@link onSelect}. */
+	 * currently applied. Ignored without {@link onSelect}. */
 	selected?: boolean;
 }
 
@@ -187,6 +188,39 @@ function hasTrend(series: number[] | undefined): series is number[] {
 	return !!series && series.length > 1;
 }
 
+// The card props that turn a metric into a control. Both StatTile and
+// MetricCard apply these, because `onSelect` lives on the Metric rather than on
+// one component's props: a renderer that ignored it would silently drop the
+// caller's click handler, keyboard access and pressed state.
+//
+// Keyboard activation is written out because the card itself is the interactive
+// element — a nested <button> would be invalid HTML inside it and would steal
+// the click target — so it does not get what a native button gives for free.
+function selectableCard(metric: Metric): {
+	className: string | false;
+	props: Record<string, unknown>;
+} {
+	const { onSelect } = metric;
+	if (!onSelect) return { className: false, props: {} };
+	return {
+		className: cn(
+			"cursor-pointer text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+			metric.selected && "ring-2 ring-primary",
+		),
+		props: {
+			role: "button" as const,
+			tabIndex: 0,
+			"aria-pressed": metric.selected ?? false,
+			onClick: onSelect,
+			onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+				if (event.key !== "Enter" && event.key !== " ") return;
+				event.preventDefault();
+				onSelect();
+			},
+		},
+	};
+}
+
 /**
  * A single headline number — label, value, optional delta and trend sparkline,
  * with a freshness badge when the metric isn't `ready`. The compact building
@@ -199,34 +233,11 @@ export function StatTile({
 	metric: Metric;
 	className?: string;
 }) {
-	const { onSelect } = metric;
-	// Keyboard activation mirrors what a native <button> gives for free, since
-	// the tile itself is the interactive element (a nested button would be
-	// invalid HTML and steal the click target).
-	function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-		if (!onSelect) return;
-		if (event.key !== "Enter" && event.key !== " ") return;
-		event.preventDefault();
-		onSelect();
-	}
+	const selectable = selectableCard(metric);
 	return (
 		<Card
-			className={cn(
-				"gap-1.5 p-4",
-				onSelect &&
-					"cursor-pointer text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-				metric.selected && "ring-2 ring-primary",
-				className,
-			)}
-			{...(onSelect
-				? {
-						role: "button" as const,
-						tabIndex: 0,
-						"aria-pressed": metric.selected,
-						onClick: onSelect,
-						onKeyDown,
-					}
-				: {})}
+			className={cn("gap-1.5 p-4", selectable.className, className)}
+			{...selectable.props}
 		>
 			<div className="flex items-center justify-between gap-2">
 				<span className="type-metric-label text-muted-foreground">
@@ -266,8 +277,9 @@ export function MetricCard({
 	metric: Metric;
 	className?: string;
 }) {
+	const selectable = selectableCard(metric);
 	return (
-		<Card className={className}>
+		<Card className={cn(selectable.className, className)} {...selectable.props}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
 				<span className="type-metric-heading text-muted-foreground">
 					{metric.label}

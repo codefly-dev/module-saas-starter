@@ -107,6 +107,11 @@ type AuditEventDefinition struct {
 	Description string
 	Durability  AuditDurability
 	Fields      []PayloadField
+	// MarksUserJoined says this type records a person joining the tenant for
+	// the first time. It is the registry's answer to "who is a new user",
+	// served over ListAuditEventTypes so no client has to keep its own list of
+	// names in step with this one.
+	MarksUserJoined bool
 }
 
 // mutation registers a privileged write (DurabilityTransactional); observation
@@ -153,6 +158,16 @@ func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
 }
 func pii(f PayloadField) PayloadField { f.PII = true; return f }
+
+// userJoined marks a definition as recording a person joining the tenant for
+// the first time — the fact a "new users" figure counts. A membership being
+// provisioned is not it: saas.auth.sso_jit_provisioned fires again whenever a
+// locally-removed member is re-provisioned from a still-valid IdP assertion,
+// so marking it would count one person once per removal.
+func userJoined(d AuditEventDefinition) AuditEventDefinition {
+	d.MarksUserJoined = true
+	return d
+}
 
 // Registered event types. The constants are the typed vocabulary producers use;
 // grouping mirrors the categories.
@@ -351,9 +366,9 @@ const (
 )
 
 var auditEventCatalog = []AuditEventDefinition{
-	mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
-		enum("signup_method", "password", "sso", "magic_link"), pii(str("email"))),
-	mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email"))),
+	userJoined(mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
+		enum("signup_method", "password", "sso", "magic_link"), pii(str("email")))),
+	userJoined(mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email")))),
 	mutation(EventUserUpdated, CategoryIdentity, "A user profile was updated."),
 	mutation(EventUserDeleted, CategoryIdentity, "A user account was deleted."),
 	// A suspension is allowed to leave an organization with no administrator —
