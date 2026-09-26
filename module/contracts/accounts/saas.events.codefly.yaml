@@ -207,7 +207,39 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.document.effect.committed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.frozen
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.ingest_skipped_stale
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.document.ingested
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.knowledge.published
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.ownership_transferred
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.payload_conflict
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.production.committed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.quarantine_release_refused
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
@@ -228,6 +260,14 @@ publishes:
     visibility: external
     retention: 30d
   - type: saas.document.search
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.snapshot.committed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.snapshot.skipped_stale
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

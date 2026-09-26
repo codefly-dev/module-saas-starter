@@ -326,6 +326,26 @@ const (
 	EventDocumentQuarantineReleased EventType = "saas.document.quarantine_released"
 	EventDocumentSubscribed         EventType = "saas.document.subscribed"
 	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
+	// Entry-level facts of the documents store's own mutations, each on the
+	// entry (resource_id) like the lifecycle vocabulary above. A transfer and a
+	// freeze are audited on success and on refusal alike, told apart by
+	// `outcome`, the way the store's API audits them. A stale ingest op was
+	// refused by the store's ordering guard and wrote nothing; a refused release
+	// named a tenant the approval was not delivered for.
+	EventDocumentOwnershipTransferred     EventType = "saas.document.ownership_transferred"
+	EventDocumentFrozen                   EventType = "saas.document.frozen"
+	EventDocumentIngestSkippedStale       EventType = "saas.document.ingest_skipped_stale"
+	EventDocumentQuarantineReleaseRefused EventType = "saas.document.quarantine_release_refused"
+	EventDocumentPayloadConflict          EventType = "saas.document.payload_conflict"
+	// Receipts of the documents store's atomic effects. resource_id is the
+	// effect key (the artifact id for a production), not an entry: each effect
+	// commits many entries at once, and every entry it changes is also audited
+	// on its own under the lifecycle vocabulary above, in the same transaction.
+	EventDocumentSnapshotCommitted    EventType = "saas.document.snapshot.committed"
+	EventDocumentSnapshotSkippedStale EventType = "saas.document.snapshot.skipped_stale"
+	EventDocumentEffectCommitted      EventType = "saas.document.effect.committed"
+	EventDocumentProductionCommitted  EventType = "saas.document.production.committed"
+	EventDocumentKnowledgePublished   EventType = "saas.document.knowledge.published"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -530,8 +550,26 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentUnarchived, CategoryLifecycle, "A document was unarchived: listed again.", documentFields...),
 	mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
-	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
-	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created, or refused (outcome failure).", documentOutcomeFields...),
+	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed, or the removal refused (outcome failure).", documentOutcomeFields...),
+	mutation(EventDocumentOwnershipTransferred, CategoryLifecycle, "A document's owner was reassigned, or the transfer refused (outcome failure).",
+		append(append([]PayloadField(nil), documentOutcomeFields...), str("new_owner_subject_id"))...),
+	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was frozen into a boundary-governed record, or the freeze refused (outcome failure).", documentOutcomeFields...),
+	observation(EventDocumentIngestSkippedStale, CategoryLifecycle, "A document ingest op was refused as behind the order already applied at its path; nothing was written.",
+		append(append([]PayloadField(nil), documentFields...), str("path"), PayloadField{Name: "ordinal", Kind: FieldInt})...),
+	observation(EventDocumentQuarantineReleaseRefused, CategorySecurity, "A quarantine release was refused: the approval's payload named a tenant the release was not delivered for.",
+		append(append([]PayloadField(nil), documentFields...), str("claimed_tenant"), str("claimed_solution"))...),
+	observation(EventDocumentPayloadConflict, CategorySystem, "A producer re-ran and offered different bytes for an artifact already stored; the stored bytes were kept.",
+		str("solution"), str("producer"), str("producer_version"), str("entry"), str("entry_version"),
+		PayloadField{Name: "stored_bytes", Kind: FieldInt}, PayloadField{Name: "offered_bytes", Kind: FieldInt}),
+	mutation(EventDocumentSnapshotCommitted, CategoryLifecycle, "A complete source listing was reconciled into a document scope as one effect.", documentSnapshotFields...),
+	observation(EventDocumentSnapshotSkippedStale, CategoryLifecycle, "A source listing was refused as older than the order its scope already holds; nothing was written.", documentSnapshotFields...),
+	mutation(EventDocumentEffectCommitted, CategoryLifecycle, "A batch of document changes committed as one effect.",
+		str("solution"), str("digest"), PayloadField{Name: "applied", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}),
+	mutation(EventDocumentProductionCommitted, CategoryLifecycle, "A producer's derived artifact for a document version committed as one effect.",
+		str("solution"), str("effect_key"), str("task_id"), str("digest"), str("producer"), str("producer_version")),
+	mutation(EventDocumentKnowledgePublished, CategoryLifecycle, "A knowledge card was published into a collection as one effect.",
+		append(append([]PayloadField(nil), documentFields...), str("effect_key"), str("run_id"), str("digest"))...),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
@@ -567,6 +605,21 @@ var documentFields = []PayloadField{
 	uid("actor_principal_id"),
 	uid("owner_principal_id"),
 	str("initiator"),
+}
+
+// documentOutcomeFields is documentFields plus the outcome of a mutation the
+// documents store audits whether it committed or was refused: `outcome` is
+// success or failure, and `reason` says why a failure failed.
+var documentOutcomeFields = append(append([]PayloadField(nil), documentFields...),
+	enum("outcome", "success", "failure"), str("reason"))
+
+// documentSnapshotFields is the receipt of one reconciled source listing:
+// the digest of the listing, how many entries it tombstoned and how many it
+// confirmed unchanged, and the delivery ordinal it was ranked at.
+var documentSnapshotFields = []PayloadField{
+	str("solution"), str("digest"),
+	PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "retained", Kind: FieldInt},
+	PayloadField{Name: "ordinal", Kind: FieldInt},
 }
 
 // Observed read telemetry never carries query text, excerpts or credentials.
