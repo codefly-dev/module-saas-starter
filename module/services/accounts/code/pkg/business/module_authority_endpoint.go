@@ -17,17 +17,49 @@ import (
 // this module's interface. See INTERNAL_TRANSPORT.md.
 const ModuleAuthorityEndpoint = "authority"
 
+// moduleAuthorityCapabilityService is the one accounts service whose every
+// admissible method authenticates the CALLING MODULE from a signed capability
+// — its module Work Context, or a viewer Work Context whose audience names it —
+// before it decides anything. Its Mint* methods are the exception: they are
+// where a module obtains a capability in the first place, so they authenticate
+// with the identity secret its composition provisioned, and the gateway brokers
+// them. ValidateModuleAuthorityProcedures refuses them here.
+const moduleAuthorityCapabilityService = "/saas.accounts.v1.ModuleCapabilitiesService/"
+
+// moduleAuthorityReadOracles are the only procedures admitted on the endpoint
+// that do NOT authenticate the caller: they authorize on the perimeter
+// credential alone and answer about the principals and tenant the request
+// names. Every entry must therefore be READ-ONLY, because the perimeter
+// credential is shared by every composed module, so a write here is a write any
+// module may make for any tenant.
+//
+// Each entry, and why it is admissible in spite of that:
+//
+//   - CheckAuthorizationRevision — answers one bit about whether a capability
+//     the consumer already holds is still current. It resolves nothing the
+//     caller did not present and mutates nothing.
+//   - AuthorizeEvidenceRead — answers one bit about a (caller, owner, task,
+//     session) tuple the consumer already holds, and mutates nothing.
+//
+// Both remain authority oracles over request-named principals, which is a real
+// residual property and the reason the set is this small and explicit rather
+// than "the WorkContextService consumer seams". Binding them to the calling
+// module's own Work Context would remove it; until then nothing may be added
+// here that writes.
+var moduleAuthorityReadOracles = map[string]struct{}{
+	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead":      {},
+	"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision": {},
+}
+
 // moduleAuthorityProcedures is the least-privilege subset of the internal tier
 // a composed module may call on ModuleAuthorityEndpoint. Every entry is an
 // EXPOSURE_INTERNAL method (the perimeter credential is verified on every
-// call), and every entry additionally decides on a credential that names the
-// caller or the capability being checked:
+// call), and every entry additionally either
 //
-//   - the Work Context consumer seams take the capability under check in the
-//     request and answer only about it;
-//   - the module capability surface authenticates the calling module
-//     principal from its verified Work Context and authorizes it against the
-//     grant its composition declared (MODULE_PRINCIPALS).
+//   - authenticates the calling module from a signed Work Context and
+//     authorizes it against the grant its composition declared
+//     (MODULE_PRINCIPALS) — the whole module capability surface does this; or
+//   - is one of the read-only oracles named in moduleAuthorityReadOracles.
 //
 // Deliberately absent, and reachable only on the private listener:
 //
@@ -38,14 +70,22 @@ const ModuleAuthorityEndpoint = "authority"
 //     (solution and client registries, API-key validation, identity
 //     resolution);
 //   - the generic permission oracles and principal administration, which
-//     would give a module an authority question about arbitrary principals
-//     (AuthorizeEvidenceRead is the purpose-bound alternative);
-//   - usage consumption and the headless installation mint, which today
-//     authorize on the perimeter credential alone and so would let any module
-//     act for any tenant.
+//     would give a module an authority question about arbitrary principals;
+//   - every method that authorizes on the perimeter credential alone AND
+//     mutates state, because that credential is shared by every composed
+//     module and so names no tenant. ConsumeUsage and StartInstallationTask
+//     are the obvious ones. ConsumeSingleUse belongs to the same class and is
+//     held off for the same reason: it writes a replay claim keyed on the
+//     org_id and context_id the REQUEST carries, with no caller binding, so
+//     serving it here would let any module burn any tenant's single-use
+//     capability (the legitimate consumer then reads its own valid capability
+//     as AlreadyExists) and fill the replay table for tenants it has no
+//     relationship with. It joins the endpoint once it decides on a credential
+//     bound to the consuming module, exactly as ConsumeUsage does.
 //
-// Adding a procedure here widens what every composed module can reach; the
-// test beside this file holds each entry to the rules above.
+// Adding a procedure here widens what every composed module can reach;
+// ValidateModuleAuthorityProcedures and the test beside this file hold each
+// entry to the rules above.
 var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
 	"/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
@@ -71,7 +111,6 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe",
 	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
 	"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
-	"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
 }
 
 var moduleAuthorityIndex = func() map[string]struct{} {
@@ -101,9 +140,19 @@ func IsModuleAuthorityProcedure(fullMethod string) bool {
 }
 
 // ValidateModuleAuthorityProcedures holds the module surface to the internal
-// tier: every entry must name a classified EXPOSURE_INTERNAL method. It runs in
-// the catalog and deployment generators, so a stale or widened entry fails
-// generation rather than rendering a policy that admits nothing or too much.
+// tier. Every entry must
+//
+//  1. name a classified EXPOSURE_INTERNAL method, and
+//  2. either belong to the capability surface that authenticates the calling
+//     module from a signed Work Context — excluding its Mint* methods, which
+//     authenticate with the module's secret and are the gateway's to broker —
+//     or be one of the explicitly justified read-only oracles.
+//
+// It runs in the catalog and deployment generators, so a stale or widened entry
+// fails generation rather than rendering a policy that admits nothing or too
+// much. Rule 2 is what keeps a method that authorizes on the shared perimeter
+// credential alone and mutates state from reaching every composed module by way
+// of a one-line edit to the list above.
 func ValidateModuleAuthorityProcedures() error {
 	seen := make(map[string]bool, len(moduleAuthorityProcedures))
 	for _, procedure := range moduleAuthorityProcedures {
@@ -117,6 +166,20 @@ func ValidateModuleAuthorityProcedures() error {
 		}
 		if policy.Tier != RPCPolicyInternal {
 			return fmt.Errorf("module authority procedure %s is %s-tier; only internal-tier methods are served on the %q endpoint", procedure, policy.Tier, ModuleAuthorityEndpoint)
+		}
+		if _, oracle := moduleAuthorityReadOracles[procedure]; oracle {
+			continue
+		}
+		if !strings.HasPrefix(procedure, moduleAuthorityCapabilityService) {
+			return fmt.Errorf("module authority procedure %s neither authenticates the calling module from its Work Context (it is not on %s) nor is a declared read-only oracle; a method that authorizes on the shared perimeter credential alone must not be served on the %q endpoint", procedure, strings.TrimSuffix(strings.TrimPrefix(moduleAuthorityCapabilityService, "/"), "/"), ModuleAuthorityEndpoint)
+		}
+		if strings.HasPrefix(policy.Method, "Mint") {
+			return fmt.Errorf("module authority procedure %s authenticates with the module identity secret, not a Work Context; the gateway brokers it and it must not be served on the %q endpoint", procedure, ModuleAuthorityEndpoint)
+		}
+	}
+	for procedure := range moduleAuthorityReadOracles {
+		if _, served := moduleAuthorityIndex[procedure]; !served {
+			return fmt.Errorf("module authority read oracle %s is declared but not served; remove it rather than leaving a justification for a procedure nobody reaches", procedure)
 		}
 	}
 	return nil

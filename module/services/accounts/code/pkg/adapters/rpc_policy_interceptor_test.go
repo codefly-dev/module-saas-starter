@@ -233,6 +233,10 @@ func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurfaceWithCredential(t *test
 		"/saas.accounts.v1.PermissionService/CheckPermission",
 		"/saas.accounts.v1.UsageService/ConsumeUsage",
 		"/saas.accounts.v1.UserService/GetSelf",
+		// Internal-tier, and on the same service as the two admitted oracles,
+		// but it authorizes on the shared perimeter credential alone and writes
+		// a replay claim for the org the request names.
+		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
 	} {
 		_, err := policy.authorize(ctx, method)
 		require.Equal(t, codes.PermissionDenied, status.Code(err), method)

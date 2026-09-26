@@ -27,13 +27,19 @@ endpoints:
       endpoint: connect
       languages: [go, typescript, python]
       services: [AccessibleScopeService, AuditService, DatasourceService, WebhookService]
-    # The internal tier a composed module may call. Its contract is the whole
-    # saas.accounts.v1 package, but the listener serves only
-    # business.ModuleAuthorityProcedures, and a client allowlist is per
-    # service, not per method: allowlisting WorkContextService would ship its
-    # tenant-tier session RPCs too. Consumers build the few calls they make on
-    # the SDK repositories' existing saas.accounts.v1 stubs, so no client is
-    # generated from this endpoint.
+    # The internal tier a composed module may call. The listener serves only
+    # business.ModuleAuthorityProcedures, but its exported contract is the whole
+    # saas.accounts.v1 package — byte for byte the same 853 KB descriptor set
+    # the `connect` endpoint above already exports, same sha256, because the
+    # contract generator extracts per API rather than per served method and does
+    # not reuse an identical one. That duplication is the generator's to fix (a
+    # curated tree here would be a hand-picked generator output, which
+    # AGENTS.md forbids); until it does, every saas.accounts.v1 change moves two
+    # identical digests instead of one.
+    # A client allowlist is per service, not per method: allowlisting
+    # WorkContextService would ship its tenant-tier session RPCs too. Consumers
+    # build the few calls they make on the SDK repositories' existing
+    # saas.accounts.v1 stubs, so no client is generated from this endpoint.
     - service: accounts
       endpoint: authority
       publish: false

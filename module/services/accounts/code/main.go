@@ -29,6 +29,7 @@ import (
 
 	"github.com/codefly-dev/core/shared"
 	"github.com/codefly-dev/core/standards"
+	"github.com/codefly-dev/core/wool"
 
 	codefly "github.com/codefly-dev/sdk-go"
 )
@@ -63,14 +64,30 @@ func main() {
 	if net := codefly.For(ctx).WithDefaultNetwork().API(standards.CONNECT).NetworkInstance(); net != nil {
 		config.EndpointConnectPort = shared.Pointer(net.Port)
 	}
-	// The module authority endpoint is declared in service.codefly.yaml, so an
-	// unresolved address is a composition error: fail at start rather than
-	// fall back to a default port that collides with the gRPC listener.
-	authority, err := codefly.For(ctx).Endpoint(business.ModuleAuthorityEndpoint).API(standards.GRPC).ResolveNetworkInstance()
-	if err != nil {
-		panic(fmt.Errorf("resolve the %q endpoint: %w", business.ModuleAuthorityEndpoint, err))
+	// The module authority endpoint is declared in service.codefly.yaml, and a
+	// topology that omits it — or gives it a port another listener already
+	// binds — is refused by the deployment generator, so a COMPOSITION error is
+	// caught at render (cataloggen.validateModuleAuthorityEndpoint). An address
+	// that does not resolve here is a different failure: the runtime, or the
+	// service agent's rendered Deployment, injected no capability for this
+	// endpoint. Binding no listener leaves it unreachable — connection refused,
+	// never a weaker gate, and RunAuthority already treats a nil port that way.
+	// Panicking instead would trade an auxiliary listener for the whole host:
+	// accounts would crashloop and take the tenant surfaces, the internal tier
+	// and every service that authenticates through them down with it.
+	//
+	// This query deliberately does not use WithDefaultNetwork(), so resolution
+	// never invents a port; the only outcomes are the injected address or this
+	// error path.
+	if authority, resolveErr := codefly.For(ctx).Endpoint(business.ModuleAuthorityEndpoint).API(standards.GRPC).ResolveNetworkInstance(); resolveErr != nil {
+		wool.Get(ctx).In("main").Error(
+			"the module authority endpoint did not resolve; no module authority listener is served",
+			wool.Field("endpoint", business.ModuleAuthorityEndpoint),
+			wool.ErrField(resolveErr),
+		)
+	} else {
+		config.EndpointAuthorityPort = shared.Pointer(authority.Port)
 	}
-	config.EndpointAuthorityPort = shared.Pointer(authority.Port)
 
 	// Complete dependency wiring, plugin registration and fixture seeding before
 	// opening any listener. Starting the generated server first exposes handlers

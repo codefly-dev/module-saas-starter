@@ -44,8 +44,9 @@ COPY --chown=appuser --from=builder /app/app .
 # Use the non-root user
 USER appuser
 
-# Expose ports
-EXPOSE 8080 9090
+# Expose ports: rest/connect, grpc, and the module authority endpoint
+# (spec.deployment.endpoint-ports in service.codefly.yaml).
+EXPOSE 8080 9090 9091
 
 # Run the binary
 CMD ["./app"]
