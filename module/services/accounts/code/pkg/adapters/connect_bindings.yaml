@@ -1,5 +1,10 @@
 version: v1
 services:
+  ApprovalReviewService:
+    handler: approvalReviewConnectHandler
+    source:
+      kind: singleton
+      name: ApprovalReviewSingleton
   AccessibleScopeService:
     handler: accessibleScopeConnectHandler
     source:

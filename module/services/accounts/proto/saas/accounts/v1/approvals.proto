@@ -1,0 +1,71 @@
+syntax = "proto3";
+package saas.accounts.v1;
+import "buf/validate/validate.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// GetApprovalReviewRequest identifies one immutable approval request.
+message GetApprovalReviewRequest {
+ string org_id = 1 [(buf.validate.field).string.uuid = true];
+ string id = 2 [(buf.validate.field).string.uuid = true];
+}
+// DecideApprovalReviewRequest binds the decision to the subject that was shown.
+message DecideApprovalReviewRequest {
+ string org_id = 1 [(buf.validate.field).string.uuid = true];
+ string id = 2 [(buf.validate.field).string.uuid = true];
+ string decision = 3 [(buf.validate.field).string = {in: ["approve", "deny"]}];
+ string reason = 4 [(buf.validate.field).string.max_len = 1024];
+ string subject_hash = 5 [(buf.validate.field).string = {len: 64, pattern: "^[a-f0-9]{64}$"}];
+}
+// ApprovalReviewDecision is an immutable human decision.
+message ApprovalReviewDecision {
+ string actor = 1;
+ string decision = 2;
+ string reason = 3;
+ google.protobuf.Timestamp decided_at = 4;
+}
+// ApprovalReview exposes the reviewed subject, pinned policy and recorded decisions.
+message ApprovalReview {
+ string id = 1;
+ string state = 2;
+ google.protobuf.Struct subject = 3;
+ string subject_hash = 4;
+ string requested_by = 5;
+ repeated string approvers = 6;
+ uint32 quorum = 7;
+ repeated ApprovalReviewDecision decisions = 8;
+}
+// ApprovalReviewService lets an assigned person inspect and decide a request.
+service ApprovalReviewService {
+ // Read a request as its requester or one of its assigned approvers.
+ rpc GetApprovalReview(GetApprovalReviewRequest) returns (ApprovalReview) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_AUTHENTICATED
+   tenant: TENANT_REQUIREMENT_ORG_MEMBER
+   resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
+   mfa: MFA_REQUIREMENT_NONE
+   audit: {emission: AUDIT_EMISSION_NONE}
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+   request_sensitivity: SENSITIVITY_CONFIDENTIAL
+   response_sensitivity: SENSITIVITY_CONFIDENTIAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+ // Record an assigned approver decision against the exact reviewed subject.
+ rpc DecideApprovalReview(DecideApprovalReviewRequest) returns (ApprovalReview) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_AUTHENTICATED
+   tenant: TENANT_REQUIREMENT_ORG_MEMBER
+   resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
+   mfa: MFA_REQUIREMENT_NONE
+   audit: {emission: AUDIT_EMISSION_NONE}
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+   request_sensitivity: SENSITIVITY_CONFIDENTIAL
+   response_sensitivity: SENSITIVITY_CONFIDENTIAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+}

@@ -297,3 +297,21 @@ var (
         WHERE id = $4 AND org_id = $5
     `
 )
+
+// ListApprovalDecisions reads only decisions in the named organization.
+func (s *PostgresStore) ListApprovalDecisions(ctx context.Context, orgID, id string) ([]business.ApprovalDecision, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT id, request_id, org_id, decider, decision, COALESCE(reason,''), decided_at FROM approval_decisions WHERE org_id=$1 AND request_id=$2 ORDER BY decided_at,id`, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []business.ApprovalDecision{}
+	for rows.Next() {
+		var d business.ApprovalDecision
+		if err := rows.Scan(&d.ID, &d.RequestID, &d.OrgID, &d.Decider, &d.Decision, &d.Reason, &d.DecidedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
