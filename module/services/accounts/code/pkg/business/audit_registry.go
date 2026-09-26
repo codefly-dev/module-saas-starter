@@ -379,6 +379,7 @@ const (
 	EventDatasourceSourceAccessLost     EventType = "saas.datasource.source.access_lost"
 	EventDatasourceSourceAccessRestored EventType = "saas.datasource.source.access_restored"
 	EventDatasourceBlobFetched          EventType = "saas.datasource.blob_fetched"
+	EventDatasourceFilesFetched         EventType = "saas.datasource.files_fetched"
 
 	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
 	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
@@ -643,6 +644,8 @@ var auditEventCatalog = []AuditEventDefinition{
 		enum("restored_from", DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended)),
 	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
+	observation(EventDatasourceFilesFetched, CategorySystem, "A module fetched a batch of a datasource's files at one version over FetchDatasourceFiles.",
+		str("repo"), str("version"), PayloadField{Name: "files", Kind: FieldInt}, PayloadField{Name: "bytes", Kind: FieldInt}),
 	revised(mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...), webhookAdminVersion),
 	observation(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),

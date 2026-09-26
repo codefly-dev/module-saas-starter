@@ -361,6 +361,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.files_fetched": {
+      "address": "saas.datasource.files_fetched",
+      "title": "saas.datasource.files_fetched",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.files_fetched"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.force_push_reconciled": {
       "address": "saas.datasource.force_push_reconciled",
       "title": "saas.datasource.force_push_reconciled",
@@ -2027,6 +2038,13 @@
       },
       "title": "saas publishes saas.datasource.credential.updated"
     },
+    "send:saas.datasource.files_fetched": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.files_fetched"
+      },
+      "title": "saas publishes saas.datasource.files_fetched"
+    },
     "send:saas.datasource.force_push_reconciled": {
       "action": "send",
       "channel": {
@@ -3160,6 +3178,13 @@
       "saas.datasource.credential.updated": {
         "name": "saas.datasource.credential.updated",
         "title": "saas.datasource.credential.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.files_fetched": {
+        "name": "saas.datasource.files_fetched",
+        "title": "saas.datasource.files_fetched",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

@@ -25,6 +25,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventBillingCheckoutStarted,
 	EventBillingFreePlan,
 	EventDatasourceBlobFetched,
+	EventDatasourceFilesFetched,
 	EventDatasourceBranchDeleted,
 	EventDatasourceChangeSetCompiled,
 	// SyncDatasourceSource emits this only when replacing a credential; the

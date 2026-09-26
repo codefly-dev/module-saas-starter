@@ -496,7 +496,7 @@ func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesReq
 	}
 	refs := make([]business.DatasourceFileRequest, 0, len(req.GetFiles()))
 	for _, f := range req.GetFiles() {
-		refs = append(refs, business.DatasourceFileRequest{Path: f.GetPath(), ItemID: f.GetItemId()})
+		refs = append(refs, business.DatasourceFileRequest{ItemID: f.GetItemId(), ItemVersion: f.GetItemVersion()})
 	}
 	buf := make([]byte, datasourceBlobChunkBytes)
 	return service.ModuleFetchDatasourceFiles(ctx, caller, req.GetSourceId(), req.GetVersion(), refs,
@@ -508,6 +508,7 @@ func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesReq
 					BoundaryNodeId: file.Provenance.BoundaryNodeID,
 					Version:        file.Provenance.Version,
 					ItemId:         file.Provenance.ItemID,
+					ItemVersion:    file.Provenance.ItemVersion,
 				},
 				Path:        file.Path,
 				ContentType: file.ContentType,

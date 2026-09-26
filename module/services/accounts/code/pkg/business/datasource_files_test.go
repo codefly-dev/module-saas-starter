@@ -159,7 +159,16 @@ func TestRateLimitedSyncWaitsForTheReset(t *testing.T) {
 
 func filesService(t *testing.T, gh *fakeGitHub, queues []string) (*business.Service, *business.DatasourceSource) {
 	t.Helper()
-	svc := moduleBlobService(t, newDatasourceFakeStore(), gh, queues, true)
+	svc, source, _ := filesServiceWithAudit(t, gh, queues)
+	return svc, source
+}
+
+func filesServiceWithAudit(t *testing.T, gh *fakeGitHub, queues []string) (*business.Service, *business.DatasourceSource, *recordingAudit) {
+	t.Helper()
+	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, gh)
+	svc.SetModuleCapabilities(&fakeJobBackend{}, &fakeJobBackend{}, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Queues: queues, CrossTenant: true},
+	})
 	source, err := svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/docs", Paths: []string{"docs"}, FileExtensions: []string{".md"},
 		CollectionLabel: "guides", AccessToken: "ghp_token",
@@ -167,7 +176,7 @@ func filesService(t *testing.T, gh *fakeGitHub, queues []string) (*business.Serv
 	if err != nil {
 		t.Fatalf("AddGitHubSource: %v", err)
 	}
-	return svc, source
+	return svc, source, audit
 }
 
 type servedFile struct {
@@ -207,11 +216,11 @@ func errorReason(t *testing.T, err error) (codes.Code, *errdetails.ErrorInfo, *e
 
 func TestModuleFetchDatasourceFiles_ServesTheBatchInOrderWithItsEnvelope(t *testing.T) {
 	gh, byPath := docsTree(40)
-	svc, source := filesService(t, gh, []string{"datasource"})
+	svc, source, audit := filesServiceWithAudit(t, gh, []string{"datasource"})
 	var refs []business.DatasourceFileRequest
 	for i := 39; i >= 0; i-- {
 		path := fmt.Sprintf("docs/page-%03d.md", i)
-		refs = append(refs, business.DatasourceFileRequest{Path: path, ItemID: blobID(byPath[path])})
+		refs = append(refs, business.DatasourceFileRequest{ItemID: path, ItemVersion: blobID(byPath[path])})
 	}
 
 	served, err := fetchFiles(svc, source.ID, refs)
@@ -224,13 +233,27 @@ func TestModuleFetchDatasourceFiles_ServesTheBatchInOrderWithItsEnvelope(t *test
 	if got := gh.fetches(); got != 1 {
 		t.Fatalf("a 40-file batch made %d fetches, want 1", got)
 	}
+	// One access event for the batch, carrying what it served — never one per file.
+	fetched := audit.entriesOf(business.EventDatasourceFilesFetched)
+	if len(fetched) != 1 || len(audit.entriesOf(business.EventDatasourceBlobFetched)) != 0 {
+		t.Fatalf("audit = %v, want exactly one files_fetched", audit.types())
+	}
+	var total int64
+	for _, s := range served {
+		total += s.file.Size
+	}
+	if p := fetched[0].Payload; p["files"] != 40 || p["bytes"] != total || p["version"] != filesVersion || fetched[0].OrgID != source.OrgID {
+		t.Fatalf("files_fetched payload = %v on org %s, want 40 files, %d bytes at %s on %s", p, fetched[0].OrgID, total, filesVersion, source.OrgID)
+	}
+	requireDeclaredPayloads(t, audit)
 	for i, s := range served {
-		if s.file.Path != refs[i].Path || !bytes.Equal(s.content, byPath[refs[i].Path]) || s.file.Size != int64(len(s.content)) {
-			t.Fatalf("file %d = %s (%d bytes), want %s in request order", i, s.file.Path, len(s.content), refs[i].Path)
+		if s.file.Path != refs[i].ItemID || !bytes.Equal(s.content, byPath[refs[i].ItemID]) || s.file.Size != int64(len(s.content)) {
+			t.Fatalf("file %d = %s (%d bytes), want %s in request order", i, s.file.Path, len(s.content), refs[i].ItemID)
 		}
 		p := s.file.Provenance
-		if p.SourceID != source.ID || p.OrgID != source.OrgID || p.BoundaryNodeID != source.BoundaryNodeID || p.Version != filesVersion || p.ItemID != refs[i].ItemID {
-			t.Fatalf("provenance = %+v, want the source, its org and boundary, the version and the item id", p)
+		if p.SourceID != source.ID || p.OrgID != source.OrgID || p.BoundaryNodeID != source.BoundaryNodeID || p.Version != filesVersion ||
+			p.ItemID != refs[i].ItemID || p.ItemVersion != refs[i].ItemVersion {
+			t.Fatalf("provenance = %+v, want the source, its org and boundary, the version, the item's path and its blob id", p)
 		}
 	}
 }
@@ -240,12 +263,12 @@ func TestModuleFetchDatasourceFiles_ServesTheBatchInOrderWithItsEnvelope(t *test
 func TestModuleFetchDatasourceFiles_RefusesWhatTheVersionDoesNotList(t *testing.T) {
 	gh, byPath := docsTree(3)
 	svc, source := filesService(t, gh, []string{"datasource"})
-	good := business.DatasourceFileRequest{Path: "docs/page-000.md", ItemID: blobID(byPath["docs/page-000.md"])}
+	good := business.DatasourceFileRequest{ItemID: "docs/page-000.md", ItemVersion: blobID(byPath["docs/page-000.md"])}
 	for name, bad := range map[string]business.DatasourceFileRequest{
-		"another file's item id": {Path: "docs/page-001.md", ItemID: blobID(byPath["docs/page-002.md"])},
-		"out of path scope":      {Path: "src/main.go", ItemID: blobID(byPath["src/main.go"])},
-		"out of file-type scope": {Path: "docs/diagram.png", ItemID: blobID(byPath["docs/diagram.png"])},
-		"unknown path":           {Path: "docs/missing.md", ItemID: blobID([]byte("x"))},
+		"another file's item version": {ItemID: "docs/page-001.md", ItemVersion: blobID(byPath["docs/page-002.md"])},
+		"out of path scope":      {ItemID: "src/main.go", ItemVersion: blobID(byPath["src/main.go"])},
+		"out of file-type scope": {ItemID: "docs/diagram.png", ItemVersion: blobID(byPath["docs/diagram.png"])},
+		"unknown path":           {ItemID: "docs/missing.md", ItemVersion: blobID([]byte("x"))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			served, err := fetchFiles(svc, source.ID, []business.DatasourceFileRequest{good, bad})
@@ -268,7 +291,7 @@ func TestModuleFetchDatasourceFiles_LimitsFailClosed(t *testing.T) {
 		path := fmt.Sprintf("docs/big-%d.md", i)
 		gh.files = append(gh.files, github.File{Path: path, SHA: blobID(content)})
 		gh.content[path] = content
-		refs = append(refs, business.DatasourceFileRequest{Path: path, ItemID: blobID(content)})
+		refs = append(refs, business.DatasourceFileRequest{ItemID: path, ItemVersion: blobID(content)})
 	}
 	huge := bytes.Repeat([]byte("z"), github.MaxFileBytes+1)
 	gh.files = append(gh.files, github.File{Path: "docs/huge.md", SHA: blobID(huge)})
@@ -279,13 +302,13 @@ func TestModuleFetchDatasourceFiles_LimitsFailClosed(t *testing.T) {
 	if code, info, _ := errorReason(t, err); code != codes.FailedPrecondition || info.GetReason() != business.DatasourceReasonBatchTooLarge {
 		t.Fatalf("66 MiB batch err = %v, want %s", err, business.DatasourceReasonBatchTooLarge)
 	}
-	_, err = fetchFiles(svc, source.ID, []business.DatasourceFileRequest{{Path: "docs/huge.md", ItemID: blobID(huge)}})
+	_, err = fetchFiles(svc, source.ID, []business.DatasourceFileRequest{{ItemID: "docs/huge.md", ItemVersion: blobID(huge)}})
 	if code, info, _ := errorReason(t, err); code != codes.FailedPrecondition || info.GetReason() != business.DatasourceReasonFileTooLarge {
 		t.Fatalf("oversized file err = %v, want %s", err, business.DatasourceReasonFileTooLarge)
 	}
 	tooMany := make([]business.DatasourceFileRequest, 1001)
 	for i := range tooMany {
-		tooMany[i] = business.DatasourceFileRequest{Path: fmt.Sprintf("docs/%d.md", i), ItemID: blobID([]byte{byte(i)})}
+		tooMany[i] = business.DatasourceFileRequest{ItemID: fmt.Sprintf("docs/%d.md", i), ItemVersion: blobID([]byte{byte(i)})}
 	}
 	if _, err := fetchFiles(svc, source.ID, tooMany); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("1001-file batch err = %v, want InvalidArgument", err)
@@ -298,7 +321,7 @@ func TestModuleFetchDatasourceFiles_RateLimitIsTypedWithItsReset(t *testing.T) {
 	gh.fetchErr = &github.RateLimitError{ResetAt: reset}
 	svc, source := filesService(t, gh, []string{"datasource"})
 
-	_, err := fetchFiles(svc, source.ID, []business.DatasourceFileRequest{{Path: "docs/page-000.md", ItemID: blobID(byPath["docs/page-000.md"])}})
+	_, err := fetchFiles(svc, source.ID, []business.DatasourceFileRequest{{ItemID: "docs/page-000.md", ItemVersion: blobID(byPath["docs/page-000.md"])}})
 	code, info, retry := errorReason(t, err)
 	if code != codes.ResourceExhausted || info.GetReason() != business.DatasourceReasonRateLimited {
 		t.Fatalf("err = %v, want ResourceExhausted %s", err, business.DatasourceReasonRateLimited)
@@ -314,7 +337,7 @@ func TestModuleFetchDatasourceFiles_RateLimitIsTypedWithItsReset(t *testing.T) {
 func TestModuleFetchDatasourceFiles_RequiresTheDatasourceQueueGrant(t *testing.T) {
 	gh, byPath := docsTree(1)
 	svc, source := filesService(t, gh, []string{"other"})
-	_, err := fetchFiles(svc, source.ID, []business.DatasourceFileRequest{{Path: "docs/page-000.md", ItemID: blobID(byPath["docs/page-000.md"])}})
+	_, err := fetchFiles(svc, source.ID, []business.DatasourceFileRequest{{ItemID: "docs/page-000.md", ItemVersion: blobID(byPath["docs/page-000.md"])}})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("err = %v, want PermissionDenied", err)
 	}
