@@ -559,6 +559,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.governance_refused": {
+      "address": "saas.document.governance_refused",
+      "title": "saas.document.governance_refused",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.governance_refused"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.ingested": {
       "address": "saas.document.ingested",
       "title": "saas.document.ingested",
@@ -576,17 +587,6 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.ownership_transferred"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
-    "saas.document.quarantine_release_refused": {
-      "address": "saas.document.quarantine_release_refused",
-      "title": "saas.document.quarantine_release_refused",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.document.quarantine_release_refused"
         }
       },
       "x-visibility": "external",
@@ -653,6 +653,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.subscribed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.unfrozen": {
+      "address": "saas.document.unfrozen",
+      "title": "saas.document.unfrozen",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.unfrozen"
         }
       },
       "x-visibility": "external",
@@ -2043,6 +2054,13 @@
       },
       "title": "saas publishes saas.document.frozen"
     },
+    "send:saas.document.governance_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.governance_refused"
+      },
+      "title": "saas publishes saas.document.governance_refused"
+    },
     "send:saas.document.ingested": {
       "action": "send",
       "channel": {
@@ -2056,13 +2074,6 @@
         "$ref": "#/channels/saas.document.ownership_transferred"
       },
       "title": "saas publishes saas.document.ownership_transferred"
-    },
-    "send:saas.document.quarantine_release_refused": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.document.quarantine_release_refused"
-      },
-      "title": "saas publishes saas.document.quarantine_release_refused"
     },
     "send:saas.document.quarantine_released": {
       "action": "send",
@@ -2105,6 +2116,13 @@
         "$ref": "#/channels/saas.document.subscribed"
       },
       "title": "saas publishes saas.document.subscribed"
+    },
+    "send:saas.document.unfrozen": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.unfrozen"
+      },
+      "title": "saas publishes saas.document.unfrozen"
     },
     "send:saas.document.unsubscribed": {
       "action": "send",
@@ -3110,6 +3128,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.governance_refused": {
+        "name": "saas.document.governance_refused",
+        "title": "saas.document.governance_refused",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.ingested": {
         "name": "saas.document.ingested",
         "title": "saas.document.ingested",
@@ -3120,13 +3145,6 @@
       "saas.document.ownership_transferred": {
         "name": "saas.document.ownership_transferred",
         "title": "saas.document.ownership_transferred",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.document.quarantine_release_refused": {
-        "name": "saas.document.quarantine_release_refused",
-        "title": "saas.document.quarantine_release_refused",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
@@ -3169,6 +3187,13 @@
       "saas.document.subscribed": {
         "name": "saas.document.subscribed",
         "title": "saas.document.subscribed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.unfrozen": {
+        "name": "saas.document.unfrozen",
+        "title": "saas.document.unfrozen",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

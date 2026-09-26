@@ -40,18 +40,21 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
 	EventDocumentDeleted,
-	// Governance actions a document producer reports through EmitAuditEvent.
+	// Governance actions a document producer reports through EmitAuditEvent,
+	// kept in the surrounding alphabetical order so two branches adding to this
+	// list conflict on the same lines instead of interleaving silently.
 	EventDocumentFrozen,
-	EventDocumentOwnershipTransferred,
-	EventDocumentQuarantineReleaseRefused,
+	EventDocumentGovernanceRefused,
 	EventDocumentIngested,
-	// Module-authenticated document readers emit these observations.
-	EventDocumentRead,
-	EventDocumentSearch,
+	EventDocumentOwnershipTransferred,
 	EventDocumentQuarantineReleased,
 	EventDocumentQuarantined,
+	// Module-authenticated document readers emit these observations.
+	EventDocumentRead,
 	EventDocumentRenamed,
+	EventDocumentSearch,
 	EventDocumentSubscribed,
+	EventDocumentUnfrozen,
 	EventDocumentUnsubscribed,
 	EventDocumentVersionMinted,
 	// Domain-event pub/sub (issue #493). These are emitted inside the producer's

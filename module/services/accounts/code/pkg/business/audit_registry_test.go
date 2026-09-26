@@ -154,19 +154,75 @@ func TestValidatePayload_DocumentGovernanceEvents(t *testing.T) {
 		event   EventType
 		payload map[string]any
 	}{
-		{EventDocumentOwnershipTransferred, map[string]any{"solution": "documents", "outcome": "success", "new_owner_subject_id": "subject-2"}},
-		{EventDocumentOwnershipTransferred, map[string]any{"solution": "documents", "outcome": "failure", "reason": "not the owner", "new_owner_subject_id": "subject-2"}},
-		{EventDocumentFrozen, map[string]any{"solution": "documents", "outcome": "success"}},
-		{EventDocumentFrozen, map[string]any{"solution": "documents", "outcome": "failure", "reason": "entry not found"}},
-		{EventDocumentQuarantineReleaseRefused, map[string]any{"solution": "documents", "version": "v1", "claimed_tenant": "other-tenant"}},
+		{EventDocumentOwnershipTransferred, map[string]any{"solution": "documents", "new_owner_subject_id": "subject-2"}},
+		{EventDocumentFrozen, map[string]any{"solution": "documents", "version": "v1"}},
+		{EventDocumentUnfrozen, map[string]any{"solution": "documents", "version": "v1"}},
+		{EventDocumentGovernanceRefused, map[string]any{"solution": "documents", "action": DocumentGovernanceFreeze, "reason": "entry not found"}},
+		{EventDocumentGovernanceRefused, map[string]any{"solution": "documents", "action": DocumentGovernanceOwnershipTransfer, "reason": "not the owner"}},
+		{EventDocumentGovernanceRefused, map[string]any{"solution": "documents", "action": DocumentGovernanceUnfreeze, "reason": "not governed"}},
+		{EventDocumentGovernanceRefused, map[string]any{"solution": "documents", "version": "v1",
+			"action": DocumentGovernanceQuarantineRelease, "reason": "approval named another tenant", "claimed_tenant": "org-b"}},
 	}
 	for _, c := range accepted {
 		require.NoError(t, ValidatePayload(c.event, c.payload), "%s %v", c.event, c.payload)
 	}
-	require.Error(t, ValidatePayload(EventDocumentFrozen, map[string]any{"solution": "documents", "outcome": "maybe"}),
-		"outcome is success or failure")
+
+	// A refusal that does not say what was refused, or why, records that
+	// something was denied without recording what — unrepairable on an
+	// append-only trail. Absent, empty and whitespace must all be refused: a
+	// Required field alone does not reject "  ".
+	for _, field := range []string{"action", "reason"} {
+		for _, value := range []any{nil, "", "  ", 12} {
+			payload := map[string]any{"solution": "documents", "action": DocumentGovernanceFreeze, "reason": "entry not found"}
+			if value == nil {
+				delete(payload, field)
+			} else {
+				payload[field] = value
+			}
+			require.Error(t, ValidatePayload(EventDocumentGovernanceRefused, payload),
+				"governance_refused must reject %s=%v", field, value)
+		}
+	}
+	require.Error(t, ValidatePayload(EventDocumentGovernanceRefused, map[string]any{
+		"solution": "documents", "action": "exfiltrate", "reason": "why"}),
+		"action is one of the registered governance actions")
+
+	// A refusal is its own type, never an outcome on the action's own type: one
+	// type cannot carry both a privileged write and an observation, and
+	// "was this refused?" must be one predicate rather than a payload value on
+	// some types and a type name on others.
+	for _, event := range []EventType{EventDocumentOwnershipTransferred, EventDocumentFrozen, EventDocumentUnfrozen} {
+		require.Error(t, ValidatePayload(event, map[string]any{"solution": "documents", "outcome": "failure"}),
+			"%s must not accept an outcome; a refusal is EventDocumentGovernanceRefused", event)
+		require.Error(t, ValidatePayload(event, map[string]any{"solution": "documents", "reason": "not the owner"}),
+			"%s must not accept a reason; a refusal is EventDocumentGovernanceRefused", event)
+	}
 	require.Error(t, ValidatePayload(EventDocumentFrozen, map[string]any{"solution": "documents", "new_owner_subject_id": "subject-2"}),
 		"a field declared on one governance event must not leak into another")
-	require.Error(t, ValidatePayload(EventDocumentQuarantineReleaseRefused, map[string]any{"solution": "documents", "outcome": "failure"}),
-		"a refused release is its own type, not an outcome")
+
+	// Freeze and unfreeze are a pair: without the second, the trail cannot say
+	// which entries are governed once a producer lifts one.
+	for _, event := range []EventType{EventDocumentFrozen, EventDocumentUnfrozen} {
+		_, registered := LookupAuditEvent(event)
+		require.Truef(t, registered, "%s must be registered: a one-way governance transition is unreadable", event)
+	}
+}
+
+// claimed_tenant names a tenant other than the one whose trail the row sits on.
+// The event exists because an approval named the wrong tenant, so letting that
+// identifier reach an export turns the detection into a cross-tenant
+// disclosure: RedactPayload feeds the customer's S3 destination, the JSON
+// download and the outbound webhook fan-out.
+func TestRedactPayload_GovernanceRefusalHidesTheOtherTenant(t *testing.T) {
+	redacted := RedactPayload(EventDocumentGovernanceRefused, map[string]any{
+		"solution":       "documents",
+		"action":         DocumentGovernanceQuarantineRelease,
+		"reason":         "approval named another tenant",
+		"claimed_tenant": "org-of-another-customer",
+	})
+	require.NotContains(t, redacted, "claimed_tenant",
+		"claimed_tenant identifies another tenant and must never reach an export path")
+	require.Equal(t, DocumentGovernanceQuarantineRelease, redacted["action"],
+		"the refusal itself must survive redaction; only the other tenant's identity is stripped")
+	require.Equal(t, "approval named another tenant", redacted["reason"])
 }

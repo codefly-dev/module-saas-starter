@@ -45,12 +45,21 @@ const (
 )
 
 // PayloadField declares one field of a typed audit payload. PII marks a field
-// as personally identifying: it is stripped from every export path so audit
-// destinations (the customer's S3 bucket, CSV/JSON downloads) never receive it.
+// as stripped from every export path, so audit destinations (the customer's S3
+// bucket, CSV/JSON downloads, the outbound webhook fan-out) never receive it:
+// personally identifying values, and values that identify a party other than
+// the tenant whose trail the row sits on.
+//
+// NonEmpty says a present value must be a nonempty, non-whitespace string. It
+// belongs to the field rather than to the event, because "this value carries
+// meaning or the row is useless" is a property of what the field records — and
+// keying it on the event type instead meant a field could be declared Required
+// on a new event and still accept "  ".
 type PayloadField struct {
 	Name     string
 	Kind     FieldKind
 	Required bool
+	NonEmpty bool
 	Enum     []string
 	PII      bool
 }
@@ -326,13 +335,40 @@ const (
 	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
 
 	// Governance actions a document producer takes on an entry: who reassigned
-	// its owner, who put it under boundary governance, and a quarantine release
-	// the producer refused because the approval named another tenant. Each is a
-	// decision about who may see or keep a record, so it belongs on the tenant's
-	// trail; ownership and freeze record the refused attempt too (`outcome`).
-	EventDocumentOwnershipTransferred     EventType = "saas.document.ownership_transferred"
-	EventDocumentFrozen                   EventType = "saas.document.frozen"
-	EventDocumentQuarantineReleaseRefused EventType = "saas.document.quarantine_release_refused"
+	// its owner, and who put an entry under boundary governance or lifted it.
+	// Each is a decision about who may see or keep a record, so it belongs on
+	// the tenant's trail alongside the lifecycle vocabulary above.
+	//
+	// Freeze and unfreeze are registered as a pair on purpose. The trail is
+	// append-only and `type` is immutable (EVENTS.md), so an event for entering
+	// a governed state with none for leaving it cannot answer "which entries
+	// were governed as of date D" the first time a producer lifts one — and the
+	// gap could only be closed by minting a second type later, leaving a period
+	// of the trail permanently unreadable.
+	//
+	// A refused attempt is never an `outcome` on these types. It committed
+	// nothing, so it is an observation rather than a privileged write, and one
+	// type cannot carry two durabilities; folding it in also left "was this
+	// refused?" as a payload value on some types and a type name on others,
+	// which no single query predicate spans. Every refusal is therefore one
+	// observational type, EventDocumentGovernanceRefused, discriminated by
+	// `action` — so `event_type = saas.document.governance_refused` is the one
+	// predicate for every refused governance action, today and as the vocabulary
+	// grows.
+	EventDocumentOwnershipTransferred EventType = "saas.document.ownership_transferred"
+	EventDocumentFrozen               EventType = "saas.document.frozen"
+	EventDocumentUnfrozen             EventType = "saas.document.unfrozen"
+	EventDocumentGovernanceRefused    EventType = "saas.document.governance_refused"
+)
+
+// The governance actions EventDocumentGovernanceRefused discriminates between.
+// They are the `action` payload values, not event types: a refusal is one type
+// so that one predicate finds every refusal.
+const (
+	DocumentGovernanceOwnershipTransfer = "ownership_transfer"
+	DocumentGovernanceFreeze            = "freeze"
+	DocumentGovernanceUnfreeze          = "unfreeze"
+	DocumentGovernanceQuarantineRelease = "quarantine_release"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -537,12 +573,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
 	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
 	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
-	mutation(EventDocumentOwnershipTransferred, CategoryAccess, "A document's owner was reassigned, or the attempt was refused.",
-		append(documentGovernanceFields(), str("new_owner_subject_id"))...),
-	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was put under boundary governance, or the attempt was refused.",
-		documentGovernanceFields()...),
-	observation(EventDocumentQuarantineReleaseRefused, CategorySecurity, "A quarantine release was refused because the approval named a different tenant.",
-		append(append([]PayloadField(nil), documentFields...), str("claimed_tenant"))...),
+	mutation(EventDocumentOwnershipTransferred, CategoryAccess, "A document's owner was reassigned.",
+		append(append([]PayloadField(nil), documentFields...), uid("new_owner_subject_id"))...),
+	mutation(EventDocumentFrozen, CategoryAccess, "A document was put under boundary governance.", documentFields...),
+	mutation(EventDocumentUnfrozen, CategoryAccess, "A document was released from boundary governance.", documentFields...),
+	observation(EventDocumentGovernanceRefused, CategorySecurity, "A document governance action was refused and committed nothing.",
+		documentGovernanceRefusalFields()...),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
@@ -580,13 +616,28 @@ var documentFields = []PayloadField{
 	str("initiator"),
 }
 
-// documentGovernanceFields is the payload of a document governance action that
-// is recorded whether it succeeded or was refused: `outcome` says which, and a
-// refusal carries its `reason`. A fresh slice each call, so one event's extra
-// fields can never leak into another's.
-func documentGovernanceFields() []PayloadField {
+// documentGovernanceRefusalFields is the payload of a refused document
+// governance action. `action` names which action was refused and `reason` says
+// why, both required and both nonempty: a refusal whose action or reason is
+// absent records that something was denied without recording what or why, which
+// on an append-only trail can never be repaired afterwards.
+//
+// `claimed_tenant` is the tenant a quarantine-release approval named when that
+// was not the tenant the release was delivered for. It identifies a party other
+// than the tenant this row sits on, so it is export-stripped: the mismatch is
+// the finding, and correlating it to the other tenant is the host's to do, not
+// something to hand a tenant's SIEM. A fresh slice each call, so one event's
+// extra fields can never leak into another's.
+func documentGovernanceRefusalFields() []PayloadField {
 	return append(append([]PayloadField(nil), documentFields...),
-		enum("outcome", "success", "failure"), str("reason"))
+		PayloadField{Name: "action", Kind: FieldEnum, Required: true, NonEmpty: true, Enum: []string{
+			DocumentGovernanceOwnershipTransfer,
+			DocumentGovernanceFreeze,
+			DocumentGovernanceUnfreeze,
+			DocumentGovernanceQuarantineRelease,
+		}},
+		PayloadField{Name: "reason", Kind: FieldString, Required: true, NonEmpty: true},
+		pii(str("claimed_tenant")))
 }
 
 // Observed read telemetry never carries query text, excerpts or credentials.
@@ -595,11 +646,12 @@ var documentReadFields = func() []PayloadField {
 	for i := range fields {
 		if fields[i].Name == "boundary" {
 			fields[i].Required = true
+			fields[i].NonEmpty = true
 		}
 	}
 	return append(fields,
-		PayloadField{Name: "correlation_id", Kind: FieldString, Required: true},
-		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{"returned", "empty", "denied", "failed"}},
+		PayloadField{Name: "correlation_id", Kind: FieldString, Required: true, NonEmpty: true},
+		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, NonEmpty: true, Enum: []string{"returned", "empty", "denied", "failed"}},
 		PayloadField{Name: "result_count", Kind: FieldInt}, PayloadField{Name: "duration_ms", Kind: FieldInt})
 }()
 
@@ -679,7 +731,7 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 }
 
 func validateField(t EventType, f PayloadField, v any) error {
-	if (t == EventDocumentRead || t == EventDocumentSearch) && f.Required {
+	if f.NonEmpty {
 		if value, ok := v.(string); !ok || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("audit: event %q field %q requires a nonempty string", t, f.Name)
 		}

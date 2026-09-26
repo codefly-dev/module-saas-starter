@@ -80,19 +80,43 @@ only when measuring attempts. Failed attempts may later complete. Dispatch is
 not completed ingestion. `processed` and `new_versions` do not establish index
 readiness. Summing per-attempt counts is not a deduplicated document total.
 
-Every document producer event carries a nonempty `scope.solution`; the RPC
-refuses one without it. Governance actions a document producer takes on an
-entry have their own types, each emitted with the entry as `entry_id`:
+Every document producer event carries a `scope.solution` of at least one
+character; the RPC refuses one without it (`min_len: 1` on the request field),
+and the scope value overwrites any `solution` the payload carried. `entry_id` is
+**not** constrained: it carries only a maximum length, because the same RPC
+serves entry-less events such as `saas.document.search`. A governance event
+naming its entry is therefore the producer's contract, not something the host
+enforces — a row whose `resource_id` is empty is accepted.
+
+Governance actions a document producer takes on an entry each have their own
+type:
 
 | Type | Recorded when | Payload beyond `solution` |
 | --- | --- | --- |
-| `saas.document.ownership_transferred` | an entry's owner is reassigned, or the attempt is refused | `outcome` (`success`/`failure`), `reason` on a refusal, `new_owner_subject_id` |
-| `saas.document.frozen` | an entry is put under boundary governance, or the attempt is refused | `outcome`, `reason` on a refusal |
-| `saas.document.quarantine_release_refused` | an approved release names a tenant other than the one it was delivered for | `version`, `claimed_tenant` |
+| `saas.document.ownership_transferred` | an entry's owner is reassigned | `new_owner_subject_id` |
+| `saas.document.frozen` | an entry is put under boundary governance | — |
+| `saas.document.unfrozen` | an entry is released from boundary governance | — |
+| `saas.document.governance_refused` | any of the above, or a quarantine release, is refused and commits nothing | `action`, `reason` (both required, nonempty), `claimed_tenant` |
 
-Pipeline bookkeeping — snapshot and effect receipts, derived-artifact
-production, stale-change skips — is not audit and has no type here: it is who
-did what to which resource that belongs on the spine, not how an ingest ran.
+A refusal is never an `outcome` on the action's own type. It commits nothing, so
+it is an observation rather than a privileged write, and one type carries one
+durability; recording it as a payload value on some types and a type name on
+others would also leave "was this refused?" with no single query predicate.
+Every refusal is one observational type discriminated by `action`, so
+`event_type = saas.document.governance_refused` finds every refused governance
+action — including ones added later. `claimed_tenant` (the tenant a
+quarantine-release approval named when the release was delivered for another) is
+export-stripped like a PII field: it identifies a party other than the tenant
+whose trail the row sits on, so it stays out of the customer's S3 destination,
+the JSON download and the webhook fan-out, and correlating it is the host's job.
+
+Freeze and unfreeze are registered as a pair. The trail is append-only and
+`type` is immutable, so a type for entering a governed state with none for
+leaving it stops answering "which entries were governed as of date D" the first
+time a producer lifts one.
+
+What belongs on the spine is who did what to which resource, not how an ingest
+ran. The registry, not this page, is the inventory of which types exist.
 
 `saas.document.read` and `saas.document.search` are observational version-1
 contracts. `boundary`, `correlation_id`, and `outcome` are required nonempty
