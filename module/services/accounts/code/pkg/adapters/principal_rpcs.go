@@ -308,11 +308,15 @@ func principalToProto(p *business.Principal) *gen.Principal {
 		OrgId:            p.OrgID,
 		AgentIdentifier:  p.AgentIdentifier,
 		CreatedBy:        p.CreatedBy,
-		CreatedAt:        timestamppb.New(p.CreatedAt),
 		RevokedReason:    p.RevokedReason,
 		AllowedAudiences: p.AllowedAudiences,
 		AllowedScopes:    p.AllowedScopes,
 		DisabledReason:   p.DisabledReason,
+	}
+	// A declared module principal has no row and so no creation time; leave the
+	// field unset rather than report the year 1.
+	if !p.CreatedAt.IsZero() {
+		out.CreatedAt = timestamppb.New(p.CreatedAt)
 	}
 	if p.RevokedAt != nil {
 		out.RevokedAt = timestamppb.New(*p.RevokedAt)

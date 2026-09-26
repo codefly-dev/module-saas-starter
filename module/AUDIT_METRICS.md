@@ -67,7 +67,25 @@ Accounts dispatch/validation events use row `resource="datasource"` and
 Context and the current tenant-bound `MODULE_PRINCIPALS` declaration. That RPC
 writes row `resource=scope.solution`, `resource_id=scope.entry_id`, and payload
 `solution=scope.solution`; the actor is the attributed actor supplied by the
-emitter. Therefore source completion/failure producers must send
+emitter. `entry_id` is stored verbatim: it is a text column, so an entry id of
+any shape (a ULID, a provider's object id) is the row's resource id. It must be
+an opaque identifier that carries neither record content nor personal data: it
+is not a payload field, so no PII redaction applies to it, it is exported as
+written, and the append-only table keeps it for the whole retention period.
+The actor column is a principal id, and the host resolves the actor a module
+sends against the module's authenticated identity: a principal id in any
+spelling is stored canonical; the module's own principal is recorded as
+`actor_type=system` and any other principal — a subject the module acted for —
+as `actor_type=agent`. A process label of the module's own, `system:<process>`
+(lowercase), is the module's own work and is recorded as the module's principal
+with `actor_type=system`. Any other actor names no principal and is refused with
+`FailedPrecondition` (`module audit actor names no principal`), never stored
+with the actor blanked; the event is well formed, so a producer keeps it pending
+rather than settling it as invalid. The directory the audit surfaces name actors
+from (`ListPrincipals`) lists each module that may act in the organization under
+its prefix, on the first page, so a module's rows read as that module rather
+than as an unknown actor.
+Therefore source completion/failure producers must send
 `scope.solution="datasource"`, `scope.entry_id=<source-id>`. A different identity
 does not silently match this source filter. Document producers must send the
 actual collection node in `fields.boundary`, with the document entry as entry_id.
