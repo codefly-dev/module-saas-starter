@@ -890,8 +890,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// source added through the SDK is live with no redeploy. Receipt verifies
 	// X-Hub-Signature-256 and persists the raw delivery to the jobs inbox under
 	// the GitHub delivery id; the documents ingest service consumes it — saas owns
-	// connection, documents owns ingest.
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
+	// connection, documents owns ingest. The switch is a declared key of the
+	// github-app configuration group, so a deployment turns it on from its own
+	// configuration rather than from an environment variable nothing declares.
+	if strings.EqualFold(strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
 			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},
