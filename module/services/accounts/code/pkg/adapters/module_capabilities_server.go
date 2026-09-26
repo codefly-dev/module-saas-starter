@@ -476,16 +476,6 @@ type datasourceFilesSender interface {
 	Send(*gen.FetchDatasourceFilesFrame) error
 }
 
-// sourceScopedReaders is the readers slot of every file a GitHub source serves:
-// a repository has no per-file access list, so its files are readable by
-// whoever may read the source's boundary.
-func sourceScopedReaders() *gen.DatasourceItemReaders {
-	return &gen.DatasourceItemReaders{
-		Basis:           gen.DatasourceItemReadersBasis_DATASOURCE_ITEM_READERS_BASIS_SOURCE_SCOPED,
-		BoundaryReaders: true,
-	}
-}
-
 func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesRequest, stream datasourceFilesSender) error {
 	if err := Validate(req); err != nil {
 		return err
@@ -513,7 +503,8 @@ func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesReq
 				Path:        file.Path,
 				ContentType: file.ContentType,
 				Size:        file.Size,
-				Readers:     sourceScopedReaders(),
+				// The connector's readers, under the host's source policy.
+				Readers: file.Readers,
 			}
 			if err := stream.Send(&gen.FetchDatasourceFilesFrame{Frame: &gen.FetchDatasourceFilesFrame_Header{Header: header}}); err != nil {
 				return err

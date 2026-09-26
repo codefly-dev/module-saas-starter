@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
+	"accounts/pkg/datasource/connector"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
 )
@@ -121,7 +122,7 @@ func (h *datasourceConnectHandler) GetDatasourceCatalog(
 	if _, err := callerID(ctx); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(datasourceCatalog()), nil
+	return connect.NewResponse(datasourceCatalog(h.svc.DatasourceCatalog())), nil
 }
 
 func (h *datasourceConnectHandler) ListSources(
@@ -450,71 +451,42 @@ func apiCredentialKindToProto(kind string) gen.ApiCredentialKind {
 	}
 }
 
-// datasourceCatalog is the static provider registry the UI enumerates to render
-// the "connect a source" surface. Config field keys match the provider config
-// message field names.
-func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
-	return &gen.GetDatasourceCatalogResponse{
-		Providers: []*gen.DatasourceProviderDescriptor{
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB,
-				DisplayName: "GitHub",
-				Description: "A GitHub repository, pulled on sync and kept fresh through push webhooks.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "repo", DisplayName: "Repository", Help: "owner/name, e.g. codefly-dev/module-saas-starter", Required: true},
-					{Key: "paths", DisplayName: "Paths", Help: "Path prefixes to ingest; empty means the whole repository.", Required: false},
-					{Key: "file_extensions", DisplayName: "File types", Help: "Case-insensitive suffix allowlist such as .md or .mdx, intersected with paths; empty means all types.", Required: false},
-					{Key: "branch", DisplayName: "Branch", Help: "Git ref to pull; empty resolves to the default branch.", Required: false},
-				},
-				SupportsWebhook: true,
-			},
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
-				DisplayName: "HTTP API",
-				Description: "An HTTP API with a stored credential; a configured resource is fetched on sync.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "base_url", DisplayName: "Base URL", Help: "Absolute http(s) URL, e.g. https://api.example.com", Required: true},
-					{Key: "resource_path", DisplayName: "Resource path", Help: "Path fetched on sync, relative to the base URL.", Required: false},
-					{Key: "credential_kind", DisplayName: "Credential kind", Help: "How the credential is sent: bearer, basic, header, query, or oauth2.", Required: true},
-					{Key: "credential_header", DisplayName: "Credential header", Help: "Header name, when the credential kind is header.", Required: false},
-					{Key: "credential_query_param", DisplayName: "Credential query parameter", Help: "Query parameter name, when the credential kind is query.", Required: false},
-					{Key: "oauth2", DisplayName: "OAuth 2.0 config", Help: "Token URL and client id, when the credential kind is oauth2; the refresh token is the credential.", Required: false},
-				},
-				SupportsWebhook: false,
-				SupportedCredentialKinds: []gen.ApiCredentialKind{
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_QUERY,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_OAUTH2,
-				},
-			},
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER,
-				DisplayName: "Web crawler",
-				Description: "A documentation website, ingested from its sitemap.xml on sync. Needs no credential.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "sitemap_url", DisplayName: "Sitemap URL", Help: "Absolute http(s) URL of the site's sitemap.xml.", Required: true},
-					{Key: "max_pages", DisplayName: "Max pages", Help: "Upper bound on pages fetched per sync; empty applies the default.", Required: false},
-				},
-				SupportsWebhook: false,
-			},
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD,
-				DisplayName: "Object storage",
-				Description: "An S3-compatible bucket; objects under a prefix are pulled on sync. The credential is the secret access key.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "endpoint", DisplayName: "Endpoint", Help: "Absolute http(s) endpoint, e.g. https://s3.us-east-1.amazonaws.com", Required: true},
-					{Key: "region", DisplayName: "Region", Help: "Signing region, e.g. us-east-1.", Required: true},
-					{Key: "bucket", DisplayName: "Bucket", Help: "Bucket to pull from.", Required: true},
-					{Key: "prefix", DisplayName: "Prefix", Help: "Key prefix to pull under; empty pulls the whole bucket.", Required: false},
-					{Key: "access_key_id", DisplayName: "Access key id", Help: "AWS-style access key id; the secret access key is the credential.", Required: true},
-					{Key: "max_objects", DisplayName: "Max objects", Help: "Upper bound on objects fetched per sync; empty applies the default.", Required: false},
-				},
-				SupportsWebhook: false,
-			},
-		},
+// datasourceCatalog projects the host's connector registry onto the catalog a
+// client renders the "connect a source" surface from: every connector that
+// admits a new source, and nothing else. A provider off the datasource envelope
+// keeps its existing sources but is not offered.
+func datasourceCatalog(descriptors []connector.Descriptor) *gen.GetDatasourceCatalogResponse {
+	out := &gen.GetDatasourceCatalogResponse{}
+	for _, d := range descriptors {
+		provider, ok := datasourceProviderEnum[d.Key]
+		if !ok {
+			// The wire still names providers by enum; a connector the enum does
+			// not know cannot be offered until the catalog carries its key.
+			continue
+		}
+		entry := &gen.DatasourceProviderDescriptor{
+			Provider:        provider,
+			DisplayName:     d.DisplayName,
+			Description:     d.Description,
+			SupportsWebhook: d.SupportsWebhook,
+		}
+		for _, f := range d.ConfigFields {
+			entry.ConfigFields = append(entry.ConfigFields, &gen.DatasourceConfigField{
+				Key: f.Key, DisplayName: f.DisplayName, Help: f.Help, Required: f.Required,
+			})
+		}
+		out.Providers = append(out.Providers, entry)
 	}
+	return out
+}
+
+// datasourceProviderEnum maps a connector's registry key onto the wire's
+// provider enum.
+var datasourceProviderEnum = map[string]gen.DatasourceProvider{
+	business.DatasourceProviderGitHub:  gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB,
+	business.DatasourceProviderAPI:     gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
+	business.DatasourceProviderCrawler: gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER,
+	business.DatasourceProviderUpload:  gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD,
 }
 
 func datasourceStatusToProto(status string) gen.DatasourceStatus {
