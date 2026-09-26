@@ -98,6 +98,44 @@ explicit extensions. Accounts uses the same generated surface for service
 registration and a fail-closed method/path allowlist; the checked-in OpenAPI
 document is filtered and verified against it. See `REST_SURFACE.md`.
 
+Every path the service registers outside the descriptor surface
+(`adapters.RegisterHTTPRoute`) must be routed here or carry a
+`codefly:gateway-route-exempt <reason>` marker at its call site. A route that is
+registered and not routed answers 404 at the public edge with its handler, and
+every one of that handler's own tests, perfectly green — it shipped that way for
+the two GitHub delivery receivers and for `/v1/status`.
+`TestRegisteredHTTPRoutesAreRoutedAtTheGateway` in `module/tools` is the
+correspondence check.
+
+## Prefixes the catalog reserves
+
+Each `/v1/<prefix>` the catalog owns — generated routes and explicit extensions
+alike — is a prefix a runtime-registered module may never claim: a colliding
+`/modules/_register` is refused with 409, because the catalog always wins in the
+matcher and a stored-but-shadowed registration would be a silently dead route.
+Registrations live in the gateway process, so the refusal bites on the next
+restart of either side: a module that holds such a prefix today goes dark and
+cannot re-register.
+
+That makes the reserved set a contract with every downstream composer, so it is
+pinned by `TestReservedV1PrefixesArePinned` rather than derived silently from
+whatever paths the catalog happens to contain. Adding a route under a new first
+segment narrows what composed modules may register; mount it under a prefix the
+catalog already owns, or widen the pinned list deliberately. The current set:
+
+```
+.well-known        accessible-scopes  acquisition        api-keys
+audit-event-types  audit-log          auth               billing
+collection-access  consent            datasource         delegations
+email              gdpr               installations      invitations
+mfa                notifications      organizations      platform
+principals         public             record-shares      resource-follows
+role-assignments   roles              scope-grants       scope-nodes
+sso                status             subscriptions      teams
+user               users              version            waitlist
+webhooks           work-contexts
+```
+
 `saas.frontend.plugins.v1` catalogs all 36 Next.js pages and the admin plugin
 catch-all. The environment topology generator owns the deployed ingress
 VirtualService, so the target-neutral route catalog does not carry a namespace,

@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -19,12 +20,25 @@ type StatusProbe struct {
 }
 
 // StatusComponent is the JSON-shape one row in the status response.
+//
+// Error is a fixed reason, never the provider's error text. A probe failure here
+// is a driver error, and a pgx dial failure reads
+// `failed to connect to host=... user=... database=...` — the internal host,
+// port, user and database name. This surface is deliberately reachable without a
+// session and the status page renders this field to whoever opens it, so the
+// real error goes to the service log and the reader gets the state.
 type StatusComponent struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"` // "ok" | "degraded" | "down"
 	LatencyMs int64  `json:"latency_ms"`
 	Error     string `json:"error,omitempty"`
 }
+
+// The fixed reasons a public reader may see for a failing component.
+const (
+	statusReasonUnavailable = "probe failed"
+	statusReasonTimeout     = "probe timed out"
+)
 
 // StatusResponse is what /v1/status returns.
 type StatusResponse struct {
@@ -99,10 +113,12 @@ func NewStatusHTTPHandler(svc *business.Service) http.Handler {
 					comps[i].Status = "ok"
 				case latency >= 2*time.Second:
 					comps[i].Status = "down"
-					comps[i].Error = err.Error()
+					comps[i].Error = statusReasonTimeout
+					log.Printf("status probe %s down after %s: %v", p.Name, latency, err)
 				default:
 					comps[i].Status = "degraded"
-					comps[i].Error = err.Error()
+					comps[i].Error = statusReasonUnavailable
+					log.Printf("status probe %s degraded after %s: %v", p.Name, latency, err)
 				}
 			}(i, p)
 		}

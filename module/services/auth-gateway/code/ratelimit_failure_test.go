@@ -35,7 +35,7 @@ func TestLimiterBackendFailureModes(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/", nil)
 			req.RemoteAddr = "198.51.100.10:1234"
 			w := httptest.NewRecorder()
-			limiter.Middleware(test.mode, false, next).ServeHTTP(w, req)
+			limiter.Middleware(test.mode, edgeRateLimitClassUnspecified, false, next).ServeHTTP(w, req)
 			require.Equal(t, test.status, w.Code)
 		})
 	}
@@ -56,7 +56,7 @@ func TestMFACompletionHasDedicatedPerIPBudget(t *testing.T) {
 		proxies: newProxyTrust(""),
 	}
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	handler := limiter.Middleware(limiterFailClosed, true, next)
+	handler := limiter.Middleware(limiterFailClosed, edgeRateLimitClassUnspecified, true, next)
 
 	for attempt := 1; attempt <= authenticationAttemptLimitPerMinute; attempt++ {
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/mfa/complete", nil)
@@ -80,7 +80,7 @@ func TestMFACompletionHasDedicatedPerIPBudget(t *testing.T) {
 	normal := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	normal.RemoteAddr = "198.51.100.10:1234"
 	normalW := httptest.NewRecorder()
-	limiter.Middleware(limiterFailOpen, false, next).ServeHTTP(normalW, normal)
+	limiter.Middleware(limiterFailOpen, edgeRateLimitClassUnspecified, false, next).ServeHTTP(normalW, normal)
 	require.Equal(t, http.StatusNoContent, normalW.Code)
 }
 

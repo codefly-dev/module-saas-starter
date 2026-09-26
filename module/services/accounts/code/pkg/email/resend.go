@@ -150,13 +150,19 @@ const ResendWebhookPath = "/v1/email/webhook/resend"
 // vocabulary are Resend-specific, so the provider owns its route and translates
 // its events into canonical DeliveryEvents; the recorder it writes to is
 // provider-agnostic.
-func (s *ResendSender) DeliveryWebhook(recorder DeliveryEventRecorder) (string, http.Handler, error) {
+//
+// The route is ResendWebhookPath, read by the caller from the constant rather
+// than returned here. Handing the path back made the registration argument a
+// function result, so no gate could tell which path the service registers — and
+// the gateway-correspondence check exists precisely because that pairing is
+// otherwise unenforced.
+func (s *ResendSender) DeliveryWebhook(recorder DeliveryEventRecorder) (http.Handler, error) {
 	handler, err := NewResendWebhookHandler(ResendWebhookConfig{
 		SigningSecret: s.cfg.WebhookSecret,
 		Recorder:      recorder,
 	})
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	return ResendWebhookPath, handler, nil
+	return handler, nil
 }

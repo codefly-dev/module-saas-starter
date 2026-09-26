@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,7 +52,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, extensions, 10)
+	require.Len(t, extensions, 11)
 	wantExtensions := map[string]bool{
 		"POST /v1/auth/magic-link":                       false,
 		"POST /v1/auth/magic-link/verify":                false,
@@ -59,6 +60,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 		"POST /v1/email/webhook/resend":                  false,
 		"POST /v1/datasource/github/webhook/{source_id}": false,
 		"POST /v1/datasource/github/app/webhook":         false,
+		"GET /v1/status":                                 false,
 		"POST /v1/billing/checkout":                      true,
 		"POST /v1/billing/free-plan":                     true,
 		"POST /v1/billing/portal":                        true,
@@ -89,6 +91,79 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.Equal(t, "/v1/datasource/github/webhook/{source_id}", matcher.MatchREST(http.MethodPost, "/v1/datasource/github/webhook/source-1").Path)
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/datasource/github/webhook/"))
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/permissions:check"))
+	require.Equal(t, "/v1/status", matcher.MatchREST(http.MethodGet, "/v1/status").Path)
+	require.False(t, matcher.MatchREST(http.MethodGet, "/v1/status").Protected)
+}
+
+// Every `/v1/<prefix>` the catalog owns is a prefix a runtime-registered module
+// may never claim: handleModuleRegister refuses a colliding registration with
+// 409, and because registrations live in the gateway process that refusal takes
+// effect on the next restart of either side — a module that registered the
+// prefix yesterday goes dark and cannot come back. That makes the reserved set a
+// contract with every downstream composer, and it was being derived silently
+// from whatever paths the catalog happened to contain: adding two GitHub webhook
+// routes took `/v1/datasource` away from every composition with nothing, no
+// test and no document, saying so.
+//
+// So the set is pinned. A new prefix here is not a lint failure to be silenced —
+// it means the route you just added narrowed what composed modules may register.
+// Either mount it under a prefix the catalog already owns, or add it here and to
+// the reserved list in module/GATEWAY_ROUTES.md deliberately.
+func TestReservedV1PrefixesArePinned(t *testing.T) {
+	generated, err := LoadRESTRoutesFromCatalog()
+	require.NoError(t, err)
+	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
+	require.NoError(t, err)
+	connect, err := LoadConnectRoutesFromCatalog()
+	require.NoError(t, err)
+
+	matcher := NewRouteMatcher(append(generated, extensions...), connect)
+	reserved := make([]string, 0, len(matcher.ReservedV1Prefixes()))
+	for prefix := range matcher.ReservedV1Prefixes() {
+		reserved = append(reserved, prefix)
+	}
+	sort.Strings(reserved)
+
+	require.Equal(t, []string{
+		".well-known",
+		"accessible-scopes",
+		"acquisition",
+		"api-keys",
+		"audit-event-types",
+		"audit-log",
+		"auth",
+		"billing",
+		"collection-access",
+		"consent",
+		"datasource",
+		"delegations",
+		"email",
+		"gdpr",
+		"installations",
+		"invitations",
+		"mfa",
+		"notifications",
+		"organizations",
+		"platform",
+		"principals",
+		"public",
+		"record-shares",
+		"resource-follows",
+		"role-assignments",
+		"roles",
+		"scope-grants",
+		"scope-nodes",
+		"sso",
+		"status",
+		"subscriptions",
+		"teams",
+		"user",
+		"users",
+		"version",
+		"waitlist",
+		"webhooks",
+		"work-contexts",
+	}, reserved)
 }
 
 func TestRESTExtensionsRejectDescriptorRoutesAndDisabledEntries(t *testing.T) {
@@ -120,6 +195,22 @@ routes:
       protected: true
 `,
 			wantErr: "must set exposed=true",
+		},
+		{
+			// A misspelled class must not fall back to the generic budget: the
+			// yaml would read as a declared class while enforcing nothing, which
+			// is the silent half of every rate-limit defect.
+			name: "unknown rate-limit class",
+			route: `path: /v1
+routes:
+  - path: /v1/mistyped
+    method: POST
+    extension:
+      exposed: true
+      protected: false
+      rate-limit-class: RATE_LIMIT_CLASS_WEBOOK
+`,
+			wantErr: `unknown rate-limit-class "RATE_LIMIT_CLASS_WEBOOK"`,
 		},
 	}
 

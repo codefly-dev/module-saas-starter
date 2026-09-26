@@ -257,7 +257,7 @@ const authenticationAttemptLimitPerMinute = 10
 // On 429 Too Many Requests it sets standard rate limit headers:
 //
 //	Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
-func (rl *RateLimiter) Middleware(mode limiterFailureMode, authenticationFactorAttempt bool, next http.Handler) http.Handler {
+func (rl *RateLimiter) Middleware(mode limiterFailureMode, class edgeRateLimitClass, authenticationFactorAttempt bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("X-Org-Id")
 		keyKind := "org"
@@ -266,6 +266,26 @@ func (rl *RateLimiter) Middleware(mode limiterFailureMode, authenticationFactorA
 		if key == "" {
 			key = rl.proxies.clientIP(r)
 			keyKind = "ip"
+		}
+		if class == edgeRateLimitClassWebhook {
+			// A signed provider delivery carries no org and no bearer, so
+			// without a class of its own it draws on the anonymous
+			// per-client-IP budget shared with every other unauthenticated
+			// request — and providers deliver every tenant's events from one
+			// small address pool, so all of them plus all anonymous traffic
+			// collide in that one bucket. A dedicated namespace keeps each
+			// side's burst out of the other's budget: an anonymous flood can no
+			// longer cost a delivery a provider will never retry, and a
+			// delivery flood can no longer spend the budget a login needs.
+			//
+			// Same limit and burst as the generic budget on purpose. The defect
+			// is the shared bucket, not its size, and a smaller dedicated
+			// budget would newly throttle a deployment whose deliveries are its
+			// dominant unauthenticated traffic. Still keyed on the trusted
+			// client IP, because the only tenant identifier on the request is
+			// one the caller chose and could mint fresh buckets from at will.
+			key = "webhook:" + rl.proxies.clientIP(r)
+			keyKind = "webhook-ip"
 		}
 		if authenticationFactorAttempt {
 			// Login MFA completion is public and has no canonical user/org

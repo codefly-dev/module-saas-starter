@@ -134,6 +134,25 @@ func TestGateway_Module_Federated_RateLimited(t *testing.T) {
 	require.NotNil(t, moduleFake.lastHeaders)
 }
 
+// A custom-verb path under a registered module prefix reaches that module.
+// v1Prefix split the first segment on "/" alone, so /v1/documents:export
+// resolved to the prefix "documents:export", missed the registry, and answered
+// 404 — a registered module could serve /v1/documents/... but never any verb
+// path, and the 404 was indistinguishable from an unregistered prefix.
+func TestGateway_Module_Federated_CustomVerbPath(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	moduleFake, upstream := newModuleUpstream(t)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstream).Code)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents:export", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "/v1/documents:export", moduleFake.lastPath)
+}
+
 // Security invariant: registration adds a proxy target, never an auth bypass. A
 // bearer-less call to a registered module prefix is denied at the gateway (401)
 // and the module upstream is never reached.
