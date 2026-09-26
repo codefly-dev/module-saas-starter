@@ -609,9 +609,19 @@ var auditEventCatalog = []AuditEventDefinition{
 	// v2 names what was removed — v1 recorded an empty payload, so the trail
 	// could not say which repository or which collection lost its source.
 	// `boundary` is the collection (boundary node) the source fed, spelled as
-	// on the document events so one payload filter reads both.
+	// on the document events so one payload filter reads both — and so the
+	// collection grant covers this event, which isCollectionBoundaryEvent reads
+	// this declaration for.
+	//
+	// `provider` is an enum, not a free string: datasource_sources.provider is
+	// NOT NULL under a CHECK restricting it to exactly these four values, so the
+	// registry can check what the database already guarantees. A string field
+	// would accept a provider that could never have been stored, and the
+	// module-facing EmitAuditEvent — the one path where registry validation
+	// rejects rather than warns — would pass it through.
 	revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
-		str("provider"), str("repo"), str("boundary")), 2),
+		enum("provider", DatasourceProviderGitHub, DatasourceProviderAPI, DatasourceProviderCrawler, DatasourceProviderUpload),
+		str("repo"), str("boundary")), 2),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
