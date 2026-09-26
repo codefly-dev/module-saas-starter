@@ -87,14 +87,14 @@ The composition then declares the binding on the **calling** principal in
           {
             "resource_kind": "example-producer.profiles",
             "actions": ["invoke", "read"],
-            "resource_ids": ["sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"]
+            "resource_ids": ["example-producer/standard"]
           }
         ],
         "lookup_scopes": [
           {
             "resource_kind": "example-producer.profiles",
             "actions": ["read"],
-            "resource_ids": ["sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"]
+            "resource_ids": ["example-producer/standard"]
           }
         ]
       }
@@ -122,6 +122,16 @@ kind, and `"*"` is refused rather than treated as a wildcard. And because the
 grant is re-read on every call, deleting the `run` entry revokes the exchange
 immediately — including in the policy recheck that runs after signing — rather
 than when the last issued child expires.
+
+A resource id is whatever the producer's contribution says it names, and the
+host compares it as an opaque string. Name the resource by its **stable
+identity**, not by a digest of its current definition. The host re-reads the
+entry on every call, and a module's operation-context revision is a digest of
+its whole entry. So a grant that has to be re-issued whenever the producer's
+definition moves revokes every outstanding context of the module at the same
+time, and until it is re-issued the consumer has no access at all. Pinning a
+definition is the producer's check, made on each request against what it has
+installed. It is not a property of the grant.
 
 ## Operation contexts with no person present
 
@@ -165,7 +175,7 @@ alone, a module can never do more with an audience than it could on a person's
 behalf:
 
 ```json
-{"documents":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"modelservice","invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile digest>"]}],"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"],"resource_ids":["<profile digest>"]}],"headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile digest>"]}]}}}}
+{"documents":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"modelservice","invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile name>"]}],"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"],"resource_ids":["<profile name>"]}],"headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile name>"]}]}}}}
 ```
 
 Here the module may invoke and read that one profile both on a person's behalf
