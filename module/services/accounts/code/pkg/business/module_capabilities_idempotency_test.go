@@ -77,9 +77,10 @@ func TestModuleEmitAuditEventDedupsRetriedTenantEmit(t *testing.T) {
 // document producer's rows failed: the spine stored an ingested event with no
 // actor and no resource id, because the writer ran the entry id — a ULID —
 // through the UUID-shape filter meant for the actor column, and the actor was a
-// process label no UUID column can hold. Written through the real store and read
-// back, the row names the module principal as a system actor and keeps the
-// entry, and a resource-id filter finds it by that entry.
+// process label no UUID column can hold. The producer still sends that label
+// (system:ingest). Written through the real store and read back, the row names
+// the calling module's principal as a system actor and keeps the entry, and a
+// resource-id filter finds it by that entry.
 func TestModuleEmitAuditEventRowKeepsItsActorAndEntry(t *testing.T) {
 	clearData(t)
 	_, org := mustUserAndOrg(t, testCtx, "entry@audit-test.com", "entry-audit", "Entry Co")
@@ -98,7 +99,7 @@ func TestModuleEmitAuditEventRowKeepsItsActorAndEntry(t *testing.T) {
 	// A document entry id is a ULID: 26 characters, no hyphens.
 	entry := "01M3C1E527S6Z98WFBN1B8VRG4"
 	require.NoError(t, svc.ModuleEmitAuditEvent(testCtx, caller, org, "saas.document.ingested",
-		modulePrincSvc, "documents", entry, "", nil))
+		"system:ingest", "documents", entry, "", nil))
 
 	rows, _, _, err := svc.QueryAuditLog(testCtx, business.AuditQuery{
 		OrgID: org, EventType: "saas.document.ingested", Resource: "documents", ResourceID: entry, PageSize: 10,

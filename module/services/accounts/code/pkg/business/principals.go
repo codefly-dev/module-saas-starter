@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 )
 
 // PrincipalKind values mirror the SQL CHECK constraint and the
@@ -561,11 +562,15 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 // silent empty list (helps debug typos).
 //
 // The composed modules that act in the org are listed too, as service
-// principals named by their prefix, after the stored rows (on the page that
-// carries no next token). A module principal is derived and declared rather
-// than stored, so without this it acts, holds grants and is recorded as the
-// actor of audit rows while every directory built from this listing reports
-// it as unknown.
+// principals named by their prefix, ahead of the stored rows on the first page
+// (the one requested with no page token). A module principal is derived and
+// declared rather than stored, so without this it acts, holds grants and is
+// recorded as the actor of audit rows while every directory built from this
+// listing reports it as unknown. The first page is the one every directory walk
+// reads — a walk that stops after a bounded number of pages never reaches a
+// large org's last page — and module rows are not part of the stored rows' sort
+// key, so leading with them cannot disturb the cursor. That page may therefore
+// carry up to pageSize stored rows plus the org's modules.
 func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSize int32, pageToken string) ([]*Principal, string, error) {
 	w := wool.Get(ctx).In("ListPrincipals",
 		wool.Field("org_id", orgID),
@@ -594,8 +599,8 @@ func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSi
 	}); err != nil {
 		return nil, "", err
 	}
-	if next == "" && (kind == "" || kind == PrincipalKindService) {
-		out = append(out, s.modulePrincipalsActingIn(orgID)...)
+	if pageToken == "" && (kind == "" || kind == PrincipalKindService) {
+		out = append(s.modulePrincipalsActingIn(orgID), out...)
 	}
 	return out, next, nil
 }
@@ -603,8 +608,13 @@ func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSi
 // modulePrincipalsActingIn projects the declared module principals that may act
 // in orgID — the ones bound to it and the cross-tenant ones — as service
 // principals, ordered by prefix so a listing is stable. A grant without a prefix
-// has no name to show and is left out.
+// has no name to show and is left out. The org id is compared in its canonical
+// form, the form ParseModulePrincipalRegistry stores a grant's tenant in, so a
+// caller spelling it in uppercase still finds its own modules.
 func (s *Service) modulePrincipalsActingIn(orgID string) []*Principal {
+	if parsed, err := uuid.Parse(orgID); err == nil {
+		orgID = parsed.String()
+	}
 	var out []*Principal
 	for id, grant := range s.modulePrincipals {
 		if grant.Prefix == "" || (grant.Tenant != orgID && !grant.CrossTenant) {
