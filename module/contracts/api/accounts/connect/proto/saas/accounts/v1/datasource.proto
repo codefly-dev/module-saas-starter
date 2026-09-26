@@ -194,16 +194,23 @@ message Datasource {
   // named constructors in the host, so it carries no credential material, token,
   // or signing secret — raw provider error text can never reach this field.
   string status_reason = 17;
+  // The display label of boundary_node_id: the collection's name, as the
+  // organization named it. Any member who may list the organization's sources
+  // reads it, whether or not they may read the collection's content: it names
+  // where the source writes, as repo names what it reads. Carried by
+  // ListSources and GetSource; empty in the other responses that return a
+  // Datasource.
+  string boundary_label = 18;
   // Whether the source's provider meets the datasource connector envelope and
   // passes its conformance suite. A source of a non-conformant provider keeps
   // running, and a client flags it; no new source of that provider can be
   // connected until it conforms.
-  bool conformant = 18;
+  bool conformant = 19;
   // What keeps a non-conformant provider off the envelope, in prose. Never
   // empty for a non-conformant source and always empty for a conformant one,
   // so a client that must also read an older host, which sends neither field,
   // can key its flag on this and treat an empty gap as nothing to flag.
-  string conformance_gap = 19;
+  string conformance_gap = 20;
 }
 
 message AddGitHubSourceRequest {

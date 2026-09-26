@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:6eb284082497bf19a91a9b7e82e612cd91a24677f4b6fa2ccc1a5ed6f6a2d197",
+      "digest": "sha256:c5ce9c1973cb5fe9222e1313d14e6e4be4791b5ca34d54f742f84c233842a23d",
       "services": [
         {
           "name": "APIKeyService",
@@ -27,6 +27,14 @@
           "fullName": "saas.accounts.v1.AccessibleScopeService",
           "procedures": [
             "/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes"
+          ]
+        },
+        {
+          "name": "ApprovalReviewService",
+          "fullName": "saas.accounts.v1.ApprovalReviewService",
+          "procedures": [
+            "/saas.accounts.v1.ApprovalReviewService/DecideApprovalReview",
+            "/saas.accounts.v1.ApprovalReviewService/GetApprovalReview"
           ]
         },
         {
