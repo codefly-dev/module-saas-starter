@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -382,6 +383,60 @@ func workContextPermissionAllowed(
 		              AND (sg_permission.resource = '*' OR sg_permission.resource = $3)
 		              AND (sg_permission.action = '*' OR sg_permission.action = $4)
 		        )
+		    )
+		    -- Content read (business.WorkContextPermission.ContentRead): the
+		    -- owner's standing to read a declared module content type, which this
+		    -- host then authorizes node by node at read time. It is held through
+		    -- the same three bases the read oracles in
+		    -- postgres_readable_sources.go and postgres_layered_access.go accept —
+		    -- a live scope grant (the owner's or a team's), a live record share,
+		    -- or platform read authority — on at least one node. Owner only: an
+		    -- actor's authority is never widened here.
+		    OR (
+		        $5
+		        AND $8
+		        AND (
+		            EXISTS (
+		                SELECT 1
+		                FROM scope_grants AS content_grant
+		                JOIN role_permissions AS content_permission
+		                  ON content_permission.role_id = content_grant.role_id
+		                WHERE content_grant.org_id = $1
+		                  AND (content_grant.expires_at IS NULL OR content_grant.expires_at > now())
+		                  AND (content_permission.resource = '*' OR content_permission.resource = $3)
+		                  AND (content_permission.action = '*' OR content_permission.action = $4)
+		                  AND (
+		                      (content_grant.subject_kind = 'principal' AND content_grant.subject_id = $2)
+		                      OR (
+		                          content_grant.subject_kind = 'team'
+		                          AND content_grant.subject_id IN (
+		                              SELECT team_id FROM team_members WHERE user_id = $2
+		                          )
+		                      )
+		                  )
+		            )
+		            OR EXISTS (
+		                SELECT 1
+		                FROM record_shares AS content_share
+		                JOIN role_permissions AS content_permission
+		                  ON content_permission.role_id = content_share.role_id
+		                WHERE content_share.org_id = $1
+		                  AND content_share.resource_type = $3
+		                  AND (content_share.expires_at IS NULL OR content_share.expires_at > now())
+		                  AND (content_permission.resource = '*' OR content_permission.resource = $3)
+		                  AND (content_permission.action = '*' OR content_permission.action = $4)
+		                  AND (
+		                      (content_share.subject_kind = 'principal' AND content_share.subject_id = $2)
+		                      OR (
+		                          content_share.subject_kind = 'team'
+		                          AND content_share.subject_id IN (
+		                              SELECT team_id FROM team_members WHERE user_id = $2
+		                          )
+		                      )
+		                  )
+		            )
+		            OR `+platformReadPredicate("$9", "$2")+`
+		        )
 		    )`,
 		orgID,
 		principalID,
@@ -390,6 +445,8 @@ func workContextPermissionAllowed(
 		includeTeamsAndOrgAdministration,
 		permission.ResourceID,
 		includeScopeGrants,
+		permission.ContentRead && permission.ResourceID == "" && permission.Action == "read",
+		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, permission.Action),
 	).Scan(&allowed)
 	return allowed, err
 }

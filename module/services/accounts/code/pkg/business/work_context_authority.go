@@ -13,11 +13,27 @@ var (
 // WorkContextPermission is one exact RBAC decision that must be true before
 // Accounts may sign it into a Work Context. Empty ResourceID means only an
 // unscoped role assignment may grant it; a resource-scoped assignment must
-// never widen into wildcard authority.
+// never widen into wildcard authority — with the one exception ContentRead
+// names.
 type WorkContextPermission struct {
 	ResourceKind string
 	Action       string
 	ResourceID   string
+	// ContentRead marks an unscoped `read` of a permission resource type a
+	// composed module declares its content under (MODULE_PRINCIPALS
+	// `resources`). This host authorizes every read of such content per scope
+	// node, at the moment of the read: ListReadableSourceCollections and
+	// CheckWorkContextRecordAccess intersect each node with the grants, shares
+	// and platform read authority of the owner and every actor. The scope in
+	// the capability is therefore the owner's standing to ask, never
+	// organization-wide authority over the content, and a collection read grant
+	// is exactly how an administrator confers it. The owner holds it when an
+	// organization-level role grants it (as before) or when a live grant, share
+	// or platform read authority confers it on at least one node.
+	//
+	// Only the adapters set it, and only from the declared registry, so a
+	// module's own vocabulary never reaches the store as a literal.
+	ContentRead bool
 }
 
 // WorkContextAuthorityFacts is the current, database-derived authority and
