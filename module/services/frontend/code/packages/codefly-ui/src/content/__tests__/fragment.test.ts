@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { markdownFragmentToText } from "../fragment.js";
+import { detectFormat } from "../detect.js";
 import { toPlainText } from "../plain.js";
 
 // A slice of a document, read as the words it renders to. These cases are the
@@ -88,5 +89,38 @@ describe("markdownFragmentToText", () => {
 		expect(
 			toPlainText("Solution** | a |", "markdown", { fragment: true }),
 		).toBe("Solution · a");
+	});
+
+	// A cut slice is exactly the input that has LOST the markers `detectFormat`
+	// looks for, so gating the fragment rules on a detected `markdown` made the
+	// option inert on the default `auto` path every `<Content variant="inline"
+	// fragment />` caller gets. Each case below detected as `text` and came back
+	// with its markup intact.
+	it("applies to a slice that auto-detection reads as plain text", () => {
+		expect(detectFormat("Solution** | a |")).toBe("text");
+		expect(toPlainText("Solution** | a |", "auto", { fragment: true })).toBe(
+			"Solution · a",
+		);
+
+		const frontmatter = "---\ntitle: Quarterly\nowner: Jane Doe\n---\nRevenue grew.";
+		expect(detectFormat(frontmatter)).toBe("text");
+		expect(toPlainText(frontmatter, "auto", { fragment: true })).toBe(
+			"Revenue grew.",
+		);
+
+		expect(toPlainText("ly important** for the rollout", "auto", {
+			fragment: true,
+		})).toBe("ly important for the rollout");
+	});
+
+	it("leaves a caller's pinned non-markdown format alone", () => {
+		// `text` and `code` are the caller stating what the value is; the fragment
+		// rules would strip characters that are content there.
+		expect(toPlainText("a * b ** c", "text", { fragment: true })).toBe(
+			"a * b ** c",
+		);
+		expect(toPlainText("rate = a ** b", "code", { fragment: true })).toBe(
+			"rate = a ** b",
+		);
 	});
 });

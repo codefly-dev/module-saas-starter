@@ -7,6 +7,9 @@
 //   - before parsing, each cited `[n]` becomes a private-use sentinel, a cited
 //     marker's `[n]: url` definition line is dropped, and the `(url)` of a cited
 //     `[n](url)` is dropped (the reference is the source, not the model's URL);
+//     a sentinel is reversible anywhere, but a DELETION is not, so the two
+//     rules that delete are held to the code regions the parser reports and
+//     never touch a fence or a code span (see `codeRanges`);
 //   - after parsing, sentinels in ordinary text become a `content-reference`
 //     element the renderer maps to the caller's component, and everywhere else
 //     (code, link text, URLs, titles, alt text) they turn back into a literal
@@ -14,6 +17,10 @@
 //     inside a link.
 //
 // A bracketed number that is not a reference is untouched.
+
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFromMarkdown } from "mdast-util-gfm";
+import { gfm } from "micromark-extension-gfm";
 
 /** The hast element name a reference marker lowers to. */
 export const REFERENCE_ELEMENT = "content-reference";
@@ -26,19 +33,86 @@ const SENTINEL_CHARS = new RegExp("[\\uE000\\uE001]", "g");
 const DEFINITION_LINE = /^[ \t]*\[(\d+)\]:[ \t]+\S.*$/gm;
 const INLINE_LINK = /\[(\d+)\]\([^\s()]*(?:[ \t]+"[^"]*")?\)/g;
 
+/**
+ * The source offsets of every code block and code span, from the same parser
+ * that will render the text.
+ *
+ * A sentinel is reversible wherever it lands — `remarkReferences` turns one
+ * back into a literal `[n]` inside code, a link or a URL — but a deletion
+ * cannot be undone in the tree, because by then the characters are gone. Only
+ * the parser knows for certain where code starts and ends (a fence may open
+ * with three or thirty backticks, close late or not at all, and a span may run
+ * across lines), so the deletions are filtered against what it reports rather
+ * than against a regex guess.
+ */
+function codeRanges(text: string): Array<readonly [number, number]> {
+	const ranges: Array<readonly [number, number]> = [];
+	const visit = (node: MdNode) => {
+		if (node.type === "code" || node.type === "inlineCode") {
+			const at = node.position as
+				| { start?: { offset?: number }; end?: { offset?: number } }
+				| undefined;
+			const start = at?.start?.offset;
+			const end = at?.end?.offset;
+			if (typeof start === "number" && typeof end === "number") {
+				ranges.push([start, end]);
+			}
+			return;
+		}
+		for (const child of node.children ?? []) visit(child);
+	};
+	visit(
+		fromMarkdown(text, {
+			extensions: [gfm()],
+			mdastExtensions: [gfmFromMarkdown()],
+		}) as unknown as MdNode,
+	);
+	return ranges;
+}
+
 /** Swap each cited `[n]` for a sentinel; see the file comment for the rest. */
 export function protectReferences(
 	text: string,
 	markers: ReadonlySet<number>,
 ): string {
 	const cited = (n: string) => markers.has(Number(n));
-	return text
-		.replace(SENTINEL_CHARS, "")
-		.replace(DEFINITION_LINE, (whole, n: string) => (cited(n) ? "" : whole))
-		.replace(INLINE_LINK, (whole, n: string) => (cited(n) ? `[${n}]` : whole))
-		.replace(MARKER, (whole, n: string) =>
-			cited(n) ? `${OPEN}${n}${CLOSE}` : whole,
-		);
+	const source = text.replace(SENTINEL_CHARS, "");
+
+	// The two irreversible edits, as offsets into `source`: a cited marker's
+	// definition line, and the `(url)` that follows its inline `[n]`.
+	const cuts: Array<readonly [number, number]> = [];
+	for (const match of source.matchAll(DEFINITION_LINE)) {
+		const n = match[1];
+		if (n !== undefined && match.index !== undefined && cited(n)) {
+			cuts.push([match.index, match.index + match[0].length]);
+		}
+	}
+	for (const match of source.matchAll(INLINE_LINK)) {
+		const n = match[1];
+		if (n !== undefined && match.index !== undefined && cited(n)) {
+			// The `[n]` stays and becomes a sentinel below; only what follows goes.
+			cuts.push([match.index + n.length + 2, match.index + match[0].length]);
+		}
+	}
+
+	let kept = source;
+	if (cuts.length > 0) {
+		// Parsing is paid for only when there is something to delete: an answer
+		// that merely cites `[1]` never reaches here.
+		const code = codeRanges(source);
+		const outside = cuts
+			.filter(([start, end]) =>
+				code.every(([from, to]) => start >= to || end <= from),
+			)
+			// Back to front, so an earlier cut's offsets stay valid.
+			.sort((a, b) => b[0] - a[0]);
+		for (const [start, end] of outside) {
+			kept = kept.slice(0, start) + kept.slice(end);
+		}
+	}
+	return kept.replace(MARKER, (whole, n: string) =>
+		cited(n) ? `${OPEN}${n}${CLOSE}` : whole,
+	);
 }
 
 const restore = (value: string) => value.replace(SENTINEL, "[$1]");

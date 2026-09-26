@@ -155,11 +155,62 @@ describe("<Content>", () => {
 		).toContain('"status"');
 	});
 
-	it("falls back to text when format=json does not parse", () => {
-		const { container } = render(<Content value="{broken" format="json" />);
+	it("reaches the citation renderer through Content, not only Markdown", () => {
+		// `references` is the whole point of references.ts, but <Content> — the
+		// component the README calls the one way to render this text — did not
+		// forward it, so the feature was unreachable without dropping to <Markdown>.
+		const { container } = render(
+			<Content
+				value="Revenue grew [1]; see [3]."
+				format="markdown"
+				references={{
+					markers: [1],
+					render: (marker) => (
+						<button type="button" data-marker={marker}>{`ref ${marker}`}</button>
+					),
+				}}
+			/>,
+		);
 		expect(
-			container.querySelector('[data-slot="content-text"]')?.textContent,
-		).toBe("{broken");
+			[...container.querySelectorAll("button[data-marker]")].map((b) =>
+				b.getAttribute("data-marker"),
+			),
+		).toEqual(["1"]);
+		expect(container.textContent).toContain("see [3].");
+	});
+
+	it("suppresses the copy button on a fence inside markdown", () => {
+		// `copyable` was documented for code, but a fence inside markdown always
+		// built its own CodeBlock with the default, so the prop did nothing here.
+		const source = "Text.\n\n```ts\nconst a = 1;\n```\n";
+		const on = render(<Content value={source} format="markdown" />);
+		expect(on.container.querySelectorAll('[data-slot="content-copy"]'))
+			.toHaveLength(1);
+		cleanup();
+		const off = render(
+			<Content value={source} format="markdown" copyable={false} />,
+		);
+		expect(off.container.querySelectorAll('[data-slot="content-copy"]'))
+			.toHaveLength(0);
+		expect(off.container.querySelector("pre")?.textContent).toBe("const a = 1;");
+	});
+
+	it("keeps an unparseable payload copyable instead of dropping to text", () => {
+		// It used to render a bare text block, which has no copy button — so a
+		// webhook body that was not valid JSON silently lost the one affordance
+		// `copyable` promises for this format.
+		const { container } = render(<Content value="{broken" format="json" />);
+		expect(container.querySelector("pre")?.textContent).toBe("{broken");
+		expect(
+			container.querySelectorAll('[data-slot="content-copy"]'),
+		).toHaveLength(1);
+		cleanup();
+		const off = render(
+			<Content value="{broken" format="json" copyable={false} />,
+		);
+		expect(
+			off.container.querySelectorAll('[data-slot="content-copy"]'),
+		).toHaveLength(0);
 	});
 });
 
@@ -195,6 +246,29 @@ describe("<JsonView>", () => {
 		);
 	});
 
+	it("reads only the page it shows, not the whole container", () => {
+		// The bound the file header promises is on WORK, not only on DOM. Mapping
+		// every entry and then slicing to `pageSize` built a pair per item on
+		// every render — a million of them to show a hundred rows, and again on
+		// every "Show more".
+		const backing = Array.from({ length: 5_000 }, (_, index) => index);
+		let reads = 0;
+		const watched = new Proxy(backing, {
+			get(target, key, receiver) {
+				if (typeof key === "string" && /^\d+$/.test(key)) reads++;
+				return Reflect.get(target, key, receiver);
+			},
+		});
+		render(
+			<JsonView value={{ items: watched }} expandDepth={2} pageSize={10} />,
+		);
+		// Opened, paged, and the tail still counted correctly from `size`.
+		expect(
+			screen.getByRole("button", { name: /Show 10 more \(4,990 hidden\)/ }),
+		).toBeDefined();
+		expect(reads).toBeLessThan(100);
+	});
+
 	it("previews a long string and expands it on request", () => {
 		const long = "x".repeat(1_000);
 		const { container } = render(<JsonView value={{ long }} />);
@@ -216,9 +290,27 @@ describe("<JsonView>", () => {
 		const { container, rerender } = render(<JsonView value='{"a": true}' />);
 		expect(container.textContent).toContain("true");
 		rerender(<JsonView value="not json" />);
+		// Verbatim, whitespace kept — and still copyable, which is why this is a
+		// code block rather than a bare text block.
+		expect(container.querySelector("pre")?.textContent).toBe("not json");
 		expect(
-			container.querySelector('[data-slot="content-text"]')?.textContent,
-		).toBe("not json");
+			container.querySelectorAll('[data-slot="content-copy"]'),
+		).toHaveLength(1);
+	});
+
+	it("keeps its copy button inside the element that scrolls", () => {
+		// `className` lands on the <figure>, so a caller capping the height there
+		// makes the figure the scrollport. An absolutely-placed button, positioned
+		// from the top of the content, scrolled away from the tree it copies.
+		const { container } = render(
+			<JsonView value={{ a: 1 }} className="max-h-40 overflow-auto" />,
+		);
+		const button = container.querySelector('[data-slot="content-copy"]');
+		expect(button).not.toBeNull();
+		const scroller = button?.closest(".overflow-auto");
+		expect(scroller).not.toBeNull();
+		// And it is pinned, not floating against a box that scrolls under it.
+		expect(button?.closest(".sticky")).not.toBeNull();
 	});
 
 	it("copies the whole document through a labelled button", async () => {
@@ -289,7 +381,7 @@ describe("<CodeBlock>", () => {
 });
 
 describe("<Chat> renders a markdown answer through the content tier", () => {
-	it("keeps text messages verbatim and renders markdown ones", () => {
+	it("keeps text messages verbatim and renders markdown ones", async () => {
 		const { container } = render(
 			<Chat
 				messages={[
@@ -304,7 +396,14 @@ describe("<Chat> renders a markdown answer through the content tier", () => {
 			/>,
 		);
 		expect(container.textContent).toContain("**not bold**");
-		expect(container.querySelector("strong")?.textContent).toBe("bold");
+		// The renderer is a separate chunk, so the words are on screen first and
+		// gain their structure when it lands.
+		expect(container.textContent).toContain("bold");
+		await waitFor(() =>
+			expect(container.querySelector("strong")?.textContent).toBe("bold"),
+		);
+		// A text message is still never parsed, before or after the chunk.
+		expect(container.textContent).toContain("**not bold**");
 	});
 });
 
@@ -337,6 +436,42 @@ describe("<Markdown> references and line breaks", () => {
 		expect(container.querySelectorAll("button[data-marker]")).toHaveLength(1);
 		expect(container.innerHTML).not.toContain("model.example");
 		expect(container.innerHTML).not.toContain("evil.example");
+	});
+
+	it("never edits a fenced block or a code span while protecting markers", () => {
+		// The `[n]: url` and `[n](url)` rules delete from the raw source before it
+		// is parsed. They used to run over the whole string, so a cited marker's
+		// definition line VANISHED from inside a fence and its inline link lost
+		// its URL — silent corruption of a snippet the model quoted.
+		const source = [
+			"See [1].",
+			"",
+			"```text",
+			"[1]: https://example.com/def",
+			"[1](https://example.com/inline)",
+			"[9]: https://example.com/keep",
+			"```",
+			"",
+			"A span: `[1]: https://example.com/span`.",
+		].join("\n");
+		const { container } = render(
+			<Markdown references={{ markers: [1], render: render_ }}>
+				{source}
+			</Markdown>,
+		);
+		expect(container.querySelector("pre")?.textContent).toBe(
+			[
+				"[1]: https://example.com/def",
+				"[1](https://example.com/inline)",
+				"[9]: https://example.com/keep",
+			].join("\n"),
+		);
+		// The inline span, not the fence's own <code> (that one has a language).
+		expect(
+			container.querySelector("code:not([data-language])")?.textContent,
+		).toBe("[1]: https://example.com/span");
+		// Outside code the rules still apply: the prose `[1]` is the caller's.
+		expect(container.querySelectorAll("button[data-marker]")).toHaveLength(1);
 	});
 
 	it("strips sentinel characters the source smuggled in", () => {

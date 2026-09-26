@@ -339,6 +339,7 @@ function Section({
 					value={body}
 					format="json"
 					label={title}
+					wrap
 					className="max-h-64 overflow-auto"
 				/>
 			) : (
