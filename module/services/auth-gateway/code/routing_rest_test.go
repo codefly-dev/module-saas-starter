@@ -138,6 +138,7 @@ func TestReservedV1PrefixesArePinned(t *testing.T) {
 		"consent",
 		"datasource",
 		"delegations",
+		"directory",
 		"email",
 		"gdpr",
 		"installations",

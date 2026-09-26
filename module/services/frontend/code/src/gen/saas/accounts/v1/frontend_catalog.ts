@@ -13,6 +13,7 @@ import { ConsentService } from "./consent_pb";
 import { DashboardService } from "./dashboards_pb";
 import { DatasourceService } from "./datasource_pb";
 import { DelegationService } from "./delegations_pb";
+import { DirectoryService } from "./directory_pb";
 import { IdentityService, UserService } from "./identity_pb";
 import { InstallationService } from "./installations_pb";
 import { IntrospectionService } from "./introspection_pb";
@@ -179,6 +180,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   DashboardService,
   DatasourceService,
   DelegationService,
+  DirectoryService,
   GDPRService,
   IdentityService,
   InstallationService,
@@ -218,6 +220,7 @@ export interface AccountsClients {
   readonly DashboardService: Client<typeof DashboardService>;
   readonly DatasourceService: Client<typeof DatasourceService>;
   readonly DelegationService: Client<typeof DelegationService>;
+  readonly DirectoryService: Client<typeof DirectoryService>;
   readonly GDPRService: Client<typeof GDPRService>;
   readonly IdentityService: Client<typeof IdentityService>;
   readonly InstallationService: Client<typeof InstallationService>;
@@ -256,6 +259,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     DashboardService: createClient(DashboardService, transport),
     DatasourceService: createClient(DatasourceService, transport),
     DelegationService: createClient(DelegationService, transport),
+    DirectoryService: createClient(DirectoryService, transport),
     GDPRService: createClient(GDPRService, transport),
     IdentityService: createClient(IdentityService, transport),
     InstallationService: createClient(InstallationService, transport),

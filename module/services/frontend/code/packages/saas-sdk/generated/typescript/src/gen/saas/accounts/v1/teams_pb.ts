@@ -8,8 +8,10 @@ import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { EmptySchema } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_empty } from "@bufbuild/protobuf/wkt";
-import type { Team, TeamMembership, TeamRole } from "./common_pb";
+import type { Team, TeamRole } from "./common_pb";
 import { file_saas_accounts_v1_common } from "./common_pb";
+import type { ListTeamMembersRequestSchema, ListTeamMembersResponseSchema, ListTeamsRequestSchema, ListTeamsResponseSchema } from "./directory_pb";
+import { file_saas_accounts_v1_directory } from "./directory_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -17,7 +19,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/teams.proto.
  */
 export const file_saas_accounts_v1_teams: GenFile = /*@__PURE__*/
-  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL3RlYW1zLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIn8KEUNyZWF0ZVRlYW1SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFQoEbmFtZRgCIAEoCUIHukgEcgIQARITCgtkZXNjcmlwdGlvbhgDIAEoCRIWCg5wYXJlbnRfdGVhbV9pZBgEIAEoCRIMCgRzbHVnGAUgASgJIjoKEkNyZWF0ZVRlYW1SZXNwb25zZRIkCgR0ZWFtGAEgASgLMhYuc2Fhcy5hY2NvdW50cy52MS5UZWFtIkwKEExpc3RUZWFtc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIeCgltZW1iZXJfaWQYAiABKAlCC7pICNgBAXIDsAEBIjoKEUxpc3RUZWFtc1Jlc3BvbnNlEiUKBXRlYW1zGAEgAygLMhYuc2Fhcy5hY2NvdW50cy52MS5UZWFtInYKFEFkZFRlYW1NZW1iZXJSZXF1ZXN0EhkKB3RlYW1faWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBEigKBHJvbGUYAyABKA4yGi5zYWFzLmFjY291bnRzLnYxLlRlYW1Sb2xlIk8KF1JlbW92ZVRlYW1NZW1iZXJSZXF1ZXN0EhkKB3RlYW1faWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBIloKEVVwZGF0ZVRlYW1SZXF1ZXN0EhkKB3RlYW1faWQYASABKAlCCLpIBXIDsAEBEhUKBG5hbWUYAiABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAyABKAkiOgoSVXBkYXRlVGVhbVJlc3BvbnNlEiQKBHRlYW0YASABKAsyFi5zYWFzLmFjY291bnRzLnYxLlRlYW0iLgoRRGVsZXRlVGVhbVJlcXVlc3QSGQoHdGVhbV9pZBgBIAEoCUIIukgFcgOwAQEiMwoWTGlzdFRlYW1NZW1iZXJzUmVxdWVzdBIZCgd0ZWFtX2lkGAEgASgJQgi6SAVyA7ABASJMChdMaXN0VGVhbU1lbWJlcnNSZXNwb25zZRIxCgdtZW1iZXJzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5UZWFtTWVtYmVyc2hpcDL7CQoLVGVhbVNlcnZpY2USvQEKCkNyZWF0ZVRlYW0SIy5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZVRlYW1SZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVUZWFtUmVzcG9uc2UiZMLzGDUIAhAEKgwKBm9yZ19pZBACGAEwAToVChFzYWFzLnRlYW0uY3JlYXRlZBACQAFIBFADWANgAYLT5JMCJToBKiIgL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vdGVhbXMSpAEKCUxpc3RUZWFtcxIiLnNhYXMuYWNjb3VudHMudjEuTGlzdFRlYW1zUmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuTGlzdFRlYW1zUmVzcG9uc2UiTsLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIiEiAvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS90ZWFtcxK0AQoJQWRkTWVtYmVyEiYuc2Fhcy5hY2NvdW50cy52MS5BZGRUZWFtTWVtYmVyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJnwvMYPQgCEAQqDQoHdGVhbV9pZBADGAIwAToaChZzYWFzLnRlYW0ubWVtYmVyX2FkZGVkEAJAAUgEUANYA2ABeAKC0+STAiA6ASoiGy92MS90ZWFtcy97dGVhbV9pZH0vbWVtYmVycxLDAQoMUmVtb3ZlTWVtYmVyEikuc2Fhcy5hY2NvdW50cy52MS5SZW1vdmVUZWFtTWVtYmVyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJwwvMYPwgCEAQqDQoHdGVhbV9pZBADGAIwATocChhzYWFzLnRlYW0ubWVtYmVyX3JlbW92ZWQQAkABSARQA1gDYAF4AoLT5JMCJyolL3YxL3RlYW1zL3t0ZWFtX2lkfS9tZW1iZXJzL3t1c2VyX2lkfRKuAQoLTGlzdE1lbWJlcnMSKC5zYWFzLmFjY291bnRzLnYxLkxpc3RUZWFtTWVtYmVyc1JlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkxpc3RUZWFtTWVtYmVyc1Jlc3BvbnNlIkrC8xgjCAIQAyoNCgd0ZWFtX2lkEAMYAjABOgIQAUABSANQA1gDYAGC0+STAh0SGy92MS90ZWFtcy97dGVhbV9pZH0vbWVtYmVycxKxAQoKVXBkYXRlVGVhbRIjLnNhYXMuYWNjb3VudHMudjEuVXBkYXRlVGVhbVJlcXVlc3QaJC5zYWFzLmFjY291bnRzLnYxLlVwZGF0ZVRlYW1SZXNwb25zZSJYwvMYNggCEAQqDQoHdGVhbV9pZBADGAIwAToVChFzYWFzLnRlYW0udXBkYXRlZBACQAFIBFADWANgAYLT5JMCGDoBKjITL3YxL3RlYW1zL3t0ZWFtX2lkfRKiAQoKRGVsZXRlVGVhbRIjLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlVGVhbVJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiV8LzGDgIAhAEKg0KB3RlYW1faWQQAxgCMAE6FQoRc2Fhcy50ZWFtLmRlbGV0ZWQQAkABSARQA1gDYAF4AoLT5JMCFSoTL3YxL3RlYW1zL3t0ZWFtX2lkfWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
+  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL3RlYW1zLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIn8KEUNyZWF0ZVRlYW1SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFQoEbmFtZRgCIAEoCUIHukgEcgIQARITCgtkZXNjcmlwdGlvbhgDIAEoCRIWCg5wYXJlbnRfdGVhbV9pZBgEIAEoCRIMCgRzbHVnGAUgASgJIjoKEkNyZWF0ZVRlYW1SZXNwb25zZRIkCgR0ZWFtGAEgASgLMhYuc2Fhcy5hY2NvdW50cy52MS5UZWFtInYKFEFkZFRlYW1NZW1iZXJSZXF1ZXN0EhkKB3RlYW1faWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBEigKBHJvbGUYAyABKA4yGi5zYWFzLmFjY291bnRzLnYxLlRlYW1Sb2xlIk8KF1JlbW92ZVRlYW1NZW1iZXJSZXF1ZXN0EhkKB3RlYW1faWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBIloKEVVwZGF0ZVRlYW1SZXF1ZXN0EhkKB3RlYW1faWQYASABKAlCCLpIBXIDsAEBEhUKBG5hbWUYAiABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAyABKAkiOgoSVXBkYXRlVGVhbVJlc3BvbnNlEiQKBHRlYW0YASABKAsyFi5zYWFzLmFjY291bnRzLnYxLlRlYW0iLgoRRGVsZXRlVGVhbVJlcXVlc3QSGQoHdGVhbV9pZBgBIAEoCUIIukgFcgOwAQEy+wkKC1RlYW1TZXJ2aWNlEr0BCgpDcmVhdGVUZWFtEiMuc2Fhcy5hY2NvdW50cy52MS5DcmVhdGVUZWFtUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlVGVhbVJlc3BvbnNlImTC8xg1CAIQBCoMCgZvcmdfaWQQAhgBMAE6FQoRc2Fhcy50ZWFtLmNyZWF0ZWQQAkABSARQA1gDYAGC0+STAiU6ASoiIC92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L3RlYW1zEqQBCglMaXN0VGVhbXMSIi5zYWFzLmFjY291bnRzLnYxLkxpc3RUZWFtc1JlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLkxpc3RUZWFtc1Jlc3BvbnNlIk7C8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCIhIgL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vdGVhbXMStAEKCUFkZE1lbWJlchImLnNhYXMuYWNjb3VudHMudjEuQWRkVGVhbU1lbWJlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiZ8LzGD0IAhAEKg0KB3RlYW1faWQQAxgCMAE6GgoWc2Fhcy50ZWFtLm1lbWJlcl9hZGRlZBACQAFIBFADWANgAXgCgtPkkwIgOgEqIhsvdjEvdGVhbXMve3RlYW1faWR9L21lbWJlcnMSwwEKDFJlbW92ZU1lbWJlchIpLnNhYXMuYWNjb3VudHMudjEuUmVtb3ZlVGVhbU1lbWJlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkicMLzGD8IAhAEKg0KB3RlYW1faWQQAxgCMAE6HAoYc2Fhcy50ZWFtLm1lbWJlcl9yZW1vdmVkEAJAAUgEUANYA2ABeAKC0+STAicqJS92MS90ZWFtcy97dGVhbV9pZH0vbWVtYmVycy97dXNlcl9pZH0SrgEKC0xpc3RNZW1iZXJzEiguc2Fhcy5hY2NvdW50cy52MS5MaXN0VGVhbU1lbWJlcnNSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5MaXN0VGVhbU1lbWJlcnNSZXNwb25zZSJKwvMYIwgCEAMqDQoHdGVhbV9pZBADGAIwAToCEAFAAUgDUANYA2ABgtPkkwIdEhsvdjEvdGVhbXMve3RlYW1faWR9L21lbWJlcnMSsQEKClVwZGF0ZVRlYW0SIy5zYWFzLmFjY291bnRzLnYxLlVwZGF0ZVRlYW1SZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5VcGRhdGVUZWFtUmVzcG9uc2UiWMLzGDYIAhAEKg0KB3RlYW1faWQQAxgCMAE6FQoRc2Fhcy50ZWFtLnVwZGF0ZWQQAkABSARQA1gDYAGC0+STAhg6ASoyEy92MS90ZWFtcy97dGVhbV9pZH0SogEKCkRlbGV0ZVRlYW0SIy5zYWFzLmFjY291bnRzLnYxLkRlbGV0ZVRlYW1SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IlfC8xg4CAIQBCoNCgd0ZWFtX2lkEAMYAjABOhUKEXNhYXMudGVhbS5kZWxldGVkEAJAAUgEUANYA2ABeAKC0+STAhUqEy92MS90ZWFtcy97dGVhbV9pZH1iBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_accounts_v1_directory, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.CreateTeamRequest
@@ -78,51 +80,6 @@ export const CreateTeamResponseSchema: GenMessage<CreateTeamResponse> = /*@__PUR
   messageDesc(file_saas_accounts_v1_teams, 1);
 
 /**
- * @generated from message saas.accounts.v1.ListTeamsRequest
- */
-export type ListTeamsRequest = Message<"saas.accounts.v1.ListTeamsRequest"> & {
-  /**
-   * @generated from field: string org_id = 1;
-   */
-  orgId: string;
-
-  /**
-   * member_id (optional) narrows the list to the teams this principal
-   * belongs to; empty returns every team in the org. The uuid rule applies
-   * only to a non-empty value — without it the filter reaches the query as a
-   * uuid cast and a malformed id fails in the database as an internal error
-   * rather than at the boundary as an invalid argument.
-   *
-   * @generated from field: string member_id = 2;
-   */
-  memberId: string;
-};
-
-/**
- * Describes the message saas.accounts.v1.ListTeamsRequest.
- * Use `create(ListTeamsRequestSchema)` to create a new message.
- */
-export const ListTeamsRequestSchema: GenMessage<ListTeamsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 2);
-
-/**
- * @generated from message saas.accounts.v1.ListTeamsResponse
- */
-export type ListTeamsResponse = Message<"saas.accounts.v1.ListTeamsResponse"> & {
-  /**
-   * @generated from field: repeated saas.accounts.v1.Team teams = 1;
-   */
-  teams: Team[];
-};
-
-/**
- * Describes the message saas.accounts.v1.ListTeamsResponse.
- * Use `create(ListTeamsResponseSchema)` to create a new message.
- */
-export const ListTeamsResponseSchema: GenMessage<ListTeamsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 3);
-
-/**
  * @generated from message saas.accounts.v1.AddTeamMemberRequest
  */
 export type AddTeamMemberRequest = Message<"saas.accounts.v1.AddTeamMemberRequest"> & {
@@ -147,7 +104,7 @@ export type AddTeamMemberRequest = Message<"saas.accounts.v1.AddTeamMemberReques
  * Use `create(AddTeamMemberRequestSchema)` to create a new message.
  */
 export const AddTeamMemberRequestSchema: GenMessage<AddTeamMemberRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 4);
+  messageDesc(file_saas_accounts_v1_teams, 2);
 
 /**
  * @generated from message saas.accounts.v1.RemoveTeamMemberRequest
@@ -169,7 +126,7 @@ export type RemoveTeamMemberRequest = Message<"saas.accounts.v1.RemoveTeamMember
  * Use `create(RemoveTeamMemberRequestSchema)` to create a new message.
  */
 export const RemoveTeamMemberRequestSchema: GenMessage<RemoveTeamMemberRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 5);
+  messageDesc(file_saas_accounts_v1_teams, 3);
 
 /**
  * @generated from message saas.accounts.v1.UpdateTeamRequest
@@ -196,7 +153,7 @@ export type UpdateTeamRequest = Message<"saas.accounts.v1.UpdateTeamRequest"> & 
  * Use `create(UpdateTeamRequestSchema)` to create a new message.
  */
 export const UpdateTeamRequestSchema: GenMessage<UpdateTeamRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 6);
+  messageDesc(file_saas_accounts_v1_teams, 4);
 
 /**
  * @generated from message saas.accounts.v1.UpdateTeamResponse
@@ -213,7 +170,7 @@ export type UpdateTeamResponse = Message<"saas.accounts.v1.UpdateTeamResponse"> 
  * Use `create(UpdateTeamResponseSchema)` to create a new message.
  */
 export const UpdateTeamResponseSchema: GenMessage<UpdateTeamResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 7);
+  messageDesc(file_saas_accounts_v1_teams, 5);
 
 /**
  * @generated from message saas.accounts.v1.DeleteTeamRequest
@@ -230,41 +187,7 @@ export type DeleteTeamRequest = Message<"saas.accounts.v1.DeleteTeamRequest"> & 
  * Use `create(DeleteTeamRequestSchema)` to create a new message.
  */
 export const DeleteTeamRequestSchema: GenMessage<DeleteTeamRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 8);
-
-/**
- * @generated from message saas.accounts.v1.ListTeamMembersRequest
- */
-export type ListTeamMembersRequest = Message<"saas.accounts.v1.ListTeamMembersRequest"> & {
-  /**
-   * @generated from field: string team_id = 1;
-   */
-  teamId: string;
-};
-
-/**
- * Describes the message saas.accounts.v1.ListTeamMembersRequest.
- * Use `create(ListTeamMembersRequestSchema)` to create a new message.
- */
-export const ListTeamMembersRequestSchema: GenMessage<ListTeamMembersRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 9);
-
-/**
- * @generated from message saas.accounts.v1.ListTeamMembersResponse
- */
-export type ListTeamMembersResponse = Message<"saas.accounts.v1.ListTeamMembersResponse"> & {
-  /**
-   * @generated from field: repeated saas.accounts.v1.TeamMembership members = 1;
-   */
-  members: TeamMembership[];
-};
-
-/**
- * Describes the message saas.accounts.v1.ListTeamMembersResponse.
- * Use `create(ListTeamMembersResponseSchema)` to create a new message.
- */
-export const ListTeamMembersResponseSchema: GenMessage<ListTeamMembersResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_teams, 10);
+  messageDesc(file_saas_accounts_v1_teams, 6);
 
 /**
  * TeamService — team and membership management

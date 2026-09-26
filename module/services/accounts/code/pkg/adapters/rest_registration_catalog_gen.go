@@ -37,6 +37,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterConsentServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service ConsentService: %w", err)
 	}
+	if err := gen.RegisterDirectoryServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service DirectoryService: %w", err)
+	}
 	if err := gen.RegisterGDPRServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service GDPRService: %w", err)
 	}
@@ -224,6 +227,9 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/approvals/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/directory/organizations/[^/]+/members$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/directory/organizations/[^/]+/teams$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/directory/teams/[^/]+/members$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/delete/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/export/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/installations/[^/]+$")},

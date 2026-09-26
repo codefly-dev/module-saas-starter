@@ -31,7 +31,7 @@ if (!bindingsOnly) {
 			"--language",
 			"typescript",
 			"--services",
-			"AccessibleScopeService,AuditService,DatasourceService,WebhookService",
+			"AccessibleScopeService,AuditService,DatasourceService,DirectoryService,WebhookService",
 			"--name",
 			"saas-sdk",
 			"--npm-scope",

@@ -15,6 +15,7 @@ var (
 	usageSingleton           = &UsageServer{}
 	installationSingleton    = &InstallationServer{}
 	accessibleScopeSingleton = &AccessibleScopeServer{}
+	directorySingleton       = &DirectoryServer{}
 )
 
 func PrincipalSingleton() *PrincipalServer { return principalSingleton }
@@ -28,6 +29,8 @@ func UsageSingleton() *UsageServer { return usageSingleton }
 func InstallationSingleton() *InstallationServer { return installationSingleton }
 
 func AccessibleScopeSingleton() *AccessibleScopeServer { return accessibleScopeSingleton }
+
+func DirectorySingleton() *DirectoryServer { return directorySingleton }
 
 func configurePermissionServerKeys() {
 	plugin := permissionsplugin.Default()

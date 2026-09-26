@@ -52,6 +52,13 @@ breaking:
       # the caller-scoped read without also carrying the administrative authz surface.
       # Same package, same fully-qualified names, same wire format.
       - saas/accounts/v1/authorization.proto
+      # ListOrgMembersRequest/Response, ListTeamsRequest/Response and
+      # ListTeamMembersRequest/Response moved to directory.proto so a published
+      # client can bind the read-only directory without the organization and
+      # team administration surfaces. Same package, same fully-qualified names,
+      # same wire format; every RPC stays where it was.
+      - saas/accounts/v1/organizations.proto
+      - saas/accounts/v1/teams.proto
       # Only AuditExportJob was dropped from jobs.proto. PrivacyExportJob's fields,
       # and every other rule, stay guarded.
       - saas/exports/v1/jobs.proto

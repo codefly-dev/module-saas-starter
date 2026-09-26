@@ -246,4 +246,15 @@ describe("@codefly-dev/saas-sdk published proto surface", () => {
 		expect(emitted.has("saas/accounts/v1/accessible_scopes_pb")).toBe(true);
 		expect(emitted.has("saas/accounts/v1/authorization_pb")).toBe(false);
 	});
+
+	// The read-only directory is its own file for the same reason: a consumer can
+	// list an organization's members, its teams and a team's members while the
+	// organization and team administration surfaces (create, rename, delete,
+	// add and remove members, settings) stay out of the tarball.
+	it("ships the read-only directory without the organization and team administration surfaces", () => {
+		const emitted = emittedPbModules();
+		expect(emitted.has("saas/accounts/v1/directory_pb")).toBe(true);
+		expect(emitted.has("saas/accounts/v1/organizations_pb")).toBe(false);
+		expect(emitted.has("saas/accounts/v1/teams_pb")).toBe(false);
+	});
 });

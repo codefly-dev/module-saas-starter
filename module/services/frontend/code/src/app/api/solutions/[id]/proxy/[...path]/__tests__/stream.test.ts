@@ -218,6 +218,75 @@ describe("authenticated solution stream carrier", () => {
 		expect(findSolution).not.toHaveBeenCalled();
 	});
 
+	// A Connect server-streaming RPC (and gRPC-web) is a POST whose response is a
+	// sequence of enveloped messages. It must pass through as unbuffered as an
+	// event stream: each message reaches the caller when it is written, not when
+	// the RPC ends, and neither an ingress nor a compressing proxy may hold it.
+	it.each([
+		"application/connect+json",
+		"application/connect+proto",
+		"application/grpc-web+proto",
+		"application/grpc-web-text",
+	])(
+		"flushes each message of a %s stream as it is written",
+		async (contentType) => {
+			let end: (() => void) | undefined;
+			const first = encoder.encode("\u0000\u0000\u0000\u0000\u0002{}");
+			await upstream((_req, res) => {
+				res.writeHead(200, {
+					"content-type": contentType,
+					"cache-control": "public",
+				});
+				res.write(first);
+				end = () => res.end(encoder.encode("\u0002\u0000\u0000\u0000\u0002{}"));
+			});
+			const response = await POST(
+				new Request(url, {
+					method: "POST",
+					body: "{}",
+					headers: {
+						authorization: "Bearer fixture-user",
+						"content-type": contentType,
+					},
+				}),
+				context,
+			);
+			expect(response.headers.get("content-type")).toBe(contentType);
+			expect(response.headers.get("cache-control")).toBe(
+				"no-store, no-transform",
+			);
+			expect(response.headers.get("x-accel-buffering")).toBe("no");
+			const reader = response.body!.getReader();
+			// The first message arrives while the upstream is still open.
+			expect((await reader.read()).value).toEqual(first);
+			end!();
+			for (;;) {
+				if ((await reader.read()).done) break;
+			}
+		},
+	);
+
+	it("leaves a unary response cacheable and transformable", async () => {
+		await upstream((_req, res) => {
+			res.writeHead(200, { "content-type": "application/json" });
+			res.end("{}");
+		});
+		const response = await POST(
+			new Request(url, {
+				method: "POST",
+				body: "{}",
+				headers: {
+					authorization: "Bearer fixture-user",
+					"content-type": "application/json",
+				},
+			}),
+			context,
+		);
+		expect(response.headers.has("x-accel-buffering")).toBe(false);
+		expect(response.headers.get("cache-control")).toBeNull();
+		await response.text();
+	});
+
 	it("does not forward resume hints on a mutation or retry that mutation", async () => {
 		registered();
 		const fetch = vi.fn().mockResolvedValue(new Response("ok"));

@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "saas/accounts/v1/common.proto";
+import "saas/policy/v1/options.proto";
+
+// The read-only organization directory: who is in an organization, its teams,
+// and who is in a team. It is its own file so a published client can bind these
+// reads without also carrying the administrative surfaces around them. A
+// generated binding is scoped to a whole file, and OrganizationService and
+// TeamService (organizations.proto, teams.proto) also create, rename, delete and
+// re-member organizations and teams. Those files import this one for the shared
+// request and response shapes; the dependency never runs the other way.
+//
+// The messages below are shared with OrganizationService.ListMembers,
+// TeamService.ListTeams and TeamService.ListMembers, so they ship to every
+// published SDK consumer: a field added here widens the public surface.
+
+message ListOrgMembersRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListOrgMembersResponse {
+  repeated OrgMembership members = 1;
+}
+
+message ListTeamsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // member_id (optional) narrows the list to the teams this principal
+  // belongs to; empty returns every team in the org. The uuid rule applies
+  // only to a non-empty value — without it the filter reaches the query as a
+  // uuid cast and a malformed id fails in the database as an internal error
+  // rather than at the boundary as an invalid argument.
+  string member_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message ListTeamsResponse {
+  repeated Team teams = 1;
+}
+
+message ListTeamMembersRequest {
+  string team_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListTeamMembersResponse {
+  repeated TeamMembership members = 1;
+}
+
+// DirectoryService is the read-only directory an organization member sees: the
+// same three reads OrganizationService and TeamService serve, under the same
+// authorization (the caller must be a member of the organization, and of the
+// team's organization for a team's members), for a consumer that must never be
+// handed the write half.
+service DirectoryService {
+  // ListOrganizationMembers lists an organization's members, as
+  // OrganizationService.ListMembers does.
+  rpc ListOrganizationMembers(ListOrgMembersRequest) returns (ListOrgMembersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/directory/organizations/{org_id}/members"};
+  }
+  // ListTeams lists an organization's teams, optionally only those a member
+  // belongs to, as TeamService.ListTeams does.
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/directory/organizations/{org_id}/teams"};
+  }
+  // ListTeamMembers lists a team's members, as TeamService.ListMembers does.
+  rpc ListTeamMembers(ListTeamMembersRequest) returns (ListTeamMembersResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "team_id"
+        target: RESOURCE_TARGET_TEAM
+        lookup: RESOURCE_LOOKUP_TEAM_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/directory/teams/{team_id}/members"};
+  }
+}

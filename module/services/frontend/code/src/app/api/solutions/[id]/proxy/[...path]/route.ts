@@ -180,12 +180,11 @@ async function handler(
 	if (upstreamContentType) {
 		responseHeaders.set("content-type", upstreamContentType);
 	}
-	if (
-		upstreamContentType?.split(";")[0].trim().toLowerCase() ===
-		"text/event-stream"
-	) {
+	if (isStreamingContentType(upstreamContentType)) {
 		// This authenticated stream must stay incremental. Preserve its bytes and
-		// EOF; the solution decides whether an event is terminal or needs a reset.
+		// EOF; the solution decides whether a message is terminal or needs a
+		// reset. no-transform keeps a compressing proxy from holding bytes to fill
+		// a block; x-accel-buffering keeps an ingress from holding the response.
 		responseHeaders.set("cache-control", "no-store, no-transform");
 		responseHeaders.set("x-accel-buffering", "no");
 	}
@@ -224,6 +223,24 @@ async function handler(
  * reporting a missing resource — labeled `not_found`, never `not_registered`,
  * so an operator isn't sent chasing a registration bug that isn't there.
  */
+/**
+ * Whether a response is a stream whose messages must reach the caller as they
+ * are written: Server-Sent Events, a Connect streaming RPC
+ * (`application/connect+json`, `application/connect+proto`) and gRPC-web
+ * (`application/grpc-web`, `+proto`, `-text`, …). A unary Connect or REST
+ * response (`application/json`, `application/proto`) is not one.
+ */
+function isStreamingContentType(contentType: string | null): boolean {
+	const essence = contentType?.split(";")[0].trim().toLowerCase() ?? "";
+	return (
+		essence === "text/event-stream" ||
+		essence.startsWith("application/connect+") ||
+		essence === "application/grpc-web" ||
+		essence.startsWith("application/grpc-web+") ||
+		essence.startsWith("application/grpc-web-text")
+	);
+}
+
 function errorCategory(status: number): string {
 	if (status === 401 || status === 403) return "auth";
 	if (status === 404) return "not_found";
