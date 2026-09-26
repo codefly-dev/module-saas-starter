@@ -32,6 +32,11 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
   reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
   shown above live provenance. Loading/error/empty are first-class.
+  A source whose provider does not yet meet the host's datasource connector
+  envelope is badged **Non-conformant provider** with the host's stated gap:
+  it keeps syncing, but the host connects no new source of that provider. The
+  flag is keyed on `conformance_gap`, so an older host that sends no
+  conformance fields flags nothing.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the

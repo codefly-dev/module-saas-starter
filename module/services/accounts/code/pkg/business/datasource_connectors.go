@@ -68,19 +68,39 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 // datasource connector is configured.
 func (s *Service) DatasourceConnectors() *connector.Registry { return s.datasourceConnectors }
 
-// DatasourceCatalog is what a tenant may connect now: the descriptor of every
-// registered connector that admits a new source, ordered by key.
-func (s *Service) DatasourceCatalog() []connector.Descriptor {
+// DatasourceCatalogEntry is one registered connector as the catalog serves it:
+// its descriptor, and whether a new source of it may be connected now.
+type DatasourceCatalogEntry struct {
+	Descriptor        connector.Descriptor
+	AcceptsNewSources bool
+}
+
+// DatasourceCatalog is the host's whole connector registry, ordered by key:
+// every provider, conformant or not, with whether it accepts a new source. A
+// client offers the ones that do and flags the ones that do not.
+func (s *Service) DatasourceCatalog() []DatasourceCatalogEntry {
 	if s.datasourceConnectors == nil {
 		return nil
 	}
-	var out []connector.Descriptor
+	var out []DatasourceCatalogEntry
 	for _, d := range s.datasourceConnectors.Descriptors() {
-		if s.datasourceConnectors.AdmitNewSource(d.Key) == nil {
-			out = append(out, d)
-		}
+		out = append(out, DatasourceCatalogEntry{Descriptor: d, AcceptsNewSources: s.datasourceConnectors.AdmitNewSource(d.Key) == nil})
 	}
 	return out
+}
+
+// DatasourceConformance reports whether a provider meets the connector
+// envelope and, when it does not, why. An unregistered provider is not
+// conformant, and says so.
+func DatasourceConformance(registry *connector.Registry, provider string) (bool, string) {
+	if registry == nil {
+		return false, "the datasource connector is not configured"
+	}
+	d, ok := registry.Descriptor(provider)
+	if !ok {
+		return false, "no connector is registered for this provider"
+	}
+	return d.Conformant, d.Gap
 }
 
 // admitNewDatasource refuses a new source of a provider the registry does not

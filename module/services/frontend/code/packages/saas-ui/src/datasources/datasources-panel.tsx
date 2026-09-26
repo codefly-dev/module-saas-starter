@@ -749,6 +749,10 @@ const statusPresentation: Record<
  * a reader who fixes the cause waits for a pull that cannot come. It also says
  * what stopped, since a red badge alone reads as "your content is gone" and
  * would send them to re-ingest content that is still there.
+ *
+ * A source of a provider that does not meet the connector envelope is flagged
+ * whatever its status: it keeps running, and the flag says why its provider
+ * cannot be connected again.
  */
 function StatusCell({ source }: { source: DatasourceView }) {
 	const presentation =
@@ -764,6 +768,16 @@ function StatusCell({ source }: { source: DatasourceView }) {
 					Scheduled pulls have stopped; use Sync to retry once the cause is
 					fixed. Content already ingested stays readable.
 				</p>
+			)}
+			{source.conformant === false && (
+				<>
+					<Badge variant="outline">Non-conformant provider</Badge>
+					<p className="type-caption-plain text-muted-foreground">
+						This source keeps syncing, but new sources of its provider cannot
+						be connected until it meets the datasource connector requirements.
+						{source.conformanceGap && ` ${source.conformanceGap}.`}
+					</p>
+				</>
 			)}
 		</div>
 	);

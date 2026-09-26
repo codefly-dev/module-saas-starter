@@ -126,6 +126,33 @@ describe("DatasourcesPanel", () => {
 		expect(explanation.textContent).toMatch(/stays readable/i);
 	});
 
+	it("flags a source whose provider does not meet the connector envelope", async () => {
+		// The host keeps such a source running but takes no new source of its
+		// provider, so the row must say so and carry the host's reason.
+		const flagged: DatasourceView = {
+			...sampleSource,
+			conformant: false,
+			conformanceGap: "no cursor and no deletions",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [flagged]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Non-conformant provider")).toBeTruthy();
+		const note = screen.getByText(/keeps syncing/i);
+		expect(note.textContent).toMatch(/no cursor and no deletions/);
+	});
+
+	it("does not flag a conformant source, or one whose client cannot tell", async () => {
+		const conformant: DatasourceView = { ...sampleSource, conformant: true };
+		const client = fakeClient({
+			listSources: vi.fn(async () => [conformant, secondSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("codefly-dev/other-repo")).toBeTruthy();
+		expect(screen.queryByText("Non-conformant provider")).toBeNull();
+	});
+
 	it("renders the reason for a status other than degraded", async () => {
 		// status_reason is scoped to "why the source left active", not to one way
 		// of leaving it, so gating the render on `degraded` drops a paused

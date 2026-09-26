@@ -79,10 +79,11 @@ type DatasourceServiceClient interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
-	// GetDatasourceCatalog returns the registry of available provider types and
-	// their per-provider connect metadata, so a client can enumerate and render
-	// the "connect a source" surface without provider-specific code. The catalog
-	// is static, non-secret, and identical for every tenant.
+	// GetDatasourceCatalog returns the host's connector registry: every provider,
+	// its connect metadata, whether it conforms to the datasource connector
+	// envelope, and whether it accepts a new source, so a client can render the
+	// "connect a source" surface without provider-specific code. The catalog is
+	// static, non-secret, and identical for every tenant.
 	GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(context.Context, *connect.Request[v1.ListSourcesRequest]) (*connect.Response[v1.ListSourcesResponse], error)
@@ -276,10 +277,11 @@ type DatasourceServiceHandler interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
-	// GetDatasourceCatalog returns the registry of available provider types and
-	// their per-provider connect metadata, so a client can enumerate and render
-	// the "connect a source" surface without provider-specific code. The catalog
-	// is static, non-secret, and identical for every tenant.
+	// GetDatasourceCatalog returns the host's connector registry: every provider,
+	// its connect metadata, whether it conforms to the datasource connector
+	// envelope, and whether it accepts a new source, so a client can render the
+	// "connect a source" surface without provider-specific code. The catalog is
+	// static, non-secret, and identical for every tenant.
 	GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(context.Context, *connect.Request[v1.ListSourcesRequest]) (*connect.Response[v1.ListSourcesResponse], error)
