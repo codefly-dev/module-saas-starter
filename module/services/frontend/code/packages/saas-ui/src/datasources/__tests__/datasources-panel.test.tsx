@@ -8,7 +8,7 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { StrictMode, type ReactElement } from "react";
+import { type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectGitHubForm } from "../connect-github-form.js";
 import { DatasourcesPanel } from "../datasources-panel.js";
@@ -1129,6 +1129,61 @@ describe("GitHub App onboarding", () => {
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(sampleSource.repo);
 		expect(alert.textContent).toContain("not connected to this organization");
+	});
+
+	it("burns the return leg and names who must finish it when the viewer may not", async () => {
+		// The viewer who follows the provider's redirect need not be the one who
+		// began the install: the App's setup URL is one address, and whoever's
+		// session is live in that browser lands here. Skipping the capture for them
+		// would drop a finished installation without a trace AND leave the
+		// single-use state and the authorization code in the address bar, in
+		// history and in same-origin referrers — the very thing the scrub exists
+		// to prevent.
+		landOn("?installation_id=42&setup_action=install&state=s1&code=oauth-1");
+		const client = appClient();
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+
+		expect(
+			await screen.findByText(
+				/only an organization administrator can connect/i,
+			),
+		).toBeTruthy();
+		expect(window.location.search).toBe("");
+		// Redeeming is the host's to refuse, so the panel does not ask on behalf of
+		// a viewer it can see would be refused.
+		expect(client.completeGitHubAppSetup).not.toHaveBeenCalled();
+		expect(screen.queryByRole("dialog", { name: "Connect GitHub" })).toBeNull();
+	});
+
+	it("redeems the return leg when the viewer's authority arrives after the first render", async () => {
+		// `canManage` is read from a credential the panel only observes, and the
+		// redirect always lands on a cold page load, so an administrator's own
+		// authority can be unknown on the first paint. Frozen at that moment, the
+		// installation would be stranded even once the credential arrives.
+		landOn("?installation_id=42&setup_action=install&state=s1&code=oauth-1");
+		const client = appClient();
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		const panel = (canManage: boolean) => (
+			<QueryClientProvider client={queryClient}>
+				<DatasourcesPanel client={client} orgId="org-1" canManage={canManage} />
+			</QueryClientProvider>
+		);
+		const { rerender } = render(panel(false));
+		await screen.findByText(/only an organization administrator can connect/i);
+		expect(client.completeGitHubAppSetup).not.toHaveBeenCalled();
+
+		rerender(panel(true));
+
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1),
+		);
+		expect(
+			screen.queryByText(/only an organization administrator can connect/i),
+		).toBeNull();
 	});
 
 	it("leaves the redirect alone when the client cannot redeem it", async () => {

@@ -157,14 +157,22 @@ function DatasourcesPanelView({
 	// to survive the scrub below rather than be re-read from an address that no
 	// longer carries them.
 	//
-	// Claimed only when this client can actually redeem them, and only for the
-	// organization on screen when they landed. A consumer adapting its own client
-	// may implement none of the App calls and handle the redirect itself, and must
-	// keep both its parameters and its address bar; and the state is redeemable
-	// only by the organization that began it, so re-firing it after an org switch
-	// would report a rejection for a setup that in fact succeeded.
+	// Captured whenever this client could redeem them, and deliberately NOT
+	// conditioned on the viewer's authority. `canManage` is read from a credential
+	// the panel only observes, so on the load that follows the redirect it can
+	// still be false for an administrator; freezing that answer into a one-shot
+	// initializer would drop a finished installation without a trace and leave the
+	// single-use state and the authorization code in the address bar, in history
+	// and in same-origin referrers. Who may redeem it is decided every render
+	// instead, at `appSetupActive` below.
+	//
+	// A consumer adapting its own client may implement none of the App calls and
+	// handle the redirect itself, and must keep both its parameters and its
+	// address bar; and the state is redeemable only by the organization that began
+	// it, so re-firing it after an org switch would report a rejection for a setup
+	// that in fact succeeded.
 	const [appSetupReturn] = useState(() => {
-		if (!completeAppSetup || !canManage) return null;
+		if (!completeAppSetup) return null;
 		const params = readAppSetupReturn();
 		return params && { ...params, orgId };
 	});
@@ -246,7 +254,23 @@ function DatasourcesPanelView({
 		);
 	};
 
-	const appSetupActive = !!appSetupReturn && appSetupReturn.orgId === orgId;
+	// Redeeming is the host's to refuse, so the panel does not ask on behalf of a
+	// viewer it can see would be refused. Derived per render rather than captured,
+	// so an authority that only arrives after the first paint still redeems the
+	// return leg the page loaded with.
+	const appSetupClaimed = !!appSetupReturn && appSetupReturn.orgId === orgId;
+	const appSetupActive = appSetupClaimed && canManage;
+	// A return leg nobody on this screen can redeem. The capture and the scrub ran
+	// regardless of authority, so the installation stands on the provider's side
+	// while its single-use state is spent: saying nothing would leave an ordinary
+	// panel over a connect that never happened.
+	//
+	// Held until the list has answered SUCCESSFULLY, because a credential that has
+	// not been read yet also reads as "not an administrator". One authenticated
+	// read is the panel's own proof that the binding is live, so this cannot
+	// accuse an administrator mid-load; a list that failed proves nothing and
+	// already shows its own error, which this line would only talk over.
+	const appSetupUnredeemed = appSetupClaimed && !canManage && list.isSuccess;
 	const appSetup = useQuery({
 		queryKey: [
 			"github-app-setup",
@@ -416,6 +440,14 @@ function DatasourcesPanelView({
 						/>
 					</div>
 				) : null}
+				{appSetupUnredeemed && (
+					<p role="status" className="type-body text-muted-foreground">
+						The GitHub App installation finished, but only an organization
+						administrator can connect the repositories it granted. Ask one to
+						connect them in Admin → Data sources; the installation itself is
+						already in place.
+					</p>
+				)}
 				{selectedCollection && (
 					<CollectionGrants
 						client={client}
