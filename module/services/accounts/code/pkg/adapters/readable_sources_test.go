@@ -92,14 +92,20 @@ func (f *readProjectionStore) ListReadableSourcesPage(_ context.Context, org str
 		if !allowed || source.ID <= after {
 			continue
 		}
-		if source.Provider != "github" {
-			return nil, status.Error(codes.Unimplemented, "unsupported source")
+		// Mirrors the production rule: GitHub is addressed by repository, every
+		// other provider by its source id.
+		container := source.ID
+		if source.Provider == "github" {
+			if source.Repo == "" {
+				return nil, status.Error(codes.FailedPrecondition, "source attribution is incomplete")
+			}
+			container = source.Repo
 		}
 		ref := source.Branch
 		if ref != "" && !strings.HasPrefix(ref, "refs/") {
 			ref = "refs/heads/" + ref
 		}
-		collection := &gen.ReadableSourceCollection{SourceId: source.ID, BoundaryId: source.BoundaryNodeID, Origin: source.Provider, Container: source.Repo, Ref: ref, Paths: source.Paths, BoundaryLabel: f.nodeLabel[source.BoundaryNodeID]}
+		collection := &gen.ReadableSourceCollection{SourceId: source.ID, BoundaryId: source.BoundaryNodeID, Origin: source.Provider, Container: container, Ref: ref, Paths: source.Paths, BoundaryLabel: f.nodeLabel[source.BoundaryNodeID]}
 		if source.LastIngestedAt != nil {
 			collection.Sync = &gen.CollectionSyncProvenance{
 				Stage:    gen.SourceSyncStage_SOURCE_SYNC_STAGE_CHANGES_ENQUEUED,
@@ -296,17 +302,22 @@ func TestSourceReadCompleteScopePaginationAndPartialFailure(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, result)
 }
-func TestSourceReadIntersectsDelegatedSubjectsAndRejectsUnsupportedSources(t *testing.T) {
+func TestSourceReadIntersectsDelegatedSubjectsAndProjectsEveryProvider(t *testing.T) {
 	store, _, _, _ := sourceReadFixture(t)
 	store.grants["actor"] = []*gen.AccessibleScope{{NodeId: "boundary-b", ScopePath: "b"}}
 	r, err := service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, []string{"documents"}, business.CollectionMetadataDisclosure{}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.NoError(t, err)
 	require.Len(t, r.Collections, 1)
 	require.Equal(t, sourceB, r.Collections[0].SourceId)
-	store.sources[1].Provider = "unsupported"
+	require.Equal(t, "acme/policies", r.Collections[0].Container)
+	// The same intersection projects a non-GitHub source, keyed by its source id
+	// rather than a repository it never had.
+	store.sources[1].Provider, store.sources[1].Repo = "upload", ""
 	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, []string{"documents"}, business.CollectionMetadataDisclosure{}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
-	require.Error(t, err)
-	require.Nil(t, r)
+	require.NoError(t, err)
+	require.Len(t, r.Collections, 1)
+	require.Equal(t, "upload", r.Collections[0].Origin)
+	require.Equal(t, sourceB, r.Collections[0].Container)
 	store.sources[1].OrgID = "another-tenant"
 	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner}, []string{"documents"}, business.CollectionMetadataDisclosure{}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.Error(t, err)
