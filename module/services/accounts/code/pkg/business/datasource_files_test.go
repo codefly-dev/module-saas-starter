@@ -266,9 +266,9 @@ func TestModuleFetchDatasourceFiles_RefusesWhatTheVersionDoesNotList(t *testing.
 	good := business.DatasourceFileRequest{ItemID: "docs/page-000.md", ItemVersion: blobID(byPath["docs/page-000.md"])}
 	for name, bad := range map[string]business.DatasourceFileRequest{
 		"another file's item version": {ItemID: "docs/page-001.md", ItemVersion: blobID(byPath["docs/page-002.md"])},
-		"out of path scope":      {ItemID: "src/main.go", ItemVersion: blobID(byPath["src/main.go"])},
-		"out of file-type scope": {ItemID: "docs/diagram.png", ItemVersion: blobID(byPath["docs/diagram.png"])},
-		"unknown path":           {ItemID: "docs/missing.md", ItemVersion: blobID([]byte("x"))},
+		"out of path scope":           {ItemID: "src/main.go", ItemVersion: blobID(byPath["src/main.go"])},
+		"out of file-type scope":      {ItemID: "docs/diagram.png", ItemVersion: blobID(byPath["docs/diagram.png"])},
+		"unknown path":                {ItemID: "docs/missing.md", ItemVersion: blobID([]byte("x"))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			served, err := fetchFiles(svc, source.ID, []business.DatasourceFileRequest{good, bad})
