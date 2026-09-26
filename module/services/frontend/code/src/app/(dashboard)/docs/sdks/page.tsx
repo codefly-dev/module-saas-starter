@@ -9,6 +9,14 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@/shared/ui";
+import { CodeBlock } from "@codefly-dev/ui/content";
+
+// The highlighter's grammar for each SDK's usage snippet.
+const USAGE_LANGUAGE: Record<string, string> = {
+	javascript: "typescript",
+	python: "python",
+	go: "go",
+};
 
 const sdks = [
 	{
@@ -172,14 +180,6 @@ func newAuthInterceptor(token string) connect.UnaryInterceptorFunc {
 	},
 ];
 
-function CodeBlock({ code }: { code: string }) {
-	return (
-		<pre className="overflow-x-auto rounded-md bg-muted p-4 text-sm">
-			<code>{code}</code>
-		</pre>
-	);
-}
-
 export default function SDKDocsPage() {
 	return (
 		<div className="space-y-6">
@@ -210,7 +210,7 @@ export default function SDKDocsPage() {
 								</CardDescription>
 							</CardHeader>
 							<CardContent>
-								<CodeBlock code={sdk.install} />
+								<CodeBlock code={sdk.install} language="bash" />
 							</CardContent>
 						</Card>
 
@@ -222,7 +222,7 @@ export default function SDKDocsPage() {
 								</CardDescription>
 							</CardHeader>
 							<CardContent>
-								<CodeBlock code={sdk.usage} />
+								<CodeBlock code={sdk.usage} language={USAGE_LANGUAGE[sdk.id]} />
 							</CardContent>
 						</Card>
 					</TabsContent>

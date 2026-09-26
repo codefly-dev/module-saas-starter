@@ -7,6 +7,7 @@ import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
 import * as CodeflyChat from "@codefly-dev/ui/chat";
 import * as CodeflySkin from "@codefly-dev/ui/skin";
 import * as CodeflyTable from "@codefly-dev/ui/table";
+import * as CodeflyContent from "@codefly-dev/ui/content";
 import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
 import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
 import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
@@ -86,6 +87,11 @@ export const CODEFLY_KIT_SHARED = {
 	"@codefly-dev/ui/table": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyTable,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/content": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyContent,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly-dev/ui/plugin-host": {

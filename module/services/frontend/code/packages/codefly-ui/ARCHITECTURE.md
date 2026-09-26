@@ -13,6 +13,7 @@ Each tier may only compose the tier below it — never a sibling, never upward.
 skin        tokens (colors·spacing·type) as DATA        ← single source of truth
 layout      Card · Section · Tabs · Text · Input · Avatar · Button   (atoms)
 charts      Svg · Scale · Axis · Gridline                            (chart atoms)
+content     Markdown · JsonView · CodeBlock · TextBlock → Content     (text atoms)
 dashboard   composes layout + charts
 chat        composes layout atoms + SDK stream hook
 table/form  composes layout atoms (DataTable takes an injected TanStack table)
@@ -20,6 +21,8 @@ table/form  composes layout atoms (DataTable takes an injected TanStack table)
 Page.tsx    full freedom: composes any of the above + solution-specific code
 ```
 
+`content` sits at the rank of `charts`: it composes layout atoms, and the
+composites compose it (`<Chat>` renders a markdown answer through it).
 `charts` currently lives inside `dashboard/` and is extracted to its own tier by
 #403. `chat`, `table`, and `form` are composite tiers that sit at the same rank
 as `dashboard` (they compose `layout`/`charts`, not each other). `plugin-host`

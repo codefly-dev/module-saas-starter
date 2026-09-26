@@ -77,10 +77,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { CardRoot, CardContent, TabsRoot, TabsList, TabsTrigger, TabsContent, PageHeader, Button, SidebarProvider } from "@codefly-dev/ui/layout";
 import { MetricCard, MetricLineChart } from "@codefly-dev/ui/dashboard";
 import { DataTable } from "@codefly-dev/ui/table";
+import { Content } from "@codefly-dev/ui/content";
 import { ConnectGitHubForm, type DatasourceClient } from "@codefly-dev/saas-ui";
 const client: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},syncSource:async()=>"example-job",deleteSource:async()=>{}};
-const html=renderToStaticMarkup(<SidebarProvider><PageHeader title="Example workspace" /><CardRoot><CardContent><Button>Save</Button></CardContent></CardRoot><TabsRoot defaultValue="one"><TabsList><TabsTrigger value="one">Overview</TabsTrigger></TabsList><TabsContent value="one">Workspace content</TabsContent></TabsRoot><MetricCard metric={{label:"Requests",value:3}} /><MetricLineChart title="Requests" series={[]} /></SidebarProvider>);
-if (!html.includes("Workspace content") || !html.includes("Save")) throw new Error("Packed UI did not render");
+const html=renderToStaticMarkup(<SidebarProvider><PageHeader title="Example workspace" /><CardRoot><CardContent><Button>Save</Button></CardContent></CardRoot><TabsRoot defaultValue="one"><TabsList><TabsTrigger value="one">Overview</TabsTrigger></TabsList><TabsContent value="one">Workspace content</TabsContent></TabsRoot><MetricCard metric={{label:"Requests",value:3}} /><MetricLineChart title="Requests" series={[]} /><Content value={"**Rendered** answer"} /></SidebarProvider>);
+if (!html.includes("Workspace content") || !html.includes("Save") || !html.includes("<strong>Rendered</strong>")) throw new Error("Packed UI did not render");
 if (typeof DataTable !== "function" || typeof ConnectGitHubForm !== "function") throw new Error("Missing public component export");
 
 console.log("Packed UI declarations and generic consumer rendering passed");

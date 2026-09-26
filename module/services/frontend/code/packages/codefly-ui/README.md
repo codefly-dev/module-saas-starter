@@ -39,6 +39,18 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `@codefly-dev/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
 
+- **Content** (`@codefly-dev/ui/content`) — the one way to render text the host
+  did not write: ingested documents, model output, payloads. `<Content value
+  format>` takes `markdown` (GFM), `json` (a collapsible, paged, copyable tree),
+  `code` (monospace, syntax highlighting loaded on demand), `text` (whitespace
+  kept) or `auto` (parseable JSON → json, markdown markers → markdown, else
+  text), as a `block` or as one `inline` line of plain text for list rows and
+  excerpts. The building blocks — `Markdown`, `JsonView`, `CodeBlock`,
+  `TextBlock` — are exported too. Untrusted by default: no raw HTML, links only
+  for http/https/mailto with `rel="noopener noreferrer"`, images off unless
+  `allowImages`, and no `innerHTML` anywhere; colour only through the host's
+  token utilities.
+
 ## Entry points
 
 | Import                        | Contents                                            |
@@ -51,6 +63,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
+| `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
 | `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
@@ -61,7 +74,7 @@ second copy would split that context and break `usePluginRuntime` in a remote.
 
 The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
 `./plugin-host`, and `./skin` touch them, and the host supplies them. The
-`./layout`, `./dashboard`, and `./chat` subpaths reference neither, so a consumer
+`./layout`, `./dashboard`, `./chat` and `./content` subpaths reference neither, so a consumer
 of just those subpaths installs the kit without pulling the host-internal plugin
 packages. `./layout` does pull the primitives' public runtime deps
 (`@base-ui/react`, `lucide-react`, `class-variance-authority`, `clsx`,

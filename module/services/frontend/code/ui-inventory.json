@@ -915,6 +915,112 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/content/code-block.tsx",
+			"imports": ["react","../layout/cn.js","./copy-button.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "HighlightedCode"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/content.tsx",
+			"imports": ["../layout/cn.js","./code-block.js","./detect.js","./json-view.js","./markdown.js","./plain.js","./text-block.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "MarkdownAnswer"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "PlainText"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "InlineExcerpts"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/copy-button.tsx",
+			"imports": ["lucide-react","react","../layout/button.js","../layout/cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "HighlightedCode"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "JsonPayload"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/json-view.tsx",
+			"imports": ["lucide-react","react","../layout/cn.js","./copy-button.js","./detect.js","./text-block.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "JsonPayload"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/markdown.tsx",
+			"imports": ["hast","react","react-markdown","remark-gfm","../layout/cn.js","./code-block.js","./url.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "MarkdownAnswer"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "DocumentPreview"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/text-block.tsx",
+			"imports": ["../layout/cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "PlainText"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
 			"source": "packages/saas-ui/src/datasources/collection-access.tsx",
 			"imports": [
 				"@tanstack/react-query",
@@ -3990,6 +4096,7 @@
 		"@codefly-dev/ui/chat": "packages/codefly-ui/src/chat/index.ts",
 		"@codefly-dev/ui/layout": "packages/codefly-ui/src/layout/index.ts",
 		"@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
+		"@codefly-dev/ui/content": "packages/codefly-ui/src/content/index.ts",
 		"@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts"
 	}
 }

@@ -4,10 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	ChevronDown,
 	ChevronUp,
-	Clipboard,
-	ClipboardCheck,
 	RotateCcw,
 } from "lucide-react";
+import { Content } from "@codefly-dev/ui/content";
 import { useState } from "react";
 import { toast } from "sonner";
 import { formatDate } from "@/shared/lib/utils";
@@ -323,46 +322,34 @@ function Section({
 	emptyHint?: string;
 	prettyJson?: boolean;
 }) {
-	const [copied, setCopied] = useState(false);
-	const formatted = prettyJson ? tryPrettyJson(body) : body;
 	const empty = !body;
-
-	async function copy() {
-		try {
-			await navigator.clipboard.writeText(body);
-			setCopied(true);
-			toast.success("Copied");
-			window.setTimeout(() => setCopied(false), 1500);
-		} catch {
-			toast.error("Copy failed");
-		}
-	}
 
 	return (
 		<div>
-			<div className="flex items-center justify-between mb-1.5">
-				<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-					{title}
-				</div>
-				{!empty && (
-					<Button variant="ghost" size="sm" className="h-7 px-2" onClick={copy}>
-						{copied ? (
-							<ClipboardCheck className="h-3.5 w-3.5" />
-						) : (
-							<Clipboard className="h-3.5 w-3.5" />
-						)}
-						<span className="ml-1.5 text-xs">Copy</span>
-					</Button>
-				)}
+			<div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+				{title}
 			</div>
 			{empty ? (
 				<div className="text-xs text-muted-foreground italic">
 					{emptyHint ?? "Empty."}
 				</div>
+			) : prettyJson ? (
+				// A payload that is not valid JSON renders verbatim as text.
+				<Content
+					value={body}
+					format="json"
+					label={title}
+					className="max-h-64 overflow-auto"
+				/>
 			) : (
-				<pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-all">
-					{formatted}
-				</pre>
+				// An endpoint's response is whatever it chose to send: shown as
+				// text, with its whitespace, and never interpreted as markup.
+				<Content
+					value={body}
+					format="code"
+					wrap
+					className="max-h-64 overflow-auto"
+				/>
 			)}
 		</div>
 	);
@@ -380,15 +367,6 @@ function statusFromProto(s: number): "pending" | "success" | "failed" {
 			return "failed";
 		default:
 			return "pending";
-	}
-}
-
-function tryPrettyJson(s: string): string {
-	if (!s) return "";
-	try {
-		return JSON.stringify(JSON.parse(s), null, 2);
-	} catch {
-		return s;
 	}
 }
 
