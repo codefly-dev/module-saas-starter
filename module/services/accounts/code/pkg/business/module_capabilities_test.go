@@ -283,7 +283,7 @@ func TestModuleEmitAuditEvent_ArchiveEventsAccepted(t *testing.T) {
 	}
 	for _, eventType := range []string{"saas.document.archived", "saas.document.unarchived"} {
 		if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-			moduleTenantA, eventType, "actor-1", "example-solution", "entry-1", "", fields); err != nil {
+			moduleTenantA, eventType, "system:ingest", "example-solution", "entry-1", "", fields); err != nil {
 			t.Fatalf("%s should be accepted: %v", eventType, err)
 		}
 	}
@@ -297,24 +297,24 @@ func TestModuleEmitAuditEvent_ArchiveEventsAccepted(t *testing.T) {
 func TestModuleEmitAuditEvent_DocumentStoreVocabularyAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	cases := map[string]map[string]any{
-		"saas.document.deleted":                    {"version": "v1", "initiator": "ApplySnapshot"},
-		"saas.document.ingested":                   {"version": "v1", "initiator": "Ingest"},
-		"saas.document.version_minted":             {"version": "v1", "initiator": "Ingest"},
-		"saas.document.renamed":                    {"version": "v1", "initiator": "ApplyEffect"},
-		"saas.document.quarantined":                {"version": "v1", "initiator": "Ingest"},
-		"saas.document.quarantine_released":        {"version": "v1"},
-		"saas.document.subscribed":                 {"outcome": "failure", "reason": "not found"},
-		"saas.document.unsubscribed":               {"outcome": "success"},
-		"saas.document.ownership_transferred":      {"outcome": "success", "new_owner_subject_id": "subject-2"},
-		"saas.document.frozen":                     {"outcome": "failure", "reason": "permission denied"},
-		"saas.document.ingest_skipped_stale":       {"path": "loans/a.xlsx", "ordinal": float64(3), "initiator": "Ingest"},
-		"saas.document.quarantine_release_refused": {"version": "v1", "claimed_tenant": "other", "claimed_solution": "s"},
-		"saas.document.payload_conflict":           {"producer": "parse", "producer_version": "1", "entry": "e", "entry_version": "v", "stored_bytes": float64(10), "offered_bytes": float64(11)},
-		"saas.document.snapshot.committed":         {"digest": "d", "deleted": float64(1), "retained": float64(2), "ordinal": float64(7)},
-		"saas.document.snapshot.skipped_stale":     {"digest": "d", "deleted": float64(0), "retained": float64(0), "ordinal": float64(6)},
-		"saas.document.effect.committed":           {"digest": "d", "applied": float64(1), "deleted": float64(0)},
-		"saas.document.production.committed":       {"effect_key": "k", "task_id": "t", "digest": "d", "producer": "index", "producer_version": "1"},
-		"saas.document.knowledge.published":        {"version": "v1", "effect_key": "k", "run_id": "r", "digest": "d"},
+		"saas.document.deleted":                {"version": "v1", "initiator": "ApplySnapshot"},
+		"saas.document.ingested":               {"version": "v1", "initiator": "Ingest"},
+		"saas.document.version_minted":         {"version": "v1", "initiator": "Ingest"},
+		"saas.document.renamed":                {"version": "v1", "initiator": "ApplyEffect"},
+		"saas.document.quarantined":            {"version": "v1", "initiator": "Ingest"},
+		"saas.document.subscribed":             {"outcome": "failure", "reason": "not found"},
+		"saas.document.unsubscribed":           {"outcome": "success"},
+		"saas.document.ownership_transferred":  {"outcome": "success", "new_owner_subject_id": "subject-2"},
+		"saas.document.frozen":                 {"outcome": "failure", "reason": "permission denied"},
+		"saas.document.unfrozen":               {"outcome": "success"},
+		"saas.document.ingest_skipped_stale":   {"path": "loans/a.xlsx", "ordinal": float64(3), "initiator": "Ingest"},
+		"saas.document.quarantine_released":    {"version": "v1", "outcome": "success"},
+		"saas.document.payload_conflict":       {"producer": "parse", "producer_version": "1", "entry": "e", "entry_version": "v", "stored_bytes": float64(10), "offered_bytes": float64(11)},
+		"saas.document.snapshot.committed":     {"digest": "d", "deleted": float64(1), "retained": float64(2), "ordinal": float64(7)},
+		"saas.document.snapshot.skipped_stale": {"digest": "d", "deleted": float64(0), "retained": float64(0), "ordinal": float64(6)},
+		"saas.document.effect.committed":       {"digest": "d", "applied": float64(1), "deleted": float64(0)},
+		"saas.document.production.committed":   {"effect_key": "k", "task_id": "t", "digest": "d", "producer": "index", "producer_version": "1"},
+		"saas.document.knowledge.published":    {"version": "v1", "effect_key": "k", "run_id": "r", "digest": "d"},
 	}
 	for eventType, payload := range cases {
 		fields, err := structpb.NewStruct(payload)
@@ -335,6 +335,48 @@ func TestModuleEmitAuditEvent_DocumentStoreVocabularyAccepted(t *testing.T) {
 	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
 		moduleTenantA, "saas.document.snapshot.committed", "system:ingest", "example-solution", "k", "", fields)
 	requireCode(t, err, codes.InvalidArgument)
+	// A refused release is the release type with outcome failure and the fact of
+	// the mismatch, never a type of its own and never the other tenant's id.
+	fields, err = structpb.NewStruct(map[string]any{"version": "v1", "outcome": "failure", "reason": "tenant mismatch", "tenant_mismatch": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.quarantine_released", "system:ingest", "example-solution", "entry-1", "", fields); err != nil {
+		t.Fatalf("a refused release should be accepted: %v", err)
+	}
+	for _, refused := range []struct {
+		eventType string
+		payload   map[string]any
+	}{
+		// The superseded refusal type is not registered.
+		{"saas.document.quarantine_release_refused", map[string]any{"version": "v1"}},
+		// Another tenant's or solution's identity has no field to travel in.
+		{"saas.document.quarantine_released", map[string]any{"outcome": "failure", "claimed_tenant": "other"}},
+		{"saas.document.quarantine_released", map[string]any{"outcome": "failure", "claimed_solution": "other"}},
+	} {
+		fields, err := structpb.NewStruct(refused.payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, refused.eventType, "system:ingest", "example-solution", "entry-1", "", fields)
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	// A governance action with no outcome would read as a success on an
+	// append-only trail, so every type that tells success from refusal requires it.
+	for _, eventType := range []string{
+		"saas.document.subscribed", "saas.document.unsubscribed", "saas.document.quarantine_released",
+		"saas.document.ownership_transferred", "saas.document.frozen", "saas.document.unfrozen",
+	} {
+		fields, err := structpb.NewStruct(map[string]any{"reason": "permission denied"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, eventType, "system:ingest", "example-solution", "entry-1", "", fields)
+		requireCode(t, err, codes.InvalidArgument)
+	}
 	// The name the store used before this vocabulary was registered stays refused.
 	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
 		moduleTenantA, "documents.snapshot.committed", "system:ingest", "example-solution", "k", "", nil)

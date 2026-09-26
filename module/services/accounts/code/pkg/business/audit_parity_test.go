@@ -52,7 +52,6 @@ var eventsEmittedOutsideRPC = []EventType{
 	// Module-authenticated document readers emit these observations.
 	EventDocumentRead,
 	EventDocumentSearch,
-	EventDocumentQuarantineReleaseRefused,
 	EventDocumentQuarantineReleased,
 	EventDocumentQuarantined,
 	EventDocumentRenamed,
@@ -60,6 +59,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDocumentSnapshotSkippedStale,
 	EventDocumentSubscribed,
 	EventDocumentUnarchived,
+	EventDocumentUnfrozen,
 	EventDocumentUnsubscribed,
 	EventDocumentVersionMinted,
 	// Domain-event pub/sub (issue #493). These are emitted inside the producer's

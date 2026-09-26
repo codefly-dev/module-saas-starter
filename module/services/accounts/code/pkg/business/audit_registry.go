@@ -327,16 +327,18 @@ const (
 	EventDocumentSubscribed         EventType = "saas.document.subscribed"
 	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
 	// Entry-level facts of the documents store's own mutations, each on the
-	// entry (resource_id) like the lifecycle vocabulary above. A transfer and a
-	// freeze are audited on success and on refusal alike, told apart by
-	// `outcome`, the way the store's API audits them. A stale ingest op was
-	// refused by the store's ordering guard and wrote nothing; a refused release
-	// named a tenant the approval was not delivered for.
-	EventDocumentOwnershipTransferred     EventType = "saas.document.ownership_transferred"
-	EventDocumentFrozen                   EventType = "saas.document.frozen"
-	EventDocumentIngestSkippedStale       EventType = "saas.document.ingest_skipped_stale"
-	EventDocumentQuarantineReleaseRefused EventType = "saas.document.quarantine_release_refused"
-	EventDocumentPayloadConflict          EventType = "saas.document.payload_conflict"
+	// entry (resource_id) like the lifecycle vocabulary above. A governance
+	// action — a subscription, a quarantine release, a transfer, a freeze or an
+	// unfreeze — is audited on success and on refusal alike under one type, told
+	// apart by the required `outcome`: a refusal is never its own type, so the
+	// `payload:outcome` aggregation counts every refused action. A stale ingest
+	// op is not a refusal but the store's ordering guard skipping an op already
+	// superseded; it wrote nothing.
+	EventDocumentOwnershipTransferred EventType = "saas.document.ownership_transferred"
+	EventDocumentFrozen               EventType = "saas.document.frozen"
+	EventDocumentUnfrozen             EventType = "saas.document.unfrozen"
+	EventDocumentIngestSkippedStale   EventType = "saas.document.ingest_skipped_stale"
+	EventDocumentPayloadConflict      EventType = "saas.document.payload_conflict"
 	// Receipts of the documents store's atomic effects. resource_id is the
 	// effect key (the artifact id for a production), not an entry: each effect
 	// commits many entries at once, and every entry it changes is also audited
@@ -549,16 +551,20 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentArchived, CategoryLifecycle, "A document was archived: taken out of the listing, every version kept.", documentFields...),
 	mutation(EventDocumentUnarchived, CategoryLifecycle, "A document was unarchived: listed again.", documentFields...),
 	mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
-	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
-	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created, or refused (outcome failure).", documentOutcomeFields...),
-	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed, or the removal refused (outcome failure).", documentOutcomeFields...),
+	// Version 2 of the release and the subscription pair: `outcome` became
+	// required when a refusal stopped being its own type, so a v1 row (no
+	// outcome) and a v2 row are told apart by schema_version, not guessed at.
+	revised(mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine, or the release refused (outcome failure).",
+		append(append([]PayloadField(nil), documentOutcomeFields...),
+			PayloadField{Name: "tenant_mismatch", Kind: FieldBool}, PayloadField{Name: "solution_mismatch", Kind: FieldBool})...), 2),
+	revised(mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created, or refused (outcome failure).", documentOutcomeFields...), 2),
+	revised(mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed, or the removal refused (outcome failure).", documentOutcomeFields...), 2),
 	mutation(EventDocumentOwnershipTransferred, CategoryLifecycle, "A document's owner was reassigned, or the transfer refused (outcome failure).",
 		append(append([]PayloadField(nil), documentOutcomeFields...), str("new_owner_subject_id"))...),
-	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was frozen into a boundary-governed record, or the freeze refused (outcome failure).", documentOutcomeFields...),
+	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was frozen into a boundary-governed record, or the freeze refused (outcome failure). A freeze lasts until a saas.document.unfrozen with outcome success.", documentOutcomeFields...),
+	mutation(EventDocumentUnfrozen, CategoryLifecycle, "A frozen document was released from its freeze, or the unfreeze refused (outcome failure).", documentOutcomeFields...),
 	observation(EventDocumentIngestSkippedStale, CategoryLifecycle, "A document ingest op was refused as behind the order already applied at its path; nothing was written.",
 		append(append([]PayloadField(nil), documentFields...), str("path"), PayloadField{Name: "ordinal", Kind: FieldInt})...),
-	observation(EventDocumentQuarantineReleaseRefused, CategorySecurity, "A quarantine release was refused: the approval's payload named a tenant the release was not delivered for.",
-		append(append([]PayloadField(nil), documentFields...), str("claimed_tenant"), str("claimed_solution"))...),
 	observation(EventDocumentPayloadConflict, CategorySystem, "A producer re-ran and offered different bytes for an artifact already stored; the stored bytes were kept.",
 		str("solution"), str("producer"), str("producer_version"), str("entry"), str("entry_version"),
 		PayloadField{Name: "stored_bytes", Kind: FieldInt}, PayloadField{Name: "offered_bytes", Kind: FieldInt}),
@@ -607,11 +613,19 @@ var documentFields = []PayloadField{
 	str("initiator"),
 }
 
-// documentOutcomeFields is documentFields plus the outcome of a mutation the
-// documents store audits whether it committed or was refused: `outcome` is
-// success or failure, and `reason` says why a failure failed.
+// documentOutcomeFields is documentFields plus the outcome of a governance
+// action the documents store audits whether it committed or was refused.
+// `outcome` is required: on an append-only trail a row with no outcome reads as
+// a success that happens to carry a reason, and cannot be corrected later.
+// `reason` says why a failure failed.
+//
+// A refusal records THAT a claim did not match, never whose claim it was: a
+// release refused because its approval named another tenant or solution sets
+// tenant_mismatch / solution_mismatch, and the other tenant's identifier is
+// never written to this tenant's trail, whose rows reach the tenant's own
+// webhook receiver, export destination and download.
 var documentOutcomeFields = append(append([]PayloadField(nil), documentFields...),
-	enum("outcome", "success", "failure"), str("reason"))
+	PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{"success", "failure"}}, str("reason"))
 
 // documentSnapshotFields is the receipt of one reconciled source listing:
 // the digest of the listing, how many entries it tombstoned and how many it
