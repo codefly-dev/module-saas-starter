@@ -181,6 +181,28 @@ describe("SortableGrid", () => {
 		expect(onSwap).not.toHaveBeenCalled();
 	});
 
+	it("draws the floating copy with renderOverlay when one is given", () => {
+		render(
+			<SortableGrid
+				ids={["a", "b", "c", "d"]}
+				onSwap={vi.fn()}
+				renderItem={(id) => `Tile ${id}`}
+				renderOverlay={(id) => `Copy of ${id}`}
+			/>,
+		);
+		expect(screen.queryByText("Copy of a")).toBeNull();
+		const drop = dragTo("a", center("d"));
+		expect(screen.getByText("Copy of a")).toBeTruthy();
+		drop();
+	});
+
+	it("draws the floating copy with renderItem by default", () => {
+		renderGrid();
+		const drop = dragTo("a", center("d"));
+		expect(screen.getAllByRole("button", { name: "Tile a" })).toHaveLength(2);
+		drop();
+	});
+
 	it("glides every tile from where it was drawn when the order changes", () => {
 		const animate = vi.fn();
 		HTMLElement.prototype.animate = animate;

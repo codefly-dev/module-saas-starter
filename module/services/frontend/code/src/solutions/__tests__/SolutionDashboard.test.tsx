@@ -463,6 +463,25 @@ describe("a viewer's layout", () => {
 			expect(tileTitles()).toEqual(swapped);
 		});
 
+		it("draws the dragged copy without its info panel or reachable controls", () => {
+			renderDashboards();
+			const drop = drag("Logins over time", middle("Total logins"));
+			// The floating copy repeats the card, but not its controls: one info
+			// trigger and one remove button per tile, the tile's own.
+			expect(
+				document.querySelectorAll('[aria-label="About Logins over time"]'),
+			).toHaveLength(1);
+			expect(
+				document.querySelectorAll('[aria-label="Remove Logins over time"]'),
+			).toHaveLength(1);
+			const copies = document.querySelectorAll("[inert]");
+			expect(copies).toHaveLength(1);
+			expect(copies[0].getAttribute("aria-hidden")).toBe("true");
+			expect(copies[0].textContent).toContain("Logins over time");
+			expect(copies[0].querySelector("[tabindex='0'], a[href]")).toBeNull();
+			drop();
+		});
+
 		it("changes nothing when a drag ends off the dashboard", () => {
 			renderDashboards();
 			drag("Total logins", { clientX: 900, clientY: 900 })();

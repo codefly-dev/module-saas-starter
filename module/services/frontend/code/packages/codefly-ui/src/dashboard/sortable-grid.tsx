@@ -64,6 +64,12 @@ export type SortableGridProps = {
 	/** A tile was dropped on another: the dragged tile's id, then the target's. */
 	onSwap: (draggedId: string, targetId: string) => void;
 	renderItem: (id: string) => ReactNode;
+	/**
+	 * What the floating copy shows while a tile is dragged. Defaults to
+	 * `renderItem`. Give a lighter copy when a tile holds controls or panels
+	 * (a menu, a popover) that should not exist twice on the page mid-drag.
+	 */
+	renderOverlay?: (id: string) => ReactNode;
 	/** A tile's name in what a screen reader announces during a drag. Defaults to its id. */
 	itemLabel?: (id: string) => string;
 	/** Classes for the list, which lay the tiles out (for example `grid grid-cols-2 gap-4`). */
@@ -230,6 +236,7 @@ export function SortableGrid({
 	ids,
 	onSwap,
 	renderItem,
+	renderOverlay = renderItem,
 	itemLabel = (id) => id,
 	className,
 }: SortableGridProps) {
@@ -237,7 +244,10 @@ export function SortableGrid({
 	// server and the client.
 	const contextId = useId();
 	const [dragged, setDragged] = useState<string | null>(null);
-	const items = useMemo(() => [...ids], [ids]);
+	// Callers usually pass a new array on every render, so the order is keyed
+	// by its content: dnd-kit sees a new items list only when the order changes.
+	const order = JSON.stringify(ids);
+	const items = useMemo(() => JSON.parse(order) as string[], [order]);
 
 	const sensors = useSensors(
 		useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -276,7 +286,7 @@ export function SortableGrid({
 			onDragCancel={() => setDragged(null)}
 		>
 			<SortableContext items={items} strategy={rectSwappingStrategy}>
-				<GlidingList order={JSON.stringify(ids)} className={className}>
+				<GlidingList order={order} className={className}>
 					{ids.map((id) => (
 						<SortableTile key={id} id={id} sorting={dragged !== null}>
 							{renderItem(id)}
@@ -289,7 +299,7 @@ export function SortableGrid({
 			<DragOverlay>
 				{dragged ? (
 					<div className="cursor-grabbing drop-shadow-lg">
-						{renderItem(dragged)}
+						{renderOverlay(dragged)}
 					</div>
 				) : null}
 			</DragOverlay>

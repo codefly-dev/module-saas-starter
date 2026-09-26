@@ -592,6 +592,39 @@ function SolutionDashboard({
 			/>
 		);
 	};
+	// The floating copy while a tile is dragged: the same card, but with no
+	// info popover (so no second panel or audit query exists mid-drag) and no
+	// controls a keyboard or screen reader could reach. The icons stay so the
+	// copy is drawn the same size as the tile it follows.
+	const renderDragged = (tileId: string) => {
+		const widget = widgets.get(tileId);
+		if (!widget) return null;
+		const glyph = (icon: ReactNode) => (
+			<Button
+				type="button"
+				variant="ghost"
+				size="icon-xs"
+				className="text-muted-foreground"
+				tabIndex={-1}
+			>
+				{icon}
+			</Button>
+		);
+		return (
+			<div inert aria-hidden="true">
+				<WidgetCard
+					graph={graph}
+					widget={widget}
+					solutionId={solutionId}
+					dashboardId={dashboard.id}
+					orgId={orgId}
+					grip={glyph(<GripVertical />)}
+					info={glyph(<Info />)}
+					remove={glyph(<X />)}
+				/>
+			</div>
+		);
+	};
 
 	return (
 		<section className="space-y-4">
@@ -620,6 +653,7 @@ function SolutionDashboard({
 					onSwap={(dragged, target) => save(swapTiles(layout, dragged, target))}
 					itemLabel={titleOf}
 					renderItem={renderTile}
+					renderOverlay={renderDragged}
 					className={
 						dashboard.layout === "stack"
 							? "flex flex-col gap-4"
