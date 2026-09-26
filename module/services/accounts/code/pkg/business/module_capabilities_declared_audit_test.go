@@ -29,16 +29,7 @@ func (f declaredTypeStore) GetDeclaredAuditEventType(_ context.Context, t busine
 	return &d, nil
 }
 
-type capturingAuditEmitter struct{ entries []business.AuditEntry }
-
-func (c *capturingAuditEmitter) Emit(_ context.Context, e business.AuditEntry) {
-	c.entries = append(c.entries, e)
-}
-
-func (c *capturingAuditEmitter) EmitTx(_ context.Context, e business.AuditEntry) error {
-	c.entries = append(c.entries, e)
-	return nil
-}
+// capturingAuditEmitter is shared with module_capabilities_test.go.
 
 const declaredItemCreated = "acme.item.created"
 
