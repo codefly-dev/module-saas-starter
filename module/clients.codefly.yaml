@@ -27,6 +27,16 @@ endpoints:
       endpoint: connect
       languages: [go, typescript, python]
       services: [AccessibleScopeService, AuditService, DatasourceService, WebhookService]
+    # The internal tier a composed module may call. Its contract is the whole
+    # saas.accounts.v1 package, but the listener serves only
+    # business.ModuleAuthorityProcedures, and a client allowlist is per
+    # service, not per method: allowlisting WorkContextService would ship its
+    # tenant-tier session RPCs too. Consumers build the few calls they make on
+    # the SDK repositories' existing saas.accounts.v1 stubs, so no client is
+    # generated from this endpoint.
+    - service: accounts
+      endpoint: authority
+      publish: false
     # Reached only through the mesh by this module's own services; no
     # out-of-module consumer exists, so this endpoint declares no client.
     # `publish: false` is a declaration, NOT a confidentiality control: it

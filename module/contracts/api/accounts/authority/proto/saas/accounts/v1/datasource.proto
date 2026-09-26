@@ -1,0 +1,718 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/jobs/v1/jobs.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Datasource — a tenant-declared external source (a GitHub repo + paths) whose
+// contents are pulled and kept fresh, then ingested into the documents store as
+// versioned Entries. saas-starter owns "connection": the datasource record, the
+// per-source credential + webhook-signing secret (SecretCipher envelopes), the
+// pull trigger, and inbound webhook receipt. The ingest engine that projects the
+// enqueued deliveries into Entry/Version lives in the documents module and
+// consumes the durable jobs inbox this contract feeds.
+// ============================================================================
+
+// DatasourceProvider identifies the external system a datasource connects to.
+// GitHub is the bespoke connector; API is the generic "HTTP API with a stored
+// credential" connector that covers a large class of sources without a
+// per-provider proto change; CRAWLER ingests a documentation website from its
+// sitemap.xml; UPLOAD pulls objects from an S3-compatible object store. The enum
+// is the extension point for further connectors.
+enum DatasourceProvider {
+  DATASOURCE_PROVIDER_UNSPECIFIED = 0;
+  DATASOURCE_PROVIDER_GITHUB = 1;
+  DATASOURCE_PROVIDER_API = 2;
+  DATASOURCE_PROVIDER_CRAWLER = 3;
+  DATASOURCE_PROVIDER_UPLOAD = 4;
+}
+
+// DatasourceStatus is the datasource lifecycle. A datasource is active from
+// creation; pausing stops scheduled pulls and webhook ingestion without dropping
+// the stored credential, so re-enabling is cheap.
+enum DatasourceStatus {
+  DATASOURCE_STATUS_UNSPECIFIED = 0;
+  DATASOURCE_STATUS_ACTIVE = 1;
+  DATASOURCE_STATUS_PAUSED = 2;
+  // The source is parked because it cannot make progress for a structural
+  // reason somebody must resolve; status_reason says which. The host sets it,
+  // never the tenant, so it is worth surfacing unprompted. Already-ingested
+  // content is retained and stays readable — degrading stops future pulls, it
+  // never withdraws history.
+  DATASOURCE_STATUS_DEGRADED = 3;
+}
+
+// GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
+// datasource. The access token and webhook signing secret are never carried
+// here; they live only as SecretCipher envelopes in the credential store.
+message GitHubDatasourceConfig {
+  // "owner/name", e.g. "codefly-dev/module-saas-starter".
+  string repo = 1;
+  // Repository-relative path prefixes to ingest. Empty means the whole repo.
+  repeated string paths = 2;
+  // Git ref (branch) to pull. Empty resolves to the repository default branch.
+  string branch = 3;
+  // Optional case-insensitive file suffixes, e.g. [".md", ".mdx"]. Empty
+  // admits every file type within paths. Applied before content is fetched.
+  repeated string file_extensions = 4;
+}
+
+// ApiCredentialKind is how the generic API connector presents its stored
+// credential on every outbound request. The credential material itself lives in
+// the secret store; only the kind (and, for KIND_HEADER/KIND_QUERY, the header
+// or parameter name, and for KIND_OAUTH2 the token endpoint and client id) is
+// non-secret config.
+enum ApiCredentialKind {
+  API_CREDENTIAL_KIND_UNSPECIFIED = 0;
+  // Authorization: Bearer <credential>.
+  API_CREDENTIAL_KIND_BEARER = 1;
+  // Authorization: Basic <credential>, where the stored credential is the
+  // already-encoded "user:password" pair.
+  API_CREDENTIAL_KIND_BASIC = 2;
+  // <credential_header>: <credential>, for APIs that take a raw token in a
+  // named header (e.g. X-API-Key).
+  API_CREDENTIAL_KIND_HEADER = 3;
+  // <credential_query_param>=<credential> appended to the request query, for
+  // APIs that take the key as a query-string parameter (e.g. ?api_key=…).
+  API_CREDENTIAL_KIND_QUERY = 4;
+  // OAuth 2.0 refresh-token flow: the stored credential is a refresh token
+  // (plus, for a confidential client, a client secret). saas exchanges it for a
+  // short-lived access token at fetch time, rotates the stored token set, and
+  // presents the access token as Authorization: Bearer.
+  API_CREDENTIAL_KIND_OAUTH2 = 5;
+}
+
+// ApiOAuth2Config is the non-secret OAuth 2.0 configuration of an API source
+// whose credential_kind is API_CREDENTIAL_KIND_OAUTH2. The refresh token and
+// client secret are never carried here; they live only as a SecretCipher
+// envelope in the credential store and are rotated in place on refresh.
+message ApiOAuth2Config {
+  // Token endpoint the refresh_token grant is exchanged at, e.g.
+  // "https://oauth2.example.com/token". Absolute http(s) URL.
+  string token_url = 1;
+  // OAuth client id presented on the refresh request.
+  string client_id = 2;
+  // Scopes requested on refresh; empty requests the token's existing scopes.
+  repeated string scopes = 3;
+}
+
+// ApiDatasourceConfig is the public, non-secret configuration of a generic
+// API-with-credentials datasource. The credential value (bearer/basic/header
+// token) and any webhook signing secret are never carried here; they live only
+// as SecretCipher envelopes in the credential store.
+message ApiDatasourceConfig {
+  // Base URL of the API, e.g. "https://api.example.com".
+  string base_url = 1;
+  // Resource path, relative to base_url, whose response is pulled and handed to
+  // the ingest inbox, e.g. "/v1/documents".
+  string resource_path = 2;
+  ApiCredentialKind credential_kind = 3;
+  // Header name for API_CREDENTIAL_KIND_HEADER; ignored for the other kinds.
+  string credential_header = 4;
+  // Query-string parameter name for API_CREDENTIAL_KIND_QUERY; ignored for the
+  // other kinds.
+  string credential_query_param = 5;
+  // OAuth 2.0 configuration for API_CREDENTIAL_KIND_OAUTH2; unset for the other
+  // kinds.
+  ApiOAuth2Config oauth2 = 6;
+}
+
+// CrawlerDatasourceConfig is the public configuration of a web/sitemap crawler
+// datasource. It needs no credential: it reads the sitemap and fetches the
+// listed pages over public HTTP.
+message CrawlerDatasourceConfig {
+  // Absolute http(s) URL of the site's sitemap.xml.
+  string sitemap_url = 1;
+  // Upper bound on pages fetched per sync. Zero applies the connector default.
+  uint32 max_pages = 2;
+}
+
+// UploadDatasourceConfig is the public, non-secret configuration of an
+// S3-compatible object-storage datasource. The secret access key is never
+// carried here; it lives only as a SecretCipher envelope in the credential
+// store. Addressing is path-style, so it works against MinIO and other
+// S3-compatible stores as well as AWS S3.
+message UploadDatasourceConfig {
+  // Absolute http(s) endpoint of the object store, e.g.
+  // "https://s3.us-east-1.amazonaws.com" or a MinIO endpoint.
+  string endpoint = 1;
+  // Signing region, e.g. "us-east-1".
+  string region = 2;
+  string bucket = 3;
+  // Key prefix to pull under; empty pulls the whole bucket.
+  string prefix = 4;
+  // AWS-style access key id. The matching secret access key is the credential.
+  string access_key_id = 5;
+  // Upper bound on objects fetched per sync. Zero applies the connector default.
+  uint32 max_objects = 6;
+}
+
+// Datasource is one connected external datasource. It is org-scoped and carries
+// only non-secret projection fields; credential material is deliberately absent.
+// Exactly one provider config (github, api, crawler, or upload) is set, matching
+// provider.
+message Datasource {
+  reserved 4;
+  reserved "target_collection";
+  string id = 1;
+  string org_id = 2;
+  DatasourceProvider provider = 3;
+  GitHubDatasourceConfig github = 5;
+  DatasourceStatus status = 6;
+  // True once a webhook signing secret has been stored for the datasource, so
+  // clients can reflect whether live updates are wired without exposing it.
+  bool webhook_configured = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  // When the leased sync worker last completed a pull for an api, crawler, or
+  // upload source. Never set for a github source, whose ingest is tracked by
+  // last_ingested_at instead.
+  google.protobuf.Timestamp last_synced_at = 10;
+  ApiDatasourceConfig api = 11;
+  CrawlerDatasourceConfig crawler = 12;
+  UploadDatasourceConfig upload = 13;
+  // The scope node whose subtree the pulled Entries land in — the data boundary
+  // this source writes into (issue #473). Grantable like any scope node.
+  string boundary_node_id = 14;
+  // When the change-set compiler last durably enqueued a change set: a webhook
+  // delivery, the periodic reconcile, or a tenant pressing "Sync now", which for
+  // this provider dispatches a forced reconcile rather than a pull. Set only for
+  // a github source — the other providers advance last_synced_at instead, so at
+  // most one of the two clocks ever ticks for a given source. Unset until the
+  // first delivery lands.
+  google.protobuf.Timestamp last_ingested_at = 15;
+  // Head commit fully enqueued as a change set at last_ingested_at; the compiler
+  // diffs the next delivery from it. Empty until the first delivery lands, and
+  // like last_ingested_at set only for a github source.
+  string last_ingested_commit = 16;
+  // Why the source left DATASOURCE_STATUS_ACTIVE, in prose a tenant can act on;
+  // empty while it is active. Every value is produced by one of a closed set of
+  // named constructors in the host, so it carries no credential material, token,
+  // or signing secret — raw provider error text can never reach this field.
+  string status_reason = 17;
+}
+
+message AddGitHubSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // "owner/name".
+  string repo = 2 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 255
+    pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+  }];
+  repeated string paths = 3 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  string branch = 4 [(buf.validate.field).string.max_len = 255];
+  reserved 5;
+  reserved "target_collection";
+  // The data boundary the pulled Entries land in (issue #473): either an
+  // existing scope node's id, or a label to mint a new `collection` node under
+  // the org. Exactly one is required.
+  oneof boundary {
+    option (buf.validate.oneof).required = true;
+    string boundary_node_id = 8 [(buf.validate.field).string.uuid = true];
+    string collection_label = 9 [(buf.validate.field).string = {
+      min_len: 1
+      max_len: 255
+    }];
+  }
+  // Plaintext, repository-scoped fine-grained GitHub PAT used to read the
+  // repository. Encrypted through the SecretCipher at receipt; only its envelope
+  // reference is persisted.
+  //
+  // Empty connects the source through the deployment's GitHub App instead: the
+  // host resolves the installation covering `repo` itself and mints a
+  // short-lived, repository-scoped installation token for every fetch, so no
+  // token is ever pasted or stored. That path requires this organization to
+  // have completed App setup (BeginGitHubAppSetup then CompleteGitHubAppSetup)
+  // for the installation covering `repo`, and is refused when no App is
+  // registered for the deployment.
+  string access_token = 6 [(buf.validate.field).string.max_len = 1024];
+  // Plaintext shared secret GitHub signs push deliveries with
+  // (X-Hub-Signature-256). Optional at creation; when omitted, live webhook
+  // ingestion stays off until a later call supplies one. Encrypted at receipt.
+  string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
+  // Optional file suffix allowlist, intersected with paths (not a glob).
+  repeated string file_extensions = 10 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: { string: { min_len: 2 max_len: 33 pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  }];
+}
+
+message AddGitHubSourceResponse {
+  Datasource datasource = 1;
+}
+
+// AddSourceRequest is the provider-agnostic connect call. provider selects the
+// connector; the config oneof carries that provider's non-secret configuration
+// (the variant must match provider); credential carries the plaintext secret the
+// connector authenticates with (a GitHub token, or the API connector's
+// bearer/basic/header credential), encrypted through the SecretCipher at receipt
+// so only its envelope reference is persisted.
+message AddSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  DatasourceProvider provider = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  reserved 3;
+  reserved "target_collection";
+  oneof config {
+    GitHubDatasourceConfig github = 4;
+    ApiDatasourceConfig api = 5;
+    CrawlerDatasourceConfig crawler = 8;
+    UploadDatasourceConfig upload = 9;
+  }
+  // The data boundary the pulled Entries land in (issue #473): either an
+  // existing scope node's id, or a label to mint a new `collection` node under
+  // the org. Exactly one is required.
+  oneof boundary {
+    option (buf.validate.oneof).required = true;
+    string boundary_node_id = 12 [(buf.validate.field).string.uuid = true];
+    string collection_label = 13 [(buf.validate.field).string = {
+      min_len: 1
+      max_len: 255
+    }];
+  }
+  // Plaintext credential the connector authenticates with (a GitHub token, the
+  // API connector's bearer/basic/header credential, or the object store's secret
+  // access key). Optional for providers that need none, such as the crawler.
+  // Encrypted at receipt. Its absence for a credential-taking provider is
+  // rejected by the connector.
+  string credential = 6 [(buf.validate.field).string.max_len = 4096];
+  // Plaintext webhook signing secret. Optional; when omitted, live webhook
+  // ingestion stays off until a later call supplies one. Encrypted at receipt.
+  string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
+  // Plaintext OAuth 2.0 client secret, for API_CREDENTIAL_KIND_OAUTH2 with a
+  // confidential client. Optional (a public client omits it). Encrypted at
+  // receipt alongside the refresh token carried in credential; never projected.
+  string oauth2_client_secret = 10 [(buf.validate.field).string.max_len = 1024];
+}
+
+message AddSourceResponse {
+  Datasource datasource = 1;
+}
+
+// DatasourceConfigField describes one non-secret config input a provider needs,
+// so the UI can render the connect form from the catalog rather than hardcoding
+// it per provider.
+message DatasourceConfigField {
+  // Config field key, matching the provider's config message field name.
+  string key = 1;
+  string display_name = 2;
+  string help = 3;
+  bool required = 4;
+}
+
+// DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
+// offer and configure a provider without provider-specific code.
+message DatasourceProviderDescriptor {
+  DatasourceProvider provider = 1;
+  string display_name = 2;
+  string description = 3;
+  repeated DatasourceConfigField config_fields = 4;
+  // Whether the provider can verify inbound webhook deliveries.
+  bool supports_webhook = 5;
+  // Credential kinds this connector accepts, so the UI can offer the matching
+  // credential inputs. Empty for a connector with a bespoke credential shape
+  // (GitHub: an access token plus an optional webhook secret).
+  repeated ApiCredentialKind supported_credential_kinds = 6;
+}
+
+message GetDatasourceCatalogRequest {}
+
+message GetDatasourceCatalogResponse {
+  repeated DatasourceProviderDescriptor providers = 1;
+}
+
+message ListSourcesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListSourcesResponse {
+  repeated Datasource datasources = 1;
+}
+
+message GetSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message GetSourceResponse {
+  Datasource datasource = 1;
+}
+
+message SyncSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+  // Optional replacement PAT: validate and encrypt for this existing GitHub
+  // source before queuing sync. Empty keeps the saved credential. Never returned.
+  string access_token = 3 [(buf.validate.field).string.max_len = 4096];
+}
+
+message SyncSourceResponse {
+  // Durable jobs-inbox id of the enqueued sync request. The pull runs
+  // asynchronously in a leased worker; this id lets callers trace it.
+  string job_id = 1;
+}
+
+message GetSourceSyncRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+  string job_id = 3 [(buf.validate.field).string.uuid = true];
+}
+
+message SourceSyncDelivery {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.JobState state = 2 [(buf.validate.field).required = true];
+  saas.jobs.v1.JobExecutionReference execution = 3;
+}
+
+message GetSourceSyncResponse {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.JobState state = 2 [(buf.validate.field).required = true];
+  repeated SourceSyncDelivery deliveries = 3;
+}
+
+message DeleteSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message DeleteSourceResponse {}
+
+// GitHubAppRepository is one repository a verified App installation grants this
+// host read access to.
+message GitHubAppRepository {
+  // "owner/name".
+  string repo = 1;
+  // The repository's default branch, so a client can offer it without a second
+  // round trip. Empty when GitHub reported none.
+  string default_branch = 2;
+  // True when this organization already connects this repository, so a client
+  // can present it as connected rather than offering it twice.
+  bool already_connected = 3;
+}
+
+message BeginGitHubAppSetupRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message BeginGitHubAppSetupResponse {
+  // Where to send the browser to install the App and choose repositories. It
+  // carries the state below, and an installation that returns without it is
+  // refused.
+  string install_url = 1;
+  // One-time setup state, bound server-side to this organization and to the
+  // user who began the setup. Redeemable exactly once.
+  string state = 2;
+  // When the state stops being redeemable.
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message CompleteGitHubAppSetupRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // The state handed out by BeginGitHubAppSetup and echoed back through the
+  // redirect.
+  string state = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // The installation the redirect claims was installed. A claim, never
+  // authority: it is a small integer supplied by a browser, so the host both
+  // verifies it against GitHub as the App and requires `code` below to
+  // attribute it to the caller, and refuses one already bound to a different
+  // organization.
+  string installation_id = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 32
+    pattern: "^[0-9]+$"
+  }];
+  // The authorization code GitHub appends to the setup redirect when the App
+  // requests user authorization during installation. The host trades it for a
+  // user-to-server token and requires that user to reach the installation,
+  // which is what stops one organization claiming another's installation by
+  // naming its id. Required: without it an installation is attributable to
+  // nobody.
+  string code = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+message CompleteGitHubAppSetupResponse {
+  // The installation the host verified and bound to this organization.
+  string installation_id = 1;
+  // Repositories that installation grants, each connectable with no token.
+  repeated GitHubAppRepository repositories = 2;
+}
+
+message MigrateGitHubSourceToAppRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message MigrateGitHubSourceToAppResponse {
+  Datasource datasource = 1;
+}
+
+// DatasourceService is the tenant-facing surface a solution drives (directly or
+// through the generated SDK) to declare and operate connected datasources.
+service DatasourceService {
+  // AddGitHubSource registers a GitHub repository as a datasource, encrypts and
+  // stores its access token (and optional webhook signing secret), and returns
+  // the non-secret projection.
+  rpc AddGitHubSource(AddGitHubSourceRequest) returns (AddGitHubSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // AddSource registers a datasource for any provider: it selects the connector
+  // by provider, stores the config and the encrypted credential (and optional
+  // webhook signing secret), and returns the non-secret projection.
+  rpc AddSource(AddSourceRequest) returns (AddSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetDatasourceCatalog returns the registry of available provider types and
+  // their per-provider connect metadata, so a client can enumerate and render
+  // the "connect a source" surface without provider-specific code. The catalog
+  // is static, non-secret, and identical for every tenant.
+  rpc GetDatasourceCatalog(GetDatasourceCatalogRequest) returns (GetDatasourceCatalogResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSources returns the calling org's connected datasources.
+  rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetSource returns one connected datasource in the calling org.
+  rpc GetSource(GetSourceRequest) returns (GetSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // SyncSource pulls the repository's current contents and enqueues an ingestion
+  // delivery per file onto the durable jobs inbox the documents module consumes.
+  rpc SyncSource(SyncSourceRequest) returns (SyncSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.synced"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetSourceSync projects durable lifecycle and module-reported execution
+  // references for one sync without exposing job payloads or attributes.
+  rpc GetSourceSync(GetSourceSyncRequest) returns (GetSourceSyncResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DeleteSource removes a connected datasource and its stored credentials.
+  rpc DeleteSource(DeleteSourceRequest) returns (DeleteSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.removed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // BeginGitHubAppSetup mints a one-time setup state, bound to this
+  // organization and to the calling user, and returns the URL that installs the
+  // deployment's GitHub App on repositories the tenant picks. No credential is
+  // stored: the App's signing key is deployment custody.
+  rpc BeginGitHubAppSetup(BeginGitHubAppSetupRequest) returns (BeginGitHubAppSetupResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.github_app.setup_started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // CompleteGitHubAppSetup redeems that state exactly once and verifies the
+  // returned installation against GitHub as the App before binding it to the
+  // organization, so an installation id arriving from a browser redirect never
+  // claims a tenant on its own. It returns the repositories the installation
+  // grants.
+  rpc CompleteGitHubAppSetup(CompleteGitHubAppSetupRequest) returns (CompleteGitHubAppSetupResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.github_app.setup_completed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MigrateGitHubSourceToApp re-points a PAT-backed source at the deployment's
+  // GitHub App in place, keeping the source's identity, path scope, boundary,
+  // grants, delivery cursor and audit history. The installation is resolved
+  // server-side from the repository the source already names, and the stored
+  // PAT is retired only once App access has been proven.
+  rpc MigrateGitHubSourceToApp(MigrateGitHubSourceToAppRequest) returns (MigrateGitHubSourceToAppResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.credential.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

@@ -183,9 +183,17 @@ viewer may read out.
 
 ## Mesh reachability is the composition's to grant
 
+A composed module reaches the internal tier on the named `authority` endpoint
+(gRPC, module visibility, a listener of its own), which serves only
+`business.ModuleAuthorityProcedures` — see
+[../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md). Widening that list
+widens what every composed module can reach; the tests beside it hold each entry
+to the internal tier and keep the gateway-brokered exchanges off it.
+
 The generated `AuthorizationPolicy` allowlists accounts' internal surface to the
 service accounts of services that **declare a dependency on accounts** in the
-workspace topology. This module's own topology names no composed module — it must
+workspace topology, and narrows a caller whose only edge is `authority` to the
+module surface. This module's own topology names no composed module — it must
 carry no build-time knowledge of its consumers — so a composed module reaches the
 capability surface in a mesh-enforced deployment only when its own workspace
 declares that dependency and regenerates the policy. A valid Work Context does
