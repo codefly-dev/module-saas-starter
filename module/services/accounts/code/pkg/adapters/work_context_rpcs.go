@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -1179,7 +1180,28 @@ func workContextScopes(
 		}
 		scopes = append(scopes, coreScope)
 	}
-	return permissions, scopes, nil
+	return markContentReads(permissions), scopes, nil
+}
+
+// markContentReads flags every unscoped `read` of a declared module content
+// resource type (business.WorkContextPermission.ContentRead). The declaration
+// is the union across the composition: a revision recheck names no audience,
+// and mint and recheck must resolve one rule or a capability minted under it
+// would be rejected as stale on its first use. A host with no declared content
+// flags nothing, so a permission it does not govern per node keeps requiring an
+// organization-level role.
+func markContentReads(permissions []business.WorkContextPermission) []business.WorkContextPermission {
+	if service == nil {
+		return permissions
+	}
+	content := service.ModulePrincipals().ContentResources()
+	for i := range permissions {
+		permission := &permissions[i]
+		permission.ContentRead = permission.ResourceID == "" &&
+			permission.Action == "read" &&
+			slices.Contains(content, permission.ResourceKind)
+	}
+	return permissions
 }
 
 func permissionsFromCoreScopes(scopes []*basev0.WorkScopeV1) []business.WorkContextPermission {
@@ -1202,7 +1224,7 @@ func permissionsFromCoreScopes(scopes []*basev0.WorkScopeV1) []business.WorkCont
 			}
 		}
 	}
-	return permissions
+	return markContentReads(permissions)
 }
 
 func cloneWorkScopes(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {

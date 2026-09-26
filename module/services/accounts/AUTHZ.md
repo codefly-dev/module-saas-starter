@@ -135,6 +135,34 @@ decision is the record. Granting or revoking the platform role itself is
 audited, and bumps the authorization revision of every organization the user
 belongs to, which invalidates outstanding Work Contexts and read cursors.
 
+## A read grant is standing to mint a content read
+
+A module reading content for a viewer presents that viewer's Work Context,
+carrying an **unscoped** `read` of the content's permission resource type. The
+capability is not organization-wide authority over the content: every read
+still resolves node by node through the oracles above (the readable-source
+projection, the exact-record check), intersected over the owner and every
+actor. So the mint admits that one permission on the same bases those oracles
+accept — an organization-level role as before, **or** a live scope grant (the
+owner's or a team's), a live record share, or platform read authority on at
+least one node. Without this a member granted read on one collection could see
+"Read" on it and still be refused every read, because the mint demanded an
+organization-wide role no collection grant confers.
+
+It is narrow on every other axis (`workContextPermissionAllowed`, flagged by
+the adapters' `markContentReads`):
+
+- **Declared content only** — a resource type some composed module declares
+  under `resources`; the union, because a revision recheck names no audience
+  and mint and recheck must resolve one rule. A host with no declared content
+  widens nothing.
+- **`read` only, unscoped only.** Any other action, and any resource-scoped
+  ask, still needs a role assignment exactly as before.
+- **The owner only.** A delegated actor's authority is never widened through
+  a node grant.
+- **Live.** Revoking or expiring the last grant withdraws it on the next mint
+  and on every recheck of an outstanding capability.
+
 ## Deferred
 
 Boundary-level RLS inside module stores (an `app.current_boundaries` GUC) stays
