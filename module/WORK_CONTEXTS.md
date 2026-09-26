@@ -87,14 +87,14 @@ The composition then declares the binding on the **calling** principal in
           {
             "resource_kind": "example-producer.profiles",
             "actions": ["invoke", "read"],
-            "resource_ids": ["example-producer/standard"]
+            "resource_ids": ["standard"]
           }
         ],
         "lookup_scopes": [
           {
             "resource_kind": "example-producer.profiles",
             "actions": ["read"],
-            "resource_ids": ["example-producer/standard"]
+            "resource_ids": ["standard"]
           }
         ]
       }
@@ -119,19 +119,41 @@ Three properties of the entry are worth reading twice. `audience` may not equal
 the caller's own prefix, so a binding cannot be a self-grant. `resource_ids`
 pins the exact resource; omitting it widens the child to every resource of that
 kind, and `"*"` is refused rather than treated as a wildcard. And because the
-grant is re-read on every call, deleting the `run` entry revokes the exchange
-immediately — including in the policy recheck that runs after signing — rather
-than when the last issued child expires.
+binding is read on every call rather than captured into a child at exchange,
+deleting the `run` entry stops the exchange as soon as the deployment carrying
+that deletion is serving — including in the policy recheck that runs after
+signing — rather than when the last issued child expires.
 
-A resource id is whatever the producer's contribution says it names, and the
-host compares it as an opaque string. Name the resource by its **stable
-identity**, not by a digest of its current definition. The host re-reads the
-entry on every call, and a module's operation-context revision is a digest of
-its whole entry. So a grant that has to be re-issued whenever the producer's
-definition moves revokes every outstanding context of the module at the same
-time, and until it is re-issued the consumer has no access at all. Pinning a
-definition is the producer's check, made on each request against what it has
-installed. It is not a property of the grant.
+A resource id is an opaque string, and the producing module owns what its ids
+mean. The host neither derives nor checks them: the producer's contribution
+declares resource kinds and actions and cannot name an id at all, and no
+registry of ids is consulted, so an id no producer recognises parses, signs, and
+reaches nothing until the producer refuses it. Beyond the sorting and wildcard
+rules above, the host requires each id to be non-empty, free of surrounding
+whitespace, and at most 512 characters — a bound a digest is always inside and a
+hand-written identity is not — and then compares it byte for byte. An id that
+breaks one of those is refused while the registry is parsed, which fails
+accounts' start-up rather than one call.
+
+Name the resource by its **stable identity**, not by a digest of its current
+definition. `MODULE_PRINCIPALS` is parsed once, at accounts start-up, so
+re-issuing this entry is a deployment rather than an edit: a grant that has to
+be re-issued whenever the producer's definition moves leaves the consumer
+without access from the moment that definition moves until every accounts
+process is serving the new entry, and while an old and a new process both serve,
+the same context is confirmed by one and refused by the other. For a module that
+also declares `headless_scopes`, the same re-issue revokes every operation
+context it has minted, across all of its bindings — the whole-entry revision
+under [Operation contexts with no person
+present](#operation-contexts-with-no-person-present). Children exchanged from a
+person's parent, like the one above, are owned by that person and take the
+row-backed check instead, so an entry change does not revoke them; they expire
+within the minute on their own.
+
+Pinning a definition is the producer's own check, made on each request against
+what it has installed. The host makes no such check, so a producer that means a
+grant to cover one exact definition enforces that itself: the id here says which
+resource is meant, never which version of it.
 
 ## Operation contexts with no person present
 
