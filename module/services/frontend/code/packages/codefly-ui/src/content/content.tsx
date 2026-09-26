@@ -5,7 +5,11 @@ import { CodeBlock } from "./code-block.js";
 import { type ContentFormat, detectFormat, readJson } from "./detect.js";
 import { JsonView, stringifyJson } from "./json-view.js";
 import type { LinkResolver } from "./links.js";
-import { type HeadingLevel, Markdown } from "./markdown.js";
+import {
+	type HeadingLevel,
+	Markdown,
+	type MarkdownReferences,
+} from "./markdown.js";
 import { toPlainText } from "./plain.js";
 import { TextBlock } from "./text-block.js";
 
@@ -39,11 +43,19 @@ export interface ContentProps {
 	lineBreaks?: boolean;
 	/** Markdown only: render https images. Default false (alt text, nothing fetched). */
 	allowImages?: boolean;
+	/**
+	 * Markdown only: numbered references (`[1]`, `[2]`) the caller renders
+	 * itself, such as a citation marker (see `MarkdownProps.references`).
+	 */
+	references?: MarkdownReferences;
 	/** JSON only: levels open on first render. Default 1. */
 	expandDepth?: number;
 	/** Code only: wrap long lines instead of scrolling. Default false. */
 	wrap?: boolean;
-	/** JSON and code: show a copy button. Default true. */
+	/**
+	 * Show a copy button: on the JSON tree, on a code block, and on each fenced
+	 * block inside markdown. Default true.
+	 */
 	copyable?: boolean;
 	/** JSON only: accessible name for the tree. */
 	label?: string;
@@ -70,6 +82,7 @@ export function Content({
 	lineBreaks,
 	linkBase,
 	resolveLink,
+	references,
 	expandDepth,
 	copyable,
 	wrap,
@@ -100,9 +113,15 @@ export function Content({
 	if (resolved === "json") {
 		const reading = readJson(value);
 		if (!reading.ok) {
+			// A payload that does not parse is still a payload. Rendering it as a
+			// bare text block silently dropped the copy button `copyable` promises
+			// for this format — for a webhook body, exactly the case a reader most
+			// wants to copy somewhere and inspect.
 			return (
-				<TextBlock
-					text={typeof value === "string" ? value : ""}
+				<CodeBlock
+					code={typeof value === "string" ? value : ""}
+					copyable={copyable}
+					wrap={wrap}
 					className={className}
 				/>
 			);
@@ -132,6 +151,8 @@ export function Content({
 				lineBreaks={lineBreaks}
 				linkBase={linkBase}
 				resolveLink={resolveLink}
+				references={references}
+				copyable={copyable}
 				className={className}
 			>
 				{source}

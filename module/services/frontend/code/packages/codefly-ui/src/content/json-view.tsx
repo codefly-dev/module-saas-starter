@@ -17,10 +17,10 @@
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../layout/cn.js";
+import { CodeBlock } from "./code-block.js";
 import { CopyButton } from "./copy-button.js";
 import { readJson } from "./detect.js";
 import { TONE } from "./tones.js";
-import { TextBlock } from "./text-block.js";
 
 export interface JsonViewProps {
 	/** Structured data, or a JSON string (parsed; unparseable text renders as text). */
@@ -69,10 +69,24 @@ export function stringifyJson(value: unknown): string {
 	}
 }
 
-function entriesOf(value: Container): Array<[string, unknown]> {
-	return Array.isArray(value)
-		? value.map((item, index) => [String(index), item])
-		: Object.entries(value);
+/**
+ * One page of a container's children. The slice comes BEFORE the mapping: a
+ * million-item array must cost a hundred pairs to show a hundred rows, not a
+ * million on every render and again on every "Show more". For an object the
+ * keys are passed in, because the count above already had to read them.
+ */
+function pageOf(
+	value: Container,
+	keys: readonly string[] | undefined,
+	limit: number,
+): Array<[string, unknown]> {
+	if (keys === undefined) {
+		return (value as unknown[])
+			.slice(0, limit)
+			.map((item, index) => [String(index), item]);
+	}
+	const record = value as Record<string, unknown>;
+	return keys.slice(0, limit).map((key) => [key, record[key]]);
 }
 
 function Key({ name, isIndex }: { name: string; isIndex: boolean }) {
@@ -185,9 +199,11 @@ function ContainerNode({
 	const [visible, setVisible] = useState(pageSize);
 	const isArray = Array.isArray(value);
 	const [openBrace, closeBrace] = isArray ? ["[", "]"] : ["{", "}"];
-	// Counting keys is O(n) but touches no DOM; the entries themselves are only
-	// materialised while the node is open.
-	const size = isArray ? value.length : Object.keys(value).length;
+	// An object has to have its keys read to be counted at all; an array does
+	// not. Neither touches the DOM, and only one page of children is ever
+	// materialised — see `pageOf`.
+	const keys = isArray ? undefined : Object.keys(value);
+	const size = isArray ? (value as unknown[]).length : (keys as string[]).length;
 	const summary = isArray
 		? `${size} ${size === 1 ? "item" : "items"}`
 		: `${size} ${size === 1 ? "key" : "keys"}`;
@@ -202,9 +218,8 @@ function ContainerNode({
 		);
 	}
 
-	const entries = open ? entriesOf(value) : [];
-	const shown = entries.slice(0, visible);
-	const hidden = entries.length - shown.length;
+	const shown = open ? pageOf(value, keys, visible) : [];
+	const hidden = open ? size - shown.length : 0;
 	const inner = new Set(ancestors).add(value);
 
 	return (
@@ -249,7 +264,7 @@ function ContainerNode({
 								expandDepth={expandDepth}
 								pageSize={pageSize}
 								ancestors={inner}
-								last={index === entries.length - 1}
+								last={index === size - 1}
 							/>
 						))}
 						{hidden > 0 && (
@@ -290,8 +305,18 @@ export function JsonView({
 		typeof value === "string"
 			? readJson(value)
 			: ({ ok: true, value } as const);
+	// A string that does not parse is still the payload the caller was handed:
+	// it keeps its whitespace AND the copy button, which a plain text block has
+	// no way to offer.
 	if (!reading.ok)
-		return <TextBlock text={String(value)} className={className} />;
+		return (
+			<CodeBlock
+				code={String(value)}
+				copyable={copyable}
+				wrap
+				className={className}
+			/>
+		);
 	const data = reading.value;
 	return (
 		<figure
@@ -302,12 +327,19 @@ export function JsonView({
 				className,
 			)}
 		>
-			{copyable && (
-				<div className="absolute top-1 right-1 z-10">
-					<CopyButton text={() => stringifyJson(data)} label={label} />
-				</div>
-			)}
 			<div className={cn("overflow-auto p-3", copyable && "pr-10")}>
+				{copyable && (
+					// Sticky INSIDE the scroll container, not absolutely placed against
+					// the figure. `className` lands on the figure, so a caller that caps
+					// the height there makes the figure the scrollport — and an absolute
+					// button, positioned from the top of the content, scrolled out of
+					// sight of the tree it copies. `h-0` keeps it out of the flow.
+					<div className="sticky top-0 z-10 flex h-0 justify-end">
+						<div className="-mt-1 -mr-8">
+							<CopyButton text={() => stringifyJson(data)} label={label} />
+						</div>
+					</div>
+				)}
 				{isContainer(data) ? (
 					<JsonNode
 						value={data}

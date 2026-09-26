@@ -11,15 +11,56 @@ import {
 	type FormEvent,
 	type KeyboardEvent,
 	type ReactNode,
+	useEffect,
 	useState,
 } from "react";
 import { Avatar as SharedAvatar, AvatarFallback } from "../layout/avatar.js";
 import { Button } from "../layout/button.js";
 import { Textarea } from "../layout/textarea.js";
 import { Section } from "../layout/page.js";
-import { Markdown } from "../content/markdown.js";
 import { cn } from "./cn.js";
 import type { ChatMessage, ChatRole } from "./types.js";
+
+// The markdown renderer is a separate chunk, reached by dynamic import the
+// first time a message asks for it. Imported statically it would put the whole
+// parser — react-markdown and ~60 micromark modules, around 120 KB minified —
+// into `@codefly-dev/ui/chat` for every consumer, including the many whose
+// messages are all plain text. That is the same cost `content/gfm.ts` goes out
+// of its way to keep out of this subpath, and the same split `<CodeBlock>`
+// makes for its highlighter.
+type MarkdownModule = typeof import("../content/markdown.js");
+let markdownModule: MarkdownModule | null = null;
+
+/**
+ * A markdown message. Until the chunk arrives (and if it never does) the words
+ * are on screen as written, so a reply is readable immediately and a failed
+ * chunk load costs formatting, not content.
+ */
+function MarkdownMessage({ source }: { source: string }) {
+	const [loaded, setLoaded] = useState(markdownModule !== null);
+
+	useEffect(() => {
+		if (markdownModule) return;
+		let cancelled = false;
+		import("../content/markdown.js")
+			.then((module) => {
+				markdownModule = module;
+				if (!cancelled) setLoaded(true);
+			})
+			.catch(() => {
+				// The message stays as plain text; nothing waits on the parser.
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	if (!loaded || !markdownModule) {
+		return <span className="whitespace-pre-wrap">{source}</span>;
+	}
+	const { Markdown } = markdownModule;
+	return <Markdown>{source}</Markdown>;
+}
 
 const ROLE_LABEL: Record<ChatRole, string> = {
 	user: "You",
@@ -67,7 +108,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 					)}
 				>
 					{message.format === "markdown" ? (
-						<Markdown>{message.content}</Markdown>
+						<MarkdownMessage source={message.content} />
 					) : (
 						message.content
 					)}

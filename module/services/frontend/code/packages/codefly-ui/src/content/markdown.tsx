@@ -14,6 +14,10 @@
 //   3. Images are OFF unless the caller opts in, because rendering one fetches
 //      it: an untrusted document could otherwise make every reader's browser
 //      call a URL of its choosing. Off, an image renders as its alt text.
+//   4. The only id that reaches the page is one the kit minted, under this
+//      block's own `clobberPrefix` namespace (`useOwnId`). That is what makes a
+//      GFM footnote's anchor work without letting a document write an id that
+//      collides with, or shadows, the host's own — or another block's.
 
 import type { Element, ElementContent } from "hast";
 import {
@@ -21,6 +25,7 @@ import {
 	createContext,
 	type ReactNode,
 	useContext,
+	useId,
 	useMemo,
 } from "react";
 import ReactMarkdown, {
@@ -85,6 +90,8 @@ export interface MarkdownProps {
 	 * `[n]: url` forms are handled.
 	 */
 	references?: MarkdownReferences;
+	/** Show a copy button on each fenced code block. Default true. */
+	copyable?: boolean;
 	className?: string;
 }
 
@@ -130,7 +137,10 @@ function headingFor(depth: number, base: HeadingLevel) {
 		children,
 	}: ComponentPropsWithoutRef<"h1"> & ExtraProps) {
 		return (
-			<Tag id={id} className={cn("mt-4 mb-2 first:mt-0", slot, className)}>
+			<Tag
+				id={useOwnId(id)}
+				className={cn("mt-4 mb-2 first:mt-0", slot, className)}
+			>
 				{children}
 			</Tag>
 		);
@@ -156,22 +166,76 @@ function codeLanguage(code: Element): string | undefined {
 
 // The caller's link rules reach the (stable, module-level) link component
 // through context, like the reference renderer.
+// Whether a fenced block inside markdown offers a copy button. It rides a
+// context rather than the components map because that map is cached per
+// (headingLevel, allowImages) and its identity must stay stable across renders.
+const CodeContext = createContext<{ copyable?: boolean }>({});
+
 const LinkContext = createContext<{
 	base?: string;
 	resolve?: LinkResolver;
+	/** This block's id namespace; see `useOwnId`. */
+	anchorPrefix?: string;
 }>({});
+
+/**
+ * An id is put on the page only when the kit minted it. Every rendered block
+ * gets its own `clobberPrefix` (see `Markdown`), so a footnote's anchor target
+ * is unique to the block and cannot collide with an id the host wrote or with
+ * another block's. Anything else is dropped — `mdast-util-to-hast` hard-codes
+ * an unprefixed `footnote-label` on the footnote heading, which would repeat on
+ * every block that has footnotes, and the `aria-describedby` that was its only
+ * consumer is dropped by the `a` component below.
+ */
+function useOwnId(id: unknown): string | undefined {
+	const { anchorPrefix } = useContext(LinkContext);
+	return typeof id === "string" &&
+		anchorPrefix !== undefined &&
+		id.startsWith(anchorPrefix)
+		? id
+		: undefined;
+}
 
 const LINK_CLASS =
 	"text-primary underline underline-offset-2 hover:no-underline break-words";
 
-function SafeLink({ href, children }: { href: unknown; children?: ReactNode }) {
-	const { base, resolve } = useContext(LinkContext);
+function SafeLink({
+	href,
+	id,
+	children,
+}: { href: unknown; id?: unknown; children?: ReactNode }) {
+	const { base, resolve, anchorPrefix } = useContext(LinkContext);
+	const ownId = useOwnId(id);
+	// An anchor the kit generated for this block — a GFM footnote's marker and
+	// its `↩` back-reference. It is not a link the content wrote, so it is
+	// settled before the caller's resolver and before the URL allowlist: both
+	// would refuse it (a bare `#fragment` is relative, so `safeLinkUrl` returns
+	// undefined), which left the whole footnote feature rendering as inert text
+	// you could neither follow nor get back from. The prefix is minted per
+	// render tree, so content cannot forge one for another block or for the host.
+	if (
+		anchorPrefix !== undefined &&
+		typeof href === "string" &&
+		href.startsWith(`#${anchorPrefix}`)
+	) {
+		return (
+			<a
+				href={href}
+				id={ownId}
+				data-slot="content-link-anchor"
+				className={LINK_CLASS}
+			>
+				{children}
+			</a>
+		);
+	}
 	const target =
 		resolve && typeof href === "string" ? resolve(href) : undefined;
 	if (target && "open" in target) {
 		return (
 			<button
 				type="button"
+				id={ownId}
 				data-slot="content-link-internal"
 				title={target.title}
 				onClick={() => target.open()}
@@ -187,6 +251,7 @@ function SafeLink({ href, children }: { href: unknown; children?: ReactNode }) {
 	if (target && "unavailable" in target) {
 		return (
 			<span
+				id={ownId}
 				data-slot="content-link-unavailable"
 				title={target.unavailable}
 				className="underline decoration-dotted underline-offset-2"
@@ -197,16 +262,58 @@ function SafeLink({ href, children }: { href: unknown; children?: ReactNode }) {
 		);
 	}
 	const safe = safeLinkUrl(href, base);
-	if (!safe) return <span data-slot="content-link-inert">{children}</span>;
+	if (!safe)
+		return (
+			<span id={ownId} data-slot="content-link-inert">
+				{children}
+			</span>
+		);
 	return (
 		<a
 			href={safe}
+			id={ownId}
 			target="_blank"
 			rel="noopener noreferrer"
 			className={LINK_CLASS}
 		>
 			{children}
 		</a>
+	);
+}
+
+function Fence({ node }: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
+	const { copyable } = useContext(CodeContext);
+	const code = node?.children.find(
+		(child): child is Element =>
+			child.type === "element" && child.tagName === "code",
+	);
+	if (!code) return null;
+	// The fence's text ends with the newline that closed it.
+	const text = textOf(code).replace(/\n$/, "");
+	return (
+		<CodeBlock
+			code={text}
+			language={codeLanguage(code)}
+			copyable={copyable}
+			className="my-2"
+		/>
+	);
+}
+
+// Named (and capitalised) so `useOwnId` is called from something the rules of
+// hooks recognise as a component; the entry in the map below is the tag.
+function ListItem({
+	id,
+	className,
+	children,
+}: ComponentPropsWithoutRef<"li"> & ExtraProps) {
+	return (
+		<li
+			id={useOwnId(id)}
+			className={cn(className === "task-list-item" && "flex items-start gap-2")}
+		>
+			{children}
+		</li>
 	);
 }
 
@@ -227,7 +334,13 @@ function buildComponents(
 		p: ({ children }) => (
 			<p className="my-2 first:mt-0 last:mb-0">{children}</p>
 		),
-		a: ({ href, children }) => <SafeLink href={href}>{children}</SafeLink>,
+		// `id` is forwarded only when the kit minted it: a footnote's marker is
+		// the target of its own back-reference.
+		a: ({ href, id, children }) => (
+			<SafeLink href={href} id={id}>
+				{children}
+			</SafeLink>
+		),
 		img: ({ src, alt }) => {
 			const safe = allowImages ? safeImageUrl(src) : undefined;
 			if (!safe) {
@@ -266,16 +379,7 @@ function buildComponents(
 				{children}
 			</ol>
 		),
-		li: ({ id, className, children }) => (
-			<li
-				id={id}
-				className={cn(
-					className === "task-list-item" && "flex items-start gap-2",
-				)}
-			>
-				{children}
-			</li>
-		),
+		li: ListItem,
 		input: ({ type, checked }) =>
 			type === "checkbox" ? (
 				<input
@@ -322,18 +426,7 @@ function buildComponents(
 				{children}
 			</code>
 		),
-		pre: ({ node }) => {
-			const code = node?.children.find(
-				(child): child is Element =>
-					child.type === "element" && child.tagName === "code",
-			);
-			if (!code) return null;
-			// The fence's text ends with the newline that closed it.
-			const text = textOf(code).replace(/\n$/, "");
-			return (
-				<CodeBlock code={text} language={codeLanguage(code)} className="my-2" />
-			);
-		},
+		pre: Fence,
 	};
 }
 
@@ -395,12 +488,25 @@ export function Markdown({
 	linkBase,
 	resolveLink,
 	references,
+	copyable,
 	className,
 }: MarkdownProps) {
+	// This block's own id namespace. `mdast-util-to-hast` derives a footnote's
+	// id from the document (`[^a]` → `<prefix>fn-a`) under a `clobberPrefix` that
+	// defaults to the well-known `user-content-`; minting one per render tree
+	// keeps two blocks on a page from emitting the same id, and gives `useOwnId`
+	// and `SafeLink` a way to tell an anchor the kit generated from one the
+	// content wrote.
+	const anchorPrefix = `content-${useId().replace(/[^a-zA-Z0-9]/g, "")}-`;
 	const links = useMemo(
-		() => ({ base: linkBase, resolve: resolveLink }),
-		[linkBase, resolveLink],
+		() => ({ base: linkBase, resolve: resolveLink, anchorPrefix }),
+		[linkBase, resolveLink, anchorPrefix],
 	);
+	const rehypeOptions = useMemo(
+		() => ({ clobberPrefix: anchorPrefix }),
+		[anchorPrefix],
+	);
+	const code = useMemo(() => ({ copyable }), [copyable]);
 	const markers = references?.markers;
 	const cited = useMemo(() => (markers ? new Set(markers) : null), [markers]);
 	const source = useMemo(
@@ -416,6 +522,7 @@ export function Markdown({
 			: PLUGINS.plain;
 	return (
 		<ReferenceContext.Provider value={references?.render ?? null}>
+			<CodeContext.Provider value={code}>
 			<LinkContext.Provider value={links}>
 				<div
 					data-slot="content-markdown"
@@ -423,6 +530,7 @@ export function Markdown({
 				>
 					<ReactMarkdown
 						remarkPlugins={[...plugins]}
+						remarkRehypeOptions={rehypeOptions}
 						skipHtml
 						urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
 						components={componentsFor(headingLevel, allowImages)}
@@ -431,6 +539,7 @@ export function Markdown({
 					</ReactMarkdown>
 				</div>
 			</LinkContext.Provider>
+			</CodeContext.Provider>
 		</ReferenceContext.Provider>
 	);
 }

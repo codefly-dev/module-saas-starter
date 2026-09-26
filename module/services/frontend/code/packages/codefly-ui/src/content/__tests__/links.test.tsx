@@ -46,6 +46,20 @@ describe("resolveRelativeLink", () => {
 		});
 	});
 
+	it("refuses an escaped separator instead of resolving through it", () => {
+		// `..%2f..%2f..%2f..%2f` used to decode AFTER the split, so the `..`
+		// segments were pushed whole and rejoined: the caller was handed
+		// "docs/guide/../../../../etc/passwd", which normalizes to /etc/passwd —
+		// out of the repository the plain spelling is refused for.
+		expect(
+			resolveRelativeLink(doc, "..%2f..%2f..%2f..%2fetc%2fpasswd"),
+		).toBeNull();
+		// A percent-escape of an ordinary character still resolves.
+		expect(resolveRelativeLink(doc, "my%20notes.md")?.path).toBe(
+			"docs/guide/my notes.md",
+		);
+	});
+
 	it("resolves from a document at the repository root", () => {
 		expect(resolveRelativeLink("README.md", "docs/a.md")?.path).toBe(
 			"docs/a.md",
@@ -62,6 +76,13 @@ describe("resolveRelativeLink", () => {
 		"",
 		"   ",
 		"../../../escape.md",
+		// A percent-escaped separator must not smuggle a `..` past the climb
+		// check: each of these is the refused spelling above, re-encoded.
+		"..%2f..%2f..%2fescape.md",
+		"..%2F..%2F..%2Fescape.md",
+		"%2e%2e%2f%2e%2e%2f%2e%2e%2fescape.md",
+		"a%2F..%2F..%2F..%2F..%2Fescape.md",
+		"%2F%2Fevil.example/a.md",
 		"%E0%A4%A.md",
 		"a.md#%E0%A4%A",
 	])("leaves %j alone", (href) => {
@@ -173,5 +194,63 @@ describe("findHeading", () => {
 	it("writes no ids into the page", () => {
 		const { container } = render(<Markdown>{"## Install the CLI"}</Markdown>);
 		expect(container.querySelector("[id]")).toBeNull();
+	});
+});
+
+describe("GFM footnotes", () => {
+	const SOURCE = "Claim.[^a]\n\n[^a]: The source.\n";
+
+	// Both of a footnote's links are `#fragment` hrefs the kit generates itself.
+	// They used to reach `safeLinkUrl`, which refuses a relative URL, so the
+	// marker and its `↩` back-reference both rendered as inert text: a
+	// superscript that did nothing above a section you could not get back from.
+	it("makes its marker and back-reference live, and targets them", () => {
+		const { container } = render(<Markdown>{SOURCE}</Markdown>);
+		const anchors = [...container.querySelectorAll("a")];
+		expect(anchors).toHaveLength(2);
+		const [marker, backref] = anchors;
+
+		// Each href resolves to an element that exists in this block.
+		for (const anchor of anchors) {
+			const href = anchor.getAttribute("href") ?? "";
+			expect(href.startsWith("#")).toBe(true);
+			expect(container.querySelector(`[id="${href.slice(1)}"]`)).not.toBeNull();
+		}
+		// A same-page anchor is not opened in a new browsing context.
+		expect(marker?.getAttribute("target")).toBeNull();
+		expect(backref?.getAttribute("target")).toBeNull();
+	});
+
+	// The ids to-hast derives from the document used to land on the page under
+	// the well-known, shared `user-content-` prefix, and the footnote heading's
+	// `footnote-label` was hard-coded and unprefixed — so two blocks on one page
+	// emitted the same ids.
+	it("namespaces every id it emits, per rendered block", () => {
+		const { container } = render(
+			<div>
+				<Markdown>{SOURCE}</Markdown>
+				<Markdown>{SOURCE}</Markdown>
+			</div>,
+		);
+		const ids = [...container.querySelectorAll("[id]")].map((e) => e.id);
+		expect(ids.length).toBeGreaterThan(0);
+		expect(new Set(ids).size).toBe(ids.length);
+		for (const id of ids) {
+			expect(id).not.toContain("user-content-");
+			expect(id).not.toBe("footnote-label");
+			expect(id).toMatch(/^content-[a-zA-Z0-9]+-/);
+		}
+	});
+
+	it("refuses a fragment the content wrote itself", () => {
+		// Only an anchor carrying THIS block's minted prefix is live; a document
+		// cannot guess it, and an in-page jump it wrote stays inert.
+		const { container } = render(
+			<Markdown>{"[jump](#content-r0-fn-a) [top](#top)"}</Markdown>,
+		);
+		expect(container.querySelectorAll("a")).toHaveLength(0);
+		expect(
+			container.querySelectorAll('[data-slot="content-link-inert"]'),
+		).toHaveLength(2);
 	});
 });

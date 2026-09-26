@@ -112,10 +112,20 @@ export function toPlainText(
 	}
 	const source =
 		typeof value === "string" ? value : value == null ? "" : compactJson(value);
-	if (resolved === "markdown") {
-		return options.fragment
-			? markdownFragmentToText(source.slice(0, INLINE_SOURCE_LIMIT))
-			: markdownToPlainText(source);
+	const slice = source.slice(0, INLINE_SOURCE_LIMIT);
+	// `fragment` is the caller SAYING this is a slice of a markdown document.
+	// Detection cannot confirm it and must not gate it: a cut loses the markers
+	// `detectFormat` looks for — a slice opening mid-emphasis, mid table row, or
+	// inside frontmatter reads as plain text — and that is precisely when the
+	// fragment rules are needed. Gating on `markdown` therefore made the option
+	// inert on its own default (`auto`), leaving the dangling `**` and the YAML
+	// keys in the row that fragment.ts exists to remove. The rules only rewrite
+	// markup characters, so running them over a slice that really was prose
+	// changes nothing; a caller who pinned `text`, `code` or `json` is taken at
+	// their word.
+	if (options.fragment && (format === "auto" || resolved === "markdown")) {
+		return markdownFragmentToText(slice);
 	}
-	return collapse(source.slice(0, INLINE_SOURCE_LIMIT));
+	if (resolved === "markdown") return markdownToPlainText(source);
+	return collapse(slice);
 }

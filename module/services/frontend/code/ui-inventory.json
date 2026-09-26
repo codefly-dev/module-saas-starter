@@ -973,7 +973,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/content/json-view.tsx",
-			"imports": ["lucide-react","react","../layout/cn.js","./copy-button.js","./detect.js","./text-block.js"],
+			"imports": ["lucide-react","react","../layout/cn.js","./code-block.js","./copy-button.js","./detect.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",

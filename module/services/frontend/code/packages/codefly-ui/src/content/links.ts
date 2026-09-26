@@ -80,6 +80,14 @@ export function resolveRelativeLink(
 	for (const raw of target.split("/")) {
 		const segment = decode(raw);
 		if (segment === null) return null;
+		// The split above happens before this decode, so a percent-escaped
+		// separator would arrive as one segment carrying a `/` of its own: the
+		// climb check below would never see the `..` in `..%2f..%2f`, and
+		// `join("/")` would put the separators back, handing the caller a path
+		// that walks out of the repository the plain spelling is refused for. No
+		// name in a repository holds a literal `/`, so an escape that decodes to
+		// one is refused rather than resolved.
+		if (segment.includes("/")) return null;
 		if (segment === "" || segment === ".") continue;
 		if (segment === "..") {
 			if (segments.length === 0) return null;
@@ -97,8 +105,10 @@ export function resolveRelativeLink(
  * The anchor a repository host gives a heading: lower-cased, punctuation
  * dropped, spaces as hyphens (`## Set up: step 2` → `set-up-step-2`). It lets
  * a caller find the heading a `#fragment` names in content the kit rendered,
- * without the kit writing ids into the page — ids from untrusted content could
- * collide with, or shadow, the host's own.
+ * without giving a heading an id derived from its own text — one taken from
+ * untrusted content could collide with, or shadow, the host's own. (The
+ * renderer does emit ids for GFM footnote anchors, but only ones it minted
+ * under a prefix unique to each rendered block; see `useOwnId` in markdown.tsx.)
  */
 export function headingSlug(text: string): string {
 	return text

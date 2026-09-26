@@ -28,8 +28,20 @@ function assertInert(root: HTMLElement) {
 	}
 	for (const anchor of root.querySelectorAll("a")) {
 		const href = anchor.getAttribute("href") ?? "";
+		if (href.startsWith("#")) {
+			// The one same-page anchor class: a GFM footnote the kit generated for
+			// this block. It must carry a minted prefix (content cannot guess one)
+			// and must point at something inside the block it was rendered in.
+			expect(href).toMatch(/^#content-[a-zA-Z0-9]+-/);
+			expect(root.querySelector(`[id="${href.slice(1)}"]`)).not.toBeNull();
+			continue;
+		}
 		expect(href).toMatch(/^(https?:|mailto:)/);
 		expect(anchor.getAttribute("rel")).toBe("noopener noreferrer");
+	}
+	// No id reaches the page except one the kit minted for this block.
+	for (const element of root.querySelectorAll("[id]")) {
+		expect(element.id).toMatch(/^content-[a-zA-Z0-9]+-/);
 	}
 	expect(root.querySelectorAll("img")).toHaveLength(0);
 }
@@ -54,6 +66,16 @@ describe("markdown renders no raw HTML", () => {
 		const { container } = render(
 			<Markdown>{`# Title\n\n${source}\n\ntext`}</Markdown>,
 		);
+		assertInert(container);
+		expect(container.textContent).not.toContain("alert(1)");
+	});
+
+	it.each([
+		["hostile footnote identifier", 'Claim.[^"><script>alert(1)</script>]\n\n[^"><script>alert(1)</script>]: note.\n'],
+		["footnote with a link label", "Claim.[^a]\n\n[^a]: see [x](javascript:alert(1))\n"],
+		["duplicate footnote", "A[^1] B[^1]\n\n[^1]: one.\n"],
+	])("%s stays inert", (_name, source) => {
+		const { container } = render(<Markdown>{source}</Markdown>);
 		assertInert(container);
 		expect(container.textContent).not.toContain("alert(1)");
 	});
