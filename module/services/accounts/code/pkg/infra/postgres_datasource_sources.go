@@ -479,12 +479,28 @@ func (s *PostgresStore) GetDatasourceSource(ctx context.Context, orgID, id strin
 	return source, nil
 }
 
-// DeleteDatasourceSource removes an org-scoped Source. Runs under the caller's
-// WithOrgTx.
-func (s *PostgresStore) DeleteDatasourceSource(ctx context.Context, orgID, id string) error {
-	_, err := s.getQueryExecutor(ctx).Exec(ctx,
-		`DELETE FROM datasource_sources WHERE org_id = $1 AND id = $2`, orgID, id)
-	return err
+// DeleteDatasourceSource removes an org-scoped Source and returns the identity
+// it removed, or nil when no row matched. Runs under the caller's WithOrgTx.
+//
+// RETURNING is what makes "was it there?" and "what was it?" one atomic answer.
+// Reading the row first and then deleting it answers both from two statements,
+// and under this store's READ COMMITTED transactions two concurrent deletes then
+// both see the row, both delete (the second matching nothing), and both record a
+// removal. The deleted row is returned by the statement that deleted it, so only
+// the caller that actually removed something has anything to record.
+func (s *PostgresStore) DeleteDatasourceSource(ctx context.Context, orgID, id string) (*business.RemovedDatasourceSource, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`DELETE FROM datasource_sources WHERE org_id = $1 AND id = $2
+		   RETURNING provider, COALESCE(repo, ''), boundary_node_id::text`, orgID, id)
+	var removed business.RemovedDatasourceSource
+	err := row.Scan(&removed.Provider, &removed.Repo, &removed.BoundaryNodeID)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &removed, nil
 }
 
 // SetDatasourceSourceSynced records the last successful sync time. Runs under

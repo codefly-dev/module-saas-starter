@@ -992,7 +992,32 @@ func (s *Service) GetDatasourceSource(ctx context.Context, orgID, id string) (*D
 	return source, nil
 }
 
+// RemovedDatasourceSource is the identity of a Source a delete removed: what the
+// audit record names it by, returned by the statement that deleted it. It is
+// deliberately not a DatasourceSource — a source that no longer exists has no
+// credential envelope, status or sync cursor to speak of, and a half-filled
+// struct of those would invite the next caller to read a field the delete never
+// returned.
+type RemovedDatasourceSource struct {
+	// Provider is one of the DatasourceProvider* values (the column is NOT NULL
+	// under a CHECK, so a removed source always names one).
+	Provider string
+	// Repo is set for the GitHub provider and empty for the others.
+	Repo string
+	// BoundaryNodeID is the collection node the source fed. The column is NOT
+	// NULL, so a removed source always names one.
+	BoundaryNodeID string
+}
+
 // DeleteDatasourceSource removes a Source and its stored credentials.
+//
+// The removal is recorded with what the source was — its provider, repository
+// and the collection (boundary node) it fed — because once the row is gone
+// nothing else on the trail says which collection lost its source. The deleting
+// statement returns that identity, so the record describes a row this
+// transaction actually removed rather than one seen by an earlier read. A source
+// that is not there is not removed, so nothing is recorded for it and the call
+// still succeeds, as it always has.
 func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id string) error {
 	orgID = strings.TrimSpace(orgID)
 	id = strings.TrimSpace(id)
@@ -1000,14 +1025,33 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 		return errors.New("org id and source id are required")
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		if err := s.store.DeleteDatasourceSource(ctx, orgID, id); err != nil {
+		removed, err := s.store.DeleteDatasourceSource(ctx, orgID, id)
+		if err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
+		if removed == nil {
+			return nil
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID, datasourceRemovedPayload(removed))
 	}); err != nil {
 		return err
 	}
 	return nil
+}
+
+// datasourceRemovedPayload names the removed source on its audit record. `repo`
+// is omitted rather than recorded as an empty string for a provider that has no
+// repository; `provider` and `boundary` are NOT NULL columns, so every removed
+// source names both.
+func datasourceRemovedPayload(removed *RemovedDatasourceSource) map[string]any {
+	payload := map[string]any{
+		"provider": removed.Provider,
+		"boundary": removed.BoundaryNodeID,
+	}
+	if removed.Repo != "" {
+		payload["repo"] = removed.Repo
+	}
+	return payload
 }
 
 // SyncDatasourceSource enqueues a durable "reconcile now" request and returns
