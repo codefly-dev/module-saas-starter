@@ -516,8 +516,9 @@ Emails → "Keep my email address private"** switched on. Set both.
 
 The gate runs on `pull_request`, from the *current* base tip to the head sha; over
 that range it fails, because those commits are still the contributor's to rewrite.
-It also runs on `push` to `main`, over `${{ github.event.before }}..${{ github.sha
-}}` — the commits that push added, never history — as `report` rather than `check`.
+It also runs on `push` to `main`, in a job of its own (`Landed commit identity`, so a
+red tripwire never skips the release gates that need `base-integrity`), over
+`${{ github.event.before }}..${{ github.sha }}` — the commits that push added, never history — as `report` rather than `check`.
 That run cannot stop the squash it inspects: the object does not exist until the
 merge is performed, after every required check has reported. It is a tripwire, not
 a barrier — it turns the growth the gate measures into a visible failure on `main`
