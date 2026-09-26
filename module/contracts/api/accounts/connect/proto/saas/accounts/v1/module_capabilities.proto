@@ -280,6 +280,85 @@ message ModuleEmitAuditEventRequest {
   string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
 }
 
+// ModuleAuditFieldKind is the kind of one declared audit payload field: the
+// same kinds a solution may declare in its manifest.
+enum ModuleAuditFieldKind {
+  MODULE_AUDIT_FIELD_KIND_UNSPECIFIED = 0;
+  MODULE_AUDIT_FIELD_KIND_STRING = 1;
+  MODULE_AUDIT_FIELD_KIND_UUID = 2;
+  // A whole number (a JSON number with no fractional part, within 2^53).
+  MODULE_AUDIT_FIELD_KIND_INT = 3;
+  // A finite number.
+  MODULE_AUDIT_FIELD_KIND_NUMBER = 4;
+  MODULE_AUDIT_FIELD_KIND_BOOL = 5;
+  // One of `values`.
+  MODULE_AUDIT_FIELD_KIND_ENUM = 6;
+  MODULE_AUDIT_FIELD_KIND_STRING_ARRAY = 7;
+}
+
+// ModuleAuditFieldDeclaration is one payload field of a declared audit event
+// type. `solution` is stamped by the host from the emitting scope and may not
+// be declared.
+message ModuleAuditFieldDeclaration {
+  // Lowercase snake_case, unique within the type.
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  ModuleAuditFieldKind kind = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // The admissible values of an ENUM field; refused on any other kind.
+  repeated string values = 3 [(buf.validate.field).repeated.max_items = 64];
+  // A personally identifying field: stripped from every path that sends an
+  // event outside the audit store (webhooks, downloads, the export sink).
+  bool pii = 4;
+}
+
+// ModuleAuditEventTypeDeclaration is one audit event type a composed module
+// declares for itself.
+message ModuleAuditEventTypeDeclaration {
+  // <namespace>.<aggregate>.<event>, lowercase snake_case segments. The
+  // namespace must be one the operator bound to this module (the `namespaces`
+  // of its MODULE_PRINCIPALS entry) and may not be the host's own.
+  string type = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string description = 2 [(buf.validate.field).string.max_len = 1024];
+  repeated ModuleAuditFieldDeclaration fields = 3 [(buf.validate.field).repeated.max_items = 32];
+}
+
+// ModuleDeclareAuditEventTypesRequest declares the audit event types a composed
+// module owns, so its EmitAuditEvent calls for them are accepted and checked
+// against the declared fields. It is the module-side form of a solution's
+// manifest declaration, admitted by the same rules: fail closed on a namespace
+// the operator did not bind to the module, and a type may only grow (fields
+// and enum values may be added; none is dropped or retyped). Re-declaring what
+// is already admitted writes nothing, so a module may declare on every start.
+message ModuleDeclareAuditEventTypesRequest {
+  // The module's own prefix: the caller must be the principal derived from
+  // it. Emissions of the declared types name the same value as `solution`.
+  string prefix = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$"
+  }];
+  repeated ModuleAuditEventTypeDeclaration types = 2 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 64
+  }];
+}
+
+// ModuleDeclareAuditEventTypesResponse names what the call changed: the types
+// it admitted or grew, and the namespaces it took over from a producer the
+// operator unbound. Both are empty for a re-declaration.
+message ModuleDeclareAuditEventTypesResponse {
+  repeated string admitted_types = 1;
+  repeated string namespaces_taken_over = 2;
+}
+
 // ---------------------------------------------------------------------------
 // Subject visibility
 // ---------------------------------------------------------------------------
@@ -970,6 +1049,24 @@ service ModuleCapabilitiesService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DeclareAuditEventTypes admits the audit event types a composed module owns,
+  // into the namespaces the operator bound to it; see the request.
+  rpc DeclareAuditEventTypes(ModuleDeclareAuditEventTypesRequest) returns (ModuleDeclareAuditEventTypesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.audit_types_declared"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_INTERNAL
       request_sensitivity: SENSITIVITY_CONFIDENTIAL

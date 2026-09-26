@@ -81,6 +81,9 @@ const (
 	// ModuleCapabilitiesServiceEmitAuditEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EmitAuditEvent RPC.
 	ModuleCapabilitiesServiceEmitAuditEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	// ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's DeclareAuditEventTypes RPC.
+	ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes"
 	// ModuleCapabilitiesServiceListSubjectVisibilityProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's ListSubjectVisibility RPC.
 	ModuleCapabilitiesServiceListSubjectVisibilityProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
@@ -161,6 +164,9 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// DeclareAuditEventTypes admits the audit event types a composed module owns,
+	// into the namespaces the operator bound to it; see the request.
+	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
@@ -315,6 +321,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		declareAuditEventTypes: connect.NewClient[v1.ModuleDeclareAuditEventTypesRequest, v1.ModuleDeclareAuditEventTypesResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("DeclareAuditEventTypes")),
+			connect.WithClientOptions(opts...),
+		),
 		listSubjectVisibility: connect.NewClient[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceListSubjectVisibilityProcedure,
@@ -407,6 +419,7 @@ type moduleCapabilitiesServiceClient struct {
 	getApproval                        *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
 	cancelApproval                     *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
 	emitAuditEvent                     *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	declareAuditEventTypes             *connect.Client[v1.ModuleDeclareAuditEventTypesRequest, v1.ModuleDeclareAuditEventTypesResponse]
 	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
 	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 	fetchDatasourceFiles               *connect.Client[v1.FetchDatasourceFilesRequest, v1.FetchDatasourceFilesFrame]
@@ -498,6 +511,11 @@ func (c *moduleCapabilitiesServiceClient) CancelApproval(ctx context.Context, re
 // EmitAuditEvent calls saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent.
 func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, req *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.emitAuditEvent.CallUnary(ctx, req)
+}
+
+// DeclareAuditEventTypes calls saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes.
+func (c *moduleCapabilitiesServiceClient) DeclareAuditEventTypes(ctx context.Context, req *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error) {
+	return c.declareAuditEventTypes.CallUnary(ctx, req)
 }
 
 // ListSubjectVisibility calls saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility.
@@ -606,6 +624,9 @@ type ModuleCapabilitiesServiceHandler interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// DeclareAuditEventTypes admits the audit event types a composed module owns,
+	// into the namespaces the operator bound to it; see the request.
+	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
@@ -756,6 +777,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceDeclareAuditEventTypesHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure,
+		svc.DeclareAuditEventTypes,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("DeclareAuditEventTypes")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceListSubjectVisibilityHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceListSubjectVisibilityProcedure,
 		svc.ListSubjectVisibility,
@@ -860,6 +887,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceCancelApprovalHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEmitAuditEventProcedure:
 			moduleCapabilitiesServiceEmitAuditEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceDeclareAuditEventTypesProcedure:
+			moduleCapabilitiesServiceDeclareAuditEventTypesHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceListSubjectVisibilityProcedure:
 			moduleCapabilitiesServiceListSubjectVisibilityHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceBlobProcedure:
@@ -951,6 +980,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) CancelApproval(context.Cont
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error) {

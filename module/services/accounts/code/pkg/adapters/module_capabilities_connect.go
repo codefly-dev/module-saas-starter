@@ -68,6 +68,10 @@ func (h *moduleCapabilitiesConnectHandler) CancelApproval(ctx context.Context, r
 	return unary(ctx, req, h.inner.CancelApproval)
 }
 
+func (h *moduleCapabilitiesConnectHandler) DeclareAuditEventTypes(ctx context.Context, req *connect.Request[gen.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[gen.ModuleDeclareAuditEventTypesResponse], error) {
+	return unary(ctx, req, h.inner.DeclareAuditEventTypes)
+}
+
 func (h *moduleCapabilitiesConnectHandler) EmitAuditEvent(ctx context.Context, req *connect.Request[gen.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.EmitAuditEvent)
 }

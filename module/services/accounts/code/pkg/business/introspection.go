@@ -171,6 +171,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/ExchangeDelegatedOperationAudience": "Exchange a current signed parent through one installed operation binding.",
 	"ModuleCapabilitiesService/ListReadableSourceCollections":      "List source collections the verified viewer may currently read.",
 	"ModuleCapabilitiesService/PlaceRecord":                        "Place one of the caller's own records at a scope node.",
+	"ModuleCapabilitiesService/DeclareAuditEventTypes":             "Declare the audit event types a composed module owns, in the namespaces bound to it.",
 	"ModuleCapabilitiesService/EmitAuditEvent":                     "Emit a registered audit event on the tenant's spine.",
 	"ModuleCapabilitiesService/ListSubjectVisibility":              "List the subjects whose rows a viewer may read in a tenant.",
 	"ModuleCapabilitiesService/FetchDatasourceBlob":                "Stream a datasource file blob referenced by a change set.",

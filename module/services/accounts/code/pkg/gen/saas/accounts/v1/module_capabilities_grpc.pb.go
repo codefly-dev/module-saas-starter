@@ -36,6 +36,7 @@ const (
 	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
 	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
 	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes"
 	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 	ModuleCapabilitiesService_FetchDatasourceFiles_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
@@ -93,6 +94,9 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// DeclareAuditEventTypes admits the audit event types a composed module owns,
+	// into the namespaces the operator bound to it; see the request.
+	DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error)
@@ -303,6 +307,16 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleDeclareAuditEventTypesResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModuleListSubjectVisibilityResponse)
@@ -485,6 +499,9 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// DeclareAuditEventTypes admits the audit event types a composed module owns,
+	// into the namespaces the operator bound to it; see the request.
+	DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error)
@@ -589,6 +606,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 }
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeclareAuditEventTypes not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSubjectVisibility not implemented")
@@ -918,6 +938,24 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_DeclareAuditEventTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleDeclareAuditEventTypesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).DeclareAuditEventTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).DeclareAuditEventTypes(ctx, req.(*ModuleDeclareAuditEventTypesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_ListSubjectVisibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModuleListSubjectVisibilityRequest)
 	if err := dec(in); err != nil {
@@ -1186,6 +1224,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EmitAuditEvent",
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
+		},
+		{
+			MethodName: "DeclareAuditEventTypes",
+			Handler:    _ModuleCapabilitiesService_DeclareAuditEventTypes_Handler,
 		},
 		{
 			MethodName: "ListSubjectVisibility",

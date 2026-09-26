@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **231 RPCs** across **34 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **232 RPCs** across **34 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -97,6 +97,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Withdraw a still-open approval request. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Check exact placed-record access under current delegated viewer authority. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Lease a bounded batch of ready jobs from an allowed queue. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.audit_types_declared | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Declare the audit event types a composed module owns, in the namespaces bound to it. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Emit a registered audit event on the tenant's spine. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Enqueue durable work for a tenant- or subject-scoped queue. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS_AND_FAILURE: saas.module.delegated_audience_exchange | FORBIDDEN / INTERNAL | SECRET → SECRET | Exchange a current signed parent through one installed operation binding. |
@@ -243,7 +244,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 46
+- `internal`: 47
 - `mfa`: 3
 - `org_admin`: 52
 - `org_member`: 45

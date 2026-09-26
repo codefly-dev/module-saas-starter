@@ -1164,6 +1164,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.module.audit_types_declared": {
+      "address": "saas.module.audit_types_declared",
+      "title": "saas.module.audit_types_declared",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module.audit_types_declared"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.module.delegated_audience_exchange": {
       "address": "saas.module.delegated_audience_exchange",
       "title": "saas.module.delegated_audience_exchange",
@@ -2648,6 +2659,13 @@
       },
       "title": "saas publishes saas.mfa.webauthn_used"
     },
+    "send:saas.module.audit_types_declared": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module.audit_types_declared"
+      },
+      "title": "saas publishes saas.module.audit_types_declared"
+    },
     "send:saas.module.delegated_audience_exchange": {
       "action": "send",
       "channel": {
@@ -3851,6 +3869,13 @@
       "saas.mfa.webauthn_used": {
         "name": "saas.mfa.webauthn_used",
         "title": "saas.mfa.webauthn_used",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module.audit_types_declared": {
+        "name": "saas.module.audit_types_declared",
+        "title": "saas.module.audit_types_declared",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

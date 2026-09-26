@@ -361,6 +361,60 @@ func (s *ModuleCapabilitiesServer) CancelApproval(ctx context.Context, req *gen.
 	return &emptypb.Empty{}, nil
 }
 
+// moduleAuditFieldKinds maps the wire kind of a declared field to the audit
+// registry's field kind. UNSPECIFIED has no entry: the request validator refuses
+// it, and a kind missing here is refused by the registry's own kind check.
+var moduleAuditFieldKinds = map[gen.ModuleAuditFieldKind]business.FieldKind{
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_STRING:       business.FieldString,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_UUID:         business.FieldUUID,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_INT:          business.FieldInt,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_NUMBER:       business.FieldNumber,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_BOOL:         business.FieldBool,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_ENUM:         business.FieldEnum,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_STRING_ARRAY: business.FieldStringArray,
+}
+
+// moduleAuditDeclarations converts the wire declarations to the registry's
+// declaration shape, the one a solution's manifest is decoded into as well.
+func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []business.AuditEventTypeDeclaration {
+	out := make([]business.AuditEventTypeDeclaration, 0, len(types))
+	for _, t := range types {
+		declaration := business.AuditEventTypeDeclaration{Type: t.GetType(), Description: t.GetDescription()}
+		for _, f := range t.GetFields() {
+			field := business.AuditFieldDeclaration{
+				Name: f.GetName(),
+				Kind: string(moduleAuditFieldKinds[f.GetKind()]),
+				PII:  f.GetPii(),
+			}
+			if len(f.GetValues()) > 0 {
+				field.Values = append([]string(nil), f.GetValues()...)
+			}
+			declaration.Fields = append(declaration.Fields, field)
+		}
+		out = append(out, declaration)
+	}
+	return out
+}
+
+func (s *ModuleCapabilitiesServer) DeclareAuditEventTypes(ctx context.Context, req *gen.ModuleDeclareAuditEventTypesRequest) (*gen.ModuleDeclareAuditEventTypesResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	admitted, takenOver, err := service.ModuleDeclareAuditEventTypes(ctx, caller, req.GetPrefix(), moduleAuditDeclarations(req.GetTypes()))
+	if err != nil {
+		return nil, err
+	}
+	resp := &gen.ModuleDeclareAuditEventTypesResponse{NamespacesTakenOver: takenOver}
+	for _, t := range admitted {
+		resp.AdmittedTypes = append(resp.AdmittedTypes, string(t))
+	}
+	return resp, nil
+}
+
 func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

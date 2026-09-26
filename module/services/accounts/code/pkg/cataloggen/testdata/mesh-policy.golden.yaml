@@ -35,6 +35,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/CancelApproval
               - /saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess
               - /saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs
+              - /saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes
               - /saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent
               - /saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob
               - /saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience

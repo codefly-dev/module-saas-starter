@@ -56,6 +56,15 @@ survives a restart and reaches every replica, and is only served when it is
   unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
   `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
   lists its namespace.
+- A composed **module** with no frontend half declares its own audit event
+  types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
+  (`pkg/business/module_audit_declarations.go`): the same validator
+  (`ValidateAuditEventTypeDeclarations`) and the same admission, under the
+  same binding. `prefix` must be the caller's own (the principal derived from
+  it), the types are owned as `solution:<prefix>`, and its emissions name that
+  prefix as `solution`. Re-declaring what is admitted writes and records
+  nothing, so a module may declare on every start; a change is recorded as
+  `saas.module.audit_types_declared`.
 - A deregistration leaves a **tombstone**, so a retiring deployment's delayed
   heartbeat cannot resurrect it.
 - accounts serves this as `SolutionRegistryService` on the **internal listener**;

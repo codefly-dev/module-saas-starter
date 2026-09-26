@@ -326,10 +326,7 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 	if document.Dashboard == nil {
 		return nil, nil
 	}
-	var (
-		declared []DeclaredAuditEventType
-		seen     = map[EventType]bool{}
-	)
+	var inputs []AuditEventTypeDeclaration
 	for _, raw := range document.Dashboard.Events {
 		var event declaredEventJSON
 		if err := json.Unmarshal(raw, &event); err != nil {
@@ -339,6 +336,44 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 			// Binds an existing type; nothing to admit.
 			continue
 		}
+		fields, err := decodeDeclaredAuditFields(event.Type, event.Fields)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, AuditEventTypeDeclaration{Type: event.Type, Description: event.Description, Fields: fields})
+	}
+	return ValidateAuditEventTypeDeclarations(solutionID, inputs)
+}
+
+// AuditEventTypeDeclaration is one audit event type as its producer declares
+// it, before validation: a solution's manifest (`dashboard.events[].fields`)
+// and a composed module's DeclareAuditEventTypes call both arrive in this
+// shape, so both are held to the one set of rules below.
+type AuditEventTypeDeclaration struct {
+	Type        string
+	Description string
+	Fields      []AuditFieldDeclaration
+}
+
+// AuditFieldDeclaration is one declared payload field. Kind is a FieldKind's
+// name; Values is required for an enum and refused otherwise; PII strips the
+// field from every path that sends an event outside the audit store.
+type AuditFieldDeclaration struct {
+	Name   string
+	Kind   string
+	Values []string
+	PII    bool
+}
+
+// ValidateAuditEventTypeDeclarations applies every rule a declaration is held
+// to that needs no database, and returns the declared types sorted by type.
+// It is the one validator both declaration paths share.
+func ValidateAuditEventTypeDeclarations(solutionID string, inputs []AuditEventTypeDeclaration) ([]DeclaredAuditEventType, error) {
+	var (
+		declared []DeclaredAuditEventType
+		seen     = map[EventType]bool{}
+	)
+	for _, event := range inputs {
 		eventType := EventType(event.Type)
 		if !declaredAuditEventTypePattern.MatchString(event.Type) || len(event.Type) > maxDeclaredAuditEventTypeLen {
 			return nil, declarationRejected(
@@ -359,7 +394,7 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 		if len(event.Description) > maxDeclaredAuditTextLen {
 			return nil, declarationRejected("event type %q description exceeds %d characters", event.Type, maxDeclaredAuditTextLen)
 		}
-		fields, err := parseDeclaredAuditFields(event.Type, event.Fields)
+		fields, err := validateDeclaredAuditFields(event.Type, event.Fields)
 		if err != nil {
 			return nil, err
 		}
@@ -378,7 +413,9 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 	return declared, nil
 }
 
-func parseDeclaredAuditFields(eventType string, raw json.RawMessage) ([]PayloadField, error) {
+// decodeDeclaredAuditFields reads a manifest's `fields` array strictly: an
+// unknown key on a field is refused, not ignored.
+func decodeDeclaredAuditFields(eventType string, raw json.RawMessage) ([]AuditFieldDeclaration, error) {
 	var entries []json.RawMessage
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &entries) != nil {
 		return nil, declarationRejected("event type %q fields must be an array", eventType)
@@ -386,8 +423,7 @@ func parseDeclaredAuditFields(eventType string, raw json.RawMessage) ([]PayloadF
 	if len(entries) > maxDeclaredAuditEventFields {
 		return nil, declarationRejected("event type %q declares %d fields; at most %d may be", eventType, len(entries), maxDeclaredAuditEventFields)
 	}
-	fields := make([]PayloadField, 0, len(entries))
-	names := map[string]bool{}
+	fields := make([]AuditFieldDeclaration, 0, len(entries))
 	for _, entry := range entries {
 		decoder := json.NewDecoder(bytes.NewReader(entry))
 		decoder.DisallowUnknownFields()
@@ -395,6 +431,24 @@ func parseDeclaredAuditFields(eventType string, raw json.RawMessage) ([]PayloadF
 		if err := decoder.Decode(&field); err != nil {
 			return nil, declarationRejected("event type %q has an unreadable field: %v", eventType, err)
 		}
+		declared := AuditFieldDeclaration{Name: field.Name, Kind: field.Kind, PII: field.PII}
+		if field.Values != nil {
+			// An empty list is still a list: for an enum it is refused as
+			// declaring no values, and for any other kind as declaring values.
+			declared.Values = append([]string{}, (*field.Values)...)
+		}
+		fields = append(fields, declared)
+	}
+	return fields, nil
+}
+
+func validateDeclaredAuditFields(eventType string, declared []AuditFieldDeclaration) ([]PayloadField, error) {
+	if len(declared) > maxDeclaredAuditEventFields {
+		return nil, declarationRejected("event type %q declares %d fields; at most %d may be", eventType, len(declared), maxDeclaredAuditEventFields)
+	}
+	fields := make([]PayloadField, 0, len(declared))
+	names := map[string]bool{}
+	for _, field := range declared {
 		if !declaredAuditFieldNamePattern.MatchString(field.Name) || len(field.Name) > maxDeclaredAuditFieldNameLen {
 			return nil, declarationRejected("event type %q field %q must be lowercase snake_case, at most %d characters",
 				eventType, field.Name, maxDeclaredAuditFieldNameLen)
@@ -427,16 +481,16 @@ func parseDeclaredAuditFields(eventType string, raw json.RawMessage) ([]PayloadF
 	return fields, nil
 }
 
-func declaredEnumValues(eventType string, field declaredFieldJSON) ([]string, error) {
-	if field.Values == nil || len(*field.Values) == 0 {
+func declaredEnumValues(eventType string, field AuditFieldDeclaration) ([]string, error) {
+	if len(field.Values) == 0 {
 		return nil, declarationRejected("event type %q enum field %q must declare its values", eventType, field.Name)
 	}
-	if len(*field.Values) > maxDeclaredAuditEventEnumItems {
+	if len(field.Values) > maxDeclaredAuditEventEnumItems {
 		return nil, declarationRejected("event type %q enum field %q declares more than %d values", eventType, field.Name, maxDeclaredAuditEventEnumItems)
 	}
 	seen := map[string]bool{}
-	values := make([]string, 0, len(*field.Values))
-	for _, value := range *field.Values {
+	values := make([]string, 0, len(field.Values))
+	for _, value := range field.Values {
 		if strings.TrimSpace(value) == "" || len(value) > maxDeclaredAuditTextLen {
 			return nil, declarationRejected("event type %q enum field %q has an empty or oversized value", eventType, field.Name)
 		}
@@ -498,8 +552,16 @@ func sameDeclaredAuditEventType(a, b DeclaredAuditEventType) bool {
 // transaction: the namespace locks it takes hold until that transaction ends,
 // and a refusal here rolls the registration write back with it.
 func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID string, declared []DeclaredAuditEventType) ([]string, error) {
+	takenOver, _, err := s.admitDeclaredAuditEventTypesWritten(ctx, solutionID, declared)
+	return takenOver, err
+}
+
+// admitDeclaredAuditEventTypesWritten is admitDeclaredAuditEventTypes that also
+// reports which types it wrote, so a caller can tell an admission that changed
+// the registry from one that re-declared what was already admitted.
+func (s *Service) admitDeclaredAuditEventTypesWritten(ctx context.Context, solutionID string, declared []DeclaredAuditEventType) ([]string, []EventType, error) {
 	if len(declared) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	owner := SolutionAuditOwner(solutionID)
 	// The binding is the solution's own principal entry. Keyed by the solution
@@ -508,7 +570,7 @@ func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID s
 	// namespace it could not emit into.
 	grant, bound := s.modulePrincipals[ModulePrincipalID(solutionID)]
 	if !bound {
-		return nil, fmt.Errorf("%w: %w: solution %q has no module principal entry, so no namespace is bound to it",
+		return nil, nil, fmt.Errorf("%w: %w: solution %q has no module principal entry, so no namespace is bound to it",
 			ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceUnbound, solutionID)
 	}
 	namespaces := make([]string, 0, len(declared))
@@ -522,11 +584,11 @@ func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID s
 		// A namespace the composed event catalog publishes domain events under
 		// has its producer already, though no audit_event_types row may name it.
 		if eventcatalog.IsPublishedNamespace(namespace) {
-			return nil, fmt.Errorf("%w: %w: namespace %q is published by a producer in the composed event catalog",
+			return nil, nil, fmt.Errorf("%w: %w: namespace %q is published by a producer in the composed event catalog",
 				ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceOwned, namespace)
 		}
 		if !grant.allowsNamespace(namespace) {
-			return nil, fmt.Errorf("%w: %w: namespace %q is not bound to solution %q",
+			return nil, nil, fmt.Errorf("%w: %w: namespace %q is not bound to solution %q",
 				ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceUnbound, namespace, solutionID)
 		}
 	}
@@ -534,25 +596,28 @@ func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID s
 	// namespace may contain, so namespaces is sorted and each appears once;
 	// taking the locks in that order is what keeps two admissions spanning the
 	// same namespaces from deadlocking.
-	var takenOver []string
+	var (
+		takenOver []string
+		written   []EventType
+	)
 	for _, namespace := range namespaces {
 		if err := s.store.LockAuditEventNamespace(ctx, namespace); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		owners, err := s.store.ListAuditEventNamespaceOwners(ctx, namespace)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, existing := range owners {
 			if existing == owner {
 				continue
 			}
 			if !s.releasedAuditNamespace(existing, namespace) {
-				return nil, fmt.Errorf("%w: %w: namespace %q is held by %q", ErrSolutionAuditDeclarationRejected,
+				return nil, nil, fmt.Errorf("%w: %w: namespace %q is held by %q", ErrSolutionAuditDeclarationRejected,
 					ErrSolutionAuditNamespaceOwned, namespace, existing)
 			}
 			if err := s.store.TransferAuditEventNamespace(ctx, namespace, existing, owner); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			takenOver = append(takenOver, namespace)
 		}
@@ -560,21 +625,22 @@ func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID s
 	for _, d := range declared {
 		admitted, err := s.store.GetDeclaredAuditEventType(ctx, d.Type)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if admitted != nil {
 			if err := checkAdditiveAuditFieldChange(*admitted, d); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if sameDeclaredAuditEventType(*admitted, d) {
 				continue
 			}
 		}
 		if err := s.store.PutDeclaredAuditEventType(ctx, d); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		written = append(written, d.Type)
 	}
-	return takenOver, nil
+	return takenOver, written, nil
 }
 
 // releasedAuditNamespace reports whether the operator has released a namespace

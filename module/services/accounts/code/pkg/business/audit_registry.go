@@ -275,11 +275,13 @@ const (
 	EventConsentTerms    EventType = "saas.consent.terms_accepted"
 	EventConsentPrefs    EventType = "saas.consent.preferences_updated"
 
-	EventAPIKeyCreated               EventType = "saas.api_key.created"
-	EventModuleRegistrationMint      EventType = "saas.module.registration_minted"
-	EventModuleWorkContextMint       EventType = "saas.module.work_context_minted"
-	EventModuleOperationContextMint  EventType = "saas.module.operation_context_minted"
-	EventDelegatedAudienceExchange   EventType = "saas.module.delegated_audience_exchange"
+	EventAPIKeyCreated              EventType = "saas.api_key.created"
+	EventModuleRegistrationMint     EventType = "saas.module.registration_minted"
+	EventModuleWorkContextMint      EventType = "saas.module.work_context_minted"
+	EventModuleOperationContextMint EventType = "saas.module.operation_context_minted"
+	EventDelegatedAudienceExchange  EventType = "saas.module.delegated_audience_exchange"
+	// A composed module declared audit event types of its own (DeclareAuditEventTypes).
+	EventModuleAuditTypesDeclared    EventType = "saas.module.audit_types_declared"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
@@ -492,6 +494,8 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
 	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
+	mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
+		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over")),
 	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
 	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
 		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
