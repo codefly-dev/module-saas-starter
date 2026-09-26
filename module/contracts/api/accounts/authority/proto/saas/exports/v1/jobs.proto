@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package saas.exports.v1;
+
+import "buf/validate/validate.proto";
+
+// PrivacyExportJob identifies one subject-owned portability request. The
+// worker re-reads current product data under the subject/control-plane
+// boundary; personal data never enters the generic job envelope.
+message PrivacyExportJob {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+}
