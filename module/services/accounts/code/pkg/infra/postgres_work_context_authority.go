@@ -295,6 +295,11 @@ func (s *PostgresStore) AuthorizeEvidenceRead(
 	})
 }
 
+// isMemberPermission is the generated catalog's member grant. It is a variable
+// only so this package's database tests can exercise the SQL branch without a
+// composed catalog; production code never reassigns it.
+var isMemberPermission = business.IsMemberPermission
+
 func workContextPermissionAllowed(
 	ctx context.Context,
 	reader ReadQueryExecutor,
@@ -315,6 +320,21 @@ func workContextPermissionAllowed(
 		            WHERE administrator.org_id = $1
 		              AND administrator.user_id = $2
 		              AND administrator.role IN ('owner', 'admin')
+		        )
+		    )
+		    -- A contributed permission declared for every member (members: true)
+		    -- is held by any current member of the organization, as a person.
+		    -- $5 is false for a delegated actor, so an agent never gains it this
+		    -- way; $10 is decided in Go from the generated catalog, never from
+		    -- the request. Like a NULL-scope assignment it is organization-wide.
+		    OR (
+		        $5
+		        AND $10
+		        AND EXISTS (
+		            SELECT 1
+		            FROM organization_members AS member
+		            WHERE member.org_id = $1
+		              AND member.user_id = $2
 		        )
 		    )
 		    OR EXISTS (
@@ -462,6 +482,7 @@ func workContextPermissionAllowed(
 		includeScopeGrants,
 		permission.ContentRead && permission.ResourceID == "" && permission.Action == "read",
 		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, permission.Action),
+		isMemberPermission(permission.ResourceKind, permission.Action),
 	).Scan(&allowed)
 	return allowed, err
 }

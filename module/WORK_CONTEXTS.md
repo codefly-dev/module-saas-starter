@@ -73,6 +73,12 @@ permissions:
     action: read
 ```
 
+A permission every ordinary member of an organization should hold, such as
+reading their own records, adds `members: true`. That member holds it as a
+person with no role assignment; a delegated agent actor never does. Owners and
+admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
+import".
+
 The composition then declares the binding on the **calling** principal in
 `module-capabilities/MODULE_PRINCIPALS`:
 

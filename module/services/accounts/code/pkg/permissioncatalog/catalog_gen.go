@@ -5,6 +5,8 @@ type Permission struct {
 	Name     string
 	Resource string
 	Action   string
+	// Members is true when every organization member holds it.
+	Members bool
 }
 
 var permissions = [...]Permission{}
