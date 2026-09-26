@@ -1,4 +1,10 @@
-export type { SolutionBinding, SolutionRequestBinding } from "./binding.js";
+export {
+	requestBinding,
+	type SolutionBinding,
+	SolutionBindingError,
+	type SolutionCredential,
+	type SolutionRequestBinding,
+} from "./binding.js";
 export { type AccessibleScopeState, useAccessibleScope } from "./grants.js";
 export {
 	COLLECTION_ACCESS_PATH,

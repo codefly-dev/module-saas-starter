@@ -8,6 +8,8 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import type { SolutionRequestBinding } from "../index.js";
 import {
+	requestBinding,
+	SolutionBindingError,
 	SolutionRequestError,
 	solutionFetch,
 	solutionJson,
@@ -102,8 +104,8 @@ describe("solutionFetch", () => {
 
 it("cannot express a binding with no credential at all", () => {
 	// The root `tsc --noEmit` covers these test files, so this @ts-expect-error IS
-	// the regression test: delete `getAccessToken` from SolutionRequestBinding's
-	// required half and the expected error disappears, failing the typecheck.
+	// the regression test: let SolutionCredential admit a binding with neither
+	// half and the expected error disappears, failing the typecheck.
 	//
 	// Without it a binding carrying neither a token getter nor an authed fetch
 	// sends the request anonymously, and the host's bare `HTTP 401` is
@@ -114,6 +116,33 @@ it("cannot express a binding with no credential at all", () => {
 		// @ts-expect-error a binding with no credential source is not constructible
 	} satisfies SolutionRequestBinding;
 	expect(anonymous.apiBase).toBe("/base");
+});
+
+it("accepts the host's authedFetch alone, with no token getter", async () => {
+	// A remote written against the binding before getAccessToken was required
+	// passes { apiBase, authedFetch }: the host's authedFetch stamps the bearer
+	// itself, so that binding is complete and must stay constructible.
+	const seen: string[] = [];
+	const authedFetch = async (input: RequestInfo | URL) => {
+		seen.push(String(input));
+		return new Response(JSON.stringify({ ok: true }), { status: 200 });
+	};
+	const binding = {
+		apiBase: "/base",
+		authedFetch,
+	} satisfies SolutionRequestBinding;
+	await expect(solutionJson(binding, "/things")).resolves.toEqual({ ok: true });
+	expect(seen).toEqual(["/base/things"]);
+});
+
+it("refuses at run time a binding with no credential the type could not see", async () => {
+	const anonymous = { apiBase: "/base" } as unknown as SolutionRequestBinding;
+	await expect(solutionJson(anonymous, "/things")).rejects.toBeInstanceOf(
+		SolutionBindingError,
+	);
+	expect(() => requestBinding("/base", undefined, undefined)).toThrow(
+		SolutionBindingError,
+	);
 });
 
 describe("solutionJson", () => {

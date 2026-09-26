@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import type { SolutionRequestBinding } from "./binding.js";
+import { requestBinding, type SolutionRequestBinding } from "./binding.js";
 import { solutionJson } from "./request.js";
 
 /**
@@ -184,10 +184,19 @@ export function useSolutionJson<T>(
 			)
 				setResult({ viewer, apiBase, path, state });
 		};
-		solutionJson<T>({ apiBase, getAccessToken, authedFetch }, path, {
-			signal: controller.signal,
-			cache,
-		})
+		// Built inside the chain, so a binding with no credential settles as an
+		// error instead of throwing out of the effect.
+		Promise.resolve()
+			.then(() =>
+				solutionJson<T>(
+					requestBinding(apiBase, getAccessToken, authedFetch),
+					path,
+					{
+						signal: controller.signal,
+						cache,
+					},
+				),
+			)
 			.then((data) => settle({ status: "ready", data }))
 			.catch((error: unknown) =>
 				settle({ status: "error", message: String(error) }),

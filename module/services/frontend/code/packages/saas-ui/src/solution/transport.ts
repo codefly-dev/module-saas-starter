@@ -1,6 +1,6 @@
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import type { SolutionRequestBinding } from "./binding.js";
+import { bindingBearer, type SolutionRequestBinding } from "./binding.js";
 
 /**
  * A Connect transport over the host binding, for generated clients: the twin
@@ -28,7 +28,7 @@ export function solutionTransport(
 			}),
 		interceptors: [
 			(next) => async (request) => {
-				const bearer = binding.getAccessToken();
+				const bearer = bindingBearer(binding);
 				if (bearer) request.header.set("authorization", `Bearer ${bearer}`);
 				try {
 					return await next(request);

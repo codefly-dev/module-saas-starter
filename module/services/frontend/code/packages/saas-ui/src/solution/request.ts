@@ -1,4 +1,4 @@
-import type { SolutionRequestBinding } from "./binding.js";
+import { bindingBearer, type SolutionRequestBinding } from "./binding.js";
 
 /**
  * A non-2xx answer from a solution's backend. `detail` is the backend's own
@@ -30,7 +30,7 @@ export function solutionFetch(
 	path: string,
 	init: RequestInit = {},
 ): Promise<Response> {
-	const bearer = binding.getAccessToken();
+	const bearer = bindingBearer(binding);
 	const headers = new Headers(init.headers);
 	if (!headers.has("accept")) headers.set("accept", "application/json");
 	if (bearer) headers.set("authorization", `Bearer ${bearer}`);

@@ -3,7 +3,7 @@
 import { AccessibleScopeService } from "@codefly-dev/saas-sdk";
 import { createClient } from "@connectrpc/connect";
 import { useEffect, useState } from "react";
-import type { SolutionRequestBinding } from "./binding.js";
+import { requestBinding, type SolutionRequestBinding } from "./binding.js";
 import { solutionTransport } from "./transport.js";
 
 /** Whether the viewer holds an action on a resource type anywhere in the org. */
@@ -32,11 +32,17 @@ export function useAccessibleScope(
 	useEffect(() => {
 		if (!orgId) return;
 		let live = true;
-		createClient(
-			AccessibleScopeService,
-			solutionTransport({ apiBase, getAccessToken, authedFetch }),
-		)
-			.listMyAccessibleScopes({ orgId, resourceType, action, pageSize: 1 })
+		// Built inside the chain, so a binding with no credential settles as an
+		// error the notice can show instead of throwing out of the effect.
+		Promise.resolve()
+			.then(() =>
+				createClient(
+					AccessibleScopeService,
+					solutionTransport(
+						requestBinding(apiBase, getAccessToken, authedFetch),
+					),
+				).listMyAccessibleScopes({ orgId, resourceType, action, pageSize: 1 }),
+			)
 			.then((page) => {
 				if (live)
 					setAnswer({ key, state: page.scopes.length > 0 ? "some" : "none" });

@@ -59,20 +59,67 @@ export interface SolutionBinding {
 }
 
 /**
- * The part of the binding the helpers below need: where to send a request, and
- * the credential to send with it.
+ * The credential half of a request binding: at least one of the two, either
+ * alone. The host's `authedFetch` stamps the viewer's bearer itself, so
+ * `{ apiBase, authedFetch }` is a complete, authenticated binding; a
+ * `getAccessToken` alone sends its bearer over plain `fetch`, losing only the
+ * refresh-then-retry recovery (a remote mounted by an older host, or a test).
  *
- * `authedFetch` alone is optional, so a remote mounted by an older host — or
- * rendered in a test — still works: the request goes out with plain `fetch` and
- * the bearer `getAccessToken` returns, losing only the refresh-then-retry
- * recovery. `getAccessToken` is NOT optional, because a binding missing both
- * would send the request anonymously and the host would answer a bare `HTTP
- * 401` — indistinguishable, to the remote and to the person reading it, from a
- * session that simply expired. A misconfigured binding must not be able to
- * disguise itself as an ordinary sign-in prompt, so it cannot be expressed.
+ * What cannot be expressed is a binding with NEITHER: it would send the request
+ * anonymously and the host would answer a bare `HTTP 401` — indistinguishable,
+ * to the remote and to the person reading it, from a session that simply
+ * expired. A misconfigured binding must not disguise itself as an ordinary
+ * sign-in prompt, so the type refuses it, and `requestBinding` refuses it at
+ * run time for a caller the type cannot see (plain JavaScript, a cast).
  */
-export type SolutionRequestBinding = Pick<
-	SolutionBinding,
-	"apiBase" | "getAccessToken"
-> &
-	Partial<Pick<SolutionBinding, "authedFetch" | "subscribeToken">>;
+export type SolutionCredential =
+	| {
+			getAccessToken: SolutionBinding["getAccessToken"];
+			authedFetch?: SolutionBinding["authedFetch"];
+	  }
+	| {
+			getAccessToken?: SolutionBinding["getAccessToken"];
+			authedFetch: SolutionBinding["authedFetch"];
+	  };
+
+/**
+ * The part of the binding the helpers below need: where to send a request, and
+ * the credential to send it with. `getAccessToken` is optional here — a
+ * required prop is a breaking change to every remote written against the
+ * binding — but the credential as a whole is not.
+ */
+export type SolutionRequestBinding = Pick<SolutionBinding, "apiBase"> &
+	Partial<Pick<SolutionBinding, "subscribeToken">> &
+	SolutionCredential;
+
+/** Thrown for a binding that carries no credential at all. */
+export class SolutionBindingError extends Error {
+	constructor() {
+		super(
+			"solution binding has no credential: pass authedFetch or getAccessToken",
+		);
+		this.name = "SolutionBindingError";
+	}
+}
+
+/**
+ * Rebuilds a request binding from its parts — the form a hook holds after
+ * destructuring for its dependency list — and refuses one with no credential
+ * instead of letting it go out anonymously.
+ */
+export function requestBinding(
+	apiBase: string,
+	getAccessToken: SolutionBinding["getAccessToken"] | undefined,
+	authedFetch: SolutionBinding["authedFetch"] | undefined,
+): SolutionRequestBinding {
+	if (authedFetch) return { apiBase, getAccessToken, authedFetch };
+	if (getAccessToken) return { apiBase, getAccessToken };
+	throw new SolutionBindingError();
+}
+
+/** The bearer a binding carries, refusing a binding that carries no credential. */
+export function bindingBearer(binding: SolutionRequestBinding): string | null {
+	if (!binding.getAccessToken && !binding.authedFetch)
+		throw new SolutionBindingError();
+	return binding.getAccessToken?.() ?? null;
+}
