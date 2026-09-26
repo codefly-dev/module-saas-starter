@@ -109,11 +109,13 @@ export async function POST(request: Request): Promise<Response> {
  * solution id, or {@link UNVERIFIED_REGISTRANT} when the credential was not
  * accepted — and, for a refusal, the reason an operator reads.
  */
-async function registerBeat(request: Request): Promise<{
+interface BeatAnswer {
 	solution: string;
 	response: Response;
 	reason?: string;
-}> {
+}
+
+async function registerBeat(request: Request): Promise<BeatAnswer> {
 	const claims = await authorize(request);
 	if (claims instanceof Response) {
 		return {
