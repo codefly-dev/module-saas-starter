@@ -12,6 +12,9 @@ import (
 type stubFiles struct{ d connector.Descriptor }
 
 func (s stubFiles) Descriptor() connector.Descriptor { return s.d }
+func (s stubFiles) Version(context.Context, connector.Source) (string, error) {
+	return "", nil
+}
 func (s stubFiles) Changes(context.Context, connector.Source, string) (connector.ChangeSet, error) {
 	return connector.ChangeSet{}, nil
 }

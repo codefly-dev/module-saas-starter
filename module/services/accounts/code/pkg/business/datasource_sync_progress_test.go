@@ -96,7 +96,7 @@ func TestSnapshotCarriesItsChangeCounts(t *testing.T) {
 	files := []github.File{{Path: "docs/a.md", SHA: "sa"}, {Path: "docs/b.md", SHA: "sb"}, {Path: "docs/c.md", SHA: "sc"}}
 	newService := func(compare func(base, head string) (*github.Comparison, error)) (*business.Service, *recordingProducer) {
 		producer := &recordingProducer{}
-		gh := &fakeGitHub{commit: "HEAD", files: files, compareFn: compare}
+		gh := &fakeGitHub{commit: cC, files: files, compareFn: compare}
 		svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
 		return svc, producer
 	}
@@ -114,7 +114,7 @@ func TestSnapshotCarriesItsChangeCounts(t *testing.T) {
 		svc, producer := newService(func(string, string) (*github.Comparison, error) {
 			return nil, errors.New("an unchanged head needs no diff")
 		})
-		source := githubSource(t, svc, "main", []string{"docs"}, "HEAD")
+		source := githubSource(t, svc, "main", []string{"docs"}, cC)
 		if _, err := svc.ReconcileGitHubSource(context.Background(), source, true, "11111111-1111-1111-1111-111111111111"); err != nil {
 			t.Fatal(err)
 		}
@@ -123,8 +123,8 @@ func TestSnapshotCarriesItsChangeCounts(t *testing.T) {
 
 	t.Run("moved head", func(t *testing.T) {
 		svc, producer := newService(func(base, head string) (*github.Comparison, error) {
-			if base != "OLD" || head != "HEAD" {
-				t.Fatalf("diffed %s...%s, want OLD...HEAD", base, head)
+			if base != cA || head != cC {
+				t.Fatalf("diffed %s...%s, want the previous commit A to the head C", base, head)
 			}
 			return &github.Comparison{Status: github.CompareStatusAhead, Files: []github.ChangedFile{
 				{Filename: "docs/c.md", Status: "added", SHA: "sc"},
@@ -133,7 +133,7 @@ func TestSnapshotCarriesItsChangeCounts(t *testing.T) {
 				{Filename: "src/main.go", Status: "modified", SHA: "sx"},
 			}}, nil
 		})
-		source := githubSource(t, svc, "main", []string{"docs"}, "OLD")
+		source := githubSource(t, svc, "main", []string{"docs"}, cA)
 		if _, err := svc.ReconcileGitHubSource(context.Background(), source, true, "11111111-1111-1111-1111-111111111111"); err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +144,7 @@ func TestSnapshotCarriesItsChangeCounts(t *testing.T) {
 		svc, producer := newService(func(string, string) (*github.Comparison, error) {
 			return nil, github.ErrNotFound
 		})
-		source := githubSource(t, svc, "main", []string{"docs"}, "OLD")
+		source := githubSource(t, svc, "main", []string{"docs"}, cA)
 		if _, err := svc.ReconcileGitHubSource(context.Background(), source, true, "11111111-1111-1111-1111-111111111111"); err != nil {
 			t.Fatal(err)
 		}

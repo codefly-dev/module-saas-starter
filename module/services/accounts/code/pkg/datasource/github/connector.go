@@ -149,6 +149,39 @@ func (c *FilesConnector) open(ctx context.Context, src connector.Source) (Source
 	return cfg, remote, mirror, nil
 }
 
+// head resolves the source's branch and its current commit: two ls-remote
+// requests at most, one when the branch is configured.
+func (c *FilesConnector) head(ctx context.Context, cfg SourceConfig, remote Remote) (string, error) {
+	branch := cfg.Branch
+	if branch == "" {
+		var err error
+		if branch, err = remote.DefaultBranch(ctx, cfg.Repo); err != nil {
+			return "", c.envelopeError(err)
+		}
+	}
+	head, err := remote.ResolveCommit(ctx, cfg.Repo, branch)
+	if err != nil {
+		return "", c.envelopeError(err)
+	}
+	return head, nil
+}
+
+// Version is the branch's current head commit. It opens no mirror.
+func (c *FilesConnector) Version(ctx context.Context, src connector.Source) (string, error) {
+	cfg, ok := src.Config.(SourceConfig)
+	if !ok || cfg.Repo == "" || cfg.InScope == nil {
+		return "", fmt.Errorf("github connector: source %s has no GitHub configuration", src.ID)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	remote, err := c.remote(ctx, src)
+	if err != nil {
+		return "", c.envelopeError(err)
+	}
+	return c.head(ctx, cfg, remote)
+}
+
 // Changes diffs from version from to the branch's current head. An empty from
 // is a complete snapshot; a from that is not an ancestor of head (history was
 // rewritten), that the remote no longer serves, or whose diff passed the
@@ -159,15 +192,9 @@ func (c *FilesConnector) Changes(ctx context.Context, src connector.Source, from
 		return connector.ChangeSet{}, err
 	}
 	defer func() { _ = mirror.Close() }()
-	branch := cfg.Branch
-	if branch == "" {
-		if branch, err = remote.DefaultBranch(ctx, cfg.Repo); err != nil {
-			return connector.ChangeSet{}, c.envelopeError(err)
-		}
-	}
-	head, err := remote.ResolveCommit(ctx, cfg.Repo, branch)
+	head, err := c.head(ctx, cfg, remote)
 	if err != nil {
-		return connector.ChangeSet{}, c.envelopeError(err)
+		return connector.ChangeSet{}, err
 	}
 	set := connector.ChangeSet{SourceID: src.ID, From: from, To: head}
 	readers := connector.ApplySourcePolicy(src, connector.SourceScoped())
@@ -182,6 +209,9 @@ func (c *FilesConnector) Changes(ctx context.Context, src connector.Source, from
 				Key: connector.KeyFor(src, f.Path), Kind: connector.ChangeAdded,
 				ItemVersion: f.SHA, Locator: f.Path, Readers: readers,
 			})
+		}
+		if err := c.sizeChanges(ctx, mirror, set.Changes); err != nil {
+			return connector.ChangeSet{}, err
 		}
 		return set, nil
 	}
@@ -204,7 +234,38 @@ func (c *FilesConnector) Changes(ctx context.Context, src connector.Source, from
 	for _, f := range cmp.Files {
 		set.Changes = append(set.Changes, changesFor(src, cfg.InScope, f, readers)...)
 	}
+	if err := c.sizeChanges(ctx, mirror, set.Changes); err != nil {
+		return connector.ChangeSet{}, err
+	}
 	return set, nil
+}
+
+// sizeChanges makes the change set's content local in one request and records
+// each item's exact size. The mirror then serves a following FetchFiles of the
+// same version without another trip to GitHub.
+func (c *FilesConnector) sizeChanges(ctx context.Context, mirror Mirror, changes []connector.Change) error {
+	var ids []string
+	for _, ch := range changes {
+		if ch.Kind != connector.ChangeDeleted {
+			ids = append(ids, ch.ItemVersion)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := mirror.Fetch(ctx, ids); err != nil {
+		return c.envelopeError(err)
+	}
+	sizes, err := mirror.Sizes(ctx, ids)
+	if err != nil {
+		return c.envelopeError(err)
+	}
+	for i := range changes {
+		if changes[i].Kind != connector.ChangeDeleted {
+			changes[i].Size = sizes[changes[i].ItemVersion]
+		}
+	}
+	return nil
 }
 
 // changesFor maps one changed file onto the envelope under the source's scope.
@@ -339,7 +400,7 @@ func (c *FilesConnector) envelopeError(err error) error {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err
 	case errors.As(err, &limited):
-		out := &connector.RateLimitedError{ResetAt: limited.ResetAt, Scope: "credential"}
+		out := &connector.RateLimitedError{ResetAt: limited.ResetAt, Scope: "credential", Cause: err}
 		if limited.Unauthenticated {
 			out.Scope = "deployment"
 		}

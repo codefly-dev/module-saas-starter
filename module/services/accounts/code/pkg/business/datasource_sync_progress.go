@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"accounts/pkg/datasource/github"
+	"accounts/pkg/datasource/connector"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
 	"github.com/codefly-dev/core/wool"
@@ -325,10 +325,11 @@ func firstTime(times ...*time.Time) *time.Time {
 // handed off for the source, and returns the counts as the attributes the
 // snapshot job carries. No previous commit makes every file an addition; the
 // same commit makes a snapshot with no changes (a forced re-sync). Otherwise
-// the split is a local diff in the mirror; when that diff cannot be had — the
-// previous commit is gone after a force push, or the histories diverged — the
-// file count stands alone and the split is reported unknown.
-func (s *Service) snapshotChangeAttributes(ctx context.Context, repo GitHubRepository, source *DatasourceSource, commit string, files int) map[string]string {
+// the split is the connector's own change set from the previous commit; when
+// the connector cannot diff from it — the previous commit is gone after a force
+// push, the histories diverged, or the head moved past the snapshot meanwhile —
+// the file count stands alone and the split is reported unknown.
+func (s *Service) snapshotChangeAttributes(ctx context.Context, conn connector.FilesConnector, src connector.Source, source *DatasourceSource, commit string, files int) map[string]string {
 	attrs := map[string]string{attrChangesFiles: strconv.Itoa(files), attrChangesSplitKnown: "false"}
 	known := func(added, modified, deleted int) map[string]string {
 		attrs[attrChangesAdded] = strconv.Itoa(added)
@@ -344,12 +345,12 @@ func (s *Service) snapshotChangeAttributes(ctx context.Context, repo GitHubRepos
 	case commit:
 		return known(0, 0, 0)
 	}
-	comparison, err := repo.Compare(ctx, previous, commit)
-	if err != nil || comparison == nil || comparison.Status != github.CompareStatusAhead || comparison.Truncated {
+	cs, err := conn.Changes(ctx, src, previous)
+	if err != nil || cs.To != commit {
 		return attrs
 	}
 	var added, modified, deleted int
-	for _, op := range s.changeOps(comparison.Files, source.Paths, source.FileExtensions) {
+	for _, op := range changeOpsFrom(cs.Changes) {
 		switch op.changeType {
 		case changeTypeAdded:
 			added++

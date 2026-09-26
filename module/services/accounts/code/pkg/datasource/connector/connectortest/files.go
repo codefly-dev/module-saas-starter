@@ -178,9 +178,17 @@ func testSnapshot(t *testing.T, f FilesFixture) {
 			t.Fatalf("change %s: %s", id, msg)
 		}
 	}
+	if v, err := f.Connector().Version(ctx(t), src); err != nil || v != cs.To {
+		t.Fatalf("Version = %q, %v; want the snapshot's version %q", v, err, cs.To)
+	}
 	files, bodies := fetchAll(t, f, src, cs.To, refsOf(cs))
 	if bodies["a.md"] != "alpha" || bodies["docs/b.md"] != "bravo" {
 		t.Fatalf("fetched content = %v", bodies)
+	}
+	for id, c := range got {
+		if c.Size != -1 && c.Size != files[id].Size {
+			t.Fatalf("change %s lists size %d, but the file is %d bytes", id, c.Size, files[id].Size)
+		}
 	}
 	for id, file := range files {
 		p := file.Provenance
@@ -305,6 +313,11 @@ func testIncremental(t *testing.T, f FilesFixture) {
 			if msg := connector.ReadersError(c.Readers); msg != "" {
 				t.Fatalf("change %s: %s", id, msg)
 			}
+			if c.Size < -1 {
+				t.Fatalf("change %s: size %d is neither known nor -1", id, c.Size)
+			}
+		} else if c.Size != 0 || c.ItemVersion != "" {
+			t.Fatalf("a deletion carries no version and no size: %+v", c)
 		}
 	}
 	if got["e.md"].PreviousItemID != "d.md" {
@@ -473,6 +486,9 @@ func testCancel(t *testing.T, f FilesFixture) {
 	cs := snapshot(t, f, src)
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
+	if _, err := f.Connector().Version(cancelled, src); !errors.Is(err, context.Canceled) {
+		t.Fatalf("version under a cancelled context = %v, want context.Canceled", err)
+	}
 	if _, err := f.Connector().Changes(cancelled, src, ""); !errors.Is(err, context.Canceled) {
 		t.Fatalf("changes under a cancelled context = %v, want context.Canceled", err)
 	}
