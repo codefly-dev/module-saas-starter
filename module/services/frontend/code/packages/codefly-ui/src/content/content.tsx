@@ -4,6 +4,7 @@ import { cn } from "../layout/cn.js";
 import { CodeBlock } from "./code-block.js";
 import { type ContentFormat, detectFormat, readJson } from "./detect.js";
 import { JsonView, stringifyJson } from "./json-view.js";
+import type { LinkResolver } from "./links.js";
 import { type HeadingLevel, Markdown } from "./markdown.js";
 import { toPlainText } from "./plain.js";
 import { TextBlock } from "./text-block.js";
@@ -32,6 +33,8 @@ export interface ContentProps {
 	headingLevel?: HeadingLevel;
 	/** Markdown only: resolve relative links against the content's own source URL. */
 	linkBase?: string;
+	/** Markdown only: decide what a link does (see `MarkdownProps.resolveLink`). */
+	resolveLink?: LinkResolver;
 	/** Markdown only: a single newline is a line break. Default false. */
 	lineBreaks?: boolean;
 	/** Markdown only: render https images. Default false (alt text, nothing fetched). */
@@ -66,6 +69,7 @@ export function Content({
 	allowImages,
 	lineBreaks,
 	linkBase,
+	resolveLink,
 	expandDepth,
 	copyable,
 	wrap,
@@ -127,6 +131,7 @@ export function Content({
 				allowImages={allowImages}
 				lineBreaks={lineBreaks}
 				linkBase={linkBase}
+				resolveLink={resolveLink}
 				className={className}
 			>
 				{source}

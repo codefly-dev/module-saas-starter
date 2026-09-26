@@ -8,7 +8,9 @@
 //   1. Raw HTML is dropped, never rendered (`skipHtml`, and no rehype-raw).
 //   2. A link is live only for an absolute http, https or mailto URL
 //      (`safeLinkUrl`); anything else renders as its text. Live links open in a
-//      new browsing context with `rel="noopener noreferrer"`.
+//      new browsing context with `rel="noopener noreferrer"`. A caller that
+//      knows where the content lives (`resolveLink`) may instead make a link
+//      open something in the product; the kit never navigates by itself.
 //   3. Images are OFF unless the caller opts in, because rendering one fetches
 //      it: an untrusted document could otherwise make every reader's browser
 //      call a URL of its choosing. Off, an image renders as its alt text.
@@ -28,6 +30,7 @@ import ReactMarkdown, {
 import { cn } from "../layout/cn.js";
 import { CodeBlock } from "./code-block.js";
 import { remarkGfmParse } from "./gfm.js";
+import type { LinkResolver } from "./links.js";
 import {
 	protectReferences,
 	REFERENCE_ELEMENT,
@@ -67,6 +70,14 @@ export interface MarkdownProps {
 	 * Default none: a relative link is inert text.
 	 */
 	linkBase?: string;
+	/**
+	 * Decides what a link does, from its href exactly as the content wrote it —
+	 * before `linkBase` and the allowlist apply. A document preview uses it to
+	 * open another document of the same collection in place (see
+	 * `resolveRelativeLink`), or to say a target cannot be shown. Returning
+	 * `undefined` leaves the link to the kit's default rule.
+	 */
+	resolveLink?: LinkResolver;
 	/**
 	 * Numbered references (`[1]`, `[2]`) the caller renders itself, such as a
 	 * citation marker. Only the listed numbers are references; any other `[n]`
@@ -143,15 +154,56 @@ function codeLanguage(code: Element): string | undefined {
 	return undefined;
 }
 
+// The caller's link rules reach the (stable, module-level) link component
+// through context, like the reference renderer.
+const LinkContext = createContext<{
+	base?: string;
+	resolve?: LinkResolver;
+}>({});
+
+const LINK_CLASS =
+	"text-primary underline underline-offset-2 hover:no-underline break-words";
+
 function SafeLink({ href, children }: { href: unknown; children?: ReactNode }) {
-	const safe = safeLinkUrl(href);
+	const { base, resolve } = useContext(LinkContext);
+	const target =
+		resolve && typeof href === "string" ? resolve(href) : undefined;
+	if (target && "open" in target) {
+		return (
+			<button
+				type="button"
+				data-slot="content-link-internal"
+				title={target.title}
+				onClick={() => target.open()}
+				className={cn(
+					LINK_CLASS,
+					"inline cursor-pointer border-0 bg-transparent p-0 text-left font-[inherit] [font-size:inherit]",
+				)}
+			>
+				{children}
+			</button>
+		);
+	}
+	if (target && "unavailable" in target) {
+		return (
+			<span
+				data-slot="content-link-unavailable"
+				title={target.unavailable}
+				className="underline decoration-dotted underline-offset-2"
+			>
+				{children}
+				<span className="sr-only"> ({target.unavailable})</span>
+			</span>
+		);
+	}
+	const safe = safeLinkUrl(href, base);
 	if (!safe) return <span data-slot="content-link-inert">{children}</span>;
 	return (
 		<a
 			href={safe}
 			target="_blank"
 			rel="noopener noreferrer"
-			className="text-primary underline underline-offset-2 hover:no-underline break-words"
+			className={LINK_CLASS}
 		>
 			{children}
 		</a>
@@ -304,13 +356,19 @@ function componentsFor(
 	return components;
 }
 
-function transformUrl(allowImages: boolean, linkBase?: string) {
-	return (url: string, key: string) =>
+// Images are decided here. An `a`'s href is passed through as written: the
+// link component holds it to the caller's resolver and then the allowlist, and
+// renders nothing live that fails both. Any other URL attribute keeps the
+// allowlist here.
+function transformUrl(allowImages: boolean) {
+	return (url: string, key: string, node: Element) =>
 		key === "src"
 			? allowImages
 				? safeImageUrl(url)
 				: undefined
-			: safeLinkUrl(url, linkBase);
+			: key === "href" && node.tagName === "a"
+				? url
+				: safeLinkUrl(url);
 }
 
 const URL_TRANSFORMS = {
@@ -335,15 +393,13 @@ export function Markdown({
 	allowImages = false,
 	lineBreaks = false,
 	linkBase,
+	resolveLink,
 	references,
 	className,
 }: MarkdownProps) {
-	const urlTransform = useMemo(
-		() =>
-			linkBase
-				? transformUrl(allowImages, linkBase)
-				: URL_TRANSFORMS[allowImages ? "true" : "false"],
-		[allowImages, linkBase],
+	const links = useMemo(
+		() => ({ base: linkBase, resolve: resolveLink }),
+		[linkBase, resolveLink],
 	);
 	const markers = references?.markers;
 	const cited = useMemo(() => (markers ? new Set(markers) : null), [markers]);
@@ -360,19 +416,21 @@ export function Markdown({
 			: PLUGINS.plain;
 	return (
 		<ReferenceContext.Provider value={references?.render ?? null}>
-			<div
-				data-slot="content-markdown"
-				className={cn("min-w-0 break-words", className)}
-			>
-				<ReactMarkdown
-					remarkPlugins={[...plugins]}
-					skipHtml
-					urlTransform={urlTransform}
-					components={componentsFor(headingLevel, allowImages)}
+			<LinkContext.Provider value={links}>
+				<div
+					data-slot="content-markdown"
+					className={cn("min-w-0 break-words", className)}
 				>
-					{source}
-				</ReactMarkdown>
-			</div>
+					<ReactMarkdown
+						remarkPlugins={[...plugins]}
+						skipHtml
+						urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
+						components={componentsFor(headingLevel, allowImages)}
+					>
+						{source}
+					</ReactMarkdown>
+				</div>
+			</LinkContext.Provider>
 		</ReferenceContext.Provider>
 	);
 }

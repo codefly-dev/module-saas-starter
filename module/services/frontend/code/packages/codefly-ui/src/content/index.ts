@@ -18,14 +18,22 @@ export {
 	type ResolvedContentFormat,
 	readJson,
 } from "./detect.js";
+export { markdownFragmentToText } from "./fragment.js";
 export { JsonView, type JsonViewProps, stringifyJson } from "./json-view.js";
+export {
+	findHeading,
+	headingSlug,
+	type LinkResolver,
+	type LinkTarget,
+	type RelativeLink,
+	resolveRelativeLink,
+} from "./links.js";
 export {
 	type HeadingLevel,
 	Markdown,
 	type MarkdownProps,
 	type MarkdownReferences,
 } from "./markdown.js";
-export { markdownFragmentToText } from "./fragment.js";
 export {
 	markdownToPlainText,
 	type PlainTextOptions,
