@@ -280,6 +280,85 @@ message ModuleEmitAuditEventRequest {
   string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
 }
 
+// ModuleAuditFieldKind is the kind of one declared audit payload field: the
+// same kinds a solution may declare in its manifest.
+enum ModuleAuditFieldKind {
+  MODULE_AUDIT_FIELD_KIND_UNSPECIFIED = 0;
+  MODULE_AUDIT_FIELD_KIND_STRING = 1;
+  MODULE_AUDIT_FIELD_KIND_UUID = 2;
+  // A whole number (a JSON number with no fractional part, within 2^53).
+  MODULE_AUDIT_FIELD_KIND_INT = 3;
+  // A finite number.
+  MODULE_AUDIT_FIELD_KIND_NUMBER = 4;
+  MODULE_AUDIT_FIELD_KIND_BOOL = 5;
+  // One of `values`.
+  MODULE_AUDIT_FIELD_KIND_ENUM = 6;
+  MODULE_AUDIT_FIELD_KIND_STRING_ARRAY = 7;
+}
+
+// ModuleAuditFieldDeclaration is one payload field of a declared audit event
+// type. `solution` is stamped by the host from the emitting scope and may not
+// be declared.
+message ModuleAuditFieldDeclaration {
+  // Lowercase snake_case, unique within the type.
+  string name = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  ModuleAuditFieldKind kind = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // The admissible values of an ENUM field; refused on any other kind.
+  repeated string values = 3 [(buf.validate.field).repeated.max_items = 64];
+  // A personally identifying field: stripped from every path that sends an
+  // event outside the audit store (webhooks, downloads, the export sink).
+  bool pii = 4;
+}
+
+// ModuleAuditEventTypeDeclaration is one audit event type a composed module
+// declares for itself.
+message ModuleAuditEventTypeDeclaration {
+  // <namespace>.<aggregate>.<event>, lowercase snake_case segments. The
+  // namespace must be one the operator bound to this module (the `namespaces`
+  // of its MODULE_PRINCIPALS entry) and may not be the host's own.
+  string type = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string description = 2 [(buf.validate.field).string.max_len = 1024];
+  repeated ModuleAuditFieldDeclaration fields = 3 [(buf.validate.field).repeated.max_items = 32];
+}
+
+// ModuleDeclareAuditEventTypesRequest declares the audit event types a composed
+// module owns, so its EmitAuditEvent calls for them are accepted and checked
+// against the declared fields. It is the module-side form of a solution's
+// manifest declaration, admitted by the same rules: fail closed on a namespace
+// the operator did not bind to the module, and a type may only grow (fields
+// and enum values may be added; none is dropped or retyped). Re-declaring what
+// is already admitted writes nothing, so a module may declare on every start.
+message ModuleDeclareAuditEventTypesRequest {
+  // The module's own prefix: the caller must be the principal derived from
+  // it. Emissions of the declared types name the same value as `solution`.
+  string prefix = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$"
+  }];
+  repeated ModuleAuditEventTypeDeclaration types = 2 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 64
+  }];
+}
+
+// ModuleDeclareAuditEventTypesResponse names what the call changed: the types
+// it admitted or grew, and the namespaces it took over from a producer the
+// operator unbound. Both are empty for a re-declaration.
+message ModuleDeclareAuditEventTypesResponse {
+  repeated string admitted_types = 1;
+  repeated string namespaces_taken_over = 2;
+}
+
 // ---------------------------------------------------------------------------
 // Subject visibility
 // ---------------------------------------------------------------------------
@@ -357,6 +436,117 @@ message FetchDatasourceBlobChunk {
   bytes data = 1;
   int64 total_size = 2;
   string content_type = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Datasource files (the files interface)
+//
+// Every datasource interface (files, pages, records, messages, events) carries
+// the same envelope: the source, its org and boundary, the provider's opaque
+// version the items were listed at, and per-item provenance. An item is named by
+// a stable provider id (item_id) and carries the version of its content
+// (item_version): the id survives an edit, the version does not. This is the
+// files interface: a path-addressed tree at a version (for a GitHub source, a
+// commit), whose items are identified by their path and versioned by their git
+// blob id.
+// ---------------------------------------------------------------------------
+
+// DatasourceFileRef names one file of a files-interface datasource at the
+// version its request pins: its stable provider id (for a GitHub source, its
+// path) and the version of its content it was listed with (for a GitHub
+// source, its git blob id).
+message DatasourceFileRef {
+  string item_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 4096
+  }];
+  string item_version = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+// FetchDatasourceFilesRequest asks accounts for a batch of files of one source
+// at one pinned version, in a single call. version is the provider's opaque
+// version the files were listed at: for a GitHub source, the commit a snapshot
+// manifest or change set names. Every named file must be in the source's scope
+// (its path prefixes and file types) at that version, with the item version the
+// source holds for it there; a request naming anything else is refused whole,
+// before the first frame. At most 1000 files and 64 MiB of content are
+// served per call, and at most 25 MiB per file.
+message FetchDatasourceFilesRequest {
+  string source_id = 1 [(buf.validate.field).string.uuid = true];
+  string version = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  repeated DatasourceFileRef files = 3 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 1000
+  }];
+}
+
+// DatasourceProvenance is the envelope every item a datasource serves carries,
+// whichever interface serves it: the source, the org and boundary that own it,
+// the provider version the source was read at, the provider's stable id for
+// the item, and the version of the item's content.
+message DatasourceProvenance {
+  string source_id = 1;
+  string org_id = 2;
+  string boundary_node_id = 3;
+  string version = 4;
+  string item_id = 5;
+  string item_version = 6;
+}
+
+// DatasourceItemReadersBasis says where an item's readers came from.
+enum DatasourceItemReadersBasis {
+  DATASOURCE_ITEM_READERS_BASIS_UNSPECIFIED = 0;
+  // The provider's own per-item access list, translated into host identities.
+  DATASOURCE_ITEM_READERS_BASIS_TRANSLATED = 1;
+  // The item has no access list of its own: whoever may read the source's
+  // boundary may read the item.
+  DATASOURCE_ITEM_READERS_BASIS_SOURCE_SCOPED = 2;
+  // The provider has a per-item access list the host cannot translate. A
+  // consumer must fail closed on it rather than widen it to the boundary.
+  DATASOURCE_ITEM_READERS_BASIS_UNTRANSLATABLE = 3;
+}
+
+// DatasourceItemReaders is the envelope's per-item permission slot: who may read
+// the item, as the host derived it. A files-interface GitHub source has no
+// per-file access list, so every file it serves is SOURCE_SCOPED with
+// boundary_readers set and nothing else.
+message DatasourceItemReaders {
+  DatasourceItemReadersBasis basis = 1;
+  repeated string user_ids = 2;
+  repeated string group_ids = 3;
+  // boundary_readers grants the item to whoever may read the source's boundary.
+  bool boundary_readers = 4;
+  // unmapped_count counts provider principals the translation could not map.
+  int32 unmapped_count = 5;
+  // acl_version is the provider's version of the access list, when it has one.
+  string acl_version = 6;
+}
+
+// DatasourceFileHeader opens one file of a FetchDatasourceFiles stream. size is
+// the exact byte count the data frames that follow deliver; content_type is the
+// host's detection from the bytes, advisory only.
+message DatasourceFileHeader {
+  DatasourceProvenance provenance = 1;
+  string path = 2;
+  string content_type = 3;
+  int64 size = 4;
+  DatasourceItemReaders readers = 5;
+}
+
+// FetchDatasourceFilesFrame is one frame of a FetchDatasourceFiles stream. The
+// files arrive in request order; each is one header frame followed by data
+// frames until the header's size has been delivered (an empty file has none).
+message FetchDatasourceFilesFrame {
+  oneof frame {
+    DatasourceFileHeader header = 1;
+    bytes data = 2;
+  }
 }
 
 // Domain events (pub/sub, issue #493)
@@ -866,6 +1056,24 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
+  // DeclareAuditEventTypes admits the audit event types a composed module owns,
+  // into the namespaces the operator bound to it; see the request.
+  rpc DeclareAuditEventTypes(ModuleDeclareAuditEventTypesRequest) returns (ModuleDeclareAuditEventTypesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.audit_types_declared"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
   // ListSubjectVisibility projects the tenant's team tree onto one viewer: the
   // whole set of other subjects whose rows that viewer may read.
   rpc ListSubjectVisibility(ModuleListSubjectVisibilityRequest) returns (ModuleListSubjectVisibilityResponse) {
@@ -881,11 +1089,33 @@ service ModuleCapabilitiesService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // FetchDatasourceBlob streams one datasource file blob, re-fetched from the
-  // upstream provider, to the module that resolves a change set's blob sha.
-  // Authorized by the caller principal's datasource-queue grant and the source
-  // row's own org/boundary, not the request tenant.
+  // FetchDatasourceBlob streams one datasource file blob to the module that
+  // resolves a change set's blob sha. Authorized by the caller principal's
+  // datasource-queue grant and the source row's own org/boundary, not the
+  // request tenant. Deprecated: one call per file; FetchDatasourceFiles serves a
+  // whole change set in one call.
   rpc FetchDatasourceBlob(FetchDatasourceBlobRequest) returns (stream FetchDatasourceBlobChunk) {
+    option deprecated = true;
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // FetchDatasourceFiles streams a batch of files of one source at one pinned
+  // version, read from a single fetch of that version shared by the whole batch.
+  // Authorized like FetchDatasourceBlob: the caller principal's datasource-queue
+  // grant and the source row's own org/boundary. A provider rate limit is
+  // RESOURCE_EXHAUSTED carrying an ErrorInfo (reason DATASOURCE_RATE_LIMITED,
+  // metadata reset_at) and a RetryInfo; a batch past its limits is
+  // FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
+  rpc FetchDatasourceFiles(FetchDatasourceFilesRequest) returns (stream FetchDatasourceFilesFrame) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

@@ -18,7 +18,7 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:2bb6f36eff7677fc0dc31f3613daae2177a22348d69b902125bae4481465e1bf
+        digest: sha256:22a46a38ec79a484dd795faa496bdb277cb19ee76bd0a459d5b1f0f0b88b4dbb
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
