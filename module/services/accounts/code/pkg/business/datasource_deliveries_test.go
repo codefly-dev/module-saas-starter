@@ -441,7 +441,6 @@ func TestCompileDelivery_LargeBlobCarriesContentTicket(t *testing.T) {
 	producer := &recordingProducer{}
 	blob := bytes.Repeat([]byte("x"), 2*1024*1024)
 	gh := &fakeGitHub{
-		errs:      map[string]error{"docs/big.md": github.ErrFileTooLarge},
 		blobs:     map[string][]byte{"bigsha": blob},
 		compareFn: compareBetween("A", "B", []github.ChangedFile{{Filename: "docs/big.md", Status: "modified", SHA: "bigsha"}}),
 	}

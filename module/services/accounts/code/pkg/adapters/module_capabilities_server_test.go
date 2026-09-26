@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -134,11 +135,14 @@ func (c staticCipher) DecryptSecret(context.Context, string, string) (string, er
 	return c.token, nil
 }
 
-// blobStreamGitHub answers GetBlob for exactly one repo and rejects fetches
-// aimed anywhere else, so a fetch against the wrong repo surfaces as an error.
+// blobStreamGitHub serves blobs for exactly one repo and rejects a mirror
+// opened for any other, so a fetch against the wrong repo surfaces as an error.
 type blobStreamGitHub struct {
 	repo  string
 	blobs map[string][]byte
+	// files is the version's in-scope listing FetchDatasourceFiles checks
+	// requests against.
+	files []github.File
 }
 
 func (*blobStreamGitHub) DefaultBranch(context.Context, string) (string, error) {
@@ -147,27 +151,65 @@ func (*blobStreamGitHub) DefaultBranch(context.Context, string) (string, error) 
 func (*blobStreamGitHub) ResolveCommit(context.Context, string, string) (string, error) {
 	return "", errors.New("unused")
 }
-func (*blobStreamGitHub) ListFiles(context.Context, string, string, []string) ([]github.File, error) {
-	return nil, errors.New("unused")
-}
-func (*blobStreamGitHub) GetFileContent(context.Context, string, string, string) ([]byte, error) {
-	return nil, errors.New("unused")
-}
-func (*blobStreamGitHub) Compare(context.Context, string, string, string) (*github.Comparison, error) {
-	return nil, errors.New("unused")
-}
 func (*blobStreamGitHub) RepositoryIsPublic(context.Context, string) (bool, error) {
 	return false, errors.New("unused")
 }
-func (g *blobStreamGitHub) GetBlob(_ context.Context, repo, blobSHA string, _ int64) ([]byte, error) {
+func (g *blobStreamGitHub) OpenRepository(_ context.Context, _ github.Workspace, repo string) (business.GitHubRepository, error) {
 	if repo != g.repo {
 		return nil, errors.New("blob fetched from the wrong repo: " + repo)
 	}
-	if b, ok := g.blobs[blobSHA]; ok {
-		return b, nil
-	}
-	return nil, github.ErrNotFound
+	return &blobStreamRepository{g: g}, nil
 }
+
+type blobStreamRepository struct{ g *blobStreamGitHub }
+
+func (r *blobStreamRepository) List(_ context.Context, _ string, match func(string) bool) ([]github.File, error) {
+	var out []github.File
+	for _, f := range r.g.files {
+		if match(f.Path) {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+func (*blobStreamRepository) Compare(context.Context, string, string) (*github.Comparison, error) {
+	return nil, errors.New("unused")
+}
+func (r *blobStreamRepository) Fetch(_ context.Context, ids []string) error {
+	for _, id := range ids {
+		if _, ok := r.g.blobs[id]; !ok {
+			return github.ErrNotFound
+		}
+	}
+	return nil
+}
+func (r *blobStreamRepository) Sizes(_ context.Context, ids []string) (map[string]int64, error) {
+	out := map[string]int64{}
+	for _, id := range ids {
+		out[id] = int64(len(r.g.blobs[id]))
+	}
+	return out, nil
+}
+func (r *blobStreamRepository) Read(_ context.Context, id string, max int64) ([]byte, error) {
+	b, ok := r.g.blobs[id]
+	if !ok {
+		return nil, github.ErrNotFound
+	}
+	if int64(len(b)) > max {
+		return nil, github.ErrFileTooLarge
+	}
+	return b, nil
+}
+func (r *blobStreamRepository) Stream(_ context.Context, ids []string, visit func(string, int64, io.Reader) error) error {
+	for _, id := range ids {
+		b := r.g.blobs[id]
+		if err := visit(id, int64(len(b)), bytes.NewReader(b)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (*blobStreamRepository) Close() error { return nil }
 
 func installBlobStreamService(t *testing.T, store business.Store, cipher business.SecretCipher, gh business.GitHubContentClient, registry business.ModulePrincipalRegistry) {
 	t.Helper()

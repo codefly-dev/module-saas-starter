@@ -1078,8 +1078,9 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // ---------------------------------------------------------------------------
 
 // ModuleFetchDatasourceBlob returns the bytes of a GitHub blob referenced by a
-// datasource change set, so the documents module can pull the content a delivery
-// omitted inline. It supersedes the signed content ticket: the module already
+// datasource change set, so a consuming module can pull the content a delivery
+// omitted inline. Deprecated in favour of ModuleFetchDatasourceFiles, which
+// serves a whole change set in one call. It supersedes the signed content ticket: the module already
 // claims the datasource queue to receive the change set, and claiming that queue
 // is an inherently cross-tenant inbox operation (every tenant's ingest jobs land
 // on it), so a principal trusted to claim it is trusted to fetch the blobs those
@@ -1089,7 +1090,8 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // org, NOT a request-supplied tenant: the source is loaded by id and the fetch
 // is authorized against that source's org, so a cross-tenant claimer reaches any
 // source while a hypothetical org-bound principal reaches only its own. The blob
-// is re-fetched with the source's decrypted token and never leaves accounts;
+// is read from the source's repository mirror, fetched with the source's
+// decrypted token when the mirror lacks it; the token never leaves accounts, and
 // anything over maxContentTicketBytes is refused rather than buffered.
 func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
 	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
@@ -1115,17 +1117,7 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	}
 	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		// A revoked installation or an unreadable credential is a precondition the
-		// tenant must repair, not an internal fault; reporting it as Internal tells
-		// a module caller to retry something that can never succeed.
-		var failure *jobs.ProcessingError
-		if errors.As(err, &failure) {
-			if failure.Retryable {
-				return nil, "", status.Error(codes.Unavailable, failure.Failure.Message)
-			}
-			return nil, "", status.Error(codes.FailedPrecondition, failure.Failure.Message)
-		}
-		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "authenticate to github").Error())
+		return nil, "", datasourceCredentialStatus(w, err)
 	}
 	// Trust boundary: blobSHA is caller-supplied and NOT re-validated against the
 	// change set that referenced it. Authorization is enforced at the repository
@@ -1135,26 +1127,14 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	// Within the authorized repo, a git blob SHA is a content-addressed,
 	// unguessable (SHA-1/-256) capability that accounts only ever hands a module
 	// via an in-scope change-set payload, so an in-scope caller cannot fabricate a
-	// SHA for out-of-scope content it was not already given. Re-deriving the tree
-	// to prove the SHA is reachable from the source's branch would reintroduce the
-	// per-fetch ticket this RPC exists to remove and break the intended lag between
-	// a module's cursor and the repo head, so the repo-grained check is the
-	// boundary by design.
-	content, err := client.GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
+	// SHA for out-of-scope content it was not already given. FetchDatasourceFiles,
+	// which names a version, holds each file to the source's scope at it.
+	content, err := s.readDatasourceBlob(ctx, source, client, blobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, "", status.Errorf(codes.FailedPrecondition, "blob exceeds the %d-byte fetch limit", maxContentTicketBytes)
 		}
-		// A public source reads GitHub unauthenticated, so its blob fetches share
-		// the IP's hourly limit; say so, rather than calling it an internal fault
-		// the module should not retry.
-		if errors.Is(err, github.ErrUnauthenticatedRateLimited) {
-			return nil, "", status.Error(codes.ResourceExhausted, githubUnauthenticatedRateLimitMessage)
-		}
-		if errors.Is(err, github.ErrRateLimited) {
-			return nil, "", status.Error(codes.ResourceExhausted, "GitHub rate limited the blob fetch. Retry later.")
-		}
-		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "fetch blob").Error())
+		return nil, "", datasourceGitHubStatus(w, err, "fetch blob")
 	}
 	// Record the data access on the source's own tenant spine. Each fetch is a
 	// distinct access event (no idempotency key), and a transient audit-write

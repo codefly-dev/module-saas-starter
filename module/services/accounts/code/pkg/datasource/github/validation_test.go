@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidationStatusDoesNotExposeResponseBody(t *testing.T) {
@@ -22,7 +23,7 @@ func TestValidationStatusDoesNotExposeResponseBody(t *testing.T) {
 			w.WriteHeader(tt.code)
 			_, _ = w.Write([]byte("sensitive provider detail"))
 		}))
-		_, err := New("private-token", server.URL).DefaultBranch(context.Background(), "acme/docs")
+		_, err := New("private-token", server.URL).RepositoryIsPublic(context.Background(), "acme/docs")
 		server.Close()
 		if !errors.Is(err, tt.want) {
 			t.Fatalf("status %d: %v", tt.code, err)
@@ -39,7 +40,7 @@ func TestSecondaryRateLimitWithoutRetryHeader(t *testing.T) {
 		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit. sensitive detail"}`))
 	}))
 	defer server.Close()
-	_, err := New("private-token", server.URL).ResolveCommit(context.Background(), "acme/docs", "main")
+	_, err := New("private-token", server.URL).RepositoryIsPublic(context.Background(), "acme/docs")
 	if !errors.Is(err, ErrRateLimited) || strings.Contains(err.Error(), "sensitive") {
 		t.Fatalf("rate limit misclassified or exposed: %v", err)
 	}
@@ -95,25 +96,45 @@ func TestRepositoryIsPublic(t *testing.T) {
 
 // The unauthenticated limit is metered per IP rather than per credential, so it
 // is reported distinctly — but still as a rate limit to a caller asking only
-// that. The JSON reads and the blob fetch classify it the same way.
+// that. The limit's reset time is read from the response, so a caller can back
+// off until it rather than retry blindly.
 func TestUnauthenticatedRateLimitIsDistinct(t *testing.T) {
+	reset := time.Now().Add(17 * time.Minute).Truncate(time.Second).UTC()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconvItoa(reset.Unix()))
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 203.0.113.7."}`))
 	}))
 	defer srv.Close()
 
-	_, err := New("", srv.URL).DefaultBranch(context.Background(), "acme/docs")
+	_, err := New("", srv.URL).RepositoryIsPublic(context.Background(), "acme/docs")
 	if !errors.Is(err, ErrUnauthenticatedRateLimited) || !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("unauthenticated read err = %v, want ErrUnauthenticatedRateLimited wrapping ErrRateLimited", err)
 	}
-	_, err = New("", srv.URL).GetBlob(context.Background(), "acme/docs", "abc", 1024)
-	if !errors.Is(err, ErrUnauthenticatedRateLimited) {
-		t.Fatalf("unauthenticated blob err = %v, want ErrUnauthenticatedRateLimited", err)
+	var limited *RateLimitError
+	if !errors.As(err, &limited) || !limited.ResetAt.Equal(reset) {
+		t.Fatalf("rate limit reset = %v, want %v", limited, reset)
 	}
-	_, err = New("tok", srv.URL).DefaultBranch(context.Background(), "acme/docs")
+	_, err = New("tok", srv.URL).RepositoryIsPublic(context.Background(), "acme/docs")
 	if !errors.Is(err, ErrRateLimited) || errors.Is(err, ErrUnauthenticatedRateLimited) {
 		t.Fatalf("authenticated read err = %v, want ErrRateLimited only", err)
+	}
+}
+
+func TestRateLimitResetPrefersRetryAfter(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	h := http.Header{}
+	h.Set("Retry-After", "90")
+	h.Set("X-RateLimit-Reset", "1700009999")
+	if got := rateLimitReset(h, now); !got.Equal(now.Add(90 * time.Second)) {
+		t.Fatalf("reset = %v, want Retry-After", got)
+	}
+	h.Del("Retry-After")
+	if got := rateLimitReset(h, now); !got.Equal(time.Unix(1700009999, 0).UTC()) {
+		t.Fatalf("reset = %v, want X-RateLimit-Reset", got)
+	}
+	if got := rateLimitReset(http.Header{}, now); !got.IsZero() {
+		t.Fatalf("reset = %v, want zero when GitHub does not say", got)
 	}
 }

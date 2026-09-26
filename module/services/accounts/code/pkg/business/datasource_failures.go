@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/jobs"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,7 +24,17 @@ func datasourceProcessingError(err error) error {
 	if errors.As(err, &safe) {
 		return safe
 	}
+	var limited *github.RateLimitError
+	if errors.As(err, &limited) {
+		return datasourceRateLimitFailure(limited)
+	}
 	switch {
+	case errors.Is(err, github.ErrRepositoryTooLarge):
+		return jobs.NewProcessingError("datasource.repository_too_large", "The repository is larger than this host mirrors for a source. Narrow the source to a smaller repository. This sync job will not retry.", false)
+	case errors.Is(err, github.ErrTooManyFiles):
+		return jobs.NewProcessingError("datasource.too_many_files", "The source's path prefixes and file types select more files than a source may hold. Narrow them. This sync job will not retry.", false)
+	case errors.Is(err, github.ErrGitUnavailable):
+		return jobs.NewProcessingError("datasource.git_unavailable", "This host cannot read repositories: git is not installed in its image. An operator must deploy an image that includes git. This sync job will not retry.", false)
 	case errors.Is(err, github.ErrUnauthorized):
 		return jobs.NewProcessingError("datasource.github_unauthorized", "GitHub rejected the PAT (401). Reconnect with a valid token. This sync job will not retry.", false)
 	// Before the generic rate limit it wraps: a public source's limit is the
@@ -38,6 +49,26 @@ func datasourceProcessingError(err error) error {
 		return jobs.NewProcessingError("datasource.github_not_found", "GitHub repository, branch, or content was not found or is inaccessible to this PAT (404). Check the source configuration and token permissions; this job may retry.", true)
 	}
 	return err
+}
+
+// datasourceRateLimitFailure reports a rate limit with the time it resets, and
+// holds the job until then rather than retrying into the same wall.
+func datasourceRateLimitFailure(limited *github.RateLimitError) error {
+	code, message := "datasource.github_rate_limited", "GitHub rate limited the request."
+	if limited.Unauthenticated {
+		code, message = "datasource.github_unauthenticated_rate_limited", githubUnauthenticatedRateLimitMessage
+	}
+	if !limited.ResetAt.IsZero() {
+		message += " The limit resets at " + limited.ResetAt.UTC().Format(time.RFC3339) + "; this job waits until then."
+	} else {
+		message += " This job may retry."
+	}
+	failure := jobs.NewProcessingError(code, message, true)
+	var processing *jobs.ProcessingError
+	if errors.As(failure, &processing) {
+		processing.NotBefore = limited.ResetAt
+	}
+	return failure
 }
 
 func datasourceFailureFields(err error, repo, trigger string) map[string]any {

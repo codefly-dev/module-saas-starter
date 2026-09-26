@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"accounts/pkg/business"
@@ -459,6 +460,80 @@ func writeDatasourceBlobFrames(content []byte, contentType string, stream dataso
 			return nil
 		}
 	}
+}
+
+// FetchDatasourceFiles streams a batch of one source's files at one pinned
+// version: per file, a header frame carrying its provenance and exact size, then
+// bounded data frames. The business layer reads the batch from the source's
+// repository mirror in request order, so nothing is buffered beyond one frame.
+func (s *ModuleCapabilitiesServer) FetchDatasourceFiles(req *gen.FetchDatasourceFilesRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceFilesFrame]) error {
+	return streamDatasourceFiles(stream.Context(), req, stream)
+}
+
+// datasourceFilesSender is the send half both the gRPC and Connect server
+// streams satisfy.
+type datasourceFilesSender interface {
+	Send(*gen.FetchDatasourceFilesFrame) error
+}
+
+// sourceScopedReaders is the readers slot of every file a GitHub source serves:
+// a repository has no per-file access list, so its files are readable by
+// whoever may read the source's boundary.
+func sourceScopedReaders() *gen.DatasourceItemReaders {
+	return &gen.DatasourceItemReaders{
+		Basis:           gen.DatasourceItemReadersBasis_DATASOURCE_ITEM_READERS_BASIS_SOURCE_SCOPED,
+		BoundaryReaders: true,
+	}
+}
+
+func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesRequest, stream datasourceFilesSender) error {
+	if err := Validate(req); err != nil {
+		return err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return err
+	}
+	refs := make([]business.DatasourceFileRequest, 0, len(req.GetFiles()))
+	for _, f := range req.GetFiles() {
+		refs = append(refs, business.DatasourceFileRequest{Path: f.GetPath(), ItemID: f.GetItemId()})
+	}
+	buf := make([]byte, datasourceBlobChunkBytes)
+	return service.ModuleFetchDatasourceFiles(ctx, caller, req.GetSourceId(), req.GetVersion(), refs,
+		func(file business.DatasourceFile, content io.Reader) error {
+			header := &gen.DatasourceFileHeader{
+				Provenance: &gen.DatasourceProvenance{
+					SourceId:       file.Provenance.SourceID,
+					OrgId:          file.Provenance.OrgID,
+					BoundaryNodeId: file.Provenance.BoundaryNodeID,
+					Version:        file.Provenance.Version,
+					ItemId:         file.Provenance.ItemID,
+				},
+				Path:        file.Path,
+				ContentType: file.ContentType,
+				Size:        file.Size,
+				Readers:     sourceScopedReaders(),
+			}
+			if err := stream.Send(&gen.FetchDatasourceFilesFrame{Frame: &gen.FetchDatasourceFilesFrame_Header{Header: header}}); err != nil {
+				return err
+			}
+			for remaining := file.Size; remaining > 0; {
+				n := int64(len(buf))
+				if remaining < n {
+					n = remaining
+				}
+				if _, err := io.ReadFull(content, buf[:n]); err != nil {
+					return err
+				}
+				// The frame owns its bytes: a sender may hold a message past Send.
+				data := append([]byte(nil), buf[:n]...)
+				if err := stream.Send(&gen.FetchDatasourceFilesFrame{Frame: &gen.FetchDatasourceFilesFrame_Data{Data: data}}); err != nil {
+					return err
+				}
+				remaining -= n
+			}
+			return nil
+		})
 }
 
 func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.ModulePlaceRecordRequest) (*gen.ModulePlaceRecordResponse, error) {
