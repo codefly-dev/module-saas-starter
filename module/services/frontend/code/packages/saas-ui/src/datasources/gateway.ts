@@ -5,6 +5,10 @@ import {
 	type Datasource,
 	DatasourceProvider,
 	DatasourceStatus,
+	type SourceSyncProgress,
+	SourceSyncFailureReason,
+	SourceSyncPhase,
+	SourceSyncTrigger,
 } from "@codefly-dev/saas-sdk";
 import {
 	Code,
@@ -18,6 +22,10 @@ import type {
 	DatasourceClient,
 	DatasourceStatusName,
 	DatasourceView,
+	SourceSyncFailureReasonName,
+	SourceSyncPhaseName,
+	SourceSyncTriggerName,
+	SourceSyncView,
 } from "./types.js";
 
 /**
@@ -200,10 +208,101 @@ export function datasourceClientOverTransport(
 			});
 			return response.jobId;
 		},
+		async getSourceSync(orgId, sourceId, jobId) {
+			try {
+				const response = await client.getSourceSync({
+					orgId,
+					sourceId,
+					jobId: jobId ?? "",
+				});
+				return toSourceSyncView(response.jobId, response.progress);
+			} catch (error) {
+				// No sync yet is an answer, not a failure: a source connected before
+				// the host enqueued first syncs at connect has none until one runs.
+				if (ConnectError.from(error).code === Code.NotFound) return undefined;
+				throw error;
+			}
+		},
 		async deleteSource(orgId, id) {
 			await client.deleteSource({ orgId, id });
 		},
 	};
+}
+
+const syncPhaseNames: Partial<Record<SourceSyncPhase, SourceSyncPhaseName>> = {
+	[SourceSyncPhase.QUEUED]: "queued",
+	[SourceSyncPhase.FETCHING]: "fetching",
+	[SourceSyncPhase.COMPILED]: "compiled",
+	[SourceSyncPhase.HANDED_OFF]: "handed_off",
+	[SourceSyncPhase.DONE]: "done",
+	[SourceSyncPhase.FAILED]: "failed",
+};
+
+const syncTriggerNames: Partial<Record<SourceSyncTrigger, SourceSyncTriggerName>> = {
+	[SourceSyncTrigger.MANUAL]: "manual",
+	[SourceSyncTrigger.SCHEDULED]: "scheduled",
+	[SourceSyncTrigger.WEBHOOK]: "webhook",
+};
+
+const syncFailureNames: Partial<
+	Record<SourceSyncFailureReason, SourceSyncFailureReasonName>
+> = {
+	[SourceSyncFailureReason.RATE_LIMITED]: "rate_limited",
+	[SourceSyncFailureReason.CREDENTIAL]: "credential",
+	[SourceSyncFailureReason.ACCESS_DENIED]: "access_denied",
+	[SourceSyncFailureReason.NOT_FOUND]: "not_found",
+	[SourceSyncFailureReason.TOO_LARGE]: "too_large",
+	[SourceSyncFailureReason.HOST_UNAVAILABLE]: "host_unavailable",
+	[SourceSyncFailureReason.DELIVERY_FAILED]: "delivery_failed",
+	[SourceSyncFailureReason.OTHER]: "other",
+};
+
+type Stamp = Parameters<typeof timestampDate>[0] | undefined;
+
+function iso(stamp: Stamp): string | undefined {
+	return stamp ? timestampDate(stamp).toISOString() : undefined;
+}
+
+/** Maps the wire progress to the plain view; exported for its tests. */
+export function toSourceSyncView(
+	jobId: string,
+	progress: SourceSyncProgress | undefined,
+): SourceSyncView {
+	const view: SourceSyncView = {
+		jobId,
+		phase: (progress && syncPhaseNames[progress.phase]) ?? "unknown",
+		trigger: (progress && syncTriggerNames[progress.trigger]) ?? "unknown",
+		queuedAt: iso(progress?.queuedAt),
+		fetchingAt: iso(progress?.fetchingAt),
+		compiledAt: iso(progress?.compiledAt),
+		handedOffAt: iso(progress?.handedOffAt),
+		finishedAt: iso(progress?.finishedAt),
+		attempt: progress?.attempt ?? 0,
+		maxAttempts: progress?.maxAttempts ?? 0,
+	};
+	const changes = progress?.changes;
+	if (changes) {
+		view.changes = {
+			files: changes.files,
+			added: changes.added,
+			modified: changes.modified,
+			deleted: changes.deleted,
+			splitKnown: changes.splitKnown,
+			snapshot: changes.snapshot,
+			commit: changes.commit,
+		};
+	}
+	const failure = progress?.failure;
+	if (failure) {
+		view.failure = {
+			reason: syncFailureNames[failure.reason] ?? "other",
+			code: failure.code,
+			message: failure.message,
+			retrying: failure.retrying,
+			retryAt: iso(failure.retryAt),
+		};
+	}
+	return view;
 }
 
 /**
