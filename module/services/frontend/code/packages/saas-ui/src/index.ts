@@ -33,6 +33,10 @@ export type {
 	DatasourceProviderName,
 	DatasourceStatusName,
 	DatasourceView,
+	SourceSyncFailureReasonName,
+	SourceSyncPhaseName,
+	SourceSyncTriggerName,
+	SourceSyncView,
 } from "./datasources/types.js";
 export { parsePaths } from "./datasources/util.js";
 // The whole solution surface, so the package root and

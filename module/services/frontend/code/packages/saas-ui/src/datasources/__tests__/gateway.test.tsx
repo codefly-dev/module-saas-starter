@@ -154,6 +154,7 @@ describe("createDatasourceClient", () => {
 			migrateGitHubSourceToApp: () =>
 				client.migrateGitHubSourceToApp!("org-1", "ds-1"),
 			syncSource: () => client.syncSource("org-1", "ds-1"),
+			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
 		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
@@ -162,6 +163,92 @@ describe("createDatasourceClient", () => {
 			await operation();
 			expect(calls.length).toBeGreaterThan(before);
 		}
+	});
+
+	it("reads a source's latest sync as the host's typed phases", async () => {
+		const { calls } = stubFetch({
+			jobId: "22222222-2222-2222-2222-222222222222",
+			state: "JOB_STATE_RETRYING",
+			progress: {
+				phase: "SOURCE_SYNC_PHASE_QUEUED",
+				trigger: "SOURCE_SYNC_TRIGGER_MANUAL",
+				queuedAt: "2026-09-26T12:00:00Z",
+				fetchingAt: "2026-09-26T12:00:01Z",
+				attempt: 1,
+				maxAttempts: 24,
+				failure: {
+					reason: "SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED",
+					code: "datasource.github_unauthenticated_rate_limited",
+					message: "GitHub rate limited the request.",
+					retrying: true,
+					retryAt: "2026-09-26T13:00:00Z",
+				},
+			},
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const sync = await client.getSourceSync!("org-1", "ds-1");
+
+		expect(calls[0].url).toContain(
+			"/api/solutions/guides/proxy/saas.accounts.v1.DatasourceService/GetSourceSync",
+		);
+		// No job id asks for the latest sync, whatever started it.
+		expect(calls[0].body).toEqual({ orgId: "org-1", sourceId: "ds-1" });
+		expect(sync).toEqual({
+			jobId: "22222222-2222-2222-2222-222222222222",
+			phase: "queued",
+			trigger: "manual",
+			queuedAt: "2026-09-26T12:00:00.000Z",
+			fetchingAt: "2026-09-26T12:00:01.000Z",
+			compiledAt: undefined,
+			handedOffAt: undefined,
+			finishedAt: undefined,
+			attempt: 1,
+			maxAttempts: 24,
+			failure: {
+				reason: "rate_limited",
+				code: "datasource.github_unauthenticated_rate_limited",
+				message: "GitHub rate limited the request.",
+				retrying: true,
+				retryAt: "2026-09-26T13:00:00.000Z",
+			},
+		});
+	});
+
+	it("reports the compiled change set, and no sync yet as undefined", async () => {
+		stubFetchSequence([
+			reply({
+				jobId: "22222222-2222-2222-2222-222222222222",
+				state: "JOB_STATE_SUCCEEDED",
+				progress: {
+					phase: "SOURCE_SYNC_PHASE_DONE",
+					trigger: "SOURCE_SYNC_TRIGGER_MANUAL",
+					changes: { files: 42, splitKnown: true, snapshot: true, commit: "c1" },
+				},
+			}),
+			reply({ code: "not_found", message: "datasource: sync not found" }, 404),
+		]);
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const done = await client.getSourceSync!("org-1", "ds-1");
+		expect(done?.phase).toBe("done");
+		// A zero the wire omits is still a count: nothing added, modified or deleted.
+		expect(done?.changes).toEqual({
+			files: 42,
+			added: 0,
+			modified: 0,
+			deleted: 0,
+			splitKnown: true,
+			snapshot: true,
+			commit: "c1",
+		});
+		await expect(client.getSourceSync!("org-1", "ds-2")).resolves.toBeUndefined();
 	});
 
 	it("calls the live DatasourceService through the gateway with the host token", async () => {

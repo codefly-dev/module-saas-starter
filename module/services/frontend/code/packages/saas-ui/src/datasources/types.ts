@@ -147,6 +147,75 @@ export interface CollectionGrantSubject {
 	kind: "principal" | "team";
 	label: string;
 }
+/** The stage the host has reached in one sync of a source. */
+export type SourceSyncPhaseName =
+	| "queued"
+	| "fetching"
+	| "compiled"
+	| "handed_off"
+	| "done"
+	| "failed"
+	| "unknown";
+
+/** What started a sync: a tenant (or the connect), the periodic reconcile, or a webhook. */
+export type SourceSyncTriggerName = "manual" | "scheduled" | "webhook" | "unknown";
+
+/** Why a sync waits to retry, or failed — typed so a view offers the remedy. */
+export type SourceSyncFailureReasonName =
+	| "rate_limited"
+	| "credential"
+	| "access_denied"
+	| "not_found"
+	| "too_large"
+	| "host_unavailable"
+	| "delivery_failed"
+	| "other";
+
+/**
+ * One sync of a source as the host reports it: its phase and when it reached
+ * each, the change set it compiled, and why it waits or failed. The phases are
+ * the host's own work — queued, fetching over git, compiled into a change set,
+ * handed to the consuming module's queue, done — so what a module does with
+ * each file afterwards is that module's to report, never this view's.
+ *
+ * Timestamps are ISO strings, absent until the phase is reached.
+ */
+export interface SourceSyncView {
+	jobId: string;
+	phase: SourceSyncPhaseName;
+	trigger: SourceSyncTriggerName;
+	queuedAt?: string;
+	fetchingAt?: string;
+	compiledAt?: string;
+	handedOffAt?: string;
+	finishedAt?: string;
+	/**
+	 * The compiled change set, relative to the commit the host last handed off.
+	 * Absent until compiled; absent at `done` means the source had not changed.
+	 */
+	changes?: {
+		files: number;
+		added: number;
+		modified: number;
+		deleted: number;
+		/** False when only `files` is known (e.g. a snapshot after a force push). */
+		splitKnown: boolean;
+		snapshot: boolean;
+		commit: string;
+	};
+	failure?: {
+		reason: SourceSyncFailureReasonName;
+		code: string;
+		/** Host-authored prose from a closed set; safe to render as it arrives. */
+		message: string;
+		retrying: boolean;
+		/** When the next attempt may run; for a rate limit, when it resets. */
+		retryAt?: string;
+	};
+	attempt: number;
+	maxAttempts: number;
+}
+
 export interface DatasourceClient {
 	listCollections?(orgId: string): Promise<CollectionAccessView[]>;
 	listGrantSubjects?(orgId: string): Promise<CollectionGrantSubject[]>;
@@ -165,6 +234,17 @@ export interface DatasourceClient {
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
 	/** Enqueues an async pull; resolves to the durable job id. */
 	syncSource(orgId: string, id: string, accessToken?: string): Promise<string>;
+	/**
+	 * Reads one sync of a source — the job `syncSource` returned, or with no job
+	 * id the source's latest, whatever started it. Resolves `undefined` when the
+	 * source has no sync yet. Optional so a consumer adapting its own client
+	 * keeps compiling without it.
+	 */
+	getSourceSync?(
+		orgId: string,
+		sourceId: string,
+		jobId?: string,
+	): Promise<SourceSyncView | undefined>;
 	deleteSource(orgId: string, id: string): Promise<void>;
 	/**
 	 * Enumerates the caller’s readable collection boundaries; failure must
