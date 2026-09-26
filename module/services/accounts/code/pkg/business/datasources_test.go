@@ -161,13 +161,19 @@ func (f *datasourceFakeStore) GetDatasourceSourceByID(_ context.Context, id stri
 	return nil, nil
 }
 
-func (f *datasourceFakeStore) DeleteDatasourceSource(_ context.Context, orgID, id string) error {
+// Mirrors the store's DELETE … RETURNING: the identity comes back only to the
+// caller whose delete actually removed the row.
+func (f *datasourceFakeStore) DeleteDatasourceSource(_ context.Context, orgID, id string) (*business.RemovedDatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
-		delete(f.sources, id)
+	s, ok := f.sources[id]
+	if !ok || s.OrgID != orgID {
+		return nil, nil
 	}
-	return nil
+	delete(f.sources, id)
+	return &business.RemovedDatasourceSource{
+		Provider: s.Provider, Repo: s.Repo, BoundaryNodeID: s.BoundaryNodeID,
+	}, nil
 }
 
 func (f *datasourceFakeStore) SetDatasourceSourceSynced(_ context.Context, orgID, id string, syncedAt time.Time) error {

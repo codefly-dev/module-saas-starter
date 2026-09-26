@@ -100,8 +100,27 @@ func TestDatasourceSource_DeleteRemovesRow(t *testing.T) {
 	_, org := mustUserAndOrg(t, ctx, "del-ds@rls-test.com", "del-ds-rls", "Acme DS Del")
 	source := insertDatasourceSource(t, ctx, org, "acme/del-docs")
 
+	// The deleting statement returns the removed row's identity under the tenant
+	// policy, and a second delete of the same id removes nothing and returns
+	// nothing — the store contract the audit record depends on.
 	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		return testStore.DeleteDatasourceSource(ctx, org, source.ID)
+		removed, err := testStore.DeleteDatasourceSource(ctx, org, source.ID)
+		if err != nil {
+			return err
+		}
+		require.NotNil(t, removed)
+		require.Equal(t, business.DatasourceProviderGitHub, removed.Provider)
+		require.Equal(t, "acme/del-docs", removed.Repo)
+		// Equality, not merely non-empty: it is what catches a transposed column
+		// in the statement's RETURNING list.
+		require.Equal(t, source.BoundaryNodeID, removed.BoundaryNodeID)
+
+		again, err := testStore.DeleteDatasourceSource(ctx, org, source.ID)
+		if err != nil {
+			return err
+		}
+		require.Nil(t, again, "deleting a source that is gone removes nothing")
+		return nil
 	}))
 
 	_, err := testService.GetDatasourceSource(ctx, org, source.ID)
