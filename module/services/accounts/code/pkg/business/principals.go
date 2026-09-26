@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -558,6 +559,13 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 // kind is the empty string to list all kinds, or one of human /
 // service / agent. Other values return an error rather than a
 // silent empty list (helps debug typos).
+//
+// The composed modules that act in the org are listed too, as service
+// principals named by their prefix, after the stored rows (on the page that
+// carries no next token). A module principal is derived and declared rather
+// than stored, so without this it acts, holds grants and is recorded as the
+// actor of audit rows while every directory built from this listing reports
+// it as unknown.
 func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSize int32, pageToken string) ([]*Principal, string, error) {
 	w := wool.Get(ctx).In("ListPrincipals",
 		wool.Field("org_id", orgID),
@@ -586,5 +594,24 @@ func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSi
 	}); err != nil {
 		return nil, "", err
 	}
+	if next == "" && (kind == "" || kind == PrincipalKindService) {
+		out = append(out, s.modulePrincipalsActingIn(orgID)...)
+	}
 	return out, next, nil
+}
+
+// modulePrincipalsActingIn projects the declared module principals that may act
+// in orgID — the ones bound to it and the cross-tenant ones — as service
+// principals, ordered by prefix so a listing is stable. A grant without a prefix
+// has no name to show and is left out.
+func (s *Service) modulePrincipalsActingIn(orgID string) []*Principal {
+	var out []*Principal
+	for id, grant := range s.modulePrincipals {
+		if grant.Prefix == "" || (grant.Tenant != orgID && !grant.CrossTenant) {
+			continue
+		}
+		out = append(out, &Principal{ID: id, Kind: PrincipalKindService, DisplayName: grant.Prefix, OrgID: orgID})
+	}
+	slices.SortFunc(out, func(a, b *Principal) int { return strings.Compare(a.DisplayName, b.DisplayName) })
+	return out
 }

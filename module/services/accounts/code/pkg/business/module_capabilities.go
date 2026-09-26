@@ -682,6 +682,13 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // spine. The event type must be registered in the code-owned catalog;
 // unregistered types are rejected, not stored free-form. An empty tenant emits a
 // system-scoped event and requires the cross-tenant grant.
+//
+// actor is a principal id, because that is what the spine's actor column holds.
+// A module that acted for a subject names that subject; a module that acted on
+// its own names its own principal — the principal_id MintModuleWorkContext
+// returns for exactly this purpose — and the row records it as a system actor.
+// Anything else is refused: it used to be accepted and then blanked on write, so
+// the row said nobody did it and the emitter was told it had succeeded.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
@@ -692,6 +699,10 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 			return status.Errorf(codes.PermissionDenied, "principal %s may not emit system-scoped audit events", caller.PrincipalID)
 		}
 	} else if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return err
+	}
+	actorType, err := moduleAuditActorType(caller, actor)
+	if err != nil {
 		return err
 	}
 	payload := make(map[string]any)
@@ -712,7 +723,7 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.
 	emit := func(ctx context.Context) error {
-		entry := s.buildAuditEntry(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+		entry := s.buildAuditEntry(ctx, actor, actorType, EventType(eventType), solution, entryID, tenant, payload)
 		entry.IdempotencyKey = idempotencyKey
 		return s.emitEntryTx(ctx, entry)
 	}
@@ -726,6 +737,24 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 		return status.Error(codes.Internal, err.Error())
 	}
 	return nil
+}
+
+// moduleAuditActorType checks a module-attributed actor and classifies it. The
+// actor must be a principal id in its one canonical spelling: uuid.Parse also
+// accepts braced, URN, unhyphenated and uppercase forms, and a row stored under
+// one of those would never match a filter or a directory lookup on the canonical
+// id. The caller's own principal is the module acting on its own behalf
+// (system); any other principal is a subject the module acted for (agent).
+func moduleAuditActorType(caller ModuleCaller, actor string) (string, error) {
+	parsed, err := uuid.Parse(actor)
+	if err != nil || parsed.String() != actor {
+		return "", status.Errorf(codes.InvalidArgument,
+			"actor %q is not a principal id: name the subject the module acted for, or the module's own principal (the principal_id MintModuleWorkContext returned) for work it did on its own", actor)
+	}
+	if actor == caller.PrincipalID {
+		return ActorTypeSystem, nil
+	}
+	return ActorTypeAgent, nil
 }
 
 // ---------------------------------------------------------------------------
