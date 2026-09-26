@@ -116,3 +116,78 @@ func TestContentReadDoesNotWidenAnActor(t *testing.T) {
 	)
 	requirePermissionRefused(t, err, "an actor holds no content read through a node grant")
 }
+
+// shareContentRecord shares one record of the declared content type with the
+// member. ShareRecord writes resource_id verbatim and never checks that a node
+// carries it, which is what makes the placed/unplaced distinction below real.
+func shareContentRecord(t *testing.T, org, member, role, recordID string) {
+	t.Helper()
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.ShareRecord(ctx, &gen.RecordShare{Id: business.NewIDString(), OrgId: org,
+			ResourceType: contentKind, ResourceId: recordID,
+			SubjectId: member, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: role})
+	}))
+}
+
+// A record share is standing to mint only when it names a record this tenant
+// has actually placed.
+//
+// Before the scope_nodes join, the share arm matched on resource_type alone: a
+// share naming any string at all — a typo, an id from another system, a record
+// deleted downstream — conferred permanent standing to mint an unscoped read of
+// that whole content type, while every read of it was refused node by node.
+// That is precisely the "the UI says Read and every read is refused" split the
+// content-read branch exists to close, reintroduced through the other arm.
+func TestContentReadThroughARecordShareRequiresAPlacedRecord(t *testing.T) {
+	org, member, role := contentReadFixture(t)
+	read := business.WorkContextPermission{ResourceKind: contentKind, Action: "read", ContentRead: true}
+
+	shareContentRecord(t, org, member, role, "record-that-was-never-placed")
+	requirePermissionRefused(t, resolveContentRead(t, org, member, read),
+		"a share naming no placed record authorizes no read, so it confers no standing to ask")
+
+	registerNode(t, org, "root.collection.record", "record", contentKind, "record-a")
+	shareContentRecord(t, org, member, role, "record-a")
+	require.NoError(t, resolveContentRead(t, org, member, read),
+		"a share on a placed record is standing the read oracles honour")
+
+	// Revoking it withdraws the standing again, leaving the unplaced share —
+	// which must still confer nothing.
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.RevokeShare(ctx, org, contentKind, "record-a", member,
+			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, role)
+	}))
+	requirePermissionRefused(t, resolveContentRead(t, org, member, read), "a revoked share confers nothing")
+}
+
+// Platform read authority is the third basis, and it reaches a plain member who
+// holds no grant anywhere — the same authority the read oracles already honour
+// for a platform administrator. It stays narrow on its own axes: `super_admin`
+// only, `read` only, and only when the adapters flagged the permission.
+func TestContentReadIsHeldThroughPlatformReadAuthority(t *testing.T) {
+	org, member, _ := contentReadFixture(t)
+	read := business.WorkContextPermission{ResourceKind: contentKind, Action: "read", ContentRead: true}
+
+	requirePermissionRefused(t, resolveContentRead(t, org, member, read), "no basis at all confers nothing")
+
+	grantPlatformRoleForTest(t, member, "super_admin")
+	require.NoError(t, resolveContentRead(t, org, member, read))
+
+	for name, permission := range map[string]business.WorkContextPermission{
+		"not read":  {ResourceKind: contentKind, Action: "write", ContentRead: true},
+		"unflagged": {ResourceKind: contentKind, Action: "read"},
+	} {
+		requirePermissionRefused(t, resolveContentRead(t, org, member, permission), name)
+	}
+}
+
+// Only `super_admin`. `support` and `billing` gain nothing here, exactly as they
+// gain nothing in the read oracles this branch mirrors.
+func TestContentReadIsNotHeldThroughANonReadPlatformRole(t *testing.T) {
+	org, member, _ := contentReadFixture(t)
+	grantPlatformRoleForTest(t, member, "support")
+	requirePermissionRefused(t,
+		resolveContentRead(t, org, member,
+			business.WorkContextPermission{ResourceKind: contentKind, Action: "read", ContentRead: true}),
+		"a support platform role is not platform read authority")
+}

@@ -392,6 +392,17 @@ func workContextPermissionAllowed(
 		    -- a live scope grant (the owner's or a team's), a live record share,
 		    -- or platform read authority — on at least one node. Owner only: an
 		    -- actor's authority is never widened here.
+		    --
+		    -- Every arm is bound to a real node, because the standing this admits
+		    -- has to be standing those oracles would honour. The grant arm gets
+		    -- that from GrantScope, which refuses a scope_path that is not a
+		    -- registered node. A share does not: ShareRecord writes resource_id
+		    -- verbatim, so a share may name a record that was never placed — and
+		    -- a share naming nothing authorizes no read, which is exactly the
+		    -- "the UI says Read and every read is refused" split this branch
+		    -- exists to close. The scope_nodes join is that bound, and it is the
+		    -- same (resource_type, resource_id) correspondence the share branch
+		    -- of accessibleScopesQuery and ListReadableSourcesPage already apply.
 		    OR (
 		        $5
 		        AND $8
@@ -420,6 +431,10 @@ func workContextPermissionAllowed(
 		                FROM record_shares AS content_share
 		                JOIN role_permissions AS content_permission
 		                  ON content_permission.role_id = content_share.role_id
+		                JOIN scope_nodes AS content_node
+		                  ON content_node.org_id = content_share.org_id
+		                 AND content_node.resource_type = content_share.resource_type
+		                 AND content_node.resource_id = content_share.resource_id
 		                WHERE content_share.org_id = $1
 		                  AND content_share.resource_type = $3
 		                  AND (content_share.expires_at IS NULL OR content_share.expires_at > now())

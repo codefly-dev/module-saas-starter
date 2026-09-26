@@ -80,9 +80,13 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	seals := func(resource, action string) bool {
 		return codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: resource, Action: action}) == nil
 	}
+	// Spelled through the reserved constants, not literals: these two are host
+	// permissions read straight off the claims rather than authorized per node,
+	// which is exactly why business.IsHostSealedScopeResource forbids a module
+	// declaring them as its content (a node grant would otherwise mint them).
 	disclosure := business.CollectionMetadataDisclosure{
-		Grants:        seals("roles", "read"),
-		SyncRequester: seals("audit", "read"),
+		Grants:        seals(business.HostScopeRoles, "read"),
+		SyncRequester: seals(business.HostScopeAudit, "read"),
 	}
 	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, resources, disclosure, req, func(ctx context.Context) error {
 		_, err := authority.requireCurrentAuthority(ctx, claims.GetTenantId(), claims)
