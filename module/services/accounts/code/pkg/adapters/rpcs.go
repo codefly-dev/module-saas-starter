@@ -395,6 +395,12 @@ func (s *OrgServer) RemoveMember(ctx context.Context, req *gen.RemoveOrgMemberRe
 }
 
 func (s *OrgServer) ListMembers(ctx context.Context, req *gen.ListOrgMembersRequest) (*gen.ListOrgMembersResponse, error) {
+	return listOrganizationMembers(ctx, req)
+}
+
+// listOrganizationMembers is the one organization-member read, served by
+// OrganizationService.ListMembers and DirectoryService.ListOrganizationMembers.
+func listOrganizationMembers(ctx context.Context, req *gen.ListOrgMembersRequest) (*gen.ListOrgMembersResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -428,6 +434,12 @@ func (s *TeamServer) CreateTeam(ctx context.Context, req *gen.CreateTeamRequest)
 }
 
 func (s *TeamServer) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*gen.ListTeamsResponse, error) {
+	return listOrganizationTeams(ctx, req)
+}
+
+// listOrganizationTeams is the one team-listing read, served by
+// TeamService.ListTeams and DirectoryService.ListTeams.
+func listOrganizationTeams(ctx context.Context, req *gen.ListTeamsRequest) (*gen.ListTeamsResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -485,6 +497,12 @@ func (s *TeamServer) RemoveMember(ctx context.Context, req *gen.RemoveTeamMember
 }
 
 func (s *TeamServer) ListMembers(ctx context.Context, req *gen.ListTeamMembersRequest) (*gen.ListTeamMembersResponse, error) {
+	return listTeamMembers(ctx, req)
+}
+
+// listTeamMembers is the one team-member read, served by TeamService.ListMembers
+// and DirectoryService.ListTeamMembers.
+func listTeamMembers(ctx context.Context, req *gen.ListTeamMembersRequest) (*gen.ListTeamMembersResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}

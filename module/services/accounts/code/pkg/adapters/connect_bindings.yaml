@@ -51,6 +51,11 @@ services:
     source:
       kind: singleton
       name: DelegationSingleton
+  DirectoryService:
+    handler: directoryConnectHandler
+    source:
+      kind: singleton
+      name: DirectorySingleton
   GDPRService:
     handler: gdprConnectHandler
     source:

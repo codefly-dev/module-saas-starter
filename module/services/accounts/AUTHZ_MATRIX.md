@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **232 RPCs** across **34 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **235 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -69,6 +69,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DelegationService/ListPendingDelegations` | unary | `GET /v1/delegations:pending` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List pending organization delegations. |
 | `/saas.accounts.v1.DelegationService/RequestDelegation` | unary | `POST /v1/delegations` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.delegation.requested, saas.delegation.auto_approved | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request a scoped authority delegation. |
 | `/saas.accounts.v1.DelegationService/WaitForDelegation` | server stream | `GET /v1/delegations/{id}:wait` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Stream the terminal delegation decision. |
+| `/saas.accounts.v1.DirectoryService/ListOrganizationMembers` | unary | `GET /v1/directory/organizations/{org_id}/members` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List an organization's members (read-only directory). |
+| `/saas.accounts.v1.DirectoryService/ListTeamMembers` | unary | `GET /v1/directory/teams/{team_id}/members` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | team_id → TEAM/TEAM_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List a team's members (read-only directory). |
+| `/saas.accounts.v1.DirectoryService/ListTeams` | unary | `GET /v1/directory/organizations/{org_id}/teams` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List an organization's teams (read-only directory). |
 | `/saas.accounts.v1.GDPRService/GetDeletionStatus` | unary | `GET /v1/gdpr/delete/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Status of a GDPR deletion request. |
 | `/saas.accounts.v1.GDPRService/GetExportStatus` | unary | `GET /v1/gdpr/export/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Status of a GDPR export request. |
 | `/saas.accounts.v1.GDPRService/RequestDeletion` | unary | `POST /v1/gdpr/delete` | `mfa` | exposure=AUTHENTICATED; tenant=USER; mfa=IF_ENROLLED_RECENT_STEP_UP; impersonation=FORBIDDEN | — | — | SUCCESS: saas.gdpr.deletion_requested | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Request account deletion when a complete privacy workflow is configured. Requires MFA. |
@@ -247,6 +250,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `internal`: 47
 - `mfa`: 3
 - `org_admin`: 52
-- `org_member`: 45
+- `org_member`: 48
 - `platform_admin`: 24
 - `public`: 18

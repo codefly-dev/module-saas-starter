@@ -51,6 +51,22 @@ export {
 	type SourceSyncProgress,
 	SourceSyncTrigger,
 } from "../generated/typescript/src/gen/saas/accounts/v1/datasource_pb.js";
+export {
+	DirectoryService,
+	type ListOrgMembersRequest,
+	type ListOrgMembersResponse,
+	type ListTeamMembersRequest,
+	type ListTeamMembersResponse,
+	type ListTeamsRequest,
+	type ListTeamsResponse,
+} from "../generated/typescript/src/gen/saas/accounts/v1/directory_pb.js";
+export {
+	type OrgMembership,
+	OrgRole,
+	type Team,
+	type TeamMembership,
+	TeamRole,
+} from "../generated/typescript/src/gen/saas/accounts/v1/common_pb.js";
 export { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1/webhooks_pb.js";
 export type {
 	Dashboard,

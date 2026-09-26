@@ -7,6 +7,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "saas/accounts/v1/common.proto";
+import "saas/accounts/v1/directory.proto";
 import "saas/composed/org_settings/v1/settings.proto";
 import "saas/policy/v1/options.proto";
 
@@ -103,14 +104,6 @@ message AddOrgMemberRequest {
 message RemoveOrgMemberRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string user_id = 2 [(buf.validate.field).string.uuid = true];
-}
-
-message ListOrgMembersRequest {
-  string org_id = 1 [(buf.validate.field).string.uuid = true];
-}
-
-message ListOrgMembersResponse {
-  repeated OrgMembership members = 1;
 }
 
 // OrganizationService — org and membership management

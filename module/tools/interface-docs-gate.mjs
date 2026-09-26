@@ -51,6 +51,7 @@ const INTERNAL_EXPOSURE = "EXPOSURE_INTERNAL";
 // because an operation nobody has placed is an operation nobody has described.
 const SERVICE_CONTEXTS = {
   AccessibleScopeService: "authorization",
+  DirectoryService: "tenancy",
   APIKeyService: "identity",
   ApprovalReviewService: "approvals",
   AuditService: "audit",

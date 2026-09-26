@@ -75,6 +75,9 @@ var serviceInfo = &gen.ServiceInfo{
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ApprovalReviewService/GetApprovalReview":                      "Read the immutable subject, assigned approvers and decisions for a request visible to the caller.",
 	"ApprovalReviewService/DecideApprovalReview":                   "Record an assigned approver decision bound to the exact subject reviewed.",
+	"DirectoryService/ListOrganizationMembers":                     "List an organization's members (read-only directory).",
+	"DirectoryService/ListTeams":                                   "List an organization's teams (read-only directory).",
+	"DirectoryService/ListTeamMembers":                             "List a team's members (read-only directory).",
 	"AccessibleScopeService/ListMyAccessibleScopes":                "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
 	"APIKeyService/CreateAPIKey":                                   "Mint an API key for an administered organization.",
 	"APIKeyService/ListAPIKeys":                                    "List org's API keys.",

@@ -45,6 +45,9 @@
       "name": "DelegationService"
     },
     {
+      "name": "DirectoryService"
+    },
+    {
       "name": "UserService"
     },
     {
@@ -1444,6 +1447,106 @@
         ],
         "tags": [
           "DelegationService"
+        ]
+      }
+    },
+    "/v1/directory/organizations/{orgId}/members": {
+      "get": {
+        "summary": "ListOrganizationMembers lists an organization's members, as\nOrganizationService.ListMembers does.",
+        "operationId": "DirectoryService_ListOrganizationMembers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListOrgMembersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DirectoryService"
+        ]
+      }
+    },
+    "/v1/directory/organizations/{orgId}/teams": {
+      "get": {
+        "summary": "ListTeams lists an organization's teams, optionally only those a member\nbelongs to, as TeamService.ListTeams does.",
+        "operationId": "DirectoryService_ListTeams",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTeamsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "memberId",
+            "description": "member_id (optional) narrows the list to the teams this principal\nbelongs to; empty returns every team in the org. The uuid rule applies\nonly to a non-empty value — without it the filter reaches the query as a\nuuid cast and a malformed id fails in the database as an internal error\nrather than at the boundary as an invalid argument.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DirectoryService"
+        ]
+      }
+    },
+    "/v1/directory/teams/{teamId}/members": {
+      "get": {
+        "summary": "ListTeamMembers lists a team's members, as TeamService.ListMembers does.",
+        "operationId": "DirectoryService_ListTeamMembers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTeamMembersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "teamId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DirectoryService"
         ]
       }
     },

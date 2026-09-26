@@ -17,6 +17,8 @@ services:
   DelegationService:
     kind: plugin
     plugin: permissions
+  DirectoryService:
+    kind: generated
   GDPRService:
     kind: generated
   InstallationService:

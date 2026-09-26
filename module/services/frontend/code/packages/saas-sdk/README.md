@@ -20,8 +20,8 @@ const { datasource: source } = await accounts.New(gw).datasource().addGitHubSour
 });
 ```
 
-`accounts.New(gw)` exposes `.accessibleScope()`, `.audit()`, `.datasource()`, and
-`.webhook()`, each returning the bound Connect client for that service. The
+`accounts.New(gw)` exposes `.accessibleScope()`, `.audit()`, `.datasource()`,
+`.directory()` and `.webhook()`, each returning the bound Connect client for that service. The
 generated service descriptors are re-exported for consumers that build their own
 clients.
 
@@ -34,6 +34,13 @@ read can ship: a generated binding is scoped to a whole proto file, and
 `PermissionService` shares `authorization.proto` with role assignment, scope
 grants, record shares and the decision oracles, none of which belong in a
 consumer's tarball.
+
+`.directory()` is the read-only organization directory for the same reason:
+`listOrganizationMembers({ orgId })`, `listTeams({ orgId, memberId? })` and
+`listTeamMembers({ teamId })` are the reads `OrganizationService` and
+`TeamService` serve, under the same authorization (an organization member), in
+`directory.proto` so the organization and team administration surfaces —
+creating, renaming, deleting and re-membering — never reach a consumer.
 
 ## The data graph
 
@@ -158,7 +165,7 @@ npm run generate
 
 This runs `scripts/generate.mjs`, which performs **both** generation steps. The
 first, `codefly generate client --from contracts:… --endpoint accounts/connect
---services AccessibleScopeService,AuditService,DatasourceService,WebhookService`,
+--services AccessibleScopeService,AuditService,DatasourceService,DirectoryService,WebhookService`,
 writes the bindings
 (`generated/typescript/src/gen`), the `accounts` facade
 (`generated/typescript/src/accounts_facade.ts`), and the resolved
