@@ -81,6 +81,22 @@ func TestValidatePayload(t *testing.T) {
 		err := ValidatePayload(EventUserRegistered, map[string]any{"email": 42})
 		require.ErrorContains(t, err, "string")
 	})
+	// The removed-datasource payload names the provider, and the column it is
+	// read from is NOT NULL under a CHECK over exactly these four values. A
+	// string field could not refuse a fifth, so the check the database makes
+	// would stop at the trail's edge.
+	t.Run("removed datasource provider is checked against the stored set", func(t *testing.T) {
+		for _, provider := range []string{
+			DatasourceProviderGitHub, DatasourceProviderAPI,
+			DatasourceProviderCrawler, DatasourceProviderUpload,
+		} {
+			require.NoError(t, ValidatePayload(EventDatasourceSourceRemoved, map[string]any{
+				"provider": provider, "repo": "acme/docs", "boundary": "node-1",
+			}), "provider %q is storable, so it must validate", provider)
+		}
+		err := ValidatePayload(EventDatasourceSourceRemoved, map[string]any{"provider": "carrier_pigeon"})
+		require.ErrorContains(t, err, "enum")
+	})
 	t.Run("string array accepts []any", func(t *testing.T) {
 		require.NoError(t, ValidatePayload(EventAPIKeyCreated, map[string]any{
 			"key_id": "00000000-0000-0000-0000-000000000001",
