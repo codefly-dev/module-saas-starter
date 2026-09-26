@@ -51,16 +51,18 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, extensions, 8)
+	require.Len(t, extensions, 10)
 	wantExtensions := map[string]bool{
-		"POST /v1/auth/magic-link":        false,
-		"POST /v1/auth/magic-link/verify": false,
-		"POST /v1/billing/webhook":        false,
-		"POST /v1/email/webhook/resend":   false,
-		"POST /v1/billing/checkout":       true,
-		"POST /v1/billing/free-plan":      true,
-		"POST /v1/billing/portal":         true,
-		"GET /v1/subscriptions/stream":    true,
+		"POST /v1/auth/magic-link":                       false,
+		"POST /v1/auth/magic-link/verify":                false,
+		"POST /v1/billing/webhook":                       false,
+		"POST /v1/email/webhook/resend":                  false,
+		"POST /v1/datasource/github/webhook/{source_id}": false,
+		"POST /v1/datasource/github/app/webhook":         false,
+		"POST /v1/billing/checkout":                      true,
+		"POST /v1/billing/free-plan":                     true,
+		"POST /v1/billing/portal":                        true,
+		"GET /v1/subscriptions/stream":                   true,
 	}
 	for _, entry := range extensions {
 		require.Empty(t, entry.Procedure)
@@ -83,6 +85,9 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/:replay"))
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/platform/jobs/job-123:other"))
 	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/magic-link"))
+	require.Equal(t, "/v1/datasource/github/app/webhook", matcher.MatchREST(http.MethodPost, "/v1/datasource/github/app/webhook").Path)
+	require.Equal(t, "/v1/datasource/github/webhook/{source_id}", matcher.MatchREST(http.MethodPost, "/v1/datasource/github/webhook/source-1").Path)
+	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/datasource/github/webhook/"))
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/permissions:check"))
 }
 
