@@ -35,4 +35,8 @@ export type {
 	SourceSyncTriggerName,
 	SourceSyncView,
 } from "./datasources/types.js";
+export {
+	notifySourceSyncRequested,
+	onSourceSyncRequested,
+} from "./datasources/sync-requests.js";
 export { parsePaths } from "./datasources/util.js";
