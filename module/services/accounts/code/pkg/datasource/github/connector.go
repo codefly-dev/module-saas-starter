@@ -100,8 +100,15 @@ func WithMaxItemBytes(n int64) ConnectorOption {
 func NewFilesConnector(remote RemoteFunc, opts ...ConnectorOption) *FilesConnector {
 	c := &FilesConnector{
 		remote: remote,
-		budget: connector.Budget{MaxItemsPerCall: MaxFilesPerBatch, MaxBytesPerCall: MaxBatchBytes, MaxItemBytes: MaxFileBytes},
-		now:    time.Now,
+		budget: connector.Budget{
+			MaxItemsPerCall: MaxFilesPerBatch, MaxBytesPerCall: MaxBatchBytes, MaxItemBytes: MaxFileBytes,
+			// One operation is one bulk call, which costs git at most a few
+			// requests. GitHub meters an installation at 5,000 REST requests an
+			// hour and publishes no git quota, so the host holds each credential
+			// well under that, and keeps a fifth of it for syncs a person starts.
+			OperationsPerWindow: 600, Window: time.Hour, BackgroundSharePercent: 80,
+		},
+		now: time.Now,
 	}
 	for _, opt := range opts {
 		opt(c)

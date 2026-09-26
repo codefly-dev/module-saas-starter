@@ -219,6 +219,39 @@ type Store interface {
 	// GitHub App onboarding (issue #687). All org-scoped: every call runs inside
 	// WithOrgTx, and the tables' RLS policies key on app.current_org_id.
 	//
+	// The datasource directory (datasource_directory.go). Every method runs
+	// inside the organization's transaction.
+	//
+	// UpsertDatasourceAccountLink links a provider account to a person. Linking
+	// the same account to the same person again returns the stored link; an
+	// account linked to another person is ErrDatasourceAccountLinkedElsewhere.
+	UpsertDatasourceAccountLink(ctx context.Context, link *DatasourceAccountLink) (*DatasourceAccountLink, error)
+	// ListDatasourceAccountLinks lists the org's links, one person's when
+	// userID is set.
+	ListDatasourceAccountLinks(ctx context.Context, orgID, userID string) ([]*DatasourceAccountLink, error)
+	GetDatasourceAccountLink(ctx context.Context, orgID, id string) (*DatasourceAccountLink, error)
+	DeleteDatasourceAccountLink(ctx context.Context, orgID, id string) error
+	// InsertDatasourceGroupBinding refuses a group already bound with
+	// ErrDatasourceGroupAlreadyBound.
+	InsertDatasourceGroupBinding(ctx context.Context, binding *DatasourceGroupBinding) error
+	ListDatasourceGroupBindings(ctx context.Context, orgID string) ([]*DatasourceGroupBinding, error)
+	// DeleteDatasourceGroupBinding returns the removed binding, nil if none.
+	DeleteDatasourceGroupBinding(ctx context.Context, orgID, id string) (*DatasourceGroupBinding, error)
+	// InsertDatasourceDomain refuses a domain the org already claimed with
+	// ErrDatasourceDomainAlreadyClaimed.
+	InsertDatasourceDomain(ctx context.Context, domain *DatasourceDomain) error
+	ListDatasourceDomains(ctx context.Context, orgID string) ([]*DatasourceDomain, error)
+	GetDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
+	MarkDatasourceDomainVerified(ctx context.Context, orgID, id string, at time.Time) error
+	// DeleteDatasourceDomain returns the removed domain, nil if none.
+	DeleteDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
+	// LinkedDatasourceUsers maps provider account ids to linked host users.
+	LinkedDatasourceUsers(ctx context.Context, orgID, connector string, accountIDs []string) (map[string]string, error)
+	// BoundDatasourceTeams maps provider group ids to bound host teams.
+	BoundDatasourceTeams(ctx context.Context, orgID, connector string, groupIDs []string) (map[string]string, error)
+	// VerifiedDatasourceDomains reports which domains are verified to the org.
+	VerifiedDatasourceDomains(ctx context.Context, orgID string, domains []string) (map[string]bool, error)
+
 	// InsertGitHubAppSetup records a one-time setup state bound to the
 	// organization and the user who began it. Only the state's SHA-256 is
 	// stored, so a database read never yields a redeemable state.

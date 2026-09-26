@@ -39,7 +39,7 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 			panic(fmt.Sprintf("datasource connector registry: %v", err))
 		}
 	}
-	must(r.Register(github.NewFilesConnector(s.githubRemoteForSource)))
+	must(r.Register(connector.Budgeted(github.NewFilesConnector(s.githubRemoteForSource), datasourceScheduler{s: s})))
 	must(r.RegisterNonConformant(connector.Descriptor{
 		Key: DatasourceProviderAPI, DisplayName: "HTTP API",
 		Description:     "An HTTP API with a stored credential; a configured resource is fetched on sync.",
@@ -123,7 +123,7 @@ func (s *Service) admitNewDatasource(provider string) error {
 // connectorSource is the envelope's view of a stored source: its identity and
 // tenancy, and — for GitHub — its repository, branch and the host's own scope.
 func connectorSource(source *DatasourceSource) connector.Source {
-	src := connector.Source{ID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID}
+	src := connector.Source{ID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID, CredentialKey: datasourceCredentialKey(source)}
 	if source.Provider == DatasourceProviderGitHub {
 		src.Config = github.SourceConfig{Repo: source.Repo, Branch: source.Branch, InScope: datasourceFileScope(source)}
 	}

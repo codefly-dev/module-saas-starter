@@ -123,6 +123,9 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 		crefs[i] = connector.FileRef{ItemID: ref.ItemID, ItemVersion: ref.ItemVersion}
 	}
 	var total int64
+	// A module reading content is waiting on the answer, and it is served from
+	// the mirror the sync filled: it spends the credential as interactive work.
+	ctx = connector.WithPriority(ctx, connector.PriorityInteractive)
 	err = files.FetchFiles(ctx, connectorSource(source), version, crefs, func(f connector.File, content io.Reader) error {
 		total += f.Size
 		p := f.Provenance

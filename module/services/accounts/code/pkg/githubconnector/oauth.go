@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -125,4 +126,28 @@ func (c *Connector) authenticatedUserLogin(ctx context.Context, userToken string
 		return "", fmt.Errorf("get authenticated user: %w", err)
 	}
 	return out.Login, nil
+}
+
+// AuthenticatedUser resolves who a user-to-server token acts as: GitHub's
+// stable numeric id for the account, which survives a rename, and its current
+// login, which does not.
+func (c *Connector) AuthenticatedUser(ctx context.Context, userToken string) (id, login string, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/user", nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	setGitHubHeaders(req)
+
+	var out struct {
+		ID    int64  `json:"id"`
+		Login string `json:"login"`
+	}
+	if err := c.do(req, &out); err != nil {
+		return "", "", fmt.Errorf("get authenticated user: %w", err)
+	}
+	if out.ID <= 0 {
+		return "", "", fmt.Errorf("get authenticated user: GitHub returned no account id")
+	}
+	return strconv.FormatInt(out.ID, 10), out.Login, nil
 }

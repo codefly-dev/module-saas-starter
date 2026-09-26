@@ -316,6 +316,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(vaultClient, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	// Every provider credential's operations are metered in one window shared by
+	// every replica, so a sync a person starts is served before background work.
+	service.SetDatasourceBudgetStore(store)
 	// The App registration is deployment custody: the signing key is read here
 	// and never copied onto a source record. Unset leaves sources on their own
 	// stored fine-grained PAT.

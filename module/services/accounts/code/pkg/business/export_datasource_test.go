@@ -1,6 +1,11 @@
 package business
 
-import "context"
+import (
+	"context"
+	"errors"
+
+	"accounts/pkg/jobs"
+)
 
 // AddExistingSource stores a source the way AddSource did before its provider
 // stopped admitting new sources, so a test can exercise what the host still
@@ -9,4 +14,18 @@ import "context"
 // production has no path around admission.
 func (s *Service) AddExistingSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
 	return s.addSource(ctx, actorID, input)
+}
+
+// DatasourceProcessingErrorForTest exposes how a sync job's failure is typed.
+func DatasourceProcessingErrorForTest(err error) *jobs.ProcessingError {
+	var out *jobs.ProcessingError
+	if errors.As(datasourceProcessingError(err), &out) {
+		return out
+	}
+	return nil
+}
+
+// DatasourceCredentialKeyForTest exposes which credential a source spends.
+func DatasourceCredentialKeyForTest(source *DatasourceSource) string {
+	return datasourceCredentialKey(source)
 }

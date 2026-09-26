@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"sync"
+	"time"
 )
 
 // CredentialMode is how a connector authenticates to its provider. The host
@@ -48,10 +49,18 @@ type ConfigField struct {
 // Budget is clause 6: the limits a connector serves within. A bulk fetch
 // naming more than MaxItemsPerCall items, or more than MaxBytesPerCall bytes,
 // is refused as ErrBatchTooLarge; an item past MaxItemBytes as ErrItemTooLarge.
+//
+// OperationsPerWindow is the quota one provider credential may spend per
+// Window, shared by every source and every replica that uses it; a person's
+// sync may spend all of it, a background sync only BackgroundSharePercent of
+// it, so background work always leaves room for a person (budget.go).
 type Budget struct {
-	MaxItemsPerCall int
-	MaxBytesPerCall int64
-	MaxItemBytes    int64
+	MaxItemsPerCall        int
+	MaxBytesPerCall        int64
+	MaxItemBytes           int64
+	OperationsPerWindow    int
+	Window                 time.Duration
+	BackgroundSharePercent int
 }
 
 // Descriptor is one catalog entry: everything a client needs to offer and
@@ -117,6 +126,10 @@ func (d Descriptor) Validate() error {
 		if d.Budget.MaxItemsPerCall <= 0 || d.Budget.MaxBytesPerCall <= 0 || d.Budget.MaxItemBytes <= 0 ||
 			d.Budget.MaxItemBytes > d.Budget.MaxBytesPerCall {
 			problems = append(problems, "budget must declare positive per-call item and byte limits, and an item limit within the byte limit")
+		}
+		if d.Budget.OperationsPerWindow <= 0 || d.Budget.Window <= 0 ||
+			d.Budget.BackgroundSharePercent <= 0 || d.Budget.BackgroundSharePercent >= 100 {
+			problems = append(problems, "budget must declare a quota of operations per window and a background share between 1 and 99 percent")
 		}
 	} else if d.Gap == "" {
 		problems = append(problems, "a non-conformant provider must name its tracked gap")

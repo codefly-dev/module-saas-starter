@@ -1,6 +1,10 @@
 "use client";
 
-import { DatasourcesPanel } from "@codefly-dev/saas-ui";
+import {
+	DatasourceAccountLinks,
+	DatasourceDirectoryPanel,
+	DatasourcesPanel,
+} from "@codefly-dev/saas-ui";
 import { HardDriveDownload } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -33,15 +37,21 @@ export function DatasourcesAdmin() {
 			</div>
 
 			{orgId ? (
-				<DatasourcesPanel
-					key={orgId}
-					client={client}
-					orgId={orgId}
-					canManage={canManage}
-					onSyncEnqueued={(jobId) =>
-						toast.success("Sync enqueued", { description: `Job ${jobId}` })
-					}
-				/>
+				<>
+					<DatasourcesPanel
+						key={orgId}
+						client={client}
+						orgId={orgId}
+						canManage={canManage}
+						onSyncEnqueued={(jobId) =>
+							toast.success("Sync enqueued", { description: `Job ${jobId}` })
+						}
+					/>
+					{/* Who a shared item is readable by: the explicit mappings a
+					    source's per-item access lists are translated through. */}
+					<DatasourceAccountLinks key={`links-${orgId}`} client={client} orgId={orgId} />
+					<DatasourceDirectoryPanel key={`directory-${orgId}`} client={client} orgId={orgId} />
+				</>
 			) : (
 				<EmptyState
 					icon={HardDriveDownload}

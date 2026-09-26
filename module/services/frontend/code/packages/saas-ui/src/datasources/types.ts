@@ -286,4 +286,76 @@ export interface DatasourceClient {
 	): Promise<GitHubAppInstallationView>;
 	/** Rebinds an existing source's credential onto the App, in place. */
 	migrateGitHubSourceToApp?(orgId: string, id: string): Promise<void>;
+
+	/**
+	 * The datasource directory: the explicit mappings a connector that
+	 * translates a provider's per-item access lists may name. A person links
+	 * their own provider account by signing in to the provider; an
+	 * administrator binds provider groups to teams and verifies domains.
+	 * Optional so that a consumer's own adapter keeps compiling without them.
+	 */
+	beginAccountLink?(
+		orgId: string,
+		connector: string,
+		redirectUri: string,
+	): Promise<AccountLinkHandle>;
+	completeAccountLink?(
+		orgId: string,
+		state: string,
+		code: string,
+	): Promise<AccountLinkView>;
+	listMyAccountLinks?(orgId: string): Promise<AccountLinkView[]>;
+	deleteAccountLink?(orgId: string, id: string): Promise<void>;
+	getDirectory?(orgId: string): Promise<DatasourceDirectoryView>;
+	bindGroup?(
+		orgId: string,
+		connector: string,
+		providerGroupId: string,
+		teamId: string,
+	): Promise<GroupBindingView>;
+	unbindGroup?(orgId: string, id: string): Promise<void>;
+	claimDomain?(orgId: string, domain: string): Promise<DomainView>;
+	verifyDomain?(orgId: string, id: string): Promise<DomainView>;
+	deleteDomain?(orgId: string, id: string): Promise<void>;
+}
+
+/** One person's provider account, proven by signing in to the provider. */
+export interface AccountLinkView {
+	id: string;
+	userId: string;
+	connector: string;
+	providerAccountId: string;
+	/** The account's current handle at the provider; not identity. */
+	providerAccountLogin: string;
+}
+
+/** Where to send the browser to sign in, and the state it echoes back. */
+export interface AccountLinkHandle {
+	authorizeUrl: string;
+	state: string;
+}
+
+/** A provider group an administrator bound to a team. */
+export interface GroupBindingView {
+	id: string;
+	connector: string;
+	providerGroupId: string;
+	teamId: string;
+}
+
+/** A domain an administrator claimed, and the TXT record that proves it. */
+export interface DomainView {
+	id: string;
+	domain: string;
+	verified: boolean;
+	txtRecordName: string;
+	txtRecordValue: string;
+}
+
+/** An organization's whole directory, with the teams a group may bind to. */
+export interface DatasourceDirectoryView {
+	links: AccountLinkView[];
+	bindings: GroupBindingView[];
+	domains: DomainView[];
+	teams: { id: string; name: string }[];
 }

@@ -261,6 +261,13 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 			return jobs.NewProcessingError("datasource.not_github", "datasource delivery for a non-GitHub source", false)
 		}
 
+		// A reconcile a person asked for ("Sync now", the first sync at connect)
+		// is interactive: it may spend the whole credential budget. Webhook
+		// deliveries and the periodic reconcile are background and yield.
+		if envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce {
+			ctx = connector.WithPriority(ctx, connector.PriorityInteractive)
+		}
+
 		switch envelope.GetTopic() {
 		case datasourcePushTopic:
 			_, err := s.CompileGitHubDelivery(ctx, source, envelope.GetPayload(), envelope.GetAttributes()[attrDeliveryID])

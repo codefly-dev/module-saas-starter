@@ -374,11 +374,17 @@ enum DatasourceReadersModel {
   DATASOURCE_READERS_MODEL_TRANSLATED = 2;
 }
 
-// DatasourceConnectorBudget is the per-call limits a connector serves within.
+// DatasourceConnectorBudget is the limits a connector serves within: the size
+// of one call, and the quota of calls one credential may spend per window.
+// Syncs a person started use the whole quota; background syncs use at most
+// background_share_percent of it, so they always leave room for a person.
 message DatasourceConnectorBudget {
   uint32 max_items_per_call = 1;
   int64 max_bytes_per_call = 2;
   int64 max_item_bytes = 3;
+  uint32 operations_per_window = 4;
+  int64 window_seconds = 5;
+  uint32 background_share_percent = 6;
 }
 
 // DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
@@ -674,6 +680,193 @@ message MigrateGitHubSourceToAppResponse {
   Datasource datasource = 1;
 }
 
+// ============================================================================
+// Datasource directory — what the host knows about provider principals, so a
+// connector that translates a provider's per-item access lists can name host
+// users and teams. Every mapping is explicit: a person links their own provider
+// account by signing in to the provider (never matched by email), an
+// administrator binds a provider group to a host team, and an administrator
+// verifies a domain before "anyone in the domain" can mean anything.
+// ============================================================================
+
+// DatasourceAccountLink is one person's provider account, proven by signing in
+// to the provider as that account.
+message DatasourceAccountLink {
+  string id = 1;
+  string org_id = 2;
+  string user_id = 3;
+  // The connector the account belongs to, e.g. "github".
+  string connector = 4;
+  // The provider's stable id for the account.
+  string provider_account_id = 5;
+  // The account's current handle at the provider, for people; not identity.
+  string provider_account_login = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// DatasourceGroupBinding maps one provider group onto one host team, by an
+// administrator's decision. An unbound provider group grants nothing.
+message DatasourceGroupBinding {
+  string id = 1;
+  string org_id = 2;
+  string connector = 3;
+  // The provider's id for the group, e.g. "acme/platform" for a GitHub team.
+  string provider_group_id = 4;
+  string team_id = 5;
+  string created_by = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// DatasourceDomainStatus is where a domain's verification stands.
+enum DatasourceDomainStatus {
+  DATASOURCE_DOMAIN_STATUS_UNSPECIFIED = 0;
+  // Claimed; the TXT record has not been found yet.
+  DATASOURCE_DOMAIN_STATUS_PENDING = 1;
+  // The TXT record was found: the domain is the tenant's.
+  DATASOURCE_DOMAIN_STATUS_VERIFIED = 2;
+}
+
+// DatasourceVerifiedDomain is a domain an administrator claimed for the tenant.
+// Only a verified one lets a provider's "anyone in the domain" grant the
+// boundary's readers; a pending one grants nothing.
+message DatasourceVerifiedDomain {
+  string id = 1;
+  string org_id = 2;
+  // Lower-case domain name, e.g. "example.com".
+  string domain = 3;
+  DatasourceDomainStatus status = 4;
+  // The DNS TXT record that proves control: its name and the value it must
+  // carry. Not a secret: it proves only that whoever controls the domain's DNS
+  // published it.
+  string txt_record_name = 5;
+  string txt_record_value = 6;
+  google.protobuf.Timestamp verified_at = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+// DatasourceDirectoryTeam is a host team an administrator may bind a group to.
+message DatasourceDirectoryTeam {
+  string id = 1;
+  string name = 2;
+}
+
+message BeginDatasourceAccountLinkRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string connector = 2 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 32
+    pattern: "^[a-z][a-z0-9-]{1,31}$"
+  }];
+  // Where the provider sends the browser back. The provider checks it against
+  // the callback URLs registered for the host's app; empty uses its default.
+  string redirect_uri = 3 [(buf.validate.field).string.max_len = 2048];
+}
+
+message BeginDatasourceAccountLinkResponse {
+  // Where to send the browser to sign in to the provider.
+  string authorize_url = 1;
+  // One-time state, bound to this organization, this person and this
+  // connector. The provider echoes it back with the authorization code.
+  string state = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message CompleteDatasourceAccountLinkRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string state = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 1024
+  }];
+  string code = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+message CompleteDatasourceAccountLinkResponse {
+  DatasourceAccountLink link = 1;
+}
+
+message ListMyDatasourceAccountLinksRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListMyDatasourceAccountLinksResponse {
+  repeated DatasourceAccountLink links = 1;
+}
+
+message DeleteDatasourceAccountLinkRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message DeleteDatasourceAccountLinkResponse {}
+
+message GetDatasourceDirectoryRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetDatasourceDirectoryResponse {
+  repeated DatasourceAccountLink links = 1;
+  repeated DatasourceGroupBinding bindings = 2;
+  repeated DatasourceVerifiedDomain domains = 3;
+  // The organization's teams, the targets a group may be bound to.
+  repeated DatasourceDirectoryTeam teams = 4;
+}
+
+message BindDatasourceGroupRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string connector = 2 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 32
+    pattern: "^[a-z][a-z0-9-]{1,31}$"
+  }];
+  string provider_group_id = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string team_id = 4 [(buf.validate.field).string.uuid = true];
+}
+
+message BindDatasourceGroupResponse {
+  DatasourceGroupBinding binding = 1;
+}
+
+message UnbindDatasourceGroupRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message UnbindDatasourceGroupResponse {}
+
+message ClaimDatasourceDomainRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string domain = 2 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 253
+  }];
+}
+
+message ClaimDatasourceDomainResponse {
+  DatasourceVerifiedDomain domain = 1;
+}
+
+message VerifyDatasourceDomainRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message VerifyDatasourceDomainResponse {
+  DatasourceVerifiedDomain domain = 1;
+}
+
+message DeleteDatasourceDomainRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message DeleteDatasourceDomainResponse {}
+
 // DatasourceService is the tenant-facing surface a solution drives (directly or
 // through the generated SDK) to declare and operate connected datasources.
 service DatasourceService {
@@ -915,6 +1108,227 @@ service DatasourceService {
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "saas.datasource.credential.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // BeginDatasourceAccountLink mints a one-time state bound to this organization, the
+  // calling person and the connector, and returns where to sign in to the provider.
+  rpc BeginDatasourceAccountLink(BeginDatasourceAccountLinkRequest) returns (BeginDatasourceAccountLinkResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.account_link_started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // CompleteDatasourceAccountLink redeems the state and the provider's authorization code,
+  // learns which provider account signed in, and links it to the calling person.
+  rpc CompleteDatasourceAccountLink(CompleteDatasourceAccountLinkRequest) returns (CompleteDatasourceAccountLinkResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.account_linked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListMyDatasourceAccountLinks returns the calling person's own linked provider accounts.
+  rpc ListMyDatasourceAccountLinks(ListMyDatasourceAccountLinksRequest) returns (ListMyDatasourceAccountLinksResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DeleteDatasourceAccountLink removes a link: a person may remove their own, and an
+  // administrator any in the organization.
+  rpc DeleteDatasourceAccountLink(DeleteDatasourceAccountLinkRequest) returns (DeleteDatasourceAccountLinkResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.account_unlinked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetDatasourceDirectory returns the organization's account links, group bindings and
+  // claimed domains, and the teams a group may be bound to.
+  rpc GetDatasourceDirectory(GetDatasourceDirectoryRequest) returns (GetDatasourceDirectoryResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // BindDatasourceGroup maps a provider group onto a team of the organization.
+  rpc BindDatasourceGroup(BindDatasourceGroupRequest) returns (BindDatasourceGroupResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.group_bound"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // UnbindDatasourceGroup removes a group binding; the group then grants nothing.
+  rpc UnbindDatasourceGroup(UnbindDatasourceGroupRequest) returns (UnbindDatasourceGroupResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.group_unbound"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ClaimDatasourceDomain records a domain as pending and returns the DNS TXT record
+  // that proves the organization controls it.
+  rpc ClaimDatasourceDomain(ClaimDatasourceDomainRequest) returns (ClaimDatasourceDomainResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.domain_claimed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // VerifyDatasourceDomain looks the TXT record up and marks the domain verified when it
+  // carries the expected value.
+  rpc VerifyDatasourceDomain(VerifyDatasourceDomainRequest) returns (VerifyDatasourceDomainResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.domain_verified"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
+  // nothing there.
+  rpc DeleteDatasourceDomain(DeleteDatasourceDomainRequest) returns (DeleteDatasourceDomainResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.domain_removed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
