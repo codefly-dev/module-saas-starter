@@ -297,6 +297,19 @@ func (s *PermServer) Decide(ctx context.Context, req *gen.DecideRequest) (*gen.D
 
 // principalToProto converts the business Principal into the wire form.
 // Centralized so display-name / org_id encoding stays consistent.
+//
+// Not every principal this projects is a `principals` row, which the proto's own
+// comment on the message still describes as a 1:1 mirror. ListPrincipals also
+// names the composed modules declared in MODULE_PRINCIPALS: derived service
+// principals that act in the organization and are the actor of the audit rows
+// they record, with no row behind them. Such an entry has no creation time —
+// left unset below rather than reported as the year 1 — and GetPrincipal,
+// RevokePrincipal, DisableAgentPrincipal and EnableAgentPrincipal all resolve
+// through the store, so they answer NotFound for it. That is the fail-closed
+// answer and must stay that way: its authority comes from the deployment
+// declaration, not from a row, so a revoke that appeared to succeed would leave
+// the module holding every capability it had. Removing its authority means
+// changing MODULE_PRINCIPALS.
 func principalToProto(p *business.Principal) *gen.Principal {
 	if p == nil {
 		return nil

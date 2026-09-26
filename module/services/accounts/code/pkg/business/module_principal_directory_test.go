@@ -14,9 +14,15 @@ type pagedPrincipalStore struct {
 	principalLookupStore
 	rows []*Principal
 	next string
+
+	// gotPageSize records the budget the business layer actually asked the store
+	// for, which is how a test can say whether the projected modules were taken
+	// out of the caller's page or added on top of it.
+	gotPageSize int32
 }
 
-func (s *pagedPrincipalStore) ListPrincipals(_ context.Context, _, kind string, _ int32, _ string) ([]*Principal, string, error) {
+func (s *pagedPrincipalStore) ListPrincipals(_ context.Context, _, kind string, pageSize int32, _ string) ([]*Principal, string, error) {
+	s.gotPageSize = pageSize
 	var out []*Principal
 	for _, p := range s.rows {
 		if kind == "" || p.Kind == kind {
@@ -112,4 +118,43 @@ func TestParseModulePrincipalRegistry_CanonicalizesTheTenant(t *testing.T) {
 			require.Equal(t, canonical, registry[ModulePrincipalID("documents")].Tenant)
 		})
 	}
+}
+
+// The projected modules come out of the page's own budget, so a page still holds
+// at most the pageSize rows the caller asked for, and the keyset token still
+// describes exactly the stored rows the store returned. Adding them on top would
+// hand a caller more rows than it asked for and a token that does not account for
+// them.
+func TestListPrincipals_ModulesComeOutOfThePageBudget(t *testing.T) {
+	const (
+		org      = "019f6bf7-6a01-7001-8001-0000000000c1"
+		otherOrg = "019f6bf7-6a01-7001-8001-0000000000c2"
+	)
+	human := &Principal{ID: "019f6bf7-6a01-7001-8001-0000000000a1", Kind: PrincipalKindHuman, DisplayName: "admin@example.com"}
+	registry, err := ParseModulePrincipalRegistry(`{
+		"documents": {"tenant": "` + org + `"},
+		"assistant": {"tenant": "` + otherOrg + `", "cross_tenant": true}
+	}`)
+	require.NoError(t, err)
+	list := func(t *testing.T, pageToken, next string) ([]*Principal, *pagedPrincipalStore) {
+		t.Helper()
+		store := &pagedPrincipalStore{rows: []*Principal{human}, next: next}
+		svc, err := NewService(store)
+		require.NoError(t, err)
+		svc.SetModulePrincipals(registry)
+		out, _, err := svc.ListPrincipals(context.Background(), org, "", 50, pageToken)
+		require.NoError(t, err)
+		return out, store
+	}
+
+	first, firstStore := list(t, "", "more")
+	require.Len(t, first, 3, "the two modules acting here, and the stored row")
+	require.Equal(t, int32(48), firstStore.gotPageSize,
+		"the two modules take two of the fifty rows the caller asked for")
+
+	// A page reached through a token carries no module, so the whole budget is the
+	// store's.
+	later, laterStore := list(t, "cursor", "")
+	require.Equal(t, []*Principal{human}, later)
+	require.Equal(t, int32(50), laterStore.gotPageSize)
 }

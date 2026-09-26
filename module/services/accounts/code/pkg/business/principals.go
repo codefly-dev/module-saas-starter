@@ -569,8 +569,11 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 // listing reports it as unknown. The first page is the one every directory walk
 // reads — a walk that stops after a bounded number of pages never reaches a
 // large org's last page — and module rows are not part of the stored rows' sort
-// key, so leading with them cannot disturb the cursor. That page may therefore
-// carry up to pageSize stored rows plus the org's modules.
+// key, so leading with them cannot disturb the cursor. They come out of that
+// page's own budget, so the page still honours pageSize and the token still
+// describes exactly the stored rows the store returned; only an org declaring
+// more modules than pageSize exceeds it, because a module left out of the
+// listing is an actor no consumer can name.
 func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSize int32, pageToken string) ([]*Principal, string, error) {
 	w := wool.Get(ctx).In("ListPrincipals",
 		wool.Field("org_id", orgID),
@@ -590,19 +593,24 @@ func (s *Service) ListPrincipals(ctx context.Context, orgID, kind string, pageSi
 	if pageSize > 200 {
 		pageSize = 200
 	}
+	var modules []*Principal
+	if pageToken == "" && (kind == "" || kind == PrincipalKindService) {
+		modules = s.modulePrincipalsActingIn(orgID)
+	}
+	storeSize := pageSize - int32(len(modules))
+	if storeSize < 1 {
+		storeSize = 1
+	}
 	var out []*Principal
 	var next string
 	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		var e error
-		out, next, e = s.principalStore().ListPrincipals(ctx, orgID, kind, pageSize, pageToken)
+		out, next, e = s.principalStore().ListPrincipals(ctx, orgID, kind, storeSize, pageToken)
 		return e
 	}); err != nil {
 		return nil, "", err
 	}
-	if pageToken == "" && (kind == "" || kind == PrincipalKindService) {
-		out = append(s.modulePrincipalsActingIn(orgID), out...)
-	}
-	return out, next, nil
+	return append(modules, out...), next, nil
 }
 
 // modulePrincipalsActingIn projects the declared module principals that may act
