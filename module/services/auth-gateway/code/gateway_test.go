@@ -22,6 +22,7 @@ type fakeUpstream struct {
 	lastHeaders http.Header
 	lastPath    string
 	lastMethod  string
+	lastBody    string
 	statusCode  int
 	body        string
 }
@@ -30,6 +31,9 @@ func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.lastHeaders = r.Header.Clone()
 	f.lastPath = r.URL.Path
 	f.lastMethod = r.Method
+	if body, err := io.ReadAll(r.Body); err == nil {
+		f.lastBody = string(body)
+	}
 	code := f.statusCode
 	if code == 0 {
 		code = 200
@@ -62,6 +66,9 @@ func testRouteEntries() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/billing/webhook", Protected: false},
 		// Resend delivery webhook (public, signed by Svix)
 		{Service: "accounts", Method: "POST", Path: "/v1/email/webhook/resend", Protected: false},
+		// GitHub push/installation webhooks (public, signed with X-Hub-Signature-256)
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/webhook/{source_id}", Protected: false},
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/app/webhook", Protected: false},
 		// Health checks
 		{Service: "self", Method: "GET", Path: "/health", Protected: false},
 		{Service: "self", Method: "GET", Path: "/healthz", Protected: false},
@@ -169,6 +176,38 @@ func TestGateway_PublicAuthPath_NoToken_Forwarded(t *testing.T) {
 	require.Equal(t, "", apiFake.lastHeaders.Get("x-user-id"))
 	require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("x-codefly-gateway-token"))
 	require.Equal(t, "http://localhost:54321", apiFake.lastHeaders.Get("x-codefly-public-origin"))
+}
+
+// GitHub signs a delivery over its exact body and carries the signature and the
+// delivery identity in its own headers. The receivers in accounts verify both,
+// so the gateway's whole job is to reach them without a bearer and without
+// touching either: a rewritten body or a dropped header is a delivery that can
+// never verify.
+func TestGateway_GitHubWebhooks_ForwardedUnauthenticatedWithSignature(t *testing.T) {
+	for _, path := range []string{
+		"/v1/datasource/github/app/webhook",
+		"/v1/datasource/github/webhook/0192f1c2-7d3e-7000-8000-000000000001",
+	} {
+		t.Run(path, func(t *testing.T) {
+			gw, apiFake, _, _ := newGatewayHarness(t)
+			body := `{"ref":"refs/heads/main","installation":{"id":1}}`
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			authenticateFrontendOrigin(req, "http://localhost:54321")
+			req.Header.Set("X-Hub-Signature-256", "sha256=00")
+			req.Header.Set("X-GitHub-Delivery", "delivery-1")
+			req.Header.Set("X-GitHub-Event", "push")
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Equal(t, path, apiFake.lastPath)
+			require.Equal(t, body, apiFake.lastBody)
+			require.Equal(t, "sha256=00", apiFake.lastHeaders.Get("X-Hub-Signature-256"))
+			require.Equal(t, "delivery-1", apiFake.lastHeaders.Get("X-GitHub-Delivery"))
+			require.Equal(t, "push", apiFake.lastHeaders.Get("X-GitHub-Event"))
+			require.Empty(t, apiFake.lastHeaders.Get("x-user-id"))
+		})
+	}
 }
 
 // ============================================================================
@@ -327,6 +366,11 @@ func TestGateway_UnlistedPath_Returns404(t *testing.T) {
 		{"DELETE", "/v1/auth/authenticate"}, // wrong method
 		{"GET", "/v1/billing/webhook"},      // POST only
 		{"GET", "/v1/email/webhook/resend"}, // POST only
+		{"GET", "/v1/datasource/github/app/webhook"},
+		{"GET", "/v1/datasource/github/webhook/source-1"},
+		{"POST", "/v1/datasource/github/webhook"},     // no source id
+		{"POST", "/v1/datasource/github/webhook/a/b"}, // one segment only
+		{"POST", "/v1/datasource/github/app/webhook/extra"},
 		{"GET", "/random"},
 		{"GET", "/v2/users"},
 	}
