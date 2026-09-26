@@ -1,16 +1,16 @@
 package business
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"time"
 
+	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/github"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
@@ -23,14 +23,11 @@ import (
 
 // The files interface serves a files-shaped datasource's content to a module in
 // batches: one call names a source, the version its files were listed at, and
-// up to maxDatasourceFilesPerBatch of them. The host reads the whole batch from
+// up to github.MaxFilesPerBatch of them. The host reads the whole batch from
 // the source's repository mirror, fetching whatever the mirror lacks in one
 // request, so a snapshot of any size costs its reader one call per batch and
 // GitHub one request per batch at most.
 const (
-	maxDatasourceFilesPerBatch   = 1000
-	maxDatasourceFilesBatchBytes = 64 << 20
-
 	// datasourceErrorDomain scopes the ErrorInfo reasons below.
 	datasourceErrorDomain = "saas.accounts.v1"
 
@@ -67,12 +64,13 @@ type DatasourceProvenance struct {
 }
 
 // DatasourceFile opens one served file: its provenance, path, the host's
-// advisory content type, and its exact size.
+// advisory content type, its exact size, and who may read it.
 type DatasourceFile struct {
 	Provenance  DatasourceProvenance
 	Path        string
 	ContentType string
 	Size        int64
+	Readers     *gen.DatasourceItemReaders
 }
 
 // ModuleFetchDatasourceFiles serves a batch of one source's files at one pinned
@@ -90,14 +88,14 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 	if !grant.allowsQueue(DatasourceIngestQueue) {
 		return status.Errorf(codes.PermissionDenied, "principal %s may not fetch datasource files: the %q queue grant is required", caller.PrincipalID, DatasourceIngestQueue)
 	}
-	if s.datasourceCipher == nil || s.newGitHubClient == nil {
+	if s.datasourceCipher == nil || s.newGitHubClient == nil || s.datasourceConnectors == nil {
 		return status.Error(codes.FailedPrecondition, "datasource connector is not configured")
 	}
 	if !github.ValidObjectID(version) {
 		return status.Error(codes.InvalidArgument, "version must be the full commit id the files were listed at")
 	}
-	if len(refs) == 0 || len(refs) > maxDatasourceFilesPerBatch {
-		return status.Errorf(codes.InvalidArgument, "a batch names 1 to %d files", maxDatasourceFilesPerBatch)
+	if len(refs) == 0 || len(refs) > github.MaxFilesPerBatch {
+		return status.Errorf(codes.InvalidArgument, "a batch names 1 to %d files", github.MaxFilesPerBatch)
 	}
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
@@ -116,83 +114,32 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 	if err := authorizeTenant(caller, grant, source.OrgID); err != nil {
 		return err
 	}
-	client, err := s.githubClientForSource(ctx, source)
-	if err != nil {
-		return datasourceCredentialStatus(w, err)
+	files, ok := s.datasourceConnectors.Files(source.Provider)
+	if !ok {
+		return status.Errorf(codes.NotFound, "datasource source %s not found", sourceID)
 	}
-	repo, err := client.OpenRepository(ctx, githubWorkspace(source), source.Repo)
-	if err != nil {
-		return datasourceGitHubStatus(w, err, "open repository mirror")
-	}
-	defer func() { _ = repo.Close() }()
-
-	listed, err := repo.List(ctx, version, datasourceFileScope(source))
-	if err != nil {
-		if errors.Is(err, github.ErrNotFound) {
-			return datasourceStatus(codes.NotFound, DatasourceReasonVersionNotFound, "the source's repository does not hold that version", nil, 0)
-		}
-		return datasourceGitHubStatus(w, err, "list version")
-	}
-	inScope := make(map[string]string, len(listed))
-	for _, f := range listed {
-		inScope[f.Path] = f.SHA
-	}
-	ids := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if inScope[ref.ItemID] != ref.ItemVersion {
-			return datasourceStatus(codes.NotFound, DatasourceReasonFileNotInVersion,
-				"a named file is not in the source's scope at that version with that item version", nil, 0)
-		}
-		ids = append(ids, ref.ItemVersion)
-	}
-	if err := repo.Fetch(ctx, ids); err != nil {
-		return datasourceGitHubStatus(w, err, "fetch files")
-	}
-	sizes, err := repo.Sizes(ctx, ids)
-	if err != nil {
-		return status.Error(codes.Internal, w.Wrapf(err, "size files").Error())
+	crefs := make([]connector.FileRef, len(refs))
+	for i, ref := range refs {
+		crefs[i] = connector.FileRef{ItemID: ref.ItemID, ItemVersion: ref.ItemVersion}
 	}
 	var total int64
-	for _, id := range ids {
-		if sizes[id] > github.MaxFileBytes {
-			return datasourceStatus(codes.FailedPrecondition, DatasourceReasonFileTooLarge,
-				fmt.Sprintf("a named file exceeds the %d-byte file limit", github.MaxFileBytes),
-				map[string]string{"limit": strconv.Itoa(github.MaxFileBytes)}, 0)
-		}
-		total += sizes[id]
-	}
-	if total > maxDatasourceFilesBatchBytes {
-		return datasourceStatus(codes.FailedPrecondition, DatasourceReasonBatchTooLarge,
-			fmt.Sprintf("the batch is %d bytes, over the %d-byte batch limit; request fewer files", total, maxDatasourceFilesBatchBytes),
-			map[string]string{"limit": strconv.Itoa(maxDatasourceFilesBatchBytes)}, 0)
-	}
-	i := 0
-	err = repo.Stream(ctx, ids, func(id string, size int64, content io.Reader) error {
-		ref := refs[i]
-		i++
-		buffered := bufio.NewReaderSize(content, 512)
-		head, _ := buffered.Peek(512)
-		file := DatasourceFile{
+	err = files.FetchFiles(ctx, connectorSource(source), version, crefs, func(f connector.File, content io.Reader) error {
+		total += f.Size
+		p := f.Provenance
+		return visit(DatasourceFile{
 			Provenance: DatasourceProvenance{
-				SourceID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID,
-				Version: version, ItemID: ref.ItemID, ItemVersion: id,
+				SourceID: p.GetSourceId(), OrgID: p.GetOrgId(), BoundaryNodeID: p.GetBoundaryNodeId(),
+				Version: p.GetVersion(), ItemID: p.GetItemId(), ItemVersion: p.GetItemVersion(),
 			},
-			Path:        ref.ItemID,
-			ContentType: http.DetectContentType(head),
-			Size:        size,
-		}
-		return visit(file, buffered)
+			Path:        f.Locator,
+			ContentType: f.ContentType,
+			Size:        f.Size,
+			Readers:     f.Readers,
+		}, content)
 	})
 	if err != nil {
-		if _, ok := status.FromError(err); ok {
-			return err
-		}
-		if ctx.Err() != nil {
-			return status.FromContextError(ctx.Err()).Err()
-		}
-		return status.Error(codes.Internal, w.Wrapf(err, "stream files").Error())
+		return datasourceConnectorStatus(w, err)
 	}
-	w.Info("served datasource files", wool.Field("source", source.ID), wool.Field("files", len(refs)), wool.Field("bytes", total), wool.Field("git_fetches", repo.Fetches()))
 	// Record the data access on the source's own tenant spine: one event for the
 	// whole batch, carrying what it served. A transient audit-write failure must
 	// not fail the read, so this is the fire-and-forget emit.
@@ -215,6 +162,50 @@ func (s *Service) readDatasourceBlob(ctx context.Context, source *DatasourceSour
 		return nil, err
 	}
 	return repo.Read(ctx, blobSHA, max)
+}
+
+// datasourceConnectorStatus maps a connector's typed refusal onto the status a
+// module caller acts on, whatever the provider. Anything untyped falls through
+// to the GitHub mapping, which never lets provider text reach the caller.
+func datasourceConnectorStatus(w *wool.Wool, err error) error {
+	var failure *jobs.ProcessingError
+	var limited *connector.RateLimitedError
+	switch {
+	case errors.As(err, &failure):
+		return datasourceCredentialStatus(w, err)
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return status.FromContextError(err).Err()
+	case errors.As(err, &limited):
+		message := "The provider rate limited the read. Retry after the reset."
+		if limited.Scope == "deployment" {
+			message = githubUnauthenticatedRateLimitMessage
+		}
+		retry := defaultRateLimitRetry
+		if d := time.Until(limited.ResetAt); d > 0 {
+			retry = d
+		}
+		return datasourceStatus(codes.ResourceExhausted, DatasourceReasonRateLimited, message,
+			map[string]string{"reset_at": limited.ResetAt.UTC().Format(time.RFC3339)}, retry)
+	case errors.Is(err, connector.ErrItemNotFound):
+		return datasourceStatus(codes.NotFound, DatasourceReasonFileNotInVersion,
+			"a named file is not in the source's scope at that version with that item version", nil, 0)
+	case errors.Is(err, connector.ErrVersionNotFound):
+		return datasourceStatus(codes.NotFound, DatasourceReasonVersionNotFound, "the source's repository does not hold that version", nil, 0)
+	case errors.Is(err, connector.ErrItemTooLarge):
+		return datasourceStatus(codes.FailedPrecondition, DatasourceReasonFileTooLarge,
+			fmt.Sprintf("a named file exceeds the %d-byte file limit", github.MaxFileBytes),
+			map[string]string{"limit": strconv.Itoa(github.MaxFileBytes)}, 0)
+	case errors.Is(err, connector.ErrBatchTooLarge):
+		return datasourceStatus(codes.FailedPrecondition, DatasourceReasonBatchTooLarge,
+			fmt.Sprintf("the batch is over the %d-byte batch limit; request fewer files", github.MaxBatchBytes),
+			map[string]string{"limit": strconv.Itoa(github.MaxBatchBytes)}, 0)
+	case errors.Is(err, connector.ErrCredentialRefused):
+		return status.Error(codes.FailedPrecondition, "the provider refused the source's credential; the source must be reconnected")
+	}
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+	return datasourceGitHubStatus(w, err, "fetch files")
 }
 
 // datasourceStatus builds a gRPC status carrying an ErrorInfo with reason, and,

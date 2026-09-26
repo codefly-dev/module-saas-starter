@@ -20,6 +20,9 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // datasourceFakeStore is a partial fake: it embeds Store (panics on any
@@ -926,7 +929,7 @@ func apiConfig() *business.APIDatasourceConfig {
 func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderAPI,
 		CollectionLabel: "guides",
@@ -960,7 +963,7 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 
 func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	_, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	_, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "sekret", API: apiConfig(), WebhookSecret: "whsec",
 	})
@@ -999,7 +1002,7 @@ func TestAddSource_Validation(t *testing.T) {
 		c.OAuth2 = &business.APIOAuth2Config{TokenURL: "https://oauth.example.com/token"}
 	})
 	for name, in := range cases {
-		if _, err := svc.AddSource(context.Background(), "actor-1", in); err == nil {
+		if _, err := svc.AddExistingSource(context.Background(), "actor-1", in); err == nil {
 			t.Errorf("%s: want error, got nil", name)
 		}
 	}
@@ -1104,7 +1107,7 @@ func uploadConfig() *business.UploadDatasourceConfig {
 func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderCrawler,
 		CollectionLabel: "guides",
@@ -1131,7 +1134,7 @@ func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
 func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderUpload,
 		CollectionLabel: "guides",
@@ -1171,7 +1174,7 @@ func TestAddSource_NewProviderValidation(t *testing.T) {
 			WebhookSecret: "whsec", Upload: uploadConfig()},
 	}
 	for name, in := range cases {
-		if _, err := svc.AddSource(context.Background(), "actor-1", in); err == nil {
+		if _, err := svc.AddExistingSource(context.Background(), "actor-1", in); err == nil {
 			t.Errorf("%s: want error, got nil", name)
 		}
 	}
@@ -1179,7 +1182,7 @@ func TestAddSource_NewProviderValidation(t *testing.T) {
 
 func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides", Crawler: crawlerConfig(),
 	})
 	if err != nil {
@@ -1190,7 +1193,7 @@ func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceS
 
 func newUploadSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
 		Credential: "secretkey", Upload: uploadConfig(),
 	})
@@ -1377,7 +1380,7 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 	fake := &fakeAPIClient{result: &apisource.Result{Body: []byte(`{"x":1}`), ContentType: "application/json"}}
 	svc.SetDatasourceAPIClientFactory(func(business.APIDatasourceConfig, string) business.APIContentClient { return fake })
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "sekret", API: apiConfig(),
 	})
@@ -1426,7 +1429,7 @@ func oauthConfig() *business.APIDatasourceConfig {
 func TestAddSource_OAuth2StoresTokenSet(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:              testOrg,
 		Provider:           business.DatasourceProviderAPI,
 		CollectionLabel:    "guides",
@@ -1488,7 +1491,7 @@ func TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer(t *testing.T) {
 		return &apisource.OAuth2Token{AccessToken: "access-1", RefreshToken: "refresh-2", ExpiresIn: time.Hour}, nil
 	})
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", OAuth2ClientSecret: "client-sekret", API: oauthConfig(),
 	})
@@ -1558,7 +1561,7 @@ func TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock(t *testing.T)
 		return &apisource.OAuth2Token{AccessToken: "must-not-be-used", ExpiresIn: time.Hour}, nil
 	})
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
@@ -1605,7 +1608,7 @@ func TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry(t *testing.T) {
 		return &apisource.OAuth2Token{AccessToken: "access-1"}, nil
 	})
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
@@ -1635,7 +1638,7 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 		return nil, apisource.ErrRefreshRejected
 	})
 
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
@@ -1741,5 +1744,42 @@ func TestAddSourceNormalizesFileExtensions(t *testing.T) {
 		CollectionLabel: "guides", Credential: "t", FileExtensions: []string{"**/*.md"},
 	}); err == nil {
 		t.Fatal("accepted a glob as a file extension")
+	}
+}
+
+// TestAddSource_RefusesProvidersOffTheEnvelope holds the owner's settled rule:
+// a provider that does not pass the datasource conformance suite keeps its
+// existing sources running and takes no new one, refused before anything is
+// validated, sealed or stored.
+func TestAddSource_RefusesProvidersOffTheEnvelope(t *testing.T) {
+	store := newDatasourceFakeStore()
+	svc, audit := newDatasourceService(store, &recordingProducer{}, nil)
+	inputs := map[string]business.AddSourceInput{
+		business.DatasourceProviderAPI:     {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", Credential: "sekret", API: apiConfig()},
+		business.DatasourceProviderCrawler: {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides", Crawler: crawlerConfig()},
+		business.DatasourceProviderUpload:  {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey", Upload: uploadConfig()},
+	}
+	for provider, in := range inputs {
+		_, err := svc.AddSource(context.Background(), "actor-1", in)
+		if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "new sources of it are refused") {
+			t.Fatalf("%s: AddSource = %v, want a FailedPrecondition refusal", provider, err)
+		}
+	}
+	if _, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{OrgID: testOrg, Provider: "gitlab", CollectionLabel: "guides"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unknown provider = %v, want InvalidArgument", err)
+	}
+	if got := audit.types(); len(got) != 0 {
+		t.Fatalf("a refused connect records nothing, got %v", got)
+	}
+	sources, err := svc.ListDatasourceSources(context.Background(), testOrg)
+	if err != nil || len(sources) != 0 {
+		t.Fatalf("a refused connect stores nothing: %v, %v", sources, err)
+	}
+	// A source that already exists keeps syncing.
+	existing := newCrawlerSource(t, svc)
+	fake := &fakeCrawlerClient{pages: []crawler.Page{{URL: "https://docs.example.com/a", Body: []byte("a"), ContentType: "text/html"}}}
+	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
+	if n, err := svc.RunDatasourceSync(context.Background(), existing.ID); err != nil || n != 1 {
+		t.Fatalf("an existing crawler source still syncs: %d, %v", n, err)
 	}
 }

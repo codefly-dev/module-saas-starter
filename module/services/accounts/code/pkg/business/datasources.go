@@ -468,6 +468,7 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 	if s.newOAuth2Refresh == nil {
 		s.newOAuth2Refresh = apisource.RefreshOAuth2
 	}
+	s.datasourceConnectors = s.newDatasourceConnectorRegistry()
 }
 
 // SetDatasourceGitHubClientFactory overrides how per-Source GitHub clients are
@@ -527,6 +528,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	orgID := strings.TrimSpace(input.OrgID)
 	if orgID == "" {
 		return nil, w.NewError("org id is required")
+	}
+	if err := s.admitNewDatasource(DatasourceProviderGitHub); err != nil {
+		return nil, err
 	}
 	repo := strings.TrimSpace(input.Repo)
 	if !validRepo(repo) {
@@ -673,6 +677,17 @@ type AddSourceInput struct {
 // supports webhooks, the signing secret), persists the non-secret row, and
 // returns it without credential material.
 func (s *Service) AddSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
+	// A provider off the datasource envelope takes no new source (its existing
+	// sources keep running); an unknown one is refused here too. Nothing is
+	// validated, sealed or stored before admission.
+	if err := s.admitNewDatasource(input.Provider); err != nil {
+		return nil, err
+	}
+	return s.addSource(ctx, actorID, input)
+}
+
+// addSource validates, seals and stores a source of an admitted provider.
+func (s *Service) addSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
 	w := wool.Get(ctx).In("AddSource")
 
 	orgID := strings.TrimSpace(input.OrgID)
@@ -685,7 +700,6 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
-
 	source := &DatasourceSource{
 		ID:       NewIDString(),
 		OrgID:    orgID,

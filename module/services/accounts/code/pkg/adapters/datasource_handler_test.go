@@ -29,42 +29,26 @@ func TestAPICredentialKindRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDatasourceCatalog_DeclaresAPICredentialKinds proves the API connector
-// declares the credential kinds it accepts (issue #472: the catalog metadata is
-// how a connector advertises the credential inputs a client must collect), and
-// that the bespoke GitHub connector declares none.
-func TestDatasourceCatalog_DeclaresAPICredentialKinds(t *testing.T) {
-	catalog := datasourceCatalog()
-	byProvider := map[gen.DatasourceProvider]*gen.DatasourceProviderDescriptor{}
-	for _, p := range catalog.GetProviders() {
-		byProvider[p.GetProvider()] = p
+// TestDatasourceCatalog_OffersOnlyWhatCanBeConnected proves the catalog is the
+// registry's admissible connectors: GitHub, with its config fields, and none of
+// the providers still off the datasource envelope, which take no new source.
+func TestDatasourceCatalog_OffersOnlyWhatCanBeConnected(t *testing.T) {
+	svc, _ := business.NewService(nil)
+	svc.SetDatasourceConnector(nil, nil, "")
+	catalog := datasourceCatalog(svc.DatasourceCatalog())
+	if len(catalog.GetProviders()) != 1 {
+		t.Fatalf("catalog = %v, want GitHub alone", catalog.GetProviders())
 	}
-
-	api := byProvider[gen.DatasourceProvider_DATASOURCE_PROVIDER_API]
-	if api == nil {
-		t.Fatal("API provider missing from catalog")
+	github := catalog.GetProviders()[0]
+	if github.GetProvider() != gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB || !github.GetSupportsWebhook() ||
+		len(github.GetConfigFields()) != 4 || github.GetConfigFields()[0].GetKey() != "repo" || !github.GetConfigFields()[0].GetRequired() {
+		t.Fatalf("GitHub entry = %v", github)
 	}
-	want := map[gen.ApiCredentialKind]bool{
-		gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER: true,
-		gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC:  true,
-		gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER: true,
-		gen.ApiCredentialKind_API_CREDENTIAL_KIND_QUERY:  true,
-		gen.ApiCredentialKind_API_CREDENTIAL_KIND_OAUTH2: true,
-	}
-	got := map[gen.ApiCredentialKind]bool{}
-	for _, k := range api.GetSupportedCredentialKinds() {
-		got[k] = true
-	}
-	for k := range want {
-		if !got[k] {
-			t.Errorf("API connector does not declare credential kind %v", k)
-		}
-	}
-
-	if github := byProvider[gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB]; github == nil {
-		t.Fatal("GitHub provider missing from catalog")
-	} else if len(github.GetSupportedCredentialKinds()) != 0 {
+	if len(github.GetSupportedCredentialKinds()) != 0 {
 		t.Errorf("GitHub is bespoke; it must declare no api credential kinds, got %v", github.GetSupportedCredentialKinds())
+	}
+	if datasourceCatalog(nil).GetProviders() != nil {
+		t.Fatal("an unconfigured connector offers nothing")
 	}
 }
 
