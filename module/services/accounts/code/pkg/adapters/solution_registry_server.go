@@ -9,6 +9,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -52,10 +53,14 @@ func solutionRegistryError(err error) error {
 		return status.Error(codes.InvalidArgument, "solution registration requires a solution id and publisher")
 	case errors.Is(err, business.ErrSolutionAuditDeclarationRejected):
 		// InvalidArgument, not FailedPrecondition or PermissionDenied: the
-		// registrant must change its declaration, and no retry of this manifest
-		// — nor a re-read of the revision — will ever succeed. The message
-		// names the event and the rule it broke.
-		return status.Error(codes.InvalidArgument, err.Error())
+		// registrant must change its declaration (or the operator its
+		// binding), and no retry of this manifest — nor a re-read of the
+		// revision — will ever succeed. FailedPrecondition is already the
+		// tombstone refusal, which the gateway relays as a conflict to re-read.
+		// The message names the event and the rule it broke; the ErrorInfo
+		// reason is what a client keys on, since InvalidArgument alone also
+		// covers a malformed write.
+		return solutionAuditDeclarationRejected(err)
 	default:
 		return err
 	}
@@ -184,4 +189,26 @@ func (h *solutionRegistryConnectHandler) DeleteSolutionRegistration(ctx context.
 
 func (h *solutionRegistryConnectHandler) ListSolutionRegistrations(ctx context.Context, req *connect.Request[gen.ListSolutionRegistrationsRequest]) (*connect.Response[gen.ListSolutionRegistrationsResponse], error) {
 	return unary(ctx, req, h.inner.ListSolutionRegistrations)
+}
+
+// SolutionAuditDeclarationRejectedReason is the google.rpc.ErrorInfo reason a
+// refused audit event declaration carries, under SolutionRegistryErrorDomain.
+// The auth-gateway keys its 422 on it — it is the stable signal, where the
+// message is prose for the registrant — so it is a wire contract: the gateway
+// holds the same two strings, and a test on each side pins them.
+const (
+	SolutionAuditDeclarationRejectedReason = "SOLUTION_AUDIT_DECLARATION_REJECTED"
+	SolutionRegistryErrorDomain            = "accounts.saas.codefly.dev"
+)
+
+func solutionAuditDeclarationRejected(err error) error {
+	rejected := status.New(codes.InvalidArgument, err.Error())
+	detailed, detailErr := rejected.WithDetails(&errdetails.ErrorInfo{
+		Reason: SolutionAuditDeclarationRejectedReason,
+		Domain: SolutionRegistryErrorDomain,
+	})
+	if detailErr != nil {
+		return rejected.Err()
+	}
+	return detailed.Err()
 }

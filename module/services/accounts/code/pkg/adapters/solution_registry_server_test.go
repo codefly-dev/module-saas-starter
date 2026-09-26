@@ -7,6 +7,8 @@ import (
 
 	"accounts/pkg/business"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -49,4 +51,31 @@ func TestSolutionRegistryErrorRejectsAuditDeclarationAsInvalid(t *testing.T) {
 	if status.Code(solutionRegistryError(owned)) != codes.InvalidArgument {
 		t.Fatal("a namespace held by another producer must be InvalidArgument too")
 	}
+	// The stable signal a client keys on is the ErrorInfo reason, which only a
+	// declaration refusal carries.
+	if !carriesDeclarationRejection(mapped) {
+		t.Fatalf("rejected declaration carries no %s ErrorInfo", SolutionAuditDeclarationRejectedReason)
+	}
+	if carriesDeclarationRejection(solutionRegistryError(business.ErrSolutionRegistrationHalfMissing)) {
+		t.Fatal("a malformed write must not carry the declaration-rejection reason")
+	}
+}
+
+// The reason and domain are a wire contract with the auth-gateway, which holds
+// the same two strings.
+func TestSolutionAuditDeclarationRejectedReasonIsPinned(t *testing.T) {
+	if SolutionAuditDeclarationRejectedReason != "SOLUTION_AUDIT_DECLARATION_REJECTED" ||
+		SolutionRegistryErrorDomain != "accounts.saas.codefly.dev" {
+		t.Fatal("the declaration-rejection ErrorInfo moved; move the auth-gateway's copy with it")
+	}
+}
+
+func carriesDeclarationRejection(err error) bool {
+	for _, detail := range status.Convert(err).Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok &&
+			info.GetReason() == SolutionAuditDeclarationRejectedReason && info.GetDomain() == SolutionRegistryErrorDomain {
+			return true
+		}
+	}
+	return false
 }

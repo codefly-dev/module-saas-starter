@@ -553,10 +553,8 @@ function invalidateSnapshot(): void {
  */
 export type SolutionWriteResult =
 	| { ok: true; revision: number; status: string }
-	| {
-			ok: false;
-			reason: "unavailable" | "conflict" | "forbidden" | "rejected";
-	  };
+	| { ok: false; reason: "unavailable" | "conflict" | "forbidden" }
+	| { ok: false; reason: "rejected"; detail?: string };
 
 async function writeToGateway(
 	path: string,
@@ -596,11 +594,27 @@ async function writeToGateway(
 	}
 	if (response.status === 409) return { ok: false, reason: "conflict" };
 	if (response.status === 403) return { ok: false, reason: "forbidden" };
-	if (response.status === 400) {
-		console.error(
-			"solution registry: the registry refused the registration as invalid",
-		);
-		return { ok: false, reason: "rejected" };
+	// The gateway answers 422 `registration_rejected` only when accounts
+	// attached the structured declaration-rejection reason; the error code is
+	// the signal, never the prose. Any other refusal — a 400 among them — keeps
+	// the outage mapping below.
+	if (response.status === 422) {
+		const refusal = (await response.json().catch(() => ({}))) as {
+			error?: unknown;
+			detail?: unknown;
+		};
+		if (refusal.error === "registration_rejected") {
+			console.error(
+				"solution registry: the registry will not admit the declared audit event types",
+			);
+			return {
+				ok: false,
+				reason: "rejected",
+				...(typeof refusal.detail === "string"
+					? { detail: refusal.detail }
+					: {}),
+			};
+		}
 	}
 	if (!response.ok) {
 		console.error(`solution registry: write answered ${response.status}`);

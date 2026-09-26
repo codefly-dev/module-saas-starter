@@ -398,20 +398,48 @@ describe("solutions register route auth", () => {
 	});
 
 	it("relays a refused declaration as a manifest to change, not an outage", async () => {
-		// The registry answers 400 when the audit catalog will not admit the
-		// event types a manifest declares — a namespace another solution owns,
-		// a field an earlier declaration admitted and this one drops. Retrying
-		// the same manifest can never succeed, so it is 422, never 503.
+		// The gateway answers 422 registration_rejected only when accounts
+		// attached the structured declaration-rejection reason — a namespace not
+		// bound to this solution or held by another, a field an earlier
+		// declaration admitted and this one drops. Retrying the same manifest
+		// can never succeed, so it is 422, never 503, and the rule is relayed.
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		vi.stubGlobal(
 			"fetch",
-			registryAnswering(new Response("invalid registration", { status: 400 })),
+			registryAnswering(
+				Response.json(
+					{
+						error: "registration_rejected",
+						detail: 'namespace "acme" is not bound to solution "acme"',
+					},
+					{ status: 422 },
+				),
+			),
 		);
 		const res = await POST(postRequest(manifestBody(), TOKEN));
 		expect(res.status).toBe(422);
 		await expect(res.json()).resolves.toEqual({
 			error: "registration_rejected",
+			detail: 'namespace "acme" is not bound to solution "acme"',
 		});
+	});
+
+	it("keeps any other registry refusal an outage, not a rejected manifest", async () => {
+		// A plain 400 is a malformed write this host produced, and a 422 without
+		// the structured error is not the declaration refusal: neither tells the
+		// registrant to change its manifest.
+		for (const answer of [
+			new Response("invalid registration", { status: 400 }),
+			Response.json({ error: "something_else" }, { status: 422 }),
+		]) {
+			getWorkspaceSecret.mockReturnValue(TOKEN);
+			vi.stubGlobal("fetch", registryAnswering(answer));
+			const res = await POST(postRequest(manifestBody(), TOKEN));
+			expect(res.status).toBe(503);
+			await expect(res.json()).resolves.toEqual({
+				error: "registry_unavailable",
+			});
+		}
 	});
 
 	it("forwards declared audit event types verbatim for the registry to admit", async () => {

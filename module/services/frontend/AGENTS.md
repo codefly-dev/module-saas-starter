@@ -24,9 +24,13 @@ refused. A registrant is never told it is serving when it is not.
 A dashboard event carrying `fields` declares an audit event type the solution
 owns (`packages/saas-plugin-manifest/src/data-graph.ts`). `assertDataGraph`
 checks its shape here; accounts admits it into the audit registry in the same
-write as the frontend half, and refuses the write — the `422` above — when the
-namespace belongs to another producer or a changed field set drops or retypes
-an admitted field. Re-registering
+write as the frontend half, and refuses the write — the `422` above, with a
+`detail` naming the rule — when the namespace is not bound to the solution or
+belongs to another producer, or a changed field set drops or retypes an
+admitted field. accounts marks that refusal with a `google.rpc.ErrorInfo`
+reason (`SOLUTION_AUDIT_DECLARATION_REJECTED`), and only that reason becomes
+the gateway's `422 registration_rejected`; any other refusal keeps its old
+mapping. Re-registering
 a deregistered solution requires an explicit `reactivate: true`. The frontend
 additionally enforces the declared runtime compatibility requirements before
 activating a remote.

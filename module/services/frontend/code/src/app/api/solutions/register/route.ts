@@ -17,6 +17,7 @@ import {
 	navProjection,
 	parseManifest,
 	registerSolution,
+	type SolutionWriteResult,
 	unregisterSolution,
 } from "@/solutions/registry";
 
@@ -210,7 +211,7 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
 		return {
 			outcome: "refused",
 			solution,
-			response: writeFailure(result.reason),
+			response: writeFailure(result),
 			reason: `registry ${result.reason}`,
 		};
 	}
@@ -236,9 +237,9 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
  * prevent.
  */
 function writeFailure(
-	reason: "unavailable" | "conflict" | "forbidden" | "rejected",
+	failure: Extract<SolutionWriteResult, { ok: false }>,
 ): Response {
-	switch (reason) {
+	switch (failure.reason) {
 		case "conflict":
 			return Response.json({ error: "revision_conflict" }, { status: 409 });
 		case "forbidden":
@@ -248,10 +249,17 @@ function writeFailure(
 			);
 		case "rejected":
 			// The declared audit event types are the one part of a manifest only
-			// the registry can judge (whether a namespace is free, whether a
-			// changed field set only grows), so this is the same class of answer
-			// as invalid_manifest: the registrant must change what it sends.
-			return Response.json({ error: "registration_rejected" }, { status: 422 });
+			// the registry can judge (whether the namespace is bound to this
+			// solution and free, whether a changed field set only grows), so
+			// this is the same class of answer as invalid_manifest: the
+			// registrant must change what it sends. `detail` names the rule.
+			return Response.json(
+				{
+					error: "registration_rejected",
+					...(failure.detail ? { detail: failure.detail } : {}),
+				},
+				{ status: 422 },
+			);
 		default:
 			return Response.json({ error: "registry_unavailable" }, { status: 503 });
 	}
@@ -274,7 +282,7 @@ export async function DELETE(request: Request): Promise<Response> {
 		request.headers.get(SOLUTION_REGISTRATION_HEADER) ?? undefined,
 	);
 	if (!result.ok) {
-		return writeFailure(result.reason);
+		return writeFailure(result);
 	}
 	observeRegistrationRemoved(id, result.revision);
 	return Response.json({ ok: true, revision: result.revision });
