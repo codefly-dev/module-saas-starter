@@ -24,8 +24,8 @@ import (
 // unimplemented method) and keeps sources in memory keyed by id.
 type datasourceFakeStore struct {
 	business.Store
-	mu          sync.Mutex
-	sources     map[string]*business.DatasourceSource
+	mu      sync.Mutex
+	sources map[string]*business.DatasourceSource
 	// id -> label, because the org-scoped datasource reads project the boundary's
 	// label alongside the row. Modelling existence alone let a source come back
 	// with an empty collection name and no test could see it.
