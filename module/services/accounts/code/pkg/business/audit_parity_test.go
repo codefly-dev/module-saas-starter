@@ -39,6 +39,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessLost,
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
+	EventDocumentArchived,
 	EventDocumentDeleted,
 	EventDocumentIngested,
 	// Module-authenticated document readers emit these observations.
@@ -48,6 +49,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDocumentQuarantined,
 	EventDocumentRenamed,
 	EventDocumentSubscribed,
+	EventDocumentUnarchived,
 	EventDocumentUnsubscribed,
 	EventDocumentVersionMinted,
 	// Domain-event pub/sub (issue #493). These are emitted inside the producer's

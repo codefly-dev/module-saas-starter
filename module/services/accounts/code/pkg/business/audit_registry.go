@@ -320,6 +320,8 @@ const (
 	EventDocumentVersionMinted      EventType = "saas.document.version_minted"
 	EventDocumentRenamed            EventType = "saas.document.renamed"
 	EventDocumentDeleted            EventType = "saas.document.deleted"
+	EventDocumentArchived           EventType = "saas.document.archived"
+	EventDocumentUnarchived         EventType = "saas.document.unarchived"
 	EventDocumentQuarantined        EventType = "saas.document.quarantined"
 	EventDocumentQuarantineReleased EventType = "saas.document.quarantine_released"
 	EventDocumentSubscribed         EventType = "saas.document.subscribed"
@@ -524,6 +526,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
 	mutation(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
 	mutation(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...),
+	mutation(EventDocumentArchived, CategoryLifecycle, "A document was archived: taken out of the listing, every version kept.", documentFields...),
+	mutation(EventDocumentUnarchived, CategoryLifecycle, "A document was unarchived: listed again.", documentFields...),
 	mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
 	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),

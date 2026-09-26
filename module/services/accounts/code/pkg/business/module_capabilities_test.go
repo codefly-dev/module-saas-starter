@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -268,6 +269,23 @@ func TestModuleEnqueueJob_OrgScopedHappyPath(t *testing.T) {
 	}
 	if len(backend.enqueued) != 1 {
 		t.Fatalf("expected 1 enqueue, got %d", len(backend.enqueued))
+	}
+}
+
+// The documents store audits ArchiveDocument and UnarchiveDocument as
+// saas.document.archived / saas.document.unarchived with the caller's initiator
+// field; the host must accept both, or every archive's audit row is refused.
+func TestModuleEmitAuditEvent_ArchiveEventsAccepted(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{"initiator": "caller"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, eventType := range []string{"saas.document.archived", "saas.document.unarchived"} {
+		if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, eventType, "actor-1", "example-solution", "entry-1", "", fields); err != nil {
+			t.Fatalf("%s should be accepted: %v", eventType, err)
+		}
 	}
 }
 
