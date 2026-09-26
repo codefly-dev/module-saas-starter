@@ -292,6 +292,14 @@ const (
 	EventDatasourceSourceAccessRestored EventType = "saas.datasource.source.access_restored"
 	EventDatasourceBlobFetched          EventType = "saas.datasource.blob_fetched"
 	EventDatasourceFilesFetched         EventType = "saas.datasource.files_fetched"
+	EventDatasourceAccountLinkStarted   EventType = "saas.datasource.account_link_started"
+	EventDatasourceAccountLinked        EventType = "saas.datasource.account_linked"
+	EventDatasourceAccountUnlinked      EventType = "saas.datasource.account_unlinked"
+	EventDatasourceGroupBound           EventType = "saas.datasource.group_bound"
+	EventDatasourceGroupUnbound         EventType = "saas.datasource.group_unbound"
+	EventDatasourceDomainClaimed        EventType = "saas.datasource.domain_claimed"
+	EventDatasourceDomainVerified       EventType = "saas.datasource.domain_verified"
+	EventDatasourceDomainRemoved        EventType = "saas.datasource.domain_removed"
 
 	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
 	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
@@ -484,6 +492,18 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
 		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
+	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
+		str("connector"), str("provider_account_id")),
+	mutation(EventDatasourceAccountUnlinked, CategorySystem, "A linked provider account was removed.",
+		str("connector"), str("provider_account_id"), str("user_id")),
+	mutation(EventDatasourceGroupBound, CategorySystem, "An administrator bound a provider group to a team.",
+		str("connector"), str("provider_group_id"), str("team_id")),
+	mutation(EventDatasourceGroupUnbound, CategorySystem, "A provider group binding was removed.",
+		str("connector"), str("provider_group_id"), str("team_id")),
+	mutation(EventDatasourceDomainClaimed, CategorySystem, "An administrator claimed a domain for the organization.", str("domain")),
+	mutation(EventDatasourceDomainVerified, CategorySystem, "A claimed domain was verified by its DNS TXT record.", str("domain")),
+	mutation(EventDatasourceDomainRemoved, CategorySystem, "A claimed domain was removed.", str("domain")),
 	mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
 		str("installation_id")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),

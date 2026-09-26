@@ -67,6 +67,36 @@ const (
 	// DatasourceServiceMigrateGitHubSourceToAppProcedure is the fully-qualified name of the
 	// DatasourceService's MigrateGitHubSourceToApp RPC.
 	DatasourceServiceMigrateGitHubSourceToAppProcedure = "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp"
+	// DatasourceServiceBeginDatasourceAccountLinkProcedure is the fully-qualified name of the
+	// DatasourceService's BeginDatasourceAccountLink RPC.
+	DatasourceServiceBeginDatasourceAccountLinkProcedure = "/saas.accounts.v1.DatasourceService/BeginDatasourceAccountLink"
+	// DatasourceServiceCompleteDatasourceAccountLinkProcedure is the fully-qualified name of the
+	// DatasourceService's CompleteDatasourceAccountLink RPC.
+	DatasourceServiceCompleteDatasourceAccountLinkProcedure = "/saas.accounts.v1.DatasourceService/CompleteDatasourceAccountLink"
+	// DatasourceServiceListMyDatasourceAccountLinksProcedure is the fully-qualified name of the
+	// DatasourceService's ListMyDatasourceAccountLinks RPC.
+	DatasourceServiceListMyDatasourceAccountLinksProcedure = "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks"
+	// DatasourceServiceDeleteDatasourceAccountLinkProcedure is the fully-qualified name of the
+	// DatasourceService's DeleteDatasourceAccountLink RPC.
+	DatasourceServiceDeleteDatasourceAccountLinkProcedure = "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink"
+	// DatasourceServiceGetDatasourceDirectoryProcedure is the fully-qualified name of the
+	// DatasourceService's GetDatasourceDirectory RPC.
+	DatasourceServiceGetDatasourceDirectoryProcedure = "/saas.accounts.v1.DatasourceService/GetDatasourceDirectory"
+	// DatasourceServiceBindDatasourceGroupProcedure is the fully-qualified name of the
+	// DatasourceService's BindDatasourceGroup RPC.
+	DatasourceServiceBindDatasourceGroupProcedure = "/saas.accounts.v1.DatasourceService/BindDatasourceGroup"
+	// DatasourceServiceUnbindDatasourceGroupProcedure is the fully-qualified name of the
+	// DatasourceService's UnbindDatasourceGroup RPC.
+	DatasourceServiceUnbindDatasourceGroupProcedure = "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup"
+	// DatasourceServiceClaimDatasourceDomainProcedure is the fully-qualified name of the
+	// DatasourceService's ClaimDatasourceDomain RPC.
+	DatasourceServiceClaimDatasourceDomainProcedure = "/saas.accounts.v1.DatasourceService/ClaimDatasourceDomain"
+	// DatasourceServiceVerifyDatasourceDomainProcedure is the fully-qualified name of the
+	// DatasourceService's VerifyDatasourceDomain RPC.
+	DatasourceServiceVerifyDatasourceDomainProcedure = "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
+	// DatasourceServiceDeleteDatasourceDomainProcedure is the fully-qualified name of the
+	// DatasourceService's DeleteDatasourceDomain RPC.
+	DatasourceServiceDeleteDatasourceDomainProcedure = "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain"
 )
 
 // DatasourceServiceClient is a client for the saas.accounts.v1.DatasourceService service.
@@ -115,6 +145,33 @@ type DatasourceServiceClient interface {
 	// server-side from the repository the source already names, and the stored
 	// PAT is retired only once App access has been proven.
 	MigrateGitHubSourceToApp(context.Context, *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error)
+	// BeginDatasourceAccountLink mints a one-time state bound to this organization, the
+	// calling person and the connector, and returns where to sign in to the provider.
+	BeginDatasourceAccountLink(context.Context, *connect.Request[v1.BeginDatasourceAccountLinkRequest]) (*connect.Response[v1.BeginDatasourceAccountLinkResponse], error)
+	// CompleteDatasourceAccountLink redeems the state and the provider's authorization code,
+	// learns which provider account signed in, and links it to the calling person.
+	CompleteDatasourceAccountLink(context.Context, *connect.Request[v1.CompleteDatasourceAccountLinkRequest]) (*connect.Response[v1.CompleteDatasourceAccountLinkResponse], error)
+	// ListMyDatasourceAccountLinks returns the calling person's own linked provider accounts.
+	ListMyDatasourceAccountLinks(context.Context, *connect.Request[v1.ListMyDatasourceAccountLinksRequest]) (*connect.Response[v1.ListMyDatasourceAccountLinksResponse], error)
+	// DeleteDatasourceAccountLink removes a link: a person may remove their own, and an
+	// administrator any in the organization.
+	DeleteDatasourceAccountLink(context.Context, *connect.Request[v1.DeleteDatasourceAccountLinkRequest]) (*connect.Response[v1.DeleteDatasourceAccountLinkResponse], error)
+	// GetDatasourceDirectory returns the organization's account links, group bindings and
+	// claimed domains, and the teams a group may be bound to.
+	GetDatasourceDirectory(context.Context, *connect.Request[v1.GetDatasourceDirectoryRequest]) (*connect.Response[v1.GetDatasourceDirectoryResponse], error)
+	// BindDatasourceGroup maps a provider group onto a team of the organization.
+	BindDatasourceGroup(context.Context, *connect.Request[v1.BindDatasourceGroupRequest]) (*connect.Response[v1.BindDatasourceGroupResponse], error)
+	// UnbindDatasourceGroup removes a group binding; the group then grants nothing.
+	UnbindDatasourceGroup(context.Context, *connect.Request[v1.UnbindDatasourceGroupRequest]) (*connect.Response[v1.UnbindDatasourceGroupResponse], error)
+	// ClaimDatasourceDomain records a domain as pending and returns the DNS TXT record
+	// that proves the organization controls it.
+	ClaimDatasourceDomain(context.Context, *connect.Request[v1.ClaimDatasourceDomainRequest]) (*connect.Response[v1.ClaimDatasourceDomainResponse], error)
+	// VerifyDatasourceDomain looks the TXT record up and marks the domain verified when it
+	// carries the expected value.
+	VerifyDatasourceDomain(context.Context, *connect.Request[v1.VerifyDatasourceDomainRequest]) (*connect.Response[v1.VerifyDatasourceDomainResponse], error)
+	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
+	// nothing there.
+	DeleteDatasourceDomain(context.Context, *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error)
 }
 
 // NewDatasourceServiceClient constructs a client for the saas.accounts.v1.DatasourceService
@@ -194,22 +251,92 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(datasourceServiceMethods.ByName("MigrateGitHubSourceToApp")),
 			connect.WithClientOptions(opts...),
 		),
+		beginDatasourceAccountLink: connect.NewClient[v1.BeginDatasourceAccountLinkRequest, v1.BeginDatasourceAccountLinkResponse](
+			httpClient,
+			baseURL+DatasourceServiceBeginDatasourceAccountLinkProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("BeginDatasourceAccountLink")),
+			connect.WithClientOptions(opts...),
+		),
+		completeDatasourceAccountLink: connect.NewClient[v1.CompleteDatasourceAccountLinkRequest, v1.CompleteDatasourceAccountLinkResponse](
+			httpClient,
+			baseURL+DatasourceServiceCompleteDatasourceAccountLinkProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("CompleteDatasourceAccountLink")),
+			connect.WithClientOptions(opts...),
+		),
+		listMyDatasourceAccountLinks: connect.NewClient[v1.ListMyDatasourceAccountLinksRequest, v1.ListMyDatasourceAccountLinksResponse](
+			httpClient,
+			baseURL+DatasourceServiceListMyDatasourceAccountLinksProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("ListMyDatasourceAccountLinks")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteDatasourceAccountLink: connect.NewClient[v1.DeleteDatasourceAccountLinkRequest, v1.DeleteDatasourceAccountLinkResponse](
+			httpClient,
+			baseURL+DatasourceServiceDeleteDatasourceAccountLinkProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("DeleteDatasourceAccountLink")),
+			connect.WithClientOptions(opts...),
+		),
+		getDatasourceDirectory: connect.NewClient[v1.GetDatasourceDirectoryRequest, v1.GetDatasourceDirectoryResponse](
+			httpClient,
+			baseURL+DatasourceServiceGetDatasourceDirectoryProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("GetDatasourceDirectory")),
+			connect.WithClientOptions(opts...),
+		),
+		bindDatasourceGroup: connect.NewClient[v1.BindDatasourceGroupRequest, v1.BindDatasourceGroupResponse](
+			httpClient,
+			baseURL+DatasourceServiceBindDatasourceGroupProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("BindDatasourceGroup")),
+			connect.WithClientOptions(opts...),
+		),
+		unbindDatasourceGroup: connect.NewClient[v1.UnbindDatasourceGroupRequest, v1.UnbindDatasourceGroupResponse](
+			httpClient,
+			baseURL+DatasourceServiceUnbindDatasourceGroupProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("UnbindDatasourceGroup")),
+			connect.WithClientOptions(opts...),
+		),
+		claimDatasourceDomain: connect.NewClient[v1.ClaimDatasourceDomainRequest, v1.ClaimDatasourceDomainResponse](
+			httpClient,
+			baseURL+DatasourceServiceClaimDatasourceDomainProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("ClaimDatasourceDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		verifyDatasourceDomain: connect.NewClient[v1.VerifyDatasourceDomainRequest, v1.VerifyDatasourceDomainResponse](
+			httpClient,
+			baseURL+DatasourceServiceVerifyDatasourceDomainProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("VerifyDatasourceDomain")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteDatasourceDomain: connect.NewClient[v1.DeleteDatasourceDomainRequest, v1.DeleteDatasourceDomainResponse](
+			httpClient,
+			baseURL+DatasourceServiceDeleteDatasourceDomainProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("DeleteDatasourceDomain")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // datasourceServiceClient implements DatasourceServiceClient.
 type datasourceServiceClient struct {
-	addGitHubSource          *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
-	addSource                *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
-	getDatasourceCatalog     *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
-	listSources              *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
-	getSource                *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
-	syncSource               *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
-	getSourceSync            *connect.Client[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse]
-	deleteSource             *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
-	beginGitHubAppSetup      *connect.Client[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse]
-	completeGitHubAppSetup   *connect.Client[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse]
-	migrateGitHubSourceToApp *connect.Client[v1.MigrateGitHubSourceToAppRequest, v1.MigrateGitHubSourceToAppResponse]
+	addGitHubSource               *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
+	addSource                     *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
+	getDatasourceCatalog          *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
+	listSources                   *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
+	getSource                     *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
+	syncSource                    *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
+	getSourceSync                 *connect.Client[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse]
+	deleteSource                  *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
+	beginGitHubAppSetup           *connect.Client[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse]
+	completeGitHubAppSetup        *connect.Client[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse]
+	migrateGitHubSourceToApp      *connect.Client[v1.MigrateGitHubSourceToAppRequest, v1.MigrateGitHubSourceToAppResponse]
+	beginDatasourceAccountLink    *connect.Client[v1.BeginDatasourceAccountLinkRequest, v1.BeginDatasourceAccountLinkResponse]
+	completeDatasourceAccountLink *connect.Client[v1.CompleteDatasourceAccountLinkRequest, v1.CompleteDatasourceAccountLinkResponse]
+	listMyDatasourceAccountLinks  *connect.Client[v1.ListMyDatasourceAccountLinksRequest, v1.ListMyDatasourceAccountLinksResponse]
+	deleteDatasourceAccountLink   *connect.Client[v1.DeleteDatasourceAccountLinkRequest, v1.DeleteDatasourceAccountLinkResponse]
+	getDatasourceDirectory        *connect.Client[v1.GetDatasourceDirectoryRequest, v1.GetDatasourceDirectoryResponse]
+	bindDatasourceGroup           *connect.Client[v1.BindDatasourceGroupRequest, v1.BindDatasourceGroupResponse]
+	unbindDatasourceGroup         *connect.Client[v1.UnbindDatasourceGroupRequest, v1.UnbindDatasourceGroupResponse]
+	claimDatasourceDomain         *connect.Client[v1.ClaimDatasourceDomainRequest, v1.ClaimDatasourceDomainResponse]
+	verifyDatasourceDomain        *connect.Client[v1.VerifyDatasourceDomainRequest, v1.VerifyDatasourceDomainResponse]
+	deleteDatasourceDomain        *connect.Client[v1.DeleteDatasourceDomainRequest, v1.DeleteDatasourceDomainResponse]
 }
 
 // AddGitHubSource calls saas.accounts.v1.DatasourceService.AddGitHubSource.
@@ -267,6 +394,58 @@ func (c *datasourceServiceClient) MigrateGitHubSourceToApp(ctx context.Context, 
 	return c.migrateGitHubSourceToApp.CallUnary(ctx, req)
 }
 
+// BeginDatasourceAccountLink calls saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink.
+func (c *datasourceServiceClient) BeginDatasourceAccountLink(ctx context.Context, req *connect.Request[v1.BeginDatasourceAccountLinkRequest]) (*connect.Response[v1.BeginDatasourceAccountLinkResponse], error) {
+	return c.beginDatasourceAccountLink.CallUnary(ctx, req)
+}
+
+// CompleteDatasourceAccountLink calls
+// saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink.
+func (c *datasourceServiceClient) CompleteDatasourceAccountLink(ctx context.Context, req *connect.Request[v1.CompleteDatasourceAccountLinkRequest]) (*connect.Response[v1.CompleteDatasourceAccountLinkResponse], error) {
+	return c.completeDatasourceAccountLink.CallUnary(ctx, req)
+}
+
+// ListMyDatasourceAccountLinks calls
+// saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks.
+func (c *datasourceServiceClient) ListMyDatasourceAccountLinks(ctx context.Context, req *connect.Request[v1.ListMyDatasourceAccountLinksRequest]) (*connect.Response[v1.ListMyDatasourceAccountLinksResponse], error) {
+	return c.listMyDatasourceAccountLinks.CallUnary(ctx, req)
+}
+
+// DeleteDatasourceAccountLink calls saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink.
+func (c *datasourceServiceClient) DeleteDatasourceAccountLink(ctx context.Context, req *connect.Request[v1.DeleteDatasourceAccountLinkRequest]) (*connect.Response[v1.DeleteDatasourceAccountLinkResponse], error) {
+	return c.deleteDatasourceAccountLink.CallUnary(ctx, req)
+}
+
+// GetDatasourceDirectory calls saas.accounts.v1.DatasourceService.GetDatasourceDirectory.
+func (c *datasourceServiceClient) GetDatasourceDirectory(ctx context.Context, req *connect.Request[v1.GetDatasourceDirectoryRequest]) (*connect.Response[v1.GetDatasourceDirectoryResponse], error) {
+	return c.getDatasourceDirectory.CallUnary(ctx, req)
+}
+
+// BindDatasourceGroup calls saas.accounts.v1.DatasourceService.BindDatasourceGroup.
+func (c *datasourceServiceClient) BindDatasourceGroup(ctx context.Context, req *connect.Request[v1.BindDatasourceGroupRequest]) (*connect.Response[v1.BindDatasourceGroupResponse], error) {
+	return c.bindDatasourceGroup.CallUnary(ctx, req)
+}
+
+// UnbindDatasourceGroup calls saas.accounts.v1.DatasourceService.UnbindDatasourceGroup.
+func (c *datasourceServiceClient) UnbindDatasourceGroup(ctx context.Context, req *connect.Request[v1.UnbindDatasourceGroupRequest]) (*connect.Response[v1.UnbindDatasourceGroupResponse], error) {
+	return c.unbindDatasourceGroup.CallUnary(ctx, req)
+}
+
+// ClaimDatasourceDomain calls saas.accounts.v1.DatasourceService.ClaimDatasourceDomain.
+func (c *datasourceServiceClient) ClaimDatasourceDomain(ctx context.Context, req *connect.Request[v1.ClaimDatasourceDomainRequest]) (*connect.Response[v1.ClaimDatasourceDomainResponse], error) {
+	return c.claimDatasourceDomain.CallUnary(ctx, req)
+}
+
+// VerifyDatasourceDomain calls saas.accounts.v1.DatasourceService.VerifyDatasourceDomain.
+func (c *datasourceServiceClient) VerifyDatasourceDomain(ctx context.Context, req *connect.Request[v1.VerifyDatasourceDomainRequest]) (*connect.Response[v1.VerifyDatasourceDomainResponse], error) {
+	return c.verifyDatasourceDomain.CallUnary(ctx, req)
+}
+
+// DeleteDatasourceDomain calls saas.accounts.v1.DatasourceService.DeleteDatasourceDomain.
+func (c *datasourceServiceClient) DeleteDatasourceDomain(ctx context.Context, req *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error) {
+	return c.deleteDatasourceDomain.CallUnary(ctx, req)
+}
+
 // DatasourceServiceHandler is an implementation of the saas.accounts.v1.DatasourceService service.
 type DatasourceServiceHandler interface {
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
@@ -313,6 +492,33 @@ type DatasourceServiceHandler interface {
 	// server-side from the repository the source already names, and the stored
 	// PAT is retired only once App access has been proven.
 	MigrateGitHubSourceToApp(context.Context, *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error)
+	// BeginDatasourceAccountLink mints a one-time state bound to this organization, the
+	// calling person and the connector, and returns where to sign in to the provider.
+	BeginDatasourceAccountLink(context.Context, *connect.Request[v1.BeginDatasourceAccountLinkRequest]) (*connect.Response[v1.BeginDatasourceAccountLinkResponse], error)
+	// CompleteDatasourceAccountLink redeems the state and the provider's authorization code,
+	// learns which provider account signed in, and links it to the calling person.
+	CompleteDatasourceAccountLink(context.Context, *connect.Request[v1.CompleteDatasourceAccountLinkRequest]) (*connect.Response[v1.CompleteDatasourceAccountLinkResponse], error)
+	// ListMyDatasourceAccountLinks returns the calling person's own linked provider accounts.
+	ListMyDatasourceAccountLinks(context.Context, *connect.Request[v1.ListMyDatasourceAccountLinksRequest]) (*connect.Response[v1.ListMyDatasourceAccountLinksResponse], error)
+	// DeleteDatasourceAccountLink removes a link: a person may remove their own, and an
+	// administrator any in the organization.
+	DeleteDatasourceAccountLink(context.Context, *connect.Request[v1.DeleteDatasourceAccountLinkRequest]) (*connect.Response[v1.DeleteDatasourceAccountLinkResponse], error)
+	// GetDatasourceDirectory returns the organization's account links, group bindings and
+	// claimed domains, and the teams a group may be bound to.
+	GetDatasourceDirectory(context.Context, *connect.Request[v1.GetDatasourceDirectoryRequest]) (*connect.Response[v1.GetDatasourceDirectoryResponse], error)
+	// BindDatasourceGroup maps a provider group onto a team of the organization.
+	BindDatasourceGroup(context.Context, *connect.Request[v1.BindDatasourceGroupRequest]) (*connect.Response[v1.BindDatasourceGroupResponse], error)
+	// UnbindDatasourceGroup removes a group binding; the group then grants nothing.
+	UnbindDatasourceGroup(context.Context, *connect.Request[v1.UnbindDatasourceGroupRequest]) (*connect.Response[v1.UnbindDatasourceGroupResponse], error)
+	// ClaimDatasourceDomain records a domain as pending and returns the DNS TXT record
+	// that proves the organization controls it.
+	ClaimDatasourceDomain(context.Context, *connect.Request[v1.ClaimDatasourceDomainRequest]) (*connect.Response[v1.ClaimDatasourceDomainResponse], error)
+	// VerifyDatasourceDomain looks the TXT record up and marks the domain verified when it
+	// carries the expected value.
+	VerifyDatasourceDomain(context.Context, *connect.Request[v1.VerifyDatasourceDomainRequest]) (*connect.Response[v1.VerifyDatasourceDomainResponse], error)
+	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
+	// nothing there.
+	DeleteDatasourceDomain(context.Context, *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error)
 }
 
 // NewDatasourceServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -388,6 +594,66 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		connect.WithSchema(datasourceServiceMethods.ByName("MigrateGitHubSourceToApp")),
 		connect.WithHandlerOptions(opts...),
 	)
+	datasourceServiceBeginDatasourceAccountLinkHandler := connect.NewUnaryHandler(
+		DatasourceServiceBeginDatasourceAccountLinkProcedure,
+		svc.BeginDatasourceAccountLink,
+		connect.WithSchema(datasourceServiceMethods.ByName("BeginDatasourceAccountLink")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceCompleteDatasourceAccountLinkHandler := connect.NewUnaryHandler(
+		DatasourceServiceCompleteDatasourceAccountLinkProcedure,
+		svc.CompleteDatasourceAccountLink,
+		connect.WithSchema(datasourceServiceMethods.ByName("CompleteDatasourceAccountLink")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceListMyDatasourceAccountLinksHandler := connect.NewUnaryHandler(
+		DatasourceServiceListMyDatasourceAccountLinksProcedure,
+		svc.ListMyDatasourceAccountLinks,
+		connect.WithSchema(datasourceServiceMethods.ByName("ListMyDatasourceAccountLinks")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceDeleteDatasourceAccountLinkHandler := connect.NewUnaryHandler(
+		DatasourceServiceDeleteDatasourceAccountLinkProcedure,
+		svc.DeleteDatasourceAccountLink,
+		connect.WithSchema(datasourceServiceMethods.ByName("DeleteDatasourceAccountLink")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceGetDatasourceDirectoryHandler := connect.NewUnaryHandler(
+		DatasourceServiceGetDatasourceDirectoryProcedure,
+		svc.GetDatasourceDirectory,
+		connect.WithSchema(datasourceServiceMethods.ByName("GetDatasourceDirectory")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceBindDatasourceGroupHandler := connect.NewUnaryHandler(
+		DatasourceServiceBindDatasourceGroupProcedure,
+		svc.BindDatasourceGroup,
+		connect.WithSchema(datasourceServiceMethods.ByName("BindDatasourceGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceUnbindDatasourceGroupHandler := connect.NewUnaryHandler(
+		DatasourceServiceUnbindDatasourceGroupProcedure,
+		svc.UnbindDatasourceGroup,
+		connect.WithSchema(datasourceServiceMethods.ByName("UnbindDatasourceGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceClaimDatasourceDomainHandler := connect.NewUnaryHandler(
+		DatasourceServiceClaimDatasourceDomainProcedure,
+		svc.ClaimDatasourceDomain,
+		connect.WithSchema(datasourceServiceMethods.ByName("ClaimDatasourceDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceVerifyDatasourceDomainHandler := connect.NewUnaryHandler(
+		DatasourceServiceVerifyDatasourceDomainProcedure,
+		svc.VerifyDatasourceDomain,
+		connect.WithSchema(datasourceServiceMethods.ByName("VerifyDatasourceDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceDeleteDatasourceDomainHandler := connect.NewUnaryHandler(
+		DatasourceServiceDeleteDatasourceDomainProcedure,
+		svc.DeleteDatasourceDomain,
+		connect.WithSchema(datasourceServiceMethods.ByName("DeleteDatasourceDomain")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.DatasourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DatasourceServiceAddGitHubSourceProcedure:
@@ -412,6 +678,26 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceCompleteGitHubAppSetupHandler.ServeHTTP(w, r)
 		case DatasourceServiceMigrateGitHubSourceToAppProcedure:
 			datasourceServiceMigrateGitHubSourceToAppHandler.ServeHTTP(w, r)
+		case DatasourceServiceBeginDatasourceAccountLinkProcedure:
+			datasourceServiceBeginDatasourceAccountLinkHandler.ServeHTTP(w, r)
+		case DatasourceServiceCompleteDatasourceAccountLinkProcedure:
+			datasourceServiceCompleteDatasourceAccountLinkHandler.ServeHTTP(w, r)
+		case DatasourceServiceListMyDatasourceAccountLinksProcedure:
+			datasourceServiceListMyDatasourceAccountLinksHandler.ServeHTTP(w, r)
+		case DatasourceServiceDeleteDatasourceAccountLinkProcedure:
+			datasourceServiceDeleteDatasourceAccountLinkHandler.ServeHTTP(w, r)
+		case DatasourceServiceGetDatasourceDirectoryProcedure:
+			datasourceServiceGetDatasourceDirectoryHandler.ServeHTTP(w, r)
+		case DatasourceServiceBindDatasourceGroupProcedure:
+			datasourceServiceBindDatasourceGroupHandler.ServeHTTP(w, r)
+		case DatasourceServiceUnbindDatasourceGroupProcedure:
+			datasourceServiceUnbindDatasourceGroupHandler.ServeHTTP(w, r)
+		case DatasourceServiceClaimDatasourceDomainProcedure:
+			datasourceServiceClaimDatasourceDomainHandler.ServeHTTP(w, r)
+		case DatasourceServiceVerifyDatasourceDomainProcedure:
+			datasourceServiceVerifyDatasourceDomainHandler.ServeHTTP(w, r)
+		case DatasourceServiceDeleteDatasourceDomainProcedure:
+			datasourceServiceDeleteDatasourceDomainHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -463,4 +749,44 @@ func (UnimplementedDatasourceServiceHandler) CompleteGitHubAppSetup(context.Cont
 
 func (UnimplementedDatasourceServiceHandler) MigrateGitHubSourceToApp(context.Context, *connect.Request[v1.MigrateGitHubSourceToAppRequest]) (*connect.Response[v1.MigrateGitHubSourceToAppResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) BeginDatasourceAccountLink(context.Context, *connect.Request[v1.BeginDatasourceAccountLinkRequest]) (*connect.Response[v1.BeginDatasourceAccountLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) CompleteDatasourceAccountLink(context.Context, *connect.Request[v1.CompleteDatasourceAccountLinkRequest]) (*connect.Response[v1.CompleteDatasourceAccountLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) ListMyDatasourceAccountLinks(context.Context, *connect.Request[v1.ListMyDatasourceAccountLinksRequest]) (*connect.Response[v1.ListMyDatasourceAccountLinksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) DeleteDatasourceAccountLink(context.Context, *connect.Request[v1.DeleteDatasourceAccountLinkRequest]) (*connect.Response[v1.DeleteDatasourceAccountLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) GetDatasourceDirectory(context.Context, *connect.Request[v1.GetDatasourceDirectoryRequest]) (*connect.Response[v1.GetDatasourceDirectoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.GetDatasourceDirectory is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) BindDatasourceGroup(context.Context, *connect.Request[v1.BindDatasourceGroupRequest]) (*connect.Response[v1.BindDatasourceGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.BindDatasourceGroup is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) UnbindDatasourceGroup(context.Context, *connect.Request[v1.UnbindDatasourceGroupRequest]) (*connect.Response[v1.UnbindDatasourceGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.UnbindDatasourceGroup is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) ClaimDatasourceDomain(context.Context, *connect.Request[v1.ClaimDatasourceDomainRequest]) (*connect.Response[v1.ClaimDatasourceDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.ClaimDatasourceDomain is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) VerifyDatasourceDomain(context.Context, *connect.Request[v1.VerifyDatasourceDomainRequest]) (*connect.Response[v1.VerifyDatasourceDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.VerifyDatasourceDomain is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) DeleteDatasourceDomain(context.Context, *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.DeleteDatasourceDomain is not implemented"))
 }

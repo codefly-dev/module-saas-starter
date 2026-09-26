@@ -3,7 +3,10 @@ import {
 	AccessBasis,
 	accounts,
 	type Datasource,
+	type DatasourceAccountLink,
+	DatasourceDomainStatus,
 	DatasourceProvider,
+	type DatasourceVerifiedDomain,
 	DatasourceStatus,
 	type SourceSyncProgress,
 	SourceSyncFailureReason,
@@ -19,9 +22,11 @@ import {
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type {
 	AccessibleScopeView,
+	AccountLinkView,
 	DatasourceClient,
 	DatasourceStatusName,
 	DatasourceView,
+	DomainView,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
 	SourceSyncTriggerName,
@@ -73,6 +78,76 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async beginAccountLink(orgId, connector, redirectUri) {
+			const response = await client.beginDatasourceAccountLink({
+				orgId,
+				connector,
+				redirectUri,
+			});
+			return { authorizeUrl: response.authorizeUrl, state: response.state };
+		},
+		async completeAccountLink(orgId, state, code) {
+			const response = await client.completeDatasourceAccountLink({
+				orgId,
+				state,
+				code,
+			});
+			if (!response.link) throw new Error("the host returned no account link");
+			return toAccountLinkView(response.link);
+		},
+		async listMyAccountLinks(orgId) {
+			const response = await client.listMyDatasourceAccountLinks({ orgId });
+			return response.links.map(toAccountLinkView);
+		},
+		async deleteAccountLink(orgId, id) {
+			await client.deleteDatasourceAccountLink({ orgId, id });
+		},
+		async getDirectory(orgId) {
+			const response = await client.getDatasourceDirectory({ orgId });
+			return {
+				links: response.links.map(toAccountLinkView),
+				bindings: response.bindings.map((b) => ({
+					id: b.id,
+					connector: b.connector,
+					providerGroupId: b.providerGroupId,
+					teamId: b.teamId,
+				})),
+				domains: response.domains.map(toDomainView),
+				teams: response.teams.map((t) => ({ id: t.id, name: t.name })),
+			};
+		},
+		async bindGroup(orgId, connector, providerGroupId, teamId) {
+			const response = await client.bindDatasourceGroup({
+				orgId,
+				connector,
+				providerGroupId,
+				teamId,
+			});
+			const b = response.binding;
+			if (!b) throw new Error("the host returned no group binding");
+			return {
+				id: b.id,
+				connector: b.connector,
+				providerGroupId: b.providerGroupId,
+				teamId: b.teamId,
+			};
+		},
+		async unbindGroup(orgId, id) {
+			await client.unbindDatasourceGroup({ orgId, id });
+		},
+		async claimDomain(orgId, domain) {
+			const response = await client.claimDatasourceDomain({ orgId, domain });
+			if (!response.domain) throw new Error("the host returned no domain");
+			return toDomainView(response.domain);
+		},
+		async verifyDomain(orgId, id) {
+			const response = await client.verifyDatasourceDomain({ orgId, id });
+			if (!response.domain) throw new Error("the host returned no domain");
+			return toDomainView(response.domain);
+		},
+		async deleteDomain(orgId, id) {
+			await client.deleteDatasourceDomain({ orgId, id });
+		},
 		async listAccessibleScopes(orgId) {
 			// Nothing declared the content's resource type, so there is no question
 			// to ask the permission service. Rejecting is how this contract already
@@ -345,6 +420,26 @@ export function createDatasourceClient(
 		createConnectTransport({ baseUrl: binding.apiBase, interceptors: [auth] }),
 		binding.contentResource,
 	);
+}
+
+function toAccountLinkView(link: DatasourceAccountLink): AccountLinkView {
+	return {
+		id: link.id,
+		userId: link.userId,
+		connector: link.connector,
+		providerAccountId: link.providerAccountId,
+		providerAccountLogin: link.providerAccountLogin,
+	};
+}
+
+function toDomainView(domain: DatasourceVerifiedDomain): DomainView {
+	return {
+		id: domain.id,
+		domain: domain.domain,
+		verified: domain.status === DatasourceDomainStatus.VERIFIED,
+		txtRecordName: domain.txtRecordName,
+		txtRecordValue: domain.txtRecordValue,
+	};
 }
 
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {

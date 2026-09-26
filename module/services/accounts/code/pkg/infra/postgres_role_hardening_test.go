@@ -36,22 +36,23 @@ var externalRelationAuthorities = map[string]externalRelationAuthority{}
 
 var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// Global catalogs and worker-owned job relations.
-	"identity_providers":      {selectRows: true},
-	"plans":                   {selectRows: true},
-	"plan_entitlements":       {selectRows: true},
-	"email_templates":         {selectRows: true},
-	"data_retention_policies": {selectRows: true},
-	"bootstrap_state":         {selectRows: true}, // the bootstrap claim runs on the control plane
-	"feature_flags":           {selectRows: true},
-	"audit_event_types":       {selectRows: true},
-	"platform_admins":         {selectRows: true}, // granting and revoking run on the control plane
-	"analytics_deliveries":    {},
-	"email_delivery_events":   {},
-	"event_subscriptions":     {}, // platform relation; request traffic has no direct access
-	"solution_registrations":  {}, // platform relation; request traffic has no direct access
-	"job_attempts":            {},
-	"job_messages":            {},
-	"job_state_transitions":   {},
+	"identity_providers":            {selectRows: true},
+	"plans":                         {selectRows: true},
+	"plan_entitlements":             {selectRows: true},
+	"email_templates":               {selectRows: true},
+	"data_retention_policies":       {selectRows: true},
+	"bootstrap_state":               {selectRows: true}, // the bootstrap claim runs on the control plane
+	"feature_flags":                 {selectRows: true},
+	"audit_event_types":             {selectRows: true},
+	"platform_admins":               {selectRows: true}, // granting and revoking run on the control plane
+	"analytics_deliveries":          {},
+	"email_delivery_events":         {},
+	"event_subscriptions":           {}, // platform relation; request traffic has no direct access
+	"solution_registrations":        {}, // platform relation; request traffic has no direct access
+	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
+	"job_attempts":                  {},
+	"job_messages":                  {},
+	"job_state_transitions":         {},
 
 	// Tenant-scoped relations.
 	"actor_chain_journal":                  {selectRows: true, insertRows: true},
@@ -65,6 +66,9 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"dashboards":                           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_account_links":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_group_bindings":            {selectRows: true, insertRows: true, deleteRows: true},
+	"datasource_domains":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"github_app_setups":                    {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"github_app_installations":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"accounts/pkg/datasource/connector"
 )
@@ -30,8 +31,9 @@ func good(key string) connector.Descriptor {
 		Interface:       connector.InterfaceFiles,
 		CredentialModes: []connector.CredentialMode{connector.CredentialOrgApp},
 		Readers:         connector.ReadersSourceScoped,
-		Budget:          connector.Budget{MaxItemsPerCall: 10, MaxBytesPerCall: 100, MaxItemBytes: 50},
-		Conformant:      true,
+		Budget: connector.Budget{MaxItemsPerCall: 10, MaxBytesPerCall: 100, MaxItemBytes: 50,
+			OperationsPerWindow: 60, Window: time.Minute, BackgroundSharePercent: 80},
+		Conformant: true,
 	}
 }
 

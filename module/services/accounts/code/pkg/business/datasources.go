@@ -486,8 +486,13 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 func (s *Service) SetDatasourceTicketKey(seed []byte) {
 	if len(seed) == 0 {
 		s.datasourceTicketSigner = nil
+		s.datasourceLinkKey = nil
 		return
 	}
+	// The account-link state is signed under its own domain-separated key, so
+	// neither kind of token can pass for the other.
+	linkKey := sha256.Sum256(append([]byte("datasource-account-link-state\x00"), seed...))
+	s.datasourceLinkKey = linkKey[:]
 	s.datasourceTicketSigner = newDatasourceTicketSigner(seed)
 }
 

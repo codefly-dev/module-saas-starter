@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/jobs"
 	"errors"
@@ -27,6 +28,10 @@ func datasourceProcessingError(err error) error {
 	var limited *github.RateLimitError
 	if errors.As(err, &limited) {
 		return datasourceRateLimitFailure(limited)
+	}
+	var budget *connector.RateLimitedError
+	if errors.As(err, &budget) && budget.Yielded {
+		return datasourceBudgetFailure(budget)
 	}
 	switch {
 	case errors.Is(err, github.ErrRepositoryTooLarge):
@@ -64,6 +69,21 @@ func datasourceRateLimitFailure(limited *github.RateLimitError) error {
 		message += " This job may retry."
 	}
 	failure := jobs.NewProcessingError(code, message, true)
+	var processing *jobs.ProcessingError
+	if errors.As(failure, &processing) {
+		processing.NotBefore = limited.ResetAt
+	}
+	return failure
+}
+
+// datasourceBudgetFailure reports the host's own budget refusing an operation:
+// the credential's window is spent (or, for background work, its share is), or
+// the provider blocked it. The job waits for the window to reset rather than
+// retrying into it.
+func datasourceBudgetFailure(limited *connector.RateLimitedError) error {
+	failure := jobs.NewProcessingError("datasource.budget_exhausted",
+		"This source's provider credential has spent its operations for now; syncs a person starts are served first. This job waits until "+
+			limited.ResetAt.UTC().Format(time.RFC3339)+".", true)
 	var processing *jobs.ProcessingError
 	if errors.As(failure, &processing) {
 		processing.NotBefore = limited.ResetAt

@@ -317,6 +317,39 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.account_link_started": {
+      "address": "saas.datasource.account_link_started",
+      "title": "saas.datasource.account_link_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.account_link_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.account_linked": {
+      "address": "saas.datasource.account_linked",
+      "title": "saas.datasource.account_linked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.account_linked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.account_unlinked": {
+      "address": "saas.datasource.account_unlinked",
+      "title": "saas.datasource.account_unlinked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.account_unlinked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.blob_fetched": {
       "address": "saas.datasource.blob_fetched",
       "title": "saas.datasource.blob_fetched",
@@ -361,6 +394,39 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.domain_claimed": {
+      "address": "saas.datasource.domain_claimed",
+      "title": "saas.datasource.domain_claimed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.domain_claimed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.domain_removed": {
+      "address": "saas.datasource.domain_removed",
+      "title": "saas.datasource.domain_removed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.domain_removed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.domain_verified": {
+      "address": "saas.datasource.domain_verified",
+      "title": "saas.datasource.domain_verified",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.domain_verified"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.files_fetched": {
       "address": "saas.datasource.files_fetched",
       "title": "saas.datasource.files_fetched",
@@ -400,6 +466,28 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.datasource.github_app.setup_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.group_bound": {
+      "address": "saas.datasource.group_bound",
+      "title": "saas.datasource.group_bound",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.group_bound"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.group_unbound": {
+      "address": "saas.datasource.group_unbound",
+      "title": "saas.datasource.group_unbound",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.group_unbound"
         }
       },
       "x-visibility": "external",
@@ -1867,6 +1955,27 @@
       },
       "title": "saas publishes saas.dashboard.updated"
     },
+    "send:saas.datasource.account_link_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.account_link_started"
+      },
+      "title": "saas publishes saas.datasource.account_link_started"
+    },
+    "send:saas.datasource.account_linked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.account_linked"
+      },
+      "title": "saas publishes saas.datasource.account_linked"
+    },
+    "send:saas.datasource.account_unlinked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.account_unlinked"
+      },
+      "title": "saas publishes saas.datasource.account_unlinked"
+    },
     "send:saas.datasource.blob_fetched": {
       "action": "send",
       "channel": {
@@ -1895,6 +2004,27 @@
       },
       "title": "saas publishes saas.datasource.credential.updated"
     },
+    "send:saas.datasource.domain_claimed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.domain_claimed"
+      },
+      "title": "saas publishes saas.datasource.domain_claimed"
+    },
+    "send:saas.datasource.domain_removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.domain_removed"
+      },
+      "title": "saas publishes saas.datasource.domain_removed"
+    },
+    "send:saas.datasource.domain_verified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.domain_verified"
+      },
+      "title": "saas publishes saas.datasource.domain_verified"
+    },
     "send:saas.datasource.files_fetched": {
       "action": "send",
       "channel": {
@@ -1922,6 +2052,20 @@
         "$ref": "#/channels/saas.datasource.github_app.setup_started"
       },
       "title": "saas publishes saas.datasource.github_app.setup_started"
+    },
+    "send:saas.datasource.group_bound": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.group_bound"
+      },
+      "title": "saas publishes saas.datasource.group_bound"
+    },
+    "send:saas.datasource.group_unbound": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.group_unbound"
+      },
+      "title": "saas publishes saas.datasource.group_unbound"
     },
     "send:saas.datasource.snapshot_too_large": {
       "action": "send",
@@ -2920,6 +3064,27 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.datasource.account_link_started": {
+        "name": "saas.datasource.account_link_started",
+        "title": "saas.datasource.account_link_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.account_linked": {
+        "name": "saas.datasource.account_linked",
+        "title": "saas.datasource.account_linked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.account_unlinked": {
+        "name": "saas.datasource.account_unlinked",
+        "title": "saas.datasource.account_unlinked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.datasource.blob_fetched": {
         "name": "saas.datasource.blob_fetched",
         "title": "saas.datasource.blob_fetched",
@@ -2948,6 +3113,27 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.datasource.domain_claimed": {
+        "name": "saas.datasource.domain_claimed",
+        "title": "saas.datasource.domain_claimed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.domain_removed": {
+        "name": "saas.datasource.domain_removed",
+        "title": "saas.datasource.domain_removed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.domain_verified": {
+        "name": "saas.datasource.domain_verified",
+        "title": "saas.datasource.domain_verified",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.datasource.files_fetched": {
         "name": "saas.datasource.files_fetched",
         "title": "saas.datasource.files_fetched",
@@ -2972,6 +3158,20 @@
       "saas.datasource.github_app.setup_started": {
         "name": "saas.datasource.github_app.setup_started",
         "title": "saas.datasource.github_app.setup_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.group_bound": {
+        "name": "saas.datasource.group_bound",
+        "title": "saas.datasource.group_bound",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.group_unbound": {
+        "name": "saas.datasource.group_unbound",
+        "title": "saas.datasource.group_unbound",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

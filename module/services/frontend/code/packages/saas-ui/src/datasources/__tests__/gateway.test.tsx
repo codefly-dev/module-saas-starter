@@ -156,6 +156,22 @@ describe("createDatasourceClient", () => {
 			syncSource: () => client.syncSource("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
+			// The stub answers {} to everything; an operation whose answer must
+			// carry a record rejects on it, after the call this test counts.
+			beginAccountLink: () =>
+				client.beginAccountLink!("org-1", "github", "https://host.example.com/"),
+			completeAccountLink: () =>
+				client.completeAccountLink!("org-1", "dl.s", "c").catch(() => undefined),
+			listMyAccountLinks: () => client.listMyAccountLinks!("org-1"),
+			deleteAccountLink: () => client.deleteAccountLink!("org-1", "l1"),
+			getDirectory: () => client.getDirectory!("org-1"),
+			bindGroup: () =>
+				client.bindGroup!("org-1", "github", "acme/x", "t1").catch(() => undefined),
+			unbindGroup: () => client.unbindGroup!("org-1", "b1"),
+			claimDomain: () =>
+				client.claimDomain!("org-1", "example.com").catch(() => undefined),
+			verifyDomain: () => client.verifyDomain!("org-1", "d1").catch(() => undefined),
+			deleteDomain: () => client.deleteDomain!("org-1", "d1"),
 		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
 		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
 		for (const operation of Object.values(operations)) {

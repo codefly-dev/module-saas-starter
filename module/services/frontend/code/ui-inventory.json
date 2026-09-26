@@ -956,6 +956,21 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/saas-ui/src/datasources/directory.tsx",
+			"imports": [
+				"@codefly-dev/ui/layout",
+				"@tanstack/react-query",
+				"react",
+				"./types.js"
+			],
+			"owner": "@codefly-dev/saas-ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Add owner stories for the account link, the group bindings and the pending and verified domains, then verify under external skins."
+		},
+		{
 			"source": "packages/saas-ui/src/datasources/datasources-panel.tsx",
 			"imports": [
 				"@codefly-dev/ui/layout",

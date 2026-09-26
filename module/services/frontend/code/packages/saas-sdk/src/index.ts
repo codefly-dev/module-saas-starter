@@ -36,9 +36,13 @@ export {
 export { AuditService } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 export {
 	type Datasource,
+	type DatasourceAccountLink,
+	DatasourceDomainStatus,
+	type DatasourceGroupBinding,
 	DatasourceProvider,
 	DatasourceService,
 	DatasourceStatus,
+	type DatasourceVerifiedDomain,
 	type GetSourceSyncResponse,
 	type SourceSyncChanges,
 	type SourceSyncFailure,

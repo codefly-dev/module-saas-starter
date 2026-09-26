@@ -86,6 +86,10 @@ type Source struct {
 	// own OAuth grant. Such a source is readable only by that person, whatever
 	// the provider's sharing says (see ApplySourcePolicy).
 	PersonalOwnerUserID string
+	// CredentialKey names the provider credential the host resolves for this
+	// source, so every source sharing one credential shares its budget. The
+	// host sets it; a connector never derives it.
+	CredentialKey string
 	// Config is the connector's own non-secret configuration type.
 	Config any
 }
@@ -221,6 +225,9 @@ type RateLimitedError struct {
 	Scope string
 	// Cause is the provider's own error, kept in the chain for the host.
 	Cause error
+	// Yielded is set when the host's own budget refused the call — a
+	// background operation yielding its share — rather than the provider.
+	Yielded bool
 }
 
 func (e *RateLimitedError) Unwrap() error { return e.Cause }

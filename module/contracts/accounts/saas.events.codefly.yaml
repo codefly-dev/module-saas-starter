@@ -119,6 +119,18 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.datasource.account_link_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.account_linked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.account_unlinked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.datasource.blob_fetched
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -135,6 +147,18 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.datasource.domain_claimed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.domain_removed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.domain_verified
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.datasource.files_fetched
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -148,6 +172,14 @@ publishes:
     visibility: external
     retention: 30d
   - type: saas.datasource.github_app.setup_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.group_bound
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.group_unbound
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

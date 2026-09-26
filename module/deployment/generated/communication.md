@@ -232,6 +232,30 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
+## saas.datasource.account_link_started
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.datasource.account_linked
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.datasource.account_unlinked
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
 ## saas.datasource.blob_fetched
 
 - **Publisher:** saas
@@ -264,6 +288,30 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
+## saas.datasource.domain_claimed
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.datasource.domain_removed
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.datasource.domain_verified
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
 ## saas.datasource.files_fetched
 
 - **Publisher:** saas
@@ -289,6 +337,22 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Consumers:** _none_
 
 ## saas.datasource.github_app.setup_started
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.datasource.group_bound
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.datasource.group_unbound
 
 - **Publisher:** saas
 - **Visibility:** external

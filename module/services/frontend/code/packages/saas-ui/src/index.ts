@@ -1,6 +1,10 @@
 export { CollectionReadBoundary, CollectionGrants } from "./datasources/collection-access.js";
 export { ConnectGitHubForm } from "./datasources/connect-github-form.js";
 export {
+	DatasourceAccountLinks,
+	DatasourceDirectoryPanel,
+} from "./datasources/directory.js";
+export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
@@ -22,6 +26,11 @@ export {
 } from "./datasources/schema.js";
 export type {
 	AccessibleScopeView,
+	AccountLinkHandle,
+	AccountLinkView,
+	DatasourceDirectoryView,
+	DomainView,
+	GroupBindingView,
 	CollectionAccessView,
 	CollectionGrantView,
 	CollectionGrantSubject,
