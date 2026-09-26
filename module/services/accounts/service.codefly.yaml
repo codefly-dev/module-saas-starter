@@ -3,7 +3,9 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.48
+    # DEV PIN: an unreleased agent prerelease (git in the service image, for datasource reads over git). Move it to the
+    # release that ships the change before this module is tagged.
+    version: 0.1.48-dev.f2f2c0c6ff13
     publisher: codefly.dev
 service-dependencies:
     - name: cache
