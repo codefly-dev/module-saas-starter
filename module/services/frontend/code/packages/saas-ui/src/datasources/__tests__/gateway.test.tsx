@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatasourcesPanel } from "../datasources-panel.js";
 import { createDatasourceClient } from "../gateway.js";
+import { onSourceSyncRequested } from "../sync-requests.js";
 
 const gatewayCatalog = JSON.parse(
 	readFileSync(
@@ -163,6 +164,32 @@ describe("createDatasourceClient", () => {
 			await operation();
 			expect(calls.length).toBeGreaterThan(before);
 		}
+	});
+
+	it("announces every sync it enqueues, so a progress view watches closely at once", async () => {
+		stubFetchSequence([reply({ jobId: "job-1" }), reply({ datasource: { id: "ds-new" } })]);
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+		const heard: string[] = [];
+		const stop = onSourceSyncRequested((id) => heard.push(id));
+		const failing = onSourceSyncRequested(() => {
+			throw new Error("a listener's failure is its own");
+		});
+		await client.syncSource("org-1", "ds-1");
+		await client.addGitHubSource({
+			orgId: "org-1",
+			repo: "acme/example",
+			paths: [],
+			branch: "",
+			targetCollection: "Example",
+			webhookSecret: "",
+		});
+		stop();
+		failing();
+		await client.syncSource("org-1", "ds-1").catch(() => {});
+		expect(heard).toEqual(["ds-1", "ds-new"]);
 	});
 
 	it("reads a source's latest sync as the host's typed phases", async () => {

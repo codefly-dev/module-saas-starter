@@ -27,6 +27,7 @@ import type {
 	SourceSyncTriggerName,
 	SourceSyncView,
 } from "./types.js";
+import { notifySourceSyncRequested } from "./sync-requests.js";
 
 /**
  * A solution remote's whole backend seam: the same-origin gateway base and the
@@ -164,7 +165,7 @@ export function datasourceClientOverTransport(
 			return response.datasources.map(toDatasourceView);
 		},
 		async addGitHubSource(input) {
-			await client.addGitHubSource({
+			const response = await client.addGitHubSource({
 				orgId: input.orgId,
 				repo: input.repo,
 				paths: input.paths,
@@ -176,6 +177,8 @@ export function datasourceClientOverTransport(
 					? { case: "boundaryNodeId", value: input.boundaryNodeId }
 					: { case: "collectionLabel", value: input.targetCollection },
 			});
+			// The host starts a GitHub source's first sync as it connects it.
+			notifySourceSyncRequested(response.datasource?.id ?? "");
 		},
 		async beginGitHubAppSetup(orgId) {
 			const response = await client.beginGitHubAppSetup({ orgId });
@@ -212,6 +215,7 @@ export function datasourceClientOverTransport(
 				id,
 				...(accessToken ? { accessToken } : {}),
 			});
+			notifySourceSyncRequested(id);
 			return response.jobId;
 		},
 		async getSourceSync(orgId, sourceId, jobId) {

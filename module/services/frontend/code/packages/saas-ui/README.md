@@ -104,7 +104,14 @@ components:
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
-  transport you already own.
+  transport you already own. Its `getSourceSync(orgId, sourceId)` reads a source's latest
+  sync as typed phases (queued, fetching, compiled, handed off, done, failed) with a
+  timestamp for each, the compiled change set, and a typed failure.
+- `onSourceSyncRequested((sourceId) => …)` — hears every sync the kit's client enqueues
+  (Sync now, a reconnect, the first sync a connect starts), so a view rendering a source's
+  progress in the panel's per-source slot can watch closely at once. It returns the
+  unsubscribe. The registry lives on `globalThis`, so a remote's own copy of the kit hears
+  the host panel.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
 
