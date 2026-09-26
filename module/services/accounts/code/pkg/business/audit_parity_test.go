@@ -14,10 +14,10 @@ import (
 // nothing can reach.
 var eventsEmittedOutsideRPC = []EventType{
 	EventActivationAchieved,
-	EventApprovalApproved,
+	// saas.approval.approved, .denied and .decision_recorded are declared by
+	// ApprovalReviewService.DecideApprovalReview.
 	EventApprovalAsked,
 	EventApprovalCancelled,
-	EventApprovalDenied,
 	EventApprovalEscalated,
 	EventApprovalTimeout,
 	EventAuthMagicLinkLogin,

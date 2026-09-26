@@ -22,6 +22,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterAccessibleScopeServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service AccessibleScopeService: %w", err)
 	}
+	if err := gen.RegisterApprovalReviewServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service ApprovalReviewService: %w", err)
+	}
 	if err := gen.RegisterAuditServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service AuditService: %w", err)
 	}
@@ -218,6 +221,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "DELETE", path: regexp.MustCompile("^/v1/teams/[^/]+/members/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "DELETE", path: regexp.MustCompile("^/v1/webhooks/[^/]+$")},
+	{method: "GET", path: regexp.MustCompile("^/v1/approvals/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/billing/invoices/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/delegations/[^/]+:wait$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/gdpr/delete/[^/]+$")},
@@ -243,6 +247,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "PATCH", path: regexp.MustCompile("^/v1/roles/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/approvals/[^/]+:decide$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:transferOwnership$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:uninstall$")},

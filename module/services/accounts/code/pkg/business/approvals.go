@@ -198,7 +198,9 @@ func (in *CreateApprovalRequestInput) validate() error {
 
 // DecideInput records one approver's decision.
 type DecideInput struct {
-	// ExpectedSubjectHash binds public decisions to the exact subject shown.
+	// ExpectedSubjectHash, when set, must equal ApprovalSubjectHash of the
+	// request's subject, checked under the request lock; a mismatch records
+	// nothing and fails with ErrTypeConflict.
 	ExpectedSubjectHash string
 	Decider             string
 	Decision            ApprovalDecisionKind
@@ -244,6 +246,9 @@ type ApprovalStore interface {
 	// InsertDecision appends a decision. The UNIQUE (request_id, decider)
 	// constraint surfaces as ErrTypeConflict on a double-vote.
 	InsertDecision(ctx context.Context, d *ApprovalDecision) error
+
+	// ListApprovalDecisions returns a request's decisions, oldest first.
+	ListApprovalDecisions(ctx context.Context, requestID, orgID string) ([]ApprovalDecision, error)
 
 	// CountApprovals returns the number of distinct approve decisions.
 	CountApprovals(ctx context.Context, requestID, orgID string) (int, error)
@@ -312,7 +317,8 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 // lands, transitions the request to approved. The whole read-decide-transition
 // runs under one org tx that locks the request FOR UPDATE, so quorum is exact
 // under concurrency. A deny transitions straight to denied. Emits
-// approval.approved / approval.denied on a terminal transition.
+// approval.decision_recorded for every decision, and approval.approved /
+// approval.denied on a terminal transition, all in that transaction.
 //
 // SECURITY INVARIANT: in.Decider is trusted verbatim — distinct-approver quorum,
 // the approver-set check, and the self-approval block are only as sound as it is.
@@ -322,106 +328,136 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 // approve their own request. This is the RPC/handler layer's responsibility (the
 // engine cannot authenticate).
 func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) (DecideOutcome, error) {
-	w := wool.Get(ctx).In("DecideApproval",
-		wool.Field("approval_id", id),
-		wool.Field("decision", string(in.Decision)))
-	if orgID == "" {
-		return DecideOutcome{}, w.NewError("org_id required")
+	if err := validateDecideInput(ctx, orgID, id, in); err != nil {
+		return DecideOutcome{}, err
 	}
-	if in.Decider == "" {
-		return DecideOutcome{}, w.NewError("decider required")
-	}
-	if in.Decision != DecisionApprove && in.Decision != DecisionDeny {
-		return DecideOutcome{}, w.NewError("decision must be approve or deny")
-	}
-
 	var outcome DecideOutcome
 	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
 			return err
 		}
-		if in.ExpectedSubjectHash != "" && in.ExpectedSubjectHash != ApprovalSubjectHash(req.Subject) {
-			return NewStoreError(errors.New("reviewed subject does not match"), ErrTypeConflict)
-		}
-		if !req.IsDecidable() {
-			return NewStoreError(
-				fmt.Errorf("approval %s is not decidable (state=%s)", id, req.State),
-				ErrTypeConflict,
-			)
-		}
-		// Enforce the decision window here, not only in the sweeper: the sweeper
-		// job is not yet wired, so without this an approver could reach quorum on
-		// a request long past its expires_at. Same predicate the sweeper uses.
-		if req.ExpiresAt != nil && !time.Now().Before(*req.ExpiresAt) {
-			return NewStoreError(
-				fmt.Errorf("approval %s decision window has expired", id),
-				ErrTypeConflict,
-			)
-		}
-		if !req.Policy.AllowSelf && in.Decider == req.RequestedBy {
-			return NewStoreError(
-				fmt.Errorf("requester %s cannot decide their own approval", in.Decider),
-				ErrTypePermission,
-			)
-		}
-		if len(req.Policy.ApproverSet) > 0 && !containsString(req.Policy.ApproverSet, in.Decider) {
-			return NewStoreError(
-				fmt.Errorf("decider %s is not in the approver set", in.Decider),
-				ErrTypePermission,
-			)
-		}
-
-		if err := s.approvalStore().InsertDecision(ctx, &ApprovalDecision{
-			ID:                NewIDString(),
-			RequestID:         id,
-			OrgID:             orgID,
-			Decider:           in.Decider,
-			Decision:          in.Decision,
-			Reason:            in.Reason,
-			DelegationGrantID: in.DelegationGrantID,
-		}); err != nil {
-			return err // ErrTypeConflict on a double-vote
-		}
-
-		outcome.Quorum = req.Quorum
-		// Audit is emitted in this same tx (emitTx) on a terminal transition, so
-		// the state change and its approval.approved / approval.denied record are
-		// atomic.
-		if in.Decision == DecisionDeny {
-			if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalDenied, in.Reason, true); err != nil {
-				return err
-			}
-			outcome.State = ApprovalDenied
-			return s.emitTx(ctx, in.Decider, "user", EventApprovalDenied, "approval_request", id, orgID, nil)
-		}
-
-		count, err := s.approvalStore().CountApprovals(ctx, id, orgID)
-		if err != nil {
-			return err
-		}
-		outcome.Approvals = count
-		if count >= req.Quorum {
-			if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalApproved, "", true); err != nil {
-				return err
-			}
-			outcome.State = ApprovalApproved
-			outcome.Approved = true
-			// Enqueue the resume outbox job in this same tx, so the gated action
-			// can never be resumed twice or lost: the approved transition and its
-			// resume job commit together or not at all (APPROVALS_DESIGN.md §6).
-			if err := s.enqueueApprovalResume(ctx, req, in.Decision, in.Decider); err != nil {
-				return err
-			}
-			return s.emitTx(ctx, in.Decider, "user", EventApprovalApproved, "approval_request", id, orgID,
-				map[string]any{"resource": req.Resource, "action": req.Action})
-		}
-		outcome.State = req.State
-		return nil
+		outcome, err = s.decideLocked(ctx, req, in)
+		return err
 	})
 	if err != nil {
 		return DecideOutcome{}, err
 	}
+	return outcome, nil
+}
+
+func validateDecideInput(ctx context.Context, orgID, id string, in DecideInput) error {
+	w := wool.Get(ctx).In("DecideApproval",
+		wool.Field("approval_id", id),
+		wool.Field("decision", string(in.Decision)))
+	if orgID == "" {
+		return w.NewError("org_id required")
+	}
+	if in.Decider == "" {
+		return w.NewError("decider required")
+	}
+	if in.Decision != DecisionApprove && in.Decision != DecisionDeny {
+		return w.NewError("decision must be approve or deny")
+	}
+	return nil
+}
+
+// decideLocked records one decision on a request the caller has locked FOR
+// UPDATE inside the current org transaction. Every check, the decision row, the
+// state transition and their audit records share that transaction.
+func (s *Service) decideLocked(ctx context.Context, req *ApprovalRequest, in DecideInput) (DecideOutcome, error) {
+	id, orgID := req.ID, req.OrgID
+	if in.ExpectedSubjectHash != "" {
+		shown, err := ApprovalSubjectHash(req.Subject)
+		if err != nil {
+			return DecideOutcome{}, NewStoreError(fmt.Errorf("approval %s subject: %w", id, err), ErrTypeInternal)
+		}
+		if in.ExpectedSubjectHash != shown {
+			return DecideOutcome{}, NewStoreError(
+				fmt.Errorf("approval %s subject does not match the subject reviewed", id),
+				ErrTypeConflict,
+			)
+		}
+	}
+	if !req.IsDecidable() {
+		return DecideOutcome{}, NewStoreError(
+			fmt.Errorf("approval %s is not decidable (state=%s)", id, req.State),
+			ErrTypeConflict,
+		)
+	}
+	// Enforce the decision window here, not only in the sweeper: the sweeper
+	// job is not yet wired, so without this an approver could reach quorum on
+	// a request long past its expires_at. Same predicate the sweeper uses.
+	if req.ExpiresAt != nil && !time.Now().Before(*req.ExpiresAt) {
+		return DecideOutcome{}, NewStoreError(
+			fmt.Errorf("approval %s decision window has expired", id),
+			ErrTypeConflict,
+		)
+	}
+	if !req.Policy.AllowSelf && in.Decider == req.RequestedBy {
+		return DecideOutcome{}, NewStoreError(
+			fmt.Errorf("requester %s cannot decide their own approval", in.Decider),
+			ErrTypePermission,
+		)
+	}
+	if len(req.Policy.ApproverSet) > 0 && !containsString(req.Policy.ApproverSet, in.Decider) {
+		return DecideOutcome{}, NewStoreError(
+			fmt.Errorf("decider %s is not in the approver set", in.Decider),
+			ErrTypePermission,
+		)
+	}
+
+	if err := s.approvalStore().InsertDecision(ctx, &ApprovalDecision{
+		ID:                NewIDString(),
+		RequestID:         id,
+		OrgID:             orgID,
+		Decider:           in.Decider,
+		Decision:          in.Decision,
+		Reason:            in.Reason,
+		DelegationGrantID: in.DelegationGrantID,
+	}); err != nil {
+		return DecideOutcome{}, err // ErrTypeConflict on a double-vote
+	}
+	// Every recorded vote is audited with it, not only the one that ends the
+	// request: a quorum is only reviewable if each contributing decision is.
+	if err := s.emitTx(ctx, in.Decider, "user", EventApprovalDecisionRecorded, "approval_request", id, orgID,
+		map[string]any{"decision": string(in.Decision)}); err != nil {
+		return DecideOutcome{}, err
+	}
+
+	outcome := DecideOutcome{Quorum: req.Quorum}
+	// Audit is emitted in this same tx (emitTx) on a terminal transition, so
+	// the state change and its approval.approved / approval.denied record are
+	// atomic.
+	if in.Decision == DecisionDeny {
+		if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalDenied, in.Reason, true); err != nil {
+			return DecideOutcome{}, err
+		}
+		outcome.State = ApprovalDenied
+		return outcome, s.emitTx(ctx, in.Decider, "user", EventApprovalDenied, "approval_request", id, orgID, nil)
+	}
+
+	count, err := s.approvalStore().CountApprovals(ctx, id, orgID)
+	if err != nil {
+		return DecideOutcome{}, err
+	}
+	outcome.Approvals = count
+	if count >= req.Quorum {
+		if err := s.approvalStore().UpdateApprovalState(ctx, id, orgID, ApprovalApproved, "", true); err != nil {
+			return DecideOutcome{}, err
+		}
+		outcome.State = ApprovalApproved
+		outcome.Approved = true
+		// Enqueue the resume outbox job in this same tx, so the gated action
+		// can never be resumed twice or lost: the approved transition and its
+		// resume job commit together or not at all (APPROVALS_DESIGN.md §6).
+		if err := s.enqueueApprovalResume(ctx, req, in.Decision, in.Decider); err != nil {
+			return DecideOutcome{}, err
+		}
+		return outcome, s.emitTx(ctx, in.Decider, "user", EventApprovalApproved, "approval_request", id, orgID,
+			map[string]any{"resource": req.Resource, "action": req.Action})
+	}
+	outcome.State = req.State
 	return outcome, nil
 }
 
@@ -547,29 +583,105 @@ func containsString(xs []string, v string) bool {
 	return false
 }
 
-// ApprovalSubjectHash is stable across JSON object key order.
-func ApprovalSubjectHash(subject map[string]any) string {
+// ApprovalSubjectHash is the SHA-256, hex-encoded, of the subject as
+// encoding/json writes it: object keys sorted, so the hash does not depend on
+// the key order the subject was stored with. A reviewer echoes it back with a
+// decision, and the decision is refused if the subject no longer hashes to it.
+func ApprovalSubjectHash(subject map[string]any) (string, error) {
 	raw, err := json.Marshal(subject)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
-// ApprovalDecisions reads the durable per-person decisions within the tenant.
-func (s *Service) ApprovalDecisions(ctx context.Context, orgID, id string) ([]ApprovalDecision, error) {
-	var out []ApprovalDecision
+// ApprovalReview is an approval request as the people it names see it: the
+// request, the hash of its subject, and every decision recorded on it.
+type ApprovalReview struct {
+	Request     *ApprovalRequest
+	SubjectHash string
+	Decisions   []ApprovalDecision
+}
+
+// approvalVisibleTo reports whether actor is named by the request — as its
+// requester or as one of its assigned approvers. Anyone else in the
+// organization is answered exactly as for a request that does not exist.
+func approvalVisibleTo(req *ApprovalRequest, actor string) bool {
+	return actor != "" && (req.RequestedBy == actor || containsString(req.Policy.ApproverSet, actor))
+}
+
+func approvalNotFound(id string) error {
+	return NewStoreError(fmt.Errorf("approval %s not found", id), ErrTypeNotFound)
+}
+
+// ReviewApproval returns the request and its decisions to its requester or one
+// of its assigned approvers, read in one org transaction. actor MUST be the
+// authenticated caller, never client input.
+func (s *Service) ReviewApproval(ctx context.Context, orgID, id, actor string) (*ApprovalReview, error) {
+	if orgID == "" || actor == "" {
+		return nil, NewStoreError(errors.New("approval review: org_id and actor required"), ErrTypeValidation)
+	}
+	var out *ApprovalReview
 	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
-		reader, ok := s.store.(interface {
-			ListApprovalDecisions(context.Context, string, string) ([]ApprovalDecision, error)
-		})
-		if !ok {
-			return errors.New("approval decision reader unavailable")
+		req, err := s.approvalStore().GetApprovalRequest(ctx, id, orgID)
+		if err != nil {
+			return err
 		}
-		var err error
-		out, err = reader.ListApprovalDecisions(ctx, orgID, id)
+		if !approvalVisibleTo(req, actor) {
+			return approvalNotFound(id)
+		}
+		out, err = s.approvalReviewOf(ctx, req)
 		return err
 	})
 	return out, err
+}
+
+// DecideReviewedApproval records in.Decider's decision on a request they are
+// named on, bound to the subject hash they reviewed, and returns the request as
+// it stands after the decision. The visibility check, the subject-hash check,
+// the decision, its audit and the returned review share one org transaction
+// holding the request FOR UPDATE, so nothing can change between the check and
+// the write, and the review returned is the state the decision produced.
+func (s *Service) DecideReviewedApproval(ctx context.Context, orgID, id string, in DecideInput) (*ApprovalReview, error) {
+	if err := validateDecideInput(ctx, orgID, id, in); err != nil {
+		return nil, err
+	}
+	if in.ExpectedSubjectHash == "" {
+		return nil, NewStoreError(errors.New("approval review: the reviewed subject hash is required"), ErrTypeValidation)
+	}
+	var out *ApprovalReview
+	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
+		if err != nil {
+			return err
+		}
+		if !approvalVisibleTo(req, in.Decider) {
+			return approvalNotFound(id)
+		}
+		if _, err := s.decideLocked(ctx, req, in); err != nil {
+			return err
+		}
+		after, err := s.approvalStore().GetApprovalRequest(ctx, id, orgID)
+		if err != nil {
+			return err
+		}
+		out, err = s.approvalReviewOf(ctx, after)
+		return err
+	})
+	return out, err
+}
+
+// approvalReviewOf projects req and its decisions inside the caller's org
+// transaction.
+func (s *Service) approvalReviewOf(ctx context.Context, req *ApprovalRequest) (*ApprovalReview, error) {
+	hash, err := ApprovalSubjectHash(req.Subject)
+	if err != nil {
+		return nil, NewStoreError(fmt.Errorf("approval %s subject: %w", req.ID, err), ErrTypeInternal)
+	}
+	decisions, err := s.approvalStore().ListApprovalDecisions(ctx, req.ID, req.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	return &ApprovalReview{Request: req, SubjectHash: hash, Decisions: decisions}, nil
 }

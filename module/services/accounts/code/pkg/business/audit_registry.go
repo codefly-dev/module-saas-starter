@@ -285,6 +285,7 @@ const (
 	EventApprovalTimeout             EventType = "saas.approval.timeout"
 	EventApprovalEscalated           EventType = "saas.approval.escalated"
 	EventApprovalCancelled           EventType = "saas.approval.cancelled"
+	EventApprovalDecisionRecorded    EventType = "saas.approval.decision_recorded"
 	EventPrincipalCreated            EventType = "saas.principal.created"
 	EventPrincipalRevoked            EventType = "saas.principal.revoked"
 	EventPrincipalDisabled           EventType = "saas.principal.disabled"
@@ -501,6 +502,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
 	mutation(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
 	mutation(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
+	mutation(EventApprovalDecisionRecorded, CategoryAccess, "An approver recorded a decision on an approval request.", str("decision")),
 	mutation(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
 	mutation(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
 	mutation(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason")),

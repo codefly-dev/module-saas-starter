@@ -298,9 +298,10 @@ var (
     `
 )
 
-// ListApprovalDecisions reads only decisions in the named organization.
-func (s *PostgresStore) ListApprovalDecisions(ctx context.Context, orgID, id string) ([]business.ApprovalDecision, error) {
-	rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT id, request_id, org_id, decider, decision, COALESCE(reason,''), decided_at FROM approval_decisions WHERE org_id=$1 AND request_id=$2 ORDER BY decided_at,id`, orgID, id)
+// ListApprovalDecisions implements business.ApprovalStore. The org predicate
+// restates what RLS already enforces under the org transaction.
+func (s *PostgresStore) ListApprovalDecisions(ctx context.Context, requestID, orgID string) ([]business.ApprovalDecision, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, listApprovalDecisionsSQL, orgID, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -315,3 +316,10 @@ func (s *PostgresStore) ListApprovalDecisions(ctx context.Context, orgID, id str
 	}
 	return out, rows.Err()
 }
+
+const listApprovalDecisionsSQL = `
+        SELECT id, request_id, org_id, decider, decision, COALESCE(reason, ''), decided_at
+        FROM approval_decisions
+        WHERE org_id = $1 AND request_id = $2
+        ORDER BY decided_at, id
+    `

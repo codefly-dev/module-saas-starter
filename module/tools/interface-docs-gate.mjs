@@ -52,6 +52,7 @@ const INTERNAL_EXPOSURE = "EXPOSURE_INTERNAL";
 const SERVICE_CONTEXTS = {
   AccessibleScopeService: "authorization",
   APIKeyService: "identity",
+  ApprovalReviewService: "approvals",
   AuditService: "audit",
   AuthService: "identity",
   ClientRegistryService: "identity",

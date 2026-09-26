@@ -312,6 +312,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "GET",
+      "path": "/v1/approvals/{id}",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.ApprovalReviewService/GetApprovalReview",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "GET",
       "path": "/v1/audit-event-types",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.AuditService/ListAuditEventTypes",
@@ -1243,6 +1259,22 @@
       "path": "/v1/api-keys",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/approvals/{id}:decide",
+      "match": "GATEWAY_MATCH_PATH_TEMPLATE",
+      "procedure": "/saas.accounts.v1.ApprovalReviewService/DecideApprovalReview",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

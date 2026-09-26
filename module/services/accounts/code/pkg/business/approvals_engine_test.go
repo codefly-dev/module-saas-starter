@@ -111,6 +111,16 @@ func (f *approvalEngineStore) UpdateApprovalState(_ context.Context, id, _ strin
 	return nil
 }
 
+func (f *approvalEngineStore) ListApprovalDecisions(_ context.Context, requestID, _ string) ([]business.ApprovalDecision, error) {
+	out := []business.ApprovalDecision{}
+	for _, d := range f.decisions {
+		if d.RequestID == requestID {
+			out = append(out, *d)
+		}
+	}
+	return out, nil
+}
+
 // var _ ensures the fake stays in lock-step with the interface.
 var _ business.ApprovalStore = (*approvalEngineStore)(nil)
 
@@ -499,6 +509,13 @@ func TestApprovalEngine_Decide_RejectsEmptyOrg(t *testing.T) {
 	require.Error(t, err)
 }
 
+func subjectHash(t *testing.T, subject map[string]any) string {
+	t.Helper()
+	h, err := business.ApprovalSubjectHash(subject)
+	require.NoError(t, err)
+	return h
+}
+
 func TestApprovalEngine_ReviewedSubjectMismatchCannotRecordDecision(t *testing.T) {
 	svc, store := newApprovalService(t)
 	subject := map[string]any{"reference": "urn:example:revision:1", "binding": "immutable-binding"}
@@ -507,7 +524,81 @@ func TestApprovalEngine_ReviewedSubjectMismatchCannotRecordDecision(t *testing.T
 	require.Error(t, err)
 	require.Equal(t, business.ErrTypeConflict, storeErrType(t, err))
 	require.Empty(t, store.decisions)
-	out, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{Decider: "reviewer", Decision: business.DecisionApprove, ExpectedSubjectHash: business.ApprovalSubjectHash(subject)})
+	out, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{Decider: "reviewer", Decision: business.DecisionApprove, ExpectedSubjectHash: subjectHash(t, subject)})
 	require.NoError(t, err)
 	require.True(t, out.Approved)
+}
+
+// The hash names the subject, not the order its keys were written in.
+func TestApprovalSubjectHash_IgnoresKeyOrder(t *testing.T) {
+	a := subjectHash(t, map[string]any{"a": 1, "b": map[string]any{"x": "1", "y": "2"}})
+	b := subjectHash(t, map[string]any{"b": map[string]any{"y": "2", "x": "1"}, "a": 1})
+	require.Equal(t, a, b)
+	require.Len(t, a, 64)
+	require.NotEqual(t, a, subjectHash(t, map[string]any{"a": 2, "b": map[string]any{"x": "1", "y": "2"}}))
+}
+
+func TestApprovalEngine_ReviewVisibleOnlyToNamedPeople(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{OrgID: "org-a", Resource: "example", Action: "advance", RequestedBy: "requester", Subject: map[string]any{"k": "v"}, Policy: business.ApprovalPolicy{ApproverSet: []string{"reviewer"}}})
+	for _, actor := range []string{"requester", "reviewer"} {
+		review, err := svc.ReviewApproval(context.Background(), "org-a", id, actor)
+		require.NoError(t, err, actor)
+		require.Equal(t, subjectHash(t, map[string]any{"k": "v"}), review.SubjectHash)
+	}
+	_, err := svc.ReviewApproval(context.Background(), "org-a", id, "bystander")
+	require.Equal(t, business.ErrTypeNotFound, storeErrType(t, err))
+	_, err = svc.DecideReviewedApproval(context.Background(), "org-a", id, business.DecideInput{Decider: "bystander", Decision: business.DecisionApprove, ExpectedSubjectHash: subjectHash(t, map[string]any{"k": "v"})})
+	require.Equal(t, business.ErrTypeNotFound, storeErrType(t, err))
+}
+
+// With no approver set a request is visible to its requester alone, so a
+// reviewed decision by anyone else is refused even though the engine would
+// otherwise admit any decider the handler let through.
+func TestApprovalEngine_ReviewedDecisionWithoutApproverSetIsRequesterOnly(t *testing.T) {
+	svc, store := newApprovalService(t)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{OrgID: "org-a", Resource: "example", Action: "advance", RequestedBy: "requester", Subject: map[string]any{"k": "v"}})
+	_, err := svc.DecideReviewedApproval(context.Background(), "org-a", id, business.DecideInput{Decider: "member", Decision: business.DecisionApprove, ExpectedSubjectHash: subjectHash(t, map[string]any{"k": "v"})})
+	require.Equal(t, business.ErrTypeNotFound, storeErrType(t, err))
+	_, err = svc.DecideReviewedApproval(context.Background(), "org-a", id, business.DecideInput{Decider: "requester", Decision: business.DecisionApprove, ExpectedSubjectHash: subjectHash(t, map[string]any{"k": "v"})})
+	require.Equal(t, business.ErrTypePermission, storeErrType(t, err))
+	require.Empty(t, store.decisions)
+}
+
+func TestApprovalEngine_ReviewedDecisionRequiresTheHash(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{OrgID: "org-a", Resource: "example", Action: "advance", RequestedBy: "requester", Policy: business.ApprovalPolicy{ApproverSet: []string{"reviewer"}}})
+	_, err := svc.DecideReviewedApproval(context.Background(), "org-a", id, business.DecideInput{Decider: "reviewer", Decision: business.DecisionApprove})
+	require.Equal(t, business.ErrTypeValidation, storeErrType(t, err))
+}
+
+func TestApprovalEngine_ReviewedDecisionReturnsTheStateItProduced(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	subject := map[string]any{"k": "v"}
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{OrgID: "org-a", Resource: "example", Action: "advance", RequestedBy: "requester", Subject: subject, Quorum: 2, Policy: business.ApprovalPolicy{ApproverSet: []string{"r1", "r2"}}})
+	review, err := svc.DecideReviewedApproval(context.Background(), "org-a", id, business.DecideInput{Decider: "r1", Decision: business.DecisionApprove, ExpectedSubjectHash: subjectHash(t, subject)})
+	require.NoError(t, err)
+	require.Equal(t, business.ApprovalPending, review.Request.State)
+	require.Len(t, review.Decisions, 1)
+	review, err = svc.DecideReviewedApproval(context.Background(), "org-a", id, business.DecideInput{Decider: "r2", Decision: business.DecisionApprove, ExpectedSubjectHash: subjectHash(t, subject)})
+	require.NoError(t, err)
+	require.Equal(t, business.ApprovalApproved, review.Request.State)
+	require.Len(t, review.Decisions, 2)
+}
+
+// Each vote is audited when it is recorded, not only the vote that closes the
+// request, so a quorum can be reconstructed from the trail.
+func TestApprovalEngine_EveryDecisionIsAudited(t *testing.T) {
+	svc, _ := newApprovalService(t)
+	spy := &recordingAuditEmitter{}
+	svc.SetAuditEmitter(spy)
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{OrgID: "org-a", Resource: "example", Action: "advance", RequestedBy: "requester", Quorum: 2, Policy: business.ApprovalPolicy{ApproverSet: []string{"r1", "r2"}}})
+	_, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{Decider: "r1", Decision: business.DecisionApprove})
+	require.NoError(t, err)
+	require.Equal(t, 1, countEvents(spy.entries, business.EventApprovalDecisionRecorded))
+	require.Zero(t, countEvents(spy.entries, business.EventApprovalApproved))
+	_, err = svc.Decide(context.Background(), "org-a", id, business.DecideInput{Decider: "r2", Decision: business.DecisionApprove})
+	require.NoError(t, err)
+	require.Equal(t, 2, countEvents(spy.entries, business.EventApprovalDecisionRecorded))
+	require.Equal(t, 1, countEvents(spy.entries, business.EventApprovalApproved))
 }

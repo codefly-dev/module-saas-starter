@@ -12,13 +12,18 @@ artifact-roots:
   - tools
 services:
   - name: accounts
-    endpoints: [connect, grpc, rest]
+    endpoints: [authority, connect, grpc, rest]
     api-contracts:
+      - endpoint: authority
+        kind: protobuf
+        package: saas.accounts.v1
+        path: contracts/api/accounts/authority/contract.binpb
+        digest: sha256:a104ff2b007521cb57850af7cd2afd18bdd3613a09b0f4c8d32df7518e3dc596
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:47d9cec4e4625c0c85287e7dd75600e2d72d9c5e0b8d7855359b2b5109a5b86c
+        digest: sha256:a104ff2b007521cb57850af7cd2afd18bdd3613a09b0f4c8d32df7518e3dc596
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:

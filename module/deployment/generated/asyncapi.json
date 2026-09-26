@@ -108,6 +108,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.approval.decision_recorded": {
+      "address": "saas.approval.decision_recorded",
+      "title": "saas.approval.decision_recorded",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.decision_recorded"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.approval.denied": {
       "address": "saas.approval.denied",
       "title": "saas.approval.denied",
@@ -1877,6 +1888,13 @@
       },
       "title": "saas publishes saas.approval.cancelled"
     },
+    "send:saas.approval.decision_recorded": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.decision_recorded"
+      },
+      "title": "saas publishes saas.approval.decision_recorded"
+    },
     "send:saas.approval.denied": {
       "action": "send",
       "channel": {
@@ -3017,6 +3035,13 @@
       "saas.approval.cancelled": {
         "name": "saas.approval.cancelled",
         "title": "saas.approval.cancelled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.decision_recorded": {
+        "name": "saas.approval.decision_recorded",
+        "title": "saas.approval.decision_recorded",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
