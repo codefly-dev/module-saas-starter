@@ -691,12 +691,16 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 //
 // actor is resolved to a principal id, because that is what the spine's actor
 // column holds (resolveModuleAuditActor). A module that acted for a subject
-// names that subject; a module that acted on its own names its own principal or
+// names that subject — recorded only once the subject is shown to be a member of
+// the tenant; a module that acted on its own names its own principal or
 // a process label of its own (system:<process>), and the row records the
 // module's principal as a system actor. An actor that resolves to no principal
 // is refused with ErrModuleAuditActorUnresolved before anything is written — it
 // used to be accepted and then blanked on write, so the row said nobody did it
 // and the emitter was told it had succeeded.
+//
+// entryID must be an opaque identifier; one that is a locator is dropped rather
+// than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
@@ -707,10 +711,6 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 			return status.Errorf(codes.PermissionDenied, "principal %s may not emit system-scoped audit events", caller.PrincipalID)
 		}
 	} else if err := authorizeTenant(caller, grant, tenant); err != nil {
-		return err
-	}
-	actorID, actorType, err := resolveModuleAuditActor(caller, actor)
-	if err != nil {
 		return err
 	}
 	payload := make(map[string]any)
@@ -727,6 +727,15 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	if err := ValidatePayload(EventType(eventType), payload); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
+	// Resolved after the registry has accepted the event: the subject case needs a
+	// membership read, so an emit that is going to be rejected on the request alone
+	// must not pay for it — and every guard that rejects on the request alone still
+	// does so before this surface touches the store at all.
+	actorID, actorType, err := s.resolveModuleAuditActor(ctx, caller, tenant, actor)
+	if err != nil {
+		return err
+	}
+	entryID = opaqueAuditEntryID(ctx, entryID)
 	// The emission IS the operation the module requested, so a failed write must
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.
@@ -774,7 +783,7 @@ var moduleProcessActorPattern = regexp.MustCompile(`^system:[a-z0-9](?:[a-z0-9._
 //     the spine can hold; the principal it runs as does.
 //   - anything else resolves to no principal and fails loudly with
 //     ErrModuleAuditActorUnresolved — never stored with the actor blanked.
-func resolveModuleAuditActor(caller ModuleCaller, actor string) (actorID, actorType string, err error) {
+func (s *Service) resolveModuleAuditActor(ctx context.Context, caller ModuleCaller, tenant, actor string) (actorID, actorType string, err error) {
 	own := caller.PrincipalID
 	if parsed, perr := uuid.Parse(own); perr == nil {
 		own = parsed.String()
@@ -784,13 +793,93 @@ func resolveModuleAuditActor(caller ModuleCaller, actor string) (actorID, actorT
 		if actorID == own {
 			return actorID, ActorTypeSystem, nil
 		}
-		return actorID, ActorTypeAgent, nil
+		placed, perr := s.moduleAuditSubjectIsMemberOf(ctx, tenant, actorID)
+		if perr != nil {
+			return "", "", perr
+		}
+		if placed {
+			return actorID, ActorTypeAgent, nil
+		}
+		return "", "", status.Errorf(codes.FailedPrecondition,
+			"%v: actor %q is not a member of tenant %q: a module may name only a subject of the tenant it is writing to, or its own work as its principal or as system:<process>",
+			ErrModuleAuditActorUnresolved, actorID, tenant)
 	}
 	if moduleProcessActorPattern.MatchString(actor) {
 		return own, ActorTypeSystem, nil
 	}
 	return "", "", status.Errorf(codes.FailedPrecondition,
 		"%v: actor %q: name the subject the module acted for (a principal id), or the module's own work as its principal or as system:<process>", ErrModuleAuditActorUnresolved, actor)
+}
+
+// moduleAuditSubjectIsMemberOf reports whether subject may be named as the actor
+// of a row in tenant. A module naming a subject is making an unattested claim:
+// audit_events.actor_id means "the verified initiator" everywhere else on the
+// spine — AuditActor is resolved from the authenticated request context and
+// never from fields the caller supplies — while here the module is the only
+// witness that the subject acted at all. The host cannot check that, so it
+// checks the one thing it can: that the subject is a party in the organization
+// the row lands in. This is the same guard requireTenantMember applies wherever
+// this surface acts on a module-named subject, and without it a module bound to
+// one tenant can write another tenant's user id, or any id at all, into a trail
+// that is append-only and never correctable.
+//
+// A system-scoped row (empty tenant) has no organization to place a subject in,
+// so there is no subject it could verify and none it will record.
+//
+// A failed read is returned, not treated as "not a member": it proves nothing
+// either way, and audit_events_no_update means a row written under a guessed
+// actor can never be put right.
+func (s *Service) moduleAuditSubjectIsMemberOf(ctx context.Context, tenant, subject string) (bool, error) {
+	if tenant == "" {
+		return false, nil
+	}
+	var member bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		member, e = s.store.OrgMemberExists(ctx, tenant, subject)
+		return e
+	}); err != nil {
+		return false, status.Error(codes.Internal, err.Error())
+	}
+	return member, nil
+}
+
+// opaqueAuditEntryID keeps an entry id the row can carry and drops one that is a
+// locator rather than an identifier.
+//
+// audit_events.resource_id is text, so the column accepts whatever a module
+// sends (entry_id is capped at 255 bytes and constrained no further). Storing it
+// as given is right — that is what keeps a document entry's ULID — but it
+// replaced an implicit constraint (a UUID or nothing) with none at all, and this
+// is the one identifier field on the row that no declaration mechanism covers:
+// a payload field declares PII and RedactPayload strips it on the CSV download,
+// the JSON download and the S3 JSONL exporter, while resource_id goes out
+// verbatim. audit_events is also append-only — audit_events_no_update and
+// audit_events_no_delete — with a 365-day retention, so a value written here can
+// never be corrected or erased.
+//
+// A path separator or an "@" is what separates a locator from an identifier: a
+// ULID, a UUID, a content digest, a provider object id and a numeric id carry
+// neither, while "clients/jane.doe@example.com/2026-Q1.pdf" carries both and is
+// record content rather than a name for the record. Whitespace and control
+// characters are the same signal. Such a value is dropped to no resource id —
+// which is exactly what the writer used to do to it — and never refuses the
+// emit, so the event itself still lands. A producer with a path, a filename or
+// an address to record has a declared payload field for it, which is the field
+// the redaction machinery can actually reach.
+func opaqueAuditEntryID(ctx context.Context, entryID string) string {
+	if entryID == "" {
+		return ""
+	}
+	for _, r := range entryID {
+		if r == '/' || r == '\\' || r == '@' || r <= ' ' || r == 0x7f {
+			wool.Get(ctx).In("opaqueAuditEntryID").Warn(
+				"module audit entry id is a locator, not an identifier; the row records no resource id",
+				wool.Field("entry_id", entryID))
+			return ""
+		}
+	}
+	return entryID
 }
 
 // ---------------------------------------------------------------------------
