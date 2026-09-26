@@ -71,7 +71,10 @@ type webhookPayload struct {
 // record. It is the domain event's payload: the emitter publishes these bytes as
 // the envelope data, and the relay wraps them in the delivery envelope below, so
 // the body an endpoint receives is unchanged by the move to subscriptions.
-func AuditEventWebhookData(entry AuditEntry) ([]byte, error) {
+//
+// resolved is what the registry says about the entry's type
+// (AuditEventResolver); its PII fields never reach an endpoint.
+func AuditEventWebhookData(entry AuditEntry, resolved ResolvedAuditEvent) ([]byte, error) {
 	return json.Marshal(map[string]any{
 		"event_type": string(entry.EventType),
 		// The registered version of this event's contract. A subscriber reads
@@ -85,7 +88,7 @@ func AuditEventWebhookData(entry AuditEntry) ([]byte, error) {
 		"actor_id":        entry.ActorID,
 		"actor_type":      entry.ActorType,
 		"organization_id": entry.OrgID,
-		"payload":         RedactPayload(entry.EventType, entry.Payload),
+		"payload":         resolved.Redact(entry.Payload),
 	})
 }
 

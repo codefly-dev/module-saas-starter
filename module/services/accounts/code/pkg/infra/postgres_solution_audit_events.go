@@ -69,7 +69,24 @@ func scanDeclaredAuditEventType(row pgx.Row) (*business.DeclaredAuditEventType, 
 
 // GetDeclaredAuditEventType reads one solution-declared type, or nil when the
 // type is absent or is code-owned.
+//
+// It is the declared half of the one audit type lookup
+// (business.AuditEventResolver), which runs both inside a transaction — the
+// audit write, admission — and outside one — the export job, a download. On a
+// transaction it reads there (app_tenant may SELECT the table, and a read on
+// the caller's transaction sees what that transaction admitted); with none it
+// opens a control-plane transaction of its own rather than reading as whatever
+// role the pool logs in as.
 func (s *PostgresStore) GetDeclaredAuditEventType(ctx context.Context, eventType business.EventType) (*business.DeclaredAuditEventType, error) {
+	if _, inTx := ctx.Value("tx").(pgx.Tx); !inTx {
+		var declared *business.DeclaredAuditEventType
+		err := s.withControlPlaneTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {
+			var err error
+			declared, err = s.GetDeclaredAuditEventType(ctx, eventType)
+			return err
+		})
+		return declared, err
+	}
 	declared, err := scanDeclaredAuditEventType(s.getQueryExecutor(ctx).QueryRow(ctx,
 		`SELECT name, namespace, owner, payload_schema FROM audit_event_types
 		 WHERE name = $1 AND starts_with(owner, $2)`,

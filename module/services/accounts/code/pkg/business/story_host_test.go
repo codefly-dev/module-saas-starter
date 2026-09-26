@@ -279,7 +279,7 @@ func TestStory_HOST_CLIENT_003(t *testing.T) {
 	// And it names the client the call was made through.
 	viaClient, recorded := byClient[storyClientID]
 	require.True(t, recorded, "the client-made call must name its client")
-	require.Equal(t, storyClientID, infra.AuditEntryToProto(viaClient).ClientId,
+	require.Equal(t, storyClientID, infra.AuditEntryToProto(viaClient, business.ResolvedAuditEvent{}).ClientId,
 		"a reviewer reads the client off the exported audit event, not only off the row")
 
 	// And the same person's call from the host's own web session names no

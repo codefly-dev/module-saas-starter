@@ -87,6 +87,9 @@ dashboard:
           kind: number
         - name: minutes_to_review
           kind: int
+        - name: reviewer_email
+          kind: string
+          pii: true
   metrics:
     - id: triggers_over_time
       kind: source

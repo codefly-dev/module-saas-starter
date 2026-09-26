@@ -81,6 +81,12 @@ export interface EventFieldDeclaration {
 	kind: EventFieldKind;
 	/** The allowed values; required for, and only for, `kind: "enum"`. */
 	values?: readonly string[];
+	/**
+	 * Marks a personally identifying field. The host strips it from every path
+	 * that sends an event outside its audit store — webhooks, the export feed,
+	 * downloads. Once admitted as `pii` a field stays so.
+	 */
+	pii?: boolean;
 }
 
 /**
@@ -306,7 +312,7 @@ function validateEventField(
 	context: string,
 ): asserts value is EventFieldDeclaration {
 	assertGraph(isObject(value), `${context} field must be an object`);
-	assertExactKeys(value, ["name", "kind", "values"], `${context} field`);
+	assertExactKeys(value, ["name", "kind", "values", "pii"], `${context} field`);
 	assertGraph(
 		typeof value.name === "string" &&
 			EVENT_FIELD_NAME.test(value.name) &&
@@ -318,6 +324,10 @@ function validateEventField(
 		`${context} may not declare '${HOST_STAMPED_EVENT_FIELD}': the host stamps it`,
 	);
 	const field = `${context} field '${value.name}'`;
+	assertGraph(
+		value.pii === undefined || typeof value.pii === "boolean",
+		`${field} pii must be a boolean`,
+	);
 	assertGraph(
 		EVENT_FIELD_KIND.includes(value.kind as EventFieldKind),
 		`${field} kind '${String(value.kind)}' is unsupported`,

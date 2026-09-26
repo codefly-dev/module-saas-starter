@@ -62,11 +62,14 @@ import (
 //   - Field names are snake_case, unique within the type, and never `solution`,
 //     which the host stamps on every emitted payload.
 //   - A field kind is one of the registry's kinds, `number` (finite) included;
-//     `enum` names its values and nothing else does.
+//     `enum` names its values and nothing else does. A field marked `pii` is
+//     stripped from every path that sends an event outside the audit store
+//     (AuditEventResolver).
 //   - Re-registering an identical declaration changes nothing. A changed field
 //     set is additive only: a field may be added, and an enum may gain values,
-//     but no field is removed, retyped, or loses a value — rows already written
-//     under the earlier set must still mean what they meant.
+//     and a field may become `pii`, but no field is removed, retyped, loses a
+//     value or stops being `pii` — rows already written under the earlier set
+//     must still mean what they meant.
 //   - A type is never removed. A declaration that stops listing it leaves it
 //     admitted and owned, because historical rows keep referencing it.
 
@@ -207,7 +210,10 @@ func (d DeclaredAuditEventType) Definition() AuditEventDefinition {
 		Owner:       SolutionAuditOwner(d.SolutionID),
 		Description: d.Description,
 		Durability:  DurabilityObservational,
-		Fields:      append([]PayloadField(nil), d.Fields...),
+		// The whole payload the type carries, the host-stamped solution
+		// included, so a declared type validates and redacts exactly as the
+		// row's stored schema says.
+		Fields: d.validationFields(),
 	}
 }
 
@@ -219,6 +225,7 @@ type storedDeclaredAuditSchema struct {
 		Type   string   `json:"type"`
 		Format string   `json:"format"`
 		Enum   []string `json:"enum"`
+		PII    bool     `json:"x-pii"`
 		Items  *struct {
 			Type string `json:"type"`
 		} `json:"items"`
@@ -247,7 +254,7 @@ func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner stri
 		if name == hostStampedAuditField {
 			continue
 		}
-		field := PayloadField{Name: name}
+		field := PayloadField{Name: name, PII: property.PII}
 		switch {
 		case property.Type == "string" && property.Format == "uuid":
 			field.Kind = FieldUUID
@@ -294,6 +301,9 @@ type declaredFieldJSON struct {
 	Name   string    `json:"name"`
 	Kind   string    `json:"kind"`
 	Values *[]string `json:"values"`
+	// PII marks a personally identifying field: it is stripped from every
+	// path that sends an event outside the audit store.
+	PII bool `json:"pii"`
 }
 
 // ParseDeclaredAuditEventTypes extracts the audit event types a registration
@@ -396,7 +406,7 @@ func parseDeclaredAuditFields(eventType string, raw json.RawMessage) ([]PayloadF
 		if !declarableAuditFieldKinds[kind] {
 			return nil, declarationRejected("event type %q field %q has unknown kind %q", eventType, field.Name, field.Kind)
 		}
-		payloadField := PayloadField{Name: field.Name, Kind: kind}
+		payloadField := PayloadField{Name: field.Name, Kind: kind, PII: field.PII}
 		if kind == FieldEnum {
 			values, err := declaredEnumValues(eventType, field)
 			if err != nil {
@@ -450,6 +460,12 @@ func checkAdditiveAuditFieldChange(admitted, declared DeclaredAuditEventType) er
 		if replacement.Kind != field.Kind {
 			return declarationRejected("event type %q field %q is admitted as %s and may not become %s",
 				declared.Type, field.Name, field.Kind, replacement.Kind)
+		}
+		// A field once marked PII stays PII: rows already written under it
+		// hold personal data, and unmarking it would start exporting them.
+		if field.PII && !replacement.PII {
+			return declarationRejected("event type %q field %q is admitted as personally identifying and may not stop being so",
+				declared.Type, field.Name)
 		}
 		if field.Kind == FieldEnum {
 			values := make(map[string]bool, len(replacement.Enum))

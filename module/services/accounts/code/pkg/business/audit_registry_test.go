@@ -105,9 +105,9 @@ func TestValidatePayload(t *testing.T) {
 	})
 }
 
-func TestRedactPayload(t *testing.T) {
+func TestResolvedAuditEvent_Redact(t *testing.T) {
 	t.Run("strips PII fields", func(t *testing.T) {
-		out := RedactPayload(EventUserRegistered, map[string]any{
+		out := catalogResolved(EventUserRegistered).Redact(map[string]any{
 			"signup_method": "password",
 			"email":         "secret@example.com",
 		})
@@ -115,10 +115,10 @@ func TestRedactPayload(t *testing.T) {
 	})
 	t.Run("no-PII type passes through", func(t *testing.T) {
 		in := map[string]any{"step": "invite_team"}
-		require.Equal(t, in, RedactPayload(EventOnboardingStepDone, in))
+		require.Equal(t, in, catalogResolved(EventOnboardingStepDone).Redact(in))
 	})
 	t.Run("unregistered type fails closed", func(t *testing.T) {
-		out := RedactPayload("saas.nope.not_real", map[string]any{"anything": "x"})
+		out := catalogResolved("saas.nope.not_real").Redact(map[string]any{"anything": "x"})
 		require.Empty(t, out)
 	})
 }

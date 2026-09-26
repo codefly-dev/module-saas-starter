@@ -1006,37 +1006,6 @@ func validateField(t EventType, f PayloadField, v any) error {
 	return nil
 }
 
-// RedactPayload returns a copy of payload with every field the registry marks
-// PII removed. Used on every export path so downstream audit sinks never
-// receive personally identifying fields. An unregistered type is redacted
-// whole (fail closed): without a schema we cannot tell which fields are safe.
-func RedactPayload(t EventType, payload map[string]any) map[string]any {
-	if len(payload) == 0 {
-		return payload
-	}
-	d, ok := auditEventIndex[t]
-	if !ok {
-		return map[string]any{}
-	}
-	piiFields := make(map[string]struct{})
-	for _, f := range d.Fields {
-		if f.PII {
-			piiFields[f.Name] = struct{}{}
-		}
-	}
-	if len(piiFields) == 0 {
-		return payload
-	}
-	out := make(map[string]any, len(payload))
-	for k, v := range payload {
-		if _, redacted := piiFields[k]; redacted {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
 // PayloadSchemaJSON is the marshaled JSON Schema stored in
 // audit_event_types.payload_schema by the DB projection.
 func (d AuditEventDefinition) PayloadSchemaJSON() []byte {

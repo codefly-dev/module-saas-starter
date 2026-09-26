@@ -1236,8 +1236,13 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 	}
 
 	var events []*gen.AuditEvent
+	resolver := service.AuditEventResolver()
 	for _, e := range entries {
-		events = append(events, infra.AuditEntryToProto(e))
+		resolved, err := resolver.Resolve(ctx, e.EventType)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "audit event types unavailable")
+		}
+		events = append(events, infra.AuditEntryToProto(e, resolved))
 	}
 
 	return &gen.QueryAuditLogResponse{

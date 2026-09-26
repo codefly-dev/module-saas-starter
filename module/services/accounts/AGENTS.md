@@ -47,7 +47,13 @@ survives a restart and reaches every replica, and is only served when it is
   Ownership follows the binding: the operator releases a namespace by removing
   it from the holder's entry and binding it to another solution, whose next
   admission takes every type in it over, recorded as
-  `audit_namespaces_taken_over` on `saas.solution.registration_updated`. `ModuleEmitAuditEvent` accepts a declared type only when the
+  `audit_namespaces_taken_over` on `saas.solution.registration_updated`.
+  Every path that reads a type's schema — the version stamp, payload checks,
+  the category label, and PII redaction on webhooks, the export feed and
+  downloads — resolves it through one lookup (`business.AuditEventResolver`),
+  which reads a declared type's row, so a declared field marked `pii` is
+  stripped like a catalog one and a declared type is never dead-lettered as
+  unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
   `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
   lists its namespace.
 - A deregistration leaves a **tombstone**, so a retiring deployment's delayed

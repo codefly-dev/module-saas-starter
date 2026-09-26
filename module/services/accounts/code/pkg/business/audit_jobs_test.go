@@ -205,13 +205,13 @@ func TestExportHandlerRefusesUnregisteredEventType(t *testing.T) {
 	entry := orgAuditEntry()
 	entry.EventType = EventType("auth.login") // the pre-namespace name
 	entry.Payload = map[string]any{"method": "password"}
-	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+	if err := enqueueAuditExport(t.Context(), store, entry, catalogResolved(entry.EventType)); err != nil {
 		t.Fatalf("enqueueAuditExport: %v", err)
 	}
 	envelope := envelopeFromRequest(t, store.jobs[0])
 
 	sink := &flakySink{}
-	handler, err := NewAuditExportJobHandler(sink)
+	handler, err := NewAuditExportJobHandler(sink, nil)
 	if err != nil {
 		t.Fatalf("NewAuditExportJobHandler: %v", err)
 	}
@@ -270,13 +270,13 @@ func (s *flakySink) Emit(_ context.Context, entry AuditEntry) error {
 
 func TestExportHandlerAtLeastOnceDrain(t *testing.T) {
 	store := &teeStore{}
-	if err := enqueueAuditExport(t.Context(), store, orgAuditEntry()); err != nil {
+	if err := enqueueAuditExport(t.Context(), store, orgAuditEntry(), catalogResolved(orgAuditEntry().EventType)); err != nil {
 		t.Fatalf("enqueueAuditExport: %v", err)
 	}
 	envelope := envelopeFromRequest(t, store.jobs[0])
 
 	sink := &flakySink{failures: 2}
-	handler, err := NewAuditExportJobHandler(sink)
+	handler, err := NewAuditExportJobHandler(sink, nil)
 	if err != nil {
 		t.Fatalf("NewAuditExportJobHandler: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestExportRedactsPayload(t *testing.T) {
 	// fixture's default: fail-closed redaction is exactly what this test asserts.
 	entry.EventType = EventType("auth.login")
 	entry.Payload = map[string]any{"secret": "value"}
-	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+	if err := enqueueAuditExport(t.Context(), store, entry, catalogResolved(entry.EventType)); err != nil {
 		t.Fatalf("enqueueAuditExport: %v", err)
 	}
 	decoded, err := decodeAuditExportEnvelope(envelopeFromRequest(t, store.jobs[0]))
@@ -365,7 +365,7 @@ func TestExportHandlerRedactsAtEgress(t *testing.T) {
 		MaxAttempts:    AuditExportMaxAttempts,
 	}
 	sink := &capturingSink{}
-	handler, err := NewAuditExportJobHandler(sink)
+	handler, err := NewAuditExportJobHandler(sink, nil)
 	if err != nil {
 		t.Fatalf("NewAuditExportJobHandler: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestExportCarriesTheClientTheCallCameThrough(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 	sink := &capturingSink{}
-	handler, err := NewAuditExportJobHandler(sink)
+	handler, err := NewAuditExportJobHandler(sink, nil)
 	if err != nil {
 		t.Fatalf("NewAuditExportJobHandler: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestExportCarriesTheClientTheCallCameThrough(t *testing.T) {
 }
 
 func TestExportHandlerRejectsMalformedJob(t *testing.T) {
-	handler, err := NewAuditExportJobHandler(&flakySink{})
+	handler, err := NewAuditExportJobHandler(&flakySink{}, nil)
 	if err != nil {
 		t.Fatalf("NewAuditExportJobHandler: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestExportPreservesTheImpersonationJustification(t *testing.T) {
 	entry := orgAuditEntry()
 	entry.EventType = EventPlatformImpersonated
 	entry.Payload = map[string]any{"reason": reason}
-	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+	if err := enqueueAuditExport(t.Context(), store, entry, catalogResolved(entry.EventType)); err != nil {
 		t.Fatalf("enqueueAuditExport: %v", err)
 	}
 	decoded, err := decodeAuditExportEnvelope(envelopeFromRequest(t, store.jobs[0]))
@@ -527,7 +527,13 @@ func TestExportPreservesTheImpersonationJustification(t *testing.T) {
 	if got := decoded.Payload["reason"]; got != reason {
 		t.Fatalf("teed reason = %v, want %q", got, reason)
 	}
-	if got := RedactPayload(entry.EventType, decoded.Payload)["reason"]; got != reason {
+	if got := catalogResolved(entry.EventType).Redact(decoded.Payload)["reason"]; got != reason {
 		t.Fatalf("egress reason = %v, want %q", got, reason)
 	}
+}
+
+// catalogResolved resolves a type against the code catalog alone.
+func catalogResolved(t EventType) ResolvedAuditEvent {
+	resolved, _ := NewAuditEventResolver(nil).Resolve(context.Background(), t)
+	return resolved
 }

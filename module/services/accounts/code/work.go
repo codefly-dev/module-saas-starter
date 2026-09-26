@@ -562,7 +562,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		// transaction and so cannot commit atomically with the audit row. Surface
 		// this so operators don't assume the warehouse holds platform events.
 		w.Warn("AUDIT_SINK=both tees only org-scoped audit events to the external sink; control-plane/platform-admin (NULL-org) events remain Postgres-only")
-		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink)
+		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink, store)
 		if err != nil {
 			return nil, err
 		}

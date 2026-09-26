@@ -48,13 +48,13 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 
 	switch format {
 	case "csv":
-		data, err := auditToCSV(all)
+		data, err := auditToCSV(ctx, s.AuditEventResolver(), all)
 		if err != nil {
 			return nil, "", "", w.Wrapf(err, "serialize audit CSV")
 		}
 		return data, "text/csv", fmt.Sprintf("audit-log-%s.csv", timestamp), nil
 	default:
-		data, err := auditToJSON(all)
+		data, err := auditToJSON(ctx, s.AuditEventResolver(), all)
 		if err != nil {
 			return nil, "", "", w.Wrapf(err, "serialize audit JSON")
 		}
@@ -62,7 +62,7 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 	}
 }
 
-func auditToCSV(entries []AuditEntry) ([]byte, error) {
+func auditToCSV(ctx context.Context, resolver *AuditEventResolver, entries []AuditEntry) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
 
@@ -72,10 +72,11 @@ func auditToCSV(entries []AuditEntry) ([]byte, error) {
 	}
 
 	for _, e := range entries {
-		category := ""
-		if def, ok := LookupAuditEvent(e.EventType); ok {
-			category = string(def.Category)
+		resolved, err := resolver.Resolve(ctx, e.EventType)
+		if err != nil {
+			return nil, err
 		}
+		category := resolved.Category()
 		if err := writer.Write([]string{
 			e.ID,
 			string(e.EventType),
@@ -117,10 +118,14 @@ type auditExportEntry struct {
 	CreatedAt     string         `json:"created_at"`
 }
 
-func auditToJSON(entries []AuditEntry) ([]byte, error) {
+func auditToJSON(ctx context.Context, resolver *AuditEventResolver, entries []AuditEntry) ([]byte, error) {
 	out := make([]auditExportEntry, len(entries))
 	for i, e := range entries {
-		out[i] = auditEntryToExport(e)
+		resolved, err := resolver.Resolve(ctx, e.EventType)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = auditEntryToExport(e, resolved)
 	}
 	return json.MarshalIndent(out, "", "  ")
 }
@@ -128,11 +133,8 @@ func auditToJSON(entries []AuditEntry) ([]byte, error) {
 // auditEntryToExport is the shared export projection for both the CSV/JSON
 // download and the S3 JSONL exporter. Payloads are PII-redacted here because
 // every caller writes to a destination outside the audit store.
-func auditEntryToExport(e AuditEntry) auditExportEntry {
-	category := ""
-	if def, ok := LookupAuditEvent(e.EventType); ok {
-		category = string(def.Category)
-	}
+func auditEntryToExport(e AuditEntry, resolved ResolvedAuditEvent) auditExportEntry {
+	category := resolved.Category()
 	return auditExportEntry{
 		ID:            e.ID,
 		EventType:     string(e.EventType),
@@ -145,7 +147,7 @@ func auditEntryToExport(e AuditEntry) auditExportEntry {
 		OrgID:         e.OrgID,
 		IPAddress:     e.IPAddress,
 		ClientID:      e.ClientID,
-		Payload:       RedactPayload(e.EventType, e.Payload),
+		Payload:       resolved.Redact(e.Payload),
 		CreatedAt:     e.CreatedAt.Format(time.RFC3339),
 	}
 }

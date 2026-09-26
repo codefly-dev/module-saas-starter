@@ -347,6 +347,7 @@ describe("assertDataGraph — declared event types", () => {
 			{ name: "label", kind: "string" },
 			{ name: "tags", kind: "string_array" },
 			{ name: "archived", kind: "bool" },
+			{ name: "requester_email", kind: "string", pii: true },
 		],
 	};
 
@@ -428,6 +429,13 @@ describe("assertDataGraph — declared event types", () => {
 				fields: [{ name: "count", kind: "int", values: ["1"] }],
 			},
 			/declares values but is not an enum/,
+		],
+		"a pii flag that is not a boolean": [
+			{
+				...itemCreated,
+				fields: [{ name: "email", kind: "string", pii: "yes" }],
+			},
+			/pii must be a boolean/,
 		],
 		"an unknown key on a field": [
 			{

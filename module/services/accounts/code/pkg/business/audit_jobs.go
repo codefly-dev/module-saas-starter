@@ -108,8 +108,8 @@ func (p auditExportPayload) toEntry() AuditEntry {
 // problem building the tee job never aborts that write (buildAuditExportJob
 // degrades to a payload-less job or skips the event). Only a genuine enqueue
 // failure — a broken jobs table — propagates and rolls the tx back.
-func enqueueAuditExport(ctx context.Context, producer jobs.Producer, entry AuditEntry) error {
-	request, ok := buildAuditExportJob(ctx, entry)
+func enqueueAuditExport(ctx context.Context, producer jobs.Producer, entry AuditEntry, resolved ResolvedAuditEvent) error {
+	request, ok := buildAuditExportJob(ctx, entry, resolved)
 	if !ok {
 		return nil
 	}
@@ -133,8 +133,8 @@ func enqueueAuditExport(ctx context.Context, producer jobs.Producer, entry Audit
 // the job payload cap — so a first failure is retried without it before the
 // event is dropped. InsertAuditEvent already tolerated the same payload; the
 // best-effort tee must not be stricter than the source of truth.
-func buildAuditExportJob(ctx context.Context, entry AuditEntry) (*jobsv1.EnqueueJobRequest, bool) {
-	entry.Payload = RedactPayload(entry.EventType, entry.Payload)
+func buildAuditExportJob(ctx context.Context, entry AuditEntry, resolved ResolvedAuditEvent) (*jobsv1.EnqueueJobRequest, bool) {
+	entry.Payload = resolved.Redact(entry.Payload)
 	request, err := newAuditExportJob(entry)
 	if err == nil {
 		err = jobs.ValidateCommand(request)
@@ -189,8 +189,9 @@ func auditExportUndeliverable(ctx context.Context, entry AuditEntry, disposition
 
 // NewAuditExportJobHandler drains the export queue into the external sink. A
 // sink failure is returned so the generic worker retries the job (at-least-once);
-// a malformed job is a non-retryable ProcessingError.
-func NewAuditExportJobHandler(sink ExternalAuditSink) (jobs.Handler, error) {
+// a malformed job is a non-retryable ProcessingError. reader serves the
+// solution-declared half of the registry; nil resolves the catalog alone.
+func NewAuditExportJobHandler(sink ExternalAuditSink, reader DeclaredAuditEventTypeReader) (jobs.Handler, error) {
 	if sink == nil {
 		return nil, errors.New("audit: external sink is required")
 	}
@@ -199,14 +200,20 @@ func NewAuditExportJobHandler(sink ExternalAuditSink) (jobs.Handler, error) {
 		if err != nil {
 			return jobs.NewProcessingError("audit.invalid_job", "invalid audit export job", false)
 		}
-		// An unregistered type has no schema, so RedactPayload fails closed and
+		// An unregistered type has no schema, so Redact fails closed and
 		// strips the payload whole. Shipping that is worse than not shipping it:
 		// the sink is a compliance store, and an entry whose payload was silently
 		// emptied is indistinguishable there from an event that never carried one.
 		// Refuse it instead, so the job dead-letters visibly and can be replayed
 		// once the registry knows the type. This is the path a job enqueued under
 		// an older vocabulary takes after a rename (issue #520).
-		if _, registered := LookupAuditEvent(entry.EventType); !registered {
+		// A registry that cannot be read is an outage, retried like a sink
+		// failure — never mistaken for an unregistered type and dead-lettered.
+		resolved, err := NewAuditEventResolver(reader).Resolve(ctx, entry.EventType)
+		if err != nil {
+			return err
+		}
+		if !resolved.Registered {
 			wool.Get(ctx).In("AuditExportJobHandler").Error(
 				"audit export refused: event type is not in the registry, so its payload cannot be redacted",
 				wool.Field("event_id", entry.ID),
@@ -219,7 +226,7 @@ func NewAuditExportJobHandler(sink ExternalAuditSink) (jobs.Handler, error) {
 		// Redact again at the egress boundary. The feed already redacts before
 		// enqueue, but the sink is the point where data leaves the audit store,
 		// so it must not depend on an upstream invariant to keep PII out.
-		entry.Payload = RedactPayload(entry.EventType, entry.Payload)
+		entry.Payload = resolved.Redact(entry.Payload)
 		return sink.Emit(ctx, entry)
 	}, nil
 }

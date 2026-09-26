@@ -83,6 +83,9 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"values on a non-enum field": (m) => {
 		arr(arr(rec(m.dashboard).events)[2].fields)[1].values = ["high"];
 	},
+	"declared field with a non-boolean pii": (m) => {
+		arr(arr(rec(m.dashboard).events)[2].fields)[3].pii = "yes";
+	},
 	"unknown key on a declared field": (m) => {
 		arr(arr(rec(m.dashboard).events)[2].fields)[2].required = true;
 	},

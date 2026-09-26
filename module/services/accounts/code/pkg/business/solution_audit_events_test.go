@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"accounts/pkg/eventcatalog"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/jobs"
 )
 
 // Admission rules for solution-declared audit event types, exercised without a
@@ -120,6 +122,7 @@ func TestDeclaredAuditEventType_SchemaRoundTrip(t *testing.T) {
 			{Name: "enabled", Kind: FieldBool},
 			{Name: "item_id", Kind: FieldUUID},
 			{Name: "label", Kind: FieldString},
+			{Name: "requester_email", Kind: FieldString, PII: true},
 			{Name: "score", Kind: FieldNumber},
 			{Name: "stage", Kind: FieldEnum, Enum: []string{"draft", "final"}},
 			{Name: "tags", Kind: FieldStringArray},
@@ -159,6 +162,7 @@ func TestCheckAdditiveAuditFieldChange(t *testing.T) {
 		{"drops a field", with(stage), false},
 		{"retypes a field", with(PayloadField{Name: "count", Kind: FieldNumber}, stage), false},
 		{"drops an enum value", with(count, PayloadField{Name: "stage", Kind: FieldEnum, Enum: []string{"draft"}}), false},
+		{"marks a field pii", with(PayloadField{Name: "count", Kind: FieldInt, PII: true}, stage), true},
 	}
 	for _, tc := range cases {
 		err := checkAdditiveAuditFieldChange(admitted, tc.next)
@@ -611,4 +615,114 @@ func (e *recordingEmitter) Emit(_ context.Context, entry AuditEntry) {
 func (e *recordingEmitter) EmitTx(_ context.Context, entry AuditEntry) error {
 	e.entries = append(e.entries, entry)
 	return nil
+}
+
+// A pii field is read from the declaration, and once admitted as pii it stays so.
+func TestDeclaredAuditEventType_PIIIsDeclaredAndOnlyTightens(t *testing.T) {
+	declared, err := ParseDeclaredAuditEventTypes("acme", declaringManifest("acme",
+		`{"name":"created","type":"acme.item.created","fields":[{"name":"email","kind":"string","pii":true},{"name":"count","kind":"int"}]}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	fields := declared[0].Fields
+	if fields[0].Name != "count" || fields[0].PII || fields[1].Name != "email" || !fields[1].PII {
+		t.Fatalf("fields = %#v, want email marked pii", fields)
+	}
+	unmarked := DeclaredAuditEventType{Type: declared[0].Type, Fields: []PayloadField{
+		{Name: "count", Kind: FieldInt}, {Name: "email", Kind: FieldString},
+	}}
+	if err := checkAdditiveAuditFieldChange(declared[0], unmarked); !errors.Is(err, ErrSolutionAuditDeclarationRejected) {
+		t.Fatalf("unmarking pii: err = %v, want refused", err)
+	}
+}
+
+// The one type lookup resolves a declared type: it is registered, carries the
+// host-stamped solution field, and its pii fields are stripped on export —
+// neither redacted whole nor dead-lettered as unregistered.
+func TestAuditEventResolver_ResolvesDeclaredTypes(t *testing.T) {
+	store := newDeclaredAuditStore()
+	declared := DeclaredAuditEventType{
+		Type: "acme.item.created", Namespace: "acme", SolutionID: "acme",
+		Fields: []PayloadField{{Name: "count", Kind: FieldInt}, {Name: "email", Kind: FieldString, PII: true}},
+	}
+	store.rows[declared.Type] = declaredAuditRow{owner: "solution:acme", namespace: "acme", declared: declared}
+
+	resolved, err := NewAuditEventResolver(store).Resolve(t.Context(), declared.Type)
+	if err != nil || !resolved.Registered || resolved.Category() != string(CategorySolution) {
+		t.Fatalf("resolved = %#v, %v", resolved, err)
+	}
+	payload := map[string]any{"solution": "acme", "count": 2.0, "email": "jane@example.com"}
+	if err := resolved.Validate(declared.Type, payload); err != nil {
+		t.Fatalf("a well-typed declared payload: %v", err)
+	}
+	if got := resolved.Redact(payload); !reflect.DeepEqual(got, map[string]any{"solution": "acme", "count": 2.0}) {
+		t.Fatalf("redacted = %v, want only the pii field stripped", got)
+	}
+
+	// The same through the export tee and the sink it feeds.
+	entry := AuditEntry{ID: NewIDString(), OrgID: teeOrgID, EventType: declared.Type, Payload: payload}
+	request, ok := buildAuditExportJob(t.Context(), entry, resolved)
+	if !ok {
+		t.Fatal("the export job was not built")
+	}
+	sink := &capturingSink{}
+	handler, err := NewAuditExportJobHandler(sink, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handler(t.Context(), exportEnvelopeFor(request)); err != nil {
+		t.Fatalf("a declared type must be exported, not dead-lettered: %v", err)
+	}
+	if _, leaked := sink.last.Payload["email"]; leaked || sink.last.Payload["count"] != 2.0 {
+		t.Fatalf("sink payload = %v", sink.last.Payload)
+	}
+
+	// The same through the webhook body and the CSV/JSON download.
+	data, err := AuditEventWebhookData(entry, resolved)
+	if err != nil || strings.Contains(string(data), "jane@example.com") {
+		t.Fatalf("webhook data = %s, %v", data, err)
+	}
+	exported, err := auditToJSON(t.Context(), NewAuditEventResolver(store), []AuditEntry{entry})
+	if err != nil || strings.Contains(string(exported), "jane@example.com") || !strings.Contains(string(exported), `"solution"`) {
+		t.Fatalf("json export = %s, %v", exported, err)
+	}
+
+	// A registry that cannot be read is retried, never dead-lettered.
+	failing, err := NewAuditExportJobHandler(sink, failingDeclaredReader{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := failing(t.Context(), exportEnvelopeFor(request)); err == nil || isProcessingError(err) {
+		t.Fatalf("an unreadable registry: err = %v, want a retryable error", err)
+	}
+}
+
+type failingDeclaredReader struct{}
+
+func (failingDeclaredReader) GetDeclaredAuditEventType(context.Context, EventType) (*DeclaredAuditEventType, error) {
+	return nil, errors.New("registry unreachable")
+}
+
+// exportEnvelopeFor is the envelope the worker leases for an enqueued export job.
+func exportEnvelopeFor(request *jobsv1.EnqueueJobRequest) *jobsv1.JobEnvelope {
+	job := request.GetJob()
+	return &jobsv1.JobEnvelope{
+		Id:             NewIDString(),
+		Direction:      job.GetDirection(),
+		Scope:          job.GetScope(),
+		Queue:          job.GetQueue(),
+		Topic:          job.GetTopic(),
+		Source:         job.GetSource(),
+		IdempotencyKey: job.GetIdempotencyKey(),
+		SchemaVersion:  job.GetSchemaVersion(),
+		Payload:        job.GetPayload(),
+		ContentType:    job.GetContentType(),
+		State:          jobsv1.JobState_JOB_STATE_PENDING,
+		MaxAttempts:    job.GetMaxAttempts(),
+	}
+}
+
+func isProcessingError(err error) bool {
+	var processing *jobs.ProcessingError
+	return errors.As(err, &processing)
 }
