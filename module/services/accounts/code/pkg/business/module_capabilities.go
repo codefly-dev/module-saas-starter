@@ -708,6 +708,20 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	if err := ValidatePayload(EventType(eventType), payload); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
+	// entry_id is optional on the request because the surface is shared: types
+	// that record something about a whole solution have no entry to name. A type
+	// the registry says is about a resource is refused without one here rather
+	// than at the transport, where a min_len would impose the requirement on
+	// every type that shares the field.
+	if entryID == "" && AuditEventRequiresEntry(EventType(eventType)) {
+		return status.Errorf(codes.InvalidArgument, "audit: event %q records what happened to a resource and requires entry_id", eventType)
+	}
+	// An empty key disables deduplication, so for a type whose emitter reports
+	// per item and retries, accepting one guarantees a duplicate row on every
+	// replayed response rather than risking one.
+	if idempotencyKey == "" && AuditEventRequiresIdempotencyKey(EventType(eventType)) {
+		return status.Errorf(codes.InvalidArgument, "audit: event %q is emitted per item and requires idempotency_key naming the operation, so a retry collapses", eventType)
+	}
 	// The emission IS the operation the module requested, so a failed write must
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.

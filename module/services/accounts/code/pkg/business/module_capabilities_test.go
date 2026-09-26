@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -403,6 +404,67 @@ func TestModuleNackJob_RetryableRetries(t *testing.T) {
 func TestModuleEmitAuditEvent_UnregisteredTypeRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.InvalidArgument)
+}
+
+// entry_id is optional on ModuleEmitAuditEventRequest because the surface is
+// shared with types that have no entry to name, so a type whose whole subject is
+// one resource has to be refused here. Without this the emit succeeded and wrote
+// a redrive row that named no document at all.
+func TestModuleEmitAuditEvent_EntryRequiredWhenTheTypeRecordsAResource(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{
+		"version": "v1", "correlation_id": "redrive-7", "producer": "embed", "error_class": "exhausted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "actor-1", "example-solution", "", "redrive-7:entry-1:embed", fields)
+	requireCode(t, err, codes.InvalidArgument)
+
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "actor-1", "example-solution", "entry-1", "redrive-7:entry-1:embed", fields); err != nil {
+		t.Fatalf("the same emit naming its entry should be accepted: %v", err)
+	}
+}
+
+// An empty idempotency_key deduplicates nothing (see the field's contract on
+// ModuleEmitAuditEventRequest), so a type emitted once per queue item — where a
+// replayed response is ordinary — is refused without one. Before this, a redrive
+// whose response was lost wrote the same re-queue twice and nothing said so.
+func TestModuleEmitAuditEvent_IdempotencyKeyRequiredForPerItemTypes(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{
+		"version": "v1", "correlation_id": "redrive-7", "producer": "embed", "error_class": "exhausted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "actor-1", "example-solution", "entry-1", "", fields)
+	requireCode(t, err, codes.InvalidArgument)
+
+	// A type nobody declared retry-prone still emits without one, so the
+	// requirement stayed with the event rather than spreading to the surface.
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil); err != nil {
+		t.Fatalf("an undeclared type must keep emitting without a key: %v", err)
+	}
+}
+
+// The blank a Go emitter sends when it never set the field. The payload is
+// otherwise complete, so nothing else can be what refuses it.
+func TestModuleEmitAuditEvent_BlankRequiredFieldRefused(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{
+		"version": "v1", "correlation_id": "redrive-7", "producer": "", "error_class": "exhausted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "actor-1", "example-solution", "entry-1", "redrive-7:entry-1:embed", fields)
 	requireCode(t, err, codes.InvalidArgument)
 }
 

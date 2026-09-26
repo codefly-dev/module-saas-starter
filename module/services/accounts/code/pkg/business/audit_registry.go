@@ -47,10 +47,21 @@ const (
 // PayloadField declares one field of a typed audit payload. PII marks a field
 // as personally identifying: it is stripped from every export path so audit
 // destinations (the customer's S3 bucket, CSV/JSON downloads) never receive it.
+//
+// Required on a string-valued kind (string, uuid, enum) means a nonempty,
+// non-blank value, not merely a present key — see validateField. Declaring it
+// is therefore the whole of the contract: there is no second flag to remember,
+// because the hole this closes was created by exactly that kind of forgetting.
+//
+// MaxLen bounds a string-valued field's length; zero leaves it unbounded. It is
+// what keeps a field declared to carry a short identifier from carrying prose:
+// the audit spine is fanned out to external destinations, so a field with no
+// bound is a field an emitter can post a failure transcript through.
 type PayloadField struct {
 	Name     string
 	Kind     FieldKind
 	Required bool
+	MaxLen   int
 	Enum     []string
 	PII      bool
 }
@@ -98,15 +109,27 @@ const (
 // key (always the leading segment of Type); Owner names the service that emits
 // it, which is a different axis entirely. Durability says how the record must
 // be committed.
+//
+// RequiresEntry marks a type whose record is meaningless without the resource it
+// happened to, and RequiresIdempotencyKey one whose emitter must name the
+// operation it is recording so a retried emit collapses. The emit surface
+// refuses either when it is missing. Both are properties of the event rather
+// than of the transport because the transport is shared —
+// ModuleEmitAuditEventRequest carries one optional entry_id and one optional
+// idempotency_key for every type, and the types that legitimately have neither
+// (an observation about a whole solution; an event that is genuinely distinct on
+// every emit) go through the same two fields.
 type AuditEventDefinition struct {
-	Type        EventType
-	Namespace   string
-	Version     int
-	Category    AuditCategory
-	Owner       string
-	Description string
-	Durability  AuditDurability
-	Fields      []PayloadField
+	Type                   EventType
+	Namespace              string
+	Version                int
+	Category               AuditCategory
+	Owner                  string
+	Description            string
+	Durability             AuditDurability
+	RequiresEntry          bool
+	RequiresIdempotencyKey bool
+	Fields                 []PayloadField
 }
 
 // mutation registers a privileged write (DurabilityTransactional); observation
@@ -144,6 +167,27 @@ func revised(d AuditEventDefinition, version int) AuditEventDefinition {
 	return d
 }
 
+// requiresEntry marks a definition whose record names a specific resource, and
+// requiresIdempotencyKey one whose emitter must name the operation being
+// recorded. Wrappers rather than constructor arguments for the same reason
+// revised is one: they read at the declaration, and every type that does not say
+// this keeps today's behaviour.
+func requiresEntry(d AuditEventDefinition) AuditEventDefinition {
+	d.RequiresEntry = true
+	return d
+}
+
+// An empty idempotency_key deduplicates nothing, so for a type whose emitter
+// retries — a queue operation reporting per item — accepting one is accepting a
+// double-counted row on every replayed response. Refusing is safe in a way that
+// deriving a key host-side would not be: the emitter, not the host, knows
+// whether two emits are one operation retried or two real operations, and a key
+// the host guessed from the payload would silently suppress the second.
+func requiresIdempotencyKey(d AuditEventDefinition) AuditEventDefinition {
+	d.RequiresIdempotencyKey = true
+	return d
+}
+
 func str(name string) PayloadField { return PayloadField{Name: name, Kind: FieldString} }
 func strs(name string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldStringArray}
@@ -153,6 +197,35 @@ func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
 }
 func pii(f PayloadField) PayloadField { f.PII = true; return f }
+
+// isStringKind reports whether a kind's values are carried as JSON strings, and
+// so whether the nonempty and length rules can apply to it at all.
+func isStringKind(k FieldKind) bool {
+	return k == FieldString || k == FieldUUID || k == FieldEnum
+}
+
+// required returns a copy of the named fields with Required set, so a definition
+// can tighten a shared field group without restating it or mutating the group
+// every other event shares. documentReadFields does the same thing by hand for
+// one field; this is that, named.
+func required(fields []PayloadField, names ...string) []PayloadField {
+	want := make(map[string]bool, len(names))
+	for _, name := range names {
+		want[name] = true
+	}
+	out := append([]PayloadField(nil), fields...)
+	found := 0
+	for i := range out {
+		if want[out[i].Name] {
+			out[i].Required = true
+			found++
+		}
+	}
+	if found != len(want) {
+		panic(fmt.Sprintf("audit registry: required() named %v, but only %d of them exist in the field group", names, found))
+	}
+	return out
+}
 
 // Registered event types. The constants are the typed vocabulary producers use;
 // grouping mirrors the categories.
@@ -534,12 +607,34 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
 	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
 	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
-	// Required fields are the ones the producer always has: which stage gave up
-	// on which version, and why. A redrive that re-queued nothing records nothing.
-	mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
-		append(append([]PayloadField(nil), documentFields...),
-			PayloadField{Name: "producer", Kind: FieldString, Required: true},
-			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true, Enum: []string{"permanent", "exhausted"}})...),
+	// Everything this record exists to say is required, because a redrive row
+	// that names no version, no stage or no operation is indistinguishable from a
+	// complete one while answering none of the questions it was written to
+	// answer. `version` is required here and optional on its siblings on purpose:
+	// a redrive re-derives one specific version, so a redrive that cannot name
+	// one is not a weaker record, it is a different event.
+	//
+	// correlation_id is the operator's whole redrive, repeated on every entry it
+	// re-queued — the same role it plays on saas.document.read, and the reason a
+	// partially-completed bulk redrive is legible afterwards rather than looking
+	// like a smaller one that finished. It is also what makes a safe emission
+	// idempotency key possible: keyed on the operation, a transport retry
+	// collapses while a genuine second redrive of the same entry still records.
+	//
+	// error_class is a closed vocabulary because the spine's vocabulary is the
+	// host's (as `outcome` is on the read events), and it enumerates the whole
+	// space because a producer that cannot say something true picks something
+	// false: `cancelled` and `unknown` exist so a run abandoned without a verdict
+	// and a dead letter that carries no classification are not filed as unreadable
+	// input. `producer` cannot be an enum — the host does not know a module's
+	// stages — so it is bounded instead: short enough to name a stage, too short
+	// to carry the failure text the spine deliberately does not hold.
+	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
+		append(required(documentFields, "version"),
+			PayloadField{Name: "correlation_id", Kind: FieldString, Required: true, MaxLen: 255},
+			PayloadField{Name: "producer", Kind: FieldString, Required: true, MaxLen: 128},
+			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true,
+				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...))),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
@@ -615,6 +710,24 @@ func IsTransactionalAuditEvent(t EventType) bool {
 	return ok && d.Durability == DurabilityTransactional
 }
 
+// AuditEventRequiresEntry reports whether an event type's record must name the
+// resource it happened to. Unregistered types require nothing: the module-facing
+// surface rejects them outright, so answering true here would only replace that
+// refusal with a less accurate one.
+func AuditEventRequiresEntry(t EventType) bool {
+	d, ok := auditEventIndex[t]
+	return ok && d.RequiresEntry
+}
+
+// AuditEventRequiresIdempotencyKey reports whether an emitter of this type must
+// name the operation it is recording, so a retried emit collapses rather than
+// writing the same fact twice. Unregistered types require nothing, for the same
+// reason as above.
+func AuditEventRequiresIdempotencyKey(t EventType) bool {
+	d, ok := auditEventIndex[t]
+	return ok && d.RequiresIdempotencyKey
+}
+
 // AuditEventCatalog returns the registered event definitions sorted by type,
 // so DB seeding and the generated facet are deterministic.
 func AuditEventCatalog() []AuditEventDefinition {
@@ -667,9 +780,21 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 }
 
 func validateField(t EventType, f PayloadField, v any) error {
-	if (t == EventDocumentRead || t == EventDocumentSearch) && f.Required {
+	// A required string-valued field means a value, not a present key. This was
+	// once a list of the two event types that had been found to need it, which
+	// made every type nobody thought to add accept "" for a field the registry
+	// and the docs both called required — a row that reads as a complete record
+	// and identifies nothing. The rule belongs to the declaration, so it holds
+	// for types that do not yet exist. Bool and int kinds are untouched: false
+	// and 0 are values, and two registered events depend on recording them.
+	if f.Required && isStringKind(f.Kind) {
 		if value, ok := v.(string); !ok || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("audit: event %q field %q requires a nonempty string", t, f.Name)
+		}
+	}
+	if f.MaxLen > 0 && isStringKind(f.Kind) {
+		if value, ok := v.(string); ok && len(value) > f.MaxLen {
+			return fmt.Errorf("audit: event %q field %q is %d bytes, over its %d-byte bound", t, f.Name, len(value), f.MaxLen)
 		}
 	}
 	switch f.Kind {
