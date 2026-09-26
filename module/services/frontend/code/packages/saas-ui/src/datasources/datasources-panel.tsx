@@ -73,6 +73,14 @@ interface DatasourcesPanelBaseProps {
 	 * consumer's own page decides who reaches the panel).
 	 */
 	canManage?: boolean;
+	/**
+	 * Renders beneath a source's repository name: the extension point through
+	 * which a consumer shows what another owner knows about the source. The host
+	 * lists, syncs and removes sources and says when it last dispatched files;
+	 * what became of those files belongs to whichever module ingests them, and
+	 * the consumer composing both hands that module's view in here.
+	 */
+	renderSourceDetail?: (source: DatasourceView) => ReactNode;
 	className?: string;
 }
 
@@ -145,6 +153,7 @@ function DatasourcesPanelView({
 	orgId,
 	onSyncEnqueued,
 	canManage = true,
+	renderSourceDetail,
 	className,
 }: DatasourcesPanelViewProps) {
 	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
@@ -541,6 +550,7 @@ function DatasourcesPanelView({
 						deletingIds={deletingIds}
 						onSync={handleSync}
 						onDelete={handleDelete}
+						renderSourceDetail={renderSourceDetail}
 					/>
 				)}
 			</section>
@@ -873,6 +883,7 @@ function SourcesTable({
 	onActivity,
 	onReconnect,
 	onMigrateToApp,
+	renderSourceDetail,
 }: {
 	canManage: boolean;
 	sources: DatasourceView[];
@@ -886,6 +897,7 @@ function SourcesTable({
 	onActivity?: (source: DatasourceView) => void;
 	onReconnect: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
+	renderSourceDetail?: (source: DatasourceView) => ReactNode;
 }) {
 	// A viewer who manages nothing is offered nothing to do but read a row's
 	// history, so the column is there only when there is something in it.
@@ -922,6 +934,11 @@ function SourcesTable({
 						<TableRow key={source.id} className="border-b last:border-0">
 							<TableCell className={cn(cellClass, "font-mono")}>
 								{source.repo}
+								{renderSourceDetail && (
+									<div className="mt-1 font-sans">
+										{renderSourceDetail(source)}
+									</div>
+								)}
 							</TableCell>
 							<TableCell className={cn(cellClass, wrapClass)}>
 								<StatusCell source={source} />

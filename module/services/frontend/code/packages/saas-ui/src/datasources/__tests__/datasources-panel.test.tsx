@@ -92,6 +92,28 @@ describe("DatasourcesPanel", () => {
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
 	});
 
+	it("renders a consumer's detail under each source it was handed", async () => {
+		// The host does not know what an ingesting module has made of a source's
+		// files; the consumer composing both renders that module's view here.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource, secondSource]),
+		});
+		const renderSourceDetail = vi.fn((source: DatasourceView) => (
+			<span>ingestion of {source.id}</span>
+		));
+		renderWithClient(
+			<DatasourcesPanel
+				client={client}
+				orgId="org-1"
+				renderSourceDetail={renderSourceDetail}
+			/>,
+		);
+
+		expect(await screen.findByText("ingestion of ds-1")).toBeTruthy();
+		expect(screen.getByText("ingestion of ds-2")).toBeTruthy();
+		expect(renderSourceDetail).toHaveBeenCalledWith(sampleSource);
+	});
+
 	it("surfaces a degraded source and its reason without being asked", async () => {
 		// The host sets this state, never the tenant, so nothing prompts a reader
 		// to open History looking for it.

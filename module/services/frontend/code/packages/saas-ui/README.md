@@ -88,6 +88,10 @@ components:
   may use them (`canManage`; with a `gateway`, read from the viewer's
   credential): anyone else keeps a row's History and is told who connects
   sources and grants access.
+  `renderSourceDetail={(source) => …}` renders beneath each repository name: the
+  slot through which a consumer shows what the module that ingests a source's
+  files knows about them (its per-source ingestion progress, say). The host
+  names no such module.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
