@@ -92,7 +92,20 @@ func translateGRPCError(err error) error {
 		return err
 	}
 	cc := connectCodeFromGRPC(st.Code())
-	return connect.NewError(cc, st.Err())
+	translated := connect.NewError(cc, st.Err())
+	// Carry the status's typed details (an ErrorInfo naming the reason, a
+	// RetryInfo naming when to retry) so a Connect caller can act on them as a
+	// gRPC caller does.
+	for _, detail := range st.Proto().GetDetails() {
+		msg, err := detail.UnmarshalNew()
+		if err != nil {
+			continue
+		}
+		if d, err := connect.NewErrorDetail(msg); err == nil {
+			translated.AddDetail(d)
+		}
+	}
+	return translated
 }
 
 // asConnectError is a tiny errors.As shim kept here to avoid pulling

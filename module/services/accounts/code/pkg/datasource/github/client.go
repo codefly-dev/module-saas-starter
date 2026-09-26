@@ -1,36 +1,64 @@
-// Package github is a minimal api.github.com client for datasource ingestion:
-// resolve a repository's default branch, enumerate the files under a set of
-// path prefixes at a ref, and fetch one file's bytes. It authenticates with a
-// per-source token supplied by the caller (a PAT or a GitHub App installation
-// token) — or with none at all, for a public repository — and holds no
-// persistence or crypto concerns of its own.
+// Package github is a minimal GitHub client for datasource ingestion. Content —
+// branches, commits, trees, diffs and file bytes — travels over git's smart-HTTP
+// transport through a per-source mirror (git.go), one request per change set
+// rather than one per file. The REST API is used only for what git cannot say:
+// whether a repository is public. It authenticates with a per-source token
+// supplied by the caller (a PAT or a GitHub App installation token) — or with
+// none at all, for a public repository — and holds no persistence or crypto
+// concerns of its own.
 package github
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // DefaultBaseURL is api.github.com; tests and GitHub Enterprise override it.
 const DefaultBaseURL = "https://api.github.com"
 
-// maxFileBytes bounds a single fetched file so a pathological blob cannot
-// exhaust memory or overflow the downstream job payload limit.
-const maxFileBytes = 5 * 1024 * 1024
+// maxResponseBytes bounds a REST response body.
+const maxResponseBytes = 1 << 20
 
 // ErrNotFound is returned when GitHub answers 404 for a repo, ref, or path.
 var ErrNotFound = errors.New("github: not found")
 var ErrUnauthorized = errors.New("github: unauthorized")
 var ErrForbidden = errors.New("github: forbidden")
 var ErrRateLimited = errors.New("github: rate limited")
+
+// RateLimitError is a rate-limited request, carrying when GitHub said the limit
+// resets (zero when it did not say) and whether the request held no credential.
+// It matches ErrRateLimited, and ErrUnauthenticatedRateLimited when
+// Unauthenticated, under errors.Is.
+type RateLimitError struct {
+	ResetAt         time.Time
+	Unauthenticated bool
+}
+
+func (e *RateLimitError) Error() string {
+	msg := ErrRateLimited.Error()
+	if e.Unauthenticated {
+		msg = ErrUnauthenticatedRateLimited.Error()
+	}
+	if !e.ResetAt.IsZero() {
+		msg += " until " + e.ResetAt.UTC().Format(time.RFC3339)
+	}
+	return msg
+}
+
+// Is reports the sentinels a rate limit matches.
+func (e *RateLimitError) Is(target error) bool {
+	return target == ErrRateLimited || (e.Unauthenticated && target == ErrUnauthenticatedRateLimited)
+}
 
 // ErrUnauthenticatedRateLimited is ErrRateLimited for a client holding no token.
 // GitHub meters unauthenticated requests per source IP address — 60 an hour on
@@ -40,15 +68,11 @@ var ErrRateLimited = errors.New("github: rate limited")
 // matches it.
 var ErrUnauthenticatedRateLimited = fmt.Errorf("%w: unauthenticated request limit exhausted", ErrRateLimited)
 
-// ErrFileTooLarge is returned when a file exceeds what the contents API can
-// return inline (GitHub caps it at 1 MiB; files above that come back with
-// encoding "none" and an empty body). Callers skip such files rather than
-// treating them as a hard error.
-var ErrFileTooLarge = errors.New("github: file too large for the contents API")
+// ErrFileTooLarge is returned when a file exceeds the size a read allows.
+var ErrFileTooLarge = errors.New("github: file too large")
 
 // File is one repository blob discovered under a source's path prefixes. Size is
-// the blob's byte length as reported by the tree, so a snapshot manifest can
-// carry it without fetching the blob.
+// the blob's byte length, or -1 before the blob has been fetched.
 type File struct {
 	Path string
 	SHA  string
@@ -63,11 +87,6 @@ const (
 	CompareStatusDiverged  = "diverged"
 )
 
-// compareFileCap is GitHub's hard limit on the files a compare returns (300). A
-// diff that reaches it is truncated and must be reconciled with a snapshot
-// rather than trusted as a complete op list.
-const compareFileCap = 300
-
 // ChangedFile is one file in a base...head comparison. Status is GitHub's
 // per-file status (added, modified, removed, renamed, copied, changed); SHA is
 // the blob sha at head; PreviousFilename is set only for a rename or copy.
@@ -80,7 +99,7 @@ type ChangedFile struct {
 
 // Comparison is the result of comparing two commits. Status is the overall
 // relationship (ahead, behind, identical, diverged); Truncated reports that the
-// file list hit GitHub's 300-file cap and is therefore incomplete.
+// file list passed the comparison's cap and is therefore incomplete.
 type Comparison struct {
 	Status    string
 	Files     []ChangedFile
@@ -88,38 +107,100 @@ type Comparison struct {
 }
 
 // Client talks to a single GitHub deployment with a single token. An empty
-// token sends no Authorization header at all, which GitHub serves only for
-// public repositories.
+// token sends no credential at all, which GitHub serves only for public
+// repositories.
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL    string
+	token      string
+	http       *http.Client
+	gitBaseURL string
+	gitScheme  string
+	cacheRoot  string
+	restCalls  atomic.Int64
+	gitCalls   atomic.Int64
 }
 
-// New returns a Client for the given token. baseURL empty uses DefaultBaseURL.
-func New(token, baseURL string) *Client {
+// Option configures a Client.
+type Option func(*Client)
+
+// WithCacheRoot places the per-source mirrors under dir instead of the user
+// cache directory.
+func WithCacheRoot(dir string) Option {
+	return func(c *Client) { c.cacheRoot = dir }
+}
+
+// New returns a Client for the given token. baseURL empty uses DefaultBaseURL;
+// the git transport origin is derived from it.
+func New(token, baseURL string, opts ...Option) *Client {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		http:    &http.Client{Timeout: 30 * time.Second},
+	c := &Client{
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		token:     token,
+		http:      &http.Client{Timeout: 30 * time.Second},
+		cacheRoot: DefaultCacheRoot(),
 	}
+	c.gitBaseURL, c.gitScheme = gitBaseURLFor(c.baseURL)
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
-// DefaultBranch returns the repository's default branch (e.g. "main").
-func (c *Client) DefaultBranch(ctx context.Context, repo string) (string, error) {
-	var out struct {
-		DefaultBranch string `json:"default_branch"`
+// DefaultCacheRoot is where mirrors live when no root is configured: the user
+// cache directory the host resolves, or the temporary directory when it has none.
+func DefaultCacheRoot() string {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		base = os.TempDir()
 	}
-	if err := c.getJSON(ctx, "/repos/"+repo, &out); err != nil {
+	return filepath.Join(base, "codefly-datasource-github")
+}
+
+// Usage reports the REST calls and the git network requests this client made.
+func (c *Client) Usage() (rest, git int64) { return c.restCalls.Load(), c.gitCalls.Load() }
+
+func (c *Client) recordFetch() { c.gitCalls.Add(1) }
+
+// DefaultBranch returns the branch the repository's HEAD names, in one git
+// request.
+func (c *Client) DefaultBranch(ctx context.Context, repo string) (string, error) {
+	out, err := c.lsRemote(ctx, repo, []string{"--symref"}, "HEAD")
+	if err != nil {
 		return "", err
 	}
-	if out.DefaultBranch == "" {
-		return "", fmt.Errorf("github: repo %q has no default branch", repo)
+	for _, line := range strings.Split(out, "\n") {
+		if target, ok := strings.CutPrefix(line, "ref: refs/heads/"); ok {
+			branch, _, _ := strings.Cut(target, "\t")
+			if branch != "" {
+				return branch, nil
+			}
+		}
 	}
-	return out.DefaultBranch, nil
+	return "", fmt.Errorf("github: repo %q has no default branch", repo)
+}
+
+// ResolveCommit returns the commit the branch ref currently points at, in one git
+// request. It is monotonic across pushes even when file content reverts to an
+// earlier state, so callers key delivery idempotency on it to avoid silently
+// dropping an A→B→A revert that a content hash alone would dedupe away.
+func (c *Client) ResolveCommit(ctx context.Context, repo, ref string) (string, error) {
+	ref = strings.TrimPrefix(ref, "refs/heads/")
+	if ref == "" || strings.ContainsAny(ref, " \t\n*?[\\") || strings.HasPrefix(ref, "-") {
+		return "", fmt.Errorf("github: invalid branch %q", ref)
+	}
+	out, err := c.lsRemote(ctx, repo, []string{"--heads"}, "refs/heads/"+ref)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		sha, name, ok := strings.Cut(line, "\t")
+		if ok && name == "refs/heads/"+ref && ValidObjectID(sha) {
+			return sha, nil
+		}
+	}
+	return "", ErrNotFound
 }
 
 // RepositoryIsPublic reports whether GitHub describes repo as public. It is
@@ -145,181 +226,6 @@ func (c *Client) RepositoryIsPublic(ctx context.Context, repo string) (bool, err
 	return out.Visibility == "" || out.Visibility == "public", nil
 }
 
-// ResolveCommit returns the commit SHA that ref currently points at. It is
-// monotonic across pushes even when file content reverts to an earlier state,
-// so callers key delivery idempotency on it to avoid silently dropping an
-// A→B→A revert that a content hash alone would dedupe away.
-func (c *Client) ResolveCommit(ctx context.Context, repo, ref string) (string, error) {
-	var out struct {
-		SHA string `json:"sha"`
-	}
-	if err := c.getJSON(ctx, "/repos/"+repo+"/commits/"+url.PathEscape(ref), &out); err != nil {
-		return "", err
-	}
-	if out.SHA == "" {
-		return "", fmt.Errorf("github: ref %q in %q resolved to no commit", ref, repo)
-	}
-	return out.SHA, nil
-}
-
-// ListFiles returns every blob at ref whose path is under one of prefixes. An
-// empty prefixes list matches the whole tree. Paths are matched at a path-
-// segment boundary so "docs" selects "docs/a.md" but not "documents/a.md".
-func (c *Client) ListFiles(ctx context.Context, repo, ref string, prefixes []string) ([]File, error) {
-	var out struct {
-		Tree []struct {
-			Path string `json:"path"`
-			Type string `json:"type"`
-			SHA  string `json:"sha"`
-			Size int64  `json:"size"`
-		} `json:"tree"`
-		Truncated bool `json:"truncated"`
-	}
-	if err := c.getJSON(ctx, "/repos/"+repo+"/git/trees/"+url.PathEscape(ref)+"?recursive=1", &out); err != nil {
-		return nil, err
-	}
-	if out.Truncated {
-		return nil, errors.New("github: repository tree is too large to enumerate in one request")
-	}
-	files := make([]File, 0, len(out.Tree))
-	for _, entry := range out.Tree {
-		if entry.Type != "blob" {
-			continue
-		}
-		if !pathMatches(entry.Path, prefixes) {
-			continue
-		}
-		files = append(files, File{Path: entry.Path, SHA: entry.SHA, Size: entry.Size})
-	}
-	return files, nil
-}
-
-// Compare returns the changed files between base and head in a single request.
-// GitHub paginates the compare's commits, not its files: the files array is
-// capped at 300 for the whole comparison and is never paginated, so a loop over
-// ?page would only re-serve the same files. When that cap is reached the result
-// is marked Truncated so the caller reconciles with a full snapshot instead of
-// trusting a partial op list. A 404 (base commit no longer reachable, e.g. after
-// a force push) surfaces as ErrNotFound, which the caller also handles by
-// snapshotting.
-func (c *Client) Compare(ctx context.Context, repo, base, head string) (*Comparison, error) {
-	var out struct {
-		Status string `json:"status"`
-		Files  []struct {
-			Filename         string `json:"filename"`
-			PreviousFilename string `json:"previous_filename"`
-			Status           string `json:"status"`
-			SHA              string `json:"sha"`
-		} `json:"files"`
-	}
-	target := "/repos/" + repo + "/compare/" +
-		url.PathEscape(base) + "..." + url.PathEscape(head)
-	if err := c.getJSON(ctx, target, &out); err != nil {
-		return nil, err
-	}
-	result := &Comparison{Status: out.Status}
-	for _, f := range out.Files {
-		result.Files = append(result.Files, ChangedFile{
-			Filename:         f.Filename,
-			PreviousFilename: f.PreviousFilename,
-			Status:           f.Status,
-			SHA:              f.SHA,
-		})
-	}
-	if len(result.Files) >= compareFileCap {
-		result.Truncated = true
-		result.Files = result.Files[:compareFileCap]
-	}
-	return result, nil
-}
-
-// GetBlob returns the decoded bytes of a git blob by its sha, up to max bytes. It
-// is the content-ticket resolution path: the module holds no token, so accounts
-// re-fetches the blob with the source's token and streams it back. A blob larger
-// than max is rejected with ErrFileTooLarge.
-func (c *Client) GetBlob(ctx context.Context, repo, blobSHA string, max int64) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		c.baseURL+"/repos/"+repo+"/git/blobs/"+url.PathEscape(blobSHA), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(base64.StdEncoding.EncodedLen(int(max)))+4096))
-	if err != nil {
-		return nil, err
-	}
-	if err := c.classify(resp, body); err != nil {
-		if !errors.Is(err, errUnexpectedStatus) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("github: GET blob %s: unexpected status %d", blobSHA, resp.StatusCode)
-	}
-	var out struct {
-		Encoding string `json:"encoding"`
-		Content  string `json:"content"`
-		Size     int64  `json:"size"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("github: decode blob %s: %w", blobSHA, err)
-	}
-	if out.Size > max {
-		return nil, ErrFileTooLarge
-	}
-	if out.Encoding != "base64" {
-		return nil, fmt.Errorf("github: unexpected blob encoding %q for %q", out.Encoding, blobSHA)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(out.Content, "\n", ""))
-	if err != nil {
-		return nil, fmt.Errorf("github: decode blob %q: %w", blobSHA, err)
-	}
-	if int64(len(decoded)) > max {
-		return nil, ErrFileTooLarge
-	}
-	return decoded, nil
-}
-
-// GetFileContent returns the decoded bytes of one file at ref.
-func (c *Client) GetFileContent(ctx context.Context, repo, ref, path string) ([]byte, error) {
-	var out struct {
-		Encoding string `json:"encoding"`
-		Content  string `json:"content"`
-		Type     string `json:"type"`
-		Size     int64  `json:"size"`
-	}
-	target := "/repos/" + repo + "/contents/" + escapePath(path) + "?ref=" + url.QueryEscape(ref)
-	if err := c.getJSON(ctx, target, &out); err != nil {
-		return nil, err
-	}
-	if out.Type != "file" {
-		return nil, fmt.Errorf("github: %q is not a file", path)
-	}
-	// A file too large for the contents API is reported as ErrFileTooLarge, not a
-	// generic error, so a sync skips it instead of aborting the whole walk. GitHub
-	// signals this two ways: the documented 1 MiB cap (size), and a 200 whose body
-	// carries encoding "none" with empty content for files above it.
-	if out.Size > maxFileBytes || out.Encoding == "none" {
-		return nil, ErrFileTooLarge
-	}
-	if out.Encoding != "base64" {
-		return nil, fmt.Errorf("github: unexpected content encoding %q for %q", out.Encoding, path)
-	}
-	// GitHub wraps the base64 payload at 60 columns.
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(out.Content, "\n", ""))
-	if err != nil {
-		return nil, fmt.Errorf("github: decode %q: %w", path, err)
-	}
-	return decoded, nil
-}
-
 func (c *Client) getJSON(ctx context.Context, path string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -330,12 +236,13 @@ func (c *Client) getJSON(ctx context.Context, path string, into any) error {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	c.restCalls.Add(1)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFileBytes+1024))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}
@@ -374,10 +281,7 @@ func (c *Client) classify(resp *http.Response, body []byte) error {
 		(resp.StatusCode == http.StatusForbidden &&
 			(resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0" ||
 				strings.Contains(strings.ToLower(failure.Message), "rate limit"))):
-		if c.token == "" {
-			return ErrUnauthenticatedRateLimited
-		}
-		return ErrRateLimited
+		return &RateLimitError{ResetAt: rateLimitReset(resp.Header, time.Now()), Unauthenticated: c.token == ""}
 	case resp.StatusCode == http.StatusForbidden:
 		return ErrForbidden
 	case resp.StatusCode == http.StatusNotFound:
@@ -388,27 +292,19 @@ func (c *Client) classify(resp *http.Response, body []byte) error {
 	return nil
 }
 
-// pathMatches reports whether p is covered by any prefix at a segment boundary.
-// No prefixes means the whole tree is in scope.
-func pathMatches(p string, prefixes []string) bool {
-	if len(prefixes) == 0 {
-		return true
-	}
-	for _, prefix := range prefixes {
-		prefix = strings.Trim(prefix, "/")
-		if prefix == "" || p == prefix || strings.HasPrefix(p, prefix+"/") {
-			return true
+// rateLimitReset reads when a rate limit lifts: Retry-After (seconds) for a
+// secondary limit, else X-RateLimit-Reset (epoch seconds) for the primary one.
+// Zero means GitHub did not say.
+func rateLimitReset(h http.Header, now time.Time) time.Time {
+	if v := strings.TrimSpace(h.Get("Retry-After")); v != "" {
+		if secs, err := strconv.ParseInt(v, 10, 64); err == nil && secs >= 0 && secs < 24*3600 {
+			return now.Add(time.Duration(secs) * time.Second).UTC()
 		}
 	}
-	return false
-}
-
-// escapePath percent-encodes each path segment while preserving the slashes
-// GitHub's contents API expects between them.
-func escapePath(p string) string {
-	segments := strings.Split(p, "/")
-	for i, s := range segments {
-		segments[i] = url.PathEscape(s)
+	if v := strings.TrimSpace(h.Get("X-RateLimit-Reset")); v != "" {
+		if epoch, err := strconv.ParseInt(v, 10, 64); err == nil && epoch > 0 {
+			return time.Unix(epoch, 0).UTC()
+		}
 	}
-	return strings.Join(segments, "/")
+	return time.Time{}
 }

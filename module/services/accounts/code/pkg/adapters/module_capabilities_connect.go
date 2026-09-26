@@ -80,6 +80,10 @@ func (h *moduleCapabilitiesConnectHandler) FetchDatasourceBlob(ctx context.Conte
 	return streamDatasourceBlob(ctx, req.Msg, stream)
 }
 
+func (h *moduleCapabilitiesConnectHandler) FetchDatasourceFiles(ctx context.Context, req *connect.Request[gen.FetchDatasourceFilesRequest], stream *connect.ServerStream[gen.FetchDatasourceFilesFrame]) error {
+	return translateGRPCError(streamDatasourceFiles(ctx, req.Msg, stream))
+}
+
 func (h *moduleCapabilitiesConnectHandler) PlaceRecord(ctx context.Context, req *connect.Request[gen.ModulePlaceRecordRequest]) (*connect.Response[gen.ModulePlaceRecordResponse], error) {
 	return unary(ctx, req, h.inner.PlaceRecord)
 }

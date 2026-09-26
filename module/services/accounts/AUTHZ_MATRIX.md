@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **218 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **219 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -90,6 +90,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS_AND_FAILURE: saas.module.delegated_audience_exchange | FORBIDDEN / INTERNAL | SECRET → SECRET | Exchange a current signed parent through one installed operation binding. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS_AND_FAILURE: saas.module.delegated_audience_exchange | FORBIDDEN / INTERNAL | SECRET → SECRET | Exchange a current signed parent through an installed read-only module binding. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob` | server stream | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Stream a datasource file blob referenced by a change set. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles` | server stream | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Stream a batch of a datasource's files at one pinned version. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/GetApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read one approval request on the caller's tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Renew a live job lease by its fencing token. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List source collections the verified viewer may currently read. |
@@ -230,7 +231,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 45
+- `internal`: 46
 - `mfa`: 3
 - `org_admin`: 46
 - `org_member`: 39

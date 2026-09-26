@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -338,18 +339,51 @@ type AddGitHubSourceInput struct {
 	WebhookSecret   string
 }
 
-// GitHubContentClient is the subset of the api.github.com client the datasource
-// connector needs. The Service builds one per Source from its decrypted token.
+// GitHubContentClient is the per-source GitHub client the datasource connector
+// needs. The Service builds one per Source from its decrypted token. Branches
+// and commits are resolved over git transport, and content is read through the
+// source's repository mirror, so a sync spends no REST budget; the REST API
+// answers only whether a repository is public.
 type GitHubContentClient interface {
 	DefaultBranch(ctx context.Context, repo string) (string, error)
 	ResolveCommit(ctx context.Context, repo, ref string) (string, error)
-	ListFiles(ctx context.Context, repo, ref string, prefixes []string) ([]github.File, error)
-	GetFileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
-	Compare(ctx context.Context, repo, base, head string) (*github.Comparison, error)
-	GetBlob(ctx context.Context, repo, blobSHA string, max int64) ([]byte, error)
+	// OpenRepository opens the source's mirror of repo, held exclusively until
+	// the returned repository is closed.
+	OpenRepository(ctx context.Context, ws github.Workspace, repo string) (GitHubRepository, error)
 	// RepositoryIsPublic is asked of a client holding no token, to prove a
 	// repository may be connected without a credential.
 	RepositoryIsPublic(ctx context.Context, repo string) (bool, error)
+}
+
+// GitHubRepository is one source's repository mirror. List and Compare fetch
+// commits and trees, Fetch fetches blobs — each in one request for everything
+// it is asked for — and Sizes, Read and Stream only ever read what is local.
+type GitHubRepository interface {
+	List(ctx context.Context, commit string, match func(path string) bool) ([]github.File, error)
+	Compare(ctx context.Context, base, head string) (*github.Comparison, error)
+	Fetch(ctx context.Context, ids []string) error
+	Sizes(ctx context.Context, ids []string) (map[string]int64, error)
+	Read(ctx context.Context, id string, max int64) ([]byte, error)
+	Stream(ctx context.Context, ids []string, visit func(id string, size int64, content io.Reader) error) error
+	Close() error
+}
+
+// githubRESTClient adapts the concrete client to GitHubContentClient: its
+// OpenRepository returns the concrete mirror type.
+type githubRESTClient struct{ *github.Client }
+
+func (c githubRESTClient) OpenRepository(ctx context.Context, ws github.Workspace, repo string) (GitHubRepository, error) {
+	r, err := c.Client.OpenRepository(ctx, ws, repo)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// githubWorkspace names a source's repository mirror by its org and id, so no
+// two sources — and no two tenants — ever share one.
+func githubWorkspace(source *DatasourceSource) github.Workspace {
+	return github.Workspace{Org: source.OrgID, Source: source.ID}
 }
 
 // APIContentClient is the subset of the generic API connector the Service needs.
@@ -390,7 +424,7 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 	s.githubBaseURL = strings.TrimSpace(githubBaseURL)
 	if s.newGitHubClient == nil {
 		s.newGitHubClient = func(token string) GitHubContentClient {
-			return github.New(token, s.githubBaseURL)
+			return githubRESTClient{github.New(token, s.githubBaseURL)}
 		}
 	}
 	if s.newAPIClient == nil {

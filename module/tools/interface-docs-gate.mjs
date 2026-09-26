@@ -96,6 +96,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/EmitAuditEvent": "audit",
   "ModuleCapabilitiesService/EnqueueJob": "jobs",
   "ModuleCapabilitiesService/FetchDatasourceBlob": "datasource",
+  "ModuleCapabilitiesService/FetchDatasourceFiles": "datasource",
   "ModuleCapabilitiesService/GetApproval": "approvals",
   "ModuleCapabilitiesService/HeartbeatJob": "jobs",
   "ModuleCapabilitiesService/ListReadableSourceCollections": "authorization",

@@ -1,9 +1,11 @@
 package business_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -508,8 +510,9 @@ func (p *recordingProducer) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJob
 	}, nil
 }
 
-// fakeGitHub returns fixed repository contents without a live api.github.com.
-// A path mapped to a nil (absent) content entry surfaces the error errs[path].
+// fakeGitHub returns fixed repository contents without a live GitHub. Content is
+// keyed by path (content, errs) or by blob id (blobs, blobErrs); a blob id
+// resolves to a path through files and through the files a comparison returned.
 type fakeGitHub struct {
 	defaultBranch string
 	commit        string
@@ -524,9 +527,15 @@ type fakeGitHub struct {
 	// a credential unless it says so. publicErr fails the visibility read.
 	public    bool
 	publicErr error
+	// openErr fails opening the repository mirror; fetchErr fails every Fetch.
+	openErr  error
+	fetchErr error
 
-	mu      sync.Mutex
-	fetched []string
+	mu         sync.Mutex
+	fetched    []string
+	shaPaths   map[string]string
+	fetchCalls int
+	workspaces []github.Workspace
 }
 
 func (f *fakeGitHub) RepositoryIsPublic(context.Context, string) (bool, error) {
@@ -543,41 +552,55 @@ func (f *fakeGitHub) ResolveCommit(context.Context, string, string) (string, err
 	return f.commit, nil
 }
 
-// ListFiles applies the same prefix rule the real client applies server-side
-// (github.pathMatches): a tree entry is in scope when it equals a prefix or sits
-// under one at a segment boundary. A fake that returned every file regardless
-// would make any test that sets Paths and reaches a snapshot assert a behavior
-// the real client does not have.
-func (f *fakeGitHub) ListFiles(_ context.Context, _, _ string, prefixes []string) ([]github.File, error) {
-	if len(prefixes) == 0 {
-		return f.files, nil
+func (f *fakeGitHub) OpenRepository(_ context.Context, ws github.Workspace, _ string) (business.GitHubRepository, error) {
+	f.mu.Lock()
+	f.workspaces = append(f.workspaces, ws)
+	f.mu.Unlock()
+	if f.openErr != nil {
+		return nil, f.openErr
 	}
-	var out []github.File
-	for _, file := range f.files {
-		for _, prefix := range prefixes {
-			prefix = strings.Trim(prefix, "/")
-			if prefix == "" || file.Path == prefix || strings.HasPrefix(file.Path, prefix+"/") {
-				out = append(out, file)
-				break
-			}
-		}
-	}
-	return out, nil
+	return &fakeRepository{gh: f}, nil
 }
 
-// fetchedPaths reports every path a compiler asked for content for, so a test
-// can assert that a filtered-out file was never fetched — the proto documents
-// the suffix filter as applied *before* content is fetched.
+// fetchedPaths reports every path a compiler read content for, so a test can
+// assert that a filtered-out file was never fetched — the proto documents the
+// suffix filter as applied *before* content is fetched.
 func (f *fakeGitHub) fetchedPaths() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.fetched)
 }
 
-func (f *fakeGitHub) GetFileContent(_ context.Context, _, _, path string) ([]byte, error) {
+// fetches reports how many batched fetches the compiler made.
+func (f *fakeGitHub) fetches() int {
 	f.mu.Lock()
-	f.fetched = append(f.fetched, path)
-	f.mu.Unlock()
+	defer f.mu.Unlock()
+	return f.fetchCalls
+}
+
+func (f *fakeGitHub) pathOf(id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.shaPaths[id]; ok {
+		return p
+	}
+	for _, file := range f.files {
+		if file.SHA == id {
+			return file.Path
+		}
+	}
+	return ""
+}
+
+// blob resolves an id to its bytes or its configured error.
+func (f *fakeGitHub) blob(id string) ([]byte, error) {
+	if err, ok := f.blobErrs[id]; ok {
+		return nil, err
+	}
+	if b, ok := f.blobs[id]; ok {
+		return b, nil
+	}
+	path := f.pathOf(id)
 	if err, ok := f.errs[path]; ok {
 		return nil, err
 	}
@@ -586,21 +609,92 @@ func (f *fakeGitHub) GetFileContent(_ context.Context, _, _, path string) ([]byt
 	}
 	return nil, github.ErrNotFound
 }
-func (f *fakeGitHub) Compare(_ context.Context, _, base, head string) (*github.Comparison, error) {
-	if f.compareFn != nil {
-		return f.compareFn(base, head)
+
+// fakeRepository is the mirror a fakeGitHub opens.
+type fakeRepository struct{ gh *fakeGitHub }
+
+// List applies the source scope the compiler passes, exactly as the real
+// mirror does.
+func (r *fakeRepository) List(_ context.Context, _ string, match func(string) bool) ([]github.File, error) {
+	var out []github.File
+	for _, file := range r.gh.files {
+		if match(file.Path) {
+			file.Size = -1
+			out = append(out, file)
+		}
 	}
-	return nil, errors.New("compare not configured")
+	return out, nil
 }
-func (f *fakeGitHub) GetBlob(_ context.Context, _, blobSHA string, _ int64) ([]byte, error) {
-	if err, ok := f.blobErrs[blobSHA]; ok {
+
+func (r *fakeRepository) Compare(_ context.Context, base, head string) (*github.Comparison, error) {
+	if r.gh.compareFn == nil {
+		return nil, errors.New("compare not configured")
+	}
+	cmp, err := r.gh.compareFn(base, head)
+	if cmp != nil {
+		r.gh.mu.Lock()
+		if r.gh.shaPaths == nil {
+			r.gh.shaPaths = map[string]string{}
+		}
+		for _, f := range cmp.Files {
+			if f.SHA != "" {
+				r.gh.shaPaths[f.SHA] = f.Filename
+			}
+		}
+		r.gh.mu.Unlock()
+	}
+	return cmp, err
+}
+
+func (r *fakeRepository) Fetch(_ context.Context, ids []string) error {
+	r.gh.mu.Lock()
+	r.gh.fetchCalls++
+	r.gh.mu.Unlock()
+	return r.gh.fetchErr
+}
+
+func (r *fakeRepository) Sizes(_ context.Context, ids []string) (map[string]int64, error) {
+	sizes := make(map[string]int64, len(ids))
+	for _, id := range ids {
+		b, err := r.gh.blob(id)
+		if err != nil {
+			continue
+		}
+		sizes[id] = int64(len(b))
+	}
+	return sizes, nil
+}
+
+func (r *fakeRepository) Read(_ context.Context, id string, max int64) ([]byte, error) {
+	if path := r.gh.pathOf(id); path != "" {
+		r.gh.mu.Lock()
+		r.gh.fetched = append(r.gh.fetched, path)
+		r.gh.mu.Unlock()
+	}
+	b, err := r.gh.blob(id)
+	if err != nil {
 		return nil, err
 	}
-	if b, ok := f.blobs[blobSHA]; ok {
-		return b, nil
+	if int64(len(b)) > max {
+		return nil, github.ErrFileTooLarge
 	}
-	return nil, github.ErrNotFound
+	return b, nil
 }
+
+func (r *fakeRepository) Stream(ctx context.Context, ids []string, visit func(string, int64, io.Reader) error) error {
+	for _, id := range ids {
+		b, err := r.Read(ctx, id, github.MaxFileBytes)
+		if err != nil {
+			return err
+		}
+		if err := visit(id, int64(len(b)), bytes.NewReader(b)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepository) Close() error { return nil }
 
 // recordingAudit captures emitted audit entries so a test can assert an RPC
 // actually produces the audit event its policy declares.

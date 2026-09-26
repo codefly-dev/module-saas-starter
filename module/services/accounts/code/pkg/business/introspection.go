@@ -162,6 +162,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/EmitAuditEvent":                     "Emit a registered audit event on the tenant's spine.",
 	"ModuleCapabilitiesService/ListSubjectVisibility":              "List the subjects whose rows a viewer may read in a tenant.",
 	"ModuleCapabilitiesService/FetchDatasourceBlob":                "Stream a datasource file blob referenced by a change set.",
+	"ModuleCapabilitiesService/FetchDatasourceFiles":               "Stream a batch of a datasource's files at one pinned version.",
 	"ModuleCapabilitiesService/MintModuleRegistration":             "Issue a composed module the signed credential it registers its gateway REST prefix with.",
 	"ModuleCapabilitiesService/MintModuleWorkContext":              "Issue a composed module the Work Context its service principal calls this surface with.",
 	"ModuleCapabilitiesService/MintModuleOperationContext":         "Issue a composed module, with no person present, a Work Context for one of its installed operation audiences.",

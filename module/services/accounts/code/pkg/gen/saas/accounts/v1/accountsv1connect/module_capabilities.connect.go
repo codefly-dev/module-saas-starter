@@ -87,6 +87,9 @@ const (
 	// ModuleCapabilitiesServiceFetchDatasourceBlobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's FetchDatasourceBlob RPC.
 	ModuleCapabilitiesServiceFetchDatasourceBlobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	// ModuleCapabilitiesServiceFetchDatasourceFilesProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's FetchDatasourceFiles RPC.
+	ModuleCapabilitiesServiceFetchDatasourceFilesProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
 	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintModuleRegistration RPC.
 	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
@@ -161,11 +164,22 @@ type ModuleCapabilitiesServiceClient interface {
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
-	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
-	// upstream provider, to the module that resolves a change set's blob sha.
-	// Authorized by the caller principal's datasource-queue grant and the source
-	// row's own org/boundary, not the request tenant.
+	// FetchDatasourceBlob streams one datasource file blob to the module that
+	// resolves a change set's blob sha. Authorized by the caller principal's
+	// datasource-queue grant and the source row's own org/boundary, not the
+	// request tenant. Deprecated: one call per file; FetchDatasourceFiles serves a
+	// whole change set in one call.
+	//
+	// Deprecated: do not use.
 	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error)
+	// FetchDatasourceFiles streams a batch of files of one source at one pinned
+	// version, read from a single fetch of that version shared by the whole batch.
+	// Authorized like FetchDatasourceBlob: the caller principal's datasource-queue
+	// grant and the source row's own org/boundary. A provider rate limit is
+	// RESOURCE_EXHAUSTED carrying an ErrorInfo (reason DATASOURCE_RATE_LIMITED,
+	// metadata reset_at) and a RetryInfo; a batch past its limits is
+	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
+	FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceFilesFrame], error)
 	// MintModuleRegistration issues the signed, prefix-bound credential a composed
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
@@ -313,6 +327,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
 			connect.WithClientOptions(opts...),
 		),
+		fetchDatasourceFiles: connect.NewClient[v1.FetchDatasourceFilesRequest, v1.FetchDatasourceFilesFrame](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceFetchDatasourceFilesProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceFiles")),
+			connect.WithClientOptions(opts...),
+		),
 		mintModuleRegistration: connect.NewClient[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
@@ -389,6 +409,7 @@ type moduleCapabilitiesServiceClient struct {
 	emitAuditEvent                     *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
 	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
 	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	fetchDatasourceFiles               *connect.Client[v1.FetchDatasourceFilesRequest, v1.FetchDatasourceFilesFrame]
 	mintModuleRegistration             *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
 	mintSolutionRegistration           *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
 	mintModuleWorkContext              *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
@@ -485,8 +506,15 @@ func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Cont
 }
 
 // FetchDatasourceBlob calls saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob.
+//
+// Deprecated: do not use.
 func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, req *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error) {
 	return c.fetchDatasourceBlob.CallServerStream(ctx, req)
+}
+
+// FetchDatasourceFiles calls saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles.
+func (c *moduleCapabilitiesServiceClient) FetchDatasourceFiles(ctx context.Context, req *connect.Request[v1.FetchDatasourceFilesRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceFilesFrame], error) {
+	return c.fetchDatasourceFiles.CallServerStream(ctx, req)
 }
 
 // MintModuleRegistration calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration.
@@ -581,11 +609,22 @@ type ModuleCapabilitiesServiceHandler interface {
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
-	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
-	// upstream provider, to the module that resolves a change set's blob sha.
-	// Authorized by the caller principal's datasource-queue grant and the source
-	// row's own org/boundary, not the request tenant.
+	// FetchDatasourceBlob streams one datasource file blob to the module that
+	// resolves a change set's blob sha. Authorized by the caller principal's
+	// datasource-queue grant and the source row's own org/boundary, not the
+	// request tenant. Deprecated: one call per file; FetchDatasourceFiles serves a
+	// whole change set in one call.
+	//
+	// Deprecated: do not use.
 	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error
+	// FetchDatasourceFiles streams a batch of files of one source at one pinned
+	// version, read from a single fetch of that version shared by the whole batch.
+	// Authorized like FetchDatasourceBlob: the caller principal's datasource-queue
+	// grant and the source row's own org/boundary. A provider rate limit is
+	// RESOURCE_EXHAUSTED carrying an ErrorInfo (reason DATASOURCE_RATE_LIMITED,
+	// metadata reset_at) and a RetryInfo; a batch past its limits is
+	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
+	FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest], *connect.ServerStream[v1.FetchDatasourceFilesFrame]) error
 	// MintModuleRegistration issues the signed, prefix-bound credential a composed
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
@@ -729,6 +768,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceFetchDatasourceFilesHandler := connect.NewServerStreamHandler(
+		ModuleCapabilitiesServiceFetchDatasourceFilesProcedure,
+		svc.FetchDatasourceFiles,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceMintModuleRegistrationHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
 		svc.MintModuleRegistration,
@@ -819,6 +864,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceListSubjectVisibilityHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceBlobProcedure:
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceFetchDatasourceFilesProcedure:
+			moduleCapabilitiesServiceFetchDatasourceFilesHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
 			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintSolutionRegistrationProcedure:
@@ -912,6 +959,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) ListSubjectVisibility(conte
 
 func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceFiles(context.Context, *connect.Request[v1.FetchDatasourceFilesRequest], *connect.ServerStream[v1.FetchDatasourceFilesFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {

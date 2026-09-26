@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:2bb6f36eff7677fc0dc31f3613daae2177a22348d69b902125bae4481465e1bf",
+      "digest": "sha256:b4b11775c68778800d0af239dff48e8690823c7c6bd0d9bb6d9ded7aa320d641",
       "services": [
         {
           "name": "APIKeyService",
@@ -194,6 +194,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
             "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
