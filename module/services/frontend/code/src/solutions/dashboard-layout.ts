@@ -5,104 +5,53 @@ import type {
 } from "@codefly/saas-plugin-manifest";
 
 /**
- * One viewer's arrangement of a solution dashboard: which tiles it shows, in
- * what order. Pure data in, data out — no React, no DOM; the caller hands in
- * the storage.
+ * One viewer's arrangement of a solution dashboard: which of its declared
+ * widgets it shows, in what order. Pure data in, data out — no React, no DOM;
+ * the caller hands in the storage.
  *
- * A layout is a list of tile ids. A tile is either a widget the dashboard
- * declares (its widget id) or a metric the graph declares that this dashboard
- * has no widget for, added by the viewer (`metric:<id>`). A widget id is a
- * logical id and can never contain a colon, so the two never collide.
- *
- * A layout only picks from what the solution already declares. It carries no
- * query of its own, so a saved layout can never make a widget ask for data the
- * graph does not already describe.
+ * A layout is a list of declared widget ids. It is a preference in the sense of
+ * ADR 0007: it can reorder, remove and re-add what the dashboard declares, and
+ * never add a metric the dashboard does not draw. It carries no query of its
+ * own, so a saved layout can never make a widget ask for data the declaration
+ * does not already describe.
  */
 
 const LAYOUT_VERSION = 1;
-const METRIC_TILE = "metric:";
 
 /** The declared widgets, in declared order: the layout every viewer starts with. */
 export function defaultLayout(dashboard: Dashboard): string[] {
 	return dashboard.widgets.map((widget) => widget.id);
 }
 
-function metricTile(metricId: string): string {
-	return `${METRIC_TILE}${metricId}`;
-}
-
-// Whether a metric's series is keyed by time. A derived metric has the shape of
-// its inputs, which must all share one dimension to combine, so its first input
-// answers for it.
-function groupsByTime(
-	graph: DataGraph,
-	metricId: string,
-	visited = new Set<string>(),
-): boolean {
-	const metric = graph.metrics.find((m) => m.id === metricId);
-	if (!metric || visited.has(metricId)) return false;
-	visited.add(metricId);
-	if (metric.kind === "source") return metric.groupBy === "time";
-	return groupsByTime(graph, metric.inputs[0], visited);
-}
-
 /**
- * The widget a tile renders, or undefined when the graph no longer declares
- * it. A metric tile borrows the widget another of the solution's dashboards
- * declares for that metric; a metric no dashboard draws gets a line when it
- * groups by time and a single number otherwise.
+ * The widget a tile renders, or undefined when the dashboard no longer
+ * declares it.
  */
 export function tileWidget(
-	graph: DataGraph,
 	dashboard: Dashboard,
 	tileId: string,
 ): MetricWidget | undefined {
-	const declared = dashboard.widgets.find((widget) => widget.id === tileId);
-	if (declared) return declared;
-	if (!tileId.startsWith(METRIC_TILE)) return undefined;
-	const metricId = tileId.slice(METRIC_TILE.length);
-	const metric = graph.metrics.find((m) => m.id === metricId);
-	if (!metric) return undefined;
-	const borrowed = graph.dashboards
-		.flatMap((d) => d.widgets)
-		.find((widget) => widget.metric === metricId);
-	return {
-		id: tileId,
-		metric: metricId,
-		visualization:
-			borrowed?.visualization ??
-			(groupsByTime(graph, metricId) ? "line" : "number"),
-		title: borrowed?.title ?? metric.title,
-	};
+	return dashboard.widgets.find((widget) => widget.id === tileId);
 }
 
 /**
- * What the + menu offers, in the graph's metric order: every declared widget
- * the layout does not show, and every metric this dashboard has no widget for
- * that the viewer has not added.
+ * What the + menu offers, in declared order: every declared widget the layout
+ * does not show.
  */
 export function addableTiles(
 	graph: DataGraph,
 	dashboard: Dashboard,
 	layout: readonly string[],
 ): { id: string; label: string }[] {
-	const addable: { id: string; label: string }[] = [];
-	for (const metric of graph.metrics) {
-		const declared = dashboard.widgets.filter(
-			(widget) => widget.metric === metric.id,
-		);
-		const tiles =
-			declared.length > 0
-				? declared.map((widget) => ({
-						id: widget.id,
-						label: widget.title ?? metric.title ?? metric.id,
-					}))
-				: [{ id: metricTile(metric.id), label: metric.title ?? metric.id }];
-		for (const tile of tiles) {
-			if (!layout.includes(tile.id)) addable.push(tile);
-		}
-	}
-	return addable;
+	return dashboard.widgets
+		.filter((widget) => !layout.includes(widget.id))
+		.map((widget) => {
+			const metric = graph.metrics.find((m) => m.id === widget.metric);
+			return {
+				id: widget.id,
+				label: widget.title ?? metric?.title ?? widget.metric,
+			};
+		});
 }
 
 export function addTile(layout: readonly string[], tileId: string): string[] {
@@ -223,14 +172,13 @@ function isStringArray(value: unknown): value is string[] {
  * cannot be trusted. A saved empty layout stays empty: the viewer removed every
  * tile.
  *
- * Tiles the graph no longer declares are dropped, and so are repeats. A metric
- * tile whose metric this dashboard now declares a widget for becomes that
- * widget, in place. A widget declared since the layout was saved is appended,
- * so a viewer who customized still sees what the solution adds.
+ * Tiles the dashboard does not declare are dropped, and so are repeats: an id
+ * the dashboard no longer declares, or anything else a stored value holds, never
+ * reaches the page. A widget declared since the layout was saved is appended, so
+ * a viewer who customized still sees what the solution adds.
  */
 export function parseLayout(
 	raw: string | null,
-	graph: DataGraph,
 	dashboard: Dashboard,
 ): string[] {
 	const fallback = defaultLayout(dashboard);
@@ -251,20 +199,9 @@ export function parseLayout(
 	}
 	const layout: string[] = [];
 	for (const tileId of tiles) {
-		const widget = tileWidget(graph, dashboard, tileId);
-		if (!widget) continue;
-		let id = tileId;
-		if (tileId.startsWith(METRIC_TILE)) {
-			const declared = dashboard.widgets.filter(
-				(w) => w.metric === widget.metric,
-			);
-			if (declared.length > 0) {
-				const free = declared.find((w) => !layout.includes(w.id));
-				if (!free) continue;
-				id = free.id;
-			}
+		if (tileWidget(dashboard, tileId) && !layout.includes(tileId)) {
+			layout.push(tileId);
 		}
-		if (!layout.includes(id)) layout.push(id);
 	}
 	for (const id of fallback) {
 		if (!seen.includes(id) && !layout.includes(id)) layout.push(id);

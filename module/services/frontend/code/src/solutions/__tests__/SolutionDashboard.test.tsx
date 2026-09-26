@@ -60,7 +60,7 @@ const graph: DataGraph = {
 			bucket: "day",
 			aggregation: "count",
 		},
-		// Declared but drawn by no widget: only a viewer can put it on the page.
+		// Declared but drawn by no widget: no viewer can put it on the page.
 		{
 			id: "logins_by_category",
 			kind: "source",
@@ -360,39 +360,39 @@ describe("a viewer's layout", () => {
 		expect(tileTitles()).toEqual(["Logins over time", "Total logins"]);
 	});
 
-	it("adds a removed widget and an undrawn metric back from the + menu", async () => {
+	it("adds a removed widget back from the + menu, and offers no undrawn metric", async () => {
 		renderDashboards();
 		fireEvent.click(
 			screen.getByRole("button", { name: "Remove Top event types" }),
 		);
 		fireEvent.click(
-			screen.getByRole("button", { name: "Add a metric to Activity" }),
+			screen.getByRole("button", { name: "Add a widget back to Activity" }),
 		);
+		// "Logins by category" is declared in the graph but drawn by no widget:
+		// a preference never adds a metric (ADR 0007).
 		const items = await screen.findAllByRole("menuitem");
-		expect(items.map((item) => item.textContent)).toEqual([
-			"Top event types",
-			"Logins by category",
-		]);
+		expect(items.map((item) => item.textContent)).toEqual(["Top event types"]);
 
 		fireEvent.click(screen.getByRole("menuitem", { name: "Top event types" }));
-		fireEvent.click(
-			screen.getByRole("button", { name: "Add a metric to Activity" }),
-		);
-		fireEvent.click(
-			await screen.findByRole("menuitem", { name: "Logins by category" }),
-		);
-
 		expect(tileTitles()).toEqual([
 			"Logins over time",
 			"Total logins",
 			"Top event types",
-			"Logins by category",
 		]);
-		// The added metric resolves through the same path as a declared widget:
-		// a category count, shown as a single number (3 + 5).
-		expect(
-			await within(tile("Logins by category")).findByText("8"),
-		).toBeTruthy();
+	});
+
+	it("ignores a stored tile the dashboard does not declare", () => {
+		window.localStorage.setItem(
+			LAYOUT_KEY,
+			JSON.stringify({
+				version: 1,
+				tiles: ["w_stat", "metric:logins_by_category", "w_line"],
+				seen: ["w_line", "w_bar", "w_stat"],
+			}),
+		);
+		renderDashboards();
+		expect(tileTitles()).toEqual(["Total logins", "Logins over time"]);
+		expect(screen.queryByText("Logins by category")).toBeNull();
 	});
 
 	describe("dragging", () => {

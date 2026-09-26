@@ -17,7 +17,8 @@ import {
 } from "../dashboard-layout";
 
 // A graph with one metric on no dashboard (`per_day`), one drawn only on the
-// second dashboard (`returns`), and one derived from two others (`net`).
+// second dashboard (`returns`), and one derived from two others (`net`). Only
+// the first dashboard's own widgets can ever be on it.
 const graph: DataGraph = {
 	events: [
 		{ name: "created", type: "example.item.created.v1" },
@@ -112,55 +113,31 @@ const blocked = {
 describe("dashboard layout", () => {
 	it("starts from the declared widgets in declared order", () => {
 		expect(defaultLayout(main)).toEqual(["w_items", "w_net"]);
-		expect(parseLayout(null, graph, main)).toEqual(["w_items", "w_net"]);
+		expect(parseLayout(null, main)).toEqual(["w_items", "w_net"]);
 	});
 
 	it("resolves a declared widget as declared", () => {
-		expect(tileWidget(graph, main, "w_items")).toBe(main.widgets[0]);
-		expect(tileWidget(graph, main, "w_returns")).toBeUndefined();
-		expect(tileWidget(graph, main, "gone")).toBeUndefined();
+		expect(tileWidget(main, "w_items")).toBe(main.widgets[0]);
+		expect(tileWidget(main, "w_returns")).toBeUndefined();
+		expect(tileWidget(main, "gone")).toBeUndefined();
 	});
 
-	it("draws an added metric with the widget another dashboard declares for it", () => {
-		expect(tileWidget(graph, main, "metric:returns")).toEqual({
-			id: "metric:returns",
-			metric: "returns",
-			visualization: "bar",
-			title: "Returns by type",
-		});
-	});
-
-	it("draws a metric no dashboard declares as a line over time, else a number", () => {
-		expect(tileWidget(graph, main, "metric:per_day")).toEqual({
-			id: "metric:per_day",
-			metric: "per_day",
-			visualization: "line",
-			title: "Items per day",
-		});
-		const bare = withWidgets([main.widgets[0]]);
-		expect(tileWidget(graph, bare, "metric:net")?.visualization).toBe("number");
-		expect(tileWidget(graph, main, "metric:gone")).toBeUndefined();
-	});
-
-	it("offers removed widgets and undrawn metrics in metric order", () => {
-		expect(addableTiles(graph, main, defaultLayout(main))).toEqual([
-			{ id: "metric:returns", label: "Returns" },
-			{ id: "metric:per_day", label: "Items per day" },
-		]);
+	it("offers only the declared widgets the layout does not show, in declared order", () => {
+		// Metrics this dashboard does not draw (returns, per_day) are never offered.
+		expect(addableTiles(graph, main, defaultLayout(main))).toEqual([]);
 		const layout = removeTile(defaultLayout(main), "w_items");
 		expect(layout).toEqual(["w_net"]);
-		expect(addableTiles(graph, main, layout).map((tile) => tile.id)).toEqual([
-			"w_items",
-			"metric:returns",
-			"metric:per_day",
+		expect(addableTiles(graph, main, layout)).toEqual([
+			{ id: "w_items", label: "Items made" },
 		]);
-		const back = addTile(layout, "metric:per_day");
-		expect(back).toEqual(["w_net", "metric:per_day"]);
-		expect(addableTiles(graph, main, back).map((tile) => tile.id)).toEqual([
-			"w_items",
-			"metric:returns",
-		]);
+		const back = addTile(layout, "w_items");
+		expect(back).toEqual(["w_net", "w_items"]);
+		expect(addableTiles(graph, main, back)).toEqual([]);
 		expect(addTile(back, "w_net")).toEqual(back);
+		expect(addableTiles(graph, main, []).map((tile) => tile.id)).toEqual([
+			"w_items",
+			"w_net",
+		]);
 	});
 
 	it("labels an offered widget by its title, else its metric", () => {
@@ -209,42 +186,42 @@ describe("dashboard layout", () => {
 
 	it("round-trips a saved layout", () => {
 		const storage = memoryStorage();
-		const layout = ["metric:per_day", "w_net"];
+		const layout = ["w_net", "w_items"];
 		expect(writeSavedLayout(storage, "k", serializeLayout(layout, main))).toBe(
 			true,
 		);
-		expect(parseLayout(readSavedLayout(storage, "k"), graph, main)).toEqual(
-			layout,
-		);
+		expect(parseLayout(readSavedLayout(storage, "k"), main)).toEqual(layout);
 		expect(readSavedLayout(storage, "other")).toBeNull();
 	});
 
 	it("keeps a saved empty layout empty", () => {
-		expect(parseLayout(serializeLayout([], main), graph, main)).toEqual([]);
+		expect(parseLayout(serializeLayout([], main), main)).toEqual([]);
 	});
 
-	it("drops tiles the graph no longer declares, and repeats", () => {
+	it("drops tiles the dashboard does not declare, and repeats", () => {
 		const raw = JSON.stringify({
 			version: 1,
 			tiles: ["w_net", "w_gone", "metric:gone", "w_net", "w_items"],
 			seen: ["w_items", "w_net"],
 		});
-		expect(parseLayout(raw, graph, main)).toEqual(["w_net", "w_items"]);
+		expect(parseLayout(raw, main)).toEqual(["w_net", "w_items"]);
 	});
 
 	it("appends a widget declared after the save, but not one the viewer removed", () => {
 		const before = withWidgets([main.widgets[0]]);
-		const raw = serializeLayout(["metric:per_day"], before);
-		expect(parseLayout(raw, graph, main)).toEqual(["metric:per_day", "w_net"]);
+		const raw = serializeLayout([], before);
+		expect(parseLayout(raw, main)).toEqual(["w_net"]);
 	});
 
-	it("turns an added metric into the widget the dashboard now declares for it", () => {
-		const raw = serializeLayout(["metric:per_day", "w_items"], main);
-		const declared = withWidgets([
-			...main.widgets,
-			{ id: "w_per_day", metric: "per_day", visualization: "area" },
-		]);
-		expect(parseLayout(raw, graph, declared)).toEqual(["w_per_day", "w_items"]);
+	it("ignores a stored metric tile or another dashboard's widget", () => {
+		// A layout from before ADR 0007 was applied, or one edited by hand, may
+		// hold ids this dashboard does not declare; none of them is drawn.
+		const raw = JSON.stringify({
+			version: 1,
+			tiles: ["metric:per_day", "w_returns", "w_items", "metric:items"],
+			seen: ["w_items", "w_net"],
+		});
+		expect(parseLayout(raw, main)).toEqual(["w_items"]);
 	});
 
 	it("falls back to the default for an unreadable or untrusted entry", () => {
@@ -258,7 +235,7 @@ describe("dashboard layout", () => {
 			JSON.stringify({ version: 1, tiles: ["w_net"] }),
 			JSON.stringify({ version: 1, tiles: [1], seen: [] }),
 		]) {
-			expect(parseLayout(raw, graph, main), raw).toEqual(fallback);
+			expect(parseLayout(raw, main), raw).toEqual(fallback);
 		}
 	});
 

@@ -98,11 +98,12 @@ has three node kinds:
   are presentation slots contributed to host surfaces; the two never mix.
 
 On a registered solution's page the host renders every declared dashboard, and
-each viewer can arrange it for themselves: reorder, remove, and add tiles. The
-declared widgets, in declared order, are where every viewer starts, and a widget
-declared later reaches viewers who already rearranged. A viewer can add any
-metric in `metrics`, including one no widget draws, so a metric declared only as
-a derived metric's input is still one a viewer can put on the page.
+each viewer can arrange it for themselves: reorder its declared widgets, remove
+them, and re-add the ones they removed. The declared widgets, in declared order,
+are where every viewer starts, and a widget declared later reaches viewers who
+already rearranged. A viewer's arrangement is a preference (ADR 0007): it never
+adds a metric the dashboard does not draw, so a metric declared only as a
+derived metric's input stays off the page.
 
 The schema owns the per-node field formats — including the two shape rules that
 cross fields: a metric carries a `bucket` exactly when it groups by `time`, and

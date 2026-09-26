@@ -262,13 +262,17 @@ function noSubscription() {
  * what makes that a defined re-render rather than a hydration mismatch.
  *
  * The layout is saved only on the viewer's own change, so a viewer who never
- * customizes keeps following the declared default. Browser storage is the
- * interim home: ADR 0007 names a per-user preferences field in the user
- * settings as the durable one, which does not exist yet.
+ * customizes keeps following the declared default.
+ *
+ * STOPGAP (labelled): browser storage is an interim home, so a layout does not
+ * follow the viewer to another browser or device. ADR 0007 puts per-user
+ * dashboard preferences in a composed `user_settings` field keyed by dashboard
+ * id; that field and its typed settings-catalog entry do not exist yet (no
+ * tracking issue yet). When they land, this hook's read and write move there
+ * and nothing else changes.
  */
 function useDashboardLayout(
 	storageKey: string,
-	graph: DataGraph,
 	dashboard: Dashboard,
 ): [string[], (next: readonly string[]) => void] {
 	const stored = useSyncExternalStore(
@@ -283,7 +287,6 @@ function useDashboardLayout(
 	);
 	const layout = parseLayout(
 		edited?.key === storageKey ? edited.raw : stored,
-		graph,
 		dashboard,
 	);
 	const save = (next: readonly string[]) => {
@@ -470,8 +473,9 @@ function MetricInfo({
 	);
 }
 
-// Lists what the viewer can put on the dashboard: the declared widgets they
-// removed, and the graph's metrics this dashboard has no widget for.
+// Lists what the viewer can put back on the dashboard: the declared widgets
+// they removed. A preference never adds a metric the dashboard does not draw
+// (ADR 0007).
 function AddTileMenu({
 	label,
 	addable,
@@ -499,7 +503,7 @@ function AddTileMenu({
 			<DropdownMenuContent align="end" className="w-64">
 				{addable.length === 0 ? (
 					<DropdownMenuItem disabled>
-						Every metric is on this dashboard
+						Every widget is on this dashboard
 					</DropdownMenuItem>
 				) : (
 					addable.map((tile) => (
@@ -530,9 +534,9 @@ function SolutionDashboard({
 		layoutKey(solutionId, dashboard.id),
 		{ organizationId, userId: user?.id },
 	);
-	const [layout, save] = useDashboardLayout(storageKey, graph, dashboard);
+	const [layout, save] = useDashboardLayout(storageKey, dashboard);
 	const shown = layout.flatMap((tileId) => {
-		const widget = tileWidget(graph, dashboard, tileId);
+		const widget = tileWidget(dashboard, tileId);
 		return widget ? [{ tileId, widget }] : [];
 	});
 	const widgets = new Map(shown.map(({ tileId, widget }) => [tileId, widget]));
@@ -598,14 +602,14 @@ function SolutionDashboard({
 					</h2>
 				)}
 				<AddTileMenu
-					label={`Add a metric to ${dashboard.title ?? "this dashboard"}`}
+					label={`Add a widget back to ${dashboard.title ?? "this dashboard"}`}
 					addable={addableTiles(graph, dashboard, layout)}
 					onAdd={(tileId) => save(addTile(layout, tileId))}
 				/>
 			</div>
 			{shown.length === 0 ? (
 				<p className="text-sm text-muted-foreground">
-					No metrics are shown. Add one with the + button.
+					No widgets are shown. Add one back with the + button.
 				</p>
 			) : (
 				// The kit's SortableGrid rather than its Grid/Stack: the tiles are
