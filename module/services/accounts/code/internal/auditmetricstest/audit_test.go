@@ -233,6 +233,74 @@ func TestPayloadBoundarySpellingTakesTheCollectionGrant(t *testing.T) {
 	require.True(t, store.called)
 }
 
+// A collection node is named by whichever event records one, not by the
+// aggregate the event is filed under. saas.datasource.source.removed records the
+// boundary node its source fed, so every spelling of "what happened in that
+// collection" must take the collection grant — and the spelling that names it
+// through collection_id must be answerable at all.
+//
+// This pins the predicate to the declared field. While it also tested the event's
+// name, an event outside saas.document.* carrying a boundary was served from the
+// ungated organization-wide path while collection_id for the same event was
+// refused as unregistered: the unauthorized spelling worked and the authorized
+// one did not.
+func TestCollectionGrantCoversEveryEventThatRecordsABoundary(t *testing.T) {
+	store := &datasourceStore{boundary: "boundary-a"}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+
+	// The reader holds documents/read on boundary-a alone, and names boundary-b
+	// only in the payload.
+	denied := business.AuditQuery{
+		OrgID:           "org-a",
+		EventType:       "saas.datasource.source.removed",
+		PayloadContains: map[string]any{"boundary": "boundary-b"},
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", denied, business.AuditAggregationSpec{})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.False(t, store.called, "a denied collection read must not reach the store")
+
+	// The collection_id spelling of the same question is answerable, and compiles
+	// into the payload predicate exactly as it does for a document event.
+	store.called = false
+	allowed := business.AuditQuery{
+		OrgID:        "org-a",
+		CollectionID: "boundary-a",
+		EventType:    "saas.datasource.source.removed",
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", allowed, business.AuditAggregationSpec{})
+	require.NoError(t, err)
+	require.True(t, store.called)
+	require.Equal(t, map[string]any{"boundary": "boundary-a"}, store.query.PayloadContains)
+	require.Empty(t, store.query.CollectionID, "the filter is compiled, never handed to the store uncompiled")
+
+	// And the payload spelling still works where the grant holds.
+	store.called = false
+	payload := business.AuditQuery{
+		OrgID:           "org-a",
+		EventType:       "saas.datasource.source.removed",
+		PayloadContains: map[string]any{"boundary": "boundary-a"},
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", payload, business.AuditAggregationSpec{})
+	require.NoError(t, err)
+	require.True(t, store.called)
+
+	// Declaring the field is what enrolls an event: one that records no boundary
+	// keeps the organization-wide contract, as the unrelated case of
+	// TestPayloadBoundarySpellingTakesTheCollectionGrant asserts for the payload
+	// spelling. Here the collection_id spelling of such an event stays refused,
+	// because nothing in its rows names a collection node to authorize.
+	store.called = false
+	unregistered := business.AuditQuery{
+		OrgID:        "org-a",
+		CollectionID: "boundary-a",
+		EventType:    "saas.datasource.sync.completed",
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", unregistered, business.AuditAggregationSpec{})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.False(t, store.called)
+}
+
 // Bind production store methods to the independently owned fixture transaction.
 type transactionStore struct {
 	*infra.PostgresStore

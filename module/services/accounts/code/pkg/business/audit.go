@@ -452,7 +452,7 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 	// naming that predicate directly is the same collection read by another
 	// spelling. Promote it into the gated path: otherwise the grant check below
 	// is defeated by moving the filter from collection_id into payload_contains.
-	if q.CollectionID == "" && isDocumentBoundaryEvent(q.EventType) {
+	if q.CollectionID == "" && isCollectionBoundaryEvent(q.EventType) {
 		if boundary, ok := q.PayloadContains["boundary"].(string); ok && boundary != "" {
 			q.CollectionID = boundary
 		}
@@ -464,8 +464,8 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 		return nil, status.Error(codes.InvalidArgument, "resource analytics requires reader, organization, resource and event type")
 	}
 	if q.CollectionID != "" {
-		if !isDocumentBoundaryEvent(q.EventType) {
-			return nil, status.Error(codes.InvalidArgument, "collection analytics requires a registered document boundary event")
+		if !isCollectionBoundaryEvent(q.EventType) {
+			return nil, status.Error(codes.InvalidArgument, "collection analytics requires an event that records a collection boundary")
 		}
 		if boundary, exists := q.PayloadContains["boundary"]; exists && boundary != q.CollectionID {
 			return nil, status.Error(codes.InvalidArgument, "conflicting collection boundary filter")
@@ -517,15 +517,23 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 	return out, err
 }
 
-// isDocumentBoundaryEvent reports whether eventType is a registered
-// saas.document.* event carrying a boundary field — the only shape for which a
-// payload `boundary` value names a collection node. Both the collection filter
-// and the payload-spelling promotion above test the same predicate, so the two
-// spellings of one filter can never diverge on which events they authorize.
-func isDocumentBoundaryEvent(eventType string) bool {
-	if !strings.HasPrefix(eventType, "saas.document.") {
-		return false
-	}
+// isCollectionBoundaryEvent reports whether eventType is a registered event
+// that records a collection node under the payload key `boundary` — the shape
+// for which a payload `boundary` value names a collection node. Both the
+// collection filter and the payload-spelling promotion above test the same
+// predicate, so the two spellings of one filter can never diverge on which
+// events they authorize.
+//
+// The declared field is the whole predicate. It deliberately does not also
+// test the event's name: a collection node is named by whichever event records
+// one, not by the aggregate it happens to be filed under, and
+// saas.datasource.source.removed records the boundary node its source fed. A
+// name test admitted only saas.document.* — so an event outside that prefix
+// carrying the same value was served from the ungated path while the
+// collection_id spelling of the same question was refused, which is the
+// grant check being worth nothing by another route. Nothing needs to be
+// allowlisted here for a new event: declaring the field is what enrolls it.
+func isCollectionBoundaryEvent(eventType string) bool {
 	definition, registered := LookupAuditEvent(EventType(eventType))
 	if !registered {
 		return false

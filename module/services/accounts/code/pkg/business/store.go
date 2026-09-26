@@ -106,7 +106,10 @@ type Store interface {
 	LatestSourceSyncRequests(context.Context, string, []string) (map[string]SourceSyncRequest, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
-	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
+	// DeleteDatasourceSource removes the Source and returns what it removed,
+	// or nil when no row matched. One statement answers both questions, so the
+	// audit record names a source the same transaction actually deleted.
+	DeleteDatasourceSource(ctx context.Context, orgID, id string) (*RemovedDatasourceSource, error)
 	SetDatasourceSourceSynced(ctx context.Context, orgID, id string, syncedAt time.Time) error
 	// LockDatasourceSourceCredentialRef reads the source's current credential
 	// envelope under a row lock (SELECT … FOR UPDATE) so a refresh-and-rotate
