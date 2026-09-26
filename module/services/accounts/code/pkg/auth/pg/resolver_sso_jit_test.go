@@ -40,6 +40,85 @@ func ssoJitAuditCount(t *testing.T, orgID uuid.UUID) int {
 	return count
 }
 
+func registeredAuditCount(t *testing.T, orgID uuid.UUID) int {
+	t.Helper()
+	var count int
+	scanControlPlane(t, &count,
+		`SELECT COUNT(*) FROM audit_events WHERE event_type = 'saas.user.registered' AND org_id = $1`,
+		orgID)
+	return count
+}
+
+// A registration is a fact about an identity being created, and it has to be
+// recorded in the organization that identity lands in — the enterprise tenant,
+// not the personal organization Service.RegisterUser makes for a self-service
+// signup. saas.auth.sso_jit_provisioned cannot stand in for it: as the test
+// below shows, that event fires again every time a removed member is
+// re-provisioned, so counting it counts one person many times.
+func TestResolver_Registration_RecordedOncePerIdentityInTheJoiningOrg(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
+	setSsoProvisioning(t, orgID, "jit", "member", []string{"acme.test"})
+
+	first, err := r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.NoError(t, err)
+	require.Equal(t, 1, registeredAuditCount(t, orgID),
+		"provisioning a first-seen identity records a registration in the org it joined")
+
+	var method, email string
+	scanControlPlane(t, &method,
+		`SELECT payload->>'signup_method' FROM audit_events
+		  WHERE event_type = 'saas.user.registered' AND org_id = $1`, orgID)
+	require.Equal(t, "sso", method, "the SSO-JIT intent names its own signup method")
+	scanControlPlane(t, &email,
+		`SELECT payload->>'email' FROM audit_events
+		  WHERE event_type = 'saas.user.registered' AND org_id = $1`, orgID)
+	require.Equal(t, "worker@acme.test", email)
+
+	// A plain login writes nothing: the identity already existed.
+	_, err = r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.NoError(t, err)
+	require.Equal(t, 1, registeredAuditCount(t, orgID), "a plain login is not a registration")
+
+	// Remove the member locally; the IdP still asserts them, so the next login
+	// re-provisions the membership and emits a second sso_jit_provisioned.
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `DELETE FROM organization_members WHERE org_id = $1 AND user_id = $2`,
+			orgID, first.UserID)
+		return err
+	}))
+	_, err = r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.NoError(t, err)
+
+	require.Equal(t, 2, ssoJitAuditCount(t, orgID),
+		"re-provisioning is a membership change and does emit the JIT event again")
+	require.Equal(t, 1, registeredAuditCount(t, orgID),
+		"but the person registered once: re-provisioning must not look like a new user")
+}
+
+// invite-only SSO reaches provisionSsoInvite rather than provisionSsoJit, and
+// it creates an identity just the same — so it records a registration too.
+func TestResolver_Registration_RecordedForInviteOnlySsoProvisioning(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID, "Acme", "workos-acme")
+	addMember(t, orgID, ownerID, "owner", time.Now())
+	setSsoProvisioning(t, orgID, "invite-only", "member", []string{"acme.test"})
+	seedInvitation(t, orgID, ownerID, "worker@acme.test", "admin", "pending", time.Now().Add(24*time.Hour))
+
+	_, err := r.Resolve(ctx, claims("worker@acme.test", "sso-worker"), auth.SsoJitIntent{OrgID: orgID})
+	require.NoError(t, err)
+	require.Equal(t, 1, registeredAuditCount(t, orgID),
+		"an invited SSO identity is created here, so its registration is recorded here")
+}
+
 func TestResolver_SsoJit_FirstLoginProvisions_SecondIsPlainLogin(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()

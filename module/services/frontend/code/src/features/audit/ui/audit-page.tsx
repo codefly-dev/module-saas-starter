@@ -93,7 +93,19 @@ export function AuditPage() {
 		groupBys: ["category", "event_type"] as AuditGroupDimension[],
 	};
 	const headlineNow = useAuditAggregate({ ...headline, ...current });
-	const headlineBefore = useAuditAggregate({ ...headline, ...previous });
+	// The tiles that act as filter controls read this one instead: the window's
+	// events with no filter applied at all. A tile is a control, so the number
+	// it shows has to be the number its click produces — reading the in-scope
+	// aggregate made "Events" display the filtered count while clicking it
+	// cleared the filters, and made "New users" drop whichever of its event
+	// types fell outside the current category. When nothing is filtered these
+	// params hash to the headline's own key, so react-query serves both from
+	// one request.
+	const unfiltered = {
+		groupBys: ["category", "event_type"] as AuditGroupDimension[],
+	};
+	const totalNow = useAuditAggregate({ ...unfiltered, ...current });
+	const totalBefore = useAuditAggregate({ ...unfiltered, ...previous });
 	// Distinct actors cannot be read off a grouped count, so they keep their
 	// own aggregate; the top-actors list reads the same one.
 	const actorsNow = useAuditAggregate({
@@ -122,14 +134,17 @@ export function AuditPage() {
 		() => sliceCategory(headlineNow.data ?? [], category),
 		[headlineNow.data, category],
 	);
-	const inScopeBefore = useMemo(
-		() => sliceCategory(headlineBefore.data ?? [], category),
-		[headlineBefore.data, category],
-	);
 	const byTypeNow = useMemo(() => byEventType(inScopeNow), [inScopeNow]);
-	const byTypeBefore = useMemo(
-		() => byEventType(inScopeBefore),
-		[inScopeBefore],
+	// Counted off the unfiltered aggregate: the new-user event types name the
+	// fact directly, so a category drill-down can only subtract from them —
+	// never refine them — and must not silently change what the tile means.
+	const allTypesNow = useMemo(
+		() => byEventType(totalNow.data ?? []),
+		[totalNow.data],
+	);
+	const allTypesBefore = useMemo(
+		() => byEventType(totalBefore.data ?? []),
+		[totalBefore.data],
 	);
 	// The registry decides which names still mean "a person joined".
 	const newUserTypes = useMemo(
@@ -137,15 +152,25 @@ export function AuditPage() {
 		[eventTypes],
 	);
 
-	// Resetting every filter is what "Events" (the unfiltered total) means as a
-	// selection, and it is also the state the other Selects already reach via
-	// their own "all" option — so the tile reuses that, not a new concept.
+	// Every clickable tile reads the unfiltered window and selects exactly the
+	// filter state that reproduces its own number, so the value and the click
+	// can never disagree. "Events" is that window whole; "Security events" is
+	// that window sliced to one category, which is why selecting it clears the
+	// other two filters rather than intersecting with them.
 	const resetFilters = () => {
 		setEventTypeFilter("all");
 		setCategoryFilter("all");
 		setNamespaceFilter("all");
 	};
-	const showsSecurityOnly = categoryFilter === SECURITY_CATEGORY;
+	const selectSecurityOnly = () => {
+		setCategoryFilter(SECURITY_CATEGORY);
+		setEventTypeFilter("all");
+		setNamespaceFilter("all");
+	};
+	const showsSecurityOnly =
+		categoryFilter === SECURITY_CATEGORY &&
+		eventTypeFilter === "all" &&
+		namespaceFilter === "all";
 	const showsNoFilter =
 		eventTypeFilter === "all" &&
 		categoryFilter === "all" &&
@@ -174,17 +199,14 @@ export function AuditPage() {
 		const newUsers = tile(
 			"new-users",
 			"New users",
-			countEventTypes(byTypeNow, newUserTypes),
-			countEventTypes(byTypeBefore, newUserTypes),
-			// Not clickable: "new users" is 3 event types spanning 2 registry
-			// categories (saas.user.registered/saas.user.created are
-			// CategoryIdentity, saas.auth.sso_jit_provisioned is
-			// CategorySecurity — module/services/accounts/code/pkg/business/
-			// audit_registry.go), and the wire contract's event_type/category
-			// filters on QueryAuditLogRequest/AggregateAuditLogRequest are each
-			// a single scalar — there is no "event type IN (...)" filter to
-			// drive a click through. Filtering to one of the three types would
-			// misrepresent the tile's own count.
+			countEventTypes(allTypesNow, newUserTypes),
+			countEventTypes(allTypesBefore, newUserTypes),
+			// Not clickable: "new users" is however many event types the
+			// registry marks, and the wire contract's event_type filter on
+			// QueryAuditLogRequest / AggregateAuditLogRequest is a single
+			// scalar — there is no "event type IN (...)" filter to drive a
+			// click through. Selecting one of them would misrepresent the
+			// tile's own count.
 		);
 		// Say so when the registry no longer knows the names this tile counts:
 		// a zero here would otherwise read as "nobody joined".
@@ -194,8 +216,8 @@ export function AuditPage() {
 			tile(
 				"events",
 				"Events",
-				totalCount(inScopeNow),
-				totalCount(inScopeBefore),
+				totalCount(totalNow.data ?? []),
+				totalCount(totalBefore.data ?? []),
 				{ onSelect: resetFilters, selected: showsNoFilter },
 			),
 			newUsers,
@@ -213,16 +235,13 @@ export function AuditPage() {
 			tile(
 				"security",
 				"Security events",
-				totalCount(sliceCategory(headlineNow.data ?? [], SECURITY_CATEGORY)),
-				totalCount(sliceCategory(headlineBefore.data ?? [], SECURITY_CATEGORY)),
+				totalCount(sliceCategory(totalNow.data ?? [], SECURITY_CATEGORY)),
+				totalCount(sliceCategory(totalBefore.data ?? [], SECURITY_CATEGORY)),
 				{
 					higherIsBetter: false,
 					// category is an exact, already-existing filter value, so this
 					// reuses the same Select state the "Category" dropdown drives.
-					onSelect: () => {
-						setCategoryFilter(SECURITY_CATEGORY);
-						setEventTypeFilter("all");
-					},
+					onSelect: selectSecurityOnly,
 					selected: showsSecurityOnly,
 				},
 			),
@@ -231,19 +250,17 @@ export function AuditPage() {
 		range,
 		eventTypes,
 		newUserTypes,
-		inScopeNow,
-		inScopeBefore,
-		byTypeNow,
-		byTypeBefore,
-		headlineNow.data,
-		headlineBefore.data,
+		allTypesNow,
+		allTypesBefore,
+		totalNow.data,
+		totalBefore.data,
 		actorsNow.data,
 		actorsBefore.data,
 		showsNoFilter,
 		showsSecurityOnly,
 	]);
-	const tilesLoading = headlineNow.isLoading || actorsNow.isLoading;
-	const tilesError = headlineNow.error ?? actorsNow.error;
+	const tilesLoading = totalNow.isLoading || actorsNow.isLoading;
+	const tilesError = totalNow.error ?? actorsNow.error;
 
 	const { directory: actorNames, failed: actorNamesFailed } =
 		usePrincipalDirectory(organizationId ?? "", [
@@ -283,7 +300,15 @@ export function AuditPage() {
 	}, [eventTypes, category, namespace]);
 
 	const handleExport = (format: "csv" | "json") => {
-		exportMutation.mutate({ format, eventType });
+		// The download is what the page is showing: same filters, same window.
+		exportMutation.mutate({
+			format,
+			eventType,
+			category,
+			namespace,
+			from: windows.current.from,
+			to: windows.current.to,
+		});
 	};
 
 	const actions = (

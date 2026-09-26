@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { useAuditService } from "@/lib/hooks/use-api-client";
 import type { AuditEvent } from "../model/types";
 
@@ -7,6 +8,11 @@ import type { AuditEvent } from "../model/types";
  *
  * Since the backend AuditService only exposes QueryAuditLog, we fetch the
  * events client-side and serialize them into the chosen format.
+ *
+ * It takes the page's whole scope — every filter plus the time window — and not
+ * just the event type: a download that quietly widens to all categories and all
+ * of history is not the thing the viewer was looking at when they asked for it,
+ * and nothing in the file says so.
  */
 export function useExportAuditLog() {
 	const svc = useAuditService();
@@ -15,16 +21,28 @@ export function useExportAuditLog() {
 		mutationFn: async ({
 			format,
 			eventType,
+			category,
+			namespace,
+			from,
+			to,
 			orgId,
 		}: {
 			format: "csv" | "json";
 			eventType?: string;
+			category?: string;
+			namespace?: string;
+			from?: Date;
+			to?: Date;
 			orgId?: string;
 		}) => {
 			const resp = await svc.queryAuditLog({
 				orgId: orgId ?? "",
 				eventType: eventType ?? "",
+				category: category ?? "",
+				namespace: namespace ?? "",
 				actorId: "",
+				from: from ? timestampFromDate(from) : undefined,
+				to: to ? timestampFromDate(to) : undefined,
 				pageSize: 10_000,
 			});
 

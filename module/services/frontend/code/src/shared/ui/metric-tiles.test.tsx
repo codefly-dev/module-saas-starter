@@ -152,6 +152,34 @@ describe("StatTile", () => {
 				.getAttribute("aria-pressed"),
 		).toBe("true");
 	});
+
+	// onSelect lives on the Metric, not on one component's props, so a renderer
+	// that ignored it would silently swallow the caller's handler. MetricCard
+	// draws the same Metric and must behave the same.
+	it("gives MetricCard the same control behaviour as StatTile", () => {
+		const onSelect = vi.fn();
+		render(
+			<MetricCard
+				metric={{
+					label: "Security events",
+					value: 3,
+					onSelect,
+					selected: true,
+				}}
+			/>,
+		);
+		const card = screen.getByRole("button", { name: /Security events/ });
+		expect(card.getAttribute("aria-pressed")).toBe("true");
+		fireEvent.click(card);
+		expect(onSelect).toHaveBeenCalledOnce();
+		fireEvent.keyDown(card, { key: "Enter" });
+		expect(onSelect).toHaveBeenCalledTimes(2);
+	});
+
+	it("leaves MetricCard static when the metric has nothing to select", () => {
+		render(<MetricCard metric={{ label: "Events", value: 10 }} />);
+		expect(screen.queryByRole("button")).toBeNull();
+	});
 });
 
 describe("MetricCard", () => {
