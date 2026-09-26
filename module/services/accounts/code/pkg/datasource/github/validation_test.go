@@ -2,139 +2,60 @@ package github
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestValidationStatusDoesNotExposeResponseBody(t *testing.T) {
-	for _, tt := range []struct {
-		code          int
-		want          error
-		header, value string
-	}{{401, ErrUnauthorized, "", ""}, {403, ErrForbidden, "", ""}, {429, ErrRateLimited, "", ""}, {403, ErrRateLimited, "Retry-After", "60"}, {403, ErrRateLimited, "X-RateLimit-Remaining", "0"}, {404, ErrNotFound, "", ""}} {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if tt.header != "" {
-				w.Header().Set(tt.header, tt.value)
-			}
-			w.WriteHeader(tt.code)
-			_, _ = w.Write([]byte("sensitive provider detail"))
-		}))
-		_, err := New("private-token", server.URL).RepositoryIsPublic(context.Background(), "acme/docs")
-		server.Close()
-		if !errors.Is(err, tt.want) {
-			t.Fatalf("status %d: %v", tt.code, err)
-		}
-		if strings.Contains(err.Error(), "sensitive") || strings.Contains(err.Error(), "private-token") {
-			t.Fatal("credential or provider detail leaked")
-		}
-	}
-}
-
-func TestSecondaryRateLimitWithoutRetryHeader(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"message":"You have exceeded a secondary rate limit. sensitive detail"}`))
-	}))
-	defer server.Close()
-	_, err := New("private-token", server.URL).RepositoryIsPublic(context.Background(), "acme/docs")
-	if !errors.Is(err, ErrRateLimited) || strings.Contains(err.Error(), "sensitive") {
-		t.Fatalf("rate limit misclassified or exposed: %v", err)
-	}
-}
-
-// Public is an affirmative answer only. GitHub answers an unauthenticated read
-// of a private or missing repository with the same 404, and a response that does
-// not say "public" must never be read as one.
+// Public is an affirmative answer only, proven by reading the repository with no
+// credential at all — and it costs no REST call.
 func TestRepositoryIsPublic(t *testing.T) {
-	cases := map[string]struct {
-		status int
-		body   string
-		want   bool
-		err    error
-	}{
-		"public":                    {http.StatusOK, `{"private":false,"visibility":"public"}`, true, nil},
-		"public without visibility": {http.StatusOK, `{"private":false}`, true, nil},
-		"private":                   {http.StatusOK, `{"private":true,"visibility":"private"}`, false, nil},
-		"internal":                  {http.StatusOK, `{"private":false,"visibility":"internal"}`, false, nil},
-		"flag absent":               {http.StatusOK, `{"visibility":"public"}`, false, nil},
-		"private or missing":        {http.StatusNotFound, `{"message":"Not Found"}`, false, ErrNotFound},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/repos/acme/docs" {
-					t.Errorf("unexpected path %q", r.URL.Path)
-				}
-				if got := r.Header.Get("Authorization"); got != "" {
-					t.Errorf("an unauthenticated client sent Authorization %q", got)
-				}
-				w.WriteHeader(tc.status)
-				_, _ = w.Write([]byte(tc.body))
-			}))
-			defer srv.Close()
+	t.Parallel()
+	gh := newFakeGitHub(t)
+	gh.repo("docs")(map[string]*string{"docs/a.md": str("a")})
 
-			got, err := New("", srv.URL).RepositoryIsPublic(context.Background(), "acme/docs")
-			if tc.err != nil {
-				if !errors.Is(err, tc.err) {
-					t.Fatalf("err = %v, want %v", err, tc.err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tc.want {
-				t.Fatalf("public = %v, want %v", got, tc.want)
-			}
-		})
+	public, err := gh.client("").RepositoryIsPublic(context.Background(), "acme/docs")
+	if err != nil || !public {
+		t.Fatalf("public repo = %v, %v; want public", public, err)
+	}
+	if _, err := gh.client("").RepositoryIsPublic(context.Background(), "acme/missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing repo err = %v, want ErrNotFound", err)
+	}
+	if public, err := gh.client("tok").RepositoryIsPublic(context.Background(), "acme/docs"); err == nil || public {
+		t.Fatal("a client holding a credential proved a repository public")
+	}
+	if gh.restCalls.Load() != 0 {
+		t.Fatalf("the visibility proof spent %d REST calls, want 0", gh.restCalls.Load())
+	}
+}
+
+// A repository that needs a credential is not public: GitHub answers the
+// anonymous read as it answers a missing repository.
+func TestRepositoryNeedingACredentialIsNotPublic(t *testing.T) {
+	t.Parallel()
+	gh := newFakeGitHub(t)
+	gh.requireAuth = "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:tok"))
+	gh.repo("docs")(map[string]*string{"docs/a.md": str("a")})
+	if public, err := gh.client("").RepositoryIsPublic(context.Background(), "acme/docs"); !errors.Is(err, ErrNotFound) || public {
+		t.Fatalf("private repo = %v, %v; want ErrNotFound", public, err)
 	}
 }
 
 // The unauthenticated limit is metered per IP rather than per credential, so it
 // is reported distinctly — but still as a rate limit to a caller asking only
-// that. The limit's reset time is read from the response, so a caller can back
-// off until it rather than retry blindly.
-func TestUnauthenticatedRateLimitIsDistinct(t *testing.T) {
-	reset := time.Now().Add(17 * time.Minute).Truncate(time.Second).UTC()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.Header().Set("X-RateLimit-Reset", strconvItoa(reset.Unix()))
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 203.0.113.7."}`))
-	}))
-	defer srv.Close()
-
-	_, err := New("", srv.URL).RepositoryIsPublic(context.Background(), "acme/docs")
-	if !errors.Is(err, ErrUnauthenticatedRateLimited) || !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("unauthenticated read err = %v, want ErrUnauthenticatedRateLimited wrapping ErrRateLimited", err)
+// that — and carries its reset when one is known.
+func TestRateLimitErrorMatchesItsSentinels(t *testing.T) {
+	reset := time.Unix(1_700_000_000, 0).UTC()
+	anon := &RateLimitError{ResetAt: reset, Unauthenticated: true}
+	if !errors.Is(anon, ErrRateLimited) || !errors.Is(anon, ErrUnauthenticatedRateLimited) {
+		t.Fatal("an unauthenticated rate limit must match both sentinels")
 	}
-	var limited *RateLimitError
-	if !errors.As(err, &limited) || !limited.ResetAt.Equal(reset) {
-		t.Fatalf("rate limit reset = %v, want %v", limited, reset)
+	authed := &RateLimitError{}
+	if !errors.Is(authed, ErrRateLimited) || errors.Is(authed, ErrUnauthenticatedRateLimited) {
+		t.Fatal("an authenticated rate limit must match only ErrRateLimited")
 	}
-	_, err = New("tok", srv.URL).RepositoryIsPublic(context.Background(), "acme/docs")
-	if !errors.Is(err, ErrRateLimited) || errors.Is(err, ErrUnauthenticatedRateLimited) {
-		t.Fatalf("authenticated read err = %v, want ErrRateLimited only", err)
-	}
-}
-
-func TestRateLimitResetPrefersRetryAfter(t *testing.T) {
-	now := time.Unix(1_700_000_000, 0).UTC()
-	h := http.Header{}
-	h.Set("Retry-After", "90")
-	h.Set("X-RateLimit-Reset", "1700009999")
-	if got := rateLimitReset(h, now); !got.Equal(now.Add(90 * time.Second)) {
-		t.Fatalf("reset = %v, want Retry-After", got)
-	}
-	h.Del("Retry-After")
-	if got := rateLimitReset(h, now); !got.Equal(time.Unix(1700009999, 0).UTC()) {
-		t.Fatalf("reset = %v, want X-RateLimit-Reset", got)
-	}
-	if got := rateLimitReset(http.Header{}, now); !got.IsZero() {
-		t.Fatalf("reset = %v, want zero when GitHub does not say", got)
+	if got := anon.Error(); got != ErrUnauthenticatedRateLimited.Error()+" until 2023-11-14T22:13:20Z" {
+		t.Fatalf("error = %q", got)
 	}
 }

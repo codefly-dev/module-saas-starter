@@ -1,8 +1,9 @@
 // Package github is a minimal GitHub client for datasource ingestion. Content —
 // branches, commits, trees, diffs and file bytes — travels over git's smart-HTTP
 // transport through a per-source mirror (git.go), one request per change set
-// rather than one per file. The REST API is used only for what git cannot say:
-// whether a repository is public. It authenticates with a per-source token
+// rather than one per file, and nothing is read over the REST API, so a sync
+// spends none of the budget GitHub meters REST reads against (60 an hour per
+// source IP for a client holding no credential). It authenticates with a per-source token
 // supplied by the caller (a PAT or a GitHub App installation token) — or with
 // none at all, for a public repository — and holds no persistence or crypto
 // concerns of its own.
@@ -10,24 +11,19 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 )
 
-// DefaultBaseURL is api.github.com; tests and GitHub Enterprise override it.
+// DefaultBaseURL is the API base the deployment is configured with; the git
+// origin is derived from it (api.github.com serves github.com). Tests and
+// GitHub Enterprise override it.
 const DefaultBaseURL = "https://api.github.com"
-
-// maxResponseBytes bounds a REST response body.
-const maxResponseBytes = 1 << 20
 
 // ErrNotFound is returned when GitHub answers 404 for a repo, ref, or path.
 var ErrNotFound = errors.New("github: not found")
@@ -110,13 +106,10 @@ type Comparison struct {
 // token sends no credential at all, which GitHub serves only for public
 // repositories.
 type Client struct {
-	baseURL    string
 	token      string
-	http       *http.Client
 	gitBaseURL string
 	gitScheme  string
 	cacheRoot  string
-	restCalls  atomic.Int64
 	gitCalls   atomic.Int64
 }
 
@@ -135,13 +128,8 @@ func New(token, baseURL string, opts ...Option) *Client {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-	c := &Client{
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		token:     token,
-		http:      &http.Client{Timeout: 30 * time.Second},
-		cacheRoot: DefaultCacheRoot(),
-	}
-	c.gitBaseURL, c.gitScheme = gitBaseURLFor(c.baseURL)
+	c := &Client{token: token, cacheRoot: DefaultCacheRoot()}
+	c.gitBaseURL, c.gitScheme = gitBaseURLFor(strings.TrimRight(baseURL, "/"))
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -156,8 +144,8 @@ func DefaultCacheRoot() string {
 	return filepath.Join(os.TempDir(), "codefly-datasource-github")
 }
 
-// Usage reports the REST calls and the git network requests this client made.
-func (c *Client) Usage() (rest, git int64) { return c.restCalls.Load(), c.gitCalls.Load() }
+// Requests reports the git network requests this client made.
+func (c *Client) Requests() int64 { return c.gitCalls.Load() }
 
 func (c *Client) recordFetch() { c.gitCalls.Add(1) }
 
@@ -201,108 +189,18 @@ func (c *Client) ResolveCommit(ctx context.Context, repo, ref string) (string, e
 	return "", ErrNotFound
 }
 
-// RepositoryIsPublic reports whether GitHub describes repo as public. It is
-// meant to be asked by a client holding no token, where the answer is also a
-// proof: GitHub answers an unauthenticated request for a private or missing
-// repository with the same 404, which surfaces as ErrNotFound and never as
-// "public".
-//
-// Public is only ever an affirmative answer. A response that omits the `private`
-// flag, or names any visibility other than public (an Enterprise "internal"
-// repository), is reported as not public rather than guessed at.
+// RepositoryIsPublic reports whether repo can be read with no credential at all,
+// in one git request. It must be asked of a client holding no token, and then
+// the answer is a proof: GitHub serves an unauthenticated read only of a public
+// repository, and answers one of a private, internal or missing repository the
+// same way — which surfaces as ErrNotFound, never as "public". A client holding
+// a token proves nothing by reading, so it never answers public.
 func (c *Client) RepositoryIsPublic(ctx context.Context, repo string) (bool, error) {
-	var out struct {
-		Private    *bool  `json:"private"`
-		Visibility string `json:"visibility"`
+	if c.token != "" {
+		return false, errors.New("github: only a client holding no credential can prove a repository public")
 	}
-	if err := c.getJSON(ctx, "/repos/"+repo, &out); err != nil {
+	if _, err := c.lsRemote(ctx, repo, nil, "HEAD"); err != nil {
 		return false, err
 	}
-	if out.Private == nil || *out.Private {
-		return false, nil
-	}
-	return out.Visibility == "" || out.Visibility == "public", nil
-}
-
-func (c *Client) getJSON(ctx context.Context, path string, into any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	c.restCalls.Add(1)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return err
-	}
-	if err := c.classify(resp, body); err != nil {
-		if !errors.Is(err, errUnexpectedStatus) {
-			return err
-		}
-		return fmt.Errorf("github: %s %s: unexpected status %d", req.Method, path, resp.StatusCode)
-	}
-	if err := json.Unmarshal(body, into); err != nil {
-		return fmt.Errorf("github: decode %s response: %w", path, err)
-	}
-	return nil
-}
-
-// errUnexpectedStatus marks a non-2xx status classify has no sentinel for; each
-// caller reports it with its own request context.
-var errUnexpectedStatus = errors.New("github: unexpected status")
-
-// classify maps a response status onto the package's sentinels, or nil for a
-// success. Every request goes through it, so a rate limit reads the same whether
-// it hit a JSON read or a blob fetch.
-func (c *Client) classify(resp *http.Response, body []byte) error {
-	// Secondary limits can omit Retry-After; GitHub identifies those in its
-	// structured message. Inspect it for classification only, never expose it.
-	var failure struct {
-		Message string `json:"message"`
-	}
-	if resp.StatusCode == http.StatusForbidden {
-		_ = json.Unmarshal(body, &failure)
-	}
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
-		return ErrUnauthorized
-	case resp.StatusCode == http.StatusTooManyRequests ||
-		(resp.StatusCode == http.StatusForbidden &&
-			(resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0" ||
-				strings.Contains(strings.ToLower(failure.Message), "rate limit"))):
-		return &RateLimitError{ResetAt: rateLimitReset(resp.Header, time.Now()), Unauthenticated: c.token == ""}
-	case resp.StatusCode == http.StatusForbidden:
-		return ErrForbidden
-	case resp.StatusCode == http.StatusNotFound:
-		return ErrNotFound
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return errUnexpectedStatus
-	}
-	return nil
-}
-
-// rateLimitReset reads when a rate limit lifts: Retry-After (seconds) for a
-// secondary limit, else X-RateLimit-Reset (epoch seconds) for the primary one.
-// Zero means GitHub did not say.
-func rateLimitReset(h http.Header, now time.Time) time.Time {
-	if v := strings.TrimSpace(h.Get("Retry-After")); v != "" {
-		if secs, err := strconv.ParseInt(v, 10, 64); err == nil && secs >= 0 && secs < 24*3600 {
-			return now.Add(time.Duration(secs) * time.Second).UTC()
-		}
-	}
-	if v := strings.TrimSpace(h.Get("X-RateLimit-Reset")); v != "" {
-		if epoch, err := strconv.ParseInt(v, 10, 64); err == nil && epoch > 0 {
-			return time.Unix(epoch, 0).UTC()
-		}
-	}
-	return time.Time{}
+	return true, nil
 }
