@@ -3,7 +3,9 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.48
+    # DEV RENDER ONLY, labelled: a dev prerelease of the go-grpc agent change
+    # that advertises named endpoints' ports (codefly-dev/service-go-grpc#140).
+    version: 0.1.48-dev.f37710ffe968
     publisher: codefly.dev
 service-dependencies:
     - name: cache
