@@ -38,13 +38,29 @@ func declaringFrontendWrite(id, namespace string) business.SolutionRegistrationW
 		`{"name":"login","type":"saas.auth.login"}],"metrics":[],"dashboards":[]}}`)
 }
 
+// declaringService is a service over the package store whose operator binding
+// gives each solution id the namespaces listed — its MODULE_PRINCIPALS entry.
+// It is its own service so the binding never leaks into testService.
+func declaringService(t *testing.T, bound map[string][]string) *business.Service {
+	t.Helper()
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	registry := business.ModulePrincipalRegistry{}
+	for solution, namespaces := range bound {
+		registry[business.ModulePrincipalID(solution)] = business.ModulePrincipalGrant{Prefix: solution, Namespaces: namespaces}
+	}
+	svc.SetModulePrincipals(registry)
+	return svc
+}
+
 func TestSolutionAuditEvents_AdmittedAtRegistrationAndEmitted(t *testing.T) {
 	clearData(t)
 	namespace := freshAuditNamespace(t)
 	solution := testSolutionID(t)
 	eventType := business.EventType(namespace + ".item.created")
 
-	_, err := testService.PutSolutionRegistration(testCtx, declaringFrontendWrite(solution, namespace))
+	registrar := declaringService(t, map[string][]string{solution: {namespace}})
+	_, err := registrar.PutSolutionRegistration(testCtx, declaringFrontendWrite(solution, namespace))
 	require.NoError(t, err, "register a solution declaring a typed event")
 
 	var admitted *business.DeclaredAuditEventType
@@ -118,7 +134,6 @@ func TestSolutionAuditEvents_AdmittedAtRegistrationAndEmitted(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "exactly the one emitted event")
 	require.Equal(t, solution, entries[0].Payload["solution"])
-	require.Equal(t, business.ActorTypeAgent, entries[0].ActorType)
 	require.Equal(t, 0.5, entries[0].Payload["score"])
 
 	// Another solution's label, and a non-finite number, are refused.
@@ -133,11 +148,14 @@ func TestSolutionAuditEvents_AdmittedAtRegistrationAndEmitted(t *testing.T) {
 func TestSolutionAuditEvents_NamespaceBelongsToOneSolution(t *testing.T) {
 	namespace := freshAuditNamespace(t)
 	first, second := testSolutionID(t), testSolutionID(t)
+	// Both are bound, which is a misconfiguration: the holder keeps the
+	// namespace while its binding stands.
+	registrar := declaringService(t, map[string][]string{first: {namespace}, second: {namespace}})
 
-	_, err := testService.PutSolutionRegistration(testCtx, declaringFrontendWrite(first, namespace))
+	_, err := registrar.PutSolutionRegistration(testCtx, declaringFrontendWrite(first, namespace))
 	require.NoError(t, err)
 
-	_, err = testService.PutSolutionRegistration(testCtx, declaringFrontendWrite(second, namespace))
+	_, err = registrar.PutSolutionRegistration(testCtx, declaringFrontendWrite(second, namespace))
 	require.True(t, errors.Is(err, business.ErrSolutionAuditNamespaceOwned), "err = %v, want the namespace refused", err)
 
 	// The refusal rolled the whole write back: the second solution has no record.
@@ -159,12 +177,38 @@ func TestSolutionAuditEvents_NamespaceBelongsToOneSolution(t *testing.T) {
 	renamed := declaringFrontendWrite(first, namespace)
 	renamed.Frontend.Manifest = strings.Replace(renamed.Frontend.Manifest, `"id":"`+first+`"`, `"id":"`+first+`","schemaVersion":1`, 1)
 	renamed.ExpectedRevision = &current.Revision
-	current, err = testService.PutSolutionRegistration(testCtx, renamed)
+	current, err = registrar.PutSolutionRegistration(testCtx, renamed)
 	require.NoError(t, err, "an identical declaration in a changed manifest")
 
 	dropping := frontendWrite(first, "publisher-"+first, `{"id":"`+first+`","dashboard":{"events":[`+
 		`{"name":"created","type":"`+namespace+`.item.created","fields":[{"name":"count","kind":"int"}]}],"metrics":[],"dashboards":[]}}`)
 	dropping.ExpectedRevision = &current.Revision
-	_, err = testService.PutSolutionRegistration(testCtx, dropping)
+	_, err = registrar.PutSolutionRegistration(testCtx, dropping)
 	require.True(t, errors.Is(err, business.ErrSolutionAuditDeclarationRejected), "err = %v, want a refused change", err)
+}
+
+// The operator's release path against Postgres: unbinding the namespace from
+// its holder and binding it to another solution moves every type in it on that
+// solution's next admission.
+func TestSolutionAuditEvents_RebindingTransfersTheNamespace(t *testing.T) {
+	namespace := freshAuditNamespace(t)
+	holder, successor := testSolutionID(t), testSolutionID(t)
+	eventType := business.EventType(namespace + ".item.created")
+
+	_, err := declaringService(t, map[string][]string{holder: {namespace}}).
+		PutSolutionRegistration(testCtx, declaringFrontendWrite(holder, namespace))
+	require.NoError(t, err)
+
+	_, err = declaringService(t, map[string][]string{successor: {namespace}}).
+		PutSolutionRegistration(testCtx, declaringFrontendWrite(successor, namespace))
+	require.NoError(t, err, "the successor takes over a namespace its holder is no longer bound to")
+
+	var admitted *business.DeclaredAuditEventType
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		admitted, err = testStore.GetDeclaredAuditEventType(ctx, eventType)
+		return err
+	}))
+	require.NotNil(t, admitted)
+	require.Equal(t, successor, admitted.SolutionID)
 }

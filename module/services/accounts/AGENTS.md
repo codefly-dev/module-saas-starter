@@ -38,10 +38,16 @@ survives a restart and reaches every replica, and is only served when it is
 - A frontend-half write that changes the manifest also **admits the audit event
   types its dashboard graph declares** (events carrying `fields`), in the same
   transaction (`pkg/business/solution_audit_events.go`). An admitted type is an
-  `audit_event_types` row owned by `solution:<id>`; a namespace belongs to one
-  producer (one the composed event catalog publishes domain events under is
-  already held), a re-declaration may only add fields, and a refusal rolls the
-  whole write back. `ModuleEmitAuditEvent` accepts a declared type only when the
+  `audit_event_types` row owned by `solution:<id>`. A solution admits types
+  only into the namespaces its own `MODULE_PRINCIPALS` entry (keyed by its
+  solution id) binds — no entry, no admission — so the registration credential
+  alone claims nothing. A namespace belongs to one producer (one the composed
+  event catalog publishes domain events under is already held), a
+  re-declaration may only add fields, and a refusal rolls the whole write back.
+  Ownership follows the binding: the operator releases a namespace by removing
+  it from the holder's entry and binding it to another solution, whose next
+  admission takes every type in it over, recorded as
+  `audit_namespaces_taken_over` on `saas.solution.registration_updated`. `ModuleEmitAuditEvent` accepts a declared type only when the
   `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
   lists its namespace.
 - A deregistration leaves a **tombstone**, so a retiring deployment's delayed

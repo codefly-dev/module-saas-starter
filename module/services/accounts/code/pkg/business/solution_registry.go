@@ -188,12 +188,13 @@ func (s *Service) PutSolutionRegistration(ctx context.Context, write SolutionReg
 		// keeps serving. A renewal carries a manifest already admitted, and is
 		// deliberately not re-read: a rule tightened by a later release must
 		// not stop a working registration from renewing.
+		var takenOver []string
 		if changed && write.Frontend != nil {
 			declared, err := ParseDeclaredAuditEventTypes(write.SolutionID, write.Frontend.Manifest)
 			if err != nil {
 				return err
 			}
-			if err := s.admitDeclaredAuditEventTypes(ctx, write.SolutionID, declared); err != nil {
+			if takenOver, err = s.admitDeclaredAuditEventTypes(ctx, write.SolutionID, declared); err != nil {
 				return err
 			}
 		}
@@ -220,14 +221,20 @@ func (s *Service) PutSolutionRegistration(ctx context.Context, write SolutionReg
 			if write.Frontend != nil {
 				half = "frontend"
 			}
+			payload := map[string]any{
+				"solution_id": write.SolutionID,
+				"publisher":   write.Publisher,
+				"half":        half,
+				"revision":    next.Revision,
+			}
+			// A takeover moves every declared type in a namespace from the
+			// solution the operator unbound to this one, so it is recorded with
+			// the write that performed it.
+			if len(takenOver) > 0 {
+				payload["audit_namespaces_taken_over"] = takenOver
+			}
 			if err := s.emitTx(ctx, "solution:"+write.SolutionID, "system",
-				EventSolutionRegistrationUpdated, "solution", write.SolutionID, "",
-				map[string]any{
-					"solution_id": write.SolutionID,
-					"publisher":   write.Publisher,
-					"half":        half,
-					"revision":    next.Revision,
-				}); err != nil {
+				EventSolutionRegistrationUpdated, "solution", write.SolutionID, "", payload); err != nil {
 				return err
 			}
 		}

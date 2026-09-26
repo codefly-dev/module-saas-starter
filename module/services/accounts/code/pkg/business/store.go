@@ -609,11 +609,14 @@ type Store interface {
 	//     sorted by type.
 	//   - PutDeclaredAuditEventType inserts or replaces a declared type, and
 	//     refuses (ErrSolutionAuditNamespaceOwned) a row another owner holds.
+	//   - TransferAuditEventNamespace moves every type in a namespace from one
+	//     owner to another: the takeover when the operator rebinds a namespace.
 	LockAuditEventNamespace(ctx context.Context, namespace string) error
 	ListAuditEventNamespaceOwners(ctx context.Context, namespace string) ([]string, error)
 	GetDeclaredAuditEventType(ctx context.Context, eventType EventType) (*DeclaredAuditEventType, error)
 	ListDeclaredAuditEventTypes(ctx context.Context) ([]DeclaredAuditEventType, error)
 	PutDeclaredAuditEventType(ctx context.Context, declared DeclaredAuditEventType) error
+	TransferAuditEventNamespace(ctx context.Context, namespace, from, to string) error
 
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)

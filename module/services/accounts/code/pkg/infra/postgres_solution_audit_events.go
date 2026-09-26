@@ -126,3 +126,15 @@ func (s *PostgresStore) PutDeclaredAuditEventType(ctx context.Context, declared 
 	}
 	return nil
 }
+
+// TransferAuditEventNamespace moves every type in a namespace from one owner to
+// another. Admission calls it, under the namespace's advisory lock, only once
+// the operator has unbound the namespace from the holding solution and bound it
+// to the admitting one; the rows keep their schemas, so the additive rule keeps
+// governing what was already written under them.
+func (s *PostgresStore) TransferAuditEventNamespace(ctx context.Context, namespace, from, to string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`UPDATE audit_event_types SET owner = $3, updated_at = NOW() WHERE namespace = $1 AND owner = $2`,
+		namespace, from, to)
+	return err
+}

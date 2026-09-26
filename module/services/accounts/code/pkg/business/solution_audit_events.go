@@ -40,12 +40,24 @@ import (
 //   - A type is `<namespace>.<aggregate>.<event>`: at least three segments, each
 //     starting with a letter — the shape audit_events admits.
 //   - A reserved namespace is refused: `saas`, the platform's own.
-//   - A namespace belongs to one producer. The first solution to admit a type
-//     into it owns it; another solution, or the code catalog, holding any type
-//     there refuses the declaration, and so does a namespace the composed event
-//     catalog publishes domain events under (eventcatalog.IsPublishedNamespace).
-//     This is the naming law domain events already follow (EVENTS.md): two
-//     producers can never mint the same name.
+//   - A solution declares only into namespaces the operator bound to it: the
+//     `namespaces` of its own MODULE_PRINCIPALS entry, keyed by its solution id
+//     — the same grant a declared type's emission is checked against. A
+//     solution with no entry admits nothing. The registration credential alone
+//     therefore claims nothing: a namespace is the operator's to hand out.
+//   - A namespace belongs to one producer. Another solution still bound to it,
+//     or the code catalog, holding any type there refuses the declaration, and
+//     so does a namespace the composed event catalog publishes domain events
+//     under (eventcatalog.IsPublishedNamespace). This is the naming law domain
+//     events already follow (EVENTS.md): two producers can never mint the same
+//     name.
+//   - Ownership follows the binding, and that is the release path. When the
+//     operator removes a namespace from the holding solution's entry and binds
+//     it to another, the next admission by the newly bound solution takes the
+//     namespace over — every type in it, historical schemas included, so the
+//     additive rule keeps applying — and the registration's audit event records
+//     the takeover. Releasing through any other authority would not hold: while
+//     the binding stands, the holder's next registration would claim it back.
 //   - A type is declared at most once in one declaration.
 //   - Field names are snake_case, unique within the type, and never `solution`,
 //     which the host stamps on every emitted payload.
@@ -91,6 +103,10 @@ var (
 	// ErrSolutionAuditDeclarationRejected, when a declared type's namespace is
 	// already held by another producer.
 	ErrSolutionAuditNamespaceOwned = errors.New("audit event namespace is owned by another producer")
+	// ErrSolutionAuditNamespaceUnbound is returned, wrapped by
+	// ErrSolutionAuditDeclarationRejected, when a declared type's namespace is
+	// not among the namespaces the operator bound to the declaring solution.
+	ErrSolutionAuditNamespaceUnbound = errors.New("audit event namespace is not bound to the declaring solution")
 )
 
 var (
@@ -455,63 +471,102 @@ func sameDeclaredAuditEventType(a, b DeclaredAuditEventType) bool {
 	return bytes.Equal(a.PayloadSchemaJSON(), b.PayloadSchemaJSON())
 }
 
-// admitDeclaredAuditEventTypes records a solution's declared types. It must run
-// inside the registration write's control-plane transaction: the namespace
-// locks it takes hold until that transaction ends, and a refusal here rolls the
-// registration write back with it.
-func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID string, declared []DeclaredAuditEventType) error {
+// admitDeclaredAuditEventTypes records a solution's declared types and
+// returns the namespaces it took over from a solution the operator no longer
+// binds to them. It must run inside the registration write's control-plane
+// transaction: the namespace locks it takes hold until that transaction ends,
+// and a refusal here rolls the registration write back with it.
+func (s *Service) admitDeclaredAuditEventTypes(ctx context.Context, solutionID string, declared []DeclaredAuditEventType) ([]string, error) {
 	if len(declared) == 0 {
-		return nil
+		return nil, nil
 	}
 	owner := SolutionAuditOwner(solutionID)
+	// The binding is the solution's own principal entry. Keyed by the solution
+	// id, it is the same entry — and the same `namespaces` — a declared type's
+	// emission is authorized against, so admission can never hand a solution a
+	// namespace it could not emit into.
+	grant, bound := s.modulePrincipals[ModulePrincipalID(solutionID)]
+	if !bound {
+		return nil, fmt.Errorf("%w: %w: solution %q has no module principal entry, so no namespace is bound to it",
+			ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceUnbound, solutionID)
+	}
 	namespaces := make([]string, 0, len(declared))
 	for _, d := range declared {
 		if len(namespaces) == 0 || namespaces[len(namespaces)-1] != d.Namespace {
 			namespaces = append(namespaces, d.Namespace)
 		}
 	}
-	// declared is sorted by type, so namespaces is sorted and each appears once;
-	// taking the locks in that order is what keeps two admissions spanning the
-	// same namespaces from deadlocking.
+	// Every rule that needs no read is checked before any lock is taken.
 	for _, namespace := range namespaces {
 		// A namespace the composed event catalog publishes domain events under
 		// has its producer already, though no audit_event_types row may name it.
 		if eventcatalog.IsPublishedNamespace(namespace) {
-			return fmt.Errorf("%w: %w: namespace %q is published by a producer in the composed event catalog",
+			return nil, fmt.Errorf("%w: %w: namespace %q is published by a producer in the composed event catalog",
 				ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceOwned, namespace)
 		}
+		if !grant.allowsNamespace(namespace) {
+			return nil, fmt.Errorf("%w: %w: namespace %q is not bound to solution %q",
+				ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceUnbound, namespace, solutionID)
+		}
+	}
+	// declared is sorted by type, and '.' sorts below every character a
+	// namespace may contain, so namespaces is sorted and each appears once;
+	// taking the locks in that order is what keeps two admissions spanning the
+	// same namespaces from deadlocking.
+	var takenOver []string
+	for _, namespace := range namespaces {
 		if err := s.store.LockAuditEventNamespace(ctx, namespace); err != nil {
-			return err
+			return nil, err
 		}
 		owners, err := s.store.ListAuditEventNamespaceOwners(ctx, namespace)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, existing := range owners {
-			if existing != owner {
-				return fmt.Errorf("%w: %w: namespace %q is held by %q", ErrSolutionAuditDeclarationRejected,
+			if existing == owner {
+				continue
+			}
+			if !s.releasedAuditNamespace(existing, namespace) {
+				return nil, fmt.Errorf("%w: %w: namespace %q is held by %q", ErrSolutionAuditDeclarationRejected,
 					ErrSolutionAuditNamespaceOwned, namespace, existing)
 			}
+			if err := s.store.TransferAuditEventNamespace(ctx, namespace, existing, owner); err != nil {
+				return nil, err
+			}
+			takenOver = append(takenOver, namespace)
 		}
 	}
 	for _, d := range declared {
 		admitted, err := s.store.GetDeclaredAuditEventType(ctx, d.Type)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if admitted != nil {
 			if err := checkAdditiveAuditFieldChange(*admitted, d); err != nil {
-				return err
+				return nil, err
 			}
 			if sameDeclaredAuditEventType(*admitted, d) {
 				continue
 			}
 		}
 		if err := s.store.PutDeclaredAuditEventType(ctx, d); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return takenOver, nil
+}
+
+// releasedAuditNamespace reports whether the operator has released a namespace
+// from the solution holding it: the holder is a solution, and its principal
+// entry — if it still has one — no longer binds the namespace. A code-owned
+// holder is never released this way.
+func (s *Service) releasedAuditNamespace(holder, namespace string) bool {
+	solutionID, ok := SolutionIDFromAuditOwner(holder)
+	if !ok {
+		return false
+	}
+	grant, bound := s.modulePrincipals[ModulePrincipalID(solutionID)]
+	return !bound || !grant.allowsNamespace(namespace)
 }
 
 // AuditEventTypes is the whole registry a reader can name: the code-owned
