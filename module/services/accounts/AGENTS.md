@@ -217,13 +217,20 @@ A composed module reaches the internal tier on the named `authority` endpoint
 (gRPC, module visibility, a listener of its own), which serves only
 `business.ModuleAuthorityProcedures` — see
 [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md). Widening that list
-widens what every composed module can reach; the tests beside it hold each entry
-to the internal tier and keep the gateway-brokered exchanges off it.
+widens what every composed module can reach, so
+`business.ValidateModuleAuthorityProcedures` runs in the catalog and deployment
+generators and refuses an entry that is neither on the capability surface that
+authenticates the calling module from its Work Context nor one of the two
+declared read-only oracles. A method that authorizes on the shared perimeter
+credential alone and mutates state therefore cannot reach every composed module
+through a one-line edit to the list.
 
 The generated `AuthorizationPolicy` allowlists accounts' internal surface to the
-service accounts of services that **declare a dependency on accounts** in the
-workspace topology, and narrows a caller whose only edge is `authority` to the
-module surface. This module's own topology names no composed module — it must
+service accounts of services that **declare a dependency on one of accounts'
+private endpoints** in the workspace topology, and admits a caller that declared
+the `authority` endpoint and no private one to the module surface alone — a
+tenant-surface edge beside it changes nothing. This module's own topology names
+no composed module — it must
 carry no build-time knowledge of its consumers — so a composed module reaches the
 capability surface in a mesh-enforced deployment only when its own workspace
 declares that dependency and regenerates the policy. A valid Work Context does

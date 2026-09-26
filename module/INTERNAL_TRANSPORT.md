@@ -61,9 +61,19 @@ must carry no build-time knowledge of its consumers. **Reach for a composed
 module is therefore the composition's to grant**: its workspace declares that
 module's dependency on accounts' `authority` endpoint and regenerates the
 policy, which adds that service's ServiceAccount to the allowlist — for the
-module surface only. A caller whose one edge to accounts is `authority` is
-admitted to `business.ModuleAuthorityProcedures` and nothing else; a caller with
-any other edge (the gateway) keeps the whole tier. A valid credential does not
+module surface only. A caller that declared the `authority` endpoint and no
+PRIVATE endpoint of accounts is admitted to
+`business.ModuleAuthorityProcedures` and nothing else — including when it also
+declared the module-visible tenant surface, which is the ordinary composition
+and must not widen anything. The whole tier goes only to a caller that declared
+one of accounts' private endpoints, the mixed `rest`/`grpc` listeners it is
+actually served on; a composed module cannot declare one, because the render
+refuses a dependency on a private endpoint. A caller that declared neither is in
+no rule at all. This matters because Istio matches on request path with no port,
+and `connect` shares its port with the multiplexed private `rest` listener: a
+caller wrongly classified as whole-tier could send the internal methods there
+with the internal credential the `authority` endpoint already requires. A valid
+credential does not
 substitute for it — the connection is refused before any token is read — and
 neither does a network route: the policy is deny-by-default for every principal
 it does not name, the ingress gateway's included.
@@ -165,15 +175,26 @@ key set. The fourth, `accounts/authority`, is a gRPC endpoint with a listener of
 its own, and it is the internal tier **narrowed**:
 
 - **Only the module surface is served.** `business.ModuleAuthorityProcedures`
-  lists it — the Work Context consumer seams (`CheckAuthorizationRevision`,
-  `AuthorizeEvidenceRead`, `ConsumeSingleUse`) and the module capability surface
-  that authenticates the calling module by its Work Context. Every other method
-  is refused on this listener, whatever credential it carries: the exchanges the
-  gateway brokers (a module never presents its own secret to accounts), the
-  gateway's registries and validators, the generic permission oracles, principal
-  administration, and the methods that today authorize on the perimeter
-  credential alone (`ConsumeUsage`, `StartInstallationTask`), which would let any
-  module act for any tenant.
+  lists it, and `business.ValidateModuleAuthorityProcedures` — which runs in the
+  catalog and deployment generators — holds every entry to one of two shapes:
+  the module capability surface, which authenticates the calling module from its
+  verified Work Context and authorizes it against the grant its composition
+  declared; or one of two read-only authority oracles
+  (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authorize on
+  the perimeter credential alone and answer one bit about a capability the
+  consumer already holds. Every other method is refused on this listener,
+  whatever credential it carries: the exchanges the gateway brokers (a module
+  never presents its own secret to accounts), the gateway's registries and
+  validators, the generic permission oracles, principal administration, and
+  every method that authorizes on the perimeter credential alone **and mutates
+  state** — `ConsumeUsage`, `StartInstallationTask`, and `ConsumeSingleUse`,
+  which writes a replay claim keyed on the `org_id` and `context_id` the request
+  carries. That credential is shared by every composed module and names no
+  tenant, so such a method would let any module act for any tenant: burn another
+  module's single-use capability, which the legitimate consumer then reads as
+  `AlreadyExists` on its own valid token, or fill the replay table for tenants it
+  has no relationship with. Each joins the endpoint once it decides on a
+  credential bound to the consuming module.
 - **Every call still carries the internal credential**, exactly as on the
   private listener, and the capability surface still decides on the verified
   Work Context and the module's declared grant.

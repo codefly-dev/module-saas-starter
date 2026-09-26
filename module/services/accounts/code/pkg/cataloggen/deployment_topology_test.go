@@ -590,7 +590,24 @@ func TestModuleAuthorityCallerIsNarrowedToTheModuleSurface(t *testing.T) {
 	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
 	require.NoError(t, err)
 
-	decoder := yaml.NewDecoder(strings.NewReader(string(artifacts.MeshPolicy)))
+	byPrincipal := internalAuthorityPathsByPrincipal(t, artifacts.MeshPolicy)
+	require.Len(t, byPrincipal, 2, "the whole tier for the gateway, the module surface for the module caller")
+
+	module := byPrincipal["cluster.local/ns/saas-starter/sa/marketing"]
+	require.Len(t, module, len(business.ModuleAuthorityProcedures()))
+	require.Contains(t, module, "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision")
+	require.NotContains(t, module, "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
+	require.NotContains(t, module, "/saas.accounts.v1.UsageService/ConsumeUsage")
+	require.Contains(t, byPrincipal["cluster.local/ns/saas-starter/sa/auth-gateway"],
+		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
+}
+
+// internalAuthorityPathsByPrincipal reads the rendered allow-accounts-internal-authority
+// policy back as a map from caller principal to the method paths it may reach.
+func internalAuthorityPathsByPrincipal(t *testing.T, meshPolicy []byte) map[string][]any {
+	t.Helper()
+	decoder := yaml.NewDecoder(strings.NewReader(string(meshPolicy)))
+	byPrincipal := map[string][]any{}
 	found := false
 	for {
 		var document struct {
@@ -608,25 +625,89 @@ func TestModuleAuthorityCallerIsNarrowedToTheModuleSurface(t *testing.T) {
 			continue
 		}
 		found = true
-		rules := document.Spec["rules"].([]any)
-		require.Len(t, rules, 2, "the whole tier for the gateway, the module surface for the module caller")
-		byPrincipal := map[string][]any{}
-		for _, rule := range rules {
+		for _, rule := range document.Spec["rules"].([]any) {
 			source := rule.(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
 			paths := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
-			principals := source["principals"].([]any)
-			require.Len(t, principals, 1)
-			byPrincipal[principals[0].(string)] = paths
+			for _, principal := range source["principals"].([]any) {
+				byPrincipal[principal.(string)] = paths
+			}
 		}
-		module := byPrincipal["cluster.local/ns/saas-starter/sa/marketing"]
-		require.Len(t, module, len(business.ModuleAuthorityProcedures()))
-		require.Contains(t, module, "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision")
-		require.NotContains(t, module, "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
-		require.NotContains(t, module, "/saas.accounts.v1.UsageService/ConsumeUsage")
-		require.Contains(t, byPrincipal["cluster.local/ns/saas-starter/sa/auth-gateway"],
-			"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
 	}
-	require.True(t, found)
+	require.True(t, found, "the internal-authority policy must be rendered")
+	return byPrincipal
+}
+
+// TestModuleAuthorityCallerKeepsTheModuleSurfaceBesideATenantEdge is the case the
+// narrowing exists for and the one that used to escape it. A composed module
+// that also consumes the module-visible tenant surface (`connect`) is the
+// ORDINARY composition, not an exception; classifying it as a whole-tier caller
+// handed it every internal method path, and since Istio matches on path with no
+// port and `connect` shares its port with the multiplexed private `rest`
+// listener, that grant was reachable with the internal credential the authority
+// endpoint already requires.
+func TestModuleAuthorityCallerKeepsTheModuleSurfaceBesideATenantEdge(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	documents := withService(t, readDeploymentDocuments(t), "marketing",
+		"endpoints:\n    - name: http\n      visibility: public\n",
+		"service-dependencies:\n    - name: accounts\n      endpoints:\n        - name: authority\n        - name: connect\nendpoints:\n    - name: http\n      visibility: public\n")
+	documents = withService(t, documents, "marketing",
+		"    mode: ssr\n", "    mode: ssr\n    service-account:\n        name: marketing\n")
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
+	require.NoError(t, err)
+
+	byPrincipal := internalAuthorityPathsByPrincipal(t, artifacts.MeshPolicy)
+	module := byPrincipal["cluster.local/ns/saas-starter/sa/marketing"]
+	require.Len(t, module, len(business.ModuleAuthorityProcedures()),
+		"a tenant-surface edge must not promote a module-authority caller to the whole internal tier")
+	require.NotContains(t, module, "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
+	require.NotContains(t, module, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
+	require.NotContains(t, module, "/saas.accounts.v1.UsageService/ConsumeUsage")
+	require.NotContains(t, module, "/saas.accounts.v1.WorkContextService/StartInstallationTask")
+}
+
+// A caller that declared neither a private endpoint nor the authority endpoint
+// has no business on the internal tier and must appear in no rule at all.
+func TestTenantOnlyCallerIsNotOnTheInternalAuthorityPolicy(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	documents := withService(t, readDeploymentDocuments(t), "marketing",
+		"endpoints:\n    - name: http\n      visibility: public\n",
+		"service-dependencies:\n    - name: accounts\n      endpoints:\n        - name: connect\nendpoints:\n    - name: http\n      visibility: public\n")
+	documents = withService(t, documents, "marketing",
+		"    mode: ssr\n", "    mode: ssr\n    service-account:\n        name: marketing\n")
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
+	require.NoError(t, err)
+
+	byPrincipal := internalAuthorityPathsByPrincipal(t, artifacts.MeshPolicy)
+	require.NotContains(t, byPrincipal, "cluster.local/ns/saas-starter/sa/marketing")
+	require.Contains(t, byPrincipal, "cluster.local/ns/saas-starter/sa/auth-gateway")
+}
+
+// The authority endpoint binds a listener of its own, so a topology that gives
+// it a port another endpoint already binds is refused at render — which is what
+// lets the service treat an unresolved address at startup as a runtime gap
+// rather than panicking over a collision it cannot have.
+func TestDeploymentTopologyRefusesAnAuthorityPortCollision(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+
+	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, readDeploymentDocuments(t), "accounts",
+			"            authority: 9091\n", "            authority: 9090\n"))
+	require.ErrorContains(t, err, "cannot share port 9090 with endpoint \"grpc\"")
+}
+
+// An Istio ALLOW policy with an empty `rules` denies every request to the
+// workload it targets, so a topology in which nothing may reach the internal
+// tier must fail generation rather than render a manifest that takes the owner
+// off the mesh.
+func TestDeploymentTopologyRefusesAnInternalTierWithNoCaller(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	documents := withService(t, readDeploymentDocuments(t), "auth-gateway",
+		"    - name: accounts\n      endpoints:\n        - name: connect\n        - name: grpc\n        - name: rest\n", "")
+
+	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
+	require.ErrorContains(t, err, "declares no caller for it")
 }
 
 func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {

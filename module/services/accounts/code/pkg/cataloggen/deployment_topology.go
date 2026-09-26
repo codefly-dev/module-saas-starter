@@ -172,11 +172,15 @@ func BuildDeploymentArtifacts(serviceDocument []byte, documents DeploymentDocume
 	if err != nil {
 		return nil, err
 	}
+	meshPolicy, err := renderMeshPolicy(bindings, serviceCatalog)
+	if err != nil {
+		return nil, err
+	}
 	return &DeploymentArtifacts{
 		Catalog:       catalog,
 		CatalogJSON:   catalogJSON,
 		NetworkPolicy: renderNetworkPolicy(bindings),
-		MeshPolicy:    renderMeshPolicy(bindings, serviceCatalog),
+		MeshPolicy:    meshPolicy,
 	}, nil
 }
 
@@ -208,6 +212,21 @@ func validateModuleAuthorityEndpoint(serviceCatalog *catalogv1.ServiceCatalog, b
 	}
 	if endpoint.API != "grpc" || endpoint.Visibility != "module" {
 		return fmt.Errorf("service %q endpoint %q must be a gRPC endpoint at module visibility, got api=%q visibility=%q", owner, name, endpoint.API, endpoint.Visibility)
+	}
+	// The endpoint binds a listener of its own, so its port may not be one
+	// another endpoint already binds — unlike `connect` and `rest`, which are
+	// deliberately multiplexed onto one port. A collision is a composition
+	// error and belongs here: the service resolves this port at startup and a
+	// second bind on it would fail after the process is already serving.
+	for _, service := range bindings.Services {
+		if service.Name != owner {
+			continue
+		}
+		for _, other := range service.Endpoints {
+			if other.Name != name && other.Port == endpoint.Port {
+				return fmt.Errorf("service %q endpoint %q binds a listener of its own and cannot share port %d with endpoint %q", owner, name, endpoint.Port, other.Name)
+			}
+		}
 	}
 	for _, exported := range bindings.Interface {
 		if exported.Service == owner && exported.Endpoint == name {
@@ -816,7 +835,7 @@ const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgate
 // are authored rather than derived and are subtracted from the port-wide
 // ingress allow by a DENY. The app-layer internal credential remains the
 // identity gate (which caller vs which tenant).
-func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) []byte {
+func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) ([]byte, error) {
 	namespace := bindings.Module.Namespace
 	var source strings.Builder
 	source.WriteString("# Code generated from " + topologySource + ". DO NOT EDIT.\n")
@@ -846,7 +865,9 @@ spec:
 			{principals: principals, procedures: procedures},
 			{principals: modulePrincipals, procedures: business.ModuleAuthorityProcedures()},
 		}
-		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerService, rules)
+		if err := writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerService, rules); err != nil {
+			return nil, err
+		}
 		layer7 = true
 	}
 	for _, service := range bindings.Services {
@@ -886,7 +907,7 @@ spec:
       protocol: HBONE
 `, namespace)
 	}
-	return []byte(source.String())
+	return []byte(source.String()), nil
 }
 
 // serviceAccountBindingName returns the Kubernetes ServiceAccount a service's
@@ -933,80 +954,70 @@ func declaredCallerPrincipals(bindings deploymentBindings, namespace, target str
 }
 
 // internalAuthorityCallerPrincipals splits the internal-tier owner's declared
-// callers by what they declared. A caller whose only edge to the owner is the
-// named module authority endpoint is admitted to that endpoint's procedures
-// alone; any other declared caller (the owner's own gateway, a bootstrap Job)
-// keeps the whole internal tier. The mesh therefore narrows a module-authority
-// caller to the same least-privilege set the endpoint's listener enforces.
+// callers by the reach each one declared.
+//
+// The whole tier goes to a caller that declared an edge to one of the owner's
+// PRIVATE endpoints — the mixed `rest`/`grpc` listeners the full internal tier
+// is served on — or that runs the owner's own bootstrap Jobs. That is the
+// owner's gateway and nothing else: a private endpoint is, by definition, not
+// something a composed module can declare, because the render refuses it.
+//
+// The module surface alone goes to a caller that declared the named module
+// authority endpoint and no private endpoint.
+//
+// The discriminator is deliberately NOT "declared the authority endpoint and
+// nothing else". A composed module that also consumes the module-visible
+// tenant surface (`connect`) is the ordinary case, not an exception, and
+// classifying it as a whole-tier caller would hand it every internal method
+// path. Istio matches on path with no port, and `connect` shares its port with
+// the multiplexed private `rest` listener, so that grant is not theoretical:
+// the module already holds the internal credential the authority endpoint
+// requires, and would reach MintModuleWorkContext, ValidateAPIKey, ConsumeUsage
+// and the permission oracles on the shared port.
+//
+// A caller that declared neither a private nor the authority endpoint has no
+// business on the internal tier and appears in no rule.
 func internalAuthorityCallerPrincipals(bindings deploymentBindings, namespace, target string) (full, moduleOnly []string) {
-	fullSet := make(map[string]bool)
-	for _, value := range declaredCallerPrincipals(bindings, namespace, target) {
-		fullSet[value] = true
+	var targetEndpoints map[string]deploymentEndpointBinding
+	for _, service := range bindings.Services {
+		if service.Name == target {
+			targetEndpoints = endpointBindingsByName(service.Endpoints)
+		}
 	}
-	moduleSet := make(map[string]bool)
+	fullSet, moduleSet := make(map[string]bool), make(map[string]bool)
 	for _, service := range bindings.Services {
 		principal := fmt.Sprintf("%s/ns/%s/sa/%s", meshTrustDomain, namespace, serviceAccountBindingName(service))
-		wide := service.Name == target && len(service.BootstrapJobEndpoints) > 0
-		narrow := false
+		if service.Name == target && len(service.BootstrapJobEndpoints) > 0 {
+			fullSet[principal] = true
+		}
 		for _, dependency := range service.Dependencies {
 			if dependency.Service != target {
 				continue
 			}
-			if onlyModuleAuthority(dependency.Endpoints) {
-				narrow = true
-			} else {
-				wide = true
+			for _, name := range dependency.Endpoints {
+				switch {
+				case name == business.ModuleAuthorityEndpoint:
+					moduleSet[principal] = true
+				case targetEndpoints[name].Visibility == "private":
+					fullSet[principal] = true
+				}
 			}
-		}
-		// A principal shared with a caller holding the whole tier (two services
-		// on one ServiceAccount) keeps the wider grant.
-		if narrow && !wide && !fullSetHasWideCaller(bindings, namespace, target, principal) {
-			moduleSet[principal] = true
 		}
 	}
 	for value := range fullSet {
-		if !moduleSet[value] {
-			full = append(full, value)
-		}
+		full = append(full, value)
 	}
+	// A principal shared with a whole-tier caller (two services on one
+	// ServiceAccount) keeps the wider grant; naming it twice would render a
+	// second rule that grants it less than it already has.
 	for value := range moduleSet {
-		moduleOnly = append(moduleOnly, value)
+		if !fullSet[value] {
+			moduleOnly = append(moduleOnly, value)
+		}
 	}
 	sort.Strings(full)
 	sort.Strings(moduleOnly)
 	return full, moduleOnly
-}
-
-func onlyModuleAuthority(endpoints []string) bool {
-	if len(endpoints) == 0 {
-		return false
-	}
-	for _, endpoint := range endpoints {
-		if endpoint != business.ModuleAuthorityEndpoint {
-			return false
-		}
-	}
-	return true
-}
-
-// fullSetHasWideCaller reports whether any service running as principal holds
-// the whole internal tier: a declared edge to anything but the module
-// authority endpoint, or the owner's own bootstrap Jobs.
-func fullSetHasWideCaller(bindings deploymentBindings, namespace, target, principal string) bool {
-	for _, service := range bindings.Services {
-		if fmt.Sprintf("%s/ns/%s/sa/%s", meshTrustDomain, namespace, serviceAccountBindingName(service)) != principal {
-			continue
-		}
-		if service.Name == target && len(service.BootstrapJobEndpoints) > 0 {
-			return true
-		}
-		for _, dependency := range service.Dependencies {
-			if dependency.Service == target && !onlyModuleAuthority(dependency.Endpoints) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // writeInternalHTTPAuthorizationPolicy gates a service's cluster-internal HTTP
@@ -1075,7 +1086,22 @@ type internalAuthorityRule struct {
 	procedures []string
 }
 
-func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, kubernetesService string, rules []internalAuthorityRule) {
+func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, kubernetesService string, rules []internalAuthorityRule) error {
+	// An ALLOW policy whose `rules` is empty denies every request to the
+	// workload it targets, so rendering one with no principals at all would
+	// take the owner off the mesh entirely rather than leave the tier ungated.
+	// Refuse at render: a topology in which nothing may reach the internal tier
+	// is a topology whose owner has no callers, and that is a composition error
+	// to report, not a manifest to install.
+	admitted := 0
+	for _, rule := range rules {
+		if len(rule.principals) > 0 {
+			admitted++
+		}
+	}
+	if admitted == 0 {
+		return fmt.Errorf("service %q serves the internal tier but the topology declares no caller for it; an ALLOW policy with no rules would deny every request to %q", service, kubernetesService)
+	}
 	fmt.Fprintf(source, `---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -1105,6 +1131,7 @@ spec:
 			fmt.Fprintf(source, "              - %s\n", procedure)
 		}
 	}
+	return nil
 }
 
 func renderNetworkPolicy(bindings deploymentBindings) []byte {
