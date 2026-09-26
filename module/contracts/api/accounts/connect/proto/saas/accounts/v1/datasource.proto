@@ -377,7 +377,14 @@ message SyncSourceResponse {
 message GetSourceSyncRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string source_id = 2 [(buf.validate.field).string.uuid = true];
-  string job_id = 3 [(buf.validate.field).string.uuid = true];
+  // The sync to read: the job id SyncSource returned. Empty reads the source's
+  // latest sync, whatever started it — the first sync enqueued at connect, a
+  // "Sync now", the periodic reconcile or a webhook delivery — so a client can
+  // show progress for a sync it did not start itself.
+  string job_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 message SourceSyncDelivery {
@@ -386,10 +393,128 @@ message SourceSyncDelivery {
   saas.jobs.v1.JobExecutionReference execution = 3;
 }
 
+// SourceSyncPhase is the stage the host has reached in one sync of a source.
+// (Not module_capabilities' SourceSyncStage, which names the one occurrence a
+// collection's provenance records.) The phases are the host's own work only: once the change set is handed off, what
+// the consuming module does with each file is the module's to report.
+enum SourceSyncPhase {
+  SOURCE_SYNC_PHASE_UNSPECIFIED = 0;
+  // Accepted and waiting for a worker, or waiting out a retry (failure then
+  // says why and until when).
+  SOURCE_SYNC_PHASE_QUEUED = 1;
+  // A worker holds the sync: resolving the branch head and fetching the
+  // repository over git.
+  SOURCE_SYNC_PHASE_FETCHING = 2;
+  // The change set is compiled and its files are being handed to the
+  // consuming module's queue; changes counts them.
+  SOURCE_SYNC_PHASE_COMPILED = 3;
+  // The whole change set is on the consuming module's queue and the module has
+  // not yet taken all of it.
+  SOURCE_SYNC_PHASE_HANDED_OFF = 4;
+  // The host's part is finished: the module took every file handed to it, or
+  // there was nothing to hand off.
+  SOURCE_SYNC_PHASE_DONE = 5;
+  // The sync stopped and will not retry; failure says why.
+  SOURCE_SYNC_PHASE_FAILED = 6;
+}
+
+// SourceSyncFailureReason classifies why a sync is waiting or failed, so a
+// client can offer the remedy without parsing prose.
+enum SourceSyncFailureReason {
+  SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED = 0;
+  // The provider rate limited the host; retry_at is when the limit resets,
+  // when the provider said.
+  SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED = 1;
+  // The stored credential was rejected or cannot be read: reconnect.
+  SOURCE_SYNC_FAILURE_REASON_CREDENTIAL = 2;
+  // The provider denied access to the repository.
+  SOURCE_SYNC_FAILURE_REASON_ACCESS_DENIED = 3;
+  // The repository, branch or content was not found.
+  SOURCE_SYNC_FAILURE_REASON_NOT_FOUND = 4;
+  // The source selects more than the host holds for one source: narrow it.
+  SOURCE_SYNC_FAILURE_REASON_TOO_LARGE = 5;
+  // The host itself cannot sync right now (a dependency is missing or down).
+  SOURCE_SYNC_FAILURE_REASON_HOST_UNAVAILABLE = 6;
+  // Any other failure; message says what can be said safely.
+  SOURCE_SYNC_FAILURE_REASON_OTHER = 7;
+  // The consuming module dead-lettered a file the host handed it.
+  SOURCE_SYNC_FAILURE_REASON_DELIVERY_FAILED = 8;
+}
+
+// SourceSyncTrigger is what started a sync.
+enum SourceSyncTrigger {
+  SOURCE_SYNC_TRIGGER_UNSPECIFIED = 0;
+  // A tenant pressed "Sync now", or connected the source.
+  SOURCE_SYNC_TRIGGER_MANUAL = 1;
+  // The periodic reconcile.
+  SOURCE_SYNC_TRIGGER_SCHEDULED = 2;
+  // A webhook delivery from the provider.
+  SOURCE_SYNC_TRIGGER_WEBHOOK = 3;
+}
+
+// SourceSyncChanges counts the change set a sync compiled, relative to the
+// commit the host last handed off for the source.
+message SourceSyncChanges {
+  // Files the change set hands off: every in-scope file for a full snapshot,
+  // the changed files for an incremental change set.
+  uint32 files = 1;
+  uint32 added = 2;
+  uint32 modified = 3;
+  uint32 deleted = 4;
+  // False when the split into added/modified/deleted is unknown, e.g. a
+  // snapshot after a force push whose previous commit is gone. files is known
+  // either way.
+  bool split_known = 5;
+  // True for a full snapshot, false for an incremental change set.
+  bool snapshot = 6;
+  // The commit the change set brings the source to.
+  string commit = 7;
+}
+
+// SourceSyncFailure is why a sync is waiting to retry, or why it failed.
+message SourceSyncFailure {
+  SourceSyncFailureReason reason = 1;
+  // The stable failure code, e.g. "datasource.github_rate_limited".
+  string code = 2;
+  // What happened, in prose a tenant can act on. Every value comes from a
+  // closed set of host-authored messages; raw provider text never reaches it.
+  string message = 3;
+  // True while the sync will try again; false once it has failed for good.
+  bool retrying = 4;
+  // When the next attempt may run: for a rate limit, when the limit resets.
+  google.protobuf.Timestamp retry_at = 5;
+}
+
+// SourceSyncProgress is one sync's phases, each stamped from the durable
+// record the host keeps of it — no stage is inferred from elapsed time.
+message SourceSyncProgress {
+  SourceSyncPhase phase = 1;
+  SourceSyncTrigger trigger = 2;
+  // When the sync was accepted.
+  google.protobuf.Timestamp queued_at = 3;
+  // When a worker last started on it (the latest attempt).
+  google.protobuf.Timestamp fetching_at = 4;
+  // When the first file of the compiled change set was handed off.
+  google.protobuf.Timestamp compiled_at = 5;
+  // When the whole change set was on the module's queue.
+  google.protobuf.Timestamp handed_off_at = 6;
+  // When the sync reached DONE or FAILED.
+  google.protobuf.Timestamp finished_at = 7;
+  // Set once the change set is compiled. Unset when the sync handed nothing
+  // off; with phase DONE that means the source had not changed.
+  SourceSyncChanges changes = 8;
+  // Set while the sync waits to retry, and when it failed.
+  SourceSyncFailure failure = 9;
+  // How many attempts the host has made, and may make.
+  uint32 attempt = 10;
+  uint32 max_attempts = 11;
+}
+
 message GetSourceSyncResponse {
   string job_id = 1 [(buf.validate.field).string.uuid = true];
   saas.jobs.v1.JobState state = 2 [(buf.validate.field).required = true];
   repeated SourceSyncDelivery deliveries = 3;
+  SourceSyncProgress progress = 4;
 }
 
 message DeleteSourceRequest {
@@ -603,8 +728,9 @@ service DatasourceService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
-  // GetSourceSync projects durable lifecycle and module-reported execution
-  // references for one sync without exposing job payloads or attributes.
+  // GetSourceSync projects durable lifecycle, the host's typed phases and
+  // module-reported execution references for one sync — or, with no job id,
+  // the source's latest — without exposing job payloads or attributes.
   rpc GetSourceSync(GetSourceSyncRequest) returns (GetSourceSyncResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

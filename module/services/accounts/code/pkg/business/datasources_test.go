@@ -762,6 +762,7 @@ func (a *recordingAudit) types() []business.EventType {
 func newDatasourceService(store business.Store, producer *recordingProducer, gh business.GitHubContentClient) (*business.Service, *recordingAudit) {
 	svc, _ := business.NewService(store)
 	svc.SetDatasourceConnector(purposeCipher{}, producer, "")
+	connectProducers.Store(svc, producer)
 	audit := &recordingAudit{}
 	svc.SetAuditEmitter(audit)
 	if gh == nil {
@@ -781,6 +782,7 @@ func addSource(t *testing.T, svc *business.Service, in business.AddGitHubSourceI
 	if err != nil {
 		t.Fatal(err)
 	}
+	forgetConnectSync(svc, source.ID)
 	return source
 }
 

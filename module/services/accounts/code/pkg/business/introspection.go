@@ -116,7 +116,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"DatasourceService/GetSource":                                  "Read one connected datasource in the org.",
 	"DatasourceService/ListSources":                                "List the org's connected datasources.",
 	"DatasourceService/SyncSource":                                 "Pull the source's current contents and enqueue ingestion deliveries.",
-	"DatasourceService/GetSourceSync":                              "Read durable lifecycle and module-reported execution references for one source sync.",
+	"DatasourceService/GetSourceSync":                              "Read one source sync's typed stages, durable lifecycle and module-reported execution references; with no job id, the source's latest sync.",
 	"DelegationService/DecideDelegation":                           "Approve or deny a delegation request.",
 	"InstallationService/InstallSolution":                          "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
 	"InstallationService/UninstallSolution":                        "Uninstall a solution and reverse its composition.",

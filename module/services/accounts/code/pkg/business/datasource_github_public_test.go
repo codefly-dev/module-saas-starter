@@ -65,6 +65,7 @@ func newPublicHarness(t *testing.T, gh *fakeGitHub) *publicHarness {
 	require.NoError(t, err)
 	cipher := &countingCipher{}
 	svc.SetDatasourceConnector(cipher, producer, "")
+	connectProducers.Store(svc, producer)
 	audit := &recordingAudit{}
 	svc.SetAuditEmitter(audit)
 	tokens := &githubTokens{}
@@ -286,6 +287,7 @@ func (h *publicHarness) publicSource(t *testing.T) *business.DatasourceSource {
 	t.Helper()
 	source, err := h.svc.AddGitHubSource(context.Background(), "actor-1", publicInput())
 	require.NoError(t, err)
+	forgetConnectSync(h.svc, source.ID)
 	stored := h.stored(t, source.ID)
 	return &stored
 }
