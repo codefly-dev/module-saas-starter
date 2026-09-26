@@ -110,6 +110,11 @@ var (
 	// ErrSolutionAuditDeclarationRejected, when a declared type's namespace is
 	// not among the namespaces the operator bound to the declaring solution.
 	ErrSolutionAuditNamespaceUnbound = errors.New("audit event namespace is not bound to the declaring solution")
+	// ErrAuditCatalogCollision is returned by the startup projection sync when
+	// a code-catalog type takes the name, or the namespace, of a type a
+	// solution declared. It is a release that cannot boot as built: the
+	// operator must release the namespace, or the catalog must rename.
+	ErrAuditCatalogCollision = errors.New("audit catalog collides with a solution-declared type")
 )
 
 var (

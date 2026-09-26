@@ -212,3 +212,36 @@ func TestSolutionAuditEvents_RebindingTransfersTheNamespace(t *testing.T) {
 	require.NotNil(t, admitted)
 	require.Equal(t, successor, admitted.SolutionID)
 }
+
+// A code catalog that takes a declared type's name, or its namespace, fails the
+// startup sync rather than reassigning the row.
+func TestSolutionAuditEvents_CatalogCollisionFailsTheSync(t *testing.T) {
+	namespace := freshAuditNamespace(t)
+	solution := testSolutionID(t)
+	eventType := business.EventType(namespace + ".item.created")
+	_, err := declaringService(t, map[string][]string{solution: {namespace}}).
+		PutSolutionRegistration(testCtx, declaringFrontendWrite(solution, namespace))
+	require.NoError(t, err)
+
+	for name, colliding := range map[string]business.EventType{
+		"same name":      eventType,
+		"same namespace": business.EventType(namespace + ".other.thing"),
+	} {
+		catalog := append(business.AuditEventCatalog(), business.AuditEventDefinition{
+			Type: colliding, Namespace: namespace, Version: 1, Category: business.CategorySystem, Owner: "accounts",
+		})
+		err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			return testStore.SyncAuditEventTypes(ctx, catalog)
+		})
+		require.True(t, errors.Is(err, business.ErrAuditCatalogCollision), "%s: err = %v", name, err)
+	}
+
+	var admitted *business.DeclaredAuditEventType
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		admitted, err = testStore.GetDeclaredAuditEventType(ctx, eventType)
+		return err
+	}))
+	require.NotNil(t, admitted, "the declared row keeps its owner")
+	require.Equal(t, solution, admitted.SolutionID)
+}

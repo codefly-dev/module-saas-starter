@@ -28,6 +28,7 @@ import (
 	"context"
 	ed25519core "crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -581,9 +582,15 @@ func doWork(ctx context.Context) (Clean, error) {
 	// and provision the current + upcoming monthly partitions so audit writes
 	// always have a target. Best-effort: a transient failure here must not
 	// block boot; the retention tick re-provisions partitions on its cycle.
+	// A catalog that collides with a solution-declared type is not transient —
+	// this release cannot own that name without reinterpreting rows already
+	// written under the solution's schema — so it fails boot.
 	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
 	}); err != nil {
+		if errors.Is(err, business.ErrAuditCatalogCollision) {
+			return nil, fmt.Errorf("audit event-type registry sync: %w", err)
+		}
 		wool.Get(ctx).Warn("audit event-type registry sync failed", wool.ErrField(err))
 	}
 	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
