@@ -91,8 +91,9 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error)
-	// GetSourceSync projects durable lifecycle and module-reported execution
-	// references for one sync without exposing job payloads or attributes.
+	// GetSourceSync projects durable lifecycle, the host's typed phases and
+	// module-reported execution references for one sync — or, with no job id,
+	// the source's latest — without exposing job payloads or attributes.
 	GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error)
@@ -287,8 +288,9 @@ type DatasourceServiceHandler interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error)
-	// GetSourceSync projects durable lifecycle and module-reported execution
-	// references for one sync without exposing job payloads or attributes.
+	// GetSourceSync projects durable lifecycle, the host's typed phases and
+	// module-reported execution references for one sync — or, with no job id,
+	// the source's latest — without exposing job payloads or attributes.
 	GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error)

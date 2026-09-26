@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/datasource.proto.
  */
 export const file_saas_accounts_v1_datasource: GenFile = /*@__PURE__*/
-  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL2RhdGFzb3VyY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXgoWR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIMCgRyZXBvGAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBmJyYW5jaBgDIAEoCRIXCg9maWxlX2V4dGVuc2lvbnMYBCADKAkiRwoPQXBpT0F1dGgyQ29uZmlnEhEKCXRva2VuX3VybBgBIAEoCRIRCgljbGllbnRfaWQYAiABKAkSDgoGc2NvcGVzGAMgAygJIuoBChNBcGlEYXRhc291cmNlQ29uZmlnEhAKCGJhc2VfdXJsGAEgASgJEhUKDXJlc291cmNlX3BhdGgYAiABKAkSPAoPY3JlZGVudGlhbF9raW5kGAMgASgOMiMuc2Fhcy5hY2NvdW50cy52MS5BcGlDcmVkZW50aWFsS2luZBIZChFjcmVkZW50aWFsX2hlYWRlchgEIAEoCRIeChZjcmVkZW50aWFsX3F1ZXJ5X3BhcmFtGAUgASgJEjEKBm9hdXRoMhgGIAEoCzIhLnNhYXMuYWNjb3VudHMudjEuQXBpT0F1dGgyQ29uZmlnIkEKF0NyYXdsZXJEYXRhc291cmNlQ29uZmlnEhMKC3NpdGVtYXBfdXJsGAEgASgJEhEKCW1heF9wYWdlcxgCIAEoDSKGAQoWVXBsb2FkRGF0YXNvdXJjZUNvbmZpZxIQCghlbmRwb2ludBgBIAEoCRIOCgZyZWdpb24YAiABKAkSDgoGYnVja2V0GAMgASgJEg4KBnByZWZpeBgEIAEoCRIVCg1hY2Nlc3Nfa2V5X2lkGAUgASgJEhMKC21heF9vYmplY3RzGAYgASgNIsYFCgpEYXRhc291cmNlEgoKAmlkGAEgASgJEg4KBm9yZ19pZBgCIAEoCRI2Cghwcm92aWRlchgDIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVByb3ZpZGVyEjgKBmdpdGh1YhgFIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIyCgZzdGF0dXMYBiABKA4yIi5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VTdGF0dXMSGgoSd2ViaG9va19jb25maWd1cmVkGAcgASgIEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKDmxhc3Rfc3luY2VkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIyCgNhcGkYCyABKAsyJS5zYWFzLmFjY291bnRzLnYxLkFwaURhdGFzb3VyY2VDb25maWcSOgoHY3Jhd2xlchgMIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuQ3Jhd2xlckRhdGFzb3VyY2VDb25maWcSOAoGdXBsb2FkGA0gASgLMiguc2Fhcy5hY2NvdW50cy52MS5VcGxvYWREYXRhc291cmNlQ29uZmlnEhgKEGJvdW5kYXJ5X25vZGVfaWQYDiABKAkSNAoQbGFzdF9pbmdlc3RlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUbGFzdF9pbmdlc3RlZF9jb21taXQYECABKAkSFQoNc3RhdHVzX3JlYXNvbhgRIAEoCUoECAQQBVIRdGFyZ2V0X2NvbGxlY3Rpb24isgMKFkFkZEdpdEh1YlNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARI7CgRyZXBvGAIgASgJQi26SCpyKBADGP8BMiFeW0EtWmEtejAtOV8uLV0rL1tBLVphLXowLTlfLi1dKyQSIAoFcGF0aHMYAyADKAlCEbpIDpIBCxBAIgdyBRABGIAEEhgKBmJyYW5jaBgEIAEoCUIIukgFcgMY/wESJAoQYm91bmRhcnlfbm9kZV9pZBgIIAEoCUIIukgFcgOwAQFIABImChBjb2xsZWN0aW9uX2xhYmVsGAkgASgJQgq6SAdyBRABGP8BSAASHgoMYWNjZXNzX3Rva2VuGAYgASgJQgi6SAVyAxiACBIgCg53ZWJob29rX3NlY3JldBgHIAEoCUIIukgFcgMYgAgSSQoPZmlsZV9leHRlbnNpb25zGAogAygJQjC6SC2SASoQICImciQQAhghMh5eXC5bQS1aYS16MC05XVtBLVphLXowLTkuXy1dKiRCEQoIYm91bmRhcnkSBbpIAggBSgQIBRAGUhF0YXJnZXRfY29sbGVjdGlvbiJLChdBZGRHaXRIdWJTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIsgEChBBZGRTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESQgoIcHJvdmlkZXIYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlckIKukgHggEEEAEgABI6CgZnaXRodWIYBCABKAsyKC5zYWFzLmFjY291bnRzLnYxLkdpdEh1YkRhdGFzb3VyY2VDb25maWdIABI0CgNhcGkYBSABKAsyJS5zYWFzLmFjY291bnRzLnYxLkFwaURhdGFzb3VyY2VDb25maWdIABI8CgdjcmF3bGVyGAggASgLMikuc2Fhcy5hY2NvdW50cy52MS5DcmF3bGVyRGF0YXNvdXJjZUNvbmZpZ0gAEjoKBnVwbG9hZBgJIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuVXBsb2FkRGF0YXNvdXJjZUNvbmZpZ0gAEiQKEGJvdW5kYXJ5X25vZGVfaWQYDCABKAlCCLpIBXIDsAEBSAESJgoQY29sbGVjdGlvbl9sYWJlbBgNIAEoCUIKukgHcgUQARj/AUgBEhwKCmNyZWRlbnRpYWwYBiABKAlCCLpIBXIDGIAgEiAKDndlYmhvb2tfc2VjcmV0GAcgASgJQgi6SAVyAxiACBImChRvYXV0aDJfY2xpZW50X3NlY3JldBgKIAEoCUIIukgFcgMYgAhCCAoGY29uZmlnQhEKCGJvdW5kYXJ5EgW6SAIIAUoECAMQBFIRdGFyZ2V0X2NvbGxlY3Rpb24iRQoRQWRkU291cmNlUmVzcG9uc2USMAoKZGF0YXNvdXJjZRgBIAEoCzIcLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZSJaChVEYXRhc291cmNlQ29uZmlnRmllbGQSCwoDa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIMCgRoZWxwGAMgASgJEhAKCHJlcXVpcmVkGAQgASgIIqQCChxEYXRhc291cmNlUHJvdmlkZXJEZXNjcmlwdG9yEjYKCHByb3ZpZGVyGAEgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXISFAoMZGlzcGxheV9uYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEj4KDWNvbmZpZ19maWVsZHMYBCADKAsyJy5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VDb25maWdGaWVsZBIYChBzdXBwb3J0c193ZWJob29rGAUgASgIEkcKGnN1cHBvcnRlZF9jcmVkZW50aWFsX2tpbmRzGAYgAygOMiMuc2Fhcy5hY2NvdW50cy52MS5BcGlDcmVkZW50aWFsS2luZCIdChtHZXREYXRhc291cmNlQ2F0YWxvZ1JlcXVlc3QiYQocR2V0RGF0YXNvdXJjZUNhdGFsb2dSZXNwb25zZRJBCglwcm92aWRlcnMYASADKAsyLi5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlckRlc2NyaXB0b3IiLgoSTGlzdFNvdXJjZXNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiSAoTTGlzdFNvdXJjZXNSZXNwb25zZRIxCgtkYXRhc291cmNlcxgBIAMoCzIcLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZSJCChBHZXRTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFAoCaWQYAiABKAlCCLpIBXIDsAEBIkUKEUdldFNvdXJjZVJlc3BvbnNlEjAKCmRhdGFzb3VyY2UYASABKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiYwoRU3luY1NvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIUCgJpZBgCIAEoCUIIukgFcgOwAQESHgoMYWNjZXNzX3Rva2VuGAMgASgJQgi6SAVyAxiAICIkChJTeW5jU291cmNlUmVzcG9uc2USDgoGam9iX2lkGAEgASgJImcKFEdldFNvdXJjZVN5bmNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGwoJc291cmNlX2lkGAIgASgJQgi6SAVyA7ABARIYCgZqb2JfaWQYAyABKAlCCLpIBXIDsAEBIpUBChJTb3VyY2VTeW5jRGVsaXZlcnkSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARItCgVzdGF0ZRgCIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZUIGukgDyAEBEjYKCWV4ZWN1dGlvbhgDIAEoCzIjLnNhYXMuam9icy52MS5Kb2JFeGVjdXRpb25SZWZlcmVuY2UimgEKFUdldFNvdXJjZVN5bmNSZXNwb25zZRIYCgZqb2JfaWQYASABKAlCCLpIBXIDsAEBEi0KBXN0YXRlGAIgASgOMhYuc2Fhcy5qb2JzLnYxLkpvYlN0YXRlQga6SAPIAQESOAoKZGVsaXZlcmllcxgDIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuU291cmNlU3luY0RlbGl2ZXJ5IkUKE0RlbGV0ZVNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIUCgJpZBgCIAEoCUIIukgFcgOwAQEiFgoURGVsZXRlU291cmNlUmVzcG9uc2UiVgoTR2l0SHViQXBwUmVwb3NpdG9yeRIMCgRyZXBvGAEgASgJEhYKDmRlZmF1bHRfYnJhbmNoGAIgASgJEhkKEWFscmVhZHlfY29ubmVjdGVkGAMgASgIIjYKGkJlZ2luR2l0SHViQXBwU2V0dXBSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEicQobQmVnaW5HaXRIdWJBcHBTZXR1cFJlc3BvbnNlEhMKC2luc3RhbGxfdXJsGAEgASgJEg0KBXN0YXRlGAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIpwBCh1Db21wbGV0ZUdpdEh1YkFwcFNldHVwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhkKBXN0YXRlGAIgASgJQgq6SAdyBRABGP8BEiwKD2luc3RhbGxhdGlvbl9pZBgDIAEoCUITukgQcg4QARggMgheWzAtOV0rJBIYCgRjb2RlGAQgASgJQgq6SAdyBRABGP8BInYKHkNvbXBsZXRlR2l0SHViQXBwU2V0dXBSZXNwb25zZRIXCg9pbnN0YWxsYXRpb25faWQYASABKAkSOwoMcmVwb3NpdG9yaWVzGAIgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5HaXRIdWJBcHBSZXBvc2l0b3J5IlEKH01pZ3JhdGVHaXRIdWJTb3VyY2VUb0FwcFJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIUCgJpZBgCIAEoCUIIukgFcgOwAQEiVAogTWlncmF0ZUdpdEh1YlNvdXJjZVRvQXBwUmVzcG9uc2USMAoKZGF0YXNvdXJjZRgBIAEoCzIcLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZSq3AQoSRGF0YXNvdXJjZVByb3ZpZGVyEiMKH0RBVEFTT1VSQ0VfUFJPVklERVJfVU5TUEVDSUZJRUQQABIeChpEQVRBU09VUkNFX1BST1ZJREVSX0dJVEhVQhABEhsKF0RBVEFTT1VSQ0VfUFJPVklERVJfQVBJEAISHwobREFUQVNPVVJDRV9QUk9WSURFUl9DUkFXTEVSEAMSHgoaREFUQVNPVVJDRV9QUk9WSURFUl9VUExPQUQQBCqRAQoQRGF0YXNvdXJjZVN0YXR1cxIhCh1EQVRBU09VUkNFX1NUQVRVU19VTlNQRUNJRklFRBAAEhwKGERBVEFTT1VSQ0VfU1RBVFVTX0FDVElWRRABEhwKGERBVEFTT1VSQ0VfU1RBVFVTX1BBVVNFRBACEh4KGkRBVEFTT1VSQ0VfU1RBVFVTX0RFR1JBREVEEAMq1gEKEUFwaUNyZWRlbnRpYWxLaW5kEiMKH0FQSV9DUkVERU5USUFMX0tJTkRfVU5TUEVDSUZJRUQQABIeChpBUElfQ1JFREVOVElBTF9LSU5EX0JFQVJFUhABEh0KGUFQSV9DUkVERU5USUFMX0tJTkRfQkFTSUMQAhIeChpBUElfQ1JFREVOVElBTF9LSU5EX0hFQURFUhADEh0KGUFQSV9DUkVERU5USUFMX0tJTkRfUVVFUlkQBBIeChpBUElfQ1JFREVOVElBTF9LSU5EX09BVVRIMhAFMrEOChFEYXRhc291cmNlU2VydmljZRKsAQoPQWRkR2l0SHViU291cmNlEiguc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXNwb25zZSJEwvMYQAgCEAQqDAoGb3JnX2lkEAIYATABOiAKHHNhYXMuZGF0YXNvdXJjZS5zb3VyY2UuYWRkZWQQAkABSARQBFgDYAESmgEKCUFkZFNvdXJjZRIiLnNhYXMuYWNjb3VudHMudjEuQWRkU291cmNlUmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuQWRkU291cmNlUmVzcG9uc2UiRMLzGEAIAhAEKgwKBm9yZ19pZBACGAEwATogChxzYWFzLmRhdGFzb3VyY2Uuc291cmNlLmFkZGVkEAJAAUgEUARYA2ABEo8BChRHZXREYXRhc291cmNlQ2F0YWxvZxItLnNhYXMuYWNjb3VudHMudjEuR2V0RGF0YXNvdXJjZUNhdGFsb2dSZXF1ZXN0Gi4uc2Fhcy5hY2NvdW50cy52MS5HZXREYXRhc291cmNlQ2F0YWxvZ1Jlc3BvbnNlIhjC8xgUCAIQATABOgIQAUABSANQAlgCYAESggEKC0xpc3RTb3VyY2VzEiQuc2Fhcy5hY2NvdW50cy52MS5MaXN0U291cmNlc1JlcXVlc3QaJS5zYWFzLmFjY291bnRzLnYxLkxpc3RTb3VyY2VzUmVzcG9uc2UiJsLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUAJYA2ABEnwKCUdldFNvdXJjZRIiLnNhYXMuYWNjb3VudHMudjEuR2V0U291cmNlUmVxdWVzdBojLnNhYXMuYWNjb3VudHMudjEuR2V0U291cmNlUmVzcG9uc2UiJsLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUAJYA2ABEp4BCgpTeW5jU291cmNlEiMuc2Fhcy5hY2NvdW50cy52MS5TeW5jU291cmNlUmVxdWVzdBokLnNhYXMuYWNjb3VudHMudjEuU3luY1NvdXJjZVJlc3BvbnNlIkXC8xhBCAIQBCoMCgZvcmdfaWQQAhgBMAE6IQodc2Fhcy5kYXRhc291cmNlLnNvdXJjZS5zeW5jZWQQAkABSARQBFgCYAESiAEKDUdldFNvdXJjZVN5bmMSJi5zYWFzLmFjY291bnRzLnYxLkdldFNvdXJjZVN5bmNSZXF1ZXN0Gicuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VTeW5jUmVzcG9uc2UiJsLzGCIIAhAEKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUAJYA2ABEqUBCgxEZWxldGVTb3VyY2USJS5zYWFzLmFjY291bnRzLnYxLkRlbGV0ZVNvdXJjZVJlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLkRlbGV0ZVNvdXJjZVJlc3BvbnNlIkbC8xhCCAIQBCoMCgZvcmdfaWQQAhgBMAE6Igoec2Fhcy5kYXRhc291cmNlLnNvdXJjZS5yZW1vdmVkEAJAAUgEUAJYAmABEsQBChNCZWdpbkdpdEh1YkFwcFNldHVwEiwuc2Fhcy5hY2NvdW50cy52MS5CZWdpbkdpdEh1YkFwcFNldHVwUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuQmVnaW5HaXRIdWJBcHBTZXR1cFJlc3BvbnNlIlDC8xhMCAIQBCoMCgZvcmdfaWQQAhgBMAE6LAooc2Fhcy5kYXRhc291cmNlLmdpdGh1Yl9hcHAuc2V0dXBfc3RhcnRlZBACQAFIBFACWARgARLPAQoWQ29tcGxldGVHaXRIdWJBcHBTZXR1cBIvLnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVHaXRIdWJBcHBTZXR1cFJlcXVlc3QaMC5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlR2l0SHViQXBwU2V0dXBSZXNwb25zZSJSwvMYTggCEAQqDAoGb3JnX2lkEAIYATABOi4KKnNhYXMuZGF0YXNvdXJjZS5naXRodWJfYXBwLnNldHVwX2NvbXBsZXRlZBACQAFIBFAEWANgARLNAQoYTWlncmF0ZUdpdEh1YlNvdXJjZVRvQXBwEjEuc2Fhcy5hY2NvdW50cy52MS5NaWdyYXRlR2l0SHViU291cmNlVG9BcHBSZXF1ZXN0GjIuc2Fhcy5hY2NvdW50cy52MS5NaWdyYXRlR2l0SHViU291cmNlVG9BcHBSZXNwb25zZSJKwvMYRggCEAQqDAoGb3JnX2lkEAIYATABOiYKInNhYXMuZGF0YXNvdXJjZS5jcmVkZW50aWFsLnVwZGF0ZWQQAkABSARQAlgDYAFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
+  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL2RhdGFzb3VyY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXgoWR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIMCgRyZXBvGAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBmJyYW5jaBgDIAEoCRIXCg9maWxlX2V4dGVuc2lvbnMYBCADKAkiRwoPQXBpT0F1dGgyQ29uZmlnEhEKCXRva2VuX3VybBgBIAEoCRIRCgljbGllbnRfaWQYAiABKAkSDgoGc2NvcGVzGAMgAygJIuoBChNBcGlEYXRhc291cmNlQ29uZmlnEhAKCGJhc2VfdXJsGAEgASgJEhUKDXJlc291cmNlX3BhdGgYAiABKAkSPAoPY3JlZGVudGlhbF9raW5kGAMgASgOMiMuc2Fhcy5hY2NvdW50cy52MS5BcGlDcmVkZW50aWFsS2luZBIZChFjcmVkZW50aWFsX2hlYWRlchgEIAEoCRIeChZjcmVkZW50aWFsX3F1ZXJ5X3BhcmFtGAUgASgJEjEKBm9hdXRoMhgGIAEoCzIhLnNhYXMuYWNjb3VudHMudjEuQXBpT0F1dGgyQ29uZmlnIkEKF0NyYXdsZXJEYXRhc291cmNlQ29uZmlnEhMKC3NpdGVtYXBfdXJsGAEgASgJEhEKCW1heF9wYWdlcxgCIAEoDSKGAQoWVXBsb2FkRGF0YXNvdXJjZUNvbmZpZxIQCghlbmRwb2ludBgBIAEoCRIOCgZyZWdpb24YAiABKAkSDgoGYnVja2V0GAMgASgJEg4KBnByZWZpeBgEIAEoCRIVCg1hY2Nlc3Nfa2V5X2lkGAUgASgJEhMKC21heF9vYmplY3RzGAYgASgNIsYFCgpEYXRhc291cmNlEgoKAmlkGAEgASgJEg4KBm9yZ19pZBgCIAEoCRI2Cghwcm92aWRlchgDIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVByb3ZpZGVyEjgKBmdpdGh1YhgFIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIyCgZzdGF0dXMYBiABKA4yIi5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VTdGF0dXMSGgoSd2ViaG9va19jb25maWd1cmVkGAcgASgIEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKDmxhc3Rfc3luY2VkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIyCgNhcGkYCyABKAsyJS5zYWFzLmFjY291bnRzLnYxLkFwaURhdGFzb3VyY2VDb25maWcSOgoHY3Jhd2xlchgMIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuQ3Jhd2xlckRhdGFzb3VyY2VDb25maWcSOAoGdXBsb2FkGA0gASgLMiguc2Fhcy5hY2NvdW50cy52MS5VcGxvYWREYXRhc291cmNlQ29uZmlnEhgKEGJvdW5kYXJ5X25vZGVfaWQYDiABKAkSNAoQbGFzdF9pbmdlc3RlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUbGFzdF9pbmdlc3RlZF9jb21taXQYECABKAkSFQoNc3RhdHVzX3JlYXNvbhgRIAEoCUoECAQQBVIRdGFyZ2V0X2NvbGxlY3Rpb24isgMKFkFkZEdpdEh1YlNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARI7CgRyZXBvGAIgASgJQi26SCpyKBADGP8BMiFeW0EtWmEtejAtOV8uLV0rL1tBLVphLXowLTlfLi1dKyQSIAoFcGF0aHMYAyADKAlCEbpIDpIBCxBAIgdyBRABGIAEEhgKBmJyYW5jaBgEIAEoCUIIukgFcgMY/wESJAoQYm91bmRhcnlfbm9kZV9pZBgIIAEoCUIIukgFcgOwAQFIABImChBjb2xsZWN0aW9uX2xhYmVsGAkgASgJQgq6SAdyBRABGP8BSAASHgoMYWNjZXNzX3Rva2VuGAYgASgJQgi6SAVyAxiACBIgCg53ZWJob29rX3NlY3JldBgHIAEoCUIIukgFcgMYgAgSSQoPZmlsZV9leHRlbnNpb25zGAogAygJQjC6SC2SASoQICImciQQAhghMh5eXC5bQS1aYS16MC05XVtBLVphLXowLTkuXy1dKiRCEQoIYm91bmRhcnkSBbpIAggBSgQIBRAGUhF0YXJnZXRfY29sbGVjdGlvbiJLChdBZGRHaXRIdWJTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIsgEChBBZGRTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESQgoIcHJvdmlkZXIYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlckIKukgHggEEEAEgABI6CgZnaXRodWIYBCABKAsyKC5zYWFzLmFjY291bnRzLnYxLkdpdEh1YkRhdGFzb3VyY2VDb25maWdIABI0CgNhcGkYBSABKAsyJS5zYWFzLmFjY291bnRzLnYxLkFwaURhdGFzb3VyY2VDb25maWdIABI8CgdjcmF3bGVyGAggASgLMikuc2Fhcy5hY2NvdW50cy52MS5DcmF3bGVyRGF0YXNvdXJjZUNvbmZpZ0gAEjoKBnVwbG9hZBgJIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuVXBsb2FkRGF0YXNvdXJjZUNvbmZpZ0gAEiQKEGJvdW5kYXJ5X25vZGVfaWQYDCABKAlCCLpIBXIDsAEBSAESJgoQY29sbGVjdGlvbl9sYWJlbBgNIAEoCUIKukgHcgUQARj/AUgBEhwKCmNyZWRlbnRpYWwYBiABKAlCCLpIBXIDGIAgEiAKDndlYmhvb2tfc2VjcmV0GAcgASgJQgi6SAVyAxiACBImChRvYXV0aDJfY2xpZW50X3NlY3JldBgKIAEoCUIIukgFcgMYgAhCCAoGY29uZmlnQhEKCGJvdW5kYXJ5EgW6SAIIAUoECAMQBFIRdGFyZ2V0X2NvbGxlY3Rpb24iRQoRQWRkU291cmNlUmVzcG9uc2USMAoKZGF0YXNvdXJjZRgBIAEoCzIcLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZSJaChVEYXRhc291cmNlQ29uZmlnRmllbGQSCwoDa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIMCgRoZWxwGAMgASgJEhAKCHJlcXVpcmVkGAQgASgIIqQCChxEYXRhc291cmNlUHJvdmlkZXJEZXNjcmlwdG9yEjYKCHByb3ZpZGVyGAEgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXISFAoMZGlzcGxheV9uYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEj4KDWNvbmZpZ19maWVsZHMYBCADKAsyJy5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VDb25maWdGaWVsZBIYChBzdXBwb3J0c193ZWJob29rGAUgASgIEkcKGnN1cHBvcnRlZF9jcmVkZW50aWFsX2tpbmRzGAYgAygOMiMuc2Fhcy5hY2NvdW50cy52MS5BcGlDcmVkZW50aWFsS2luZCIdChtHZXREYXRhc291cmNlQ2F0YWxvZ1JlcXVlc3QiYQocR2V0RGF0YXNvdXJjZUNhdGFsb2dSZXNwb25zZRJBCglwcm92aWRlcnMYASADKAsyLi5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlckRlc2NyaXB0b3IiLgoSTGlzdFNvdXJjZXNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiSAoTTGlzdFNvdXJjZXNSZXNwb25zZRIxCgtkYXRhc291cmNlcxgBIAMoCzIcLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZSJCChBHZXRTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFAoCaWQYAiABKAlCCLpIBXIDsAEBIkUKEUdldFNvdXJjZVJlc3BvbnNlEjAKCmRhdGFzb3VyY2UYASABKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiYwoRU3luY1NvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIUCgJpZBgCIAEoCUIIukgFcgOwAQESHgoMYWNjZXNzX3Rva2VuGAMgASgJQgi6SAVyAxiAICIkChJTeW5jU291cmNlUmVzcG9uc2USDgoGam9iX2lkGAEgASgJImoKFEdldFNvdXJjZVN5bmNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGwoJc291cmNlX2lkGAIgASgJQgi6SAVyA7ABARIbCgZqb2JfaWQYAyABKAlCC7pICNgBAXIDsAEBIpUBChJTb3VyY2VTeW5jRGVsaXZlcnkSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARItCgVzdGF0ZRgCIAEoDjIWLnNhYXMuam9icy52MS5Kb2JTdGF0ZUIGukgDyAEBEjYKCWV4ZWN1dGlvbhgDIAEoCzIjLnNhYXMuam9icy52MS5Kb2JFeGVjdXRpb25SZWZlcmVuY2UiiwEKEVNvdXJjZVN5bmNDaGFuZ2VzEg0KBWZpbGVzGAEgASgNEg0KBWFkZGVkGAIgASgNEhAKCG1vZGlmaWVkGAMgASgNEg8KB2RlbGV0ZWQYBCABKA0SEwoLc3BsaXRfa25vd24YBSABKAgSEAoIc25hcHNob3QYBiABKAgSDgoGY29tbWl0GAcgASgJIq0BChFTb3VyY2VTeW5jRmFpbHVyZRI5CgZyZWFzb24YASABKA4yKS5zYWFzLmFjY291bnRzLnYxLlNvdXJjZVN5bmNGYWlsdXJlUmVhc29uEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCRIQCghyZXRyeWluZxgEIAEoCBIsCghyZXRyeV9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAihAQKElNvdXJjZVN5bmNQcm9ncmVzcxIwCgVwaGFzZRgBIAEoDjIhLnNhYXMuYWNjb3VudHMudjEuU291cmNlU3luY1BoYXNlEjQKB3RyaWdnZXIYAiABKA4yIy5zYWFzLmFjY291bnRzLnYxLlNvdXJjZVN5bmNUcmlnZ2VyEi0KCXF1ZXVlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLZmV0Y2hpbmdfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2NvbXBpbGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1oYW5kZWRfb2ZmX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtmaW5pc2hlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNAoHY2hhbmdlcxgIIAEoCzIjLnNhYXMuYWNjb3VudHMudjEuU291cmNlU3luY0NoYW5nZXMSNAoHZmFpbHVyZRgJIAEoCzIjLnNhYXMuYWNjb3VudHMudjEuU291cmNlU3luY0ZhaWx1cmUSDwoHYXR0ZW1wdBgKIAEoDRIUCgxtYXhfYXR0ZW1wdHMYCyABKA0i0gEKFUdldFNvdXJjZVN5bmNSZXNwb25zZRIYCgZqb2JfaWQYASABKAlCCLpIBXIDsAEBEi0KBXN0YXRlGAIgASgOMhYuc2Fhcy5qb2JzLnYxLkpvYlN0YXRlQga6SAPIAQESOAoKZGVsaXZlcmllcxgDIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuU291cmNlU3luY0RlbGl2ZXJ5EjYKCHByb2dyZXNzGAQgASgLMiQuc2Fhcy5hY2NvdW50cy52MS5Tb3VyY2VTeW5jUHJvZ3Jlc3MiRQoTRGVsZXRlU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASIWChREZWxldGVTb3VyY2VSZXNwb25zZSJWChNHaXRIdWJBcHBSZXBvc2l0b3J5EgwKBHJlcG8YASABKAkSFgoOZGVmYXVsdF9icmFuY2gYAiABKAkSGQoRYWxyZWFkeV9jb25uZWN0ZWQYAyABKAgiNgoaQmVnaW5HaXRIdWJBcHBTZXR1cFJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASJxChtCZWdpbkdpdEh1YkFwcFNldHVwUmVzcG9uc2USEwoLaW5zdGFsbF91cmwYASABKAkSDQoFc3RhdGUYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAinAEKHUNvbXBsZXRlR2l0SHViQXBwU2V0dXBSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoFc3RhdGUYAiABKAlCCrpIB3IFEAEY/wESLAoPaW5zdGFsbGF0aW9uX2lkGAMgASgJQhO6SBByDhABGCAyCF5bMC05XSskEhgKBGNvZGUYBCABKAlCCrpIB3IFEAEY/wEidgoeQ29tcGxldGVHaXRIdWJBcHBTZXR1cFJlc3BvbnNlEhcKD2luc3RhbGxhdGlvbl9pZBgBIAEoCRI7CgxyZXBvc2l0b3JpZXMYAiADKAsyJS5zYWFzLmFjY291bnRzLnYxLkdpdEh1YkFwcFJlcG9zaXRvcnkiUQofTWlncmF0ZUdpdEh1YlNvdXJjZVRvQXBwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASJUCiBNaWdyYXRlR2l0SHViU291cmNlVG9BcHBSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlKrcBChJEYXRhc291cmNlUHJvdmlkZXISIwofREFUQVNPVVJDRV9QUk9WSURFUl9VTlNQRUNJRklFRBAAEh4KGkRBVEFTT1VSQ0VfUFJPVklERVJfR0lUSFVCEAESGwoXREFUQVNPVVJDRV9QUk9WSURFUl9BUEkQAhIfChtEQVRBU09VUkNFX1BST1ZJREVSX0NSQVdMRVIQAxIeChpEQVRBU09VUkNFX1BST1ZJREVSX1VQTE9BRBAEKpEBChBEYXRhc291cmNlU3RhdHVzEiEKHURBVEFTT1VSQ0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHAoYREFUQVNPVVJDRV9TVEFUVVNfQUNUSVZFEAESHAoYREFUQVNPVVJDRV9TVEFUVVNfUEFVU0VEEAISHgoaREFUQVNPVVJDRV9TVEFUVVNfREVHUkFERUQQAyrWAQoRQXBpQ3JlZGVudGlhbEtpbmQSIwofQVBJX0NSRURFTlRJQUxfS0lORF9VTlNQRUNJRklFRBAAEh4KGkFQSV9DUkVERU5USUFMX0tJTkRfQkVBUkVSEAESHQoZQVBJX0NSRURFTlRJQUxfS0lORF9CQVNJQxACEh4KGkFQSV9DUkVERU5USUFMX0tJTkRfSEVBREVSEAMSHQoZQVBJX0NSRURFTlRJQUxfS0lORF9RVUVSWRAEEh4KGkFQSV9DUkVERU5USUFMX0tJTkRfT0FVVEgyEAUq7gEKD1NvdXJjZVN5bmNQaGFzZRIhCh1TT1VSQ0VfU1lOQ19QSEFTRV9VTlNQRUNJRklFRBAAEhwKGFNPVVJDRV9TWU5DX1BIQVNFX1FVRVVFRBABEh4KGlNPVVJDRV9TWU5DX1BIQVNFX0ZFVENISU5HEAISHgoaU09VUkNFX1NZTkNfUEhBU0VfQ09NUElMRUQQAxIgChxTT1VSQ0VfU1lOQ19QSEFTRV9IQU5ERURfT0ZGEAQSGgoWU09VUkNFX1NZTkNfUEhBU0VfRE9ORRAFEhwKGFNPVVJDRV9TWU5DX1BIQVNFX0ZBSUxFRBAGKqYDChdTb3VyY2VTeW5jRmFpbHVyZVJlYXNvbhIqCiZTT1VSQ0VfU1lOQ19GQUlMVVJFX1JFQVNPTl9VTlNQRUNJRklFRBAAEisKJ1NPVVJDRV9TWU5DX0ZBSUxVUkVfUkVBU09OX1JBVEVfTElNSVRFRBABEikKJVNPVVJDRV9TWU5DX0ZBSUxVUkVfUkVBU09OX0NSRURFTlRJQUwQAhIsCihTT1VSQ0VfU1lOQ19GQUlMVVJFX1JFQVNPTl9BQ0NFU1NfREVOSUVEEAMSKAokU09VUkNFX1NZTkNfRkFJTFVSRV9SRUFTT05fTk9UX0ZPVU5EEAQSKAokU09VUkNFX1NZTkNfRkFJTFVSRV9SRUFTT05fVE9PX0xBUkdFEAUSLworU09VUkNFX1NZTkNfRkFJTFVSRV9SRUFTT05fSE9TVF9VTkFWQUlMQUJMRRAGEiQKIFNPVVJDRV9TWU5DX0ZBSUxVUkVfUkVBU09OX09USEVSEAcSLgoqU09VUkNFX1NZTkNfRkFJTFVSRV9SRUFTT05fREVMSVZFUllfRkFJTEVEEAgqnAEKEVNvdXJjZVN5bmNUcmlnZ2VyEiMKH1NPVVJDRV9TWU5DX1RSSUdHRVJfVU5TUEVDSUZJRUQQABIeChpTT1VSQ0VfU1lOQ19UUklHR0VSX01BTlVBTBABEiEKHVNPVVJDRV9TWU5DX1RSSUdHRVJfU0NIRURVTEVEEAISHwobU09VUkNFX1NZTkNfVFJJR0dFUl9XRUJIT09LEAMysQ4KEURhdGFzb3VyY2VTZXJ2aWNlEqwBCg9BZGRHaXRIdWJTb3VyY2USKC5zYWFzLmFjY291bnRzLnYxLkFkZEdpdEh1YlNvdXJjZVJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkFkZEdpdEh1YlNvdXJjZVJlc3BvbnNlIkTC8xhACAIQBCoMCgZvcmdfaWQQAhgBMAE6IAocc2Fhcy5kYXRhc291cmNlLnNvdXJjZS5hZGRlZBACQAFIBFAEWANgARKaAQoJQWRkU291cmNlEiIuc2Fhcy5hY2NvdW50cy52MS5BZGRTb3VyY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5BZGRTb3VyY2VSZXNwb25zZSJEwvMYQAgCEAQqDAoGb3JnX2lkEAIYATABOiAKHHNhYXMuZGF0YXNvdXJjZS5zb3VyY2UuYWRkZWQQAkABSARQBFgDYAESjwEKFEdldERhdGFzb3VyY2VDYXRhbG9nEi0uc2Fhcy5hY2NvdW50cy52MS5HZXREYXRhc291cmNlQ2F0YWxvZ1JlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2UiGMLzGBQIAhABMAE6AhABQAFIA1ACWAJgARKCAQoLTGlzdFNvdXJjZXMSJC5zYWFzLmFjY291bnRzLnYxLkxpc3RTb3VyY2VzUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuTGlzdFNvdXJjZXNSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESfAoJR2V0U291cmNlEiIuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESngEKClN5bmNTb3VyY2USIy5zYWFzLmFjY291bnRzLnYxLlN5bmNTb3VyY2VSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5TeW5jU291cmNlUmVzcG9uc2UiRcLzGEEIAhAEKgwKBm9yZ19pZBACGAEwATohCh1zYWFzLmRhdGFzb3VyY2Uuc291cmNlLnN5bmNlZBACQAFIBFAEWAJgARKIAQoNR2V0U291cmNlU3luYxImLnNhYXMuYWNjb3VudHMudjEuR2V0U291cmNlU3luY1JlcXVlc3QaJy5zYWFzLmFjY291bnRzLnYxLkdldFNvdXJjZVN5bmNSZXNwb25zZSImwvMYIggCEAQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESpQEKDERlbGV0ZVNvdXJjZRIlLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVzcG9uc2UiRsLzGEIIAhAEKgwKBm9yZ19pZBACGAEwAToiCh5zYWFzLmRhdGFzb3VyY2Uuc291cmNlLnJlbW92ZWQQAkABSARQAlgCYAESxAEKE0JlZ2luR2l0SHViQXBwU2V0dXASLC5zYWFzLmFjY291bnRzLnYxLkJlZ2luR2l0SHViQXBwU2V0dXBSZXF1ZXN0Gi0uc2Fhcy5hY2NvdW50cy52MS5CZWdpbkdpdEh1YkFwcFNldHVwUmVzcG9uc2UiUMLzGEwIAhAEKgwKBm9yZ19pZBACGAEwATosCihzYWFzLmRhdGFzb3VyY2UuZ2l0aHViX2FwcC5zZXR1cF9zdGFydGVkEAJAAUgEUAJYBGABEs8BChZDb21wbGV0ZUdpdEh1YkFwcFNldHVwEi8uc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZUdpdEh1YkFwcFNldHVwUmVxdWVzdBowLnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVHaXRIdWJBcHBTZXR1cFJlc3BvbnNlIlLC8xhOCAIQBCoMCgZvcmdfaWQQAhgBMAE6Lgoqc2Fhcy5kYXRhc291cmNlLmdpdGh1Yl9hcHAuc2V0dXBfY29tcGxldGVkEAJAAUgEUARYA2ABEs0BChhNaWdyYXRlR2l0SHViU291cmNlVG9BcHASMS5zYWFzLmFjY291bnRzLnYxLk1pZ3JhdGVHaXRIdWJTb3VyY2VUb0FwcFJlcXVlc3QaMi5zYWFzLmFjY291bnRzLnYxLk1pZ3JhdGVHaXRIdWJTb3VyY2VUb0FwcFJlc3BvbnNlIkrC8xhGCAIQBCoMCgZvcmdfaWQQAhgBMAE6Jgoic2Fhcy5kYXRhc291cmNlLmNyZWRlbnRpYWwudXBkYXRlZBACQAFIBFACWANgAWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
 
 /**
  * GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
@@ -860,6 +860,11 @@ export type GetSourceSyncRequest = Message<"saas.accounts.v1.GetSourceSyncReques
   sourceId: string;
 
   /**
+   * The sync to read: the job id SyncSource returned. Empty reads the source's
+   * latest sync, whatever started it — the first sync enqueued at connect, a
+   * "Sync now", the periodic reconcile or a webhook delivery — so a client can
+   * show progress for a sync it did not start itself.
+   *
    * @generated from field: string job_id = 3;
    */
   jobId: string;
@@ -900,6 +905,202 @@ export const SourceSyncDeliverySchema: GenMessage<SourceSyncDelivery> = /*@__PUR
   messageDesc(file_saas_accounts_v1_datasource, 21);
 
 /**
+ * SourceSyncChanges counts the change set a sync compiled, relative to the
+ * commit the host last handed off for the source.
+ *
+ * @generated from message saas.accounts.v1.SourceSyncChanges
+ */
+export type SourceSyncChanges = Message<"saas.accounts.v1.SourceSyncChanges"> & {
+  /**
+   * Files the change set hands off: every in-scope file for a full snapshot,
+   * the changed files for an incremental change set.
+   *
+   * @generated from field: uint32 files = 1;
+   */
+  files: number;
+
+  /**
+   * @generated from field: uint32 added = 2;
+   */
+  added: number;
+
+  /**
+   * @generated from field: uint32 modified = 3;
+   */
+  modified: number;
+
+  /**
+   * @generated from field: uint32 deleted = 4;
+   */
+  deleted: number;
+
+  /**
+   * False when the split into added/modified/deleted is unknown, e.g. a
+   * snapshot after a force push whose previous commit is gone. files is known
+   * either way.
+   *
+   * @generated from field: bool split_known = 5;
+   */
+  splitKnown: boolean;
+
+  /**
+   * True for a full snapshot, false for an incremental change set.
+   *
+   * @generated from field: bool snapshot = 6;
+   */
+  snapshot: boolean;
+
+  /**
+   * The commit the change set brings the source to.
+   *
+   * @generated from field: string commit = 7;
+   */
+  commit: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SourceSyncChanges.
+ * Use `create(SourceSyncChangesSchema)` to create a new message.
+ */
+export const SourceSyncChangesSchema: GenMessage<SourceSyncChanges> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 22);
+
+/**
+ * SourceSyncFailure is why a sync is waiting to retry, or why it failed.
+ *
+ * @generated from message saas.accounts.v1.SourceSyncFailure
+ */
+export type SourceSyncFailure = Message<"saas.accounts.v1.SourceSyncFailure"> & {
+  /**
+   * @generated from field: saas.accounts.v1.SourceSyncFailureReason reason = 1;
+   */
+  reason: SourceSyncFailureReason;
+
+  /**
+   * The stable failure code, e.g. "datasource.github_rate_limited".
+   *
+   * @generated from field: string code = 2;
+   */
+  code: string;
+
+  /**
+   * What happened, in prose a tenant can act on. Every value comes from a
+   * closed set of host-authored messages; raw provider text never reaches it.
+   *
+   * @generated from field: string message = 3;
+   */
+  message: string;
+
+  /**
+   * True while the sync will try again; false once it has failed for good.
+   *
+   * @generated from field: bool retrying = 4;
+   */
+  retrying: boolean;
+
+  /**
+   * When the next attempt may run: for a rate limit, when the limit resets.
+   *
+   * @generated from field: google.protobuf.Timestamp retry_at = 5;
+   */
+  retryAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SourceSyncFailure.
+ * Use `create(SourceSyncFailureSchema)` to create a new message.
+ */
+export const SourceSyncFailureSchema: GenMessage<SourceSyncFailure> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 23);
+
+/**
+ * SourceSyncProgress is one sync's phases, each stamped from the durable
+ * record the host keeps of it — no stage is inferred from elapsed time.
+ *
+ * @generated from message saas.accounts.v1.SourceSyncProgress
+ */
+export type SourceSyncProgress = Message<"saas.accounts.v1.SourceSyncProgress"> & {
+  /**
+   * @generated from field: saas.accounts.v1.SourceSyncPhase phase = 1;
+   */
+  phase: SourceSyncPhase;
+
+  /**
+   * @generated from field: saas.accounts.v1.SourceSyncTrigger trigger = 2;
+   */
+  trigger: SourceSyncTrigger;
+
+  /**
+   * When the sync was accepted.
+   *
+   * @generated from field: google.protobuf.Timestamp queued_at = 3;
+   */
+  queuedAt?: Timestamp;
+
+  /**
+   * When a worker last started on it (the latest attempt).
+   *
+   * @generated from field: google.protobuf.Timestamp fetching_at = 4;
+   */
+  fetchingAt?: Timestamp;
+
+  /**
+   * When the first file of the compiled change set was handed off.
+   *
+   * @generated from field: google.protobuf.Timestamp compiled_at = 5;
+   */
+  compiledAt?: Timestamp;
+
+  /**
+   * When the whole change set was on the module's queue.
+   *
+   * @generated from field: google.protobuf.Timestamp handed_off_at = 6;
+   */
+  handedOffAt?: Timestamp;
+
+  /**
+   * When the sync reached DONE or FAILED.
+   *
+   * @generated from field: google.protobuf.Timestamp finished_at = 7;
+   */
+  finishedAt?: Timestamp;
+
+  /**
+   * Set once the change set is compiled. Unset when the sync handed nothing
+   * off; with phase DONE that means the source had not changed.
+   *
+   * @generated from field: saas.accounts.v1.SourceSyncChanges changes = 8;
+   */
+  changes?: SourceSyncChanges;
+
+  /**
+   * Set while the sync waits to retry, and when it failed.
+   *
+   * @generated from field: saas.accounts.v1.SourceSyncFailure failure = 9;
+   */
+  failure?: SourceSyncFailure;
+
+  /**
+   * How many attempts the host has made, and may make.
+   *
+   * @generated from field: uint32 attempt = 10;
+   */
+  attempt: number;
+
+  /**
+   * @generated from field: uint32 max_attempts = 11;
+   */
+  maxAttempts: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SourceSyncProgress.
+ * Use `create(SourceSyncProgressSchema)` to create a new message.
+ */
+export const SourceSyncProgressSchema: GenMessage<SourceSyncProgress> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 24);
+
+/**
  * @generated from message saas.accounts.v1.GetSourceSyncResponse
  */
 export type GetSourceSyncResponse = Message<"saas.accounts.v1.GetSourceSyncResponse"> & {
@@ -917,6 +1118,11 @@ export type GetSourceSyncResponse = Message<"saas.accounts.v1.GetSourceSyncRespo
    * @generated from field: repeated saas.accounts.v1.SourceSyncDelivery deliveries = 3;
    */
   deliveries: SourceSyncDelivery[];
+
+  /**
+   * @generated from field: saas.accounts.v1.SourceSyncProgress progress = 4;
+   */
+  progress?: SourceSyncProgress;
 };
 
 /**
@@ -924,7 +1130,7 @@ export type GetSourceSyncResponse = Message<"saas.accounts.v1.GetSourceSyncRespo
  * Use `create(GetSourceSyncResponseSchema)` to create a new message.
  */
 export const GetSourceSyncResponseSchema: GenMessage<GetSourceSyncResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 22);
+  messageDesc(file_saas_accounts_v1_datasource, 25);
 
 /**
  * @generated from message saas.accounts.v1.DeleteSourceRequest
@@ -946,7 +1152,7 @@ export type DeleteSourceRequest = Message<"saas.accounts.v1.DeleteSourceRequest"
  * Use `create(DeleteSourceRequestSchema)` to create a new message.
  */
 export const DeleteSourceRequestSchema: GenMessage<DeleteSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 23);
+  messageDesc(file_saas_accounts_v1_datasource, 26);
 
 /**
  * @generated from message saas.accounts.v1.DeleteSourceResponse
@@ -959,7 +1165,7 @@ export type DeleteSourceResponse = Message<"saas.accounts.v1.DeleteSourceRespons
  * Use `create(DeleteSourceResponseSchema)` to create a new message.
  */
 export const DeleteSourceResponseSchema: GenMessage<DeleteSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 24);
+  messageDesc(file_saas_accounts_v1_datasource, 27);
 
 /**
  * GitHubAppRepository is one repository a verified App installation grants this
@@ -997,7 +1203,7 @@ export type GitHubAppRepository = Message<"saas.accounts.v1.GitHubAppRepository"
  * Use `create(GitHubAppRepositorySchema)` to create a new message.
  */
 export const GitHubAppRepositorySchema: GenMessage<GitHubAppRepository> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 25);
+  messageDesc(file_saas_accounts_v1_datasource, 28);
 
 /**
  * @generated from message saas.accounts.v1.BeginGitHubAppSetupRequest
@@ -1014,7 +1220,7 @@ export type BeginGitHubAppSetupRequest = Message<"saas.accounts.v1.BeginGitHubAp
  * Use `create(BeginGitHubAppSetupRequestSchema)` to create a new message.
  */
 export const BeginGitHubAppSetupRequestSchema: GenMessage<BeginGitHubAppSetupRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 26);
+  messageDesc(file_saas_accounts_v1_datasource, 29);
 
 /**
  * @generated from message saas.accounts.v1.BeginGitHubAppSetupResponse
@@ -1050,7 +1256,7 @@ export type BeginGitHubAppSetupResponse = Message<"saas.accounts.v1.BeginGitHubA
  * Use `create(BeginGitHubAppSetupResponseSchema)` to create a new message.
  */
 export const BeginGitHubAppSetupResponseSchema: GenMessage<BeginGitHubAppSetupResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 27);
+  messageDesc(file_saas_accounts_v1_datasource, 30);
 
 /**
  * @generated from message saas.accounts.v1.CompleteGitHubAppSetupRequest
@@ -1098,7 +1304,7 @@ export type CompleteGitHubAppSetupRequest = Message<"saas.accounts.v1.CompleteGi
  * Use `create(CompleteGitHubAppSetupRequestSchema)` to create a new message.
  */
 export const CompleteGitHubAppSetupRequestSchema: GenMessage<CompleteGitHubAppSetupRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 28);
+  messageDesc(file_saas_accounts_v1_datasource, 31);
 
 /**
  * @generated from message saas.accounts.v1.CompleteGitHubAppSetupResponse
@@ -1124,7 +1330,7 @@ export type CompleteGitHubAppSetupResponse = Message<"saas.accounts.v1.CompleteG
  * Use `create(CompleteGitHubAppSetupResponseSchema)` to create a new message.
  */
 export const CompleteGitHubAppSetupResponseSchema: GenMessage<CompleteGitHubAppSetupResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 29);
+  messageDesc(file_saas_accounts_v1_datasource, 32);
 
 /**
  * @generated from message saas.accounts.v1.MigrateGitHubSourceToAppRequest
@@ -1146,7 +1352,7 @@ export type MigrateGitHubSourceToAppRequest = Message<"saas.accounts.v1.MigrateG
  * Use `create(MigrateGitHubSourceToAppRequestSchema)` to create a new message.
  */
 export const MigrateGitHubSourceToAppRequestSchema: GenMessage<MigrateGitHubSourceToAppRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 30);
+  messageDesc(file_saas_accounts_v1_datasource, 33);
 
 /**
  * @generated from message saas.accounts.v1.MigrateGitHubSourceToAppResponse
@@ -1163,7 +1369,7 @@ export type MigrateGitHubSourceToAppResponse = Message<"saas.accounts.v1.Migrate
  * Use `create(MigrateGitHubSourceToAppResponseSchema)` to create a new message.
  */
 export const MigrateGitHubSourceToAppResponseSchema: GenMessage<MigrateGitHubSourceToAppResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 31);
+  messageDesc(file_saas_accounts_v1_datasource, 34);
 
 /**
  * DatasourceProvider identifies the external system a datasource connects to.
@@ -1313,6 +1519,189 @@ export const ApiCredentialKindSchema: GenEnum<ApiCredentialKind> = /*@__PURE__*/
   enumDesc(file_saas_accounts_v1_datasource, 2);
 
 /**
+ * SourceSyncPhase is the stage the host has reached in one sync of a source.
+ * (Not module_capabilities' SourceSyncStage, which names the one occurrence a
+ * collection's provenance records.) The phases are the host's own work only: once the change set is handed off, what
+ * the consuming module does with each file is the module's to report.
+ *
+ * @generated from enum saas.accounts.v1.SourceSyncPhase
+ */
+export enum SourceSyncPhase {
+  /**
+   * @generated from enum value: SOURCE_SYNC_PHASE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Accepted and waiting for a worker, or waiting out a retry (failure then
+   * says why and until when).
+   *
+   * @generated from enum value: SOURCE_SYNC_PHASE_QUEUED = 1;
+   */
+  QUEUED = 1,
+
+  /**
+   * A worker holds the sync: resolving the branch head and fetching the
+   * repository over git.
+   *
+   * @generated from enum value: SOURCE_SYNC_PHASE_FETCHING = 2;
+   */
+  FETCHING = 2,
+
+  /**
+   * The change set is compiled and its files are being handed to the
+   * consuming module's queue; changes counts them.
+   *
+   * @generated from enum value: SOURCE_SYNC_PHASE_COMPILED = 3;
+   */
+  COMPILED = 3,
+
+  /**
+   * The whole change set is on the consuming module's queue and the module has
+   * not yet taken all of it.
+   *
+   * @generated from enum value: SOURCE_SYNC_PHASE_HANDED_OFF = 4;
+   */
+  HANDED_OFF = 4,
+
+  /**
+   * The host's part is finished: the module took every file handed to it, or
+   * there was nothing to hand off.
+   *
+   * @generated from enum value: SOURCE_SYNC_PHASE_DONE = 5;
+   */
+  DONE = 5,
+
+  /**
+   * The sync stopped and will not retry; failure says why.
+   *
+   * @generated from enum value: SOURCE_SYNC_PHASE_FAILED = 6;
+   */
+  FAILED = 6,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.SourceSyncPhase.
+ */
+export const SourceSyncPhaseSchema: GenEnum<SourceSyncPhase> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_datasource, 3);
+
+/**
+ * SourceSyncFailureReason classifies why a sync is waiting or failed, so a
+ * client can offer the remedy without parsing prose.
+ *
+ * @generated from enum saas.accounts.v1.SourceSyncFailureReason
+ */
+export enum SourceSyncFailureReason {
+  /**
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The provider rate limited the host; retry_at is when the limit resets,
+   * when the provider said.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED = 1;
+   */
+  RATE_LIMITED = 1,
+
+  /**
+   * The stored credential was rejected or cannot be read: reconnect.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_CREDENTIAL = 2;
+   */
+  CREDENTIAL = 2,
+
+  /**
+   * The provider denied access to the repository.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_ACCESS_DENIED = 3;
+   */
+  ACCESS_DENIED = 3,
+
+  /**
+   * The repository, branch or content was not found.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_NOT_FOUND = 4;
+   */
+  NOT_FOUND = 4,
+
+  /**
+   * The source selects more than the host holds for one source: narrow it.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_TOO_LARGE = 5;
+   */
+  TOO_LARGE = 5,
+
+  /**
+   * The host itself cannot sync right now (a dependency is missing or down).
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_HOST_UNAVAILABLE = 6;
+   */
+  HOST_UNAVAILABLE = 6,
+
+  /**
+   * Any other failure; message says what can be said safely.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_OTHER = 7;
+   */
+  OTHER = 7,
+
+  /**
+   * The consuming module dead-lettered a file the host handed it.
+   *
+   * @generated from enum value: SOURCE_SYNC_FAILURE_REASON_DELIVERY_FAILED = 8;
+   */
+  DELIVERY_FAILED = 8,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.SourceSyncFailureReason.
+ */
+export const SourceSyncFailureReasonSchema: GenEnum<SourceSyncFailureReason> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_datasource, 4);
+
+/**
+ * SourceSyncTrigger is what started a sync.
+ *
+ * @generated from enum saas.accounts.v1.SourceSyncTrigger
+ */
+export enum SourceSyncTrigger {
+  /**
+   * @generated from enum value: SOURCE_SYNC_TRIGGER_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A tenant pressed "Sync now", or connected the source.
+   *
+   * @generated from enum value: SOURCE_SYNC_TRIGGER_MANUAL = 1;
+   */
+  MANUAL = 1,
+
+  /**
+   * The periodic reconcile.
+   *
+   * @generated from enum value: SOURCE_SYNC_TRIGGER_SCHEDULED = 2;
+   */
+  SCHEDULED = 2,
+
+  /**
+   * A webhook delivery from the provider.
+   *
+   * @generated from enum value: SOURCE_SYNC_TRIGGER_WEBHOOK = 3;
+   */
+  WEBHOOK = 3,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.SourceSyncTrigger.
+ */
+export const SourceSyncTriggerSchema: GenEnum<SourceSyncTrigger> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_datasource, 5);
+
+/**
  * DatasourceService is the tenant-facing surface a solution drives (directly or
  * through the generated SDK) to declare and operate connected datasources.
  *
@@ -1388,8 +1777,9 @@ export const DatasourceService: GenService<{
     output: typeof SyncSourceResponseSchema;
   },
   /**
-   * GetSourceSync projects durable lifecycle and module-reported execution
-   * references for one sync without exposing job payloads or attributes.
+   * GetSourceSync projects durable lifecycle, the host's typed phases and
+   * module-reported execution references for one sync — or, with no job id,
+   * the source's latest — without exposing job payloads or attributes.
    *
    * @generated from rpc saas.accounts.v1.DatasourceService.GetSourceSync
    */

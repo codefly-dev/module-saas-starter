@@ -188,10 +188,17 @@ type DatasourceSyncOperation struct {
 	JobID      string
 	State      jobsv1.JobState
 	Deliveries []DatasourceSyncDelivery
+	// Record and Handoff are the durable facts the store read; Progress is
+	// projected from them (ProjectDatasourceSyncProgress).
+	Record   DatasourceSyncRecord
+	Handoff  DatasourceSyncHandoff
+	Progress DatasourceSyncProgress
 }
 
+// DatasourceSyncOperationStore reads one sync of a source: the job named by
+// jobID, or with jobID empty the source's latest sync.
 type DatasourceSyncOperationStore interface {
-	GetDatasourceSyncOperation(context.Context, string, string, string) (*DatasourceSyncOperation, error)
+	GetDatasourceSyncOperation(ctx context.Context, orgID, sourceID, jobID string) (*DatasourceSyncOperation, error)
 }
 
 // ErrOAuth2ReauthRequired reports that an OAuth 2.0 source's refresh token was
@@ -588,6 +595,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
+	s.startFirstGitHubSync(ctx, source)
 	return source, nil
 }
 
@@ -808,6 +816,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
+	}
+	if source.Provider == DatasourceProviderGitHub {
+		s.startFirstGitHubSync(ctx, source)
 	}
 	return source, nil
 }
@@ -1164,7 +1175,12 @@ func (s *Service) GetDatasourceSync(ctx context.Context, orgID, sourceID, jobID 
 	if s.datasourceSyncOperations == nil {
 		return nil, errors.New("datasource sync observation is not configured")
 	}
-	return s.datasourceSyncOperations.GetDatasourceSyncOperation(ctx, orgID, sourceID, jobID)
+	operation, err := s.datasourceSyncOperations.GetDatasourceSyncOperation(ctx, orgID, sourceID, jobID)
+	if err != nil {
+		return nil, err
+	}
+	operation.Progress = ProjectDatasourceSyncProgress(operation.Record, operation.Handoff)
+	return operation, nil
 }
 
 // datasourceRequestBody is the body every datasource *request* job carries —

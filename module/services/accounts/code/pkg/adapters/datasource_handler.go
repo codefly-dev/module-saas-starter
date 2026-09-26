@@ -224,6 +224,7 @@ func (h *datasourceConnectHandler) GetSourceSync(
 			JobId: delivery.JobID, State: delivery.State, Execution: delivery.Execution,
 		})
 	}
+	response.Progress = sourceSyncProgressToProto(operation.Progress)
 	return connect.NewResponse(response), nil
 }
 

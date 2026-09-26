@@ -60,8 +60,9 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(ctx context.Context, in *SyncSourceRequest, opts ...grpc.CallOption) (*SyncSourceResponse, error)
-	// GetSourceSync projects durable lifecycle and module-reported execution
-	// references for one sync without exposing job payloads or attributes.
+	// GetSourceSync projects durable lifecycle, the host's typed phases and
+	// module-reported execution references for one sync — or, with no job id,
+	// the source's latest — without exposing job payloads or attributes.
 	GetSourceSync(ctx context.Context, in *GetSourceSyncRequest, opts ...grpc.CallOption) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error)
@@ -229,8 +230,9 @@ type DatasourceServiceServer interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *SyncSourceRequest) (*SyncSourceResponse, error)
-	// GetSourceSync projects durable lifecycle and module-reported execution
-	// references for one sync without exposing job payloads or attributes.
+	// GetSourceSync projects durable lifecycle, the host's typed phases and
+	// module-reported execution references for one sync — or, with no job id,
+	// the source's latest — without exposing job payloads or attributes.
 	GetSourceSync(context.Context, *GetSourceSyncRequest) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error)

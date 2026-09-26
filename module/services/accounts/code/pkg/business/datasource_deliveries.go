@@ -532,7 +532,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, repo
 			Payload:        payload,
 			ContentType:    "application/json",
 			MaxAttempts:    datasourceIngestMaxAttempts,
-			Attributes: map[string]string{
+			Attributes: withAttributes(map[string]string{
 				attrSourceID:   source.ID,
 				attrOrgID:      source.OrgID,
 				attrBoundaryID: source.BoundaryNodeID,
@@ -540,7 +540,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, repo
 				attrCommit:     commit,
 				attrDeliveryID: deliveryID,
 				attrSourceRef:  ref,
-			},
+			}, s.snapshotChangeAttributes(ctx, repo, source, commit, len(manifest.Files))),
 		},
 	}); err != nil {
 		return "", w.Wrapf(err, "enqueue snapshot")

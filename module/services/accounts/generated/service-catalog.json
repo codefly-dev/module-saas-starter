@@ -2659,7 +2659,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
-      "description": "Read durable lifecycle and module-reported execution references for one source sync.",
+      "description": "Read one source sync's typed stages, durable lifecycle and module-reported execution references; with no job id, the source's latest sync.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

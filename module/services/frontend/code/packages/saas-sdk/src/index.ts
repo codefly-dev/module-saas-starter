@@ -39,6 +39,13 @@ export {
 	DatasourceProvider,
 	DatasourceService,
 	DatasourceStatus,
+	type GetSourceSyncResponse,
+	type SourceSyncChanges,
+	type SourceSyncFailure,
+	SourceSyncFailureReason,
+	SourceSyncPhase,
+	type SourceSyncProgress,
+	SourceSyncTrigger,
 } from "../generated/typescript/src/gen/saas/accounts/v1/datasource_pb.js";
 export { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1/webhooks_pb.js";
 export type {
