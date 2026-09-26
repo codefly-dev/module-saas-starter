@@ -32,3 +32,27 @@ func TestComposedPermissionVocabularyRejectsMalformedOrCollidingContributions(t 
 		})
 	}
 }
+
+func TestMemberPermissionIndexHoldsOnlyDeclaredContributedPairs(t *testing.T) {
+	index := memberPermissionIndex([]permissioncatalog.Permission{
+		{Name: "example.jobs:list", Resource: "example.jobs", Action: "list", Members: true},
+		{Name: "example.jobs:inspect", Resource: "example.jobs", Action: "inspect"},
+	})
+	require.Equal(t, map[string]struct{}{"example.jobs:list": {}}, index)
+}
+
+func TestComposedPermissionVocabularyNamesTheMemberGrant(t *testing.T) {
+	definitions, err := composedPermissionVocabulary(nil, []permissioncatalog.Permission{
+		{Name: "example.jobs:list", Resource: "example.jobs", Action: "list", Members: true},
+		{Name: "example.jobs:inspect", Resource: "example.jobs", Action: "inspect"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "example.jobs:inspect", definitions[0].Permission)
+	require.Empty(t, definitions[0].BuiltInRoles)
+	require.Equal(t, []string{"admin (via membership)", "member (via membership)"}, definitions[1].BuiltInRoles)
+}
+
+func TestTheBaseCatalogGrantsNothingToMembers(t *testing.T) {
+	require.False(t, IsMemberPermission("*", "*"))
+	require.False(t, IsMemberPermission("users", "read"))
+}

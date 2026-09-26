@@ -28,6 +28,7 @@ import (
 	"context"
 	ed25519core "crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -105,6 +106,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
 		}
 		otelMetricProvider = metricProvider
+		// codefly:gateway-route-exempt the OTEL scrape endpoint; the collector reaches it over the mesh and it must never be public
 		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
 	}
 
@@ -191,6 +193,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure module installer policy: %w", err)
 	}
 	if installerHandler != nil {
+		// codefly:gateway-route-exempt the module-facing capability surface; a caller presents a module Work Context and reaches it over the mesh, never the public edge
 		adapters.RegisterHTTPRoute("/v1/module-installations/", installerHandler)
 	}
 
@@ -313,6 +316,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(vaultClient, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	// Every provider credential's operations are metered in one window shared by
+	// every replica, so a sync a person starts is served before background work.
+	service.SetDatasourceBudgetStore(store)
 	// The App registration is deployment custody: the signing key is read here
 	// and never copied onto a source record. Unset leaves sources on their own
 	// stored fine-grained PAT.
@@ -560,7 +566,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		// transaction and so cannot commit atomically with the audit row. Surface
 		// this so operators don't assume the warehouse holds platform events.
 		w.Warn("AUDIT_SINK=both tees only org-scoped audit events to the external sink; control-plane/platform-admin (NULL-org) events remain Postgres-only")
-		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink)
+		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink, store)
 		if err != nil {
 			return nil, err
 		}
@@ -579,9 +585,15 @@ func doWork(ctx context.Context) (Clean, error) {
 	// and provision the current + upcoming monthly partitions so audit writes
 	// always have a target. Best-effort: a transient failure here must not
 	// block boot; the retention tick re-provisions partitions on its cycle.
+	// A catalog that collides with a solution-declared type is not transient —
+	// this release cannot own that name without reinterpreting rows already
+	// written under the solution's schema — so it fails boot.
 	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
 	}); err != nil {
+		if errors.Is(err, business.ErrAuditCatalogCollision) {
+			return nil, fmt.Errorf("audit event-type registry sync: %w", err)
+		}
 		wool.Get(ctx).Warn("audit event-type registry sync failed", wool.ErrField(err))
 	}
 	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -720,11 +732,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	if resend, ok := emailSender.(*email.ResendSender); ok {
-		path, resendWebhook, err := resend.DeliveryWebhook(jobStore)
+		resendWebhook, err := resend.DeliveryWebhook(jobStore)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute(path, resendWebhook)
+		adapters.RegisterHTTPRoute(email.ResendWebhookPath, resendWebhook)
 	}
 	emailJobHandler, err := email.NewJobHandler(emailSender)
 	if err != nil {
@@ -890,8 +902,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// source added through the SDK is live with no redeploy. Receipt verifies
 	// X-Hub-Signature-256 and persists the raw delivery to the jobs inbox under
 	// the GitHub delivery id; the documents ingest service consumes it — saas owns
-	// connection, documents owns ingest.
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
+	// connection, documents owns ingest. The switch is a declared key of the
+	// github-app configuration group, so a deployment turns it on from its own
+	// configuration rather than from an environment variable nothing declares.
+	if strings.EqualFold(strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
 			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},

@@ -23,17 +23,45 @@ const datasourceSourceColumns = `
 	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at,
 	COALESCE(github_installation_id, '')`
 
+// datasourceBoundaryLabelColumn is the boundary's display label, appended to
+// the shared projection by the org-scoped reads the DatasourceService serves
+// (scanned with scanDatasourceSourceWithLabel). It is not in the shared
+// projection itself: the cross-org worker reads run without an organization
+// scope, where scope_nodes' row security has no organization to admit.
+const datasourceBoundaryLabelColumn = `,
+	COALESCE((SELECT n.label FROM scope_nodes n
+	           WHERE n.org_id = datasource_sources.org_id
+	             AND n.id = datasource_sources.boundary_node_id), '')`
+
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
+	return scanDatasourceSourceInto(row, nil)
+}
+
+func scanDatasourceSourceWithLabel(row pgx.Row) (*business.DatasourceSource, error) {
+	var label string
+	source, err := scanDatasourceSourceInto(row, &label)
+	if err != nil {
+		return nil, err
+	}
+	source.BoundaryLabel = label
+	return source, nil
+}
+
+func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceSource, error) {
 	var d business.DatasourceSource
 	var config []byte
 	var reconcileIntervalSeconds int64
-	if err := row.Scan(
+	dest := []any{
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
 		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
 		&d.Status, &d.StatusReason, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 		&d.LastIngestedCommit, &d.LastIngestedAt, &d.LastDeliveryID,
 		&reconcileIntervalSeconds, &d.NextReconcileAt, &d.GitHubInstallationID,
-	); err != nil {
+	}
+	if label != nil {
+		dest = append(dest, label)
+	}
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
 	d.ReconcileInterval = time.Duration(reconcileIntervalSeconds) * time.Second
@@ -444,7 +472,7 @@ func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context
 // caller's WithOrgTx.
 func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT `+datasourceSourceColumns+`
+		`SELECT `+datasourceSourceColumns+datasourceBoundaryLabelColumn+`
 		   FROM datasource_sources
 		  WHERE org_id = $1
 		  ORDER BY created_at DESC`, orgID)
@@ -454,7 +482,7 @@ func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string)
 	defer rows.Close()
 	var sources []*business.DatasourceSource
 	for rows.Next() {
-		source, err := scanDatasourceSource(rows)
+		source, err := scanDatasourceSourceWithLabel(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -467,9 +495,9 @@ func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string)
 // matches. Runs under the caller's WithOrgTx.
 func (s *PostgresStore) GetDatasourceSource(ctx context.Context, orgID, id string) (*business.DatasourceSource, error) {
 	row := s.getQueryExecutor(ctx).QueryRow(ctx,
-		`SELECT `+datasourceSourceColumns+`
+		`SELECT `+datasourceSourceColumns+datasourceBoundaryLabelColumn+`
 		   FROM datasource_sources WHERE org_id = $1 AND id = $2`, orgID, id)
-	source, err := scanDatasourceSource(row)
+	source, err := scanDatasourceSourceWithLabel(row)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -479,12 +507,28 @@ func (s *PostgresStore) GetDatasourceSource(ctx context.Context, orgID, id strin
 	return source, nil
 }
 
-// DeleteDatasourceSource removes an org-scoped Source. Runs under the caller's
-// WithOrgTx.
-func (s *PostgresStore) DeleteDatasourceSource(ctx context.Context, orgID, id string) error {
-	_, err := s.getQueryExecutor(ctx).Exec(ctx,
-		`DELETE FROM datasource_sources WHERE org_id = $1 AND id = $2`, orgID, id)
-	return err
+// DeleteDatasourceSource removes an org-scoped Source and returns the identity
+// it removed, or nil when no row matched. Runs under the caller's WithOrgTx.
+//
+// RETURNING is what makes "was it there?" and "what was it?" one atomic answer.
+// Reading the row first and then deleting it answers both from two statements,
+// and under this store's READ COMMITTED transactions two concurrent deletes then
+// both see the row, both delete (the second matching nothing), and both record a
+// removal. The deleted row is returned by the statement that deleted it, so only
+// the caller that actually removed something has anything to record.
+func (s *PostgresStore) DeleteDatasourceSource(ctx context.Context, orgID, id string) (*business.RemovedDatasourceSource, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`DELETE FROM datasource_sources WHERE org_id = $1 AND id = $2
+		   RETURNING provider, COALESCE(repo, ''), boundary_node_id::text`, orgID, id)
+	var removed business.RemovedDatasourceSource
+	err := row.Scan(&removed.Provider, &removed.Repo, &removed.BoundaryNodeID)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &removed, nil
 }
 
 // SetDatasourceSourceSynced records the last successful sync time. Runs under

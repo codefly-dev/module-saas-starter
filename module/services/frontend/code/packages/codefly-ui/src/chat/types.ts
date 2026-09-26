@@ -20,4 +20,9 @@ export interface ChatMessage {
 	author?: string;
 	/** The assistant reply still streaming in — renders a live typing caret. */
 	pending?: boolean;
+	/**
+	 * How `content` is written. Default `text` (shown verbatim). `markdown`
+	 * renders through the content tier: GFM, no raw HTML, safe links only.
+	 */
+	format?: "text" | "markdown";
 }

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"time"
 
@@ -91,6 +92,38 @@ func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
 		}
 	}
 	return false
+}
+
+// HostScopeRoles and HostScopeAudit are the permission resource types this host
+// reads out of a *sealed capability* to decide something of its own, rather than
+// authorizing them node by node the way it authorizes module content:
+// ListReadableSourceCollections reads them from the presented claims to decide
+// how much of a collection's metadata to disclose (its grants, its sync
+// requester).
+//
+// They are therefore reserved: a composition may not declare one as the content
+// of a module. The content-read branch admits an unscoped `read` of declared
+// content on a node grant or share precisely because the host re-authorizes
+// every such read per node — and that justification is simply false for a type
+// the host reads straight off the claims. Declaring `roles` here would let one
+// collection grant mint `roles:read` and so disclose who holds a grant on every
+// collection the holder can see, which an organization-wide role assignment was
+// the only way to reach before.
+//
+// The registry is operator-supplied text this host cannot otherwise check, so
+// the refusal belongs at parse time, where a bad composition fails to boot
+// instead of quietly changing who may mint what.
+const (
+	HostScopeRoles = "roles"
+	HostScopeAudit = "audit"
+)
+
+// IsHostSealedScopeResource reports whether a permission resource type is one
+// the host reads out of a sealed capability for its own decisions. Anything
+// added to the constants above — or any new host decision taken from a
+// capability's sealed scopes — belongs in this set.
+func IsHostSealedScopeResource(resource string) bool {
+	return resource == HostScopeRoles || resource == HostScopeAudit
 }
 
 // ModulePrincipalRegistry maps a module service principal id to its grant.
@@ -171,8 +204,13 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		// The tenant is sealed into a signed capability and compared against
 		// organization ids, so a malformed one cannot be caught downstream: it
 		// signs, then silently matches no tenant and drops the org from its own
-		// audit record.
-		if err := uuid.Validate(grant.Tenant); err != nil {
+		// audit record. A well-formed one is canonicalized for the same reason:
+		// every comparison downstream is a string compare against the lowercase
+		// hyphenated id Postgres returns, so an uppercase, braced, urn:uuid: or
+		// unhyphenated spelling would pass here and then match its own
+		// organization nowhere.
+		tenant, err := uuid.Parse(grant.Tenant)
+		if err != nil {
 			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
 		}
 		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
@@ -180,6 +218,14 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		}
 		if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
 			return nil, err
+		}
+		for _, resource := range grant.Resources {
+			if IsHostSealedScopeResource(resource) {
+				return nil, fmt.Errorf(
+					"module principal %q may not declare %q as its content: the host reads that permission out of a sealed capability for its own decisions, so a node grant must never stand in for a role assignment on it",
+					prefix, resource,
+				)
+			}
 		}
 		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
 			ReadAudiences:      grant.ReadAudiences,
@@ -189,7 +235,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 			Namespaces:         grant.Namespaces,
 			Resources:          grant.Resources,
 			CrossTenant:        grant.CrossTenant,
-			Tenant:             grant.Tenant,
+			Tenant:             tenant.String(),
 		}
 	}
 	return registry, nil
@@ -679,9 +725,24 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // ---------------------------------------------------------------------------
 
 // ModuleEmitAuditEvent emits a registered audit event onto the tenant's audit
-// spine. The event type must be registered in the code-owned catalog;
-// unregistered types are rejected, not stored free-form. An empty tenant emits a
-// system-scoped event and requires the cross-tenant grant.
+// spine. The event type must be registered — in the code-owned catalog, or as a
+// type the emitting solution declared at registration
+// (validateModuleAuditEvent); unregistered types are rejected, not stored
+// free-form. An empty tenant emits a system-scoped event and requires the
+// cross-tenant grant.
+//
+// actor is resolved to a principal id, because that is what the spine's actor
+// column holds (resolveModuleAuditActor). A module that acted for a subject
+// names that subject — recorded only once the subject is shown to be a member of
+// the tenant; a module that acted on its own names its own principal or
+// a process label of its own (system:<process>), and the row records the
+// module's principal as a system actor. An actor that resolves to no principal
+// is refused with ErrModuleAuditActorUnresolved before anything is written — it
+// used to be accepted and then blanked on write, so the row said nobody did it
+// and the emitter was told it had succeeded.
+//
+// entryID must be an opaque identifier; one that is a locator is dropped rather
+// than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
@@ -705,14 +766,37 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// unknown/mistyped field is rejected, not stored free-form. (Downstream
 	// registry validation is only advisory; this is where the module's typed-
 	// fields contract is actually enforced.)
-	if err := ValidatePayload(EventType(eventType), payload); err != nil {
-		return status.Error(codes.InvalidArgument, err.Error())
+	if err := s.validateModuleAuditEvent(ctx, grant, EventType(eventType), solution, payload); err != nil {
+		return err
 	}
+	// entry_id is optional on the request because the surface is shared: types
+	// that record something about a whole solution have no entry to name. A type
+	// the registry says is about a resource is refused without one here rather
+	// than at the transport, where a min_len would impose the requirement on
+	// every type that shares the field.
+	if entryID == "" && AuditEventRequiresEntry(EventType(eventType)) {
+		return status.Errorf(codes.InvalidArgument, "audit: event %q records what happened to a resource and requires entry_id", eventType)
+	}
+	// An empty key disables deduplication, so for a type whose emitter reports
+	// per item and retries, accepting one guarantees a duplicate row on every
+	// replayed response rather than risking one.
+	if idempotencyKey == "" && AuditEventRequiresIdempotencyKey(EventType(eventType)) {
+		return status.Errorf(codes.InvalidArgument, "audit: event %q is emitted per item and requires idempotency_key naming the operation, so a retry collapses", eventType)
+	}
+	// Resolved after the registry has accepted the event: the subject case needs a
+	// membership read, so an emit that is going to be rejected on the request alone
+	// must not pay for it — and every guard that rejects on the request alone still
+	// does so before this surface touches the store at all.
+	actorID, actorType, err := s.resolveModuleAuditActor(ctx, caller, tenant, actor)
+	if err != nil {
+		return err
+	}
+	entryID = opaqueAuditEntryID(ctx, entryID)
 	// The emission IS the operation the module requested, so a failed write must
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.
 	emit := func(ctx context.Context) error {
-		entry := s.buildAuditEntry(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+		entry := s.buildAuditEntry(ctx, actorID, actorType, EventType(eventType), solution, entryID, tenant, payload)
 		entry.IdempotencyKey = idempotencyKey
 		return s.emitEntryTx(ctx, entry)
 	}
@@ -724,6 +808,181 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	}
 	if err := s.store.WithOrgTx(ctx, tenant, emit); err != nil {
 		return status.Error(codes.Internal, err.Error())
+	}
+	return nil
+}
+
+// ErrModuleAuditActorUnresolved reports that a module-attributed audit actor
+// names no principal the host can record. It is carried as FailedPrecondition,
+// not InvalidArgument: the event itself is well formed and must be kept by the
+// producer's outbox and delivered once the producer (or the host's mapping)
+// names the actor, never settled as a permanent refusal and dropped.
+var ErrModuleAuditActorUnresolved = errors.New("module audit actor names no principal")
+
+// moduleProcessActorPattern is a module's own process label, system:<process>:
+// the name a module gives the work it does on its own (an ingest pass, a
+// producer run) when it has no subject to attribute it to.
+var moduleProcessActorPattern = regexp.MustCompile(`^system:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$`)
+
+// resolveModuleAuditActor maps a module-attributed actor to the principal id
+// the row records and its actor type. The caller's identity is the
+// authenticated module principal, so the host — not the emitter — decides which
+// principal a module's own work belongs to:
+//
+//   - a principal id in any spelling uuid.Parse accepts (canonical, uppercase,
+//     braced, urn:uuid:, unhyphenated) is canonicalized, so a row is stored,
+//     filtered and named under the one text form of its id. The caller's own
+//     principal is the module acting on its own (system); any other principal
+//     is a subject the module acted for (agent).
+//   - system:<process> is the module's own work under a process label, and maps
+//     to the caller's principal as a system actor. The label carries no identity
+//     the spine can hold; the principal it runs as does.
+//   - anything else resolves to no principal and fails loudly with
+//     ErrModuleAuditActorUnresolved — never stored with the actor blanked.
+func (s *Service) resolveModuleAuditActor(ctx context.Context, caller ModuleCaller, tenant, actor string) (actorID, actorType string, err error) {
+	own := caller.PrincipalID
+	if parsed, perr := uuid.Parse(own); perr == nil {
+		own = parsed.String()
+	}
+	if parsed, perr := uuid.Parse(actor); perr == nil {
+		actorID = parsed.String()
+		if actorID == own {
+			return actorID, ActorTypeSystem, nil
+		}
+		placed, perr := s.moduleAuditSubjectIsMemberOf(ctx, tenant, actorID)
+		if perr != nil {
+			return "", "", perr
+		}
+		if placed {
+			return actorID, ActorTypeAgent, nil
+		}
+		return "", "", status.Errorf(codes.FailedPrecondition,
+			"%v: actor %q is not a member of tenant %q: a module may name only a subject of the tenant it is writing to, or its own work as its principal or as system:<process>",
+			ErrModuleAuditActorUnresolved, actorID, tenant)
+	}
+	if moduleProcessActorPattern.MatchString(actor) {
+		return own, ActorTypeSystem, nil
+	}
+	return "", "", status.Errorf(codes.FailedPrecondition,
+		"%v: actor %q: name the subject the module acted for (a principal id), or the module's own work as its principal or as system:<process>", ErrModuleAuditActorUnresolved, actor)
+}
+
+// moduleAuditSubjectIsMemberOf reports whether subject may be named as the actor
+// of a row in tenant. A module naming a subject is making an unattested claim:
+// audit_events.actor_id means "the verified initiator" everywhere else on the
+// spine — AuditActor is resolved from the authenticated request context and
+// never from fields the caller supplies — while here the module is the only
+// witness that the subject acted at all. The host cannot check that, so it
+// checks the one thing it can: that the subject is a party in the organization
+// the row lands in. This is the same guard requireTenantMember applies wherever
+// this surface acts on a module-named subject, and without it a module bound to
+// one tenant can write another tenant's user id, or any id at all, into a trail
+// that is append-only and never correctable.
+//
+// A system-scoped row (empty tenant) has no organization to place a subject in,
+// so there is no subject it could verify and none it will record.
+//
+// A failed read is returned, not treated as "not a member": it proves nothing
+// either way, and audit_events_no_update means a row written under a guessed
+// actor can never be put right.
+func (s *Service) moduleAuditSubjectIsMemberOf(ctx context.Context, tenant, subject string) (bool, error) {
+	if tenant == "" {
+		return false, nil
+	}
+	var member bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		member, e = s.store.OrgMemberExists(ctx, tenant, subject)
+		return e
+	}); err != nil {
+		return false, status.Error(codes.Internal, err.Error())
+	}
+	return member, nil
+}
+
+// opaqueAuditEntryID keeps an entry id the row can carry and drops one that is a
+// locator rather than an identifier.
+//
+// audit_events.resource_id is text, so the column accepts whatever a module
+// sends (entry_id is capped at 255 bytes and constrained no further). Storing it
+// as given is right — that is what keeps a document entry's ULID — but it
+// replaced an implicit constraint (a UUID or nothing) with none at all, and this
+// is the one identifier field on the row that no declaration mechanism covers:
+// a payload field declares PII and RedactPayload strips it on the CSV download,
+// the JSON download and the S3 JSONL exporter, while resource_id goes out
+// verbatim. audit_events is also append-only — audit_events_no_update and
+// audit_events_no_delete — with a 365-day retention, so a value written here can
+// never be corrected or erased.
+//
+// A path separator or an "@" is what separates a locator from an identifier: a
+// ULID, a UUID, a content digest, a provider object id and a numeric id carry
+// neither, while "clients/jane.doe@example.com/2026-Q1.pdf" carries both and is
+// record content rather than a name for the record. Whitespace and control
+// characters are the same signal. Such a value is dropped to no resource id —
+// which is exactly what the writer used to do to it — and never refuses the
+// emit, so the event itself still lands. A producer with a path, a filename or
+// an address to record has a declared payload field for it, which is the field
+// the redaction machinery can actually reach.
+func opaqueAuditEntryID(ctx context.Context, entryID string) string {
+	if entryID == "" {
+		return ""
+	}
+	for _, r := range entryID {
+		if r == '/' || r == '\\' || r == '@' || r <= ' ' || r == 0x7f {
+			wool.Get(ctx).In("opaqueAuditEntryID").Warn(
+				"module audit entry id is a locator, not an identifier; the row records no resource id",
+				wool.Field("entry_id", entryID))
+			return ""
+		}
+	}
+	return entryID
+}
+
+// validateModuleAuditEvent checks one module-emitted event against the schema
+// that governs its type. A code-owned type is checked against the catalog, as
+// it always was. Any other type must be one a registered solution declared, and
+// then three things must hold:
+//
+//   - the event is emitted as that solution: the `solution` scope — stamped into
+//     the payload and written as the row's resource — names the type's owner,
+//     so a solution can never emit, or be credited with, another's type;
+//   - the calling principal may publish into the type's namespace
+//     (MODULE_PRINCIPALS `namespaces`), the same composition-declared authority
+//     domain-event publishing already requires, so the `solution` label alone —
+//     which the caller supplies — authorizes nothing;
+//   - the payload matches the declared fields.
+//
+// Attribution is unchanged by the type's origin: the row is written exactly as
+// a catalog type's is.
+func (s *Service) validateModuleAuditEvent(ctx context.Context, grant ModulePrincipalGrant, eventType EventType, solution string, payload map[string]any) error {
+	if _, registered := LookupAuditEvent(eventType); registered {
+		if err := ValidatePayload(eventType, payload); err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil
+	}
+	unregistered := status.Errorf(codes.InvalidArgument, "audit: unregistered event type %q", eventType)
+	// A type no solution could have declared is refused before any read.
+	if !isDeclarableAuditEventType(eventType) {
+		return unregistered
+	}
+	declared, err := s.lookupDeclaredAuditEventType(ctx, eventType)
+	if err != nil {
+		return status.Error(codes.Internal, "audit: cannot resolve declared event type")
+	}
+	if declared == nil {
+		return unregistered
+	}
+	if declared.SolutionID != solution {
+		return status.Errorf(codes.PermissionDenied,
+			"audit: event type %q is declared by another solution", eventType)
+	}
+	if !grant.allowsNamespace(declared.Namespace) {
+		return status.Errorf(codes.PermissionDenied,
+			"audit: principal may not emit into namespace %q", declared.Namespace)
+	}
+	if err := validatePayloadFields(eventType, declared.validationFields(), payload); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	return nil
 }
@@ -870,8 +1129,9 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // ---------------------------------------------------------------------------
 
 // ModuleFetchDatasourceBlob returns the bytes of a GitHub blob referenced by a
-// datasource change set, so the documents module can pull the content a delivery
-// omitted inline. It supersedes the signed content ticket: the module already
+// datasource change set, so a consuming module can pull the content a delivery
+// omitted inline. Deprecated in favour of ModuleFetchDatasourceFiles, which
+// serves a whole change set in one call. It supersedes the signed content ticket: the module already
 // claims the datasource queue to receive the change set, and claiming that queue
 // is an inherently cross-tenant inbox operation (every tenant's ingest jobs land
 // on it), so a principal trusted to claim it is trusted to fetch the blobs those
@@ -881,7 +1141,8 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // org, NOT a request-supplied tenant: the source is loaded by id and the fetch
 // is authorized against that source's org, so a cross-tenant claimer reaches any
 // source while a hypothetical org-bound principal reaches only its own. The blob
-// is re-fetched with the source's decrypted token and never leaves accounts;
+// is read from the source's repository mirror, fetched with the source's
+// decrypted token when the mirror lacks it; the token never leaves accounts, and
 // anything over maxContentTicketBytes is refused rather than buffered.
 func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
 	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
@@ -907,17 +1168,7 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	}
 	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		// A revoked installation or an unreadable credential is a precondition the
-		// tenant must repair, not an internal fault; reporting it as Internal tells
-		// a module caller to retry something that can never succeed.
-		var failure *jobs.ProcessingError
-		if errors.As(err, &failure) {
-			if failure.Retryable {
-				return nil, "", status.Error(codes.Unavailable, failure.Failure.Message)
-			}
-			return nil, "", status.Error(codes.FailedPrecondition, failure.Failure.Message)
-		}
-		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "authenticate to github").Error())
+		return nil, "", datasourceCredentialStatus(w, err)
 	}
 	// Trust boundary: blobSHA is caller-supplied and NOT re-validated against the
 	// change set that referenced it. Authorization is enforced at the repository
@@ -927,26 +1178,14 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	// Within the authorized repo, a git blob SHA is a content-addressed,
 	// unguessable (SHA-1/-256) capability that accounts only ever hands a module
 	// via an in-scope change-set payload, so an in-scope caller cannot fabricate a
-	// SHA for out-of-scope content it was not already given. Re-deriving the tree
-	// to prove the SHA is reachable from the source's branch would reintroduce the
-	// per-fetch ticket this RPC exists to remove and break the intended lag between
-	// a module's cursor and the repo head, so the repo-grained check is the
-	// boundary by design.
-	content, err := client.GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
+	// SHA for out-of-scope content it was not already given. FetchDatasourceFiles,
+	// which names a version, holds each file to the source's scope at it.
+	content, err := s.readDatasourceBlob(ctx, source, client, blobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, "", status.Errorf(codes.FailedPrecondition, "blob exceeds the %d-byte fetch limit", maxContentTicketBytes)
 		}
-		// A public source reads GitHub unauthenticated, so its blob fetches share
-		// the IP's hourly limit; say so, rather than calling it an internal fault
-		// the module should not retry.
-		if errors.Is(err, github.ErrUnauthenticatedRateLimited) {
-			return nil, "", status.Error(codes.ResourceExhausted, githubUnauthenticatedRateLimitMessage)
-		}
-		if errors.Is(err, github.ErrRateLimited) {
-			return nil, "", status.Error(codes.ResourceExhausted, "GitHub rate limited the blob fetch. Retry later.")
-		}
-		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "fetch blob").Error())
+		return nil, "", datasourceGitHubStatus(w, err, "fetch blob")
 	}
 	// Record the data access on the source's own tenant spine. Each fetch is a
 	// distinct access event (no idempotency key), and a transient audit-write

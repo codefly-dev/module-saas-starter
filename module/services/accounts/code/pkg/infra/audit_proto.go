@@ -12,7 +12,11 @@ import (
 // Payloads are surfaced in full here: the query/UI path is an authenticated
 // admin read of the caller's own tenant, not an export, so PII redaction (which
 // applies to export/webhook sinks) is deliberately not performed.
-func AuditEntryToProto(e business.AuditEntry) *gen.AuditEvent {
+//
+// resolved is what the registry says about the entry's type
+// (business.AuditEventResolver), so a solution-declared type is labelled with
+// its category like a catalog one.
+func AuditEntryToProto(e business.AuditEntry, resolved business.ResolvedAuditEvent) *gen.AuditEvent {
 	event := &gen.AuditEvent{
 		Id:            e.ID,
 		ActorId:       e.ActorID,
@@ -26,9 +30,7 @@ func AuditEntryToProto(e business.AuditEntry) *gen.AuditEvent {
 		CreatedAt:     timestamppb.New(e.CreatedAt),
 		ClientId:      e.ClientID,
 	}
-	if def, ok := business.LookupAuditEvent(e.EventType); ok {
-		event.Category = string(def.Category)
-	}
+	event.Category = resolved.Category()
 	if len(e.Payload) > 0 {
 		if s, err := structpb.NewStruct(e.Payload); err == nil {
 			event.Payload = s

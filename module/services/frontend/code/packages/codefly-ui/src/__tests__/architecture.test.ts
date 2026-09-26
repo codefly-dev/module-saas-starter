@@ -13,12 +13,15 @@ import { describe, expect, it } from "vitest";
 // diagram in ARCHITECTURE.md. `charts` is still nested in `dashboard/` today
 // (extracted by #403); `chat`/`table`/`form` are composite tiers that sit at the
 // same rank as `dashboard` — they compose the atoms below, never each other.
+// `content` (markdown, JSON, code, text) sits beside `charts`: it composes
+// layout atoms, and the composites (chat renders a markdown answer) compose it.
 // `plugin-host` and the root entry are deliberately absent: they are the
 // host-facing surface, not part of the presentational turtle stack.
 const TIER_RANK: Record<string, number> = {
 	skin: 0,
 	layout: 1,
 	charts: 2,
+	content: 2,
 	dashboard: 3,
 	chat: 3,
 	table: 3,

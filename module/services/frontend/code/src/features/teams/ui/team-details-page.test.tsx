@@ -173,6 +173,54 @@ describe("team details", () => {
 		await screen.findByText("Team unavailable");
 		expect(roster).not.toHaveBeenCalled();
 	});
+	it("adds a new member and shows them in the roster", async () => {
+		auth.orgRole = "owner";
+		// The roster handler below shadows the beforeEach one, so the empty
+		// roster comes from `added` being null rather than from `removed`.
+		let added: { userId: string; userEmail: string } | null = null;
+		server.use(
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({
+					members: [{ userId: "user-new", userEmail: "newbie@example.com" }],
+				}),
+			),
+			http.post(rpc("TeamService", "AddMember"), async ({ request }) => {
+				const body = (await request.json()) as { userId: string };
+				added = { userId: body.userId, userEmail: "newbie@example.com" };
+				return HttpResponse.json({});
+			}),
+			http.post(rpc("TeamService", "ListMembers"), () =>
+				HttpResponse.json({
+					members: added
+						? [
+								{
+									teamId: team.id,
+									userId: added.userId,
+									userEmail: added.userEmail,
+									role: 1,
+								},
+							]
+						: [],
+				}),
+			),
+		);
+		renderInApp(<TeamDetailsPage teamId={team.id} />);
+		expect(
+			await screen.findByText("No members in this team yet."),
+		).toBeTruthy();
+		fireEvent.change(screen.getByPlaceholderText("Search members by email…"), {
+			target: { value: "newbie" },
+		});
+		fireEvent.click(
+			await screen.findByRole("button", { name: "newbie@example.com" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
+		// The mutation has to reach the service before the roster can refetch;
+		// waiting on the button proves nothing, it is there throughout.
+		await waitFor(() => expect(added).not.toBeNull());
+		expect(await screen.findByText("newbie@example.com")).toBeTruthy();
+		expect(screen.getByText("Members (1)")).toBeTruthy();
+	});
 	it("does not mistake a roster failure for an empty team or grant management controls", async () => {
 		auth.orgRole = "owner";
 		server.use(

@@ -1236,8 +1236,13 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 	}
 
 	var events []*gen.AuditEvent
+	resolver := service.AuditEventResolver()
 	for _, e := range entries {
-		events = append(events, infra.AuditEntryToProto(e))
+		resolved, err := resolver.Resolve(ctx, e.EventType)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "audit event types unavailable")
+		}
+		events = append(events, infra.AuditEntryToProto(e, resolved))
 	}
 
 	return &gen.QueryAuditLogResponse{
@@ -1344,16 +1349,24 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 	if _, err := requireAuth(ctx); err != nil {
 		return nil, err
 	}
-	defs := business.AuditEventCatalog()
+	// The code-owned catalog plus every type a registered solution declared,
+	// each declared type labelled by its owner (`solution:<id>`). An unreadable
+	// declared set fails the call rather than answering with the catalog alone,
+	// which a reader could not tell from "no solution declares anything".
+	defs, err := service.AuditEventTypes(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "audit event types unavailable")
+	}
 	out := make([]*gen.AuditEventType, 0, len(defs))
 	for _, d := range defs {
 		out = append(out, &gen.AuditEventType{
-			Name:        string(d.Type),
-			Namespace:   d.Namespace,
-			Version:     int32(d.Version),
-			Category:    string(d.Category),
-			Owner:       d.Owner,
-			Description: d.Description,
+			Name:            string(d.Type),
+			Namespace:       d.Namespace,
+			Version:         int32(d.Version),
+			Category:        string(d.Category),
+			Owner:           d.Owner,
+			Description:     d.Description,
+			MarksUserJoined: d.MarksUserJoined,
 		})
 	}
 	return &gen.ListAuditEventTypesResponse{Types: out}, nil

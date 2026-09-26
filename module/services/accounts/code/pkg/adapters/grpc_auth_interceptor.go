@@ -51,6 +51,9 @@ type rpcExposure uint8
 const (
 	rpcExposureTenant rpcExposure = iota
 	rpcExposureInternal
+	// rpcExposureModule is the named module authority endpoint: the internal
+	// tier narrowed to business.ModuleAuthorityProcedures, for composed modules.
+	rpcExposureModule
 )
 
 func newGRPCPolicyAuthorizer(getMinter func() auth.JWTMinter, exposure rpcExposure) *grpcPolicyAuthorizer {
@@ -266,6 +269,15 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	policy, classified := business.LookupRPCPolicy(fullMethod)
 	if !classified {
 		return ctx, status.Error(codes.PermissionDenied, "RPC is not classified by the authorization policy")
+	}
+	if i.exposure == rpcExposureModule {
+		if policy.Tier != business.RPCPolicyInternal || !business.IsModuleAuthorityProcedure(fullMethod) {
+			return ctx, status.Error(codes.PermissionDenied, "RPC is not exposed on the module authority endpoint")
+		}
+		if !validInternalToken(firstMetadataValue(md, "x-codefly-internal-token")) {
+			return ctx, status.Error(codes.PermissionDenied, "internal service credential required")
+		}
+		return ctx, nil
 	}
 	if i.exposure == rpcExposureInternal {
 		if policy.Tier != business.RPCPolicyInternal {

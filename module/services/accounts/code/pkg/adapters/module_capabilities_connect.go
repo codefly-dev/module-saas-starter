@@ -68,6 +68,10 @@ func (h *moduleCapabilitiesConnectHandler) CancelApproval(ctx context.Context, r
 	return unary(ctx, req, h.inner.CancelApproval)
 }
 
+func (h *moduleCapabilitiesConnectHandler) DeclareAuditEventTypes(ctx context.Context, req *connect.Request[gen.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[gen.ModuleDeclareAuditEventTypesResponse], error) {
+	return unary(ctx, req, h.inner.DeclareAuditEventTypes)
+}
+
 func (h *moduleCapabilitiesConnectHandler) EmitAuditEvent(ctx context.Context, req *connect.Request[gen.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.EmitAuditEvent)
 }
@@ -78,6 +82,10 @@ func (h *moduleCapabilitiesConnectHandler) ListSubjectVisibility(ctx context.Con
 
 func (h *moduleCapabilitiesConnectHandler) FetchDatasourceBlob(ctx context.Context, req *connect.Request[gen.FetchDatasourceBlobRequest], stream *connect.ServerStream[gen.FetchDatasourceBlobChunk]) error {
 	return streamDatasourceBlob(ctx, req.Msg, stream)
+}
+
+func (h *moduleCapabilitiesConnectHandler) FetchDatasourceFiles(ctx context.Context, req *connect.Request[gen.FetchDatasourceFilesRequest], stream *connect.ServerStream[gen.FetchDatasourceFilesFrame]) error {
+	return translateGRPCError(streamDatasourceFiles(ctx, req.Msg, stream))
 }
 
 func (h *moduleCapabilitiesConnectHandler) PlaceRecord(ctx context.Context, req *connect.Request[gen.ModulePlaceRecordRequest]) (*connect.Response[gen.ModulePlaceRecordResponse], error) {

@@ -35,10 +35,11 @@ endpoint of its own. It was rejected on three counts:
   came with leaf reload, SNI handling and a private verification-key route,
   each its own failure mode, each duplicating something the mesh or the public
   key document already provides.
-- **A named endpoint is not available here.** Binding a second endpoint to the
-  same protobuf API needs the Codefly Go runtime to inject and bind multiple
-  same-API endpoints (`P1-NET-007`). That is a gap in the runtime, and the fix
-  belongs there — not a listener hand-rolled beside it.
+- **The named endpoint that exists is not a TLS one.** Codefly now injects and
+  binds several endpoints for one API (`P1-NET-007`), and accounts uses that to
+  export the module surface on a named endpoint of its own (below). It is h2c
+  like the rest of the tier: a second endpoint changes who may declare a
+  dependency, not who secures the hop.
 
 ## Three gates, and a call passes all of them
 
@@ -58,8 +59,21 @@ multiplexed on a shared port. The rendering is
 This module's own topology names one such caller, `auth-gateway`, because it
 must carry no build-time knowledge of its consumers. **Reach for a composed
 module is therefore the composition's to grant**: its workspace declares that
-module's dependency on accounts and regenerates the policy, which adds that
-service's ServiceAccount to the allowlist. A valid credential does not
+module's dependency on accounts' `authority` endpoint and regenerates the
+policy, which adds that service's ServiceAccount to the allowlist — for the
+module surface only. A caller that declared the `authority` endpoint and no
+PRIVATE endpoint of accounts is admitted to
+`business.ModuleAuthorityProcedures` and nothing else — including when it also
+declared the module-visible tenant surface, which is the ordinary composition
+and must not widen anything. The whole tier goes only to a caller that declared
+one of accounts' private endpoints, the mixed `rest`/`grpc` listeners it is
+actually served on; a composed module cannot declare one, because the render
+refuses a dependency on a private endpoint. A caller that declared neither is in
+no rule at all. This matters because Istio matches on request path with no port,
+and `connect` shares its port with the multiplexed private `rest` listener: a
+caller wrongly classified as whole-tier could send the internal methods there
+with the internal credential the `authority` endpoint already requires. A valid
+credential does not
 substitute for it — the connection is refused before any token is read — and
 neither does a network route: the policy is deny-by-default for every principal
 it does not name, the ingress gateway's included.
@@ -151,15 +165,59 @@ window and the observability of a rotation are in
 side of it — re-read on an unrecognised `kid`, bound the cache lifetime, and
 fail closed rather than fall back to another key when the set expires.
 
-## What this module does not export yet
+## The endpoint a composed module depends on: `accounts/authority`
 
-The module interface publishes `accounts/connect` and `auth-gateway/grpc`.
-Neither carries this tier: the tiering interceptor refuses internal methods on
-both, and the brokered bootstrap routes live on the private `auth-gateway/rest`
-endpoint. There is no module-visible endpoint name for the internal transport,
-and the mixed private listener is deliberately not promoted to one — that is
-`P1-NET-007` again, and until it lands the origin comes from the composed
-workspace's own topology rather than from this module's published interface.
+The module interface exports four endpoints at module visibility. Three do not
+carry this tier: `accounts/connect` and `auth-gateway/grpc` are tenant surfaces
+whose tiering interceptor refuses internal methods, and `auth-gateway/rest`
+carries the brokered bootstrap routes (registration, Work Context mints) and the
+key set. The fourth, `accounts/authority`, is a gRPC endpoint with a listener of
+its own, and it is the internal tier **narrowed**:
+
+- **Only the module surface is served.** `business.ModuleAuthorityProcedures`
+  lists it, and `business.ValidateModuleAuthorityProcedures` — which runs in the
+  catalog and deployment generators — holds every entry to one of two shapes:
+  the module capability surface, which authenticates the calling module from its
+  verified Work Context and authorizes it against the grant its composition
+  declared; or one of two read-only authority oracles
+  (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authorize on
+  the perimeter credential alone and answer one bit about a capability the
+  consumer already holds. Every other method is refused on this listener,
+  whatever credential it carries: the exchanges the gateway brokers (a module
+  never presents its own secret to accounts), the gateway's registries and
+  validators, the generic permission oracles, principal administration, and
+  every method that authorizes on the perimeter credential alone **and mutates
+  state** — `ConsumeUsage`, `StartInstallationTask`, and `ConsumeSingleUse`,
+  which writes a replay claim keyed on the `org_id` and `context_id` the request
+  carries. That credential is shared by every composed module and names no
+  tenant, so such a method would let any module act for any tenant: burn another
+  module's single-use capability, which the legitimate consumer then reads as
+  `AlreadyExists` on its own valid token, or fill the replay table for tenants it
+  has no relationship with. Each joins the endpoint once it decides on a
+  credential bound to the consuming module.
+- **Every call still carries the internal credential**, exactly as on the
+  private listener, and the capability surface still decides on the verified
+  Work Context and the module's declared grant.
+- **Transport is unchanged**: h2c, resolved rather than configured:
+
+```go
+net, err := codefly.For(ctx).Module("<host module>").Service("accounts").
+    Endpoint("authority").API("grpc").ResolveNetworkInstance()
+```
+
+and the service declares the edge in its manifest:
+
+```yaml
+service-dependencies:
+    - module: <host module>
+      name: accounts
+      endpoints:
+        - name: authority
+```
+
+The mixed private `rest` listener stays private and keeps serving the whole
+tier to the host's own gateway. A composed module never depends on it; the
+render refuses the attempt because the endpoint is private.
 
 ## Adopting a release that removed the TLS listeners
 

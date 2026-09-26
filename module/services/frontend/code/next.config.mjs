@@ -51,6 +51,18 @@ const legalDevPlaceholder =
 const nextConfig = {
 	output: "standalone",
 	reactCompiler: true,
+	// The dev server prints a line per request. Solutions re-register here on a
+	// heartbeat (and browsers poll the nav list from the same path), so that line
+	// was one per solution every few seconds — most of what a local run printed.
+	// The route logs the registration's state changes itself (registered, a new
+	// revision, refused and why, recovered) and counts the beats between them;
+	// see src/solutions/registration-log.ts. A production server prints no
+	// per-request lines, so this only quiets `next dev`.
+	logging: {
+		incomingRequests: {
+			ignore: [/^\/api\/solutions\/register(?:[?#]|$)/],
+		},
+	},
 	// Inlined into client + server bundles at build time; read by legal-config.ts
 	// to decide whether dev legal placeholders apply. Default derives from the
 	// fixture boundary above, so real deploys stay safe-by-default.

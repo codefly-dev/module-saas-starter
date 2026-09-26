@@ -221,6 +221,449 @@ func (ApiCredentialKind) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{2}
 }
 
+// DatasourceConnectorInterface is one of the five connector interfaces a
+// provider is served through. The set is closed; the set of providers is open.
+type DatasourceConnectorInterface int32
+
+const (
+	DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_UNSPECIFIED DatasourceConnectorInterface = 0
+	// Files: bytes with a media type and a path (a repository, a drive, a bucket).
+	DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_FILES DatasourceConnectorInterface = 1
+	// Pages: a rendered body in a parent/child hierarchy (a knowledge base, a crawled site).
+	DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_PAGES DatasourceConnectorInterface = 2
+	// Records: typed rows the provider's schema describes (a CRM, a ticket system).
+	DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_RECORDS DatasourceConnectorInterface = 3
+	// Messages: mail and chat, a body and attachments plus the message itself.
+	DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_MESSAGES DatasourceConnectorInterface = 4
+	// Events: calendar entries.
+	DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_EVENTS DatasourceConnectorInterface = 5
+)
+
+// Enum value maps for DatasourceConnectorInterface.
+var (
+	DatasourceConnectorInterface_name = map[int32]string{
+		0: "DATASOURCE_CONNECTOR_INTERFACE_UNSPECIFIED",
+		1: "DATASOURCE_CONNECTOR_INTERFACE_FILES",
+		2: "DATASOURCE_CONNECTOR_INTERFACE_PAGES",
+		3: "DATASOURCE_CONNECTOR_INTERFACE_RECORDS",
+		4: "DATASOURCE_CONNECTOR_INTERFACE_MESSAGES",
+		5: "DATASOURCE_CONNECTOR_INTERFACE_EVENTS",
+	}
+	DatasourceConnectorInterface_value = map[string]int32{
+		"DATASOURCE_CONNECTOR_INTERFACE_UNSPECIFIED": 0,
+		"DATASOURCE_CONNECTOR_INTERFACE_FILES":       1,
+		"DATASOURCE_CONNECTOR_INTERFACE_PAGES":       2,
+		"DATASOURCE_CONNECTOR_INTERFACE_RECORDS":     3,
+		"DATASOURCE_CONNECTOR_INTERFACE_MESSAGES":    4,
+		"DATASOURCE_CONNECTOR_INTERFACE_EVENTS":      5,
+	}
+)
+
+func (x DatasourceConnectorInterface) Enum() *DatasourceConnectorInterface {
+	p := new(DatasourceConnectorInterface)
+	*p = x
+	return p
+}
+
+func (x DatasourceConnectorInterface) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DatasourceConnectorInterface) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[3].Descriptor()
+}
+
+func (DatasourceConnectorInterface) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[3]
+}
+
+func (x DatasourceConnectorInterface) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DatasourceConnectorInterface.Descriptor instead.
+func (DatasourceConnectorInterface) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{3}
+}
+
+// DatasourceCredentialMode is how a connector authenticates to its provider.
+// The host holds every credential; the mode says which kind a connect asks for.
+type DatasourceCredentialMode int32
+
+const (
+	DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_UNSPECIFIED DatasourceCredentialMode = 0
+	// The provider serves the source without a credential.
+	DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_NONE DatasourceCredentialMode = 1
+	// An org-level app or installation the host holds.
+	DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_ORG_APP DatasourceCredentialMode = 2
+	// A person's own OAuth grant; such a source is readable by that person alone.
+	DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_USER_OAUTH DatasourceCredentialMode = 3
+	// A token or key the tenant supplies once.
+	DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET DatasourceCredentialMode = 4
+)
+
+// Enum value maps for DatasourceCredentialMode.
+var (
+	DatasourceCredentialMode_name = map[int32]string{
+		0: "DATASOURCE_CREDENTIAL_MODE_UNSPECIFIED",
+		1: "DATASOURCE_CREDENTIAL_MODE_NONE",
+		2: "DATASOURCE_CREDENTIAL_MODE_ORG_APP",
+		3: "DATASOURCE_CREDENTIAL_MODE_USER_OAUTH",
+		4: "DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET",
+	}
+	DatasourceCredentialMode_value = map[string]int32{
+		"DATASOURCE_CREDENTIAL_MODE_UNSPECIFIED":   0,
+		"DATASOURCE_CREDENTIAL_MODE_NONE":          1,
+		"DATASOURCE_CREDENTIAL_MODE_ORG_APP":       2,
+		"DATASOURCE_CREDENTIAL_MODE_USER_OAUTH":    3,
+		"DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET": 4,
+	}
+)
+
+func (x DatasourceCredentialMode) Enum() *DatasourceCredentialMode {
+	p := new(DatasourceCredentialMode)
+	*p = x
+	return p
+}
+
+func (x DatasourceCredentialMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DatasourceCredentialMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[4].Descriptor()
+}
+
+func (DatasourceCredentialMode) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[4]
+}
+
+func (x DatasourceCredentialMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DatasourceCredentialMode.Descriptor instead.
+func (DatasourceCredentialMode) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{4}
+}
+
+// DatasourceReadersModel is how a connector derives each item's readers.
+type DatasourceReadersModel int32
+
+const (
+	DatasourceReadersModel_DATASOURCE_READERS_MODEL_UNSPECIFIED DatasourceReadersModel = 0
+	// The provider has no per-item access list: every item is readable by
+	// whoever may read the source's boundary.
+	DatasourceReadersModel_DATASOURCE_READERS_MODEL_SOURCE_SCOPED DatasourceReadersModel = 1
+	// The provider's per-item access lists are translated into host users and
+	// teams; what cannot be translated is readable by the boundary's
+	// administrators only.
+	DatasourceReadersModel_DATASOURCE_READERS_MODEL_TRANSLATED DatasourceReadersModel = 2
+)
+
+// Enum value maps for DatasourceReadersModel.
+var (
+	DatasourceReadersModel_name = map[int32]string{
+		0: "DATASOURCE_READERS_MODEL_UNSPECIFIED",
+		1: "DATASOURCE_READERS_MODEL_SOURCE_SCOPED",
+		2: "DATASOURCE_READERS_MODEL_TRANSLATED",
+	}
+	DatasourceReadersModel_value = map[string]int32{
+		"DATASOURCE_READERS_MODEL_UNSPECIFIED":   0,
+		"DATASOURCE_READERS_MODEL_SOURCE_SCOPED": 1,
+		"DATASOURCE_READERS_MODEL_TRANSLATED":    2,
+	}
+)
+
+func (x DatasourceReadersModel) Enum() *DatasourceReadersModel {
+	p := new(DatasourceReadersModel)
+	*p = x
+	return p
+}
+
+func (x DatasourceReadersModel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DatasourceReadersModel) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[5].Descriptor()
+}
+
+func (DatasourceReadersModel) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[5]
+}
+
+func (x DatasourceReadersModel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DatasourceReadersModel.Descriptor instead.
+func (DatasourceReadersModel) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{5}
+}
+
+// SourceSyncPhase is the stage the host has reached in one sync of a source.
+// (Not module_capabilities' SourceSyncStage, which names the one occurrence a
+// collection's provenance records.) The phases are the host's own work only: once the change set is handed off, what
+// the consuming module does with each file is the module's to report.
+type SourceSyncPhase int32
+
+const (
+	SourceSyncPhase_SOURCE_SYNC_PHASE_UNSPECIFIED SourceSyncPhase = 0
+	// Accepted and waiting for a worker, or waiting out a retry (failure then
+	// says why and until when).
+	SourceSyncPhase_SOURCE_SYNC_PHASE_QUEUED SourceSyncPhase = 1
+	// A worker holds the sync: resolving the branch head and fetching the
+	// repository over git.
+	SourceSyncPhase_SOURCE_SYNC_PHASE_FETCHING SourceSyncPhase = 2
+	// The change set is compiled and its files are being handed to the
+	// consuming module's queue; changes counts them.
+	SourceSyncPhase_SOURCE_SYNC_PHASE_COMPILED SourceSyncPhase = 3
+	// The whole change set is on the consuming module's queue and the module has
+	// not yet taken all of it.
+	SourceSyncPhase_SOURCE_SYNC_PHASE_HANDED_OFF SourceSyncPhase = 4
+	// The host's part is finished: the module took every file handed to it, or
+	// there was nothing to hand off.
+	SourceSyncPhase_SOURCE_SYNC_PHASE_DONE SourceSyncPhase = 5
+	// The sync stopped and will not retry; failure says why.
+	SourceSyncPhase_SOURCE_SYNC_PHASE_FAILED SourceSyncPhase = 6
+)
+
+// Enum value maps for SourceSyncPhase.
+var (
+	SourceSyncPhase_name = map[int32]string{
+		0: "SOURCE_SYNC_PHASE_UNSPECIFIED",
+		1: "SOURCE_SYNC_PHASE_QUEUED",
+		2: "SOURCE_SYNC_PHASE_FETCHING",
+		3: "SOURCE_SYNC_PHASE_COMPILED",
+		4: "SOURCE_SYNC_PHASE_HANDED_OFF",
+		5: "SOURCE_SYNC_PHASE_DONE",
+		6: "SOURCE_SYNC_PHASE_FAILED",
+	}
+	SourceSyncPhase_value = map[string]int32{
+		"SOURCE_SYNC_PHASE_UNSPECIFIED": 0,
+		"SOURCE_SYNC_PHASE_QUEUED":      1,
+		"SOURCE_SYNC_PHASE_FETCHING":    2,
+		"SOURCE_SYNC_PHASE_COMPILED":    3,
+		"SOURCE_SYNC_PHASE_HANDED_OFF":  4,
+		"SOURCE_SYNC_PHASE_DONE":        5,
+		"SOURCE_SYNC_PHASE_FAILED":      6,
+	}
+)
+
+func (x SourceSyncPhase) Enum() *SourceSyncPhase {
+	p := new(SourceSyncPhase)
+	*p = x
+	return p
+}
+
+func (x SourceSyncPhase) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceSyncPhase) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[6].Descriptor()
+}
+
+func (SourceSyncPhase) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[6]
+}
+
+func (x SourceSyncPhase) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceSyncPhase.Descriptor instead.
+func (SourceSyncPhase) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{6}
+}
+
+// SourceSyncFailureReason classifies why a sync is waiting or failed, so a
+// client can offer the remedy without parsing prose.
+type SourceSyncFailureReason int32
+
+const (
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED SourceSyncFailureReason = 0
+	// The provider rate limited the host; retry_at is when the limit resets,
+	// when the provider said.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED SourceSyncFailureReason = 1
+	// The stored credential was rejected or cannot be read: reconnect.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_CREDENTIAL SourceSyncFailureReason = 2
+	// The provider denied access to the repository.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_ACCESS_DENIED SourceSyncFailureReason = 3
+	// The repository, branch or content was not found.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_NOT_FOUND SourceSyncFailureReason = 4
+	// The source selects more than the host holds for one source: narrow it.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_TOO_LARGE SourceSyncFailureReason = 5
+	// The host itself cannot sync right now (a dependency is missing or down).
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_HOST_UNAVAILABLE SourceSyncFailureReason = 6
+	// Any other failure; message says what can be said safely.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_OTHER SourceSyncFailureReason = 7
+	// The consuming module dead-lettered a file the host handed it.
+	SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_DELIVERY_FAILED SourceSyncFailureReason = 8
+)
+
+// Enum value maps for SourceSyncFailureReason.
+var (
+	SourceSyncFailureReason_name = map[int32]string{
+		0: "SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED",
+		1: "SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED",
+		2: "SOURCE_SYNC_FAILURE_REASON_CREDENTIAL",
+		3: "SOURCE_SYNC_FAILURE_REASON_ACCESS_DENIED",
+		4: "SOURCE_SYNC_FAILURE_REASON_NOT_FOUND",
+		5: "SOURCE_SYNC_FAILURE_REASON_TOO_LARGE",
+		6: "SOURCE_SYNC_FAILURE_REASON_HOST_UNAVAILABLE",
+		7: "SOURCE_SYNC_FAILURE_REASON_OTHER",
+		8: "SOURCE_SYNC_FAILURE_REASON_DELIVERY_FAILED",
+	}
+	SourceSyncFailureReason_value = map[string]int32{
+		"SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED":      0,
+		"SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED":     1,
+		"SOURCE_SYNC_FAILURE_REASON_CREDENTIAL":       2,
+		"SOURCE_SYNC_FAILURE_REASON_ACCESS_DENIED":    3,
+		"SOURCE_SYNC_FAILURE_REASON_NOT_FOUND":        4,
+		"SOURCE_SYNC_FAILURE_REASON_TOO_LARGE":        5,
+		"SOURCE_SYNC_FAILURE_REASON_HOST_UNAVAILABLE": 6,
+		"SOURCE_SYNC_FAILURE_REASON_OTHER":            7,
+		"SOURCE_SYNC_FAILURE_REASON_DELIVERY_FAILED":  8,
+	}
+)
+
+func (x SourceSyncFailureReason) Enum() *SourceSyncFailureReason {
+	p := new(SourceSyncFailureReason)
+	*p = x
+	return p
+}
+
+func (x SourceSyncFailureReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceSyncFailureReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[7].Descriptor()
+}
+
+func (SourceSyncFailureReason) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[7]
+}
+
+func (x SourceSyncFailureReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceSyncFailureReason.Descriptor instead.
+func (SourceSyncFailureReason) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{7}
+}
+
+// SourceSyncTrigger is what started a sync.
+type SourceSyncTrigger int32
+
+const (
+	SourceSyncTrigger_SOURCE_SYNC_TRIGGER_UNSPECIFIED SourceSyncTrigger = 0
+	// A tenant pressed "Sync now", or connected the source.
+	SourceSyncTrigger_SOURCE_SYNC_TRIGGER_MANUAL SourceSyncTrigger = 1
+	// The periodic reconcile.
+	SourceSyncTrigger_SOURCE_SYNC_TRIGGER_SCHEDULED SourceSyncTrigger = 2
+	// A webhook delivery from the provider.
+	SourceSyncTrigger_SOURCE_SYNC_TRIGGER_WEBHOOK SourceSyncTrigger = 3
+)
+
+// Enum value maps for SourceSyncTrigger.
+var (
+	SourceSyncTrigger_name = map[int32]string{
+		0: "SOURCE_SYNC_TRIGGER_UNSPECIFIED",
+		1: "SOURCE_SYNC_TRIGGER_MANUAL",
+		2: "SOURCE_SYNC_TRIGGER_SCHEDULED",
+		3: "SOURCE_SYNC_TRIGGER_WEBHOOK",
+	}
+	SourceSyncTrigger_value = map[string]int32{
+		"SOURCE_SYNC_TRIGGER_UNSPECIFIED": 0,
+		"SOURCE_SYNC_TRIGGER_MANUAL":      1,
+		"SOURCE_SYNC_TRIGGER_SCHEDULED":   2,
+		"SOURCE_SYNC_TRIGGER_WEBHOOK":     3,
+	}
+)
+
+func (x SourceSyncTrigger) Enum() *SourceSyncTrigger {
+	p := new(SourceSyncTrigger)
+	*p = x
+	return p
+}
+
+func (x SourceSyncTrigger) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceSyncTrigger) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[8].Descriptor()
+}
+
+func (SourceSyncTrigger) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[8]
+}
+
+func (x SourceSyncTrigger) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceSyncTrigger.Descriptor instead.
+func (SourceSyncTrigger) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{8}
+}
+
+// DatasourceDomainStatus is where a domain's verification stands.
+type DatasourceDomainStatus int32
+
+const (
+	DatasourceDomainStatus_DATASOURCE_DOMAIN_STATUS_UNSPECIFIED DatasourceDomainStatus = 0
+	// Claimed; the TXT record has not been found yet.
+	DatasourceDomainStatus_DATASOURCE_DOMAIN_STATUS_PENDING DatasourceDomainStatus = 1
+	// The TXT record was found: the domain is the tenant's.
+	DatasourceDomainStatus_DATASOURCE_DOMAIN_STATUS_VERIFIED DatasourceDomainStatus = 2
+)
+
+// Enum value maps for DatasourceDomainStatus.
+var (
+	DatasourceDomainStatus_name = map[int32]string{
+		0: "DATASOURCE_DOMAIN_STATUS_UNSPECIFIED",
+		1: "DATASOURCE_DOMAIN_STATUS_PENDING",
+		2: "DATASOURCE_DOMAIN_STATUS_VERIFIED",
+	}
+	DatasourceDomainStatus_value = map[string]int32{
+		"DATASOURCE_DOMAIN_STATUS_UNSPECIFIED": 0,
+		"DATASOURCE_DOMAIN_STATUS_PENDING":     1,
+		"DATASOURCE_DOMAIN_STATUS_VERIFIED":    2,
+	}
+)
+
+func (x DatasourceDomainStatus) Enum() *DatasourceDomainStatus {
+	p := new(DatasourceDomainStatus)
+	*p = x
+	return p
+}
+
+func (x DatasourceDomainStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DatasourceDomainStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[9].Descriptor()
+}
+
+func (DatasourceDomainStatus) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[9]
+}
+
+func (x DatasourceDomainStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DatasourceDomainStatus.Descriptor instead.
+func (DatasourceDomainStatus) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{9}
+}
+
 // GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
 // datasource. The access token and webhook signing secret are never carried
 // here; they live only as SecretCipher envelopes in the credential store.
@@ -654,9 +1097,26 @@ type Datasource struct {
 	// empty while it is active. Every value is produced by one of a closed set of
 	// named constructors in the host, so it carries no credential material, token,
 	// or signing secret — raw provider error text can never reach this field.
-	StatusReason  string `protobuf:"bytes,17,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	StatusReason string `protobuf:"bytes,17,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	// The display label of boundary_node_id: the collection's name, as the
+	// organization named it. Any member who may list the organization's sources
+	// reads it, whether or not they may read the collection's content: it names
+	// where the source writes, as repo names what it reads. Carried by
+	// ListSources and GetSource; empty in the other responses that return a
+	// Datasource.
+	BoundaryLabel string `protobuf:"bytes,18,opt,name=boundary_label,json=boundaryLabel,proto3" json:"boundary_label,omitempty"`
+	// Whether the source's provider meets the datasource connector envelope and
+	// passes its conformance suite. A source of a non-conformant provider keeps
+	// running, and a client flags it; no new source of that provider can be
+	// connected until it conforms.
+	Conformant bool `protobuf:"varint,19,opt,name=conformant,proto3" json:"conformant,omitempty"`
+	// What keeps a non-conformant provider off the envelope, in prose. Never
+	// empty for a non-conformant source and always empty for a conformant one,
+	// so a client that must also read an older host, which sends neither field,
+	// can key its flag on this and treat an empty gap as nothing to flag.
+	ConformanceGap string `protobuf:"bytes,20,opt,name=conformance_gap,json=conformanceGap,proto3" json:"conformance_gap,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Datasource) Reset() {
@@ -797,6 +1257,27 @@ func (x *Datasource) GetLastIngestedCommit() string {
 func (x *Datasource) GetStatusReason() string {
 	if x != nil {
 		return x.StatusReason
+	}
+	return ""
+}
+
+func (x *Datasource) GetBoundaryLabel() string {
+	if x != nil {
+		return x.BoundaryLabel
+	}
+	return ""
+}
+
+func (x *Datasource) GetConformant() bool {
+	if x != nil {
+		return x.Conformant
+	}
+	return false
+}
+
+func (x *Datasource) GetConformanceGap() string {
+	if x != nil {
+		return x.ConformanceGap
 	}
 	return ""
 }
@@ -1339,6 +1820,94 @@ func (x *DatasourceConfigField) GetRequired() bool {
 	return false
 }
 
+// DatasourceConnectorBudget is the limits a connector serves within: the size
+// of one call, and the quota of calls one credential may spend per window.
+// Syncs a person started use the whole quota; background syncs use at most
+// background_share_percent of it, so they always leave room for a person.
+type DatasourceConnectorBudget struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	MaxItemsPerCall        uint32                 `protobuf:"varint,1,opt,name=max_items_per_call,json=maxItemsPerCall,proto3" json:"max_items_per_call,omitempty"`
+	MaxBytesPerCall        int64                  `protobuf:"varint,2,opt,name=max_bytes_per_call,json=maxBytesPerCall,proto3" json:"max_bytes_per_call,omitempty"`
+	MaxItemBytes           int64                  `protobuf:"varint,3,opt,name=max_item_bytes,json=maxItemBytes,proto3" json:"max_item_bytes,omitempty"`
+	OperationsPerWindow    uint32                 `protobuf:"varint,4,opt,name=operations_per_window,json=operationsPerWindow,proto3" json:"operations_per_window,omitempty"`
+	WindowSeconds          int64                  `protobuf:"varint,5,opt,name=window_seconds,json=windowSeconds,proto3" json:"window_seconds,omitempty"`
+	BackgroundSharePercent uint32                 `protobuf:"varint,6,opt,name=background_share_percent,json=backgroundSharePercent,proto3" json:"background_share_percent,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *DatasourceConnectorBudget) Reset() {
+	*x = DatasourceConnectorBudget{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatasourceConnectorBudget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatasourceConnectorBudget) ProtoMessage() {}
+
+func (x *DatasourceConnectorBudget) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatasourceConnectorBudget.ProtoReflect.Descriptor instead.
+func (*DatasourceConnectorBudget) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DatasourceConnectorBudget) GetMaxItemsPerCall() uint32 {
+	if x != nil {
+		return x.MaxItemsPerCall
+	}
+	return 0
+}
+
+func (x *DatasourceConnectorBudget) GetMaxBytesPerCall() int64 {
+	if x != nil {
+		return x.MaxBytesPerCall
+	}
+	return 0
+}
+
+func (x *DatasourceConnectorBudget) GetMaxItemBytes() int64 {
+	if x != nil {
+		return x.MaxItemBytes
+	}
+	return 0
+}
+
+func (x *DatasourceConnectorBudget) GetOperationsPerWindow() uint32 {
+	if x != nil {
+		return x.OperationsPerWindow
+	}
+	return 0
+}
+
+func (x *DatasourceConnectorBudget) GetWindowSeconds() int64 {
+	if x != nil {
+		return x.WindowSeconds
+	}
+	return 0
+}
+
+func (x *DatasourceConnectorBudget) GetBackgroundSharePercent() uint32 {
+	if x != nil {
+		return x.BackgroundSharePercent
+	}
+	return 0
+}
+
 // DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
 // offer and configure a provider without provider-specific code.
 type DatasourceProviderDescriptor struct {
@@ -1353,13 +1922,29 @@ type DatasourceProviderDescriptor struct {
 	// credential inputs. Empty for a connector with a bespoke credential shape
 	// (GitHub: an access token plus an optional webhook secret).
 	SupportedCredentialKinds []ApiCredentialKind `protobuf:"varint,6,rep,packed,name=supported_credential_kinds,json=supportedCredentialKinds,proto3,enum=saas.accounts.v1.ApiCredentialKind" json:"supported_credential_kinds,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// The connector's registry key, e.g. "github".
+	Connector       string                       `protobuf:"bytes,7,opt,name=connector,proto3" json:"connector,omitempty"`
+	Interface       DatasourceConnectorInterface `protobuf:"varint,8,opt,name=interface,proto3,enum=saas.accounts.v1.DatasourceConnectorInterface" json:"interface,omitempty"`
+	CredentialModes []DatasourceCredentialMode   `protobuf:"varint,9,rep,packed,name=credential_modes,json=credentialModes,proto3,enum=saas.accounts.v1.DatasourceCredentialMode" json:"credential_modes,omitempty"`
+	ReadersModel    DatasourceReadersModel       `protobuf:"varint,10,opt,name=readers_model,json=readersModel,proto3,enum=saas.accounts.v1.DatasourceReadersModel" json:"readers_model,omitempty"`
+	// Unset for a provider that is not conformant.
+	Budget *DatasourceConnectorBudget `protobuf:"bytes,11,opt,name=budget,proto3" json:"budget,omitempty"`
+	// Whether the provider meets the datasource connector envelope and passes
+	// its conformance suite.
+	Conformant bool `protobuf:"varint,12,opt,name=conformant,proto3" json:"conformant,omitempty"`
+	// What keeps a non-conformant provider off the envelope; empty otherwise.
+	ConformanceGap string `protobuf:"bytes,13,opt,name=conformance_gap,json=conformanceGap,proto3" json:"conformance_gap,omitempty"`
+	// Whether a new source of this provider may be connected now. False for a
+	// non-conformant provider, and for one that translates provider permissions
+	// while this deployment does not enforce them at read.
+	AcceptsNewSources bool `protobuf:"varint,14,opt,name=accepts_new_sources,json=acceptsNewSources,proto3" json:"accepts_new_sources,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *DatasourceProviderDescriptor) Reset() {
 	*x = DatasourceProviderDescriptor{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1371,7 +1956,7 @@ func (x *DatasourceProviderDescriptor) String() string {
 func (*DatasourceProviderDescriptor) ProtoMessage() {}
 
 func (x *DatasourceProviderDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1384,7 +1969,7 @@ func (x *DatasourceProviderDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatasourceProviderDescriptor.ProtoReflect.Descriptor instead.
 func (*DatasourceProviderDescriptor) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{11}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DatasourceProviderDescriptor) GetProvider() DatasourceProvider {
@@ -1429,6 +2014,62 @@ func (x *DatasourceProviderDescriptor) GetSupportedCredentialKinds() []ApiCreden
 	return nil
 }
 
+func (x *DatasourceProviderDescriptor) GetConnector() string {
+	if x != nil {
+		return x.Connector
+	}
+	return ""
+}
+
+func (x *DatasourceProviderDescriptor) GetInterface() DatasourceConnectorInterface {
+	if x != nil {
+		return x.Interface
+	}
+	return DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_UNSPECIFIED
+}
+
+func (x *DatasourceProviderDescriptor) GetCredentialModes() []DatasourceCredentialMode {
+	if x != nil {
+		return x.CredentialModes
+	}
+	return nil
+}
+
+func (x *DatasourceProviderDescriptor) GetReadersModel() DatasourceReadersModel {
+	if x != nil {
+		return x.ReadersModel
+	}
+	return DatasourceReadersModel_DATASOURCE_READERS_MODEL_UNSPECIFIED
+}
+
+func (x *DatasourceProviderDescriptor) GetBudget() *DatasourceConnectorBudget {
+	if x != nil {
+		return x.Budget
+	}
+	return nil
+}
+
+func (x *DatasourceProviderDescriptor) GetConformant() bool {
+	if x != nil {
+		return x.Conformant
+	}
+	return false
+}
+
+func (x *DatasourceProviderDescriptor) GetConformanceGap() string {
+	if x != nil {
+		return x.ConformanceGap
+	}
+	return ""
+}
+
+func (x *DatasourceProviderDescriptor) GetAcceptsNewSources() bool {
+	if x != nil {
+		return x.AcceptsNewSources
+	}
+	return false
+}
+
 type GetDatasourceCatalogRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1437,7 +2078,7 @@ type GetDatasourceCatalogRequest struct {
 
 func (x *GetDatasourceCatalogRequest) Reset() {
 	*x = GetDatasourceCatalogRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[12]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1449,7 +2090,7 @@ func (x *GetDatasourceCatalogRequest) String() string {
 func (*GetDatasourceCatalogRequest) ProtoMessage() {}
 
 func (x *GetDatasourceCatalogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[12]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1462,7 +2103,7 @@ func (x *GetDatasourceCatalogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDatasourceCatalogRequest.ProtoReflect.Descriptor instead.
 func (*GetDatasourceCatalogRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{12}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{13}
 }
 
 type GetDatasourceCatalogResponse struct {
@@ -1474,7 +2115,7 @@ type GetDatasourceCatalogResponse struct {
 
 func (x *GetDatasourceCatalogResponse) Reset() {
 	*x = GetDatasourceCatalogResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +2127,7 @@ func (x *GetDatasourceCatalogResponse) String() string {
 func (*GetDatasourceCatalogResponse) ProtoMessage() {}
 
 func (x *GetDatasourceCatalogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +2140,7 @@ func (x *GetDatasourceCatalogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDatasourceCatalogResponse.ProtoReflect.Descriptor instead.
 func (*GetDatasourceCatalogResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{13}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetDatasourceCatalogResponse) GetProviders() []*DatasourceProviderDescriptor {
@@ -1518,7 +2159,7 @@ type ListSourcesRequest struct {
 
 func (x *ListSourcesRequest) Reset() {
 	*x = ListSourcesRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1530,7 +2171,7 @@ func (x *ListSourcesRequest) String() string {
 func (*ListSourcesRequest) ProtoMessage() {}
 
 func (x *ListSourcesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1543,7 +2184,7 @@ func (x *ListSourcesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListSourcesRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{14}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListSourcesRequest) GetOrgId() string {
@@ -1562,7 +2203,7 @@ type ListSourcesResponse struct {
 
 func (x *ListSourcesResponse) Reset() {
 	*x = ListSourcesResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1574,7 +2215,7 @@ func (x *ListSourcesResponse) String() string {
 func (*ListSourcesResponse) ProtoMessage() {}
 
 func (x *ListSourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1587,7 +2228,7 @@ func (x *ListSourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSourcesResponse.ProtoReflect.Descriptor instead.
 func (*ListSourcesResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{15}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListSourcesResponse) GetDatasources() []*Datasource {
@@ -1607,7 +2248,7 @@ type GetSourceRequest struct {
 
 func (x *GetSourceRequest) Reset() {
 	*x = GetSourceRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1619,7 +2260,7 @@ func (x *GetSourceRequest) String() string {
 func (*GetSourceRequest) ProtoMessage() {}
 
 func (x *GetSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1632,7 +2273,7 @@ func (x *GetSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSourceRequest.ProtoReflect.Descriptor instead.
 func (*GetSourceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{16}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetSourceRequest) GetOrgId() string {
@@ -1658,7 +2299,7 @@ type GetSourceResponse struct {
 
 func (x *GetSourceResponse) Reset() {
 	*x = GetSourceResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1670,7 +2311,7 @@ func (x *GetSourceResponse) String() string {
 func (*GetSourceResponse) ProtoMessage() {}
 
 func (x *GetSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1683,7 +2324,7 @@ func (x *GetSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSourceResponse.ProtoReflect.Descriptor instead.
 func (*GetSourceResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{17}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetSourceResponse) GetDatasource() *Datasource {
@@ -1706,7 +2347,7 @@ type SyncSourceRequest struct {
 
 func (x *SyncSourceRequest) Reset() {
 	*x = SyncSourceRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1718,7 +2359,7 @@ func (x *SyncSourceRequest) String() string {
 func (*SyncSourceRequest) ProtoMessage() {}
 
 func (x *SyncSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1731,7 +2372,7 @@ func (x *SyncSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncSourceRequest.ProtoReflect.Descriptor instead.
 func (*SyncSourceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{18}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SyncSourceRequest) GetOrgId() string {
@@ -1766,7 +2407,7 @@ type SyncSourceResponse struct {
 
 func (x *SyncSourceResponse) Reset() {
 	*x = SyncSourceResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1778,7 +2419,7 @@ func (x *SyncSourceResponse) String() string {
 func (*SyncSourceResponse) ProtoMessage() {}
 
 func (x *SyncSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1791,7 +2432,7 @@ func (x *SyncSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncSourceResponse.ProtoReflect.Descriptor instead.
 func (*SyncSourceResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{19}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SyncSourceResponse) GetJobId() string {
@@ -1802,17 +2443,21 @@ func (x *SyncSourceResponse) GetJobId() string {
 }
 
 type GetSourceSyncRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	JobId         string                 `protobuf:"bytes,3,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SourceId string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	// The sync to read: the job id SyncSource returned. Empty reads the source's
+	// latest sync, whatever started it — the first sync enqueued at connect, a
+	// "Sync now", the periodic reconcile or a webhook delivery — so a client can
+	// show progress for a sync it did not start itself.
+	JobId         string `protobuf:"bytes,3,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetSourceSyncRequest) Reset() {
 	*x = GetSourceSyncRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1824,7 +2469,7 @@ func (x *GetSourceSyncRequest) String() string {
 func (*GetSourceSyncRequest) ProtoMessage() {}
 
 func (x *GetSourceSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1837,7 +2482,7 @@ func (x *GetSourceSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSourceSyncRequest.ProtoReflect.Descriptor instead.
 func (*GetSourceSyncRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{20}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetSourceSyncRequest) GetOrgId() string {
@@ -1872,7 +2517,7 @@ type SourceSyncDelivery struct {
 
 func (x *SourceSyncDelivery) Reset() {
 	*x = SourceSyncDelivery{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1884,7 +2529,7 @@ func (x *SourceSyncDelivery) String() string {
 func (*SourceSyncDelivery) ProtoMessage() {}
 
 func (x *SourceSyncDelivery) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1897,7 +2542,7 @@ func (x *SourceSyncDelivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceSyncDelivery.ProtoReflect.Descriptor instead.
 func (*SourceSyncDelivery) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{21}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SourceSyncDelivery) GetJobId() string {
@@ -1921,18 +2566,337 @@ func (x *SourceSyncDelivery) GetExecution() *v1.JobExecutionReference {
 	return nil
 }
 
+// SourceSyncChanges counts the change set a sync compiled, relative to the
+// commit the host last handed off for the source.
+type SourceSyncChanges struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Files the change set hands off: every in-scope file for a full snapshot,
+	// the changed files for an incremental change set.
+	Files    uint32 `protobuf:"varint,1,opt,name=files,proto3" json:"files,omitempty"`
+	Added    uint32 `protobuf:"varint,2,opt,name=added,proto3" json:"added,omitempty"`
+	Modified uint32 `protobuf:"varint,3,opt,name=modified,proto3" json:"modified,omitempty"`
+	Deleted  uint32 `protobuf:"varint,4,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	// False when the split into added/modified/deleted is unknown, e.g. a
+	// snapshot after a force push whose previous commit is gone. files is known
+	// either way.
+	SplitKnown bool `protobuf:"varint,5,opt,name=split_known,json=splitKnown,proto3" json:"split_known,omitempty"`
+	// True for a full snapshot, false for an incremental change set.
+	Snapshot bool `protobuf:"varint,6,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	// The commit the change set brings the source to.
+	Commit        string `protobuf:"bytes,7,opt,name=commit,proto3" json:"commit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceSyncChanges) Reset() {
+	*x = SourceSyncChanges{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceSyncChanges) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceSyncChanges) ProtoMessage() {}
+
+func (x *SourceSyncChanges) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceSyncChanges.ProtoReflect.Descriptor instead.
+func (*SourceSyncChanges) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *SourceSyncChanges) GetFiles() uint32 {
+	if x != nil {
+		return x.Files
+	}
+	return 0
+}
+
+func (x *SourceSyncChanges) GetAdded() uint32 {
+	if x != nil {
+		return x.Added
+	}
+	return 0
+}
+
+func (x *SourceSyncChanges) GetModified() uint32 {
+	if x != nil {
+		return x.Modified
+	}
+	return 0
+}
+
+func (x *SourceSyncChanges) GetDeleted() uint32 {
+	if x != nil {
+		return x.Deleted
+	}
+	return 0
+}
+
+func (x *SourceSyncChanges) GetSplitKnown() bool {
+	if x != nil {
+		return x.SplitKnown
+	}
+	return false
+}
+
+func (x *SourceSyncChanges) GetSnapshot() bool {
+	if x != nil {
+		return x.Snapshot
+	}
+	return false
+}
+
+func (x *SourceSyncChanges) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+// SourceSyncFailure is why a sync is waiting to retry, or why it failed.
+type SourceSyncFailure struct {
+	state  protoimpl.MessageState  `protogen:"open.v1"`
+	Reason SourceSyncFailureReason `protobuf:"varint,1,opt,name=reason,proto3,enum=saas.accounts.v1.SourceSyncFailureReason" json:"reason,omitempty"`
+	// The stable failure code, e.g. "datasource.github_rate_limited".
+	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	// What happened, in prose a tenant can act on. Every value comes from a
+	// closed set of host-authored messages; raw provider text never reaches it.
+	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	// True while the sync will try again; false once it has failed for good.
+	Retrying bool `protobuf:"varint,4,opt,name=retrying,proto3" json:"retrying,omitempty"`
+	// When the next attempt may run: for a rate limit, when the limit resets.
+	RetryAt       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=retry_at,json=retryAt,proto3" json:"retry_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceSyncFailure) Reset() {
+	*x = SourceSyncFailure{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceSyncFailure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceSyncFailure) ProtoMessage() {}
+
+func (x *SourceSyncFailure) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceSyncFailure.ProtoReflect.Descriptor instead.
+func (*SourceSyncFailure) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SourceSyncFailure) GetReason() SourceSyncFailureReason {
+	if x != nil {
+		return x.Reason
+	}
+	return SourceSyncFailureReason_SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED
+}
+
+func (x *SourceSyncFailure) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *SourceSyncFailure) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *SourceSyncFailure) GetRetrying() bool {
+	if x != nil {
+		return x.Retrying
+	}
+	return false
+}
+
+func (x *SourceSyncFailure) GetRetryAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RetryAt
+	}
+	return nil
+}
+
+// SourceSyncProgress is one sync's phases, each stamped from the durable
+// record the host keeps of it — no stage is inferred from elapsed time.
+type SourceSyncProgress struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Phase   SourceSyncPhase        `protobuf:"varint,1,opt,name=phase,proto3,enum=saas.accounts.v1.SourceSyncPhase" json:"phase,omitempty"`
+	Trigger SourceSyncTrigger      `protobuf:"varint,2,opt,name=trigger,proto3,enum=saas.accounts.v1.SourceSyncTrigger" json:"trigger,omitempty"`
+	// When the sync was accepted.
+	QueuedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=queued_at,json=queuedAt,proto3" json:"queued_at,omitempty"`
+	// When a worker last started on it (the latest attempt).
+	FetchingAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=fetching_at,json=fetchingAt,proto3" json:"fetching_at,omitempty"`
+	// When the first file of the compiled change set was handed off.
+	CompiledAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=compiled_at,json=compiledAt,proto3" json:"compiled_at,omitempty"`
+	// When the whole change set was on the module's queue.
+	HandedOffAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=handed_off_at,json=handedOffAt,proto3" json:"handed_off_at,omitempty"`
+	// When the sync reached DONE or FAILED.
+	FinishedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	// Set once the change set is compiled. Unset when the sync handed nothing
+	// off; with phase DONE that means the source had not changed.
+	Changes *SourceSyncChanges `protobuf:"bytes,8,opt,name=changes,proto3" json:"changes,omitempty"`
+	// Set while the sync waits to retry, and when it failed.
+	Failure *SourceSyncFailure `protobuf:"bytes,9,opt,name=failure,proto3" json:"failure,omitempty"`
+	// How many attempts the host has made, and may make.
+	Attempt       uint32 `protobuf:"varint,10,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	MaxAttempts   uint32 `protobuf:"varint,11,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceSyncProgress) Reset() {
+	*x = SourceSyncProgress{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceSyncProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceSyncProgress) ProtoMessage() {}
+
+func (x *SourceSyncProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceSyncProgress.ProtoReflect.Descriptor instead.
+func (*SourceSyncProgress) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *SourceSyncProgress) GetPhase() SourceSyncPhase {
+	if x != nil {
+		return x.Phase
+	}
+	return SourceSyncPhase_SOURCE_SYNC_PHASE_UNSPECIFIED
+}
+
+func (x *SourceSyncProgress) GetTrigger() SourceSyncTrigger {
+	if x != nil {
+		return x.Trigger
+	}
+	return SourceSyncTrigger_SOURCE_SYNC_TRIGGER_UNSPECIFIED
+}
+
+func (x *SourceSyncProgress) GetQueuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.QueuedAt
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetFetchingAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FetchingAt
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetCompiledAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CompiledAt
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetHandedOffAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.HandedOffAt
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetChanges() *SourceSyncChanges {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetFailure() *SourceSyncFailure {
+	if x != nil {
+		return x.Failure
+	}
+	return nil
+}
+
+func (x *SourceSyncProgress) GetAttempt() uint32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *SourceSyncProgress) GetMaxAttempts() uint32 {
+	if x != nil {
+		return x.MaxAttempts
+	}
+	return 0
+}
+
 type GetSourceSyncResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	State         v1.JobState            `protobuf:"varint,2,opt,name=state,proto3,enum=saas.jobs.v1.JobState" json:"state,omitempty"`
 	Deliveries    []*SourceSyncDelivery  `protobuf:"bytes,3,rep,name=deliveries,proto3" json:"deliveries,omitempty"`
+	Progress      *SourceSyncProgress    `protobuf:"bytes,4,opt,name=progress,proto3" json:"progress,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetSourceSyncResponse) Reset() {
 	*x = GetSourceSyncResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1944,7 +2908,7 @@ func (x *GetSourceSyncResponse) String() string {
 func (*GetSourceSyncResponse) ProtoMessage() {}
 
 func (x *GetSourceSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1957,7 +2921,7 @@ func (x *GetSourceSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSourceSyncResponse.ProtoReflect.Descriptor instead.
 func (*GetSourceSyncResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{22}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetSourceSyncResponse) GetJobId() string {
@@ -1981,6 +2945,13 @@ func (x *GetSourceSyncResponse) GetDeliveries() []*SourceSyncDelivery {
 	return nil
 }
 
+func (x *GetSourceSyncResponse) GetProgress() *SourceSyncProgress {
+	if x != nil {
+		return x.Progress
+	}
+	return nil
+}
+
 type DeleteSourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -1991,7 +2962,7 @@ type DeleteSourceRequest struct {
 
 func (x *DeleteSourceRequest) Reset() {
 	*x = DeleteSourceRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2003,7 +2974,7 @@ func (x *DeleteSourceRequest) String() string {
 func (*DeleteSourceRequest) ProtoMessage() {}
 
 func (x *DeleteSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2016,7 +2987,7 @@ func (x *DeleteSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSourceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSourceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{23}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DeleteSourceRequest) GetOrgId() string {
@@ -2041,7 +3012,7 @@ type DeleteSourceResponse struct {
 
 func (x *DeleteSourceResponse) Reset() {
 	*x = DeleteSourceResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2053,7 +3024,7 @@ func (x *DeleteSourceResponse) String() string {
 func (*DeleteSourceResponse) ProtoMessage() {}
 
 func (x *DeleteSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2066,7 +3037,7 @@ func (x *DeleteSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSourceResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSourceResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{24}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{28}
 }
 
 // GitHubAppRepository is one repository a verified App installation grants this
@@ -2087,7 +3058,7 @@ type GitHubAppRepository struct {
 
 func (x *GitHubAppRepository) Reset() {
 	*x = GitHubAppRepository{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[25]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2099,7 +3070,7 @@ func (x *GitHubAppRepository) String() string {
 func (*GitHubAppRepository) ProtoMessage() {}
 
 func (x *GitHubAppRepository) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[25]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2112,7 +3083,7 @@ func (x *GitHubAppRepository) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubAppRepository.ProtoReflect.Descriptor instead.
 func (*GitHubAppRepository) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{25}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GitHubAppRepository) GetRepo() string {
@@ -2145,7 +3116,7 @@ type BeginGitHubAppSetupRequest struct {
 
 func (x *BeginGitHubAppSetupRequest) Reset() {
 	*x = BeginGitHubAppSetupRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[26]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2157,7 +3128,7 @@ func (x *BeginGitHubAppSetupRequest) String() string {
 func (*BeginGitHubAppSetupRequest) ProtoMessage() {}
 
 func (x *BeginGitHubAppSetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[26]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2170,7 +3141,7 @@ func (x *BeginGitHubAppSetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginGitHubAppSetupRequest.ProtoReflect.Descriptor instead.
 func (*BeginGitHubAppSetupRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{26}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *BeginGitHubAppSetupRequest) GetOrgId() string {
@@ -2197,7 +3168,7 @@ type BeginGitHubAppSetupResponse struct {
 
 func (x *BeginGitHubAppSetupResponse) Reset() {
 	*x = BeginGitHubAppSetupResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[27]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2209,7 +3180,7 @@ func (x *BeginGitHubAppSetupResponse) String() string {
 func (*BeginGitHubAppSetupResponse) ProtoMessage() {}
 
 func (x *BeginGitHubAppSetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[27]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2222,7 +3193,7 @@ func (x *BeginGitHubAppSetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginGitHubAppSetupResponse.ProtoReflect.Descriptor instead.
 func (*BeginGitHubAppSetupResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{27}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *BeginGitHubAppSetupResponse) GetInstallUrl() string {
@@ -2271,7 +3242,7 @@ type CompleteGitHubAppSetupRequest struct {
 
 func (x *CompleteGitHubAppSetupRequest) Reset() {
 	*x = CompleteGitHubAppSetupRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[28]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2283,7 +3254,7 @@ func (x *CompleteGitHubAppSetupRequest) String() string {
 func (*CompleteGitHubAppSetupRequest) ProtoMessage() {}
 
 func (x *CompleteGitHubAppSetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[28]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2296,7 +3267,7 @@ func (x *CompleteGitHubAppSetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteGitHubAppSetupRequest.ProtoReflect.Descriptor instead.
 func (*CompleteGitHubAppSetupRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{28}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CompleteGitHubAppSetupRequest) GetOrgId() string {
@@ -2339,7 +3310,7 @@ type CompleteGitHubAppSetupResponse struct {
 
 func (x *CompleteGitHubAppSetupResponse) Reset() {
 	*x = CompleteGitHubAppSetupResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[29]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2351,7 +3322,7 @@ func (x *CompleteGitHubAppSetupResponse) String() string {
 func (*CompleteGitHubAppSetupResponse) ProtoMessage() {}
 
 func (x *CompleteGitHubAppSetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[29]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2364,7 +3335,7 @@ func (x *CompleteGitHubAppSetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteGitHubAppSetupResponse.ProtoReflect.Descriptor instead.
 func (*CompleteGitHubAppSetupResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{29}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *CompleteGitHubAppSetupResponse) GetInstallationId() string {
@@ -2391,7 +3362,7 @@ type MigrateGitHubSourceToAppRequest struct {
 
 func (x *MigrateGitHubSourceToAppRequest) Reset() {
 	*x = MigrateGitHubSourceToAppRequest{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[30]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2403,7 +3374,7 @@ func (x *MigrateGitHubSourceToAppRequest) String() string {
 func (*MigrateGitHubSourceToAppRequest) ProtoMessage() {}
 
 func (x *MigrateGitHubSourceToAppRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[30]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2416,7 +3387,7 @@ func (x *MigrateGitHubSourceToAppRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MigrateGitHubSourceToAppRequest.ProtoReflect.Descriptor instead.
 func (*MigrateGitHubSourceToAppRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{30}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *MigrateGitHubSourceToAppRequest) GetOrgId() string {
@@ -2442,7 +3413,7 @@ type MigrateGitHubSourceToAppResponse struct {
 
 func (x *MigrateGitHubSourceToAppResponse) Reset() {
 	*x = MigrateGitHubSourceToAppResponse{}
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[31]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2454,7 +3425,7 @@ func (x *MigrateGitHubSourceToAppResponse) String() string {
 func (*MigrateGitHubSourceToAppResponse) ProtoMessage() {}
 
 func (x *MigrateGitHubSourceToAppResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[31]
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2467,7 +3438,7 @@ func (x *MigrateGitHubSourceToAppResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MigrateGitHubSourceToAppResponse.ProtoReflect.Descriptor instead.
 func (*MigrateGitHubSourceToAppResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{31}
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *MigrateGitHubSourceToAppResponse) GetDatasource() *Datasource {
@@ -2475,6 +3446,1356 @@ func (x *MigrateGitHubSourceToAppResponse) GetDatasource() *Datasource {
 		return x.Datasource
 	}
 	return nil
+}
+
+// DatasourceAccountLink is one person's provider account, proven by signing in
+// to the provider as that account.
+type DatasourceAccountLink struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrgId  string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	UserId string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// The connector the account belongs to, e.g. "github".
+	Connector string `protobuf:"bytes,4,opt,name=connector,proto3" json:"connector,omitempty"`
+	// The provider's stable id for the account.
+	ProviderAccountId string `protobuf:"bytes,5,opt,name=provider_account_id,json=providerAccountId,proto3" json:"provider_account_id,omitempty"`
+	// The account's current handle at the provider, for people; not identity.
+	ProviderAccountLogin string                 `protobuf:"bytes,6,opt,name=provider_account_login,json=providerAccountLogin,proto3" json:"provider_account_login,omitempty"`
+	CreatedAt            *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *DatasourceAccountLink) Reset() {
+	*x = DatasourceAccountLink{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatasourceAccountLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatasourceAccountLink) ProtoMessage() {}
+
+func (x *DatasourceAccountLink) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatasourceAccountLink.ProtoReflect.Descriptor instead.
+func (*DatasourceAccountLink) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *DatasourceAccountLink) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DatasourceAccountLink) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DatasourceAccountLink) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *DatasourceAccountLink) GetConnector() string {
+	if x != nil {
+		return x.Connector
+	}
+	return ""
+}
+
+func (x *DatasourceAccountLink) GetProviderAccountId() string {
+	if x != nil {
+		return x.ProviderAccountId
+	}
+	return ""
+}
+
+func (x *DatasourceAccountLink) GetProviderAccountLogin() string {
+	if x != nil {
+		return x.ProviderAccountLogin
+	}
+	return ""
+}
+
+func (x *DatasourceAccountLink) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+// DatasourceGroupBinding maps one provider group onto one host team, by an
+// administrator's decision. An unbound provider group grants nothing.
+type DatasourceGroupBinding struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrgId     string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Connector string                 `protobuf:"bytes,3,opt,name=connector,proto3" json:"connector,omitempty"`
+	// The provider's id for the group, e.g. "acme/platform" for a GitHub team.
+	ProviderGroupId string                 `protobuf:"bytes,4,opt,name=provider_group_id,json=providerGroupId,proto3" json:"provider_group_id,omitempty"`
+	TeamId          string                 `protobuf:"bytes,5,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	CreatedBy       string                 `protobuf:"bytes,6,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DatasourceGroupBinding) Reset() {
+	*x = DatasourceGroupBinding{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatasourceGroupBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatasourceGroupBinding) ProtoMessage() {}
+
+func (x *DatasourceGroupBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatasourceGroupBinding.ProtoReflect.Descriptor instead.
+func (*DatasourceGroupBinding) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *DatasourceGroupBinding) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DatasourceGroupBinding) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DatasourceGroupBinding) GetConnector() string {
+	if x != nil {
+		return x.Connector
+	}
+	return ""
+}
+
+func (x *DatasourceGroupBinding) GetProviderGroupId() string {
+	if x != nil {
+		return x.ProviderGroupId
+	}
+	return ""
+}
+
+func (x *DatasourceGroupBinding) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+func (x *DatasourceGroupBinding) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+func (x *DatasourceGroupBinding) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+// DatasourceVerifiedDomain is a domain an administrator claimed for the tenant.
+// Only a verified one lets a provider's "anyone in the domain" grant the
+// boundary's readers; a pending one grants nothing.
+type DatasourceVerifiedDomain struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrgId string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Lower-case domain name, e.g. "example.com".
+	Domain string                 `protobuf:"bytes,3,opt,name=domain,proto3" json:"domain,omitempty"`
+	Status DatasourceDomainStatus `protobuf:"varint,4,opt,name=status,proto3,enum=saas.accounts.v1.DatasourceDomainStatus" json:"status,omitempty"`
+	// The DNS TXT record that proves control: its name and the value it must
+	// carry. Not a secret: it proves only that whoever controls the domain's DNS
+	// published it.
+	TxtRecordName  string                 `protobuf:"bytes,5,opt,name=txt_record_name,json=txtRecordName,proto3" json:"txt_record_name,omitempty"`
+	TxtRecordValue string                 `protobuf:"bytes,6,opt,name=txt_record_value,json=txtRecordValue,proto3" json:"txt_record_value,omitempty"`
+	VerifiedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=verified_at,json=verifiedAt,proto3" json:"verified_at,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DatasourceVerifiedDomain) Reset() {
+	*x = DatasourceVerifiedDomain{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatasourceVerifiedDomain) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatasourceVerifiedDomain) ProtoMessage() {}
+
+func (x *DatasourceVerifiedDomain) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatasourceVerifiedDomain.ProtoReflect.Descriptor instead.
+func (*DatasourceVerifiedDomain) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *DatasourceVerifiedDomain) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DatasourceVerifiedDomain) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DatasourceVerifiedDomain) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *DatasourceVerifiedDomain) GetStatus() DatasourceDomainStatus {
+	if x != nil {
+		return x.Status
+	}
+	return DatasourceDomainStatus_DATASOURCE_DOMAIN_STATUS_UNSPECIFIED
+}
+
+func (x *DatasourceVerifiedDomain) GetTxtRecordName() string {
+	if x != nil {
+		return x.TxtRecordName
+	}
+	return ""
+}
+
+func (x *DatasourceVerifiedDomain) GetTxtRecordValue() string {
+	if x != nil {
+		return x.TxtRecordValue
+	}
+	return ""
+}
+
+func (x *DatasourceVerifiedDomain) GetVerifiedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.VerifiedAt
+	}
+	return nil
+}
+
+func (x *DatasourceVerifiedDomain) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+// DatasourceDirectoryTeam is a host team an administrator may bind a group to.
+type DatasourceDirectoryTeam struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DatasourceDirectoryTeam) Reset() {
+	*x = DatasourceDirectoryTeam{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DatasourceDirectoryTeam) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DatasourceDirectoryTeam) ProtoMessage() {}
+
+func (x *DatasourceDirectoryTeam) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DatasourceDirectoryTeam.ProtoReflect.Descriptor instead.
+func (*DatasourceDirectoryTeam) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *DatasourceDirectoryTeam) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DatasourceDirectoryTeam) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type BeginDatasourceAccountLinkRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	OrgId     string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Connector string                 `protobuf:"bytes,2,opt,name=connector,proto3" json:"connector,omitempty"`
+	// Where the provider sends the browser back. The provider checks it against
+	// the callback URLs registered for the host's app; empty uses its default.
+	RedirectUri   string `protobuf:"bytes,3,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginDatasourceAccountLinkRequest) Reset() {
+	*x = BeginDatasourceAccountLinkRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginDatasourceAccountLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginDatasourceAccountLinkRequest) ProtoMessage() {}
+
+func (x *BeginDatasourceAccountLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginDatasourceAccountLinkRequest.ProtoReflect.Descriptor instead.
+func (*BeginDatasourceAccountLinkRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *BeginDatasourceAccountLinkRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *BeginDatasourceAccountLinkRequest) GetConnector() string {
+	if x != nil {
+		return x.Connector
+	}
+	return ""
+}
+
+func (x *BeginDatasourceAccountLinkRequest) GetRedirectUri() string {
+	if x != nil {
+		return x.RedirectUri
+	}
+	return ""
+}
+
+type BeginDatasourceAccountLinkResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where to send the browser to sign in to the provider.
+	AuthorizeUrl string `protobuf:"bytes,1,opt,name=authorize_url,json=authorizeUrl,proto3" json:"authorize_url,omitempty"`
+	// One-time state, bound to this organization, this person and this
+	// connector. The provider echoes it back with the authorization code.
+	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BeginDatasourceAccountLinkResponse) Reset() {
+	*x = BeginDatasourceAccountLinkResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginDatasourceAccountLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginDatasourceAccountLinkResponse) ProtoMessage() {}
+
+func (x *BeginDatasourceAccountLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginDatasourceAccountLinkResponse.ProtoReflect.Descriptor instead.
+func (*BeginDatasourceAccountLinkResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *BeginDatasourceAccountLinkResponse) GetAuthorizeUrl() string {
+	if x != nil {
+		return x.AuthorizeUrl
+	}
+	return ""
+}
+
+func (x *BeginDatasourceAccountLinkResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *BeginDatasourceAccountLinkResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+type CompleteDatasourceAccountLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	Code          string                 `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteDatasourceAccountLinkRequest) Reset() {
+	*x = CompleteDatasourceAccountLinkRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteDatasourceAccountLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteDatasourceAccountLinkRequest) ProtoMessage() {}
+
+func (x *CompleteDatasourceAccountLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteDatasourceAccountLinkRequest.ProtoReflect.Descriptor instead.
+func (*CompleteDatasourceAccountLinkRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *CompleteDatasourceAccountLinkRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *CompleteDatasourceAccountLinkRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *CompleteDatasourceAccountLinkRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type CompleteDatasourceAccountLinkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Link          *DatasourceAccountLink `protobuf:"bytes,1,opt,name=link,proto3" json:"link,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteDatasourceAccountLinkResponse) Reset() {
+	*x = CompleteDatasourceAccountLinkResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteDatasourceAccountLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteDatasourceAccountLinkResponse) ProtoMessage() {}
+
+func (x *CompleteDatasourceAccountLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteDatasourceAccountLinkResponse.ProtoReflect.Descriptor instead.
+func (*CompleteDatasourceAccountLinkResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *CompleteDatasourceAccountLinkResponse) GetLink() *DatasourceAccountLink {
+	if x != nil {
+		return x.Link
+	}
+	return nil
+}
+
+type ListMyDatasourceAccountLinksRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyDatasourceAccountLinksRequest) Reset() {
+	*x = ListMyDatasourceAccountLinksRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyDatasourceAccountLinksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyDatasourceAccountLinksRequest) ProtoMessage() {}
+
+func (x *ListMyDatasourceAccountLinksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyDatasourceAccountLinksRequest.ProtoReflect.Descriptor instead.
+func (*ListMyDatasourceAccountLinksRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ListMyDatasourceAccountLinksRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+type ListMyDatasourceAccountLinksResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Links         []*DatasourceAccountLink `protobuf:"bytes,1,rep,name=links,proto3" json:"links,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyDatasourceAccountLinksResponse) Reset() {
+	*x = ListMyDatasourceAccountLinksResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyDatasourceAccountLinksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyDatasourceAccountLinksResponse) ProtoMessage() {}
+
+func (x *ListMyDatasourceAccountLinksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyDatasourceAccountLinksResponse.ProtoReflect.Descriptor instead.
+func (*ListMyDatasourceAccountLinksResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ListMyDatasourceAccountLinksResponse) GetLinks() []*DatasourceAccountLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+type DeleteDatasourceAccountLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteDatasourceAccountLinkRequest) Reset() {
+	*x = DeleteDatasourceAccountLinkRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteDatasourceAccountLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteDatasourceAccountLinkRequest) ProtoMessage() {}
+
+func (x *DeleteDatasourceAccountLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteDatasourceAccountLinkRequest.ProtoReflect.Descriptor instead.
+func (*DeleteDatasourceAccountLinkRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *DeleteDatasourceAccountLinkRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DeleteDatasourceAccountLinkRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteDatasourceAccountLinkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteDatasourceAccountLinkResponse) Reset() {
+	*x = DeleteDatasourceAccountLinkResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteDatasourceAccountLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteDatasourceAccountLinkResponse) ProtoMessage() {}
+
+func (x *DeleteDatasourceAccountLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteDatasourceAccountLinkResponse.ProtoReflect.Descriptor instead.
+func (*DeleteDatasourceAccountLinkResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{47}
+}
+
+type GetDatasourceDirectoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDatasourceDirectoryRequest) Reset() {
+	*x = GetDatasourceDirectoryRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDatasourceDirectoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDatasourceDirectoryRequest) ProtoMessage() {}
+
+func (x *GetDatasourceDirectoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDatasourceDirectoryRequest.ProtoReflect.Descriptor instead.
+func (*GetDatasourceDirectoryRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *GetDatasourceDirectoryRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+type GetDatasourceDirectoryResponse struct {
+	state    protoimpl.MessageState      `protogen:"open.v1"`
+	Links    []*DatasourceAccountLink    `protobuf:"bytes,1,rep,name=links,proto3" json:"links,omitempty"`
+	Bindings []*DatasourceGroupBinding   `protobuf:"bytes,2,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	Domains  []*DatasourceVerifiedDomain `protobuf:"bytes,3,rep,name=domains,proto3" json:"domains,omitempty"`
+	// The organization's teams, the targets a group may be bound to.
+	Teams         []*DatasourceDirectoryTeam `protobuf:"bytes,4,rep,name=teams,proto3" json:"teams,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDatasourceDirectoryResponse) Reset() {
+	*x = GetDatasourceDirectoryResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDatasourceDirectoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDatasourceDirectoryResponse) ProtoMessage() {}
+
+func (x *GetDatasourceDirectoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDatasourceDirectoryResponse.ProtoReflect.Descriptor instead.
+func (*GetDatasourceDirectoryResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *GetDatasourceDirectoryResponse) GetLinks() []*DatasourceAccountLink {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+func (x *GetDatasourceDirectoryResponse) GetBindings() []*DatasourceGroupBinding {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+func (x *GetDatasourceDirectoryResponse) GetDomains() []*DatasourceVerifiedDomain {
+	if x != nil {
+		return x.Domains
+	}
+	return nil
+}
+
+func (x *GetDatasourceDirectoryResponse) GetTeams() []*DatasourceDirectoryTeam {
+	if x != nil {
+		return x.Teams
+	}
+	return nil
+}
+
+type BindDatasourceGroupRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	OrgId           string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Connector       string                 `protobuf:"bytes,2,opt,name=connector,proto3" json:"connector,omitempty"`
+	ProviderGroupId string                 `protobuf:"bytes,3,opt,name=provider_group_id,json=providerGroupId,proto3" json:"provider_group_id,omitempty"`
+	TeamId          string                 `protobuf:"bytes,4,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *BindDatasourceGroupRequest) Reset() {
+	*x = BindDatasourceGroupRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindDatasourceGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindDatasourceGroupRequest) ProtoMessage() {}
+
+func (x *BindDatasourceGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindDatasourceGroupRequest.ProtoReflect.Descriptor instead.
+func (*BindDatasourceGroupRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *BindDatasourceGroupRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *BindDatasourceGroupRequest) GetConnector() string {
+	if x != nil {
+		return x.Connector
+	}
+	return ""
+}
+
+func (x *BindDatasourceGroupRequest) GetProviderGroupId() string {
+	if x != nil {
+		return x.ProviderGroupId
+	}
+	return ""
+}
+
+func (x *BindDatasourceGroupRequest) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+type BindDatasourceGroupResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Binding       *DatasourceGroupBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindDatasourceGroupResponse) Reset() {
+	*x = BindDatasourceGroupResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindDatasourceGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindDatasourceGroupResponse) ProtoMessage() {}
+
+func (x *BindDatasourceGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindDatasourceGroupResponse.ProtoReflect.Descriptor instead.
+func (*BindDatasourceGroupResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *BindDatasourceGroupResponse) GetBinding() *DatasourceGroupBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
+type UnbindDatasourceGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnbindDatasourceGroupRequest) Reset() {
+	*x = UnbindDatasourceGroupRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnbindDatasourceGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnbindDatasourceGroupRequest) ProtoMessage() {}
+
+func (x *UnbindDatasourceGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnbindDatasourceGroupRequest.ProtoReflect.Descriptor instead.
+func (*UnbindDatasourceGroupRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *UnbindDatasourceGroupRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *UnbindDatasourceGroupRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type UnbindDatasourceGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnbindDatasourceGroupResponse) Reset() {
+	*x = UnbindDatasourceGroupResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnbindDatasourceGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnbindDatasourceGroupResponse) ProtoMessage() {}
+
+func (x *UnbindDatasourceGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnbindDatasourceGroupResponse.ProtoReflect.Descriptor instead.
+func (*UnbindDatasourceGroupResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{53}
+}
+
+type ClaimDatasourceDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Domain        string                 `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimDatasourceDomainRequest) Reset() {
+	*x = ClaimDatasourceDomainRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDatasourceDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDatasourceDomainRequest) ProtoMessage() {}
+
+func (x *ClaimDatasourceDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDatasourceDomainRequest.ProtoReflect.Descriptor instead.
+func (*ClaimDatasourceDomainRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *ClaimDatasourceDomainRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ClaimDatasourceDomainRequest) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+type ClaimDatasourceDomainResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Domain        *DatasourceVerifiedDomain `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimDatasourceDomainResponse) Reset() {
+	*x = ClaimDatasourceDomainResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimDatasourceDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimDatasourceDomainResponse) ProtoMessage() {}
+
+func (x *ClaimDatasourceDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimDatasourceDomainResponse.ProtoReflect.Descriptor instead.
+func (*ClaimDatasourceDomainResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *ClaimDatasourceDomainResponse) GetDomain() *DatasourceVerifiedDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type VerifyDatasourceDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyDatasourceDomainRequest) Reset() {
+	*x = VerifyDatasourceDomainRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyDatasourceDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyDatasourceDomainRequest) ProtoMessage() {}
+
+func (x *VerifyDatasourceDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyDatasourceDomainRequest.ProtoReflect.Descriptor instead.
+func (*VerifyDatasourceDomainRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *VerifyDatasourceDomainRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *VerifyDatasourceDomainRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type VerifyDatasourceDomainResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Domain        *DatasourceVerifiedDomain `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyDatasourceDomainResponse) Reset() {
+	*x = VerifyDatasourceDomainResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyDatasourceDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyDatasourceDomainResponse) ProtoMessage() {}
+
+func (x *VerifyDatasourceDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyDatasourceDomainResponse.ProtoReflect.Descriptor instead.
+func (*VerifyDatasourceDomainResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *VerifyDatasourceDomainResponse) GetDomain() *DatasourceVerifiedDomain {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type DeleteDatasourceDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteDatasourceDomainRequest) Reset() {
+	*x = DeleteDatasourceDomainRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteDatasourceDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteDatasourceDomainRequest) ProtoMessage() {}
+
+func (x *DeleteDatasourceDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteDatasourceDomainRequest.ProtoReflect.Descriptor instead.
+func (*DeleteDatasourceDomainRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *DeleteDatasourceDomainRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DeleteDatasourceDomainRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteDatasourceDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteDatasourceDomainResponse) Reset() {
+	*x = DeleteDatasourceDomainResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteDatasourceDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteDatasourceDomainResponse) ProtoMessage() {}
+
+func (x *DeleteDatasourceDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteDatasourceDomainResponse.ProtoReflect.Descriptor instead.
+func (*DeleteDatasourceDomainResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{59}
 }
 
 var File_saas_accounts_v1_datasource_proto protoreflect.FileDescriptor
@@ -2509,7 +4830,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12\x1f\n" +
 	"\vmax_objects\x18\x06 \x01(\rR\n" +
-	"maxObjects\"\xfa\x06\n" +
+	"maxObjects\"\xea\a\n" +
 	"\n" +
 	"Datasource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -2530,7 +4851,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeId\x12D\n" +
 	"\x10last_ingested_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0elastIngestedAt\x120\n" +
 	"\x14last_ingested_commit\x18\x10 \x01(\tR\x12lastIngestedCommit\x12#\n" +
-	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReasonJ\x04\b\x04\x10\x05R\x11target_collection\"\x9b\x04\n" +
+	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReason\x12%\n" +
+	"\x0eboundary_label\x18\x12 \x01(\tR\rboundaryLabel\x12\x1e\n" +
+	"\n" +
+	"conformant\x18\x13 \x01(\bR\n" +
+	"conformant\x12'\n" +
+	"\x0fconformance_gap\x18\x14 \x01(\tR\x0econformanceGapJ\x04\b\x04\x10\x05R\x11target_collection\"\x9b\x04\n" +
 	"\x16AddGitHubSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12A\n" +
 	"\x04repo\x18\x02 \x01(\tB-\xbaH*r(\x10\x03\x18\xff\x012!^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$R\x04repo\x12'\n" +
@@ -2575,14 +4901,32 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x12\n" +
 	"\x04help\x18\x03 \x01(\tR\x04help\x12\x1a\n" +
-	"\brequired\x18\x04 \x01(\bR\brequired\"\x81\x03\n" +
+	"\brequired\x18\x04 \x01(\bR\brequired\"\xb0\x02\n" +
+	"\x19DatasourceConnectorBudget\x12+\n" +
+	"\x12max_items_per_call\x18\x01 \x01(\rR\x0fmaxItemsPerCall\x12+\n" +
+	"\x12max_bytes_per_call\x18\x02 \x01(\x03R\x0fmaxBytesPerCall\x12$\n" +
+	"\x0emax_item_bytes\x18\x03 \x01(\x03R\fmaxItemBytes\x122\n" +
+	"\x15operations_per_window\x18\x04 \x01(\rR\x13operationsPerWindow\x12%\n" +
+	"\x0ewindow_seconds\x18\x05 \x01(\x03R\rwindowSeconds\x128\n" +
+	"\x18background_share_percent\x18\x06 \x01(\rR\x16backgroundSharePercent\"\xd1\x06\n" +
 	"\x1cDatasourceProviderDescriptor\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2$.saas.accounts.v1.DatasourceProviderR\bprovider\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12L\n" +
 	"\rconfig_fields\x18\x04 \x03(\v2'.saas.accounts.v1.DatasourceConfigFieldR\fconfigFields\x12)\n" +
 	"\x10supports_webhook\x18\x05 \x01(\bR\x0fsupportsWebhook\x12a\n" +
-	"\x1asupported_credential_kinds\x18\x06 \x03(\x0e2#.saas.accounts.v1.ApiCredentialKindR\x18supportedCredentialKinds\"\x1d\n" +
+	"\x1asupported_credential_kinds\x18\x06 \x03(\x0e2#.saas.accounts.v1.ApiCredentialKindR\x18supportedCredentialKinds\x12\x1c\n" +
+	"\tconnector\x18\a \x01(\tR\tconnector\x12L\n" +
+	"\tinterface\x18\b \x01(\x0e2..saas.accounts.v1.DatasourceConnectorInterfaceR\tinterface\x12U\n" +
+	"\x10credential_modes\x18\t \x03(\x0e2*.saas.accounts.v1.DatasourceCredentialModeR\x0fcredentialModes\x12M\n" +
+	"\rreaders_model\x18\n" +
+	" \x01(\x0e2(.saas.accounts.v1.DatasourceReadersModelR\freadersModel\x12C\n" +
+	"\x06budget\x18\v \x01(\v2+.saas.accounts.v1.DatasourceConnectorBudgetR\x06budget\x12\x1e\n" +
+	"\n" +
+	"conformant\x18\f \x01(\bR\n" +
+	"conformant\x12'\n" +
+	"\x0fconformance_gap\x18\r \x01(\tR\x0econformanceGap\x12.\n" +
+	"\x13accepts_new_sources\x18\x0e \x01(\bR\x11acceptsNewSources\"\x1d\n" +
 	"\x1bGetDatasourceCatalogRequest\"l\n" +
 	"\x1cGetDatasourceCatalogResponse\x12L\n" +
 	"\tproviders\x18\x01 \x03(\v2..saas.accounts.v1.DatasourceProviderDescriptorR\tproviders\"5\n" +
@@ -2602,21 +4946,53 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12+\n" +
 	"\faccess_token\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vaccessToken\"+\n" +
 	"\x12SyncSourceResponse\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\x7f\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\x82\x01\n" +
 	"\x14GetSourceSyncRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12%\n" +
-	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12\x1f\n" +
-	"\x06job_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\"\xae\x01\n" +
+	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12\"\n" +
+	"\x06job_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x05jobId\"\xae\x01\n" +
 	"\x12SourceSyncDelivery\x12\x1f\n" +
 	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x124\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x16.saas.jobs.v1.JobStateB\x06\xbaH\x03\xc8\x01\x01R\x05state\x12A\n" +
-	"\texecution\x18\x03 \x01(\v2#.saas.jobs.v1.JobExecutionReferenceR\texecution\"\xb4\x01\n" +
+	"\texecution\x18\x03 \x01(\v2#.saas.jobs.v1.JobExecutionReferenceR\texecution\"\xca\x01\n" +
+	"\x11SourceSyncChanges\x12\x14\n" +
+	"\x05files\x18\x01 \x01(\rR\x05files\x12\x14\n" +
+	"\x05added\x18\x02 \x01(\rR\x05added\x12\x1a\n" +
+	"\bmodified\x18\x03 \x01(\rR\bmodified\x12\x18\n" +
+	"\adeleted\x18\x04 \x01(\rR\adeleted\x12\x1f\n" +
+	"\vsplit_known\x18\x05 \x01(\bR\n" +
+	"splitKnown\x12\x1a\n" +
+	"\bsnapshot\x18\x06 \x01(\bR\bsnapshot\x12\x16\n" +
+	"\x06commit\x18\a \x01(\tR\x06commit\"\xd7\x01\n" +
+	"\x11SourceSyncFailure\x12A\n" +
+	"\x06reason\x18\x01 \x01(\x0e2).saas.accounts.v1.SourceSyncFailureReasonR\x06reason\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1a\n" +
+	"\bretrying\x18\x04 \x01(\bR\bretrying\x125\n" +
+	"\bretry_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\aretryAt\"\xf7\x04\n" +
+	"\x12SourceSyncProgress\x127\n" +
+	"\x05phase\x18\x01 \x01(\x0e2!.saas.accounts.v1.SourceSyncPhaseR\x05phase\x12=\n" +
+	"\atrigger\x18\x02 \x01(\x0e2#.saas.accounts.v1.SourceSyncTriggerR\atrigger\x127\n" +
+	"\tqueued_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bqueuedAt\x12;\n" +
+	"\vfetching_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"fetchingAt\x12;\n" +
+	"\vcompiled_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"compiledAt\x12>\n" +
+	"\rhanded_off_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vhandedOffAt\x12;\n" +
+	"\vfinished_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x12=\n" +
+	"\achanges\x18\b \x01(\v2#.saas.accounts.v1.SourceSyncChangesR\achanges\x12=\n" +
+	"\afailure\x18\t \x01(\v2#.saas.accounts.v1.SourceSyncFailureR\afailure\x12\x18\n" +
+	"\aattempt\x18\n" +
+	" \x01(\rR\aattempt\x12!\n" +
+	"\fmax_attempts\x18\v \x01(\rR\vmaxAttempts\"\xf6\x01\n" +
 	"\x15GetSourceSyncResponse\x12\x1f\n" +
 	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x124\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x16.saas.jobs.v1.JobStateB\x06\xbaH\x03\xc8\x01\x01R\x05state\x12D\n" +
 	"\n" +
 	"deliveries\x18\x03 \x03(\v2$.saas.accounts.v1.SourceSyncDeliveryR\n" +
-	"deliveries\"P\n" +
+	"deliveries\x12@\n" +
+	"\bprogress\x18\x04 \x01(\v2$.saas.accounts.v1.SourceSyncProgressR\bprogress\"P\n" +
 	"\x13DeleteSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x16\n" +
@@ -2649,7 +5025,99 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	" MigrateGitHubSourceToAppResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
-	"datasource*\xb7\x01\n" +
+	"datasource\"\x96\x02\n" +
+	"\x15DatasourceAccountLink\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
+	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x1c\n" +
+	"\tconnector\x18\x04 \x01(\tR\tconnector\x12.\n" +
+	"\x13provider_account_id\x18\x05 \x01(\tR\x11providerAccountId\x124\n" +
+	"\x16provider_account_login\x18\x06 \x01(\tR\x14providerAccountLogin\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xfc\x01\n" +
+	"\x16DatasourceGroupBinding\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
+	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12\x1c\n" +
+	"\tconnector\x18\x03 \x01(\tR\tconnector\x12*\n" +
+	"\x11provider_group_id\x18\x04 \x01(\tR\x0fproviderGroupId\x12\x17\n" +
+	"\ateam_id\x18\x05 \x01(\tR\x06teamId\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\x06 \x01(\tR\tcreatedBy\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xe5\x02\n" +
+	"\x18DatasourceVerifiedDomain\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
+	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12\x16\n" +
+	"\x06domain\x18\x03 \x01(\tR\x06domain\x12@\n" +
+	"\x06status\x18\x04 \x01(\x0e2(.saas.accounts.v1.DatasourceDomainStatusR\x06status\x12&\n" +
+	"\x0ftxt_record_name\x18\x05 \x01(\tR\rtxtRecordName\x12(\n" +
+	"\x10txt_record_value\x18\x06 \x01(\tR\x0etxtRecordValue\x12;\n" +
+	"\vverified_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"verifiedAt\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"=\n" +
+	"\x17DatasourceDirectoryTeam\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xb2\x01\n" +
+	"!BeginDatasourceAccountLinkRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12?\n" +
+	"\tconnector\x18\x02 \x01(\tB!\xbaH\x1er\x1c\x10\x02\x18 2\x16^[a-z][a-z0-9-]{1,31}$R\tconnector\x12+\n" +
+	"\fredirect_uri\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\vredirectUri\"\x9a\x01\n" +
+	"\"BeginDatasourceAccountLinkResponse\x12#\n" +
+	"\rauthorize_url\x18\x01 \x01(\tR\fauthorizeUrl\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x89\x01\n" +
+	"$CompleteDatasourceAccountLinkRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12 \n" +
+	"\x05state\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\bR\x05state\x12\x1e\n" +
+	"\x04code\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x04code\"d\n" +
+	"%CompleteDatasourceAccountLinkResponse\x12;\n" +
+	"\x04link\x18\x01 \x01(\v2'.saas.accounts.v1.DatasourceAccountLinkR\x04link\"F\n" +
+	"#ListMyDatasourceAccountLinksRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"e\n" +
+	"$ListMyDatasourceAccountLinksResponse\x12=\n" +
+	"\x05links\x18\x01 \x03(\v2'.saas.accounts.v1.DatasourceAccountLinkR\x05links\"_\n" +
+	"\"DeleteDatasourceAccountLinkRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
+	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"%\n" +
+	"#DeleteDatasourceAccountLinkResponse\"@\n" +
+	"\x1dGetDatasourceDirectoryRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"\xac\x02\n" +
+	"\x1eGetDatasourceDirectoryResponse\x12=\n" +
+	"\x05links\x18\x01 \x03(\v2'.saas.accounts.v1.DatasourceAccountLinkR\x05links\x12D\n" +
+	"\bbindings\x18\x02 \x03(\v2(.saas.accounts.v1.DatasourceGroupBindingR\bbindings\x12D\n" +
+	"\adomains\x18\x03 \x03(\v2*.saas.accounts.v1.DatasourceVerifiedDomainR\adomains\x12?\n" +
+	"\x05teams\x18\x04 \x03(\v2).saas.accounts.v1.DatasourceDirectoryTeamR\x05teams\"\xd9\x01\n" +
+	"\x1aBindDatasourceGroupRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12?\n" +
+	"\tconnector\x18\x02 \x01(\tB!\xbaH\x1er\x1c\x10\x02\x18 2\x16^[a-z][a-z0-9-]{1,31}$R\tconnector\x126\n" +
+	"\x11provider_group_id\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x0fproviderGroupId\x12!\n" +
+	"\ateam_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\"a\n" +
+	"\x1bBindDatasourceGroupResponse\x12B\n" +
+	"\abinding\x18\x01 \x01(\v2(.saas.accounts.v1.DatasourceGroupBindingR\abinding\"Y\n" +
+	"\x1cUnbindDatasourceGroupRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
+	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1f\n" +
+	"\x1dUnbindDatasourceGroupResponse\"c\n" +
+	"\x1cClaimDatasourceDomainRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\"\n" +
+	"\x06domain\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x03\x18\xfd\x01R\x06domain\"c\n" +
+	"\x1dClaimDatasourceDomainResponse\x12B\n" +
+	"\x06domain\x18\x01 \x01(\v2*.saas.accounts.v1.DatasourceVerifiedDomainR\x06domain\"Z\n" +
+	"\x1dVerifyDatasourceDomainRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
+	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"d\n" +
+	"\x1eVerifyDatasourceDomainResponse\x12B\n" +
+	"\x06domain\x18\x01 \x01(\v2*.saas.accounts.v1.DatasourceVerifiedDomainR\x06domain\"Z\n" +
+	"\x1dDeleteDatasourceDomainRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
+	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\" \n" +
+	"\x1eDeleteDatasourceDomainResponse*\xb7\x01\n" +
 	"\x12DatasourceProvider\x12#\n" +
 	"\x1fDATASOURCE_PROVIDER_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aDATASOURCE_PROVIDER_GITHUB\x10\x01\x12\x1b\n" +
@@ -2667,7 +5135,51 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x19API_CREDENTIAL_KIND_BASIC\x10\x02\x12\x1e\n" +
 	"\x1aAPI_CREDENTIAL_KIND_HEADER\x10\x03\x12\x1d\n" +
 	"\x19API_CREDENTIAL_KIND_QUERY\x10\x04\x12\x1e\n" +
-	"\x1aAPI_CREDENTIAL_KIND_OAUTH2\x10\x052\xb1\x0e\n" +
+	"\x1aAPI_CREDENTIAL_KIND_OAUTH2\x10\x05*\xa6\x02\n" +
+	"\x1cDatasourceConnectorInterface\x12.\n" +
+	"*DATASOURCE_CONNECTOR_INTERFACE_UNSPECIFIED\x10\x00\x12(\n" +
+	"$DATASOURCE_CONNECTOR_INTERFACE_FILES\x10\x01\x12(\n" +
+	"$DATASOURCE_CONNECTOR_INTERFACE_PAGES\x10\x02\x12*\n" +
+	"&DATASOURCE_CONNECTOR_INTERFACE_RECORDS\x10\x03\x12+\n" +
+	"'DATASOURCE_CONNECTOR_INTERFACE_MESSAGES\x10\x04\x12)\n" +
+	"%DATASOURCE_CONNECTOR_INTERFACE_EVENTS\x10\x05*\xec\x01\n" +
+	"\x18DatasourceCredentialMode\x12*\n" +
+	"&DATASOURCE_CREDENTIAL_MODE_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fDATASOURCE_CREDENTIAL_MODE_NONE\x10\x01\x12&\n" +
+	"\"DATASOURCE_CREDENTIAL_MODE_ORG_APP\x10\x02\x12)\n" +
+	"%DATASOURCE_CREDENTIAL_MODE_USER_OAUTH\x10\x03\x12,\n" +
+	"(DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET\x10\x04*\x97\x01\n" +
+	"\x16DatasourceReadersModel\x12(\n" +
+	"$DATASOURCE_READERS_MODEL_UNSPECIFIED\x10\x00\x12*\n" +
+	"&DATASOURCE_READERS_MODEL_SOURCE_SCOPED\x10\x01\x12'\n" +
+	"#DATASOURCE_READERS_MODEL_TRANSLATED\x10\x02*\xee\x01\n" +
+	"\x0fSourceSyncPhase\x12!\n" +
+	"\x1dSOURCE_SYNC_PHASE_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18SOURCE_SYNC_PHASE_QUEUED\x10\x01\x12\x1e\n" +
+	"\x1aSOURCE_SYNC_PHASE_FETCHING\x10\x02\x12\x1e\n" +
+	"\x1aSOURCE_SYNC_PHASE_COMPILED\x10\x03\x12 \n" +
+	"\x1cSOURCE_SYNC_PHASE_HANDED_OFF\x10\x04\x12\x1a\n" +
+	"\x16SOURCE_SYNC_PHASE_DONE\x10\x05\x12\x1c\n" +
+	"\x18SOURCE_SYNC_PHASE_FAILED\x10\x06*\xa6\x03\n" +
+	"\x17SourceSyncFailureReason\x12*\n" +
+	"&SOURCE_SYNC_FAILURE_REASON_UNSPECIFIED\x10\x00\x12+\n" +
+	"'SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED\x10\x01\x12)\n" +
+	"%SOURCE_SYNC_FAILURE_REASON_CREDENTIAL\x10\x02\x12,\n" +
+	"(SOURCE_SYNC_FAILURE_REASON_ACCESS_DENIED\x10\x03\x12(\n" +
+	"$SOURCE_SYNC_FAILURE_REASON_NOT_FOUND\x10\x04\x12(\n" +
+	"$SOURCE_SYNC_FAILURE_REASON_TOO_LARGE\x10\x05\x12/\n" +
+	"+SOURCE_SYNC_FAILURE_REASON_HOST_UNAVAILABLE\x10\x06\x12$\n" +
+	" SOURCE_SYNC_FAILURE_REASON_OTHER\x10\a\x12.\n" +
+	"*SOURCE_SYNC_FAILURE_REASON_DELIVERY_FAILED\x10\b*\x9c\x01\n" +
+	"\x11SourceSyncTrigger\x12#\n" +
+	"\x1fSOURCE_SYNC_TRIGGER_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aSOURCE_SYNC_TRIGGER_MANUAL\x10\x01\x12!\n" +
+	"\x1dSOURCE_SYNC_TRIGGER_SCHEDULED\x10\x02\x12\x1f\n" +
+	"\x1bSOURCE_SYNC_TRIGGER_WEBHOOK\x10\x03*\x8f\x01\n" +
+	"\x16DatasourceDomainStatus\x12(\n" +
+	"$DATASOURCE_DOMAIN_STATUS_UNSPECIFIED\x10\x00\x12$\n" +
+	" DATASOURCE_DOMAIN_STATUS_PENDING\x10\x01\x12%\n" +
+	"!DATASOURCE_DOMAIN_STATUS_VERIFIED\x10\x022\xe5\x1d\n" +
 	"\x11DatasourceService\x12\xac\x01\n" +
 	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01: \n" +
@@ -2697,7 +5209,35 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"*saas.datasource.github_app.setup_completed\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xcd\x01\n" +
 	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
-	"\"saas.datasource.credential.updated\x10\x02@\x01H\x04P\x02X\x03`\x01B\xb7\x01\n" +
+	"\"saas.datasource.credential.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xd5\x01\n" +
+	"\x1aBeginDatasourceAccountLink\x123.saas.accounts.v1.BeginDatasourceAccountLinkRequest\x1a4.saas.accounts.v1.BeginDatasourceAccountLinkResponse\"L\xc2\xf3\x18H\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:(\n" +
+	"$saas.datasource.account_link_started\x10\x02@\x01H\x04P\x02X\x04`\x01\x12\xd8\x01\n" +
+	"\x1dCompleteDatasourceAccountLink\x126.saas.accounts.v1.CompleteDatasourceAccountLinkRequest\x1a7.saas.accounts.v1.CompleteDatasourceAccountLinkResponse\"F\xc2\xf3\x18B\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
+	"\x1esaas.datasource.account_linked\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xb5\x01\n" +
+	"\x1cListMyDatasourceAccountLinks\x125.saas.accounts.v1.ListMyDatasourceAccountLinksRequest\x1a6.saas.accounts.v1.ListMyDatasourceAccountLinksResponse\"&\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xd4\x01\n" +
+	"\x1bDeleteDatasourceAccountLink\x124.saas.accounts.v1.DeleteDatasourceAccountLinkRequest\x1a5.saas.accounts.v1.DeleteDatasourceAccountLinkResponse\"H\xc2\xf3\x18D\b\x02\x10\x03*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:$\n" +
+	" saas.datasource.account_unlinked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xa3\x01\n" +
+	"\x16GetDatasourceDirectory\x12/.saas.accounts.v1.GetDatasourceDirectoryRequest\x1a0.saas.accounts.v1.GetDatasourceDirectoryResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xb7\x01\n" +
+	"\x13BindDatasourceGroup\x12,.saas.accounts.v1.BindDatasourceGroupRequest\x1a-.saas.accounts.v1.BindDatasourceGroupResponse\"C\xc2\xf3\x18?\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x1f\n" +
+	"\x1bsaas.datasource.group_bound\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xbf\x01\n" +
+	"\x15UnbindDatasourceGroup\x12..saas.accounts.v1.UnbindDatasourceGroupRequest\x1a/.saas.accounts.v1.UnbindDatasourceGroupResponse\"E\xc2\xf3\x18A\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:!\n" +
+	"\x1dsaas.datasource.group_unbound\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xc0\x01\n" +
+	"\x15ClaimDatasourceDomain\x12..saas.accounts.v1.ClaimDatasourceDomainRequest\x1a/.saas.accounts.v1.ClaimDatasourceDomainResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
+	"\x1esaas.datasource.domain_claimed\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xc4\x01\n" +
+	"\x16VerifyDatasourceDomain\x12/.saas.accounts.v1.VerifyDatasourceDomainRequest\x1a0.saas.accounts.v1.VerifyDatasourceDomainResponse\"G\xc2\xf3\x18C\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:#\n" +
+	"\x1fsaas.datasource.domain_verified\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xc3\x01\n" +
+	"\x16DeleteDatasourceDomain\x12/.saas.accounts.v1.DeleteDatasourceDomainRequest\x1a0.saas.accounts.v1.DeleteDatasourceDomainResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
+	"\x1esaas.datasource.domain_removed\x10\x02@\x01H\x04P\x02X\x03`\x01B\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fDatasourceProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -2712,108 +5252,194 @@ func file_saas_accounts_v1_datasource_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_datasource_proto_rawDescData
 }
 
-var file_saas_accounts_v1_datasource_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_saas_accounts_v1_datasource_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_saas_accounts_v1_datasource_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_saas_accounts_v1_datasource_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
 var file_saas_accounts_v1_datasource_proto_goTypes = []any{
-	(DatasourceProvider)(0),                  // 0: saas.accounts.v1.DatasourceProvider
-	(DatasourceStatus)(0),                    // 1: saas.accounts.v1.DatasourceStatus
-	(ApiCredentialKind)(0),                   // 2: saas.accounts.v1.ApiCredentialKind
-	(*GitHubDatasourceConfig)(nil),           // 3: saas.accounts.v1.GitHubDatasourceConfig
-	(*ApiOAuth2Config)(nil),                  // 4: saas.accounts.v1.ApiOAuth2Config
-	(*ApiDatasourceConfig)(nil),              // 5: saas.accounts.v1.ApiDatasourceConfig
-	(*CrawlerDatasourceConfig)(nil),          // 6: saas.accounts.v1.CrawlerDatasourceConfig
-	(*UploadDatasourceConfig)(nil),           // 7: saas.accounts.v1.UploadDatasourceConfig
-	(*Datasource)(nil),                       // 8: saas.accounts.v1.Datasource
-	(*AddGitHubSourceRequest)(nil),           // 9: saas.accounts.v1.AddGitHubSourceRequest
-	(*AddGitHubSourceResponse)(nil),          // 10: saas.accounts.v1.AddGitHubSourceResponse
-	(*AddSourceRequest)(nil),                 // 11: saas.accounts.v1.AddSourceRequest
-	(*AddSourceResponse)(nil),                // 12: saas.accounts.v1.AddSourceResponse
-	(*DatasourceConfigField)(nil),            // 13: saas.accounts.v1.DatasourceConfigField
-	(*DatasourceProviderDescriptor)(nil),     // 14: saas.accounts.v1.DatasourceProviderDescriptor
-	(*GetDatasourceCatalogRequest)(nil),      // 15: saas.accounts.v1.GetDatasourceCatalogRequest
-	(*GetDatasourceCatalogResponse)(nil),     // 16: saas.accounts.v1.GetDatasourceCatalogResponse
-	(*ListSourcesRequest)(nil),               // 17: saas.accounts.v1.ListSourcesRequest
-	(*ListSourcesResponse)(nil),              // 18: saas.accounts.v1.ListSourcesResponse
-	(*GetSourceRequest)(nil),                 // 19: saas.accounts.v1.GetSourceRequest
-	(*GetSourceResponse)(nil),                // 20: saas.accounts.v1.GetSourceResponse
-	(*SyncSourceRequest)(nil),                // 21: saas.accounts.v1.SyncSourceRequest
-	(*SyncSourceResponse)(nil),               // 22: saas.accounts.v1.SyncSourceResponse
-	(*GetSourceSyncRequest)(nil),             // 23: saas.accounts.v1.GetSourceSyncRequest
-	(*SourceSyncDelivery)(nil),               // 24: saas.accounts.v1.SourceSyncDelivery
-	(*GetSourceSyncResponse)(nil),            // 25: saas.accounts.v1.GetSourceSyncResponse
-	(*DeleteSourceRequest)(nil),              // 26: saas.accounts.v1.DeleteSourceRequest
-	(*DeleteSourceResponse)(nil),             // 27: saas.accounts.v1.DeleteSourceResponse
-	(*GitHubAppRepository)(nil),              // 28: saas.accounts.v1.GitHubAppRepository
-	(*BeginGitHubAppSetupRequest)(nil),       // 29: saas.accounts.v1.BeginGitHubAppSetupRequest
-	(*BeginGitHubAppSetupResponse)(nil),      // 30: saas.accounts.v1.BeginGitHubAppSetupResponse
-	(*CompleteGitHubAppSetupRequest)(nil),    // 31: saas.accounts.v1.CompleteGitHubAppSetupRequest
-	(*CompleteGitHubAppSetupResponse)(nil),   // 32: saas.accounts.v1.CompleteGitHubAppSetupResponse
-	(*MigrateGitHubSourceToAppRequest)(nil),  // 33: saas.accounts.v1.MigrateGitHubSourceToAppRequest
-	(*MigrateGitHubSourceToAppResponse)(nil), // 34: saas.accounts.v1.MigrateGitHubSourceToAppResponse
-	(*timestamppb.Timestamp)(nil),            // 35: google.protobuf.Timestamp
-	(v1.JobState)(0),                         // 36: saas.jobs.v1.JobState
-	(*v1.JobExecutionReference)(nil),         // 37: saas.jobs.v1.JobExecutionReference
+	(DatasourceProvider)(0),                       // 0: saas.accounts.v1.DatasourceProvider
+	(DatasourceStatus)(0),                         // 1: saas.accounts.v1.DatasourceStatus
+	(ApiCredentialKind)(0),                        // 2: saas.accounts.v1.ApiCredentialKind
+	(DatasourceConnectorInterface)(0),             // 3: saas.accounts.v1.DatasourceConnectorInterface
+	(DatasourceCredentialMode)(0),                 // 4: saas.accounts.v1.DatasourceCredentialMode
+	(DatasourceReadersModel)(0),                   // 5: saas.accounts.v1.DatasourceReadersModel
+	(SourceSyncPhase)(0),                          // 6: saas.accounts.v1.SourceSyncPhase
+	(SourceSyncFailureReason)(0),                  // 7: saas.accounts.v1.SourceSyncFailureReason
+	(SourceSyncTrigger)(0),                        // 8: saas.accounts.v1.SourceSyncTrigger
+	(DatasourceDomainStatus)(0),                   // 9: saas.accounts.v1.DatasourceDomainStatus
+	(*GitHubDatasourceConfig)(nil),                // 10: saas.accounts.v1.GitHubDatasourceConfig
+	(*ApiOAuth2Config)(nil),                       // 11: saas.accounts.v1.ApiOAuth2Config
+	(*ApiDatasourceConfig)(nil),                   // 12: saas.accounts.v1.ApiDatasourceConfig
+	(*CrawlerDatasourceConfig)(nil),               // 13: saas.accounts.v1.CrawlerDatasourceConfig
+	(*UploadDatasourceConfig)(nil),                // 14: saas.accounts.v1.UploadDatasourceConfig
+	(*Datasource)(nil),                            // 15: saas.accounts.v1.Datasource
+	(*AddGitHubSourceRequest)(nil),                // 16: saas.accounts.v1.AddGitHubSourceRequest
+	(*AddGitHubSourceResponse)(nil),               // 17: saas.accounts.v1.AddGitHubSourceResponse
+	(*AddSourceRequest)(nil),                      // 18: saas.accounts.v1.AddSourceRequest
+	(*AddSourceResponse)(nil),                     // 19: saas.accounts.v1.AddSourceResponse
+	(*DatasourceConfigField)(nil),                 // 20: saas.accounts.v1.DatasourceConfigField
+	(*DatasourceConnectorBudget)(nil),             // 21: saas.accounts.v1.DatasourceConnectorBudget
+	(*DatasourceProviderDescriptor)(nil),          // 22: saas.accounts.v1.DatasourceProviderDescriptor
+	(*GetDatasourceCatalogRequest)(nil),           // 23: saas.accounts.v1.GetDatasourceCatalogRequest
+	(*GetDatasourceCatalogResponse)(nil),          // 24: saas.accounts.v1.GetDatasourceCatalogResponse
+	(*ListSourcesRequest)(nil),                    // 25: saas.accounts.v1.ListSourcesRequest
+	(*ListSourcesResponse)(nil),                   // 26: saas.accounts.v1.ListSourcesResponse
+	(*GetSourceRequest)(nil),                      // 27: saas.accounts.v1.GetSourceRequest
+	(*GetSourceResponse)(nil),                     // 28: saas.accounts.v1.GetSourceResponse
+	(*SyncSourceRequest)(nil),                     // 29: saas.accounts.v1.SyncSourceRequest
+	(*SyncSourceResponse)(nil),                    // 30: saas.accounts.v1.SyncSourceResponse
+	(*GetSourceSyncRequest)(nil),                  // 31: saas.accounts.v1.GetSourceSyncRequest
+	(*SourceSyncDelivery)(nil),                    // 32: saas.accounts.v1.SourceSyncDelivery
+	(*SourceSyncChanges)(nil),                     // 33: saas.accounts.v1.SourceSyncChanges
+	(*SourceSyncFailure)(nil),                     // 34: saas.accounts.v1.SourceSyncFailure
+	(*SourceSyncProgress)(nil),                    // 35: saas.accounts.v1.SourceSyncProgress
+	(*GetSourceSyncResponse)(nil),                 // 36: saas.accounts.v1.GetSourceSyncResponse
+	(*DeleteSourceRequest)(nil),                   // 37: saas.accounts.v1.DeleteSourceRequest
+	(*DeleteSourceResponse)(nil),                  // 38: saas.accounts.v1.DeleteSourceResponse
+	(*GitHubAppRepository)(nil),                   // 39: saas.accounts.v1.GitHubAppRepository
+	(*BeginGitHubAppSetupRequest)(nil),            // 40: saas.accounts.v1.BeginGitHubAppSetupRequest
+	(*BeginGitHubAppSetupResponse)(nil),           // 41: saas.accounts.v1.BeginGitHubAppSetupResponse
+	(*CompleteGitHubAppSetupRequest)(nil),         // 42: saas.accounts.v1.CompleteGitHubAppSetupRequest
+	(*CompleteGitHubAppSetupResponse)(nil),        // 43: saas.accounts.v1.CompleteGitHubAppSetupResponse
+	(*MigrateGitHubSourceToAppRequest)(nil),       // 44: saas.accounts.v1.MigrateGitHubSourceToAppRequest
+	(*MigrateGitHubSourceToAppResponse)(nil),      // 45: saas.accounts.v1.MigrateGitHubSourceToAppResponse
+	(*DatasourceAccountLink)(nil),                 // 46: saas.accounts.v1.DatasourceAccountLink
+	(*DatasourceGroupBinding)(nil),                // 47: saas.accounts.v1.DatasourceGroupBinding
+	(*DatasourceVerifiedDomain)(nil),              // 48: saas.accounts.v1.DatasourceVerifiedDomain
+	(*DatasourceDirectoryTeam)(nil),               // 49: saas.accounts.v1.DatasourceDirectoryTeam
+	(*BeginDatasourceAccountLinkRequest)(nil),     // 50: saas.accounts.v1.BeginDatasourceAccountLinkRequest
+	(*BeginDatasourceAccountLinkResponse)(nil),    // 51: saas.accounts.v1.BeginDatasourceAccountLinkResponse
+	(*CompleteDatasourceAccountLinkRequest)(nil),  // 52: saas.accounts.v1.CompleteDatasourceAccountLinkRequest
+	(*CompleteDatasourceAccountLinkResponse)(nil), // 53: saas.accounts.v1.CompleteDatasourceAccountLinkResponse
+	(*ListMyDatasourceAccountLinksRequest)(nil),   // 54: saas.accounts.v1.ListMyDatasourceAccountLinksRequest
+	(*ListMyDatasourceAccountLinksResponse)(nil),  // 55: saas.accounts.v1.ListMyDatasourceAccountLinksResponse
+	(*DeleteDatasourceAccountLinkRequest)(nil),    // 56: saas.accounts.v1.DeleteDatasourceAccountLinkRequest
+	(*DeleteDatasourceAccountLinkResponse)(nil),   // 57: saas.accounts.v1.DeleteDatasourceAccountLinkResponse
+	(*GetDatasourceDirectoryRequest)(nil),         // 58: saas.accounts.v1.GetDatasourceDirectoryRequest
+	(*GetDatasourceDirectoryResponse)(nil),        // 59: saas.accounts.v1.GetDatasourceDirectoryResponse
+	(*BindDatasourceGroupRequest)(nil),            // 60: saas.accounts.v1.BindDatasourceGroupRequest
+	(*BindDatasourceGroupResponse)(nil),           // 61: saas.accounts.v1.BindDatasourceGroupResponse
+	(*UnbindDatasourceGroupRequest)(nil),          // 62: saas.accounts.v1.UnbindDatasourceGroupRequest
+	(*UnbindDatasourceGroupResponse)(nil),         // 63: saas.accounts.v1.UnbindDatasourceGroupResponse
+	(*ClaimDatasourceDomainRequest)(nil),          // 64: saas.accounts.v1.ClaimDatasourceDomainRequest
+	(*ClaimDatasourceDomainResponse)(nil),         // 65: saas.accounts.v1.ClaimDatasourceDomainResponse
+	(*VerifyDatasourceDomainRequest)(nil),         // 66: saas.accounts.v1.VerifyDatasourceDomainRequest
+	(*VerifyDatasourceDomainResponse)(nil),        // 67: saas.accounts.v1.VerifyDatasourceDomainResponse
+	(*DeleteDatasourceDomainRequest)(nil),         // 68: saas.accounts.v1.DeleteDatasourceDomainRequest
+	(*DeleteDatasourceDomainResponse)(nil),        // 69: saas.accounts.v1.DeleteDatasourceDomainResponse
+	(*timestamppb.Timestamp)(nil),                 // 70: google.protobuf.Timestamp
+	(v1.JobState)(0),                              // 71: saas.jobs.v1.JobState
+	(*v1.JobExecutionReference)(nil),              // 72: saas.jobs.v1.JobExecutionReference
 }
 var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	2,  // 0: saas.accounts.v1.ApiDatasourceConfig.credential_kind:type_name -> saas.accounts.v1.ApiCredentialKind
-	4,  // 1: saas.accounts.v1.ApiDatasourceConfig.oauth2:type_name -> saas.accounts.v1.ApiOAuth2Config
+	11, // 1: saas.accounts.v1.ApiDatasourceConfig.oauth2:type_name -> saas.accounts.v1.ApiOAuth2Config
 	0,  // 2: saas.accounts.v1.Datasource.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	3,  // 3: saas.accounts.v1.Datasource.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
+	10, // 3: saas.accounts.v1.Datasource.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
 	1,  // 4: saas.accounts.v1.Datasource.status:type_name -> saas.accounts.v1.DatasourceStatus
-	35, // 5: saas.accounts.v1.Datasource.created_at:type_name -> google.protobuf.Timestamp
-	35, // 6: saas.accounts.v1.Datasource.updated_at:type_name -> google.protobuf.Timestamp
-	35, // 7: saas.accounts.v1.Datasource.last_synced_at:type_name -> google.protobuf.Timestamp
-	5,  // 8: saas.accounts.v1.Datasource.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
-	6,  // 9: saas.accounts.v1.Datasource.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
-	7,  // 10: saas.accounts.v1.Datasource.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	35, // 11: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
-	8,  // 12: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	70, // 5: saas.accounts.v1.Datasource.created_at:type_name -> google.protobuf.Timestamp
+	70, // 6: saas.accounts.v1.Datasource.updated_at:type_name -> google.protobuf.Timestamp
+	70, // 7: saas.accounts.v1.Datasource.last_synced_at:type_name -> google.protobuf.Timestamp
+	12, // 8: saas.accounts.v1.Datasource.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
+	13, // 9: saas.accounts.v1.Datasource.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
+	14, // 10: saas.accounts.v1.Datasource.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
+	70, // 11: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
+	15, // 12: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
 	0,  // 13: saas.accounts.v1.AddSourceRequest.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	3,  // 14: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
-	5,  // 15: saas.accounts.v1.AddSourceRequest.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
-	6,  // 16: saas.accounts.v1.AddSourceRequest.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
-	7,  // 17: saas.accounts.v1.AddSourceRequest.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	8,  // 18: saas.accounts.v1.AddSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	10, // 14: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
+	12, // 15: saas.accounts.v1.AddSourceRequest.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
+	13, // 16: saas.accounts.v1.AddSourceRequest.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
+	14, // 17: saas.accounts.v1.AddSourceRequest.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
+	15, // 18: saas.accounts.v1.AddSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
 	0,  // 19: saas.accounts.v1.DatasourceProviderDescriptor.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	13, // 20: saas.accounts.v1.DatasourceProviderDescriptor.config_fields:type_name -> saas.accounts.v1.DatasourceConfigField
+	20, // 20: saas.accounts.v1.DatasourceProviderDescriptor.config_fields:type_name -> saas.accounts.v1.DatasourceConfigField
 	2,  // 21: saas.accounts.v1.DatasourceProviderDescriptor.supported_credential_kinds:type_name -> saas.accounts.v1.ApiCredentialKind
-	14, // 22: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
-	8,  // 23: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
-	8,  // 24: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	36, // 25: saas.accounts.v1.SourceSyncDelivery.state:type_name -> saas.jobs.v1.JobState
-	37, // 26: saas.accounts.v1.SourceSyncDelivery.execution:type_name -> saas.jobs.v1.JobExecutionReference
-	36, // 27: saas.accounts.v1.GetSourceSyncResponse.state:type_name -> saas.jobs.v1.JobState
-	24, // 28: saas.accounts.v1.GetSourceSyncResponse.deliveries:type_name -> saas.accounts.v1.SourceSyncDelivery
-	35, // 29: saas.accounts.v1.BeginGitHubAppSetupResponse.expires_at:type_name -> google.protobuf.Timestamp
-	28, // 30: saas.accounts.v1.CompleteGitHubAppSetupResponse.repositories:type_name -> saas.accounts.v1.GitHubAppRepository
-	8,  // 31: saas.accounts.v1.MigrateGitHubSourceToAppResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	9,  // 32: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
-	11, // 33: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
-	15, // 34: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
-	17, // 35: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
-	19, // 36: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
-	21, // 37: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
-	23, // 38: saas.accounts.v1.DatasourceService.GetSourceSync:input_type -> saas.accounts.v1.GetSourceSyncRequest
-	26, // 39: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
-	29, // 40: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:input_type -> saas.accounts.v1.BeginGitHubAppSetupRequest
-	31, // 41: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:input_type -> saas.accounts.v1.CompleteGitHubAppSetupRequest
-	33, // 42: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:input_type -> saas.accounts.v1.MigrateGitHubSourceToAppRequest
-	10, // 43: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
-	12, // 44: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
-	16, // 45: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
-	18, // 46: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
-	20, // 47: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
-	22, // 48: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
-	25, // 49: saas.accounts.v1.DatasourceService.GetSourceSync:output_type -> saas.accounts.v1.GetSourceSyncResponse
-	27, // 50: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
-	30, // 51: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:output_type -> saas.accounts.v1.BeginGitHubAppSetupResponse
-	32, // 52: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:output_type -> saas.accounts.v1.CompleteGitHubAppSetupResponse
-	34, // 53: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:output_type -> saas.accounts.v1.MigrateGitHubSourceToAppResponse
-	43, // [43:54] is the sub-list for method output_type
-	32, // [32:43] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	3,  // 22: saas.accounts.v1.DatasourceProviderDescriptor.interface:type_name -> saas.accounts.v1.DatasourceConnectorInterface
+	4,  // 23: saas.accounts.v1.DatasourceProviderDescriptor.credential_modes:type_name -> saas.accounts.v1.DatasourceCredentialMode
+	5,  // 24: saas.accounts.v1.DatasourceProviderDescriptor.readers_model:type_name -> saas.accounts.v1.DatasourceReadersModel
+	21, // 25: saas.accounts.v1.DatasourceProviderDescriptor.budget:type_name -> saas.accounts.v1.DatasourceConnectorBudget
+	22, // 26: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
+	15, // 27: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
+	15, // 28: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	71, // 29: saas.accounts.v1.SourceSyncDelivery.state:type_name -> saas.jobs.v1.JobState
+	72, // 30: saas.accounts.v1.SourceSyncDelivery.execution:type_name -> saas.jobs.v1.JobExecutionReference
+	7,  // 31: saas.accounts.v1.SourceSyncFailure.reason:type_name -> saas.accounts.v1.SourceSyncFailureReason
+	70, // 32: saas.accounts.v1.SourceSyncFailure.retry_at:type_name -> google.protobuf.Timestamp
+	6,  // 33: saas.accounts.v1.SourceSyncProgress.phase:type_name -> saas.accounts.v1.SourceSyncPhase
+	8,  // 34: saas.accounts.v1.SourceSyncProgress.trigger:type_name -> saas.accounts.v1.SourceSyncTrigger
+	70, // 35: saas.accounts.v1.SourceSyncProgress.queued_at:type_name -> google.protobuf.Timestamp
+	70, // 36: saas.accounts.v1.SourceSyncProgress.fetching_at:type_name -> google.protobuf.Timestamp
+	70, // 37: saas.accounts.v1.SourceSyncProgress.compiled_at:type_name -> google.protobuf.Timestamp
+	70, // 38: saas.accounts.v1.SourceSyncProgress.handed_off_at:type_name -> google.protobuf.Timestamp
+	70, // 39: saas.accounts.v1.SourceSyncProgress.finished_at:type_name -> google.protobuf.Timestamp
+	33, // 40: saas.accounts.v1.SourceSyncProgress.changes:type_name -> saas.accounts.v1.SourceSyncChanges
+	34, // 41: saas.accounts.v1.SourceSyncProgress.failure:type_name -> saas.accounts.v1.SourceSyncFailure
+	71, // 42: saas.accounts.v1.GetSourceSyncResponse.state:type_name -> saas.jobs.v1.JobState
+	32, // 43: saas.accounts.v1.GetSourceSyncResponse.deliveries:type_name -> saas.accounts.v1.SourceSyncDelivery
+	35, // 44: saas.accounts.v1.GetSourceSyncResponse.progress:type_name -> saas.accounts.v1.SourceSyncProgress
+	70, // 45: saas.accounts.v1.BeginGitHubAppSetupResponse.expires_at:type_name -> google.protobuf.Timestamp
+	39, // 46: saas.accounts.v1.CompleteGitHubAppSetupResponse.repositories:type_name -> saas.accounts.v1.GitHubAppRepository
+	15, // 47: saas.accounts.v1.MigrateGitHubSourceToAppResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	70, // 48: saas.accounts.v1.DatasourceAccountLink.created_at:type_name -> google.protobuf.Timestamp
+	70, // 49: saas.accounts.v1.DatasourceGroupBinding.created_at:type_name -> google.protobuf.Timestamp
+	9,  // 50: saas.accounts.v1.DatasourceVerifiedDomain.status:type_name -> saas.accounts.v1.DatasourceDomainStatus
+	70, // 51: saas.accounts.v1.DatasourceVerifiedDomain.verified_at:type_name -> google.protobuf.Timestamp
+	70, // 52: saas.accounts.v1.DatasourceVerifiedDomain.created_at:type_name -> google.protobuf.Timestamp
+	70, // 53: saas.accounts.v1.BeginDatasourceAccountLinkResponse.expires_at:type_name -> google.protobuf.Timestamp
+	46, // 54: saas.accounts.v1.CompleteDatasourceAccountLinkResponse.link:type_name -> saas.accounts.v1.DatasourceAccountLink
+	46, // 55: saas.accounts.v1.ListMyDatasourceAccountLinksResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
+	46, // 56: saas.accounts.v1.GetDatasourceDirectoryResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
+	47, // 57: saas.accounts.v1.GetDatasourceDirectoryResponse.bindings:type_name -> saas.accounts.v1.DatasourceGroupBinding
+	48, // 58: saas.accounts.v1.GetDatasourceDirectoryResponse.domains:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
+	49, // 59: saas.accounts.v1.GetDatasourceDirectoryResponse.teams:type_name -> saas.accounts.v1.DatasourceDirectoryTeam
+	47, // 60: saas.accounts.v1.BindDatasourceGroupResponse.binding:type_name -> saas.accounts.v1.DatasourceGroupBinding
+	48, // 61: saas.accounts.v1.ClaimDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
+	48, // 62: saas.accounts.v1.VerifyDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
+	16, // 63: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
+	18, // 64: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
+	23, // 65: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
+	25, // 66: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
+	27, // 67: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
+	29, // 68: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
+	31, // 69: saas.accounts.v1.DatasourceService.GetSourceSync:input_type -> saas.accounts.v1.GetSourceSyncRequest
+	37, // 70: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
+	40, // 71: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:input_type -> saas.accounts.v1.BeginGitHubAppSetupRequest
+	42, // 72: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:input_type -> saas.accounts.v1.CompleteGitHubAppSetupRequest
+	44, // 73: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:input_type -> saas.accounts.v1.MigrateGitHubSourceToAppRequest
+	50, // 74: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:input_type -> saas.accounts.v1.BeginDatasourceAccountLinkRequest
+	52, // 75: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:input_type -> saas.accounts.v1.CompleteDatasourceAccountLinkRequest
+	54, // 76: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:input_type -> saas.accounts.v1.ListMyDatasourceAccountLinksRequest
+	56, // 77: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:input_type -> saas.accounts.v1.DeleteDatasourceAccountLinkRequest
+	58, // 78: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:input_type -> saas.accounts.v1.GetDatasourceDirectoryRequest
+	60, // 79: saas.accounts.v1.DatasourceService.BindDatasourceGroup:input_type -> saas.accounts.v1.BindDatasourceGroupRequest
+	62, // 80: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:input_type -> saas.accounts.v1.UnbindDatasourceGroupRequest
+	64, // 81: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:input_type -> saas.accounts.v1.ClaimDatasourceDomainRequest
+	66, // 82: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:input_type -> saas.accounts.v1.VerifyDatasourceDomainRequest
+	68, // 83: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:input_type -> saas.accounts.v1.DeleteDatasourceDomainRequest
+	17, // 84: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
+	19, // 85: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
+	24, // 86: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
+	26, // 87: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
+	28, // 88: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
+	30, // 89: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
+	36, // 90: saas.accounts.v1.DatasourceService.GetSourceSync:output_type -> saas.accounts.v1.GetSourceSyncResponse
+	38, // 91: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
+	41, // 92: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:output_type -> saas.accounts.v1.BeginGitHubAppSetupResponse
+	43, // 93: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:output_type -> saas.accounts.v1.CompleteGitHubAppSetupResponse
+	45, // 94: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:output_type -> saas.accounts.v1.MigrateGitHubSourceToAppResponse
+	51, // 95: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:output_type -> saas.accounts.v1.BeginDatasourceAccountLinkResponse
+	53, // 96: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:output_type -> saas.accounts.v1.CompleteDatasourceAccountLinkResponse
+	55, // 97: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:output_type -> saas.accounts.v1.ListMyDatasourceAccountLinksResponse
+	57, // 98: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:output_type -> saas.accounts.v1.DeleteDatasourceAccountLinkResponse
+	59, // 99: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:output_type -> saas.accounts.v1.GetDatasourceDirectoryResponse
+	61, // 100: saas.accounts.v1.DatasourceService.BindDatasourceGroup:output_type -> saas.accounts.v1.BindDatasourceGroupResponse
+	63, // 101: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:output_type -> saas.accounts.v1.UnbindDatasourceGroupResponse
+	65, // 102: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:output_type -> saas.accounts.v1.ClaimDatasourceDomainResponse
+	67, // 103: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:output_type -> saas.accounts.v1.VerifyDatasourceDomainResponse
+	69, // 104: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:output_type -> saas.accounts.v1.DeleteDatasourceDomainResponse
+	84, // [84:105] is the sub-list for method output_type
+	63, // [63:84] is the sub-list for method input_type
+	63, // [63:63] is the sub-list for extension type_name
+	63, // [63:63] is the sub-list for extension extendee
+	0,  // [0:63] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_datasource_proto_init() }
@@ -2838,8 +5464,8 @@ func file_saas_accounts_v1_datasource_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_datasource_proto_rawDesc), len(file_saas_accounts_v1_datasource_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   32,
+			NumEnums:      10,
+			NumMessages:   60,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

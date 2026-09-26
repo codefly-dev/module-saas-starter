@@ -1,7 +1,7 @@
 import { version as reactVersion } from "react";
 import { version as kitVersion } from "../../packages/codefly-ui/package.json";
-import { version as saasUiVersion } from "../../packages/saas-ui/package.json";
 import { version as saasSdkVersion } from "../../packages/saas-sdk/package.json";
+import { version as saasUiVersion } from "../../packages/saas-ui/package.json";
 
 /**
  * What this host offers a runtime-loaded solution remote, stated as data so the
@@ -61,10 +61,12 @@ export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
 	"@codefly-dev/ui/chat": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/skin": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/table": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/content": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host/runtime": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host/ui": CODEFLY_KIT_VERSION,
 	"@codefly-dev/saas-ui": CODEFLY_SAAS_UI_VERSION,
+	"@codefly-dev/saas-ui/solution": CODEFLY_SAAS_UI_VERSION,
 	"@codefly-dev/saas-sdk": CODEFLY_SAAS_SDK_VERSION,
 };
 

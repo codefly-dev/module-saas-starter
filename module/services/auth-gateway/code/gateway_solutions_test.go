@@ -15,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -779,6 +780,51 @@ func TestGateway_Solution_Register_RelaysConflict(t *testing.T) {
 
 	postSolutionRegistration(t, gw, "/solutions/_register",
 		`{"id":"audit","upstream":"http://10.0.0.9:8080"}`, http.StatusConflict)
+}
+
+// A refused audit event declaration carries a structured reason; only that
+// becomes 422 registration_rejected. Any other InvalidArgument stays 400.
+func TestGateway_Solution_FrontendRegister_RelaysARejectedDeclaration(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	rejected, err := grpcstatus.New(codes.InvalidArgument, "namespace \"acme\" is not bound to solution \"audit\"").
+		WithDetails(&errdetails.ErrorInfo{
+			Reason: "SOLUTION_AUDIT_DECLARATION_REJECTED",
+			Domain: "accounts.saas.codefly.dev",
+		})
+	require.NoError(t, err)
+	solutionRegistryFake(t, gw).putErr = rejected.Err()
+	body := postSolutionRegistration(t, gw, "/solutions/_frontend",
+		`{"id":"audit","manifest":"{\"id\":\"audit\"}"}`, http.StatusUnprocessableEntity)
+	require.Equal(t, "registration_rejected", body["error"])
+	require.Contains(t, body["detail"], "not bound")
+
+	for name, refusal := range map[string]error{
+		"no detail":      grpcstatus.Error(codes.InvalidArgument, "namespace is not bound"),
+		"another reason": mustWithInfo(t, "SOMETHING_ELSE", "accounts.saas.codefly.dev"),
+		"another domain": mustWithInfo(t, "SOLUTION_AUDIT_DECLARATION_REJECTED", "example.com"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			solutionRegistryFake(t, gw).putErr = refusal
+			postSolutionRegistration(t, gw, "/solutions/_frontend",
+				`{"id":"audit","manifest":"{\"id\":\"audit\"}"}`, http.StatusBadRequest)
+		})
+	}
+}
+
+// The reason and domain are a wire contract with accounts, which holds the
+// same two strings.
+func TestSolutionAuditDeclarationRejectedReasonIsPinned(t *testing.T) {
+	require.Equal(t, "SOLUTION_AUDIT_DECLARATION_REJECTED", solutionAuditDeclarationRejectedReason,
+		"the declaration-rejection ErrorInfo moved; move accounts' copy with it")
+	require.Equal(t, "accounts.saas.codefly.dev", solutionRegistryErrorDomain)
+}
+
+func mustWithInfo(t *testing.T, reason, domain string) error {
+	t.Helper()
+	st, err := grpcstatus.New(codes.InvalidArgument, "refused").
+		WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: domain})
+	require.NoError(t, err)
+	return st.Err()
 }
 
 // The frontend half is registered through the gateway because the frontend has

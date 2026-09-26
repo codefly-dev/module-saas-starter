@@ -452,3 +452,27 @@ func TestSecurityMutation_MemberRemovalCascadeCommitsWithItsRecord(t *testing.T)
 		"team access must be gone by the time the removal is recorded")
 	require.Equal(t, 1, countAuditEvents(t, string(business.EventOrgMemberRemoved), orgID))
 }
+
+// TestAuditRowKeepsANonUUIDResourceID pins that audit_events.resource_id, a
+// text column, stores the resource id it is given. A module names its
+// resources with its own ids — the documents store's entries are ULIDs — and
+// the insert used to map every non-UUID resource id to NULL, so every document
+// event committed with no entry named and nothing reported it.
+func TestAuditRowKeepsANonUUIDResourceID(t *testing.T) {
+	org := seedOrg(t, seedUser(t))
+	const entryID = "01M3CKXR2J5Q6H0FZD7FCANY52"
+	id := business.NewIDString()
+	require.NoError(t, testStore.As(business.Identity{OrgID: org}).Within(testCtx, func(ctx context.Context) error {
+		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
+			ID: id, EventType: business.EventDocumentDeleted, ActorID: "system:ingest", ActorType: "agent",
+			Resource: "documents", ResourceID: entryID, OrgID: org,
+		})
+	}))
+	var stored *string
+	require.NoError(t, testStore.As(business.Identity{OrgID: org}).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx, `SELECT resource_id FROM audit_events WHERE id = $1`, id).Scan(&stored)
+	}))
+	require.NotNil(t, stored, "the entry id was dropped from the audit row")
+	require.Equal(t, entryID, *stored)
+}

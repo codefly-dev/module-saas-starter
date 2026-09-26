@@ -3,6 +3,8 @@ import "server-only";
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
 import { getEndpoints, getWorkspaceSecret } from "codefly";
 
+import { isStandingConditionMilestone } from "@/solutions/registration-log";
+
 /**
  * Runtime solution registry (generic host seam).
  *
@@ -300,6 +302,7 @@ export type SolutionRegistryFailure = "unavailable";
 const globalForRegistry = globalThis as typeof globalThis & {
 	__solutionSnapshot?: RegistrySnapshot | null;
 	__solutionSnapshotInFlight?: Promise<RegistrySnapshot | null> | null;
+	__solutionSnapshotFailure?: { reason: string; reads: number } | null;
 };
 
 const GATEWAY_REGISTRY_PATH = "/solutions/_registry";
@@ -413,14 +416,60 @@ function manifestsFromSnapshot(payload: unknown): {
 	};
 }
 
+/**
+ * The snapshot read's standing failure, if it is failing.
+ *
+ * Every browser polling the navigation drives this read, so a registry outage
+ * printed a line per read for as long as it lasted — and the registration
+ * endpoint's own per-request line is switched off for that path in
+ * next.config.mjs, which makes this the only thing left saying the registry is
+ * unreachable. It has to be readable, so it is reported as a condition: the
+ * first failed read, the same failure again only at milestone counts, and the
+ * recovery. A one-shot latch would be the other failure — quiet while the
+ * thing is still broken.
+ *
+ * It lives beside the snapshot on globalThis, not in a module-level binding,
+ * for the reason the snapshot does: every Next module graph in the process
+ * shares one registry, and a per-graph copy of this would report the same
+ * outage once per graph and recover from it once per graph.
+ */
+function snapshotUnreadable(reason: string, cause?: unknown): null {
+	const failure = globalForRegistry.__solutionSnapshotFailure ?? null;
+	if (failure?.reason === reason) {
+		failure.reads += 1;
+		if (isStandingConditionMilestone(failure.reads)) {
+			console.error(
+				`solution registry: ${reason}, still, after ${failure.reads} reads`,
+			);
+		}
+		return null;
+	}
+	globalForRegistry.__solutionSnapshotFailure = { reason, reads: 1 };
+	if (cause === undefined) {
+		console.error(`solution registry: ${reason}`);
+	} else {
+		console.error(`solution registry: ${reason}`, cause);
+	}
+	return null;
+}
+
+function snapshotReadable(): void {
+	const failure = globalForRegistry.__solutionSnapshotFailure ?? null;
+	if (failure === null) {
+		return;
+	}
+	const { reason, reads } = failure;
+	globalForRegistry.__solutionSnapshotFailure = null;
+	console.info(
+		`solution registry: snapshot readable again after ${reads} failed ${reads === 1 ? "read" : "reads"} (${reason})`,
+	);
+}
+
 async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 	const origin = gatewayOrigin();
 	const token = internalToken();
 	if (!origin || !token) {
-		console.error(
-			"solution registry: gateway endpoint or internal token unresolved",
-		);
-		return null;
+		return snapshotUnreadable("gateway endpoint or internal token unresolved");
 	}
 	let response: Response;
 	try {
@@ -430,18 +479,16 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 			signal: AbortSignal.timeout(REGISTRY_READ_TIMEOUT_MS),
 		});
 	} catch (err) {
-		console.error("solution registry: gateway unreachable", err);
-		return null;
+		return snapshotUnreadable("gateway unreachable", err);
 	}
 	if (!response.ok) {
-		console.error(`solution registry: gateway answered ${response.status}`);
-		return null;
+		return snapshotUnreadable(`gateway answered ${response.status}`);
 	}
 	const parsed = manifestsFromSnapshot(await response.json().catch(() => null));
 	if (parsed === null) {
-		console.error("solution registry: malformed registry snapshot");
-		return null;
+		return snapshotUnreadable("malformed registry snapshot");
 	}
+	snapshotReadable();
 	return {
 		revision: parsed.revision,
 		solutions: parsed.solutions,
@@ -498,11 +545,16 @@ function invalidateSnapshot(): void {
 /**
  * The outcome of a registration write. `conflict` is the registry refusing a
  * stale or resurrecting write — the caller must re-read and retry, not retry
- * blindly.
+ * blindly. `rejected` is the registry refusing the registration itself as
+ * inadmissible — today, audit event types its dashboard declares that the
+ * audit registry will not admit, such as a namespace another solution owns or a
+ * field an earlier declaration admitted and this one drops. No retry of the
+ * same manifest can succeed, so it must not read as an outage.
  */
 export type SolutionWriteResult =
 	| { ok: true; revision: number; status: string }
-	| { ok: false; reason: "unavailable" | "conflict" | "forbidden" };
+	| { ok: false; reason: "unavailable" | "conflict" | "forbidden" }
+	| { ok: false; reason: "rejected"; detail?: string };
 
 async function writeToGateway(
 	path: string,
@@ -542,6 +594,28 @@ async function writeToGateway(
 	}
 	if (response.status === 409) return { ok: false, reason: "conflict" };
 	if (response.status === 403) return { ok: false, reason: "forbidden" };
+	// The gateway answers 422 `registration_rejected` only when accounts
+	// attached the structured declaration-rejection reason; the error code is
+	// the signal, never the prose. Any other refusal — a 400 among them — keeps
+	// the outage mapping below.
+	if (response.status === 422) {
+		const refusal = (await response.json().catch(() => ({}))) as {
+			error?: unknown;
+			detail?: unknown;
+		};
+		if (refusal.error === "registration_rejected") {
+			console.error(
+				"solution registry: the registry will not admit the declared audit event types",
+			);
+			return {
+				ok: false,
+				reason: "rejected",
+				...(typeof refusal.detail === "string"
+					? { detail: refusal.detail }
+					: {}),
+			};
+		}
+	}
 	if (!response.ok) {
 		console.error(`solution registry: write answered ${response.status}`);
 		return { ok: false, reason: "unavailable" };
@@ -561,10 +635,18 @@ async function writeToGateway(
 /**
  * Register the frontend half of a solution.
  *
- * The manifest travels as the exact JSON text this host validated. The registry
- * stores it verbatim and never reinterprets it, and byte stability is what lets
- * a re-registration be recognised as a lease renewal rather than a change —
- * which keeps a heartbeat from churning every replica's cache.
+ * The manifest travels as the JSON text this host validated. The registry
+ * stores it in a jsonb column, so it does NOT survive as those bytes: Postgres
+ * re-serializes it on read with its keys reordered, a space after every colon
+ * and its numbers rendered as numerics. Byte stability is therefore exactly
+ * what a re-registration cannot be recognised by — assuming it was is what made
+ * every heartbeat advance the revision and churn every replica's cache. What
+ * recognises a renewal is JSON-value equality, in the registry's own
+ * sameManifest (accounts, pkg/business/solution_registry.go). When the manifest
+ * changes, the registry reads the one part of it that is also a registration of
+ * its own: the audit event types the dashboard graph declares (events carrying
+ * `fields`), which it admits into the audit catalog in the same write, refusing
+ * the whole write when it will not.
  */
 export function registerSolution(
 	manifest: SolutionManifest,
@@ -858,7 +940,11 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	const backend = candidate.backend as Record<string, unknown> | undefined;
 	if (
 		typeof candidate.id !== "string" ||
-		candidate.id === "" ||
+		// The same rule every surface id already answers to. Accepting any
+		// non-empty string here let the id carry whatever the caller liked into
+		// a log line and into solutionProxyBase's URL path; the id is a slug
+		// everywhere it is used, so it is checked as one where it enters.
+		!SAFE_SLUG.test(candidate.id) ||
 		!nav ||
 		typeof nav.title !== "string" ||
 		typeof nav.path !== "string" ||

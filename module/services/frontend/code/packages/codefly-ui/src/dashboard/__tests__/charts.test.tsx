@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Axis, Svg } from "../atoms.js";
-import { AreaChart, LineChart } from "../charts.js";
+import { AreaChart, LineChart, StatChart } from "../charts.js";
 import type { SeriesPoint } from "../types.js";
 
 type ElementLike = { type?: unknown; props?: { children?: unknown } & Record<string, unknown> };
@@ -79,5 +79,19 @@ describe("axes gating", () => {
 		expect(axis?.props).toBeDefined();
 		expect(axis?.props?.x).toBeTruthy();
 		expect(axis?.props?.y).toBeUndefined();
+	});
+});
+
+describe("StatChart", () => {
+	// A single bucket (an all-time total) has no trend. Drawn, it is a flat line
+	// that reads as "no change" beside the number.
+	it("draws no trend line for a single point", () => {
+		const el = StatChart({ total: 31, points: [{ key: "all", value: 31 }] });
+		expect(byType(el, LineChart)).toHaveLength(0);
+	});
+
+	it("draws the trend line for two points or more", () => {
+		const el = StatChart({ total: 5, points: pts });
+		expect(byType(el, LineChart)).toHaveLength(1);
 	});
 });

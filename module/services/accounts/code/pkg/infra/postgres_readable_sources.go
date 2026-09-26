@@ -135,11 +135,23 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
 			&source.BoundaryLabel, &enqueuedAt, &revision, &delivery); err != nil {
 			return nil, err
 		}
-		if source.Origin != "github" {
-			return nil, status.Error(codes.Unimplemented, "source read projection is not supported for this provider")
-		}
-		if source.Container == "" {
-			return nil, status.Error(codes.FailedPrecondition, "source attribution is incomplete")
+		// Container is the identity the consuming module's ingest keys this
+		// source's entries under, so it has to be the one the ingest seam
+		// delivers for the provider. GitHub deliveries name the repository
+		// (github.repo), so the row's repo is the container and a GitHub row
+		// without one cannot be attributed. Every other provider's deliveries
+		// name the resource (api.url, crawler.url, upload.bucket+upload.key)
+		// and the source (datasource.source_id) and no container of their own;
+		// the source id is the one container-level identity they carry, so it
+		// is the container. A bucket is not one: two sources over the same
+		// bucket are two containers. repo is written by the GitHub branch of
+		// AddSource alone, so for these rows it is never consulted.
+		if source.Origin == "github" {
+			if source.Container == "" {
+				return nil, status.Error(codes.FailedPrecondition, "source attribution is incomplete")
+			}
+		} else {
+			source.Container = source.SourceId
 		}
 		if source.Ref != "" && !strings.HasPrefix(source.Ref, "refs/") {
 			source.Ref = "refs/heads/" + source.Ref

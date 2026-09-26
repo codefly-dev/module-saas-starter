@@ -4,6 +4,8 @@ services:
     kind: generated
   APIKeyService:
     kind: generated
+  ApprovalReviewService:
+    kind: generated
   AuditService:
     kind: generated
   AuthService:

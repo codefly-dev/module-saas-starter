@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -62,6 +64,7 @@ const (
 	moduleTenantB  = "22222222-2222-2222-2222-222222222222"
 	modulePrincSvc = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	moduleUserA    = "33333333-3333-3333-3333-333333333333"
+	moduleUserB    = "44444444-4444-4444-4444-444444444444"
 )
 
 // fakeTxStore satisfies business.Store for the enqueue/audit transaction seam
@@ -69,7 +72,8 @@ const (
 // in the same context, and members answers the membership guard.
 type fakeTxStore struct {
 	business.Store
-	members map[string]bool // "org|user" -> true
+	members    map[string]bool // "org|user" -> true
+	membersErr error           // when set, the membership read fails
 }
 
 func (fakeTxStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
@@ -84,7 +88,17 @@ func (fakeTxStore) WithControlPlane(ctx context.Context, fn func(context.Context
 	return fn(ctx)
 }
 
+// GetDeclaredAuditEventType: no solution has declared a type in these tests, so
+// a type outside the code catalog resolves to nothing and is refused as
+// unregistered, exactly as before declared types existed.
+func (fakeTxStore) GetDeclaredAuditEventType(context.Context, business.EventType) (*business.DeclaredAuditEventType, error) {
+	return nil, nil
+}
+
 func (f fakeTxStore) OrgMemberExists(_ context.Context, orgID, userID string) (bool, error) {
+	if f.membersErr != nil {
+		return false, f.membersErr
+	}
 	return f.members[orgID+"|"+userID], nil
 }
 
@@ -271,12 +285,270 @@ func TestModuleEnqueueJob_OrgScopedHappyPath(t *testing.T) {
 	}
 }
 
+// The documents store audits ArchiveDocument and UnarchiveDocument as
+// saas.document.archived / saas.document.unarchived with the caller's initiator
+// field; the host must accept both, or every archive's audit row is refused.
+func TestModuleEmitAuditEvent_ArchiveEventsAccepted(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{"initiator": "caller"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, eventType := range []string{"saas.document.archived", "saas.document.unarchived"} {
+		if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, eventType, "system:ingest", "example-solution", "entry-1", "", fields); err != nil {
+			t.Fatalf("%s should be accepted: %v", eventType, err)
+		}
+	}
+}
+
+// The documents store audits every entry its ingest writes, tombstones or
+// refuses, the receipts of its atomic effects, and the outcome of its ownership
+// and subscription mutations under these names, with exactly these payloads (the
+// store sends counts as numbers). Each must be accepted, or the store's outbox
+// settles the row as refused and the fact never reaches the spine.
+func TestModuleEmitAuditEvent_DocumentStoreVocabularyAccepted(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	cases := map[string]map[string]any{
+		"saas.document.deleted":                {"version": "v1", "initiator": "ApplySnapshot"},
+		"saas.document.ingested":               {"version": "v1", "initiator": "Ingest"},
+		"saas.document.version_minted":         {"version": "v1", "initiator": "Ingest"},
+		"saas.document.renamed":                {"version": "v1", "initiator": "ApplyEffect"},
+		"saas.document.quarantined":            {"version": "v1", "initiator": "Ingest"},
+		"saas.document.subscribed":             {"outcome": "failure", "reason": "not found"},
+		"saas.document.unsubscribed":           {"outcome": "success"},
+		"saas.document.ownership_transferred":  {"outcome": "success", "new_owner_subject_id": "subject-2"},
+		"saas.document.frozen":                 {"outcome": "failure", "reason": "permission denied"},
+		"saas.document.unfrozen":               {"outcome": "success"},
+		"saas.document.ingest_skipped_stale":   {"path": "loans/a.xlsx", "ordinal": float64(3), "initiator": "Ingest"},
+		"saas.document.quarantine_released":    {"version": "v1", "outcome": "success"},
+		"saas.document.payload_conflict":       {"producer": "parse", "producer_version": "1", "entry": "e", "entry_version": "v", "stored_bytes": float64(10), "offered_bytes": float64(11)},
+		"saas.document.snapshot.committed":     {"digest": "d", "deleted": float64(1), "retained": float64(2), "ordinal": float64(7)},
+		"saas.document.snapshot.skipped_stale": {"digest": "d", "deleted": float64(0), "retained": float64(0), "ordinal": float64(6)},
+		"saas.document.effect.committed":       {"digest": "d", "applied": float64(1), "deleted": float64(0)},
+		"saas.document.production.committed":   {"effect_key": "k", "task_id": "t", "digest": "d", "producer": "index", "producer_version": "1"},
+		"saas.document.knowledge.published":    {"version": "v1", "effect_key": "k", "run_id": "r", "digest": "d"},
+	}
+	for eventType, payload := range cases {
+		fields, err := structpb.NewStruct(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, eventType, "system:ingest", "example-solution", "entry-1", "", fields); err != nil {
+			t.Fatalf("%s should be accepted: %v", eventType, err)
+		}
+	}
+	// A count sent as a string is the mistake the store's typed delivery exists
+	// to prevent; the registry refuses it rather than storing it free-form.
+	fields, err := structpb.NewStruct(map[string]any{"digest": "d", "deleted": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.snapshot.committed", "system:ingest", "example-solution", "k", "", fields)
+	requireCode(t, err, codes.InvalidArgument)
+	// A refused release is the release type with outcome failure and the fact of
+	// the mismatch, never a type of its own and never the other tenant's id.
+	fields, err = structpb.NewStruct(map[string]any{"version": "v1", "outcome": "failure", "reason": "tenant mismatch", "tenant_mismatch": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.quarantine_released", "system:ingest", "example-solution", "entry-1", "", fields); err != nil {
+		t.Fatalf("a refused release should be accepted: %v", err)
+	}
+	for _, refused := range []struct {
+		eventType string
+		payload   map[string]any
+	}{
+		// The superseded refusal type is not registered.
+		{"saas.document.quarantine_release_refused", map[string]any{"version": "v1"}},
+		// Another tenant's or solution's identity has no field to travel in.
+		{"saas.document.quarantine_released", map[string]any{"outcome": "failure", "claimed_tenant": "other"}},
+		{"saas.document.quarantine_released", map[string]any{"outcome": "failure", "claimed_solution": "other"}},
+	} {
+		fields, err := structpb.NewStruct(refused.payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, refused.eventType, "system:ingest", "example-solution", "entry-1", "", fields)
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	// A governance action with no outcome would read as a success on an
+	// append-only trail, so every type that tells success from refusal requires it.
+	for _, eventType := range []string{
+		"saas.document.subscribed", "saas.document.unsubscribed", "saas.document.quarantine_released",
+		"saas.document.ownership_transferred", "saas.document.frozen", "saas.document.unfrozen",
+	} {
+		fields, err := structpb.NewStruct(map[string]any{"reason": "permission denied"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, eventType, "system:ingest", "example-solution", "entry-1", "", fields)
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	// The name the store used before this vocabulary was registered stays refused.
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "documents.snapshot.committed", "system:ingest", "example-solution", "k", "", nil)
+	requireCode(t, err, codes.InvalidArgument)
+}
+
 func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+		moduleTenantA, "saas.document.ingested", modulePrincSvc, "example-solution", "entry-1", "", nil)
 	if err != nil {
 		t.Fatalf("registered audit event should be accepted: %v", err)
+	}
+}
+
+// capturingAuditEmitter records every entry the surface hands the spine, so a
+// test can assert what the row would carry without a database.
+type capturingAuditEmitter struct{ entries []business.AuditEntry }
+
+func (c *capturingAuditEmitter) Emit(_ context.Context, e business.AuditEntry) {
+	c.entries = append(c.entries, e)
+}
+
+func (c *capturingAuditEmitter) EmitTx(_ context.Context, e business.AuditEntry) error {
+	c.entries = append(c.entries, e)
+	return nil
+}
+
+// A module attributes the work it did on its own to its own principal. The row
+// names that principal as a system actor, and the entry the event concerns is
+// its resource id — a document entry is a ULID, not a UUID, and it must survive.
+func TestModuleEmitAuditEvent_OwnPrincipalIsASystemActor(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	const entry = "01M3C1E527S6Z98WFBN1B8VRG4"
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", modulePrincSvc, "example-solution", entry, "", nil); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if len(spine.entries) != 1 {
+		t.Fatalf("expected one entry, got %d", len(spine.entries))
+	}
+	got := spine.entries[0]
+	if got.ActorID != modulePrincSvc || got.ActorType != business.ActorTypeSystem {
+		t.Fatalf("actor = %q/%q, want the module principal as a system actor", got.ActorID, got.ActorType)
+	}
+	if got.ResourceID != entry {
+		t.Fatalf("resource id = %q, want the entry %q", got.ResourceID, entry)
+	}
+}
+
+// A module that acted for a subject names the subject, recorded as work done
+// through an agent.
+func TestModuleEmitAuditEvent_SubjectIsAnAgentActor(t *testing.T) {
+	store := fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", nil); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if got := spine.entries[0]; got.ActorID != moduleUserA || got.ActorType != business.ActorTypeAgent {
+		t.Fatalf("actor = %q/%q, want the subject as an agent actor", got.ActorID, got.ActorType)
+	}
+}
+
+// A module's own process label is its own work: the host knows which module
+// is calling, so system:<process> is recorded under that module's principal as
+// a system actor instead of being refused. A document producer sends
+// system:ingest on every ingested entry; refusing it would hold every one of
+// those events at the producer until it changed, and a producer that settles a
+// refusal as final would lose them.
+func TestModuleEmitAuditEvent_ProcessLabelMapsToTheModulePrincipal(t *testing.T) {
+	for _, actor := range []string{"system:ingest", "system:producers", "system:knowledge-card", "system:sync.v2"} {
+		t.Run(actor, func(t *testing.T) {
+			svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+			spine := &capturingAuditEmitter{}
+			svc.SetAuditEmitter(spine)
+			if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+				moduleTenantA, "saas.document.ingested", actor, "example-solution", "entry-1", "", nil); err != nil {
+				t.Fatalf("a module's own process label must be accepted: %v", err)
+			}
+			if len(spine.entries) != 1 {
+				t.Fatalf("expected one entry, got %d", len(spine.entries))
+			}
+			if got := spine.entries[0]; got.ActorID != modulePrincSvc || got.ActorType != business.ActorTypeSystem {
+				t.Fatalf("actor = %q/%q, want the calling module's principal as a system actor", got.ActorID, got.ActorType)
+			}
+		})
+	}
+}
+
+// uuid.Parse accepts several spellings of one id, and Postgres stores all of
+// them as the same uuid. The row carries the canonical form, and the calling
+// module's own principal in any spelling is still the module (system), so an
+// uppercase id is neither refused nor misfiled as a subject the module acted for.
+func TestModuleEmitAuditEvent_PrincipalSpellingsAreCanonicalized(t *testing.T) {
+	const subjectUpper = "33333333-3333-3333-3333-333333333333"
+	for name, tc := range map[string]struct{ actor, wantID, wantType string }{
+		"canonical own":    {modulePrincSvc, modulePrincSvc, business.ActorTypeSystem},
+		"uppercase own":    {"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", modulePrincSvc, business.ActorTypeSystem},
+		"braced own":       {"{" + modulePrincSvc + "}", modulePrincSvc, business.ActorTypeSystem},
+		"urn own":          {"urn:uuid:" + modulePrincSvc, modulePrincSvc, business.ActorTypeSystem},
+		"unhyphenated own": {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", modulePrincSvc, business.ActorTypeSystem},
+		"braced subject":   {"{" + subjectUpper + "}", moduleUserA, business.ActorTypeAgent},
+		"uppercase subject": {"ABCDEF01-2345-6789-ABCD-EF0123456789",
+			"abcdef01-2345-6789-abcd-ef0123456789", business.ActorTypeAgent},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// A subject is recorded only once it is a member of the tenant, so the
+			// spelling under test is the only thing left for the case to prove.
+			store := fakeTxStore{members: map[string]bool{moduleTenantA + "|" + tc.wantID: true}}
+			svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+			spine := &capturingAuditEmitter{}
+			svc.SetAuditEmitter(spine)
+			if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+				moduleTenantA, "saas.document.ingested", tc.actor, "example-solution", "entry-1", "", nil); err != nil {
+				t.Fatalf("emit: %v", err)
+			}
+			if got := spine.entries[0]; got.ActorID != tc.wantID || got.ActorType != tc.wantType {
+				t.Fatalf("actor = %q/%q, want %q/%q", got.ActorID, got.ActorType, tc.wantID, tc.wantType)
+			}
+		})
+	}
+}
+
+// An actor that resolves to no principal — not a principal id in any spelling,
+// not a system:<process> label — fails loudly, before anything is written: it
+// used to be accepted and blanked on write, so the row said nobody did it and
+// the module was told it had succeeded. The refusal is FailedPrecondition, not
+// InvalidArgument: the event is well formed and must stay pending at the
+// producer until the actor is named, not be settled as permanently invalid.
+func TestModuleEmitAuditEvent_UnresolvedActorFailsLoudlyAndStaysRetryable(t *testing.T) {
+	for name, actor := range map[string]string{
+		"a free-form name":         "actor-1",
+		"an empty process":         "system:",
+		"an uppercase process":     "system:Ingest",
+		"an uppercase prefix":      "SYSTEM:ingest",
+		"a process with a space":   "system:in gest",
+		"another namespace":        "user:ingest",
+		"a malformed uuid":         "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaz",
+		"a trailing process colon": "system:ingest:",
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+			spine := &capturingAuditEmitter{}
+			svc.SetAuditEmitter(spine)
+			err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+				moduleTenantA, "saas.document.ingested", actor, "example-solution", "entry-1", "", nil)
+			requireCode(t, err, codes.FailedPrecondition)
+			if !strings.Contains(err.Error(), business.ErrModuleAuditActorUnresolved.Error()) {
+				t.Fatalf("the refusal must name its cause, got %v", err)
+			}
+			if len(spine.entries) != 0 {
+				t.Fatalf("an unresolved actor reached the spine: %+v", spine.entries)
+			}
+		})
 	}
 }
 
@@ -285,7 +557,7 @@ func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 func TestModuleEmitAuditEvent_LegacyTypeRejected(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+		moduleTenantA, "document.ingested", moduleUserA, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -296,7 +568,7 @@ func TestModuleEmitAuditEvent_WriteFailureSurfaces(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	svc.SetAuditEmitter(&fakeAuditEmitter{emitTxErr: errors.New("audit spine unavailable")})
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
+		moduleTenantA, "saas.document.ingested", modulePrincSvc, "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.Internal)
 }
 
@@ -402,7 +674,68 @@ func TestModuleNackJob_RetryableRetries(t *testing.T) {
 
 func TestModuleEmitAuditEvent_UnregisteredTypeRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
-	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", "", nil)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", moduleUserA, "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.InvalidArgument)
+}
+
+// entry_id is optional on ModuleEmitAuditEventRequest because the surface is
+// shared with types that have no entry to name, so a type whose whole subject is
+// one resource has to be refused here. Without this the emit succeeded and wrote
+// a redrive row that named no document at all.
+func TestModuleEmitAuditEvent_EntryRequiredWhenTheTypeRecordsAResource(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{
+		"version": "v1", "correlation_id": "redrive-7", "producer": "embed", "error_class": "exhausted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "system:redrive", "example-solution", "", "redrive-7:entry-1:embed", fields)
+	requireCode(t, err, codes.InvalidArgument)
+
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "system:redrive", "example-solution", "entry-1", "redrive-7:entry-1:embed", fields); err != nil {
+		t.Fatalf("the same emit naming its entry should be accepted: %v", err)
+	}
+}
+
+// An empty idempotency_key deduplicates nothing (see the field's contract on
+// ModuleEmitAuditEventRequest), so a type emitted once per queue item — where a
+// replayed response is ordinary — is refused without one. Before this, a redrive
+// whose response was lost wrote the same re-queue twice and nothing said so.
+func TestModuleEmitAuditEvent_IdempotencyKeyRequiredForPerItemTypes(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{
+		"version": "v1", "correlation_id": "redrive-7", "producer": "embed", "error_class": "exhausted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "system:redrive", "example-solution", "entry-1", "", fields)
+	requireCode(t, err, codes.InvalidArgument)
+
+	// A type nobody declared retry-prone still emits without one, so the
+	// requirement stayed with the event rather than spreading to the surface.
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.ingested", "system:redrive", "example-solution", "entry-1", "", nil); err != nil {
+		t.Fatalf("an undeclared type must keep emitting without a key: %v", err)
+	}
+}
+
+// The blank a Go emitter sends when it never set the field. The payload is
+// otherwise complete, so nothing else can be what refuses it.
+func TestModuleEmitAuditEvent_BlankRequiredFieldRefused(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	fields, err := structpb.NewStruct(map[string]any{
+		"version": "v1", "correlation_id": "redrive-7", "producer": "", "error_class": "exhausted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA,
+		"saas.document.dead_letter_redriven", "actor-1", "example-solution", "entry-1", "redrive-7:entry-1:embed", fields)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -588,6 +921,27 @@ func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 	}
 }
 
+// A module's own content types are untouched by the reservation above: only the
+// two the host reads out of a sealed capability are refused.
+func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing.T) {
+	registry, err := business.ParseModulePrincipalRegistry(
+		`{"documents":{"resources":["documents.files","rolesets"],"tenant":"` + moduleTenantA + `"}}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	grant := registry[business.ModulePrincipalID("documents")]
+	if len(grant.Resources) != 2 {
+		t.Fatalf("resources = %v, want both declarations kept", grant.Resources)
+	}
+	if business.IsHostSealedScopeResource("rolesets") || business.IsHostSealedScopeResource("documents.files") {
+		t.Fatal("the reservation must match the exact host resource type, not a prefix of it")
+	}
+	if !business.IsHostSealedScopeResource(business.HostScopeRoles) ||
+		!business.IsHostSealedScopeResource(business.HostScopeAudit) {
+		t.Fatal("both host sealed-scope resources must be reserved")
+	}
+}
+
 func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
 	tests := map[string]string{
 		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
@@ -600,6 +954,16 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 		// registry used to be would otherwise parse into a principal no module can
 		// ever be, denying every call for a reason that names the caller.
 		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+		// `roles` and `audit` are read off a sealed capability by the host itself
+		// (the collection-metadata disclosure) rather than authorized per node, so
+		// the content-read branch's "every read is re-authorized per node"
+		// justification does not cover them. Declaring one as module content would
+		// let a single collection grant mint an unscoped `roles:read` and disclose
+		// who holds a grant on every readable collection, which only an
+		// organization-wide assignment could reach before. The registry is operator
+		// text this host cannot otherwise check, so it is refused at parse time.
+		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"tenant":"` + moduleTenantA + `"}}`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -761,4 +1125,140 @@ func TestModuleListSubjectVisibility_SetAtTheCapIsServed(t *testing.T) {
 	if len(grants) != business.ModuleSubjectVisibilityMaxSet {
 		t.Fatalf("grants = %d, want the whole set at the cap", len(grants))
 	}
+}
+
+// A module naming a subject is making a claim the host cannot check: actor_id
+// means "the verified initiator" everywhere else on the spine, and here the
+// module is the only witness that the subject acted. The host checks the one
+// thing it can — that the subject is a party in the organization the row lands
+// in — so a module bound to one tenant cannot write another tenant's user id, or
+// any id at all, into a trail that is append-only and never correctable.
+// moduleUserB is a well-formed principal id that is a member of nothing here.
+func TestModuleEmitAuditEvent_SubjectMustBelongToTheTenant(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", moduleUserB, "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.FailedPrecondition)
+	if !errors.Is(err, business.ErrModuleAuditActorUnresolved) && !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("error must say the subject is not of this tenant: %v", err)
+	}
+	if len(spine.entries) != 0 {
+		t.Fatalf("an unverified subject reached the spine: %+v", spine.entries)
+	}
+}
+
+// A system-scoped row has no organization to place a subject in, so there is no
+// subject it could verify and none it will record. Only the module's own work
+// belongs on one.
+func TestModuleEmitAuditEvent_SystemScopedRowTakesNoSubject(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, true)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		"", "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.FailedPrecondition)
+
+	if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		"", "saas.document.ingested", "system:ingest", "example-solution", "entry-1", "", nil); err != nil {
+		t.Fatalf("the module's own work is what a system-scoped row records: %v", err)
+	}
+	if got := spine.entries[0]; got.ActorID != modulePrincSvc || got.ActorType != business.ActorTypeSystem {
+		t.Fatalf("actor = %q/%q, want the module principal as a system actor", got.ActorID, got.ActorType)
+	}
+}
+
+// A membership read that failed proves neither that the subject belongs to the
+// tenant nor that it does not. audit_events_no_update means a row written under a
+// guessed actor can never be put right, so the emit surfaces the error and
+// nothing reaches the spine.
+func TestModuleEmitAuditEvent_MembershipReadFailureSurfaces(t *testing.T) {
+	store := fakeTxStore{membersErr: errors.New("organization_members unavailable")}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.Internal)
+	if len(spine.entries) != 0 {
+		t.Fatalf("an unresolved actor reached the spine: %+v", spine.entries)
+	}
+}
+
+// resource_id is the one identifier field on an audit row that no declaration
+// mechanism covers: payload fields declare PII and RedactPayload strips it on the
+// CSV download, the JSON download and the S3 JSONL exporter, while resource_id is
+// written verbatim into a table audit_events_no_update and audit_events_no_delete
+// make append-only for 365 days. Storing the entry id as given is what keeps a
+// document's ULID; it also replaced an implicit constraint with none, so an
+// identifier is kept and a locator — record content, carrying a path or an
+// address — is dropped to no resource id, which is what the writer used to do to
+// it. Neither refuses the emit.
+func TestModuleEmitAuditEvent_EntryIDKeepsIdentifiersAndDropsLocators(t *testing.T) {
+	emit := func(t *testing.T, entry string) business.AuditEntry {
+		t.Helper()
+		svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+		spine := &capturingAuditEmitter{}
+		svc.SetAuditEmitter(spine)
+		if err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+			moduleTenantA, "saas.document.ingested", modulePrincSvc, "example-solution", entry, "", nil); err != nil {
+			t.Fatalf("entry id %q must not refuse the emit: %v", entry, err)
+		}
+		if len(spine.entries) != 1 {
+			t.Fatalf("the event must still land, got %d entries", len(spine.entries))
+		}
+		return spine.entries[0]
+	}
+	for name, entry := range map[string]string{
+		"a ULID":             "01M3C1E527S6Z98WFBN1B8VRG4",
+		"a uuid":             moduleUserA,
+		"a provider id":      "cus_NffrFeUfNV2Hib",
+		"a numeric id":       "88214417",
+		"a digest":           "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+		"a dotted version":   "entry-1.v3",
+		"a plus-scoped id":   "run+42",
+		"an unpadded base64": "aGVsbG8-d29ybGQ_",
+	} {
+		t.Run("keeps "+name, func(t *testing.T) {
+			if got := emit(t, entry).ResourceID; got != entry {
+				t.Fatalf("resource id = %q, want the entry %q", got, entry)
+			}
+		})
+	}
+	for name, entry := range map[string]string{
+		"a path":                 "clients/2026-Q1.pdf",
+		"a path with an email":   "clients/jane.doe@example.com/2026-Q1.pdf",
+		"a windows path":         `clients\2026-Q1.pdf`,
+		"a bare address":         "jane.doe@example.com",
+		"a value with a space":   "Q1 report",
+		"a value with a tab":     "entry\treport",
+		"a value with a newline": "entry\nreport",
+	} {
+		t.Run("drops "+name, func(t *testing.T) {
+			if got := emit(t, entry).ResourceID; got != "" {
+				t.Fatalf("resource id = %q, want it dropped", got)
+			}
+		})
+	}
+}
+
+// The registry and the payload registry reject on the request alone, so they must
+// still do so before this surface touches the store — the subject case now needs a
+// membership read, and newModuleService is documented as safe with a nil store for
+// exactly these guards. A nil store panics rather than erring, so this pins the
+// order rather than the message.
+func TestModuleEmitAuditEvent_RequestOnlyGuardsRejectBeforeAnyStoreAccess(t *testing.T) {
+	svc := newModuleService(t, &fakeJobBackend{})
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "document.made_up", moduleUserA, "example-solution", "entry-1", "", nil)
+	requireCode(t, err, codes.InvalidArgument)
+
+	fields, ferr := structpb.NewStruct(map[string]any{"not_a_declared_field": "x"})
+	if ferr != nil {
+		t.Fatal(ferr)
+	}
+	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", fields)
+	requireCode(t, err, codes.InvalidArgument)
 }

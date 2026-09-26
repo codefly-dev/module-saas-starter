@@ -35,6 +35,36 @@ survives a restart and reaches every replica, and is only served when it is
 
 - Writes are **compare-and-swap on the revision**, so a stale publisher cannot
   overwrite newer state.
+- A frontend-half write that changes the manifest also **admits the audit event
+  types its dashboard graph declares** (events carrying `fields`), in the same
+  transaction (`pkg/business/solution_audit_events.go`). An admitted type is an
+  `audit_event_types` row owned by `solution:<id>`. A solution admits types
+  only into the namespaces its own `MODULE_PRINCIPALS` entry (keyed by its
+  solution id) binds — no entry, no admission — so the registration credential
+  alone claims nothing. A namespace belongs to one producer (one the composed
+  event catalog publishes domain events under is already held), a
+  re-declaration may only add fields, and a refusal rolls the whole write back.
+  Ownership follows the binding: the operator releases a namespace by removing
+  it from the holder's entry and binding it to another solution, whose next
+  admission takes every type in it over, recorded as
+  `audit_namespaces_taken_over` on `saas.solution.registration_updated`.
+  Every path that reads a type's schema — the version stamp, payload checks,
+  the category label, and PII redaction on webhooks, the export feed and
+  downloads — resolves it through one lookup (`business.AuditEventResolver`),
+  which reads a declared type's row, so a declared field marked `pii` is
+  stripped like a catalog one and a declared type is never dead-lettered as
+  unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
+  `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
+  lists its namespace.
+- A composed **module** with no frontend half declares its own audit event
+  types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
+  (`pkg/business/module_audit_declarations.go`): the same validator
+  (`ValidateAuditEventTypeDeclarations`) and the same admission, under the
+  same binding. `prefix` must be the caller's own (the principal derived from
+  it), the types are owned as `solution:<prefix>`, and its emissions name that
+  prefix as `solution`. Re-declaring what is admitted writes and records
+  nothing, so a module may declare on every start; a change is recorded as
+  `saas.module.audit_types_declared`.
 - A deregistration leaves a **tombstone**, so a retiring deployment's delayed
   heartbeat cannot resurrect it.
 - accounts serves this as `SolutionRegistryService` on the **internal listener**;
@@ -183,9 +213,24 @@ viewer may read out.
 
 ## Mesh reachability is the composition's to grant
 
+A composed module reaches the internal tier on the named `authority` endpoint
+(gRPC, module visibility, a listener of its own), which serves only
+`business.ModuleAuthorityProcedures` — see
+[../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md). Widening that list
+widens what every composed module can reach, so
+`business.ValidateModuleAuthorityProcedures` runs in the catalog and deployment
+generators and refuses an entry that is neither on the capability surface that
+authenticates the calling module from its Work Context nor one of the two
+declared read-only oracles. A method that authorizes on the shared perimeter
+credential alone and mutates state therefore cannot reach every composed module
+through a one-line edit to the list.
+
 The generated `AuthorizationPolicy` allowlists accounts' internal surface to the
-service accounts of services that **declare a dependency on accounts** in the
-workspace topology. This module's own topology names no composed module — it must
+service accounts of services that **declare a dependency on one of accounts'
+private endpoints** in the workspace topology, and admits a caller that declared
+the `authority` endpoint and no private one to the module surface alone — a
+tenant-surface edge beside it changes nothing. This module's own topology names
+no composed module — it must
 carry no build-time knowledge of its consumers — so a composed module reaches the
 capability surface in a mesh-enforced deployment only when its own workspace
 declares that dependency and regenerates the policy. A valid Work Context does

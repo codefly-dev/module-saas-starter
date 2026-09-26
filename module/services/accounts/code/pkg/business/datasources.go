@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -160,12 +162,19 @@ const (
 	datasourceCrawlerSyncSource = "crawler.sync"
 	datasourceUploadSyncTopic   = "datasource.upload.sync"
 	datasourceUploadSyncSource  = "upload.sync"
+	// datasourceUploadListingTopic closes an upload sync with the complete
+	// listing it delivered, under the sync's ordinal; the documents store
+	// tombstones every entry of the source the listing omits.
+	datasourceUploadListingTopic = "datasource.upload.snapshot"
 
 	attrCrawlerURL        = "crawler.url"
 	attrCrawlerContentSHA = "crawler.content_sha"
 	attrUploadBucket      = "upload.bucket"
 	attrUploadKey         = "upload.key"
 	attrUploadETag        = "upload.etag"
+	// attrUploadOrdinal is the sync's per-source ordinal, stamped on every
+	// object job of the sync and on its listing so the store can rank them.
+	attrUploadOrdinal = "upload.ordinal"
 
 	changeTypeAdded = "added"
 )
@@ -187,10 +196,17 @@ type DatasourceSyncOperation struct {
 	JobID      string
 	State      jobsv1.JobState
 	Deliveries []DatasourceSyncDelivery
+	// Record and Handoff are the durable facts the store read; Progress is
+	// projected from them (ProjectDatasourceSyncProgress).
+	Record   DatasourceSyncRecord
+	Handoff  DatasourceSyncHandoff
+	Progress DatasourceSyncProgress
 }
 
+// DatasourceSyncOperationStore reads one sync of a source: the job named by
+// jobID, or with jobID empty the source's latest sync.
 type DatasourceSyncOperationStore interface {
-	GetDatasourceSyncOperation(context.Context, string, string, string) (*DatasourceSyncOperation, error)
+	GetDatasourceSyncOperation(ctx context.Context, orgID, sourceID, jobID string) (*DatasourceSyncOperation, error)
 }
 
 // ErrOAuth2ReauthRequired reports that an OAuth 2.0 source's refresh token was
@@ -270,17 +286,21 @@ type UploadDatasourceConfig struct {
 // provider), never plaintext. Repo/Paths/Branch are set for the GitHub provider;
 // API/Crawler/Upload is set for the matching generic provider.
 type DatasourceSource struct {
-	ID                  string
-	OrgID               string
-	Provider            string
-	Repo                string
-	Paths               []string
-	FileExtensions      []string
-	Branch              string
-	API                 *APIDatasourceConfig
-	Crawler             *CrawlerDatasourceConfig
-	Upload              *UploadDatasourceConfig
-	BoundaryNodeID      string
+	ID             string
+	OrgID          string
+	Provider       string
+	Repo           string
+	Paths          []string
+	FileExtensions []string
+	Branch         string
+	API            *APIDatasourceConfig
+	Crawler        *CrawlerDatasourceConfig
+	Upload         *UploadDatasourceConfig
+	BoundaryNodeID string
+	// BoundaryLabel is the display label of BoundaryNodeID (the collection's
+	// name). Read only by the org-scoped listing and point read the
+	// DatasourceService serves; empty on every other read.
+	BoundaryLabel       string
 	CredentialSecretRef string
 	WebhookSecretRef    string
 	// GitHubInstallationID is the App installation this source's credential
@@ -338,18 +358,54 @@ type AddGitHubSourceInput struct {
 	WebhookSecret   string
 }
 
-// GitHubContentClient is the subset of the api.github.com client the datasource
-// connector needs. The Service builds one per Source from its decrypted token.
+// GitHubContentClient is the per-source GitHub client the datasource connector
+// needs. The Service builds one per Source from its decrypted token. Branches
+// and commits are resolved over git transport, and content is read through the
+// source's repository mirror, so a sync spends no REST budget; the REST API
+// answers only whether a repository is public.
 type GitHubContentClient interface {
 	DefaultBranch(ctx context.Context, repo string) (string, error)
 	ResolveCommit(ctx context.Context, repo, ref string) (string, error)
-	ListFiles(ctx context.Context, repo, ref string, prefixes []string) ([]github.File, error)
-	GetFileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
-	Compare(ctx context.Context, repo, base, head string) (*github.Comparison, error)
-	GetBlob(ctx context.Context, repo, blobSHA string, max int64) ([]byte, error)
+	// OpenRepository opens the source's mirror of repo, held exclusively until
+	// the returned repository is closed.
+	OpenRepository(ctx context.Context, ws github.Workspace, repo string) (GitHubRepository, error)
 	// RepositoryIsPublic is asked of a client holding no token, to prove a
 	// repository may be connected without a credential.
 	RepositoryIsPublic(ctx context.Context, repo string) (bool, error)
+}
+
+// GitHubRepository is one source's repository mirror. List and Compare fetch
+// commits and trees, Fetch fetches blobs — each in one request for everything
+// it is asked for — and Sizes, Read and Stream only ever read what is local.
+type GitHubRepository interface {
+	List(ctx context.Context, commit string, match func(path string) bool) ([]github.File, error)
+	Compare(ctx context.Context, base, head string) (*github.Comparison, error)
+	Fetch(ctx context.Context, ids []string) error
+	Sizes(ctx context.Context, ids []string) (map[string]int64, error)
+	Read(ctx context.Context, id string, max int64) ([]byte, error)
+	Stream(ctx context.Context, ids []string, visit func(id string, size int64, content io.Reader) error) error
+	// Fetches reports how many network requests this handle made, so every
+	// operation can report what it cost.
+	Fetches() int
+	Close() error
+}
+
+// githubRESTClient adapts the concrete client to GitHubContentClient: its
+// OpenRepository returns the concrete mirror type.
+type githubRESTClient struct{ *github.Client }
+
+func (c githubRESTClient) OpenRepository(ctx context.Context, ws github.Workspace, repo string) (GitHubRepository, error) {
+	r, err := c.Client.OpenRepository(ctx, ws, repo)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// githubWorkspace names a source's repository mirror by its org and id, so no
+// two sources — and no two tenants — ever share one.
+func githubWorkspace(source *DatasourceSource) github.Workspace {
+	return github.Workspace{Org: source.OrgID, Source: source.ID}
 }
 
 // APIContentClient is the subset of the generic API connector the Service needs.
@@ -370,7 +426,7 @@ type CrawlerContentClient interface {
 // needs. The Service builds one per Source from its config and decrypted secret
 // access key and drives it item-at-a-time (List then Fetch).
 type UploadContentClient interface {
-	List(ctx context.Context) ([]objectstore.Entry, error)
+	List(ctx context.Context) (objectstore.Listing, error)
 	Fetch(ctx context.Context, key string) (objectstore.Object, error)
 }
 
@@ -390,7 +446,7 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 	s.githubBaseURL = strings.TrimSpace(githubBaseURL)
 	if s.newGitHubClient == nil {
 		s.newGitHubClient = func(token string) GitHubContentClient {
-			return github.New(token, s.githubBaseURL)
+			return githubRESTClient{github.New(token, s.githubBaseURL)}
 		}
 	}
 	if s.newAPIClient == nil {
@@ -424,6 +480,7 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 	if s.newOAuth2Refresh == nil {
 		s.newOAuth2Refresh = apisource.RefreshOAuth2
 	}
+	s.datasourceConnectors = s.newDatasourceConnectorRegistry()
 }
 
 // SetDatasourceGitHubClientFactory overrides how per-Source GitHub clients are
@@ -441,8 +498,13 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 func (s *Service) SetDatasourceTicketKey(seed []byte) {
 	if len(seed) == 0 {
 		s.datasourceTicketSigner = nil
+		s.datasourceLinkKey = nil
 		return
 	}
+	// The account-link state is signed under its own domain-separated key, so
+	// neither kind of token can pass for the other.
+	linkKey := sha256.Sum256(append([]byte("datasource-account-link-state\x00"), seed...))
+	s.datasourceLinkKey = linkKey[:]
 	s.datasourceTicketSigner = newDatasourceTicketSigner(seed)
 }
 
@@ -483,6 +545,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	orgID := strings.TrimSpace(input.OrgID)
 	if orgID == "" {
 		return nil, w.NewError("org id is required")
+	}
+	if err := s.admitNewDatasource(DatasourceProviderGitHub); err != nil {
+		return nil, err
 	}
 	repo := strings.TrimSpace(input.Repo)
 	if !validRepo(repo) {
@@ -546,11 +611,15 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
+		if err := s.fillBoundaryLabel(ctx, source); err != nil {
+			return err
+		}
 		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
 			map[string]any{"repo": source.Repo, "provider": source.Provider, "credential_kind": credential.Kind})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
+	s.startFirstGitHubSync(ctx, source)
 	return source, nil
 }
 
@@ -628,6 +697,17 @@ type AddSourceInput struct {
 // supports webhooks, the signing secret), persists the non-secret row, and
 // returns it without credential material.
 func (s *Service) AddSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
+	// A provider off the datasource envelope takes no new source (its existing
+	// sources keep running); an unknown one is refused here too. Nothing is
+	// validated, sealed or stored before admission.
+	if err := s.admitNewDatasource(input.Provider); err != nil {
+		return nil, err
+	}
+	return s.addSource(ctx, actorID, input)
+}
+
+// addSource validates, seals and stores a source of an admitted provider.
+func (s *Service) addSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
 	w := wool.Get(ctx).In("AddSource")
 
 	orgID := strings.TrimSpace(input.OrgID)
@@ -640,7 +720,6 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
-
 	source := &DatasourceSource{
 		ID:       NewIDString(),
 		OrgID:    orgID,
@@ -763,6 +842,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
+		if err := s.fillBoundaryLabel(ctx, source); err != nil {
+			return err
+		}
 		payload := map[string]any{"provider": source.Provider}
 		if source.Provider == DatasourceProviderGitHub {
 			payload["repo"] = source.Repo
@@ -772,7 +854,32 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
+	if source.Provider == DatasourceProviderGitHub {
+		s.startFirstGitHubSync(ctx, source)
+	}
 	return source, nil
+}
+
+// fillBoundaryLabel reads the boundary's name back through the same labelled
+// projection the listing and the point read use, so the Datasource a write
+// returns names its collection exactly as a later read does.
+//
+// Deriving it here instead would give the write path a second source of truth:
+// the mint branch knows the label it asked for, but the branch that names an
+// existing node knows only its id, and a field that carries a name on
+// ListSources and an empty string on AddSource is a contract no consumer can
+// hold — they cannot tell "unnamed" from "this RPC does not fill it".
+//
+// Runs inside the caller's WithOrgTx, against the row just inserted.
+func (s *Service) fillBoundaryLabel(ctx context.Context, source *DatasourceSource) error {
+	stored, err := s.store.GetDatasourceSource(ctx, source.OrgID, source.ID)
+	if err != nil {
+		return err
+	}
+	if stored != nil {
+		source.BoundaryLabel = stored.BoundaryLabel
+	}
+	return nil
 }
 
 // requireBoundarySpec rejects a connect input that names neither or both of a
@@ -992,7 +1099,32 @@ func (s *Service) GetDatasourceSource(ctx context.Context, orgID, id string) (*D
 	return source, nil
 }
 
+// RemovedDatasourceSource is the identity of a Source a delete removed: what the
+// audit record names it by, returned by the statement that deleted it. It is
+// deliberately not a DatasourceSource — a source that no longer exists has no
+// credential envelope, status or sync cursor to speak of, and a half-filled
+// struct of those would invite the next caller to read a field the delete never
+// returned.
+type RemovedDatasourceSource struct {
+	// Provider is one of the DatasourceProvider* values (the column is NOT NULL
+	// under a CHECK, so a removed source always names one).
+	Provider string
+	// Repo is set for the GitHub provider and empty for the others.
+	Repo string
+	// BoundaryNodeID is the collection node the source fed. The column is NOT
+	// NULL, so a removed source always names one.
+	BoundaryNodeID string
+}
+
 // DeleteDatasourceSource removes a Source and its stored credentials.
+//
+// The removal is recorded with what the source was — its provider, repository
+// and the collection (boundary node) it fed — because once the row is gone
+// nothing else on the trail says which collection lost its source. The deleting
+// statement returns that identity, so the record describes a row this
+// transaction actually removed rather than one seen by an earlier read. A source
+// that is not there is not removed, so nothing is recorded for it and the call
+// still succeeds, as it always has.
 func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id string) error {
 	orgID = strings.TrimSpace(orgID)
 	id = strings.TrimSpace(id)
@@ -1000,14 +1132,33 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 		return errors.New("org id and source id are required")
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		if err := s.store.DeleteDatasourceSource(ctx, orgID, id); err != nil {
+		removed, err := s.store.DeleteDatasourceSource(ctx, orgID, id)
+		if err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
+		if removed == nil {
+			return nil
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID, datasourceRemovedPayload(removed))
 	}); err != nil {
 		return err
 	}
 	return nil
+}
+
+// datasourceRemovedPayload names the removed source on its audit record. `repo`
+// is omitted rather than recorded as an empty string for a provider that has no
+// repository; `provider` and `boundary` are NOT NULL columns, so every removed
+// source names both.
+func datasourceRemovedPayload(removed *RemovedDatasourceSource) map[string]any {
+	payload := map[string]any{
+		"provider": removed.Provider,
+		"boundary": removed.BoundaryNodeID,
+	}
+	if removed.Repo != "" {
+		payload["repo"] = removed.Repo
+	}
+	return payload
 }
 
 // SyncDatasourceSource enqueues a durable "reconcile now" request and returns
@@ -1127,7 +1278,12 @@ func (s *Service) GetDatasourceSync(ctx context.Context, orgID, sourceID, jobID 
 	if s.datasourceSyncOperations == nil {
 		return nil, errors.New("datasource sync observation is not configured")
 	}
-	return s.datasourceSyncOperations.GetDatasourceSyncOperation(ctx, orgID, sourceID, jobID)
+	operation, err := s.datasourceSyncOperations.GetDatasourceSyncOperation(ctx, orgID, sourceID, jobID)
+	if err != nil {
+		return nil, err
+	}
+	operation.Progress = ProjectDatasourceSyncProgress(operation.Record, operation.Handoff)
+	return operation, nil
 }
 
 // datasourceRequestBody is the body every datasource *request* job carries —
@@ -1448,12 +1604,26 @@ func crawlerIngestIdempotencyKey(sourceID, pageURL, contentSHA string) string {
 	return "datasource-crawler-sync/" + hex.EncodeToString(digest[:])
 }
 
-// runUploadSync lists the source's objects and fetches each one at a time,
-// enqueuing an ingest delivery per object. Objects are streamed (never all held
-// in memory); a listed object deleted before its fetch is skipped, an object too
-// large to deliver is recorded and surfaced, and any real fetch failure (a
-// permission or transport error) aborts the sync rather than reading as an empty
-// bucket.
+// ErrUploadListingIncomplete reports an upload sync whose listing was not the
+// whole folder: the store truncated it, or the source's object cap cut it. The
+// objects it did list are still delivered, but no listing is sent, so nothing
+// is removed on a partial view; it fails the sync terminally rather than
+// retrying into the same cap.
+var ErrUploadListingIncomplete = errors.New("upload listing is incomplete; removals were not reconciled")
+
+// runUploadSync mirrors the source's folder into the documents store. It lists
+// the source's objects and fetches each one at a time, enqueuing an ingest
+// delivery per object, then closes the sync with the complete listing of every
+// object it delivered, so the store tombstones the entries whose objects are
+// gone. Every job of one sync carries one freshly allocated ordinal, which the
+// store ranks the listing against the writes it covers by.
+//
+// The listing is sent only when the sync saw the whole folder and delivered
+// every object in it: a failed or truncated listing, a fetch failure, or an
+// object too large to deliver ends the sync without one, so a partial view can
+// never delete. A listed object deleted before its fetch is gone, and is left
+// out of the listing. A key ending in "/" is a folder marker, not a file, and
+// is neither delivered nor listed.
 func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
 	w := wool.Get(ctx).In("runUploadSync")
 	if s.newUploadClient == nil {
@@ -1469,18 +1639,26 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	}
 	client := s.newUploadClient(*source.Upload, secretKey)
 
-	entries, err := client.List(ctx)
+	listing, err := client.List(ctx)
 	if err != nil {
 		return 0, w.Wrapf(err, "list objects")
+	}
+	ordinal, err := s.allocateOrdinal(ctx, source.ID)
+	if err != nil {
+		return 0, w.Wrapf(err, "allocate ordinal")
 	}
 
 	enqueued := 0
 	oversized := 0
-	for _, entry := range entries {
+	delivered := make([]uploadListingFile, 0, len(listing.Entries))
+	for _, entry := range listing.Entries {
+		if strings.HasSuffix(entry.Key, "/") {
+			continue
+		}
 		object, err := client.Fetch(ctx, entry.Key)
 		if err != nil {
 			if errors.Is(err, objectstore.ErrObjectNotFound) {
-				// Deleted between listing and fetch; skip best-effort.
+				// Deleted between listing and fetch: it is gone, so it is not listed.
 				w.Warn("skipping vanished object", wool.Field("key", entry.Key))
 				continue
 			}
@@ -1496,9 +1674,11 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 			oversized++
 			continue
 		}
-		if err := s.enqueueUploadIngest(ctx, source, object, uploadFingerprint(object, entry)); err != nil {
+		fingerprint := uploadFingerprint(object, entry)
+		if err := s.enqueueUploadIngest(ctx, source, object, fingerprint, ordinal); err != nil {
 			return enqueued, w.Wrapf(err, "enqueue %s", entry.Key)
 		}
+		delivered = append(delivered, uploadListingFile{Key: object.Key, ETag: fingerprint})
 		enqueued++
 	}
 
@@ -1507,6 +1687,12 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	if oversized > 0 {
 		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
 	}
+	if !listing.Complete {
+		return enqueued, w.Wrapf(ErrUploadListingIncomplete, "listing of %d object(s) under %q", len(listing.Entries), source.Upload.Prefix)
+	}
+	if err := s.enqueueUploadListing(ctx, source, ordinal, delivered); err != nil {
+		return enqueued, w.Wrapf(err, "enqueue listing")
+	}
 
 	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
 		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
@@ -1514,6 +1700,59 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 		return enqueued, w.Wrapf(err, "record sync time")
 	}
 	return enqueued, nil
+}
+
+// uploadListingFile is one delivered object in an upload sync's listing: its
+// key and the fingerprint its own ingest job was versioned by.
+type uploadListingFile struct {
+	Key  string `json:"key"`
+	ETag string `json:"etag"`
+}
+
+// uploadListing is the payload of datasourceUploadListingTopic. Files is always
+// present, empty for an emptied folder, so the store can tell an empty folder
+// from a listing that lost its inventory.
+type uploadListing struct {
+	Bucket  string              `json:"bucket"`
+	Prefix  string              `json:"prefix"`
+	Ordinal int64               `json:"ordinal"`
+	Files   []uploadListingFile `json:"files"`
+}
+
+func (s *Service) enqueueUploadListing(ctx context.Context, source *DatasourceSource, ordinal int64, files []uploadListingFile) error {
+	if source.BoundaryNodeID == "" {
+		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
+	}
+	payload, err := json.Marshal(uploadListing{Bucket: source.Upload.Bucket, Prefix: source.Upload.Prefix, Ordinal: ordinal, Files: files})
+	if err != nil {
+		return err
+	}
+	if len(payload) > maxIngestPayload {
+		return wool.Get(ctx).NewError("upload listing of %d object(s) is %d bytes, over the %d-byte ingest limit", len(files), len(payload), maxIngestPayload)
+	}
+	ordinalText := strconv.FormatInt(ordinal, 10)
+	_, err = s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+		Job: &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:          DatasourceIngestQueue,
+			Topic:          datasourceUploadListingTopic,
+			Source:         datasourceUploadSyncSource,
+			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, "\x00listing", ordinalText),
+			SchemaVersion:  datasourceIngestSchemaVersion,
+			Payload:        payload,
+			ContentType:    "application/json",
+			MaxAttempts:    datasourceIngestMaxAttempts,
+			Attributes: map[string]string{
+				attrSourceID:      source.ID,
+				attrOrgID:         source.OrgID,
+				attrBoundaryID:    source.BoundaryNodeID,
+				attrUploadBucket:  source.Upload.Bucket,
+				attrUploadOrdinal: ordinalText,
+			},
+		},
+	})
+	return err
 }
 
 // uploadFingerprint is the object's content fingerprint used to key delivery
@@ -1530,7 +1769,7 @@ func uploadFingerprint(object objectstore.Object, entry objectstore.Entry) strin
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string) error {
+func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string, ordinal int64) error {
 	if source.BoundaryNodeID == "" {
 		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
 	}
@@ -1545,28 +1784,33 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceUploadSyncTopic,
 			Source:         datasourceUploadSyncSource,
-			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint),
+			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint+"\x00"+strconv.FormatInt(ordinal, 10)),
 			SchemaVersion:  datasourceIngestSchemaVersion,
 			Payload:        object.Body,
 			ContentType:    contentType,
 			MaxAttempts:    datasourceIngestMaxAttempts,
 			Attributes: map[string]string{
-				attrSourceID:     source.ID,
-				attrOrgID:        source.OrgID,
-				attrBoundaryID:   source.BoundaryNodeID,
-				attrUploadBucket: source.Upload.Bucket,
-				attrUploadKey:    object.Key,
-				attrUploadETag:   fingerprint,
-				attrChangeType:   changeTypeAdded,
+				attrSourceID:      source.ID,
+				attrOrgID:         source.OrgID,
+				attrBoundaryID:    source.BoundaryNodeID,
+				attrUploadBucket:  source.Upload.Bucket,
+				attrUploadKey:     object.Key,
+				attrUploadETag:    fingerprint,
+				attrUploadOrdinal: strconv.FormatInt(ordinal, 10),
+				attrChangeType:    changeTypeAdded,
 			},
 		},
 	})
 	return err
 }
 
-// uploadIngestIdempotencyKey is deterministic in (source, key, fingerprint) and
-// bounded: a re-pull of an unchanged object dedupes, while a changed object at
-// the same key keys distinctly and is re-delivered.
+// uploadIngestIdempotencyKey is deterministic in (source, key, version) and
+// bounded. An object job's version is its fingerprint under the sync's ordinal:
+// a retry of one enqueue dedupes, while every sync re-delivers each object —
+// the store confirms an unchanged one by its fingerprint without writing — so
+// an object removed and later put back unchanged is delivered again rather
+// than deduped against the delivery its removal superseded. A listing's
+// version is the sync's ordinal.
 func uploadIngestIdempotencyKey(sourceID, key, fingerprint string) string {
 	digest := sha256.Sum256([]byte(sourceID + "\x00" + key + "\x00" + fingerprint))
 	return "datasource-upload-sync/" + hex.EncodeToString(digest[:])
@@ -1590,6 +1834,10 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 		switch {
 		case err == nil, errors.Is(err, ErrDatasourceSourceNotFound):
 			return nil
+		case errors.Is(err, ErrUploadListingIncomplete):
+			// The folder is larger than one listing reaches; a retry lists the
+			// same page. Fail terminally so it is visible, not retried forever.
+			return jobs.NewProcessingError("datasource.upload_listing_incomplete", err.Error(), false)
 		case errors.Is(err, ErrOAuth2ReauthRequired):
 			// The refresh token is permanently dead; replaying it can never
 			// succeed, so fail the job terminally rather than burning retries.

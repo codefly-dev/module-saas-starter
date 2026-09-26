@@ -279,6 +279,7 @@ Each source receives the Postgres agent's independent
 
 That application side file currently extends migration inputs only. It does
 not grant an installed product service access to the accounts internal RPC
-listener. Generic usage producers require the named internal gRPC endpoint and
-generated product dependency edge tracked by `P1-NET-007`; the current mixed
-private REST/h2c listener must not be promoted to a module export.
+listener. A composed module reaches the internal tier by declaring a
+dependency on the named `accounts/authority` endpoint (`P1-NET-007`), which
+serves only the module surface; the mixed private REST/h2c listener must not be
+promoted to a module export.

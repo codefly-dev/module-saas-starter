@@ -20,17 +20,27 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DatasourceService_AddGitHubSource_FullMethodName          = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
-	DatasourceService_AddSource_FullMethodName                = "/saas.accounts.v1.DatasourceService/AddSource"
-	DatasourceService_GetDatasourceCatalog_FullMethodName     = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
-	DatasourceService_ListSources_FullMethodName              = "/saas.accounts.v1.DatasourceService/ListSources"
-	DatasourceService_GetSource_FullMethodName                = "/saas.accounts.v1.DatasourceService/GetSource"
-	DatasourceService_SyncSource_FullMethodName               = "/saas.accounts.v1.DatasourceService/SyncSource"
-	DatasourceService_GetSourceSync_FullMethodName            = "/saas.accounts.v1.DatasourceService/GetSourceSync"
-	DatasourceService_DeleteSource_FullMethodName             = "/saas.accounts.v1.DatasourceService/DeleteSource"
-	DatasourceService_BeginGitHubAppSetup_FullMethodName      = "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup"
-	DatasourceService_CompleteGitHubAppSetup_FullMethodName   = "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup"
-	DatasourceService_MigrateGitHubSourceToApp_FullMethodName = "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp"
+	DatasourceService_AddGitHubSource_FullMethodName               = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
+	DatasourceService_AddSource_FullMethodName                     = "/saas.accounts.v1.DatasourceService/AddSource"
+	DatasourceService_GetDatasourceCatalog_FullMethodName          = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
+	DatasourceService_ListSources_FullMethodName                   = "/saas.accounts.v1.DatasourceService/ListSources"
+	DatasourceService_GetSource_FullMethodName                     = "/saas.accounts.v1.DatasourceService/GetSource"
+	DatasourceService_SyncSource_FullMethodName                    = "/saas.accounts.v1.DatasourceService/SyncSource"
+	DatasourceService_GetSourceSync_FullMethodName                 = "/saas.accounts.v1.DatasourceService/GetSourceSync"
+	DatasourceService_DeleteSource_FullMethodName                  = "/saas.accounts.v1.DatasourceService/DeleteSource"
+	DatasourceService_BeginGitHubAppSetup_FullMethodName           = "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup"
+	DatasourceService_CompleteGitHubAppSetup_FullMethodName        = "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup"
+	DatasourceService_MigrateGitHubSourceToApp_FullMethodName      = "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp"
+	DatasourceService_BeginDatasourceAccountLink_FullMethodName    = "/saas.accounts.v1.DatasourceService/BeginDatasourceAccountLink"
+	DatasourceService_CompleteDatasourceAccountLink_FullMethodName = "/saas.accounts.v1.DatasourceService/CompleteDatasourceAccountLink"
+	DatasourceService_ListMyDatasourceAccountLinks_FullMethodName  = "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks"
+	DatasourceService_DeleteDatasourceAccountLink_FullMethodName   = "/saas.accounts.v1.DatasourceService/DeleteDatasourceAccountLink"
+	DatasourceService_GetDatasourceDirectory_FullMethodName        = "/saas.accounts.v1.DatasourceService/GetDatasourceDirectory"
+	DatasourceService_BindDatasourceGroup_FullMethodName           = "/saas.accounts.v1.DatasourceService/BindDatasourceGroup"
+	DatasourceService_UnbindDatasourceGroup_FullMethodName         = "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup"
+	DatasourceService_ClaimDatasourceDomain_FullMethodName         = "/saas.accounts.v1.DatasourceService/ClaimDatasourceDomain"
+	DatasourceService_VerifyDatasourceDomain_FullMethodName        = "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
+	DatasourceService_DeleteDatasourceDomain_FullMethodName        = "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain"
 )
 
 // DatasourceServiceClient is the client API for DatasourceService service.
@@ -48,10 +58,11 @@ type DatasourceServiceClient interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(ctx context.Context, in *AddSourceRequest, opts ...grpc.CallOption) (*AddSourceResponse, error)
-	// GetDatasourceCatalog returns the registry of available provider types and
-	// their per-provider connect metadata, so a client can enumerate and render
-	// the "connect a source" surface without provider-specific code. The catalog
-	// is static, non-secret, and identical for every tenant.
+	// GetDatasourceCatalog returns the host's connector registry: every provider,
+	// its connect metadata, whether it conforms to the datasource connector
+	// envelope, and whether it accepts a new source, so a client can render the
+	// "connect a source" surface without provider-specific code. The catalog is
+	// static, non-secret, and identical for every tenant.
 	GetDatasourceCatalog(ctx context.Context, in *GetDatasourceCatalogRequest, opts ...grpc.CallOption) (*GetDatasourceCatalogResponse, error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error)
@@ -60,8 +71,9 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(ctx context.Context, in *SyncSourceRequest, opts ...grpc.CallOption) (*SyncSourceResponse, error)
-	// GetSourceSync projects durable lifecycle and module-reported execution
-	// references for one sync without exposing job payloads or attributes.
+	// GetSourceSync projects durable lifecycle, the host's typed phases and
+	// module-reported execution references for one sync — or, with no job id,
+	// the source's latest — without exposing job payloads or attributes.
 	GetSourceSync(ctx context.Context, in *GetSourceSyncRequest, opts ...grpc.CallOption) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error)
@@ -82,6 +94,33 @@ type DatasourceServiceClient interface {
 	// server-side from the repository the source already names, and the stored
 	// PAT is retired only once App access has been proven.
 	MigrateGitHubSourceToApp(ctx context.Context, in *MigrateGitHubSourceToAppRequest, opts ...grpc.CallOption) (*MigrateGitHubSourceToAppResponse, error)
+	// BeginDatasourceAccountLink mints a one-time state bound to this organization, the
+	// calling person and the connector, and returns where to sign in to the provider.
+	BeginDatasourceAccountLink(ctx context.Context, in *BeginDatasourceAccountLinkRequest, opts ...grpc.CallOption) (*BeginDatasourceAccountLinkResponse, error)
+	// CompleteDatasourceAccountLink redeems the state and the provider's authorization code,
+	// learns which provider account signed in, and links it to the calling person.
+	CompleteDatasourceAccountLink(ctx context.Context, in *CompleteDatasourceAccountLinkRequest, opts ...grpc.CallOption) (*CompleteDatasourceAccountLinkResponse, error)
+	// ListMyDatasourceAccountLinks returns the calling person's own linked provider accounts.
+	ListMyDatasourceAccountLinks(ctx context.Context, in *ListMyDatasourceAccountLinksRequest, opts ...grpc.CallOption) (*ListMyDatasourceAccountLinksResponse, error)
+	// DeleteDatasourceAccountLink removes a link: a person may remove their own, and an
+	// administrator any in the organization.
+	DeleteDatasourceAccountLink(ctx context.Context, in *DeleteDatasourceAccountLinkRequest, opts ...grpc.CallOption) (*DeleteDatasourceAccountLinkResponse, error)
+	// GetDatasourceDirectory returns the organization's account links, group bindings and
+	// claimed domains, and the teams a group may be bound to.
+	GetDatasourceDirectory(ctx context.Context, in *GetDatasourceDirectoryRequest, opts ...grpc.CallOption) (*GetDatasourceDirectoryResponse, error)
+	// BindDatasourceGroup maps a provider group onto a team of the organization.
+	BindDatasourceGroup(ctx context.Context, in *BindDatasourceGroupRequest, opts ...grpc.CallOption) (*BindDatasourceGroupResponse, error)
+	// UnbindDatasourceGroup removes a group binding; the group then grants nothing.
+	UnbindDatasourceGroup(ctx context.Context, in *UnbindDatasourceGroupRequest, opts ...grpc.CallOption) (*UnbindDatasourceGroupResponse, error)
+	// ClaimDatasourceDomain records a domain as pending and returns the DNS TXT record
+	// that proves the organization controls it.
+	ClaimDatasourceDomain(ctx context.Context, in *ClaimDatasourceDomainRequest, opts ...grpc.CallOption) (*ClaimDatasourceDomainResponse, error)
+	// VerifyDatasourceDomain looks the TXT record up and marks the domain verified when it
+	// carries the expected value.
+	VerifyDatasourceDomain(ctx context.Context, in *VerifyDatasourceDomainRequest, opts ...grpc.CallOption) (*VerifyDatasourceDomainResponse, error)
+	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
+	// nothing there.
+	DeleteDatasourceDomain(ctx context.Context, in *DeleteDatasourceDomainRequest, opts ...grpc.CallOption) (*DeleteDatasourceDomainResponse, error)
 }
 
 type datasourceServiceClient struct {
@@ -202,6 +241,106 @@ func (c *datasourceServiceClient) MigrateGitHubSourceToApp(ctx context.Context, 
 	return out, nil
 }
 
+func (c *datasourceServiceClient) BeginDatasourceAccountLink(ctx context.Context, in *BeginDatasourceAccountLinkRequest, opts ...grpc.CallOption) (*BeginDatasourceAccountLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginDatasourceAccountLinkResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_BeginDatasourceAccountLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) CompleteDatasourceAccountLink(ctx context.Context, in *CompleteDatasourceAccountLinkRequest, opts ...grpc.CallOption) (*CompleteDatasourceAccountLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteDatasourceAccountLinkResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_CompleteDatasourceAccountLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) ListMyDatasourceAccountLinks(ctx context.Context, in *ListMyDatasourceAccountLinksRequest, opts ...grpc.CallOption) (*ListMyDatasourceAccountLinksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMyDatasourceAccountLinksResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_ListMyDatasourceAccountLinks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) DeleteDatasourceAccountLink(ctx context.Context, in *DeleteDatasourceAccountLinkRequest, opts ...grpc.CallOption) (*DeleteDatasourceAccountLinkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteDatasourceAccountLinkResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_DeleteDatasourceAccountLink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) GetDatasourceDirectory(ctx context.Context, in *GetDatasourceDirectoryRequest, opts ...grpc.CallOption) (*GetDatasourceDirectoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDatasourceDirectoryResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_GetDatasourceDirectory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) BindDatasourceGroup(ctx context.Context, in *BindDatasourceGroupRequest, opts ...grpc.CallOption) (*BindDatasourceGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindDatasourceGroupResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_BindDatasourceGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) UnbindDatasourceGroup(ctx context.Context, in *UnbindDatasourceGroupRequest, opts ...grpc.CallOption) (*UnbindDatasourceGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnbindDatasourceGroupResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_UnbindDatasourceGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) ClaimDatasourceDomain(ctx context.Context, in *ClaimDatasourceDomainRequest, opts ...grpc.CallOption) (*ClaimDatasourceDomainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaimDatasourceDomainResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_ClaimDatasourceDomain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) VerifyDatasourceDomain(ctx context.Context, in *VerifyDatasourceDomainRequest, opts ...grpc.CallOption) (*VerifyDatasourceDomainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyDatasourceDomainResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_VerifyDatasourceDomain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) DeleteDatasourceDomain(ctx context.Context, in *DeleteDatasourceDomainRequest, opts ...grpc.CallOption) (*DeleteDatasourceDomainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteDatasourceDomainResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_DeleteDatasourceDomain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatasourceServiceServer is the server API for DatasourceService service.
 // All implementations must embed UnimplementedDatasourceServiceServer
 // for forward compatibility.
@@ -217,10 +356,11 @@ type DatasourceServiceServer interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error)
-	// GetDatasourceCatalog returns the registry of available provider types and
-	// their per-provider connect metadata, so a client can enumerate and render
-	// the "connect a source" surface without provider-specific code. The catalog
-	// is static, non-secret, and identical for every tenant.
+	// GetDatasourceCatalog returns the host's connector registry: every provider,
+	// its connect metadata, whether it conforms to the datasource connector
+	// envelope, and whether it accepts a new source, so a client can render the
+	// "connect a source" surface without provider-specific code. The catalog is
+	// static, non-secret, and identical for every tenant.
 	GetDatasourceCatalog(context.Context, *GetDatasourceCatalogRequest) (*GetDatasourceCatalogResponse, error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error)
@@ -229,8 +369,9 @@ type DatasourceServiceServer interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *SyncSourceRequest) (*SyncSourceResponse, error)
-	// GetSourceSync projects durable lifecycle and module-reported execution
-	// references for one sync without exposing job payloads or attributes.
+	// GetSourceSync projects durable lifecycle, the host's typed phases and
+	// module-reported execution references for one sync — or, with no job id,
+	// the source's latest — without exposing job payloads or attributes.
 	GetSourceSync(context.Context, *GetSourceSyncRequest) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error)
@@ -251,6 +392,33 @@ type DatasourceServiceServer interface {
 	// server-side from the repository the source already names, and the stored
 	// PAT is retired only once App access has been proven.
 	MigrateGitHubSourceToApp(context.Context, *MigrateGitHubSourceToAppRequest) (*MigrateGitHubSourceToAppResponse, error)
+	// BeginDatasourceAccountLink mints a one-time state bound to this organization, the
+	// calling person and the connector, and returns where to sign in to the provider.
+	BeginDatasourceAccountLink(context.Context, *BeginDatasourceAccountLinkRequest) (*BeginDatasourceAccountLinkResponse, error)
+	// CompleteDatasourceAccountLink redeems the state and the provider's authorization code,
+	// learns which provider account signed in, and links it to the calling person.
+	CompleteDatasourceAccountLink(context.Context, *CompleteDatasourceAccountLinkRequest) (*CompleteDatasourceAccountLinkResponse, error)
+	// ListMyDatasourceAccountLinks returns the calling person's own linked provider accounts.
+	ListMyDatasourceAccountLinks(context.Context, *ListMyDatasourceAccountLinksRequest) (*ListMyDatasourceAccountLinksResponse, error)
+	// DeleteDatasourceAccountLink removes a link: a person may remove their own, and an
+	// administrator any in the organization.
+	DeleteDatasourceAccountLink(context.Context, *DeleteDatasourceAccountLinkRequest) (*DeleteDatasourceAccountLinkResponse, error)
+	// GetDatasourceDirectory returns the organization's account links, group bindings and
+	// claimed domains, and the teams a group may be bound to.
+	GetDatasourceDirectory(context.Context, *GetDatasourceDirectoryRequest) (*GetDatasourceDirectoryResponse, error)
+	// BindDatasourceGroup maps a provider group onto a team of the organization.
+	BindDatasourceGroup(context.Context, *BindDatasourceGroupRequest) (*BindDatasourceGroupResponse, error)
+	// UnbindDatasourceGroup removes a group binding; the group then grants nothing.
+	UnbindDatasourceGroup(context.Context, *UnbindDatasourceGroupRequest) (*UnbindDatasourceGroupResponse, error)
+	// ClaimDatasourceDomain records a domain as pending and returns the DNS TXT record
+	// that proves the organization controls it.
+	ClaimDatasourceDomain(context.Context, *ClaimDatasourceDomainRequest) (*ClaimDatasourceDomainResponse, error)
+	// VerifyDatasourceDomain looks the TXT record up and marks the domain verified when it
+	// carries the expected value.
+	VerifyDatasourceDomain(context.Context, *VerifyDatasourceDomainRequest) (*VerifyDatasourceDomainResponse, error)
+	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
+	// nothing there.
+	DeleteDatasourceDomain(context.Context, *DeleteDatasourceDomainRequest) (*DeleteDatasourceDomainResponse, error)
 	mustEmbedUnimplementedDatasourceServiceServer()
 }
 
@@ -293,6 +461,36 @@ func (UnimplementedDatasourceServiceServer) CompleteGitHubAppSetup(context.Conte
 }
 func (UnimplementedDatasourceServiceServer) MigrateGitHubSourceToApp(context.Context, *MigrateGitHubSourceToAppRequest) (*MigrateGitHubSourceToAppResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MigrateGitHubSourceToApp not implemented")
+}
+func (UnimplementedDatasourceServiceServer) BeginDatasourceAccountLink(context.Context, *BeginDatasourceAccountLinkRequest) (*BeginDatasourceAccountLinkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginDatasourceAccountLink not implemented")
+}
+func (UnimplementedDatasourceServiceServer) CompleteDatasourceAccountLink(context.Context, *CompleteDatasourceAccountLinkRequest) (*CompleteDatasourceAccountLinkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteDatasourceAccountLink not implemented")
+}
+func (UnimplementedDatasourceServiceServer) ListMyDatasourceAccountLinks(context.Context, *ListMyDatasourceAccountLinksRequest) (*ListMyDatasourceAccountLinksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMyDatasourceAccountLinks not implemented")
+}
+func (UnimplementedDatasourceServiceServer) DeleteDatasourceAccountLink(context.Context, *DeleteDatasourceAccountLinkRequest) (*DeleteDatasourceAccountLinkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteDatasourceAccountLink not implemented")
+}
+func (UnimplementedDatasourceServiceServer) GetDatasourceDirectory(context.Context, *GetDatasourceDirectoryRequest) (*GetDatasourceDirectoryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDatasourceDirectory not implemented")
+}
+func (UnimplementedDatasourceServiceServer) BindDatasourceGroup(context.Context, *BindDatasourceGroupRequest) (*BindDatasourceGroupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindDatasourceGroup not implemented")
+}
+func (UnimplementedDatasourceServiceServer) UnbindDatasourceGroup(context.Context, *UnbindDatasourceGroupRequest) (*UnbindDatasourceGroupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnbindDatasourceGroup not implemented")
+}
+func (UnimplementedDatasourceServiceServer) ClaimDatasourceDomain(context.Context, *ClaimDatasourceDomainRequest) (*ClaimDatasourceDomainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClaimDatasourceDomain not implemented")
+}
+func (UnimplementedDatasourceServiceServer) VerifyDatasourceDomain(context.Context, *VerifyDatasourceDomainRequest) (*VerifyDatasourceDomainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyDatasourceDomain not implemented")
+}
+func (UnimplementedDatasourceServiceServer) DeleteDatasourceDomain(context.Context, *DeleteDatasourceDomainRequest) (*DeleteDatasourceDomainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteDatasourceDomain not implemented")
 }
 func (UnimplementedDatasourceServiceServer) mustEmbedUnimplementedDatasourceServiceServer() {}
 func (UnimplementedDatasourceServiceServer) testEmbeddedByValue()                           {}
@@ -513,6 +711,186 @@ func _DatasourceService_MigrateGitHubSourceToApp_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatasourceService_BeginDatasourceAccountLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginDatasourceAccountLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).BeginDatasourceAccountLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_BeginDatasourceAccountLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).BeginDatasourceAccountLink(ctx, req.(*BeginDatasourceAccountLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_CompleteDatasourceAccountLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteDatasourceAccountLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).CompleteDatasourceAccountLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_CompleteDatasourceAccountLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).CompleteDatasourceAccountLink(ctx, req.(*CompleteDatasourceAccountLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_ListMyDatasourceAccountLinks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMyDatasourceAccountLinksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).ListMyDatasourceAccountLinks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_ListMyDatasourceAccountLinks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).ListMyDatasourceAccountLinks(ctx, req.(*ListMyDatasourceAccountLinksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_DeleteDatasourceAccountLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteDatasourceAccountLinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).DeleteDatasourceAccountLink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_DeleteDatasourceAccountLink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).DeleteDatasourceAccountLink(ctx, req.(*DeleteDatasourceAccountLinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_GetDatasourceDirectory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDatasourceDirectoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).GetDatasourceDirectory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_GetDatasourceDirectory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).GetDatasourceDirectory(ctx, req.(*GetDatasourceDirectoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_BindDatasourceGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindDatasourceGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).BindDatasourceGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_BindDatasourceGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).BindDatasourceGroup(ctx, req.(*BindDatasourceGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_UnbindDatasourceGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnbindDatasourceGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).UnbindDatasourceGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_UnbindDatasourceGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).UnbindDatasourceGroup(ctx, req.(*UnbindDatasourceGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_ClaimDatasourceDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClaimDatasourceDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).ClaimDatasourceDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_ClaimDatasourceDomain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).ClaimDatasourceDomain(ctx, req.(*ClaimDatasourceDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_VerifyDatasourceDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyDatasourceDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).VerifyDatasourceDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_VerifyDatasourceDomain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).VerifyDatasourceDomain(ctx, req.(*VerifyDatasourceDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_DeleteDatasourceDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteDatasourceDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).DeleteDatasourceDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_DeleteDatasourceDomain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).DeleteDatasourceDomain(ctx, req.(*DeleteDatasourceDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatasourceService_ServiceDesc is the grpc.ServiceDesc for DatasourceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -563,6 +941,46 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MigrateGitHubSourceToApp",
 			Handler:    _DatasourceService_MigrateGitHubSourceToApp_Handler,
+		},
+		{
+			MethodName: "BeginDatasourceAccountLink",
+			Handler:    _DatasourceService_BeginDatasourceAccountLink_Handler,
+		},
+		{
+			MethodName: "CompleteDatasourceAccountLink",
+			Handler:    _DatasourceService_CompleteDatasourceAccountLink_Handler,
+		},
+		{
+			MethodName: "ListMyDatasourceAccountLinks",
+			Handler:    _DatasourceService_ListMyDatasourceAccountLinks_Handler,
+		},
+		{
+			MethodName: "DeleteDatasourceAccountLink",
+			Handler:    _DatasourceService_DeleteDatasourceAccountLink_Handler,
+		},
+		{
+			MethodName: "GetDatasourceDirectory",
+			Handler:    _DatasourceService_GetDatasourceDirectory_Handler,
+		},
+		{
+			MethodName: "BindDatasourceGroup",
+			Handler:    _DatasourceService_BindDatasourceGroup_Handler,
+		},
+		{
+			MethodName: "UnbindDatasourceGroup",
+			Handler:    _DatasourceService_UnbindDatasourceGroup_Handler,
+		},
+		{
+			MethodName: "ClaimDatasourceDomain",
+			Handler:    _DatasourceService_ClaimDatasourceDomain_Handler,
+		},
+		{
+			MethodName: "VerifyDatasourceDomain",
+			Handler:    _DatasourceService_VerifyDatasourceDomain_Handler,
+		},
+		{
+			MethodName: "DeleteDatasourceDomain",
+			Handler:    _DatasourceService_DeleteDatasourceDomain_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

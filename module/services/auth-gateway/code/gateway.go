@@ -375,12 +375,22 @@ func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, ups
 		return
 	}
 	if g.rateLimiter != nil {
-		g.rateLimiter.Middleware(limiterFailureModeFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.proxyTo(w, r, upstream, entry)
 		})).ServeHTTP(w, r)
 		return
 	}
 	g.proxyTo(w, r, upstream, entry)
+}
+
+// rateLimitClassFor reads the route's declared edge budget class. A nil entry
+// cannot happen on the proxy path, but answering "unspecified" rather than
+// dereferencing keeps it to the generic budget instead of a panic.
+func rateLimitClassFor(entry *RouteEntry) edgeRateLimitClass {
+	if entry == nil {
+		return edgeRateLimitClassUnspecified
+	}
+	return entry.RateLimitClass
 }
 
 func limiterFailureModeFor(entry *RouteEntry) limiterFailureMode {

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -138,7 +139,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 			return nil, status.Error(codes.InvalidArgument, "revision subjects must be unique")
 		}
 		seen[principalID] = struct{}{}
-		permissions, _, err := workContextScopes(subject.GetScopes())
+		permissions, _, err := workContextScopes(subject.GetScopes(), recheckContentReads())
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
@@ -307,7 +308,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 	sessionID := callerSessionID(ctx, req.GetSessionId())
-	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
+	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -376,7 +377,7 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if s == nil || s.configureErr != nil || s.signer == nil || s.authority == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
 	}
-	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
+	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -498,7 +499,7 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	if authority.Revision == 0 {
 		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context revision", codefly.ErrWorkContextInvalid)
 	}
-	_, scopes, err := workContextScopes(authority.WireScopes())
+	_, scopes, err := workContextScopes(authority.WireScopes(), mintContentReads(authority.Audience))
 	if err != nil || len(scopes) == 0 {
 		return codefly.WorkContextToken{}, nil, fmt.Errorf("%w: operation context scopes", codefly.ErrWorkContextInvalid)
 	}
@@ -649,7 +650,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
 	}
-	_, scopes, err := workContextScopes(req.GetAttenuatedScopes())
+	_, scopes, err := workContextScopes(req.GetAttenuatedScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -695,7 +696,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if req.GetSessionId() == parent.GetSessionId() {
 		return nil, status.Error(codes.InvalidArgument, "child session_id must differ from parent session")
 	}
-	permissions, scopes, err := workContextScopes(req.GetGrantedScopes())
+	permissions, scopes, err := workContextScopes(req.GetGrantedScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -766,7 +767,11 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	}
 	var scopes []*basev0.WorkScopeV1
 	if len(req.GetAttenuatedScopes()) > 0 {
-		if _, scopes, err = workContextScopes(req.GetAttenuatedScopes()); err != nil {
+		// Only the validated wire scopes are wanted here: a renewal draws its
+		// authority from requireCurrentAuthority on the parent, not from a fresh
+		// permission resolution, so the permission set is discarded and the
+		// content-read rule never reaches a decision.
+		if _, scopes, err = workContextScopes(req.GetAttenuatedScopes(), noContentReads); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
@@ -1021,7 +1026,7 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 ) (*business.Principal, error) {
 	ownerID := parent.GetOwnerPrincipalId()
 	if len(parent.GetActorChain()) == 0 {
-		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes())
+		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes(), recheckContentReads())
 		facts, err := s.resolveAuthority(ctx, orgID, ownerID, "", permissions)
 		if err != nil {
 			return nil, err
@@ -1039,7 +1044,7 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 	}
 	var outermostActor *business.Principal
 	for _, actor := range parent.GetActorChain() {
-		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
+		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes(), recheckContentReads())
 		facts, err := s.resolveAuthority(
 			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,
 		)
@@ -1131,6 +1136,7 @@ func enforceActorAudience(actor *business.Principal, audience string) error {
 
 func workContextScopes(
 	input []*gen.WorkContextScope,
+	eligible contentReadEligible,
 ) ([]business.WorkContextPermission, []*basev0.WorkScopeV1, error) {
 	permissions := make([]business.WorkContextPermission, 0)
 	scopes := make([]*basev0.WorkScopeV1, 0, len(input))
@@ -1179,10 +1185,83 @@ func workContextScopes(
 		}
 		scopes = append(scopes, coreScope)
 	}
-	return permissions, scopes, nil
+	return markContentReads(permissions, eligible), scopes, nil
 }
 
-func permissionsFromCoreScopes(scopes []*basev0.WorkScopeV1) []business.WorkContextPermission {
+// contentReadEligible reports whether an unscoped `read` of this resource kind
+// may be admitted through the content-read branch
+// (business.WorkContextPermission.ContentRead). It is a predicate rather than a
+// fixed set because a mint and a recheck answer it from different places, and
+// that difference is load-bearing: see mintContentReads and recheckContentReads.
+type contentReadEligible func(resourceKind string) bool
+
+// noContentReads admits nothing, so an unflagged permission keeps requiring an
+// organization-level role exactly as it did before the branch existed.
+func noContentReads(string) bool { return false }
+
+// mintContentReads admits only the content the audience this capability is
+// being minted for declares as its own.
+//
+// That audience is the one module that will ever present the capability back to
+// this host, and both module-facing reads already refuse a scope outside its
+// declaration (ModuleContentResources, read by ListReadableSourceCollections
+// and CheckWorkContextRecordAccess). Admitting the composition-wide union here
+// would seal scopes no consumer can use, and would let one module's declaration
+// decide what a capability minted for another module may carry.
+//
+// An unregistered audience, or one that declares no content, admits nothing.
+func mintContentReads(audience string) contentReadEligible {
+	if service == nil || audience == "" {
+		return noContentReads
+	}
+	declared, err := service.ModuleContentResources(audience)
+	if err != nil {
+		return noContentReads
+	}
+	return func(resourceKind string) bool { return slices.Contains(declared, resourceKind) }
+}
+
+// recheckContentReads admits every unscoped read, and consults no declaration
+// at all. That is deliberate, and it is the narrower choice rather than the
+// wider one.
+//
+// A recheck issues nothing. It re-validates a capability whose scopes a mint
+// already sealed under mintContentReads, and the module-facing reads gate those
+// scopes a second time against the audience's own declaration. So a recheck
+// that is a superset of every mint can admit nothing that was not already
+// issued — while the reverse, a recheck narrower than the mint that issued the
+// capability, reports a live capability as revoked.
+//
+// That reverse is not hypothetical. The declaration is MODULE_PRINCIPALS, read
+// once at process start, so two hosts in one fleet disagree about it for the
+// length of any rollout that changes it: a capability minted by a host that
+// declares the type is refused by a host that does not, and the consumer reads
+// ErrWorkContextAuthorizationStale as a revocation. Resolving a recheck without
+// the declaration takes process-start configuration out of the staleness
+// verdict. Revocation is still caught, by the live grant, share and platform
+// bases the branch requires and by the authorization revision compared after.
+func recheckContentReads() contentReadEligible {
+	return func(string) bool { return true }
+}
+
+// markContentReads flags every unscoped `read` the given rule admits.
+func markContentReads(
+	permissions []business.WorkContextPermission,
+	eligible contentReadEligible,
+) []business.WorkContextPermission {
+	for i := range permissions {
+		permission := &permissions[i]
+		permission.ContentRead = permission.ResourceID == "" &&
+			permission.Action == "read" &&
+			eligible(permission.ResourceKind)
+	}
+	return permissions
+}
+
+func permissionsFromCoreScopes(
+	scopes []*basev0.WorkScopeV1,
+	eligible contentReadEligible,
+) []business.WorkContextPermission {
 	permissions := make([]business.WorkContextPermission, 0)
 	for _, scope := range scopes {
 		for _, action := range scope.GetActions() {
@@ -1202,7 +1281,7 @@ func permissionsFromCoreScopes(scopes []*basev0.WorkScopeV1) []business.WorkCont
 			}
 		}
 	}
-	return permissions
+	return markContentReads(permissions, eligible)
 }
 
 func cloneWorkScopes(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {

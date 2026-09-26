@@ -166,6 +166,12 @@ func (r *Resolver) resolveInTx(
 	// 2. Branch on intent to decide provisioning and org membership.
 	var orgID uuid.UUID
 	var orgRole string
+	// signupMethod is recorded on the registration below. Only the SSO-JIT
+	// intent names its mechanism by construction; a signup or an invitation
+	// acceptance can arrive through any provider, and the resolver does not
+	// know which of the declared methods that provider is, so it says nothing
+	// rather than guessing into a forensic record.
+	signupMethod := ""
 	switch intent := intent.(type) {
 	case auth.LoginIntent:
 		if !found {
@@ -177,12 +183,26 @@ func (r *Resolver) resolveInTx(
 	case auth.InviteIntent:
 		userID, orgID, orgRole, err = r.resolveInvite(ctx, tx, c, userID, found, intent.Token)
 	case auth.SsoJitIntent:
+		signupMethod = "sso"
 		userID, orgID, orgRole, err = r.resolveSsoJit(ctx, tx, c, userID, found, intent.OrgID)
 	default:
 		return nil, fmt.Errorf("pgauth: unsupported intent %T", intent)
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	// 2b. A first-seen identity that this resolution provisioned is a
+	//     registration, and it is recorded here — the one point every
+	//     provisioning path funnels through — rather than in each of the five
+	//     call sites of provisionIdentity, so a new path cannot forget it.
+	//     `found` is read before any write, so an identity that already existed
+	//     can never produce one: re-provisioning a known user into an org they
+	//     were removed from is a membership change, not a registration.
+	if !found {
+		if err := r.emitUserRegistered(ctx, tx, c, userID, orgID, signupMethod); err != nil {
+			return nil, err
+		}
 	}
 
 	// 3. Bootstrap admin check — runs for every authentication but only grants
@@ -944,6 +964,63 @@ func (r *Resolver) emitSsoJitAudit(ctx context.Context, tx pgx.Tx, c *auth.Claim
 	)
 	if err != nil {
 		return fmt.Errorf("pgauth: insert sso jit audit event: %w", err)
+	}
+	return nil
+}
+
+// emitUserRegistered records that this resolution provisioned a first-seen
+// identity, in the organization that identity landed in, inside the resolution
+// transaction so the record commits with the rows it describes.
+//
+// It exists because the provisioning paths that are not the plain
+// self-service signup — SSO JIT, SSO invite-only, and invitation acceptance —
+// created a user and wrote no registration anywhere the tenant could see:
+// Service.RegisterUser emits saas.user.registered against the personal
+// organization it creates, which is a different tenant from the one an
+// enterprise identity is provisioned into. An org whose people all arrive
+// through its own IdP therefore recorded no registration at all, and
+// saas.auth.sso_jit_provisioned is not a substitute: that event also fires
+// when a known identity is re-provisioned after a local removal, and when an
+// invitation is accepted.
+func (r *Resolver) emitUserRegistered(
+	ctx context.Context,
+	tx pgx.Tx,
+	c *auth.Claims,
+	userID, orgID uuid.UUID,
+	signupMethod string,
+) error {
+	// A signup with no organization name resolves to the explicit orgless state
+	// (see ensureOrg), so the registration has no tenant to belong to. It is
+	// still recorded, with a NULL org_id — the shape audit_events' tenant policy
+	// already admits, scoped to the actor — rather than dropped: the person did
+	// register, and no tenant should count them until they join one.
+	var org any
+	if orgID != uuid.Nil {
+		org = orgID
+	}
+	fields := map[string]any{"email": strings.ToLower(c.Email)}
+	if signupMethod != "" {
+		fields["signup_method"] = signupMethod
+	}
+	// The row is written with raw SQL on the resolution transaction, so the
+	// business emitter's declared-payload check does not run over it; call it
+	// here so an undeclared key or an out-of-enum value fails the login that
+	// would otherwise have written an unreadable record.
+	if err := business.ValidatePayload(business.EventUserRegistered, fields); err != nil {
+		return fmt.Errorf("pgauth: registration audit payload: %w", err)
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		return fmt.Errorf("pgauth: marshal registration audit payload: %w", err)
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO audit_events (
+			id, actor_id, actor_type, event_type, schema_version, resource, resource_id, org_id, payload
+		) VALUES ($1, $2, 'user', $3, 1, 'user', $4, $5, $6::jsonb)`,
+		business.NewID(), userID, string(business.EventUserRegistered), userID.String(), org, string(payload),
+	)
+	if err != nil {
+		return fmt.Errorf("pgauth: insert registration audit event: %w", err)
 	}
 	return nil
 }

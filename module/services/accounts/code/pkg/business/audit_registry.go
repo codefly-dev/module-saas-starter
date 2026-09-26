@@ -3,6 +3,7 @@ package business
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -28,29 +29,58 @@ const (
 	CategoryOrganization AuditCategory = "organization"
 	CategoryLifecycle    AuditCategory = "lifecycle"
 	CategorySystem       AuditCategory = "system"
+	// CategorySolution groups the event types a registered solution declared in
+	// its own registration manifest (solution_audit_events.go). No code-owned
+	// type carries it.
+	CategorySolution AuditCategory = "solution"
 )
 
 // FieldKind is the declared type of one payload field. Payloads are validated
 // against these at the emit choke point; the JSON Schema projection stored in
 // audit_event_types.payload_schema is generated from the same fields.
+//
+// FieldInt is a whole number. A Go int of any width is one; a float64 — the
+// form every number takes after a protobuf Struct or JSON — is one only when it
+// is whole and within ±maxExactFloatInt.
+//
+// FieldNumber is a finite IEEE-754 double — a fraction, a score, a ratio — and
+// is the kind to declare for any value that is not a count. NaN and ±Inf are
+// rejected: no aggregate over them means anything, and jsonb cannot store them.
 type FieldKind string
 
 const (
 	FieldString      FieldKind = "string"
 	FieldUUID        FieldKind = "uuid"
 	FieldInt         FieldKind = "int"
+	FieldNumber      FieldKind = "number"
 	FieldBool        FieldKind = "bool"
 	FieldEnum        FieldKind = "enum"
 	FieldStringArray FieldKind = "string_array"
 )
 
+// maxExactFloatInt is 2^53-1, the largest magnitude at which every int has its
+// own float64. Beyond it a float64 stands for more than one int, so a FieldInt
+// that arrived as a float64 cannot be trusted to be the value that was sent.
+const maxExactFloatInt = 1<<53 - 1
+
 // PayloadField declares one field of a typed audit payload. PII marks a field
 // as personally identifying: it is stripped from every export path so audit
 // destinations (the customer's S3 bucket, CSV/JSON downloads) never receive it.
+//
+// Required on a string-valued kind (string, uuid, enum) means a nonempty,
+// non-blank value, not merely a present key — see validateField. Declaring it
+// is therefore the whole of the contract: there is no second flag to remember,
+// because the hole this closes was created by exactly that kind of forgetting.
+//
+// MaxLen bounds a string-valued field's length; zero leaves it unbounded. It is
+// what keeps a field declared to carry a short identifier from carrying prose:
+// the audit spine is fanned out to external destinations, so a field with no
+// bound is a field an emitter can post a failure transcript through.
 type PayloadField struct {
 	Name     string
 	Kind     FieldKind
 	Required bool
+	MaxLen   int
 	Enum     []string
 	PII      bool
 }
@@ -98,15 +128,32 @@ const (
 // key (always the leading segment of Type); Owner names the service that emits
 // it, which is a different axis entirely. Durability says how the record must
 // be committed.
+//
+// RequiresEntry marks a type whose record is meaningless without the resource it
+// happened to, and RequiresIdempotencyKey one whose emitter must name the
+// operation it is recording so a retried emit collapses. The emit surface
+// refuses either when it is missing. Both are properties of the event rather
+// than of the transport because the transport is shared —
+// ModuleEmitAuditEventRequest carries one optional entry_id and one optional
+// idempotency_key for every type, and the types that legitimately have neither
+// (an observation about a whole solution; an event that is genuinely distinct on
+// every emit) go through the same two fields.
 type AuditEventDefinition struct {
-	Type        EventType
-	Namespace   string
-	Version     int
-	Category    AuditCategory
-	Owner       string
-	Description string
-	Durability  AuditDurability
-	Fields      []PayloadField
+	Type                   EventType
+	Namespace              string
+	Version                int
+	Category               AuditCategory
+	Owner                  string
+	Description            string
+	Durability             AuditDurability
+	RequiresEntry          bool
+	RequiresIdempotencyKey bool
+	Fields                 []PayloadField
+	// MarksUserJoined says this type records a person joining the tenant for
+	// the first time. It is the registry's answer to "who is a new user",
+	// served over ListAuditEventTypes so no client has to keep its own list of
+	// names in step with this one.
+	MarksUserJoined bool
 }
 
 // mutation registers a privileged write (DurabilityTransactional); observation
@@ -144,6 +191,27 @@ func revised(d AuditEventDefinition, version int) AuditEventDefinition {
 	return d
 }
 
+// requiresEntry marks a definition whose record names a specific resource, and
+// requiresIdempotencyKey one whose emitter must name the operation being
+// recorded. Wrappers rather than constructor arguments for the same reason
+// revised is one: they read at the declaration, and every type that does not say
+// this keeps today's behaviour.
+func requiresEntry(d AuditEventDefinition) AuditEventDefinition {
+	d.RequiresEntry = true
+	return d
+}
+
+// An empty idempotency_key deduplicates nothing, so for a type whose emitter
+// retries — a queue operation reporting per item — accepting one is accepting a
+// double-counted row on every replayed response. Refusing is safe in a way that
+// deriving a key host-side would not be: the emitter, not the host, knows
+// whether two emits are one operation retried or two real operations, and a key
+// the host guessed from the payload would silently suppress the second.
+func requiresIdempotencyKey(d AuditEventDefinition) AuditEventDefinition {
+	d.RequiresIdempotencyKey = true
+	return d
+}
+
 func str(name string) PayloadField { return PayloadField{Name: name, Kind: FieldString} }
 func strs(name string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldStringArray}
@@ -153,6 +221,45 @@ func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
 }
 func pii(f PayloadField) PayloadField { f.PII = true; return f }
+
+// userJoined marks a definition as recording a person joining the tenant for
+// the first time — the fact a "new users" figure counts. A membership being
+// provisioned is not it: saas.auth.sso_jit_provisioned fires again whenever a
+// locally-removed member is re-provisioned from a still-valid IdP assertion,
+// so marking it would count one person once per removal.
+func userJoined(d AuditEventDefinition) AuditEventDefinition {
+	d.MarksUserJoined = true
+	return d
+}
+
+// isStringKind reports whether a kind's values are carried as JSON strings, and
+// so whether the nonempty and length rules can apply to it at all.
+func isStringKind(k FieldKind) bool {
+	return k == FieldString || k == FieldUUID || k == FieldEnum
+}
+
+// required returns a copy of the named fields with Required set, so a definition
+// can tighten a shared field group without restating it or mutating the group
+// every other event shares. documentReadFields does the same thing by hand for
+// one field; this is that, named.
+func required(fields []PayloadField, names ...string) []PayloadField {
+	want := make(map[string]bool, len(names))
+	for _, name := range names {
+		want[name] = true
+	}
+	out := append([]PayloadField(nil), fields...)
+	found := 0
+	for i := range out {
+		if want[out[i].Name] {
+			out[i].Required = true
+			found++
+		}
+	}
+	if found != len(want) {
+		panic(fmt.Sprintf("audit registry: required() named %v, but only %d of them exist in the field group", names, found))
+	}
+	return out
+}
 
 // Registered event types. The constants are the typed vocabulary producers use;
 // grouping mirrors the categories.
@@ -168,11 +275,13 @@ const (
 	EventConsentTerms    EventType = "saas.consent.terms_accepted"
 	EventConsentPrefs    EventType = "saas.consent.preferences_updated"
 
-	EventAPIKeyCreated               EventType = "saas.api_key.created"
-	EventModuleRegistrationMint      EventType = "saas.module.registration_minted"
-	EventModuleWorkContextMint       EventType = "saas.module.work_context_minted"
-	EventModuleOperationContextMint  EventType = "saas.module.operation_context_minted"
-	EventDelegatedAudienceExchange   EventType = "saas.module.delegated_audience_exchange"
+	EventAPIKeyCreated              EventType = "saas.api_key.created"
+	EventModuleRegistrationMint     EventType = "saas.module.registration_minted"
+	EventModuleWorkContextMint      EventType = "saas.module.work_context_minted"
+	EventModuleOperationContextMint EventType = "saas.module.operation_context_minted"
+	EventDelegatedAudienceExchange  EventType = "saas.module.delegated_audience_exchange"
+	// A composed module declared audit event types of its own (DeclareAuditEventTypes).
+	EventModuleAuditTypesDeclared    EventType = "saas.module.audit_types_declared"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
@@ -197,6 +306,7 @@ const (
 	EventApprovalTimeout             EventType = "saas.approval.timeout"
 	EventApprovalEscalated           EventType = "saas.approval.escalated"
 	EventApprovalCancelled           EventType = "saas.approval.cancelled"
+	EventApprovalDecisionRecorded    EventType = "saas.approval.decision_recorded"
 	EventPrincipalCreated            EventType = "saas.principal.created"
 	EventPrincipalRevoked            EventType = "saas.principal.revoked"
 	EventPrincipalDisabled           EventType = "saas.principal.disabled"
@@ -291,6 +401,15 @@ const (
 	EventDatasourceSourceAccessLost     EventType = "saas.datasource.source.access_lost"
 	EventDatasourceSourceAccessRestored EventType = "saas.datasource.source.access_restored"
 	EventDatasourceBlobFetched          EventType = "saas.datasource.blob_fetched"
+	EventDatasourceFilesFetched         EventType = "saas.datasource.files_fetched"
+	EventDatasourceAccountLinkStarted   EventType = "saas.datasource.account_link_started"
+	EventDatasourceAccountLinked        EventType = "saas.datasource.account_linked"
+	EventDatasourceAccountUnlinked      EventType = "saas.datasource.account_unlinked"
+	EventDatasourceGroupBound           EventType = "saas.datasource.group_bound"
+	EventDatasourceGroupUnbound         EventType = "saas.datasource.group_unbound"
+	EventDatasourceDomainClaimed        EventType = "saas.datasource.domain_claimed"
+	EventDatasourceDomainVerified       EventType = "saas.datasource.domain_verified"
+	EventDatasourceDomainRemoved        EventType = "saas.datasource.domain_removed"
 
 	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
 	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
@@ -320,16 +439,46 @@ const (
 	EventDocumentVersionMinted      EventType = "saas.document.version_minted"
 	EventDocumentRenamed            EventType = "saas.document.renamed"
 	EventDocumentDeleted            EventType = "saas.document.deleted"
+	EventDocumentArchived           EventType = "saas.document.archived"
+	EventDocumentUnarchived         EventType = "saas.document.unarchived"
 	EventDocumentQuarantined        EventType = "saas.document.quarantined"
 	EventDocumentQuarantineReleased EventType = "saas.document.quarantine_released"
 	EventDocumentSubscribed         EventType = "saas.document.subscribed"
 	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
+	// Entry-level facts of the documents store's own mutations, each on the
+	// entry (resource_id) like the lifecycle vocabulary above. A governance
+	// action — a subscription, a quarantine release, a transfer, a freeze or an
+	// unfreeze — is audited on success and on refusal alike under one type, told
+	// apart by the required `outcome`: a refusal is never its own type, so the
+	// `payload:outcome` aggregation counts every refused action. A stale ingest
+	// op is not a refusal but the store's ordering guard skipping an op already
+	// superseded; it wrote nothing.
+	EventDocumentOwnershipTransferred EventType = "saas.document.ownership_transferred"
+	EventDocumentFrozen               EventType = "saas.document.frozen"
+	EventDocumentUnfrozen             EventType = "saas.document.unfrozen"
+	EventDocumentIngestSkippedStale   EventType = "saas.document.ingest_skipped_stale"
+	EventDocumentPayloadConflict      EventType = "saas.document.payload_conflict"
+	// Receipts of the documents store's atomic effects. resource_id is the
+	// effect key (the artifact id for a production), not an entry: each effect
+	// commits many entries at once, and every entry it changes is also audited
+	// on its own under the lifecycle vocabulary above, in the same transaction.
+	EventDocumentSnapshotCommitted    EventType = "saas.document.snapshot.committed"
+	EventDocumentSnapshotSkippedStale EventType = "saas.document.snapshot.skipped_stale"
+	EventDocumentEffectCommitted      EventType = "saas.document.effect.committed"
+	EventDocumentProductionCommitted  EventType = "saas.document.production.committed"
+	EventDocumentKnowledgePublished   EventType = "saas.document.knowledge.published"
+
+	// An operator re-queued a document's dead-lettered derivation — the
+	// producer run a document module gave up on — once the cause was fixed. It
+	// is who-did-what-to-which-resource (the entry is re-derived on an operator's
+	// say-so), not pipeline bookkeeping, so it has a type of its own.
+	EventDocumentDeadLetterRedriven EventType = "saas.document.dead_letter_redriven"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
-	mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
-		enum("signup_method", "password", "sso", "magic_link"), pii(str("email"))),
-	mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email"))),
+	userJoined(mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
+		enum("signup_method", "password", "sso", "magic_link"), pii(str("email")))),
+	userJoined(mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email")))),
 	mutation(EventUserUpdated, CategoryIdentity, "A user profile was updated."),
 	mutation(EventUserDeleted, CategoryIdentity, "A user account was deleted."),
 	// A suspension is allowed to leave an organization with no administrator —
@@ -345,6 +494,8 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
 	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
+	mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
+		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over")),
 	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
 	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
 		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
@@ -359,7 +510,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
 		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
-	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}),
+	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
 	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
@@ -382,6 +533,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
 	mutation(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
 	mutation(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
+	mutation(EventApprovalDecisionRecorded, CategoryAccess, "An approver recorded a decision on an approval request.", str("decision")),
 	mutation(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
 	mutation(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
 	mutation(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason")),
@@ -483,12 +635,39 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
 		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
 	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
+	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
+		str("connector"), str("provider_account_id")),
+	mutation(EventDatasourceAccountUnlinked, CategorySystem, "A linked provider account was removed.",
+		str("connector"), str("provider_account_id"), str("user_id")),
+	mutation(EventDatasourceGroupBound, CategorySystem, "An administrator bound a provider group to a team.",
+		str("connector"), str("provider_group_id"), str("team_id")),
+	mutation(EventDatasourceGroupUnbound, CategorySystem, "A provider group binding was removed.",
+		str("connector"), str("provider_group_id"), str("team_id")),
+	mutation(EventDatasourceDomainClaimed, CategorySystem, "An administrator claimed a domain for the organization.", str("domain")),
+	mutation(EventDatasourceDomainVerified, CategorySystem, "A claimed domain was verified by its DNS TXT record.", str("domain")),
+	mutation(EventDatasourceDomainRemoved, CategorySystem, "A claimed domain was removed.", str("domain")),
 	mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
 		str("installation_id")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
-	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
+	// v2 names what was removed — v1 recorded an empty payload, so the trail
+	// could not say which repository or which collection lost its source.
+	// `boundary` is the collection (boundary node) the source fed, spelled as
+	// on the document events so one payload filter reads both — and so the
+	// collection grant covers this event, which isCollectionBoundaryEvent reads
+	// this declaration for.
+	//
+	// `provider` is an enum, not a free string: datasource_sources.provider is
+	// NOT NULL under a CHECK restricting it to exactly these four values, so the
+	// registry can check what the database already guarantees. A string field
+	// would accept a provider that could never have been stored, and the
+	// module-facing EmitAuditEvent — the one path where registry validation
+	// rejects rather than warns — would pass it through.
+	revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
+		enum("provider", DatasourceProviderGitHub, DatasourceProviderAPI, DatasourceProviderCrawler, DatasourceProviderUpload),
+		str("repo"), str("boundary")), 2),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
@@ -510,6 +689,8 @@ var auditEventCatalog = []AuditEventDefinition{
 		enum("restored_from", DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended)),
 	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
+	observation(EventDatasourceFilesFetched, CategorySystem, "A module fetched a batch of a datasource's files at one version over FetchDatasourceFiles.",
+		str("repo"), str("version"), PayloadField{Name: "files", Kind: FieldInt}, PayloadField{Name: "bytes", Kind: FieldInt}),
 	revised(mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...), webhookAdminVersion),
 	observation(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
@@ -524,10 +705,62 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
 	mutation(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
 	mutation(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...),
+	mutation(EventDocumentArchived, CategoryLifecycle, "A document was archived: taken out of the listing, every version kept.", documentFields...),
+	mutation(EventDocumentUnarchived, CategoryLifecycle, "A document was unarchived: listed again.", documentFields...),
 	mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
-	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
-	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
-	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+	// Version 2 of the release and the subscription pair: `outcome` became
+	// required when a refusal stopped being its own type, so a v1 row (no
+	// outcome) and a v2 row are told apart by schema_version, not guessed at.
+	revised(mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine, or the release refused (outcome failure).",
+		append(append([]PayloadField(nil), documentOutcomeFields...),
+			PayloadField{Name: "tenant_mismatch", Kind: FieldBool}, PayloadField{Name: "solution_mismatch", Kind: FieldBool})...), 2),
+	revised(mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created, or refused (outcome failure).", documentOutcomeFields...), 2),
+	revised(mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed, or the removal refused (outcome failure).", documentOutcomeFields...), 2),
+	mutation(EventDocumentOwnershipTransferred, CategoryLifecycle, "A document's owner was reassigned, or the transfer refused (outcome failure).",
+		append(append([]PayloadField(nil), documentOutcomeFields...), str("new_owner_subject_id"))...),
+	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was frozen into a boundary-governed record, or the freeze refused (outcome failure). A freeze lasts until a saas.document.unfrozen with outcome success.", documentOutcomeFields...),
+	mutation(EventDocumentUnfrozen, CategoryLifecycle, "A frozen document was released from its freeze, or the unfreeze refused (outcome failure).", documentOutcomeFields...),
+	observation(EventDocumentIngestSkippedStale, CategoryLifecycle, "A document ingest op was refused as behind the order already applied at its path; nothing was written.",
+		append(append([]PayloadField(nil), documentFields...), str("path"), PayloadField{Name: "ordinal", Kind: FieldInt})...),
+	observation(EventDocumentPayloadConflict, CategorySystem, "A producer re-ran and offered different bytes for an artifact already stored; the stored bytes were kept.",
+		str("solution"), str("producer"), str("producer_version"), str("entry"), str("entry_version"),
+		PayloadField{Name: "stored_bytes", Kind: FieldInt}, PayloadField{Name: "offered_bytes", Kind: FieldInt}),
+	mutation(EventDocumentSnapshotCommitted, CategoryLifecycle, "A complete source listing was reconciled into a document scope as one effect.", documentSnapshotFields...),
+	observation(EventDocumentSnapshotSkippedStale, CategoryLifecycle, "A source listing was refused as older than the order its scope already holds; nothing was written.", documentSnapshotFields...),
+	mutation(EventDocumentEffectCommitted, CategoryLifecycle, "A batch of document changes committed as one effect.",
+		str("solution"), str("digest"), PayloadField{Name: "applied", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}),
+	mutation(EventDocumentProductionCommitted, CategoryLifecycle, "A producer's derived artifact for a document version committed as one effect.",
+		str("solution"), str("effect_key"), str("task_id"), str("digest"), str("producer"), str("producer_version")),
+	mutation(EventDocumentKnowledgePublished, CategoryLifecycle, "A knowledge card was published into a collection as one effect.",
+		append(append([]PayloadField(nil), documentFields...), str("effect_key"), str("run_id"), str("digest"))...),
+	// Everything this record exists to say is required, because a redrive row
+	// that names no version, no stage or no operation is indistinguishable from a
+	// complete one while answering none of the questions it was written to
+	// answer. `version` is required here and optional on its siblings on purpose:
+	// a redrive re-derives one specific version, so a redrive that cannot name
+	// one is not a weaker record, it is a different event.
+	//
+	// correlation_id is the operator's whole redrive, repeated on every entry it
+	// re-queued — the same role it plays on saas.document.read, and the reason a
+	// partially-completed bulk redrive is legible afterwards rather than looking
+	// like a smaller one that finished. It is also what makes a safe emission
+	// idempotency key possible: keyed on the operation, a transport retry
+	// collapses while a genuine second redrive of the same entry still records.
+	//
+	// error_class is a closed vocabulary because the spine's vocabulary is the
+	// host's (as `outcome` is on the read events), and it enumerates the whole
+	// space because a producer that cannot say something true picks something
+	// false: `cancelled` and `unknown` exist so a run abandoned without a verdict
+	// and a dead letter that carries no classification are not filed as unreadable
+	// input. `producer` cannot be an enum — the host does not know a module's
+	// stages — so it is bounded instead: short enough to name a stage, too short
+	// to carry the failure text the spine deliberately does not hold.
+	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
+		append(required(documentFields, "version"),
+			PayloadField{Name: "correlation_id", Kind: FieldString, Required: true, MaxLen: 255},
+			PayloadField{Name: "producer", Kind: FieldString, Required: true, MaxLen: 128},
+			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true,
+				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...))),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
@@ -563,6 +796,29 @@ var documentFields = []PayloadField{
 	uid("actor_principal_id"),
 	uid("owner_principal_id"),
 	str("initiator"),
+}
+
+// documentOutcomeFields is documentFields plus the outcome of a governance
+// action the documents store audits whether it committed or was refused.
+// `outcome` is required: on an append-only trail a row with no outcome reads as
+// a success that happens to carry a reason, and cannot be corrected later.
+// `reason` says why a failure failed.
+//
+// A refusal records THAT a claim did not match, never whose claim it was: a
+// release refused because its approval named another tenant or solution sets
+// tenant_mismatch / solution_mismatch, and the other tenant's identifier is
+// never written to this tenant's trail, whose rows reach the tenant's own
+// webhook receiver, export destination and download.
+var documentOutcomeFields = append(append([]PayloadField(nil), documentFields...),
+	PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{"success", "failure"}}, str("reason"))
+
+// documentSnapshotFields is the receipt of one reconciled source listing:
+// the digest of the listing, how many entries it tombstoned and how many it
+// confirmed unchanged, and the delivery ordinal it was ranked at.
+var documentSnapshotFields = []PayloadField{
+	str("solution"), str("digest"),
+	PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "retained", Kind: FieldInt},
+	PayloadField{Name: "ordinal", Kind: FieldInt},
 }
 
 // Observed read telemetry never carries query text, excerpts or credentials.
@@ -603,6 +859,24 @@ func IsTransactionalAuditEvent(t EventType) bool {
 	return ok && d.Durability == DurabilityTransactional
 }
 
+// AuditEventRequiresEntry reports whether an event type's record must name the
+// resource it happened to. Unregistered types require nothing: the module-facing
+// surface rejects them outright, so answering true here would only replace that
+// refusal with a less accurate one.
+func AuditEventRequiresEntry(t EventType) bool {
+	d, ok := auditEventIndex[t]
+	return ok && d.RequiresEntry
+}
+
+// AuditEventRequiresIdempotencyKey reports whether an emitter of this type must
+// name the operation it is recording, so a retried emit collapses rather than
+// writing the same fact twice. Unregistered types require nothing, for the same
+// reason as above.
+func AuditEventRequiresIdempotencyKey(t EventType) bool {
+	d, ok := auditEventIndex[t]
+	return ok && d.RequiresIdempotencyKey
+}
+
 // AuditEventCatalog returns the registered event definitions sorted by type,
 // so DB seeding and the generated facet are deterministic.
 func AuditEventCatalog() []AuditEventDefinition {
@@ -630,8 +904,16 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 	if !ok {
 		return fmt.Errorf("audit: unregistered event type %q", t)
 	}
-	fields := make(map[string]PayloadField, len(d.Fields))
-	for _, f := range d.Fields {
+	return validatePayloadFields(t, d.Fields, payload)
+}
+
+// validatePayloadFields checks a payload against one declared field set. It is
+// the single typed-field check both the code-owned catalog and a
+// solution-declared type go through, so a kind means the same thing whichever
+// registry declared it.
+func validatePayloadFields(t EventType, declared []PayloadField, payload map[string]any) error {
+	fields := make(map[string]PayloadField, len(declared))
+	for _, f := range declared {
 		fields[f.Name] = f
 	}
 	for name := range payload {
@@ -639,7 +921,7 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 			return fmt.Errorf("audit: event %q has no registered field %q", t, name)
 		}
 	}
-	for _, f := range d.Fields {
+	for _, f := range declared {
 		v, present := payload[f.Name]
 		if !present {
 			if f.Required {
@@ -655,9 +937,21 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 }
 
 func validateField(t EventType, f PayloadField, v any) error {
-	if (t == EventDocumentRead || t == EventDocumentSearch) && f.Required {
+	// A required string-valued field means a value, not a present key. This was
+	// once a list of the two event types that had been found to need it, which
+	// made every type nobody thought to add accept "" for a field the registry
+	// and the docs both called required — a row that reads as a complete record
+	// and identifies nothing. The rule belongs to the declaration, so it holds
+	// for types that do not yet exist. Bool and int kinds are untouched: false
+	// and 0 are values, and two registered events depend on recording them.
+	if f.Required && isStringKind(f.Kind) {
 		if value, ok := v.(string); !ok || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("audit: event %q field %q requires a nonempty string", t, f.Name)
+		}
+	}
+	if f.MaxLen > 0 && isStringKind(f.Kind) {
+		if value, ok := v.(string); ok && len(value) > f.MaxLen {
+			return fmt.Errorf("audit: event %q field %q is %d bytes, over its %d-byte bound", t, f.Name, len(value), f.MaxLen)
 		}
 	}
 	switch f.Kind {
@@ -677,10 +971,43 @@ func validateField(t EventType, f PayloadField, v any) error {
 		}
 		return fmt.Errorf("audit: event %q field %q value %q not in enum %v", t, f.Name, s, f.Enum)
 	case FieldInt:
-		switch v.(type) {
-		case int, int32, int64, float64:
+		switch value := v.(type) {
+		case int, int32, int64:
+		case float64:
+			// A protobuf Struct and decoded JSON carry every number as a float64,
+			// so the value itself must be an int. A non-finite value cannot be
+			// stored: jsonb has no NaN or ±Inf, and the audit insert would record
+			// the event with its payload dropped.
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				return fmt.Errorf("audit: event %q field %q expects a finite int", t, f.Name)
+			}
+			if value != math.Trunc(value) {
+				return fmt.Errorf("audit: event %q field %q expects an int, not a fraction", t, f.Name)
+			}
+			if math.Abs(value) > maxExactFloatInt {
+				return fmt.Errorf("audit: event %q field %q expects an int within ±%d", t, f.Name, int64(maxExactFloatInt))
+			}
 		default:
 			return fmt.Errorf("audit: event %q field %q expects an int", t, f.Name)
+		}
+	case FieldNumber:
+		var n float64
+		switch value := v.(type) {
+		case int:
+			n = float64(value)
+		case int32:
+			n = float64(value)
+		case int64:
+			n = float64(value)
+		case float32:
+			n = float64(value)
+		case float64:
+			n = value
+		default:
+			return fmt.Errorf("audit: event %q field %q expects a number", t, f.Name)
+		}
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return fmt.Errorf("audit: event %q field %q expects a finite number", t, f.Name)
 		}
 	case FieldBool:
 		if _, ok := v.(bool); !ok {
@@ -701,37 +1028,6 @@ func validateField(t EventType, f PayloadField, v any) error {
 		}
 	}
 	return nil
-}
-
-// RedactPayload returns a copy of payload with every field the registry marks
-// PII removed. Used on every export path so downstream audit sinks never
-// receive personally identifying fields. An unregistered type is redacted
-// whole (fail closed): without a schema we cannot tell which fields are safe.
-func RedactPayload(t EventType, payload map[string]any) map[string]any {
-	if len(payload) == 0 {
-		return payload
-	}
-	d, ok := auditEventIndex[t]
-	if !ok {
-		return map[string]any{}
-	}
-	piiFields := make(map[string]struct{})
-	for _, f := range d.Fields {
-		if f.PII {
-			piiFields[f.Name] = struct{}{}
-		}
-	}
-	if len(piiFields) == 0 {
-		return payload
-	}
-	out := make(map[string]any, len(payload))
-	for k, v := range payload {
-		if _, redacted := piiFields[k]; redacted {
-			continue
-		}
-		out[k] = v
-	}
-	return out
 }
 
 // PayloadSchemaJSON is the marshaled JSON Schema stored in
@@ -760,6 +1056,8 @@ func (d AuditEventDefinition) payloadJSONSchema() map[string]any {
 			prop["enum"] = f.Enum
 		case FieldInt:
 			prop["type"] = "integer"
+		case FieldNumber:
+			prop["type"] = "number"
 		case FieldBool:
 			prop["type"] = "boolean"
 		case FieldStringArray:

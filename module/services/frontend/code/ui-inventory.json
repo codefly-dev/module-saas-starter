@@ -228,6 +228,27 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/dashboard/sortable-grid.tsx",
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Shared owner implementation.",
+			"imports": [
+				"@dnd-kit/core",
+				"@dnd-kit/sortable",
+				"@dnd-kit/utilities",
+				"react",
+				"./cn.js"
+			],
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/composites.stories.tsx",
+					"export": "SortableTiles"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify dragging in the explorer with a mouse and on touch, and visual baselines under external skins."
+		},
+		{
 			"source": "packages/codefly-ui/src/dashboard/sparkline.tsx",
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
@@ -678,6 +699,21 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
 		},
 		{
+			"source": "packages/codefly-ui/src/layout/popover.tsx",
+			"imports": ["@base-ui/react/popover", "./cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/primitives.stories.tsx",
+					"export": "PopoverPreview"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
 			"source": "packages/codefly-ui/src/layout/select.tsx",
 			"imports": ["@base-ui/react/select", "lucide-react", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
@@ -915,6 +951,112 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/content/code-block.tsx",
+			"imports": ["react","../layout/cn.js","./copy-button.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "HighlightedCode"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/content.tsx",
+			"imports": ["../layout/cn.js","./code-block.js","./detect.js","./json-view.js","./markdown.js","./plain.js","./text-block.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "MarkdownAnswer"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "PlainText"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "InlineExcerpts"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/copy-button.tsx",
+			"imports": ["lucide-react","react","../layout/button.js","../layout/cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "HighlightedCode"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "JsonPayload"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/json-view.tsx",
+			"imports": ["lucide-react","react","../layout/cn.js","./code-block.js","./copy-button.js","./detect.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "JsonPayload"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/markdown.tsx",
+			"imports": ["hast","react","react-markdown","remark-gfm","../layout/cn.js","./code-block.js","./url.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "MarkdownAnswer"
+				},
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "DocumentPreview"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/content/text-block.tsx",
+			"imports": ["../layout/cn.js"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: the content tier renders markdown, JSON, code and text for every consumer.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/content.stories.tsx",
+					"export": "PlainText"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
 			"source": "packages/saas-ui/src/datasources/collection-access.tsx",
 			"imports": [
 				"@tanstack/react-query",
@@ -956,12 +1098,29 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/saas-ui/src/datasources/directory.tsx",
+			"imports": [
+				"@codefly-dev/ui/layout",
+				"@tanstack/react-query",
+				"react",
+				"./types.js"
+			],
+			"owner": "@codefly-dev/saas-ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Add owner stories for the account link, the group bindings and the pending and verified domains, then verify under external skins."
+		},
+		{
 			"source": "packages/saas-ui/src/datasources/datasources-panel.tsx",
 			"imports": [
 				"@codefly-dev/ui/layout",
 				"@connectrpc/connect",
 				"@tanstack/react-query",
 				"react",
+				"../solution/no-readable-collection.js",
+				"../solution/viewer.js",
 				"./connect-github-form.js",
 				"./gateway.js",
 				"./queries.js",
@@ -988,6 +1147,29 @@
 				{
 					"file": "packages/saas-ui/stories/datasources.stories.tsx",
 					"export": "ProviderError"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/saas-ui/src/solution/no-readable-collection.tsx",
+			"imports": [],
+			"owner": "@codefly-dev/saas-ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: what every solution shows a viewer who may read no collection.",
+			"stories": [
+				{
+					"file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
+					"export": "Member"
+				},
+				{
+					"file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
+					"export": "Administrator"
+				},
+				{
+					"file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
+					"export": "Chat"
 				}
 			],
 			"coverage": "owner stories; browser/skin verification pending",
@@ -3990,6 +4172,7 @@
 		"@codefly-dev/ui/chat": "packages/codefly-ui/src/chat/index.ts",
 		"@codefly-dev/ui/layout": "packages/codefly-ui/src/layout/index.ts",
 		"@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
+		"@codefly-dev/ui/content": "packages/codefly-ui/src/content/index.ts",
 		"@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts"
 	}
 }

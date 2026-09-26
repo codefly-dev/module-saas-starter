@@ -28,6 +28,13 @@ import (
 type RouteExtension struct {
 	Exposed   bool `yaml:"exposed"`
 	Protected bool `yaml:"protected"`
+	// RateLimitClass names the edge budget this route draws on, spelled with the
+	// same RATE_LIMIT_CLASS_* vocabulary the descriptor policy uses so there is
+	// one name per class rather than a second spelling to drift. Empty means the
+	// generic budget, which is what every extension drew on before the field
+	// existed. An unknown name is rejected at load: a misspelling that fell back
+	// to the generic budget would read as a declared class and enforce nothing.
+	RateLimitClass string `yaml:"rate-limit-class"`
 }
 
 // RouteEntry is the internal representation used by the gateway.
@@ -100,6 +107,13 @@ func LoadRESTExtensionsFromDir(ctx context.Context, dir string) ([]*RouteEntry, 
 				Method:    string(route.Method),
 				Path:      route.Path,
 				Protected: route.Extension.Protected,
+			}
+			if declared := strings.TrimSpace(route.Extension.RateLimitClass); declared != "" {
+				class, ok := edgeRateLimitClassByName[declared]
+				if !ok {
+					return nil, fmt.Errorf("routing: extension %s %s declares unknown rate-limit-class %q", entry.Method, entry.Path, declared)
+				}
+				entry.RateLimitClass = class
 			}
 			if err := applyGeneratedAuthorizationMetadata(entry, authz); err != nil {
 				return nil, fmt.Errorf("routing: %s %s: %w", entry.Method, entry.Path, err)
@@ -233,6 +247,16 @@ func (m *RouteMatcher) ReservedV1Prefixes() map[string]struct{} {
 
 // v1Prefix extracts the `<prefix>` from a `/v1/<prefix>/...` (or `/v1/<prefix>`)
 // path. It reports false for any path not under /v1/ or with an empty prefix.
+//
+// A custom-verb route ends its first segment with `:<verb>`
+// (`/v1/permissions:check`, `/v1/work-contexts:renew`), and the verb is not part
+// of the prefix. Splitting only on `/` made `permissions:check` the "prefix" of
+// that route, which left the real prefix `permissions` absent from
+// ReservedV1Prefixes: a runtime module could claim a namespace the catalog owns,
+// which is exactly what the reservation exists to refuse. It also made the
+// federation lookup on the other caller compare a verb-suffixed segment against
+// registered prefixes, so `/v1/<module>:<verb>` could never reach a registered
+// module even when that module owned the prefix.
 func v1Prefix(path string) (string, bool) {
 	const root = "/v1/"
 	if !strings.HasPrefix(path, root) {
@@ -242,6 +266,9 @@ func v1Prefix(path string) (string, bool) {
 	prefix := rest
 	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
 		prefix = rest[:idx]
+	}
+	if idx := strings.IndexByte(prefix, ':'); idx >= 0 {
+		prefix = prefix[:idx]
 	}
 	if prefix == "" {
 		return "", false

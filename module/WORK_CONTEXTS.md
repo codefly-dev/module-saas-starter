@@ -73,6 +73,12 @@ permissions:
     action: read
 ```
 
+A permission every ordinary member of an organization should hold, such as
+reading their own records, adds `members: true`. That member holds it as a
+person with no role assignment; a delegated agent actor never does. Owners and
+admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
+import".
+
 The composition then declares the binding on the **calling** principal in
 `module-capabilities/MODULE_PRINCIPALS`:
 
@@ -87,14 +93,14 @@ The composition then declares the binding on the **calling** principal in
           {
             "resource_kind": "example-producer.profiles",
             "actions": ["invoke", "read"],
-            "resource_ids": ["sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"]
+            "resource_ids": ["standard"]
           }
         ],
         "lookup_scopes": [
           {
             "resource_kind": "example-producer.profiles",
             "actions": ["read"],
-            "resource_ids": ["sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"]
+            "resource_ids": ["standard"]
           }
         ]
       }
@@ -119,9 +125,41 @@ Three properties of the entry are worth reading twice. `audience` may not equal
 the caller's own prefix, so a binding cannot be a self-grant. `resource_ids`
 pins the exact resource; omitting it widens the child to every resource of that
 kind, and `"*"` is refused rather than treated as a wildcard. And because the
-grant is re-read on every call, deleting the `run` entry revokes the exchange
-immediately — including in the policy recheck that runs after signing — rather
-than when the last issued child expires.
+binding is read on every call rather than captured into a child at exchange,
+deleting the `run` entry stops the exchange as soon as the deployment carrying
+that deletion is serving — including in the policy recheck that runs after
+signing — rather than when the last issued child expires.
+
+A resource id is an opaque string, and the producing module owns what its ids
+mean. The host neither derives nor checks them: the producer's contribution
+declares resource kinds and actions and cannot name an id at all, and no
+registry of ids is consulted, so an id no producer recognises parses, signs, and
+reaches nothing until the producer refuses it. Beyond the sorting and wildcard
+rules above, the host requires each id to be non-empty, free of surrounding
+whitespace, and at most 512 characters — a bound a digest is always inside and a
+hand-written identity is not — and then compares it byte for byte. An id that
+breaks one of those is refused while the registry is parsed, which fails
+accounts' start-up rather than one call.
+
+Name the resource by its **stable identity**, not by a digest of its current
+definition. `MODULE_PRINCIPALS` is parsed once, at accounts start-up, so
+re-issuing this entry is a deployment rather than an edit: a grant that has to
+be re-issued whenever the producer's definition moves leaves the consumer
+without access from the moment that definition moves until every accounts
+process is serving the new entry, and while an old and a new process both serve,
+the same context is confirmed by one and refused by the other. For a module that
+also declares `headless_scopes`, the same re-issue revokes every operation
+context it has minted, across all of its bindings — the whole-entry revision
+under [Operation contexts with no person
+present](#operation-contexts-with-no-person-present). Children exchanged from a
+person's parent, like the one above, are owned by that person and take the
+row-backed check instead, so an entry change does not revoke them; they expire
+within the minute on their own.
+
+Pinning a definition is the producer's own check, made on each request against
+what it has installed. The host makes no such check, so a producer that means a
+grant to cover one exact definition enforces that itself: the id here says which
+resource is meant, never which version of it.
 
 ## Operation contexts with no person present
 
@@ -165,7 +203,7 @@ alone, a module can never do more with an audience than it could on a person's
 behalf:
 
 ```json
-{"documents":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"modelservice","invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile digest>"]}],"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"],"resource_ids":["<profile digest>"]}],"headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile digest>"]}]}}}}
+{"documents":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"modelservice","invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile name>"]}],"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"],"resource_ids":["<profile name>"]}],"headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile name>"]}]}}}}
 ```
 
 Here the module may invoke and read that one profile both on a person's behalf

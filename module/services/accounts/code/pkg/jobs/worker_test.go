@@ -479,3 +479,38 @@ func TestWorkerShutdownCancelsAfterGraceDeadline(t *testing.T) {
 		t.Fatalf("shutdown reported as a handler failure:\n%s", sink.rendered())
 	}
 }
+
+// A retryable failure that names when its cause lifts is not retried before
+// then, and one that names an earlier time keeps the queue's own backoff.
+func TestWorkerHoldsARetryUntilTheFailureSaysItMayRun(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	for name, tc := range map[string]struct {
+		notBefore time.Time
+		want      time.Time
+	}{
+		"later than the backoff":   {now.Add(45 * time.Minute), now.Add(45 * time.Minute)},
+		"earlier than the backoff": {now.Add(5 * time.Second), now.Add(30 * time.Second)},
+		"unset":                    {time.Time{}, now.Add(30 * time.Second)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeWorkerStore{claims: []*jobsv1.ClaimJobsResponse{{Jobs: []*jobsv1.JobEnvelope{claimedJob()}}}}
+			worker := newTestWorker(t, store, func(context.Context, *jobsv1.JobEnvelope) error {
+				err := NewProcessingError("source.rate_limited", "the provider's limit is exhausted", true)
+				var failure *ProcessingError
+				if errors.As(err, &failure) {
+					failure.NotBefore = tc.notBefore
+				}
+				return err
+			})
+			if _, err := worker.RunOnce(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if len(store.retried) != 1 {
+				t.Fatalf("retried %d, want 1", len(store.retried))
+			}
+			if got := store.retried[0].GetRetryAt().AsTime(); !got.Equal(tc.want) {
+				t.Fatalf("retry at = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

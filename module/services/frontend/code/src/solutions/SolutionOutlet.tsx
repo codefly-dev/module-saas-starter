@@ -2,15 +2,17 @@
 
 import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly-dev/saas-ui";
-import * as CodeflyLayout from "@codefly-dev/ui/layout";
-import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
+import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
+import * as CodeflyUi from "@codefly-dev/ui";
 import * as CodeflyChat from "@codefly-dev/ui/chat";
-import * as CodeflySkin from "@codefly-dev/ui/skin";
-import * as CodeflyTable from "@codefly-dev/ui/table";
+import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
+import * as CodeflyLayout from "@codefly-dev/ui/layout";
+import * as CodeflyContent from "@codefly-dev/ui/content";
 import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
 import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
 import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
-import * as CodeflyUi from "@codefly-dev/ui";
+import * as CodeflySkin from "@codefly-dev/ui/skin";
+import * as CodeflyTable from "@codefly-dev/ui/table";
 import {
 	createInstance,
 	type ModuleFederation,
@@ -28,7 +30,12 @@ import * as ReactJSXRuntime from "react/jsx-runtime";
 import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
-import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
+import {
+	authedFetch,
+	getToken,
+	refreshToken,
+	subscribeToken,
+} from "@/lib/connect/token-store";
 import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
@@ -88,6 +95,11 @@ export const CODEFLY_KIT_SHARED = {
 		lib: () => CodeflyTable,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
+	"@codefly-dev/ui/content": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyContent,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
 	"@codefly-dev/ui/plugin-host": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyPluginHost,
@@ -111,6 +123,11 @@ export const CODEFLY_KIT_SHARED = {
 	"@codefly-dev/saas-ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUi,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/saas-ui/solution": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => SaasUiSolution,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly-dev/saas-sdk": {
@@ -296,48 +313,15 @@ export interface SolutionRemote {
 	exposedModule: string;
 }
 
-/** Props the host injects into every solution page. */
-export interface SolutionPageProps {
-	solutionId: string;
-	/**
-	 * Same-origin base for ALL of a remote's backend calls — its own service and
-	 * the host's platform services alike. ONE base covers both because the host
-	 * proxy routes on the path, not on the base: a Connect procedure shaped
-	 * `saas.<pkg>.v1.<Service>/<Method>` goes to the API gateway's root, exactly
-	 * where a host page's own call lands, and everything else goes to this
-	 * solution's registered upstream (`api/solutions/[id]/proxy/[...path]`).
-	 *
-	 * So a kit component the host hands a remote — `<DatasourcesPanel gateway>`
-	 * calls the host's `saas.accounts.v1.DatasourceService` — works over this
-	 * base unchanged. Do NOT add a second "host" base: it would be the same
-	 * destination reached a second way, and a remote built against a base an
-	 * older host does not inject receives `undefined` and throws inside
-	 * `SolutionErrorBoundary`, blanking the page instead of failing one panel.
-	 */
-	apiBase: string;
-	/** Host-owned access-token getter — the remote never touches the token store. */
-	getAccessToken: () => string | null;
-	/**
-	 * Host-owned refresh: exchanges the httpOnly session for a fresh access token
-	 * (single-flight) and resolves to it, or null if the session is gone. The
-	 * remote hands this to `<DatasourcesPanel gateway>` so a data call that hits
-	 * the token's expiry mid-session recovers instead of failing — the same
-	 * mid-session recovery the portal's own transport does.
-	 */
-	refreshAccessToken: () => Promise<string | null>;
-	/**
-	 * Host-owned authed fetch: stamps the bearer token, and on a 401 exchanges
-	 * the session for a fresh token (single-flight) and retries the request once.
-	 * If the session is truly gone the host has already redirected to login. A
-	 * solution making raw REST calls uses this instead of hand-rolling
-	 * `fetch(..., { Authorization: Bearer getAccessToken() })`, so every solution
-	 * gets the portal's refresh-then-retry recovery — and the dead-session
-	 * auto-relogin — for free, rather than surfacing a bare `HTTP 401`.
-	 */
-	authedFetch: (
-		input: RequestInfo | URL,
-		init?: RequestInit,
-	) => Promise<Response>;
+/**
+ * Props the host injects into every solution page. The backend binding —
+ * `solutionId`, `apiBase` and the token accessors — is the kit's
+ * `SolutionBinding`, the one definition a remote's own helpers read
+ * (`solutionFetch`, `useSolutionJson`, `useViewerEpoch` in
+ * `@codefly-dev/saas-ui`); this adds only what the host alone knows how to
+ * construct.
+ */
+export interface SolutionPageProps extends SaasUi.SolutionBinding {
 	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
@@ -428,6 +412,7 @@ export function SolutionOutlet({
 					<Remote
 						{...pageProps}
 						getAccessToken={getToken}
+						subscribeToken={subscribeToken}
 						refreshAccessToken={refreshToken}
 						authedFetch={authedFetch}
 						dashboardAuthoring={authoring}

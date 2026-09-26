@@ -12,6 +12,9 @@
       "name": "APIKeyService"
     },
     {
+      "name": "ApprovalReviewService"
+    },
+    {
       "name": "AuditService"
     },
     {
@@ -322,6 +325,82 @@
         ],
         "tags": [
           "APIKeyService"
+        ]
+      }
+    },
+    "/v1/approvals/{id}": {
+      "get": {
+        "summary": "Read a request as its requester or one of its assigned approvers.",
+        "operationId": "ApprovalReviewService_GetApprovalReview",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApprovalReview"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ApprovalReviewService"
+        ]
+      }
+    },
+    "/v1/approvals/{id}:decide": {
+      "post": {
+        "summary": "Record an assigned approver decision against the exact reviewed subject.\nA support session acting as another person cannot cast that person's vote.",
+        "operationId": "ApprovalReviewService_DecideApprovalReview",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApprovalReview"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ApprovalReviewServiceDecideApprovalReviewBody"
+            }
+          }
+        ],
+        "tags": [
+          "ApprovalReviewService"
         ]
       }
     },
@@ -5732,6 +5811,25 @@
     }
   },
   "definitions": {
+    "ApprovalReviewServiceDecideApprovalReviewBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "subjectHash": {
+          "type": "string",
+          "description": "subject_hash is the ApprovalReview.subject_hash the caller reviewed. A\ndecision against any other subject is refused and records nothing."
+        }
+      },
+      "description": "DecideApprovalReviewRequest binds the decision to the subject that was shown."
+    },
     "DelegationServiceDecideDelegationBody": {
       "type": "object",
       "properties": {
@@ -6199,6 +6297,64 @@
         }
       }
     },
+    "v1ApprovalReview": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subjectHash": {
+          "type": "string",
+          "description": "subject_hash is the SHA-256 of the subject's canonical JSON; echo it in\nDecideApprovalReviewRequest.subject_hash."
+        },
+        "requestedBy": {
+          "type": "string"
+        },
+        "approvers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "quorum": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ApprovalReviewDecision"
+          }
+        }
+      },
+      "description": "ApprovalReview exposes the reviewed subject, pinned policy and recorded decisions."
+    },
+    "v1ApprovalReviewDecision": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "ApprovalReviewDecision is an immutable human decision."
+    },
     "v1AssignRoleRequest": {
       "type": "object",
       "properties": {
@@ -6363,6 +6519,10 @@
         "namespace": {
           "type": "string",
           "description": "The module namespace that owns the type: the leading segment of `name`.\nDistinct from `owner`, which names the emitting service."
+        },
+        "marksUserJoined": {
+          "type": "boolean",
+          "description": "Whether this type records a person joining the tenant for the first time.\nThe registry owns the meaning so a client counting new users does not have\nto hardcode the names: a type renamed, retired or added here changes what\nclients count without any of them shipping a new list. `category` cannot\nstand in for it — a category groups events for facets, and not every\nidentity event is a person arriving."
         }
       }
     },

@@ -38,6 +38,13 @@ func TestReflectionRegisteredOnlyLocally(t *testing.T) {
 			"reflection must be registered locally to aid discovery")
 		require.False(t, reflectionRegistered(server.internalGRPC),
 			"reflection is never registered on the internal listener")
+		// The one listener a composed module is meant to reach. Every
+		// saas.accounts.v1 service is registered on it, so reflection here
+		// would hand every module the whole surface — platform administration
+		// and the brokered secret exchanges included — from the one port it is
+		// legitimately allowed to dial.
+		require.False(t, reflectionRegistered(server.authorityGRPC),
+			"reflection is never registered on the module authority listener")
 	})
 
 	t.Run("deployed does not register reflection", func(t *testing.T) {
@@ -47,5 +54,6 @@ func TestReflectionRegisteredOnlyLocally(t *testing.T) {
 		require.False(t, reflectionRegistered(server.gRPC),
 			"reflection must not be registered outside local")
 		require.False(t, reflectionRegistered(server.internalGRPC))
+		require.False(t, reflectionRegistered(server.authorityGRPC))
 	})
 }

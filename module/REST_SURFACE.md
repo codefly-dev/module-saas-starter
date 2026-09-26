@@ -15,13 +15,22 @@ The accounts projection contains 120 descriptor routes across 24 services:
 - 12 public routes and 108 authenticated routes;
 - 100 OpenAPI paths and 120 operations;
 - zero of the seven internal RPCs;
-- seven explicit non-protobuf extensions loaded by auth-gateway: magic-link
-  request/verification, the billing and Resend email webhooks, checkout,
-  free-plan, and portal.
+- eleven explicit non-protobuf extensions loaded by auth-gateway: magic-link
+  request/verification, the billing and Resend email webhooks, the two GitHub
+  delivery receivers, the public status surface, the subscriptions stream,
+  checkout, free-plan, and portal.
 
-The generated runtime therefore authorizes 127 REST routes in total. Descriptor
+The generated runtime therefore authorizes 131 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
+
+The extension count is the one number here a test holds:
+`TestGeneratedRESTSurfaceAndExtensions` in `auth-gateway/code/routing_rest.go`'s
+test file pins the loaded extension set by method+path, so it cannot change
+without that assertion changing. The totals on this page are derived from it by
+hand and nothing reads them — which is why the extension count sat at "seven"
+from the day `/v1/subscriptions/stream` landed until it was corrected here. Read
+the pinned set, not this paragraph, when the answer has to be right.
 
 ## Sources and generated artifacts
 
@@ -34,7 +43,7 @@ for a protobuf procedure or inherit policy by path similarity.
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
 | `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-gateway descriptor REST inventory. |
-| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Seven explicit routes without protobuf ownership. |
+| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Eleven explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
 The strict binding file covers every surface service exactly once. Twenty-two

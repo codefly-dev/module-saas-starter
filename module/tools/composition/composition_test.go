@@ -541,3 +541,46 @@ func assertScopeAbsent(t *testing.T, label, haystack, needle string) {
 		t.Fatalf("%s unexpectedly contains %q in:\n%s", label, needle, haystack)
 	}
 }
+
+func TestPermissionContributionCarriesTheMemberGrantIntoTheGeneratedCatalog(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "permissions.codefly.yaml")
+	body := "schema: codefly/saas/permissions-contribution/v1\nnamespace: example\npermissions:\n" +
+		"  - {name: example.jobs:list, resource: example.jobs, action: list, members: true}\n" +
+		"  - {name: example.jobs:inspect, resource: example.jobs, action: inspect}\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	contributions, err := readDocuments[PermissionsContribution]([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderPermissionsGo(contributions)
+	for _, want := range []string{
+		`{Name: "example.jobs:inspect", Resource: "example.jobs", Action: "inspect", Members: false}`,
+		`{Name: "example.jobs:list", Resource: "example.jobs", Action: "list", Members: true}`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("generated catalog must carry %s:\n%s", want, rendered)
+		}
+	}
+	// The role catalog is unchanged by the grant: the namespace role still
+	// carries the full set, and nothing implies a role for members.
+	catalog := roleCatalogFromContributions(contributions)
+	if len(catalog.Roles) != 1 || len(catalog.Roles[0].Permissions) != 2 {
+		t.Fatalf("role catalog = %+v, want one namespace role with both grants", catalog)
+	}
+}
+
+func TestPermissionContributionRefusesAMisspelledMemberGrant(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "permissions.codefly.yaml")
+	body := "schema: codefly/saas/permissions-contribution/v1\nnamespace: example\npermissions:\n" +
+		"  - {name: example.jobs:list, resource: example.jobs, action: list, member: true}\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readDocuments[PermissionsContribution]([]string{path}); err == nil {
+		t.Fatal("an unknown key must fail at compose time, not silently grant nothing")
+	}
+}

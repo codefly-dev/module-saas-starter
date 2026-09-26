@@ -239,6 +239,104 @@ describe("solutions register route auth", () => {
 		});
 	});
 
+	it("logs a heartbeat's state changes, never each beat", async () => {
+		// A registrant beats every few seconds for as long as it runs. The route
+		// says when the registration starts, is refused, and recovers — the beats
+		// in between are counted, not printed.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		(globalThis as Record<string, unknown>).__solutionRegistrationLog =
+			undefined;
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const renewing = vi.fn(async (input: string | URL) => {
+			if (
+				new URL(String(input)).pathname === "/v1/auth/.well-known/jwks.json"
+			) {
+				return new Response(JWKS, { status: 200 });
+			}
+			// A renewal keeps the record's revision, as the durable registry does.
+			return Response.json({
+				ok: true,
+				id: "audit",
+				revision: 4,
+				status: "active",
+			});
+		});
+		vi.stubGlobal("fetch", renewing);
+		for (let beat = 0; beat < 20; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+		}
+		expect(info).toHaveBeenCalledTimes(1);
+		expect(String(info.mock.calls[0]?.[0])).toContain(
+			'"audit" registered (revision 4, active)',
+		);
+
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("down", { status: 503 })),
+		);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		for (let beat = 0; beat < 5; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+		}
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(String(warn.mock.calls[0]?.[0])).toContain(
+			'"audit" refused 503 registry unavailable — was registered at revision 4 after 20 beats',
+		);
+
+		vi.stubGlobal("fetch", renewing);
+		await POST(postRequest(manifestBody(), TOKEN));
+		expect(info).toHaveBeenCalledTimes(2);
+		expect(String(info.mock.calls[1]?.[0])).toContain(
+			"recovered from 503 registry unavailable after 5 beats",
+		);
+	});
+
+	it("reports a key set outage and its end, not one line per beat and not silence", async () => {
+		// An unverified beat names no registrant, so holding it under a stand-in
+		// one could never recover: nothing unverified ever succeeds. The outage
+		// was one line, an hour ago, while every solution's own entry still read
+		// "registered" — and a refused credential arriving during the same
+		// outage alternated with it and printed on every beat.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const scope = globalThis as Record<string, unknown>;
+		scope.__solutionRegistrationLog = undefined;
+		scope.__solutionRegistrationAuthority = undefined;
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("upstream restarting", { status: 502 })),
+		);
+		for (let beat = 0; beat < 5; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+			// A beat carrying no credential is judged without reaching the key
+			// set, so it is refused 401 inside the same window. Sharing one slot
+			// with the outage, the two alternated and printed on every beat.
+			expect((await POST(postRequest(manifestBody()))).status).toBe(401);
+		}
+		expect(warn).toHaveBeenCalledTimes(2);
+		expect(String(warn.mock.calls[0]?.[0])).toContain(
+			"the registration key set is unreachable",
+		);
+		expect(String(warn.mock.calls[1]?.[0])).toContain(
+			"a beat presented a credential this host does not accept",
+		);
+
+		// The key set is probed on a backoff, so the recovering beat is the
+		// first one past that window rather than the first after the gateway
+		// returns.
+		vi.stubGlobal("fetch", fakeGateway());
+		(globalThis as Record<string, unknown>).__solutionRegistrationJwks =
+			undefined;
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+		expect(String(info.mock.calls[0]?.[0])).toContain(
+			"the registration key set is reachable again; it answered 503 for 5 beats",
+		);
+	});
+
 	it("answers 503, not a refusal, when the key set it verifies against is unreachable", async () => {
 		// A restarting gateway is not a wrong credential. Told 401, a registrant
 		// goes looking for a provisioning or ownership fault that does not exist.
@@ -297,6 +395,102 @@ describe("solutions register route auth", () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		vi.stubGlobal("fetch", registryAnswering(new Response("forbidden", { status: 403 })));
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(403);
+	});
+
+	it("relays a refused declaration as a manifest to change, not an outage", async () => {
+		// The gateway answers 422 registration_rejected only when accounts
+		// attached the structured declaration-rejection reason — a namespace not
+		// bound to this solution or held by another, a field an earlier
+		// declaration admitted and this one drops. Retrying the same manifest
+		// can never succeed, so it is 422, never 503, and the rule is relayed.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(
+				Response.json(
+					{
+						error: "registration_rejected",
+						detail: 'namespace "acme" is not bound to solution "acme"',
+					},
+					{ status: 422 },
+				),
+			),
+		);
+		const res = await POST(postRequest(manifestBody(), TOKEN));
+		expect(res.status).toBe(422);
+		await expect(res.json()).resolves.toEqual({
+			error: "registration_rejected",
+			detail: 'namespace "acme" is not bound to solution "acme"',
+		});
+	});
+
+	it("keeps any other registry refusal an outage, not a rejected manifest", async () => {
+		// A plain 400 is a malformed write this host produced, and a 422 without
+		// the structured error is not the declaration refusal: neither tells the
+		// registrant to change its manifest.
+		for (const answer of [
+			new Response("invalid registration", { status: 400 }),
+			Response.json({ error: "something_else" }, { status: 422 }),
+		]) {
+			getWorkspaceSecret.mockReturnValue(TOKEN);
+			vi.stubGlobal("fetch", registryAnswering(answer));
+			const res = await POST(postRequest(manifestBody(), TOKEN));
+			expect(res.status).toBe(503);
+			await expect(res.json()).resolves.toEqual({
+				error: "registry_unavailable",
+			});
+		}
+	});
+
+	it("forwards declared audit event types verbatim for the registry to admit", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const gateway = fakeGateway();
+		vi.stubGlobal("fetch", gateway);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [
+				{
+					name: "item_created",
+					type: "acme.item.created",
+					fields: [
+						{ name: "score", kind: "number" },
+						{ name: "stage", kind: "enum", values: ["draft", "final"] },
+					],
+				},
+			],
+			metrics: [],
+			dashboards: [],
+		};
+		const res = await POST(postRequest(body, TOKEN));
+		expect(res.status).toBe(200);
+		const write = gateway.mock.calls.find(
+			([input]) => new URL(String(input)).pathname === "/solutions/_frontend",
+		);
+		const sent = JSON.parse(String(write?.[1]?.body));
+		expect(JSON.parse(sent.manifest).dashboard.events[0].fields).toEqual([
+			{ name: "score", kind: "number" },
+			{ name: "stage", kind: "enum", values: ["draft", "final"] },
+		]);
+	});
+
+	it("refuses a malformed declaration before any registry write", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const gateway = fakeGateway();
+		vi.stubGlobal("fetch", gateway);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [{ name: "e", type: "saas.item.created", fields: [] }],
+			metrics: [],
+			dashboards: [],
+		};
+		const res = await POST(postRequest(body, TOKEN));
+		expect(res.status).toBe(422);
+		expect(
+			gateway.mock.calls.some(
+				([input]) =>
+					new URL(String(input)).pathname === "/solutions/_frontend",
+			),
+		).toBe(false);
 	});
 
 	it("reports a registry outage instead of a phantom success", async () => {

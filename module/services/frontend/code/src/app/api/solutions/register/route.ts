@@ -6,10 +6,18 @@ import {
 	verifySolutionRegistration,
 } from "@/solutions/registration-authority";
 import {
+	observeAuthorityReachable,
+	observeAuthorityRefusal,
+	observeRegistrationBeat,
+	observeRegistrationRemoved,
+	type RegistrationRefusal,
+} from "@/solutions/registration-log";
+import {
 	loadSolutions,
 	navProjection,
 	parseManifest,
 	registerSolution,
+	type SolutionWriteResult,
 	unregisterSolution,
 } from "@/solutions/registry";
 
@@ -56,38 +64,120 @@ async function authorize(
 	const verdict = await verifySolutionRegistration(
 		request.headers.get(SOLUTION_REGISTRATION_HEADER),
 	);
+	// Recorded here, where the verdict is known, and not as a registrant state:
+	// a beat that did not verify names no registrant this host believes. The
+	// key set being unreachable lasts many beats and is one condition, not one
+	// per beat — and a beat that DOES verify is the only evidence the key set
+	// is reachable again, which is why the recovery is recorded here too.
 	if (verdict === "unavailable") {
-		console.error(
-			"solution registration: the registration key set is unreachable; answering 503 rather than refusing the credential",
-		);
+		observeAuthorityRefusal("unreachable");
 		return Response.json(
 			{ error: "registration_authority_unavailable" },
 			{ status: 503, headers: { "retry-after": "5" } },
 		);
 	}
 	if (verdict === "invalid" || !consumeRegistrationToken(verdict)) {
+		observeAuthorityRefusal("refused");
 		return Response.json({ error: "unauthorized" }, { status: 401 });
 	}
+	observeAuthorityReachable();
 	return verdict;
 }
 
+/**
+ * A registration beat. The heartbeat that calls this is logged by
+ * {@link observeRegistrationBeat} at its state changes only — never per beat —
+ * and the dev server's own per-request line for this path is switched off in
+ * next.config.mjs, so the two together print nothing for a beat that finds the
+ * registration as it left it.
+ */
 export async function POST(request: Request): Promise<Response> {
+	const answer = await registerBeat(request);
+	switch (answer.outcome) {
+		case "unverified":
+			// The credential never verified, so there is no registrant to
+			// attribute this beat to; authorize() already recorded it against
+			// the credential check itself.
+			break;
+		case "registered": {
+			const body = (await answer.response.clone().json()) as {
+				revision: number;
+				status: string;
+			};
+			observeRegistrationBeat(answer.solution, {
+				ok: true,
+				revision: body.revision,
+				status: body.status,
+			});
+			break;
+		}
+		default:
+			observeRegistrationBeat(answer.solution, {
+				ok: false,
+				httpStatus: answer.response.status,
+				reason: answer.reason,
+				detail: answer.detail,
+			});
+	}
+	return answer.response;
+}
+
+/**
+ * One beat's answer.
+ *
+ * Three outcomes rather than a response plus optional fields: a beat whose
+ * credential did not verify has no registrant to name, and a refusal always
+ * has a reason. Spelling that out is what keeps the caller from needing a
+ * default for a reason that is never actually absent.
+ */
+type BeatAnswer =
+	| { outcome: "unverified"; response: Response }
+	| { outcome: "registered"; solution: string; response: Response }
+	| {
+			outcome: "refused";
+			solution: string;
+			response: Response;
+			reason: RegistrationRefusal;
+			detail?: string;
+	  };
+
+async function registerBeat(request: Request): Promise<BeatAnswer> {
 	const claims = await authorize(request);
 	if (claims instanceof Response) {
-		return claims;
+		return { outcome: "unverified", response: claims };
 	}
+	const solution = claims.solution;
 	let body: unknown;
 	try {
 		body = await request.json();
 	} catch {
-		return Response.json({ error: "invalid_json" }, { status: 400 });
+		return {
+			outcome: "refused",
+			solution,
+			response: Response.json({ error: "invalid_json" }, { status: 400 }),
+			reason: "invalid_json",
+		};
 	}
 	const manifest = parseManifest(body);
 	if (!manifest) {
-		return Response.json({ error: "invalid_manifest" }, { status: 422 });
+		return {
+			outcome: "refused",
+			solution,
+			response: Response.json({ error: "invalid_manifest" }, { status: 422 }),
+			reason: "invalid_manifest",
+		};
 	}
 	if (manifest.id !== claims.solution) {
-		return Response.json({ error: "solution_not_authorized" }, { status: 403 });
+		return {
+			outcome: "refused",
+			solution,
+			response: Response.json(
+				{ error: "solution_not_authorized" },
+				{ status: 403 },
+			),
+			reason: "solution_not_authorized",
+			detail: `manifest names "${manifest.id}"`,
+		};
 	}
 	// Compatibility is enforced BEFORE the write, so an incompatible remote never
 	// reaches a browser and an existing, working registration keeps serving. The
@@ -95,13 +185,16 @@ export async function POST(request: Request): Promise<Response> {
 	// would have nothing to act on.
 	const verdict = checkRuntimeCompatibility(manifest);
 	if (!verdict.compatible) {
-		console.error(
-			`solution registration refused as incompatible: ${manifest.id}: ${verdict.reasons.join("; ")}`,
-		);
-		return Response.json(
-			{ error: "incompatible_runtime", reasons: verdict.reasons },
-			{ status: 409 },
-		);
+		return {
+			outcome: "refused",
+			solution,
+			response: Response.json(
+				{ error: "incompatible_runtime", reasons: verdict.reasons },
+				{ status: 409 },
+			),
+			reason: "incompatible_runtime",
+			detail: verdict.reasons.join("; "),
+		};
 	}
 	// A solution whose registration was deregistered has to say so to come back:
 	// an ordinary retry from a retiring deployment must not resurrect what an
@@ -115,33 +208,57 @@ export async function POST(request: Request): Promise<Response> {
 		credential: request.headers.get(SOLUTION_REGISTRATION_HEADER) ?? undefined,
 	});
 	if (!result.ok) {
-		return writeFailure(result.reason);
+		return {
+			outcome: "refused",
+			solution,
+			response: writeFailure(result),
+			reason: `registry ${result.reason}`,
+		};
 	}
-	return Response.json({
-		ok: true,
-		id: manifest.id,
-		revision: result.revision,
-		status: result.status,
-	});
+	return {
+		outcome: "registered",
+		solution,
+		response: Response.json({
+			ok: true,
+			id: manifest.id,
+			revision: result.revision,
+			status: result.status,
+		}),
+	};
 }
 
 /**
  * Registration is a write to a shared, versioned record, so it can fail in ways
  * a caller must tell apart: `conflict` means re-read and retry, `forbidden`
- * means the id belongs to someone else, `unavailable` means back off. Answering
- * 200 for any of these would let a solution believe it is serving when it is
- * not — the exact incoherence this registry exists to prevent.
+ * means the id belongs to someone else, `rejected` means the registry will not
+ * admit this manifest — change it, do not retry it — and `unavailable` means
+ * back off. Answering 200 for any of these would let a solution believe it is
+ * serving when it is not — the exact incoherence this registry exists to
+ * prevent.
  */
 function writeFailure(
-	reason: "unavailable" | "conflict" | "forbidden",
+	failure: Extract<SolutionWriteResult, { ok: false }>,
 ): Response {
-	switch (reason) {
+	switch (failure.reason) {
 		case "conflict":
 			return Response.json({ error: "revision_conflict" }, { status: 409 });
 		case "forbidden":
 			return Response.json(
 				{ error: "not_registration_owner" },
 				{ status: 403 },
+			);
+		case "rejected":
+			// The declared audit event types are the one part of a manifest only
+			// the registry can judge (whether the namespace is bound to this
+			// solution and free, whether a changed field set only grows), so
+			// this is the same class of answer as invalid_manifest: the
+			// registrant must change what it sends. `detail` names the rule.
+			return Response.json(
+				{
+					error: "registration_rejected",
+					...(failure.detail ? { detail: failure.detail } : {}),
+				},
+				{ status: 422 },
 			);
 		default:
 			return Response.json({ error: "registry_unavailable" }, { status: 503 });
@@ -165,8 +282,9 @@ export async function DELETE(request: Request): Promise<Response> {
 		request.headers.get(SOLUTION_REGISTRATION_HEADER) ?? undefined,
 	);
 	if (!result.ok) {
-		return writeFailure(result.reason);
+		return writeFailure(result);
 	}
+	observeRegistrationRemoved(id, result.revision);
 	return Response.json({ ok: true, revision: result.revision });
 }
 

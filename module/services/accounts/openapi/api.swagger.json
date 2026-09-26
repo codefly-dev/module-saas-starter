@@ -3,6 +3,25 @@
     "application/json"
   ],
   "definitions": {
+    "ApprovalReviewServiceDecideApprovalReviewBody": {
+      "description": "DecideApprovalReviewRequest binds the decision to the subject that was shown.",
+      "properties": {
+        "decision": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "subjectHash": {
+          "description": "subject_hash is the ApprovalReview.subject_hash the caller reviewed. A\ndecision against any other subject is refused and records nothing.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "DelegationServiceDecideDelegationBody": {
       "properties": {
         "decision": {
@@ -462,6 +481,64 @@
       },
       "type": "object"
     },
+    "v1ApprovalReview": {
+      "description": "ApprovalReview exposes the reviewed subject, pinned policy and recorded decisions.",
+      "properties": {
+        "approvers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/definitions/v1ApprovalReviewDecision",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "quorum": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "requestedBy": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subjectHash": {
+          "description": "subject_hash is the SHA-256 of the subject's canonical JSON; echo it in\nDecideApprovalReviewRequest.subject_hash.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ApprovalReviewDecision": {
+      "description": "ApprovalReviewDecision is an immutable human decision.",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "decidedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1AssignRoleRequest": {
       "properties": {
         "orgId": {
@@ -596,6 +673,10 @@
         },
         "description": {
           "type": "string"
+        },
+        "marksUserJoined": {
+          "description": "Whether this type records a person joining the tenant for the first time.\nThe registry owns the meaning so a client counting new users does not have\nto hardcode the names: a type renamed, retired or added here changes what\nclients count without any of them shipping a new list. `category` cannot\nstand in for it — a category groups events for facets, and not every\nidentity event is a person arriving.",
+          "type": "boolean"
         },
         "name": {
           "type": "string"
@@ -5231,6 +5312,82 @@
         },
         "tags": [
           "APIKeyService"
+        ]
+      }
+    },
+    "/v1/approvals/{id}": {
+      "get": {
+        "operationId": "ApprovalReviewService_GetApprovalReview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApprovalReview"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Read a request as its requester or one of its assigned approvers.",
+        "tags": [
+          "ApprovalReviewService"
+        ]
+      }
+    },
+    "/v1/approvals/{id}:decide": {
+      "post": {
+        "operationId": "ApprovalReviewService_DecideApprovalReview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ApprovalReviewServiceDecideApprovalReviewBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApprovalReview"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "Record an assigned approver decision against the exact reviewed subject.\nA support session acting as another person cannot cast that person's vote.",
+        "tags": [
+          "ApprovalReviewService"
         ]
       }
     },
@@ -10650,6 +10807,9 @@
     },
     {
       "name": "APIKeyService"
+    },
+    {
+      "name": "ApprovalReviewService"
     },
     {
       "name": "AuditService"

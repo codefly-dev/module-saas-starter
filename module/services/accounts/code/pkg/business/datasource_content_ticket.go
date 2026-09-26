@@ -102,7 +102,8 @@ func (t *datasourceTicketSigner) sign(encodedBody string) string {
 
 // ResolveContentTicket redeems a content ticket for the referenced blob's bytes.
 // The token stays in accounts: the ticket names a source and a blob sha, and the
-// blob is re-fetched with that source's decrypted token, up to
+// blob is read from that source's repository mirror, fetched with its decrypted
+// token when the mirror lacks it, up to
 // maxContentTicketBytes. A malformed, forged, or foreign ticket is
 // ErrContentTicketInvalid; an expired one is ErrContentTicketExpired.
 func (s *Service) ResolveContentTicket(ctx context.Context, ticket string) ([]byte, error) {
@@ -128,7 +129,7 @@ func (s *Service) ResolveContentTicket(ctx context.Context, ticket string) ([]by
 		// retry the redemption.
 		return nil, err
 	}
-	content, err := client.GetBlob(ctx, source.Repo, claims.BlobSHA, maxContentTicketBytes)
+	content, err := s.readDatasourceBlob(ctx, source, client, claims.BlobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, w.NewError("blob exceeds the content ticket size limit")

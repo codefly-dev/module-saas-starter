@@ -3,7 +3,9 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: postgres
-    version: 0.0.139
+    # DEV PIN: an unreleased agent prerelease (the postgres agent change this round needs). Move it to the
+    # release that ships the change before this module is tagged.
+    version: 0.0.139-dev.9b0c2212c6be
     publisher: codefly.dev
 endpoints:
     - name: tcp

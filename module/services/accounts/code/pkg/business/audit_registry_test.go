@@ -81,6 +81,22 @@ func TestValidatePayload(t *testing.T) {
 		err := ValidatePayload(EventUserRegistered, map[string]any{"email": 42})
 		require.ErrorContains(t, err, "string")
 	})
+	// The removed-datasource payload names the provider, and the column it is
+	// read from is NOT NULL under a CHECK over exactly these four values. A
+	// string field could not refuse a fifth, so the check the database makes
+	// would stop at the trail's edge.
+	t.Run("removed datasource provider is checked against the stored set", func(t *testing.T) {
+		for _, provider := range []string{
+			DatasourceProviderGitHub, DatasourceProviderAPI,
+			DatasourceProviderCrawler, DatasourceProviderUpload,
+		} {
+			require.NoError(t, ValidatePayload(EventDatasourceSourceRemoved, map[string]any{
+				"provider": provider, "repo": "acme/docs", "boundary": "node-1",
+			}), "provider %q is storable, so it must validate", provider)
+		}
+		err := ValidatePayload(EventDatasourceSourceRemoved, map[string]any{"provider": "carrier_pigeon"})
+		require.ErrorContains(t, err, "enum")
+	})
 	t.Run("string array accepts []any", func(t *testing.T) {
 		require.NoError(t, ValidatePayload(EventAPIKeyCreated, map[string]any{
 			"key_id": "00000000-0000-0000-0000-000000000001",
@@ -89,9 +105,9 @@ func TestValidatePayload(t *testing.T) {
 	})
 }
 
-func TestRedactPayload(t *testing.T) {
+func TestResolvedAuditEvent_Redact(t *testing.T) {
 	t.Run("strips PII fields", func(t *testing.T) {
-		out := RedactPayload(EventUserRegistered, map[string]any{
+		out := catalogResolved(EventUserRegistered).Redact(map[string]any{
 			"signup_method": "password",
 			"email":         "secret@example.com",
 		})
@@ -99,10 +115,10 @@ func TestRedactPayload(t *testing.T) {
 	})
 	t.Run("no-PII type passes through", func(t *testing.T) {
 		in := map[string]any{"step": "invite_team"}
-		require.Equal(t, in, RedactPayload(EventOnboardingStepDone, in))
+		require.Equal(t, in, catalogResolved(EventOnboardingStepDone).Redact(in))
 	})
 	t.Run("unregistered type fails closed", func(t *testing.T) {
-		out := RedactPayload("saas.nope.not_real", map[string]any{"anything": "x"})
+		out := catalogResolved("saas.nope.not_real").Redact(map[string]any{"anything": "x"})
 		require.Empty(t, out)
 	})
 }
@@ -143,4 +159,108 @@ func TestAuditCatalog_InstallationReasonCodesAreDeclaredOnBothEvents(t *testing.
 	codes := slices.Sorted(maps.Values(datasourceInstallationReasonCodes))
 	require.ElementsMatch(t, codes, lost,
 		"every code datasourceInstallationReasonCodes can put in a payload must be declared on the event")
+}
+
+// A document module records each re-queued dead letter with exactly this
+// payload; EmitAuditEvent rejects an undeclared key, so the declaration has to
+// match what the producer sends, and every field that says what was re-run is
+// required.
+func TestValidatePayload_DocumentDeadLetterRedriven(t *testing.T) {
+	complete := func() map[string]any {
+		return map[string]any{
+			"solution": "documents", "version": "v1", "correlation_id": "redrive-7",
+			"producer": "embed", "error_class": "exhausted",
+		}
+	}
+	require.NoError(t, ValidatePayload(EventDocumentDeadLetterRedriven, complete()))
+
+	// The vocabulary covers the whole space, so a producer never has to file a
+	// run it cannot classify as one it can.
+	for _, class := range []string{"permanent", "exhausted", "cancelled", "unknown"} {
+		payload := complete()
+		payload["error_class"] = class
+		require.NoErrorf(t, ValidatePayload(EventDocumentDeadLetterRedriven, payload), "error_class %q", class)
+	}
+
+	require.Error(t, ValidatePayload(EventDocumentDeadLetterRedriven, func() map[string]any {
+		p := complete()
+		p["error_class"] = "flaky"
+		return p
+	}()), "error_class is a closed vocabulary")
+
+	require.Error(t, ValidatePayload(EventDocumentDeadLetterRedriven, func() map[string]any {
+		p := complete()
+		p["last_error"] = "x"
+		return p
+	}()), "the error text is never on the spine")
+
+	// Every identifying field, absent and blank. A required string that accepts
+	// "" writes a row that reads as a complete record and names nothing: the
+	// zero value of a Go string is what an emitter sends when it forgot to set
+	// the field, which is exactly when the record has to refuse.
+	for _, field := range []string{"version", "correlation_id", "producer", "error_class"} {
+		for _, blank := range []any{nil, "", "   ", 12} {
+			payload := complete()
+			if blank == nil {
+				delete(payload, field)
+			} else {
+				payload[field] = blank
+			}
+			require.Errorf(t, ValidatePayload(EventDocumentDeadLetterRedriven, payload),
+				"%s=%v must be refused", field, blank)
+		}
+	}
+
+	// producer is bounded so it can name a stage and not carry a transcript.
+	overLong := complete()
+	overLong["producer"] = strings.Repeat("e", 129)
+	require.Error(t, ValidatePayload(EventDocumentDeadLetterRedriven, overLong),
+		"producer is bounded at 128 bytes")
+	atBound := complete()
+	atBound["producer"] = strings.Repeat("e", 128)
+	require.NoError(t, ValidatePayload(EventDocumentDeadLetterRedriven, atBound))
+}
+
+// The nonempty rule belongs to the declaration, not to a list of the event types
+// somebody remembered to add: a required string-valued field on ANY registered
+// type refuses a blank, and a required bool or int still records false and 0.
+func TestValidatePayload_RequiredStringFieldsRejectBlanksOnEveryEvent(t *testing.T) {
+	checked := 0
+	for _, d := range AuditEventCatalog() {
+		for _, f := range d.Fields {
+			if !f.Required {
+				continue
+			}
+			switch f.Kind {
+			case FieldString, FieldUUID, FieldEnum:
+				require.Errorf(t, validateField(d.Type, f, ""), "%s.%s accepted an empty string", d.Type, f.Name)
+				require.Errorf(t, validateField(d.Type, f, "  "), "%s.%s accepted a blank string", d.Type, f.Name)
+				checked++
+			case FieldBool:
+				require.NoErrorf(t, validateField(d.Type, f, false), "%s.%s must still record false", d.Type, f.Name)
+				checked++
+			case FieldInt:
+				require.NoErrorf(t, validateField(d.Type, f, 0), "%s.%s must still record zero", d.Type, f.Name)
+				checked++
+			}
+		}
+	}
+	require.NotZero(t, checked, "no required fields found; the catalog walk is broken")
+}
+
+// A type whose record is about a resource must name one. The registry decides
+// it, because the request field it constrains is shared with every type that has
+// no entry to name.
+func TestAuditCatalog_EntryRequirementIsDeclaredNotAssumed(t *testing.T) {
+	require.True(t, AuditEventRequiresEntry(EventDocumentDeadLetterRedriven))
+	require.False(t, AuditEventRequiresEntry(EventDocumentSearch),
+		"a search is about a collection, not an entry")
+	require.False(t, AuditEventRequiresEntry("saas.not.registered"),
+		"an unregistered type is refused as unregistered, not as missing an entry")
+
+	require.True(t, AuditEventRequiresIdempotencyKey(EventDocumentDeadLetterRedriven),
+		"a per-item queue report retries, so its emitter must name the operation")
+	require.False(t, AuditEventRequiresIdempotencyKey(EventDocumentIngested),
+		"the requirement belongs to the types that declared it, not to the surface")
+	require.False(t, AuditEventRequiresIdempotencyKey("saas.not.registered"))
 }

@@ -16,6 +16,15 @@ import (
 	"accounts/pkg/jobs"
 )
 
+// Commit ids a test pushes and diffs between. They are full object ids, as
+// every version a connector hands out is.
+var (
+	cA = strings.Repeat("a", 40)
+	cB = strings.Repeat("b", 40)
+	cC = strings.Repeat("c", 40)
+	cX = strings.Repeat("e", 40)
+)
+
 // pushDelivery builds a raw GitHub push payload the compiler parses.
 func pushDelivery(ref, before, after string, created, deleted bool) []byte {
 	body, _ := json.Marshal(map[string]any{
@@ -163,14 +172,15 @@ func TestCompileDelivery_PathFilterAndRenames(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			producer := &recordingProducer{}
 			gh := &fakeGitHub{
+				commit:    cB,
 				content:   map[string][]byte{"docs/a.md": []byte("A")},
-				compareFn: compareBetween("A", "B", tc.files),
+				compareFn: compareBetween(cA, cB, tc.files),
 			}
 			svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-			source := githubSource(t, svc, "main", []string{"docs"}, "A")
+			source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 			disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-				pushDelivery("refs/heads/main", "A", "B", false, false), "d1")
+				pushDelivery("refs/heads/main", cA, cB, false, false), "d1")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -194,14 +204,15 @@ func TestCompileDelivery_EmptyFileCarriesPresentContent(t *testing.T) {
 	// omitted content field with no ticket is ambiguous with "fetch via ticket".
 	producer := &recordingProducer{}
 	gh := &fakeGitHub{
+		commit:    cB,
 		content:   map[string][]byte{"docs/empty.md": {}},
-		compareFn: compareBetween("A", "B", []github.ChangedFile{{Filename: "docs/empty.md", Status: "added", SHA: "se"}}),
+		compareFn: compareBetween(cA, cB, []github.ChangedFile{{Filename: "docs/empty.md", Status: "added", SHA: "se"}}),
 	}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	if _, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "d"); err != nil {
+		pushDelivery("refs/heads/main", cA, cB, false, false), "d"); err != nil {
 		t.Fatal(err)
 	}
 	if len(producer.jobs) != 1 {
@@ -222,21 +233,19 @@ func TestCompileDelivery_EmptyFileCarriesPresentContent(t *testing.T) {
 
 func TestCompileDelivery_OutOfOrderDropsStale(t *testing.T) {
 	producer := &recordingProducer{}
-	// Cursor already at C. A late delivery for A→B arrives: B is an ancestor of C
-	// (B...C is ahead), so it is dropped and the cursor stays at C.
-	gh := &fakeGitHub{compareFn: func(base, head string) (*github.Comparison, error) {
-		if base == "B" && head == "C" {
-			return &github.Comparison{Status: github.CompareStatusAhead}, nil
-		}
+	// Cursor already at C, which is the branch head. A late delivery for A→B
+	// arrives: there is nothing past the cursor, so it is dropped and the cursor
+	// stays at C. No diff is asked for: from the head to itself is empty.
+	gh := &fakeGitHub{commit: cC, compareFn: func(base, head string) (*github.Comparison, error) {
 		return nil, errors.New("unexpected compare " + base + "..." + head)
 	}}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
-	source := githubSource(t, svc, "main", nil, "C")
-	setStoredCursor(store, source.ID, "C")
+	source := githubSource(t, svc, "main", nil, cC)
+	setStoredCursor(store, source.ID, cC)
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "late")
+		pushDelivery("refs/heads/main", cA, cB, false, false), "late")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,45 +255,45 @@ func TestCompileDelivery_OutOfOrderDropsStale(t *testing.T) {
 	if len(producer.jobs) != 0 {
 		t.Fatalf("enqueued %d jobs, want 0 for a stale delivery", len(producer.jobs))
 	}
-	if got := storedCursor(t, store, source.ID); got != "C" {
+	if got := storedCursor(t, store, source.ID); got != cC {
 		t.Fatalf("cursor moved to %q, want it to stay at C", got)
 	}
 }
 
-func TestCompileDelivery_BehindCompareNeverRewindsCursor(t *testing.T) {
+func TestCompileDelivery_StaleDeliveryCompilesToTheMovedHead(t *testing.T) {
 	producer := &recordingProducer{}
-	// A redelivered older push (after=B, an ancestor of the cursor C) arrives while
-	// the ancestry pre-check Compare(B...C) transiently fails. The main compare
-	// C...B then reports "behind"; compiling it would rewind the cursor to B and
-	// re-emit reverted content, so it must be dropped as stale with the cursor
-	// left at C.
-	gh := &fakeGitHub{compareFn: func(base, head string) (*github.Comparison, error) {
-		if base == "B" && head == "C" {
-			return nil, errors.New("transient GitHub error")
-		}
-		if base == "C" && head == "B" {
-			return &github.Comparison{Status: github.CompareStatusBehind}, nil
-		}
-		return nil, errors.New("unexpected compare " + base + "..." + head)
-	}}
+	// A redelivered older push (after=B, before the cursor C) arrives while the
+	// branch has since moved on to X. The compiler never diffs toward the
+	// delivery's own commit, so it cannot rewind the cursor or re-emit reverted
+	// content: it compiles the cursor to the current head, the state the stale
+	// push was part of, and the cursor moves forward to X.
+	gh := &fakeGitHub{
+		commit:  cX,
+		content: map[string][]byte{"docs/x.md": []byte("X")},
+		compareFn: func(base, head string) (*github.Comparison, error) {
+			if base == cC && head == cX {
+				return &github.Comparison{Status: github.CompareStatusAhead, Files: []github.ChangedFile{
+					{Filename: "docs/x.md", Status: "added", SHA: "sx"},
+				}}, nil
+			}
+			return nil, errors.New("unexpected compare " + base + "..." + head)
+		},
+	}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
-	source := githubSource(t, svc, "main", nil, "C")
-	setStoredCursor(store, source.ID, "C")
+	source := githubSource(t, svc, "main", nil, cC)
+	setStoredCursor(store, source.ID, cC)
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "redelivery")
+		pushDelivery("refs/heads/main", cA, cB, false, false), "redelivery")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disp != business.DispositionStale {
-		t.Fatalf("disposition = %q, want stale for a behind compare", disp)
+	if disp != business.DispositionCompiled || len(producer.jobs) != 1 {
+		t.Fatalf("disposition = %q with %d jobs, want the head's one change compiled", disp, len(producer.jobs))
 	}
-	if len(producer.jobs) != 0 {
-		t.Fatalf("enqueued %d jobs, want 0 for a behind (backward) delivery", len(producer.jobs))
-	}
-	if got := storedCursor(t, store, source.ID); got != "C" {
-		t.Fatalf("cursor rewound to %q, want it to stay at C", got)
+	if got := storedCursor(t, store, source.ID); got != cX {
+		t.Fatalf("cursor = %q, want it moved forward to the head X", got)
 	}
 }
 
@@ -295,12 +304,10 @@ func TestCompileDelivery_MissedDeliveryDiffsFromCursorNotBefore(t *testing.T) {
 	// from the cursor (A), not the delivery's own `before` (B), so B's changes are
 	// caught up.
 	gh := &fakeGitHub{
+		commit:  cC,
 		content: map[string][]byte{"docs/from-b.md": []byte("B"), "docs/from-c.md": []byte("C")},
 		compareFn: func(base, head string) (*github.Comparison, error) {
-			if base == "C" && head == "A" { // ancestry check: not an ancestor
-				return &github.Comparison{Status: github.CompareStatusBehind}, nil
-			}
-			if head == "C" {
+			if head == cC {
 				comparedBase = base
 				return &github.Comparison{Status: github.CompareStatusAhead, Files: []github.ChangedFile{
 					{Filename: "docs/from-b.md", Status: "added", SHA: "b"},
@@ -311,17 +318,17 @@ func TestCompileDelivery_MissedDeliveryDiffsFromCursorNotBefore(t *testing.T) {
 		},
 	}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "B", "C", false, false), "d")
+		pushDelivery("refs/heads/main", cB, cC, false, false), "d")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if disp != business.DispositionCompiled {
 		t.Fatalf("disposition = %q, want compiled", disp)
 	}
-	if comparedBase != "A" {
+	if comparedBase != cA {
 		t.Fatalf("diffed from %q, want the cursor A", comparedBase)
 	}
 	if len(producer.jobs) != 2 {
@@ -331,15 +338,15 @@ func TestCompileDelivery_MissedDeliveryDiffsFromCursorNotBefore(t *testing.T) {
 
 func TestCompileDelivery_ForcePushSnapshots(t *testing.T) {
 	producer := &recordingProducer{}
-	// `before` (or the cursor A) is unreachable: the incremental compare 404s, so
-	// the delivery snapshots at the head and the cursor moves to the head.
+	// The cursor A is unreachable from the head C: the incremental diff 404s, so
+	// the connector requires a resync, the delivery snapshots at the head and the
+	// cursor moves to the head.
 	gh := &fakeGitHub{
-		files: []github.File{{Path: "docs/a.md", SHA: "sa", Size: 3}},
+		commit:  cC,
+		files:   []github.File{{Path: "docs/a.md", SHA: "sa", Size: 3}},
+		content: map[string][]byte{"docs/a.md": []byte("abc")},
 		compareFn: func(base, head string) (*github.Comparison, error) {
-			if base == "C" && head == "A" {
-				return &github.Comparison{Status: github.CompareStatusDiverged}, nil
-			}
-			if base == "A" && head == "C" {
+			if base == cA && head == cC {
 				return nil, github.ErrNotFound
 			}
 			return nil, errors.New("unexpected compare " + base + "..." + head)
@@ -347,10 +354,10 @@ func TestCompileDelivery_ForcePushSnapshots(t *testing.T) {
 	}
 	store := newDatasourceFakeStore()
 	svc, audit := newDatasourceService(store, producer, gh)
-	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "X", "C", false, false), "force")
+		pushDelivery("refs/heads/main", cX, cC, false, false), "force")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +367,7 @@ func TestCompileDelivery_ForcePushSnapshots(t *testing.T) {
 	if len(producer.jobs) != 1 || producer.jobs[0].GetTopic() != "datasource.github.snapshot" {
 		t.Fatalf("want exactly one snapshot job, got %d", len(producer.jobs))
 	}
-	if got := storedCursor(t, store, source.ID); got != "C" {
+	if got := storedCursor(t, store, source.ID); got != cC {
 		t.Fatalf("cursor = %q, want C after snapshot", got)
 	}
 	if !auditHas(audit, business.EventDatasourceForcePushReconciled) {
@@ -368,50 +375,45 @@ func TestCompileDelivery_ForcePushSnapshots(t *testing.T) {
 	}
 }
 
-func TestCompileDelivery_CursorMonotonicRejectsAncestor(t *testing.T) {
+func TestCompileDelivery_HeadNotYetVisibleRetries(t *testing.T) {
 	producer := &recordingProducer{}
-	// after (B) is an ancestor of the cursor (C): B...C ahead ⇒ drop as stale and
-	// never move the cursor backwards.
-	gh := &fakeGitHub{compareFn: func(base, head string) (*github.Comparison, error) {
-		if base == "B" && head == "C" {
-			return &github.Comparison{Status: github.CompareStatusAhead}, nil
-		}
-		return nil, errors.New("unexpected compare " + base + "..." + head)
-	}}
+	// The push B extends exactly the cursor A, but the source still shows A as
+	// its head: GitHub announced the push before its ref was visible. Dropping
+	// it would leave B for the next reconcile, so the job retries instead, and
+	// the cursor stays at A.
+	gh := &fakeGitHub{commit: cA}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
-	source := githubSource(t, svc, "main", nil, "C")
-	setStoredCursor(store, source.ID, "C")
+	source := githubSource(t, svc, "main", nil, cA)
+	setStoredCursor(store, source.ID, cA)
 
-	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "d")
-	if err != nil {
-		t.Fatal(err)
+	_, err := svc.CompileGitHubDelivery(context.Background(), source,
+		pushDelivery("refs/heads/main", cA, cB, false, false), "d")
+	var failure *jobs.ProcessingError
+	if !errors.As(err, &failure) || !failure.Retryable || failure.Failure.GetCode() != "datasource.head_not_visible" {
+		t.Fatalf("err = %v, want a retryable head_not_visible", err)
 	}
-	if disp != business.DispositionStale {
-		t.Fatalf("disposition = %q, want stale", disp)
-	}
-	if got := storedCursor(t, store, source.ID); got != "C" {
-		t.Fatalf("cursor = %q, want it to stay at C (monotonic)", got)
+	if got := storedCursor(t, store, source.ID); got != cA || len(producer.jobs) != 0 {
+		t.Fatalf("cursor = %q with %d jobs, want A and nothing enqueued", got, len(producer.jobs))
 	}
 }
 
 func TestCompileDelivery_CreatedBranchSnapshots(t *testing.T) {
 	producer := &recordingProducer{}
-	gh := &fakeGitHub{files: []github.File{{Path: "docs/a.md", SHA: "sa", Size: 1}}}
+	gh := &fakeGitHub{commit: cC, files: []github.File{{Path: "docs/a.md", SHA: "sa", Size: 1}}, content: map[string][]byte{"docs/a.md": []byte("a")}}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
 	source := githubSource(t, svc, "main", []string{"docs"}, "")
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "0000000000000000000000000000000000000000", "C", true, false), "d")
+		pushDelivery("refs/heads/main", "0000000000000000000000000000000000000000", cC, true, false), "d")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if disp != business.DispositionSnapshot {
 		t.Fatalf("disposition = %q, want snapshot for a created branch", disp)
 	}
-	if got := storedCursor(t, store, source.ID); got != "C" {
+	if got := storedCursor(t, store, source.ID); got != cC {
 		t.Fatalf("cursor = %q, want C", got)
 	}
 }
@@ -419,10 +421,10 @@ func TestCompileDelivery_CreatedBranchSnapshots(t *testing.T) {
 func TestCompileDelivery_DeletedBranchKeepsDocuments(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), producer, &fakeGitHub{})
-	source := githubSource(t, svc, "main", nil, "A")
+	source := githubSource(t, svc, "main", nil, cA)
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "0000000000000000000000000000000000000000", false, true), "d")
+		pushDelivery("refs/heads/main", cA, "0000000000000000000000000000000000000000", false, true), "d")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,17 +443,17 @@ func TestCompileDelivery_LargeBlobCarriesContentTicket(t *testing.T) {
 	producer := &recordingProducer{}
 	blob := bytes.Repeat([]byte("x"), 2*1024*1024)
 	gh := &fakeGitHub{
-		errs:      map[string]error{"docs/big.md": github.ErrFileTooLarge},
+		commit:    cB,
 		blobs:     map[string][]byte{"bigsha": blob},
-		compareFn: compareBetween("A", "B", []github.ChangedFile{{Filename: "docs/big.md", Status: "modified", SHA: "bigsha"}}),
+		compareFn: compareBetween(cA, cB, []github.ChangedFile{{Filename: "docs/big.md", Status: "modified", SHA: "bigsha"}}),
 	}
 	store := newDatasourceFakeStore()
 	svc, _ := newDatasourceService(store, producer, gh)
 	svc.SetDatasourceTicketKey([]byte("test-key"))
-	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	if _, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "d"); err != nil {
+		pushDelivery("refs/heads/main", cA, cB, false, false), "d"); err != nil {
 		t.Fatal(err)
 	}
 	if len(producer.jobs) != 1 {
@@ -485,8 +487,9 @@ func TestCompileDelivery_LargeBlobCarriesContentTicket(t *testing.T) {
 func TestCompileDelivery_CarriesSourceTokenOnEveryCall(t *testing.T) {
 	producer := &recordingProducer{}
 	gh := &fakeGitHub{
+		commit:    cB,
 		content:   map[string][]byte{"docs/a.md": []byte("A")},
-		compareFn: compareBetween("A", "B", []github.ChangedFile{{Filename: "docs/a.md", Status: "modified", SHA: "sa"}}),
+		compareFn: compareBetween(cA, cB, []github.ChangedFile{{Filename: "docs/a.md", Status: "modified", SHA: "sa"}}),
 	}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
 	var tokens []string
@@ -494,10 +497,10 @@ func TestCompileDelivery_CarriesSourceTokenOnEveryCall(t *testing.T) {
 		tokens = append(tokens, token)
 		return gh
 	})
-	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+	source := githubSource(t, svc, "main", []string{"docs"}, cA)
 
 	if _, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "A", "B", false, false), "d"); err != nil {
+		pushDelivery("refs/heads/main", cA, cB, false, false), "d"); err != nil {
 		t.Fatal(err)
 	}
 	if len(tokens) == 0 {
@@ -528,7 +531,7 @@ func TestDeliveryHandler_DropsNonGitHubSourceTerminally(t *testing.T) {
 		Queue:      business.DatasourceDeliveryQueue,
 		Topic:      "datasource.github.push",
 		Attributes: map[string]string{"datasource.source_id": "api-1"},
-		Payload:    pushDelivery("refs/heads/main", "A", "B", false, false),
+		Payload:    pushDelivery("refs/heads/main", cA, cB, false, false),
 	})
 	var pe *jobs.ProcessingError
 	if !errors.As(err, &pe) || pe.Retryable {
@@ -570,7 +573,7 @@ func TestCompileDelivery_OversizedSnapshotDegradesSource(t *testing.T) {
 	source := githubSource(t, svc, "main", nil, "")
 
 	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
-		pushDelivery("refs/heads/main", "0000000000000000000000000000000000000000", "C", true, false), "d")
+		pushDelivery("refs/heads/main", "0000000000000000000000000000000000000000", cC, true, false), "d")
 	if err != nil {
 		t.Fatalf("oversized snapshot must be acknowledged, got error: %v", err)
 	}

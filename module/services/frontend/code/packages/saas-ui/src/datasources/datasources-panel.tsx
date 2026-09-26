@@ -3,6 +3,11 @@
 import {
 	Badge,
 	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
 	Input,
 	Label,
 	Table,
@@ -21,6 +26,14 @@ import {
 	useQuery,
 } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+	COLLECTION_ACCESS_PATH,
+	NoReadableCollection,
+} from "../solution/no-readable-collection.js";
+import {
+	useAccessToken,
+	viewerAdministersOrganization,
+} from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
@@ -51,6 +64,23 @@ interface DatasourcesPanelBaseProps {
 	orgId: string;
 	/** Called with the durable job id after a sync is enqueued. */
 	onSyncEnqueued?: (jobId: string) => void;
+	/**
+	 * Whether the viewer may connect, sync, reconnect or remove a source and
+	 * grant read access — the host's organization-administrator tier. Without
+	 * it those controls are not offered; the host refuses the calls either way.
+	 * Default: with a `gateway`, read from the viewer's credential
+	 * (`viewerAdministersOrganization`); with an injected `client`, true (the
+	 * consumer's own page decides who reaches the panel).
+	 */
+	canManage?: boolean;
+	/**
+	 * Renders beneath a source's repository name: the extension point through
+	 * which a consumer shows what another owner knows about the source. The host
+	 * lists, syncs and removes sources and says when it last dispatched files;
+	 * what became of those files belongs to whichever module ingests them, and
+	 * the consumer composing both hands that module's view in here.
+	 */
+	renderSourceDetail?: (source: DatasourceView) => ReactNode;
 	className?: string;
 }
 
@@ -82,8 +112,14 @@ function GatewayBoundPanel({
 }: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
 	// The interceptor reads the token at request time, so the client only needs
 	// rebuilding when the binding itself changes — not on every render.
-	const { apiBase, getAccessToken, refreshAccessToken, contentResource } =
-		gateway;
+	const {
+		apiBase,
+		getAccessToken,
+		refreshAccessToken,
+		contentResource,
+		subscribeToken,
+	} = gateway;
+	const token = useAccessToken(getAccessToken, subscribeToken);
 	const client = useMemo(
 		() =>
 			createDatasourceClient({
@@ -99,7 +135,11 @@ function GatewayBoundPanel({
 	);
 	return (
 		<QueryClientProvider client={queryClient}>
-			<DatasourcesPanelView client={client} {...rest} />
+			<DatasourcesPanelView
+				client={client}
+				{...rest}
+				canManage={rest.canManage ?? viewerAdministersOrganization(token)}
+			/>
 		</QueryClientProvider>
 	);
 }
@@ -112,6 +152,8 @@ function DatasourcesPanelView({
 	client,
 	orgId,
 	onSyncEnqueued,
+	canManage = true,
+	renderSourceDetail,
 	className,
 }: DatasourcesPanelViewProps) {
 	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
@@ -129,12 +171,20 @@ function DatasourcesPanelView({
 	// to survive the scrub below rather than be re-read from an address that no
 	// longer carries them.
 	//
-	// Claimed only when this client can actually redeem them, and only for the
-	// organization on screen when they landed. A consumer adapting its own client
-	// may implement none of the App calls and handle the redirect itself, and must
-	// keep both its parameters and its address bar; and the state is redeemable
-	// only by the organization that began it, so re-firing it after an org switch
-	// would report a rejection for a setup that in fact succeeded.
+	// Captured whenever this client could redeem them, and deliberately NOT
+	// conditioned on the viewer's authority. `canManage` is read from a credential
+	// the panel only observes, so on the load that follows the redirect it can
+	// still be false for an administrator; freezing that answer into a one-shot
+	// initializer would drop a finished installation without a trace and leave the
+	// single-use state and the authorization code in the address bar, in history
+	// and in same-origin referrers. Who may redeem it is decided every render
+	// instead, at `appSetupActive` below.
+	//
+	// A consumer adapting its own client may implement none of the App calls and
+	// handle the redirect itself, and must keep both its parameters and its
+	// address bar; and the state is redeemable only by the organization that began
+	// it, so re-firing it after an org switch would report a rejection for a setup
+	// that in fact succeeded.
 	const [appSetupReturn] = useState(() => {
 		if (!completeAppSetup) return null;
 		const params = readAppSetupReturn();
@@ -218,7 +268,23 @@ function DatasourcesPanelView({
 		);
 	};
 
-	const appSetupActive = !!appSetupReturn && appSetupReturn.orgId === orgId;
+	// Redeeming is the host's to refuse, so the panel does not ask on behalf of a
+	// viewer it can see would be refused. Derived per render rather than captured,
+	// so an authority that only arrives after the first paint still redeems the
+	// return leg the page loaded with.
+	const appSetupClaimed = !!appSetupReturn && appSetupReturn.orgId === orgId;
+	const appSetupActive = appSetupClaimed && canManage;
+	// A return leg nobody on this screen can redeem. The capture and the scrub ran
+	// regardless of authority, so the installation stands on the provider's side
+	// while its single-use state is spent: saying nothing would leave an ordinary
+	// panel over a connect that never happened.
+	//
+	// Held until the list has answered SUCCESSFULLY, because a credential that has
+	// not been read yet also reads as "not an administrator". One authenticated
+	// read is the panel's own proof that the binding is live, so this cannot
+	// accuse an administrator mid-load; a list that failed proves nothing and
+	// already shows its own error, which this line would only talk over.
+	const appSetupUnredeemed = appSetupClaimed && !canManage && list.isSuccess;
 	const appSetup = useQuery({
 		queryKey: [
 			"github-app-setup",
@@ -368,9 +434,11 @@ function DatasourcesPanelView({
 							Repositories this organization ingests from.
 						</p>
 					</div>
-					<Button type="button" onClick={() => setShowConnect(true)}>
-						Connect GitHub
-					</Button>
+					{canManage && (
+						<Button type="button" onClick={() => setShowConnect(true)}>
+							Connect GitHub
+						</Button>
+					)}
 				</div>
 
 				{scopes.isError ? (
@@ -379,12 +447,25 @@ function DatasourcesPanelView({
 						no indexed content.
 					</p>
 				) : scopes.isSuccess && !readableCollection ? (
-					<p role="status" className="type-body text-muted-foreground">
-						No readable collection. Ask an organization administrator for read
-						access. Connecting or syncing a source does not grant access; only
-						a platform administrator reads every collection without a grant.
-					</p>
+					<div role="status">
+						<NoReadableCollection
+							canGrant={canManage}
+							subject="ingested documents to show"
+							// A client that can list collections makes this panel the grants
+							// surface, so the notice names the section below rather than
+							// linking to the page the reader is already on.
+							grantsOnThisPage={!!client.listCollections}
+						/>
+					</div>
 				) : null}
+				{appSetupUnredeemed && (
+					<p role="status" className="type-body text-muted-foreground">
+						The GitHub App installation finished, but only an organization
+						administrator can connect the repositories it granted. Ask one to
+						connect them in Admin → Data sources; the installation itself is
+						already in place.
+					</p>
+				)}
 				{selectedCollection && (
 					<CollectionGrants
 						client={client}
@@ -432,19 +513,29 @@ function DatasourcesPanelView({
 				) : sources.length === 0 ? (
 					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
 						<p className="type-emphasis">No data sources connected.</p>
-						<p className="type-body text-muted-foreground">
-							Connect a GitHub repository to start ingesting.
-						</p>
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => setShowConnect(true)}
-						>
-							Connect a repository
-						</Button>
+						{canManage ? (
+							<>
+								<p className="type-body text-muted-foreground">
+									Connect a GitHub repository to start ingesting.
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => setShowConnect(true)}
+								>
+									Connect a repository
+								</Button>
+							</>
+						) : (
+							<p className="type-body text-muted-foreground">
+								An organization administrator connects the repositories this
+								organization ingests from.
+							</p>
+						)}
 					</div>
 				) : (
 					<SourcesTable
+						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onReconnect={(source) => {
 							setReconnectError(undefined);
@@ -459,6 +550,7 @@ function DatasourcesPanelView({
 						deletingIds={deletingIds}
 						onSync={handleSync}
 						onDelete={handleDelete}
+						renderSourceDetail={renderSourceDetail}
 					/>
 				)}
 			</section>
@@ -494,8 +586,8 @@ function DatasourcesPanelView({
 											? boundaries.has(collection.nodeId)
 											: undefined;
 									const asPlatformAdministrator =
-										boundaries.get(collection.nodeId)?.viaPlatformAdministrator ===
-										true;
+										boundaries.get(collection.nodeId)
+											?.viaPlatformAdministrator === true;
 									const readers = collection.grants
 										.map((grant) => grant.subjectLabel)
 										.join(", ");
@@ -552,19 +644,23 @@ function DatasourcesPanelView({
 						</Table>
 					)}
 				</section>
-			) : (
+			) : canManage ? (
 				<Button
 					type="button"
 					variant="link"
 					size="sm"
-					onClick={() => window.location.assign("/admin/datasources")}
+					onClick={() => window.location.assign(COLLECTION_ACCESS_PATH)}
 				>
-					Manage collection read grants in the host (organization
-					administrators)
+					Manage who can read each collection
 				</Button>
+			) : (
+				<p className="type-body text-muted-foreground">
+					Read access to a collection is granted by an organization
+					administrator, in Admin → Data sources → Collection access.
+				</p>
 			)}
 
-			{reconnecting && (
+			{canManage && reconnecting && (
 				<ReconnectSource
 					source={reconnecting}
 					pending={reconnectPending}
@@ -595,7 +691,7 @@ function DatasourcesPanelView({
 					}}
 				/>
 			)}
-			{showConnect && (
+			{canManage && showConnect && (
 				<ConnectGitHubForm
 					// Both legs or neither: an install the panel cannot redeem on the
 					// way back strands the tenant on a completed GitHub install with
@@ -749,6 +845,10 @@ const statusPresentation: Record<
  * a reader who fixes the cause waits for a pull that cannot come. It also says
  * what stopped, since a red badge alone reads as "your content is gone" and
  * would send them to re-ingest content that is still there.
+ *
+ * A source of a provider that does not meet the connector envelope is flagged
+ * whatever its status: it keeps running, and the flag says why its provider
+ * cannot be connected again.
  */
 function StatusCell({ source }: { source: DatasourceView }) {
 	const presentation =
@@ -765,14 +865,27 @@ function StatusCell({ source }: { source: DatasourceView }) {
 					fixed. Content already ingested stays readable.
 				</p>
 			)}
+			{source.conformant === false && (
+				<>
+					<Badge variant="outline">Non-conformant provider</Badge>
+					<p className="type-caption-plain text-muted-foreground">
+						This source keeps syncing, but new sources of its provider cannot
+						be connected until it meets the datasource connector requirements.
+						{source.conformanceGap && ` ${source.conformanceGap}.`}
+					</p>
+				</>
+			)}
 		</div>
 	);
 }
 
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
+/** Prose cells wrap instead of widening the table past its column. */
+const wrapClass = "min-w-32 whitespace-normal";
 
 function SourcesTable({
+	canManage,
 	sources,
 	boundaries,
 	permissionsResolved,
@@ -784,7 +897,9 @@ function SourcesTable({
 	onActivity,
 	onReconnect,
 	onMigrateToApp,
+	renderSourceDetail,
 }: {
+	canManage: boolean;
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
 	permissionsResolved: boolean;
@@ -796,22 +911,36 @@ function SourcesTable({
 	onActivity?: (source: DatasourceView) => void;
 	onReconnect: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
+	renderSourceDetail?: (source: DatasourceView) => ReactNode;
 }) {
+	// A viewer who manages nothing is offered nothing to do but read a row's
+	// history, so the column is there only when there is something in it.
+	const showActions = canManage || !!onActivity;
 	return (
 		<div className="overflow-x-auto rounded-lg border">
 			<Table className="w-full text-sm">
 				<TableHeader className="border-b bg-muted/40">
 					<TableRow>
 						<TableHead className={headerClass}>Repository</TableHead>
+						{/* Always present, even when every row is quiet. Deriving the
+						    column from the data made it appear the moment a source
+						    degraded and vanish when it recovered — and `sources` refetches
+						    on an interval, so the table gained or lost a column under
+						    whoever was reading it, shifting every column after Status
+						    sideways at exactly the moment something had just broken. An
+						    always-empty cell costs the column's padding; a shifting table
+						    costs the reader their place. */}
 						<TableHead className={headerClass}>Status</TableHead>
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
 						<TableHead className={headerClass}>Webhook</TableHead>
 						<TableHead className={headerClass}>Last sync dispatch</TableHead>
-						<TableHead className={cn(headerClass, "text-right")}>
-							Actions
-						</TableHead>
+						{showActions && (
+							<TableHead className={cn(headerClass, "text-right")}>
+								Actions
+							</TableHead>
+						)}
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -819,8 +948,13 @@ function SourcesTable({
 						<TableRow key={source.id} className="border-b last:border-0">
 							<TableCell className={cn(cellClass, "font-mono")}>
 								{source.repo}
+								{renderSourceDetail && (
+									<div className="mt-1 font-sans">
+										{renderSourceDetail(source)}
+									</div>
+								)}
 							</TableCell>
-							<TableCell className={cellClass}>
+							<TableCell className={cn(cellClass, wrapClass)}>
 								<StatusCell source={source} />
 							</TableCell>
 							<TableCell className={cellClass}>
@@ -838,9 +972,10 @@ function SourcesTable({
 							<TableCell className={cellClass}>
 								{source.branch || "default"}
 							</TableCell>
-							<TableCell className={cellClass}>
+							<TableCell className={cn(cellClass, wrapClass)}>
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
+									label={source.boundaryLabel}
 									permissionsResolved={permissionsResolved}
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
@@ -850,64 +985,94 @@ function SourcesTable({
 									? "Signing secret configured"
 									: "Not configured"}
 							</TableCell>
-							<TableCell className={cn(cellClass, "text-muted-foreground")}>
+							<TableCell
+								className={cn(cellClass, wrapClass, "text-muted-foreground")}
+							>
 								<LastSyncCell source={source} />
 							</TableCell>
-							<TableCell className={cn(cellClass, "text-right")}>
-								<div className="inline-flex gap-2">
-									{source.provider === "github" && (
+							{showActions && (
+								<TableCell className={cn(cellClass, "text-right")}>
+									{!canManage ? (
 										<Button
 											type="button"
-											variant="outline"
+											variant="ghost"
 											size="sm"
-											onClick={() => onReconnect(source)}
-										>
-											Reconnect
-										</Button>
-									)}
-									{onMigrateToApp && source.provider === "github" && (
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											disabled={migratingIds.has(source.id)}
-											onClick={() => onMigrateToApp(source)}
-										>
-											{migratingIds.has(source.id)
-												? "Moving to the App…"
-												: "Use GitHub App"}
-										</Button>
-									)}
-									{onActivity && (
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => onActivity(source)}
+											aria-label={`History of ${source.repo}`}
+											onClick={() => onActivity?.(source)}
 										>
 											History
 										</Button>
+									) : (
+										/* Sync is the row's one routine action; the rest sit behind
+								    a menu so the table fits a content column instead of
+								    pushing its last actions out of view. */
+										<div className="inline-flex items-center gap-2">
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												disabled={syncingIds.has(source.id)}
+												onClick={() => onSync(source)}
+											>
+												{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
+											</Button>
+											<DropdownMenu>
+												<DropdownMenuTrigger
+													render={
+														<Button
+															type="button"
+															variant="ghost"
+															size="sm"
+															aria-label={`More actions for ${source.repo}`}
+														/>
+													}
+												>
+													More
+												</DropdownMenuTrigger>
+												<DropdownMenuContent
+													align="end"
+													className="w-auto min-w-44"
+												>
+													{source.provider === "github" && (
+														<DropdownMenuItem
+															onClick={() => onReconnect(source)}
+														>
+															Reconnect
+														</DropdownMenuItem>
+													)}
+													{onMigrateToApp && source.provider === "github" && (
+														<DropdownMenuItem
+															disabled={migratingIds.has(source.id)}
+															onClick={() => onMigrateToApp(source)}
+														>
+															{migratingIds.has(source.id)
+																? "Moving to the App…"
+																: "Use GitHub App"}
+														</DropdownMenuItem>
+													)}
+													{onActivity && (
+														<DropdownMenuItem
+															onClick={() => onActivity(source)}
+														>
+															History
+														</DropdownMenuItem>
+													)}
+													<DropdownMenuSeparator />
+													<DropdownMenuItem
+														variant="destructive"
+														disabled={deletingIds.has(source.id)}
+														onClick={() => onDelete(source)}
+													>
+														{deletingIds.has(source.id)
+															? "Deleting…"
+															: "Delete"}
+													</DropdownMenuItem>
+												</DropdownMenuContent>
+											</DropdownMenu>
+										</div>
 									)}
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										disabled={syncingIds.has(source.id)}
-										onClick={() => onSync(source)}
-									>
-										{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
-									</Button>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										className="text-destructive"
-										disabled={deletingIds.has(source.id)}
-										onClick={() => onDelete(source)}
-									>
-										{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
-									</Button>
-								</div>
-							</TableCell>
+								</TableCell>
+							)}
 						</TableRow>
 					))}
 				</TableBody>
@@ -919,16 +1084,19 @@ function SourcesTable({
 function BoundaryCell({
 	permissionsResolved,
 	nodeId,
+	label,
 	scope,
 }: {
 	nodeId: string;
+	/** The collection's name as the host lists it with the source. */
+	label?: string;
 	scope: AccessibleScopeView | undefined;
 	permissionsResolved: boolean;
 }) {
 	if (scope) {
 		return (
 			<div className="space-y-0.5">
-				<div>{scope.label || shortBoundaryId(nodeId)}</div>
+				<div>{scope.label || label || shortBoundaryId(nodeId)}</div>
 				<div className="text-xs text-muted-foreground">
 					{formatGrants(scope.actions)}
 					{scope.viaPlatformAdministrator && " (platform administrator)"}
@@ -938,7 +1106,11 @@ function BoundaryCell({
 	}
 	return (
 		<div>
-			<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			{label ? (
+				<div>{label}</div>
+			) : (
+				<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			)}
 			<p className="text-xs">
 				{permissionsResolved ? "No read access" : "Read permission unresolved"}
 			</p>

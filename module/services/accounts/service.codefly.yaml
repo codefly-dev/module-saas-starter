@@ -3,7 +3,9 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.48
+    # DEV PIN: an unreleased agent prerelease (git in the service image, for datasource reads over git). Move it to the
+    # release that ships the change before this module is tagged.
+    version: 0.1.48-dev.f2f2c0c6ff13
     publisher: codefly.dev
 service-dependencies:
     - name: cache
@@ -34,6 +36,13 @@ workspace-configuration-dependencies:
     - security
     - vault
 endpoints:
+    # The internal tier a composed module may call, on a listener of its own:
+    # only business.ModuleAuthorityProcedures, each behind the internal
+    # credential. A module declares a dependency on this endpoint, never on the
+    # private rest listener (INTERNAL_TRANSPORT.md).
+    - name: authority
+      api: grpc
+      visibility: module
     - name: connect
       visibility: module
     - name: grpc
@@ -49,6 +58,7 @@ spec:
         name: accounts
     deployment:
         endpoint-ports:
+            authority: 9091
             connect: 8080
             grpc: 9090
             rest: 8080

@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/abuse"
 	"accounts/pkg/analytics"
 	"accounts/pkg/auth"
+	"accounts/pkg/datasource/connector"
 	"accounts/pkg/email"
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -68,6 +69,11 @@ type Service struct {
 	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	datasourceSyncOperations  DatasourceSyncOperationStore
+	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
+	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
+	datasourceLinkers         map[string]DatasourceAccountLinker
+	datasourceTXTResolver     TXTResolver
+	datasourceBudgets         DatasourceBudgetStore   // meters provider credentials; nil leaves connectors unmetered
 	githubBaseURL             string                  // api.github.com override for the datasource connector
 	githubAppID               string                  // deployment's GitHub App registration; empty leaves sources on their own PAT
 	githubAppKeyPEM           string                  // the App's RSA signing key, deployment custody — never copied onto a source

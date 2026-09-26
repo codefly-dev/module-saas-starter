@@ -126,10 +126,12 @@ listener. `ConsumeUsage` is on the internal tier, so the mesh reach gate
 (`deny-accounts-internal-authority`) denies its method path from every
 principal except the allowlisted in-mesh caller — the ingress gateway included
 — and `requireInternalCredential` remains the app-layer identity gate. That
-listener is not exported as a module interface. Product modules must depend on
-the generated named internal endpoint once `P1-NET-007` adds multiple same-API
-endpoint support to the Codefly Go runtime. Do not export the mixed REST
-listener or route `ConsumeUsage` through the public auth-gateway as a
+listener is not exported as a module interface. The named module endpoint,
+`accounts/authority`, exists (`P1-NET-007`), but `ConsumeUsage` is deliberately
+not served on it: it authorizes on the perimeter credential alone, so any module
+holding it could consume any tenant's quota. It joins that endpoint once it
+decides on a credential bound to the calling producer. Do not export the mixed
+REST listener or route `ConsumeUsage` through the public auth-gateway as a
 workaround.
 
 This deployment limitation does not change the protobuf or database contract;
@@ -137,8 +139,8 @@ it only blocks the final cross-module service edge.
 
 ## Remaining production work
 
-- Generate the named internal Codefly endpoint and product dependency edge
-  (`P1-NET-007`).
+- Bind `ConsumeUsage` to the calling producer's own credential, then serve it
+  on the `accounts/authority` module endpoint (`P1-NET-007`).
 - Add automated reconciliation jobs; the discrepancy alert contract is in
   `services/accounts/code/pkg/metrics/slo_pack.json`.
 - Report billable aggregates to the configured billing provider with durable

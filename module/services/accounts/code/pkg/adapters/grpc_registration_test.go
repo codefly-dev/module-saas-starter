@@ -13,7 +13,7 @@ func TestCatalogGRPCRegistrationMatchesGeneratedNativeSubset(t *testing.T) {
 	server, err := NewGrpServer(&Configuration{})
 	require.NoError(t, err)
 
-	for _, listener := range []*grpc.Server{server.gRPC, server.internalGRPC} {
+	for _, listener := range []*grpc.Server{server.gRPC, server.internalGRPC, server.authorityGRPC} {
 		var registered []string
 		for name := range listener.GetServiceInfo() {
 			if strings.HasPrefix(name, "saas.accounts.v1.") {

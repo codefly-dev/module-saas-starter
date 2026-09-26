@@ -83,3 +83,82 @@ func enqueueDatasourceOperationJob(
 	require.NoError(t, err)
 	return response.GetJobId()
 }
+
+// With no job id the read is the source's latest sync, and its hand-off is
+// aggregated from the change-set jobs keyed to it: a snapshot's stamped counts,
+// or incremental file jobs counted by change type.
+func TestDatasourceLatestSyncReadsTheNewestJobAndAggregatesItsHandoff(t *testing.T) {
+	pool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	store := infra.NewPostgresJobStore(pool)
+	orgID, sourceID, otherSourceID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+
+	_ = enqueueDatasourceOperationJob(t, store, business.DatasourceDeliveryQueue,
+		business.DatasourceReconcileTopic, business.DatasourceReconcileSource, orgID, sourceID, "")
+	latest := enqueueDatasourceJobWithAttributes(t, store, business.DatasourceDeliveryQueue,
+		business.DatasourceReconcileTopic, business.DatasourceReconcileSource, map[string]string{
+			"datasource.org_id": orgID, "datasource.source_id": sourceID, "datasource.reconcile_mode": "force",
+		})
+	_ = enqueueDatasourceOperationJob(t, store, business.DatasourceDeliveryQueue,
+		business.DatasourceReconcileTopic, business.DatasourceReconcileSource, orgID, otherSourceID, "")
+
+	operation, err := store.GetDatasourceSyncOperation(testCtx, orgID, sourceID, "")
+	require.NoError(t, err)
+	require.Equal(t, latest, operation.JobID)
+	require.Equal(t, jobsv1.JobState_JOB_STATE_PENDING, operation.Record.State)
+	require.Equal(t, "force", operation.Record.ReconcileMode)
+	require.False(t, operation.Record.CreatedAt.IsZero())
+	require.Zero(t, operation.Handoff.Jobs)
+
+	handoff := func(topic string, extra map[string]string) {
+		attributes := map[string]string{
+			"datasource.org_id": orgID, "datasource.source_id": sourceID, "datasource.delivery_id": latest,
+			"github.commit": "c1",
+		}
+		for k, v := range extra {
+			attributes[k] = v
+		}
+		enqueueDatasourceJobWithAttributes(t, store, business.DatasourceIngestQueue, topic, business.DatasourceSyncSource, attributes)
+	}
+	handoff(business.DatasourceSnapshotTopic, map[string]string{
+		"datasource.changes.files": "3", "datasource.changes.added": "1", "datasource.changes.modified": "1",
+		"datasource.changes.deleted": "1", "datasource.changes.split_known": "true",
+	})
+	handoff(business.DatasourceChangeSetFileTopic, map[string]string{"github.change_type": "added"})
+	handoff(business.DatasourceChangeSetFileTopic, map[string]string{"github.change_type": "renamed"})
+
+	operation, err = store.GetDatasourceSyncOperation(testCtx, orgID, sourceID, "")
+	require.NoError(t, err)
+	got := operation.Handoff
+	require.Equal(t, 3, got.Jobs)
+	require.True(t, got.Snapshot)
+	require.Equal(t, "c1", got.Commit)
+	require.Equal(t, [5]string{"3", "1", "1", "1", "true"},
+		[5]string{got.SnapshotFiles, got.SnapshotAdded, got.SnapshotModified, got.SnapshotDeleted, got.SnapshotSplitKnown})
+	require.Equal(t, [3]int{1, 1, 0}, [3]int{got.Added, got.Modified, got.Deleted})
+	require.NotNil(t, got.FirstAt)
+	require.Len(t, operation.Deliveries, 1, "deliveries list the snapshot only, as before")
+
+	_, err = store.GetDatasourceSyncOperation(testCtx, uuid.NewString(), sourceID, "")
+	require.ErrorIs(t, err, business.ErrDatasourceSyncNotFound)
+}
+
+func enqueueDatasourceJobWithAttributes(
+	t *testing.T,
+	store *infra.PostgresJobStore,
+	queue, topic, source string,
+	attributes map[string]string,
+) string {
+	t.Helper()
+	response, err := store.EnqueueJob(testCtx, &jobsv1.EnqueueJobRequest{Job: &jobsv1.NewJob{
+		Direction: jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+		Scope:     &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+		Queue:     queue, Topic: topic, Source: source,
+		IdempotencyKey: uuid.NewString(), SchemaVersion: 1,
+		Payload: []byte(`{}`), ContentType: "application/json",
+		Attributes: attributes, MaxAttempts: 4,
+	}})
+	require.NoError(t, err)
+	return response.GetJobId()
+}

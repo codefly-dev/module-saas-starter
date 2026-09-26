@@ -14,10 +14,10 @@ import (
 // nothing can reach.
 var eventsEmittedOutsideRPC = []EventType{
 	EventActivationAchieved,
-	EventApprovalApproved,
+	// saas.approval.approved, .denied and .decision_recorded are declared by
+	// ApprovalReviewService.DecideApprovalReview.
 	EventApprovalAsked,
 	EventApprovalCancelled,
-	EventApprovalDenied,
 	EventApprovalEscalated,
 	EventApprovalTimeout,
 	EventAuthMagicLinkLogin,
@@ -25,6 +25,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventBillingCheckoutStarted,
 	EventBillingFreePlan,
 	EventDatasourceBlobFetched,
+	EventDatasourceFilesFetched,
 	EventDatasourceBranchDeleted,
 	EventDatasourceChangeSetCompiled,
 	// SyncDatasourceSource emits this only when replacing a credential; the
@@ -39,15 +40,29 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessLost,
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
+	EventDocumentArchived,
+	// A document module's operator redrive reports this through EmitAuditEvent.
+	EventDocumentDeadLetterRedriven,
 	EventDocumentDeleted,
+	EventDocumentEffectCommitted,
+	EventDocumentFrozen,
+	EventDocumentIngestSkippedStale,
 	EventDocumentIngested,
+	EventDocumentKnowledgePublished,
+	EventDocumentOwnershipTransferred,
+	EventDocumentPayloadConflict,
+	EventDocumentProductionCommitted,
 	// Module-authenticated document readers emit these observations.
 	EventDocumentRead,
 	EventDocumentSearch,
 	EventDocumentQuarantineReleased,
 	EventDocumentQuarantined,
 	EventDocumentRenamed,
+	EventDocumentSnapshotCommitted,
+	EventDocumentSnapshotSkippedStale,
 	EventDocumentSubscribed,
+	EventDocumentUnarchived,
+	EventDocumentUnfrozen,
 	EventDocumentUnsubscribed,
 	EventDocumentVersionMinted,
 	// Domain-event pub/sub (issue #493). These are emitted inside the producer's

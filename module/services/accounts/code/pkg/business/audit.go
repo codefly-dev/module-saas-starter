@@ -172,31 +172,46 @@ func NewDurableAuditEmitter(store Store, producer jobs.Producer, opts ...Durable
 	return emitter, nil
 }
 
-// normalize backfills id / timestamp / schema version and logs an advisory
-// validation warning. A security event is never dropped because its payload
-// drifted from the registered schema.
-func (e *DurableAuditEmitter) normalize(ctx context.Context, entry *AuditEntry) {
+// normalize backfills id / timestamp. The schema version and the advisory
+// payload check need the registry, which for a solution-declared type is a
+// read, so write does them on the transaction it already holds.
+func (e *DurableAuditEmitter) normalize(entry *AuditEntry) {
 	if entry.ID == "" {
 		entry.ID = NewIDString()
 	}
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = time.Now().UTC()
 	}
-	if def, ok := LookupAuditEvent(entry.EventType); ok && entry.SchemaVersion == 0 {
-		entry.SchemaVersion = def.Version
+}
+
+// resolve reads what the registry says about the entry's type, backfills its
+// schema version and logs an advisory validation warning. A security event is
+// never dropped because its payload drifted from the registered schema.
+func (e *DurableAuditEmitter) resolve(ctx context.Context, entry *AuditEntry) (ResolvedAuditEvent, error) {
+	resolved, err := NewAuditEventResolver(e.store).Resolve(ctx, entry.EventType)
+	if err != nil {
+		return ResolvedAuditEvent{}, err
 	}
-	if err := ValidatePayload(entry.EventType, entry.Payload); err != nil {
+	if resolved.Registered && entry.SchemaVersion == 0 {
+		entry.SchemaVersion = resolved.Definition.Version
+	}
+	if err := resolved.Validate(entry.EventType, entry.Payload); err != nil {
 		wool.Get(ctx).In("DurableAuditEmitter.Emit").Warn(
 			"audit payload failed registry validation",
 			wool.Field("event_type", string(entry.EventType)),
 			wool.ErrField(err),
 		)
 	}
+	return resolved, nil
 }
 
 // write inserts the audit row and publishes its domain event using whatever
 // transaction is already on ctx (getQueryExecutor / Publish both pick it up).
 func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error {
+	resolved, err := e.resolve(ctx, &entry)
+	if err != nil {
+		return err
+	}
 	if entry.IdempotencyKey != "" {
 		reserved, err := e.store.ReserveAuditIdempotency(ctx, entry.OrgID, string(entry.EventType), entry.IdempotencyKey)
 		if err != nil {
@@ -222,11 +237,11 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 	// write runs inside its mutation's transaction, and that transaction is the
 	// control plane for platform-admin and other privileged writes, where RLS
 	// would not scope this read at all.
-	if err := e.publishDomainEvent(ctx, entry); err != nil {
+	if err := e.publishDomainEvent(ctx, entry, resolved); err != nil {
 		return err
 	}
 	if e.teeExternal {
-		if err := enqueueAuditExport(ctx, e.producer, entry); err != nil {
+		if err := enqueueAuditExport(ctx, e.producer, entry, resolved); err != nil {
 			return err
 		}
 	}
@@ -234,7 +249,7 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 }
 
 func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
-	e.normalize(ctx, &entry)
+	e.normalize(&entry)
 	var err error
 	if entry.OrgID == "" {
 		err = e.store.WithControlPlane(ctx, func(ctx context.Context) error { return e.write(ctx, entry) })
@@ -259,7 +274,7 @@ func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
 // record and the action it records are all-or-nothing. It MUST be called inside
 // an active tx (a Within/WithOrgTx block); there is no tx of its own.
 func (e *DurableAuditEmitter) EmitTx(ctx context.Context, entry AuditEntry) error {
-	e.normalize(ctx, &entry)
+	e.normalize(&entry)
 	return e.write(ctx, entry)
 }
 
@@ -452,7 +467,7 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 	// naming that predicate directly is the same collection read by another
 	// spelling. Promote it into the gated path: otherwise the grant check below
 	// is defeated by moving the filter from collection_id into payload_contains.
-	if q.CollectionID == "" && isDocumentBoundaryEvent(q.EventType) {
+	if q.CollectionID == "" && isCollectionBoundaryEvent(q.EventType) {
 		if boundary, ok := q.PayloadContains["boundary"].(string); ok && boundary != "" {
 			q.CollectionID = boundary
 		}
@@ -464,8 +479,8 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 		return nil, status.Error(codes.InvalidArgument, "resource analytics requires reader, organization, resource and event type")
 	}
 	if q.CollectionID != "" {
-		if !isDocumentBoundaryEvent(q.EventType) {
-			return nil, status.Error(codes.InvalidArgument, "collection analytics requires a registered document boundary event")
+		if !isCollectionBoundaryEvent(q.EventType) {
+			return nil, status.Error(codes.InvalidArgument, "collection analytics requires an event that records a collection boundary")
 		}
 		if boundary, exists := q.PayloadContains["boundary"]; exists && boundary != q.CollectionID {
 			return nil, status.Error(codes.InvalidArgument, "conflicting collection boundary filter")
@@ -517,15 +532,23 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 	return out, err
 }
 
-// isDocumentBoundaryEvent reports whether eventType is a registered
-// saas.document.* event carrying a boundary field — the only shape for which a
-// payload `boundary` value names a collection node. Both the collection filter
-// and the payload-spelling promotion above test the same predicate, so the two
-// spellings of one filter can never diverge on which events they authorize.
-func isDocumentBoundaryEvent(eventType string) bool {
-	if !strings.HasPrefix(eventType, "saas.document.") {
-		return false
-	}
+// isCollectionBoundaryEvent reports whether eventType is a registered event
+// that records a collection node under the payload key `boundary` — the shape
+// for which a payload `boundary` value names a collection node. Both the
+// collection filter and the payload-spelling promotion above test the same
+// predicate, so the two spellings of one filter can never diverge on which
+// events they authorize.
+//
+// The declared field is the whole predicate. It deliberately does not also
+// test the event's name: a collection node is named by whichever event records
+// one, not by the aggregate it happens to be filed under, and
+// saas.datasource.source.removed records the boundary node its source fed. A
+// name test admitted only saas.document.* — so an event outside that prefix
+// carrying the same value was served from the ungated path while the
+// collection_id spelling of the same question was refused, which is the
+// grant check being worth nothing by another route. Nothing needs to be
+// allowlisted here for a new event: declaring the field is what enrolls it.
+func isCollectionBoundaryEvent(eventType string) bool {
 	definition, registered := LookupAuditEvent(EventType(eventType))
 	if !registered {
 		return false
@@ -679,11 +702,11 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 // ordering nothing consumes: an outbound webhook is dispatched in
 // subscription-id order, and the platform namespace is not subscribable by a
 // module, so no ordered subscriber can exist for these types.
-func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry AuditEntry) error {
+func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry AuditEntry, resolved ResolvedAuditEvent) error {
 	if e.transport == nil || !eventcatalog.IsExternalPublished(string(entry.EventType)) {
 		return nil
 	}
-	data, err := AuditEventWebhookData(entry)
+	data, err := AuditEventWebhookData(entry, resolved)
 	if err != nil {
 		return err
 	}

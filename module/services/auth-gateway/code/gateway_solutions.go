@@ -12,6 +12,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 )
@@ -564,10 +565,44 @@ func writeSolutionRegistryError(w http.ResponseWriter, err error) {
 	case codes.NotFound:
 		httpError(w, http.StatusNotFound, "solution not registered")
 	case codes.InvalidArgument:
+		if isSolutionAuditDeclarationRejection(err) {
+			// The registry will not admit the audit event types the manifest
+			// declares. That is a manifest (or a binding) to change, not a
+			// malformed write, so it has its own status and a stable error the
+			// frontend relays; the message says which rule was broken.
+			writeSolutionJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error":  "registration_rejected",
+				"detail": grpcstatus.Convert(err).Message(),
+			})
+			return
+		}
 		httpError(w, http.StatusBadRequest, "invalid registration")
 	default:
 		httpError(w, http.StatusBadGateway, "solution registry unavailable")
 	}
+}
+
+// The google.rpc.ErrorInfo accounts attaches to a refused audit event
+// declaration (adapters.SolutionAuditDeclarationRejectedReason and
+// adapters.SolutionRegistryErrorDomain in accounts). The two strings are a wire
+// contract; a test on each side pins them.
+const (
+	solutionAuditDeclarationRejectedReason = "SOLUTION_AUDIT_DECLARATION_REJECTED"
+	solutionRegistryErrorDomain            = "accounts.saas.codefly.dev"
+)
+
+// isSolutionAuditDeclarationRejection reports whether a registry refusal is
+// the audit registry declining the manifest's declared event types. It reads
+// the structured ErrorInfo, never the message.
+func isSolutionAuditDeclarationRejection(err error) bool {
+	for _, detail := range grpcstatus.Convert(err).Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok &&
+			info.GetReason() == solutionAuditDeclarationRejectedReason &&
+			info.GetDomain() == solutionRegistryErrorDomain {
+			return true
+		}
+	}
+	return false
 }
 
 // isForbiddenUpstreamHost blocks upstream hosts that are credential-theft SSRF

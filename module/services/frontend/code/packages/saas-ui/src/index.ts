@@ -1,5 +1,12 @@
-export { CollectionReadBoundary, CollectionGrants } from "./datasources/collection-access.js";
+export {
+	CollectionGrants,
+	CollectionReadBoundary,
+} from "./datasources/collection-access.js";
 export { ConnectGitHubForm } from "./datasources/connect-github-form.js";
+export {
+	DatasourceAccountLinks,
+	DatasourceDirectoryPanel,
+} from "./datasources/directory.js";
 export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
@@ -22,13 +29,54 @@ export {
 } from "./datasources/schema.js";
 export type {
 	AccessibleScopeView,
+	AccountLinkHandle,
+	AccountLinkView,
+	DatasourceDirectoryView,
+	DomainView,
+	GroupBindingView,
 	CollectionAccessView,
-	CollectionGrantView,
 	CollectionGrantSubject,
+	CollectionGrantView,
 	ConnectGitHubInput,
 	DatasourceClient,
 	DatasourceProviderName,
 	DatasourceStatusName,
 	DatasourceView,
+	SourceSyncFailureReasonName,
+	SourceSyncPhaseName,
+	SourceSyncTriggerName,
+	SourceSyncView,
 } from "./datasources/types.js";
+export {
+	notifySourceSyncRequested,
+	onSourceSyncRequested,
+} from "./datasources/sync-requests.js";
 export { parsePaths } from "./datasources/util.js";
+// The whole solution surface, so the package root and
+// `@codefly-dev/saas-ui/solution` name the same set. A partial root left
+// `useAccessibleScope` off while re-exporting the `NoReadableCollection` that
+// consumes its "none" answer, which made the README's "exported from the
+// package root" false for half a documented pair.
+export {
+	type AccessibleScopeState,
+	COLLECTION_ACCESS_PATH,
+	NoReadableCollection,
+	type NoReadableCollectionProps,
+	requestBinding,
+	type SolutionBinding,
+	SolutionBindingError,
+	type SolutionCredential,
+	type SolutionRequestBinding,
+	SolutionRequestError,
+	type SolutionResource,
+	solutionFetch,
+	solutionJson,
+	solutionTransport,
+	useAccessibleScope,
+	useAccessToken,
+	useSolutionJson,
+	useViewerEpoch,
+	viewerAdministersOrganization,
+	viewerIdentity,
+	viewerOrganization,
+} from "./solution/index.js";

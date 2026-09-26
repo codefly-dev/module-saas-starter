@@ -3,8 +3,15 @@ import {
 	AccessBasis,
 	accounts,
 	type Datasource,
+	type DatasourceAccountLink,
+	DatasourceDomainStatus,
 	DatasourceProvider,
+	type DatasourceVerifiedDomain,
 	DatasourceStatus,
+	type SourceSyncProgress,
+	SourceSyncFailureReason,
+	SourceSyncPhase,
+	SourceSyncTrigger,
 } from "@codefly-dev/saas-sdk";
 import {
 	Code,
@@ -15,10 +22,17 @@ import {
 import { createConnectTransport } from "@connectrpc/connect-web";
 import type {
 	AccessibleScopeView,
+	AccountLinkView,
 	DatasourceClient,
 	DatasourceStatusName,
 	DatasourceView,
+	DomainView,
+	SourceSyncFailureReasonName,
+	SourceSyncPhaseName,
+	SourceSyncTriggerName,
+	SourceSyncView,
 } from "./types.js";
+import { notifySourceSyncRequested } from "./sync-requests.js";
 
 /**
  * A solution remote's whole backend seam: the same-origin gateway base and the
@@ -42,6 +56,12 @@ export interface GatewayBinding {
 	/** Reads the current access token (may be null before the first exchange). */
 	getAccessToken: () => string | null;
 	/**
+	 * Optional host-owned notification that the token changed (see the kit's
+	 * `SolutionBinding.subscribeToken`). Without it the panel re-reads the
+	 * credential on a timer to keep `canManage` honest across a rotation.
+	 */
+	subscribeToken?: (listener: () => void) => () => void;
+	/**
 	 * Exchanges the session for a fresh access token when a request comes back
 	 * Unauthenticated — the short-lived token expired, was revoked, or none was
 	 * installed yet. The interceptor retries the call once with the returned
@@ -64,6 +84,76 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async beginAccountLink(orgId, connector, redirectUri) {
+			const response = await client.beginDatasourceAccountLink({
+				orgId,
+				connector,
+				redirectUri,
+			});
+			return { authorizeUrl: response.authorizeUrl, state: response.state };
+		},
+		async completeAccountLink(orgId, state, code) {
+			const response = await client.completeDatasourceAccountLink({
+				orgId,
+				state,
+				code,
+			});
+			if (!response.link) throw new Error("the host returned no account link");
+			return toAccountLinkView(response.link);
+		},
+		async listMyAccountLinks(orgId) {
+			const response = await client.listMyDatasourceAccountLinks({ orgId });
+			return response.links.map(toAccountLinkView);
+		},
+		async deleteAccountLink(orgId, id) {
+			await client.deleteDatasourceAccountLink({ orgId, id });
+		},
+		async getDirectory(orgId) {
+			const response = await client.getDatasourceDirectory({ orgId });
+			return {
+				links: response.links.map(toAccountLinkView),
+				bindings: response.bindings.map((b) => ({
+					id: b.id,
+					connector: b.connector,
+					providerGroupId: b.providerGroupId,
+					teamId: b.teamId,
+				})),
+				domains: response.domains.map(toDomainView),
+				teams: response.teams.map((t) => ({ id: t.id, name: t.name })),
+			};
+		},
+		async bindGroup(orgId, connector, providerGroupId, teamId) {
+			const response = await client.bindDatasourceGroup({
+				orgId,
+				connector,
+				providerGroupId,
+				teamId,
+			});
+			const b = response.binding;
+			if (!b) throw new Error("the host returned no group binding");
+			return {
+				id: b.id,
+				connector: b.connector,
+				providerGroupId: b.providerGroupId,
+				teamId: b.teamId,
+			};
+		},
+		async unbindGroup(orgId, id) {
+			await client.unbindDatasourceGroup({ orgId, id });
+		},
+		async claimDomain(orgId, domain) {
+			const response = await client.claimDatasourceDomain({ orgId, domain });
+			if (!response.domain) throw new Error("the host returned no domain");
+			return toDomainView(response.domain);
+		},
+		async verifyDomain(orgId, id) {
+			const response = await client.verifyDatasourceDomain({ orgId, id });
+			if (!response.domain) throw new Error("the host returned no domain");
+			return toDomainView(response.domain);
+		},
+		async deleteDomain(orgId, id) {
+			await client.deleteDatasourceDomain({ orgId, id });
+		},
 		async listAccessibleScopes(orgId) {
 			// Nothing declared the content's resource type, so there is no question
 			// to ask the permission service. Rejecting is how this contract already
@@ -150,7 +240,7 @@ export function datasourceClientOverTransport(
 			return response.datasources.map(toDatasourceView);
 		},
 		async addGitHubSource(input) {
-			await client.addGitHubSource({
+			const response = await client.addGitHubSource({
 				orgId: input.orgId,
 				repo: input.repo,
 				paths: input.paths,
@@ -162,6 +252,8 @@ export function datasourceClientOverTransport(
 					? { case: "boundaryNodeId", value: input.boundaryNodeId }
 					: { case: "collectionLabel", value: input.targetCollection },
 			});
+			// The host starts a GitHub source's first sync as it connects it.
+			notifySourceSyncRequested(response.datasource?.id ?? "");
 		},
 		async beginGitHubAppSetup(orgId) {
 			const response = await client.beginGitHubAppSetup({ orgId });
@@ -198,12 +290,104 @@ export function datasourceClientOverTransport(
 				id,
 				...(accessToken ? { accessToken } : {}),
 			});
+			notifySourceSyncRequested(id);
 			return response.jobId;
+		},
+		async getSourceSync(orgId, sourceId, jobId) {
+			try {
+				const response = await client.getSourceSync({
+					orgId,
+					sourceId,
+					jobId: jobId ?? "",
+				});
+				return toSourceSyncView(response.jobId, response.progress);
+			} catch (error) {
+				// No sync yet is an answer, not a failure: a source connected before
+				// the host enqueued first syncs at connect has none until one runs.
+				if (ConnectError.from(error).code === Code.NotFound) return undefined;
+				throw error;
+			}
 		},
 		async deleteSource(orgId, id) {
 			await client.deleteSource({ orgId, id });
 		},
 	};
+}
+
+const syncPhaseNames: Partial<Record<SourceSyncPhase, SourceSyncPhaseName>> = {
+	[SourceSyncPhase.QUEUED]: "queued",
+	[SourceSyncPhase.FETCHING]: "fetching",
+	[SourceSyncPhase.COMPILED]: "compiled",
+	[SourceSyncPhase.HANDED_OFF]: "handed_off",
+	[SourceSyncPhase.DONE]: "done",
+	[SourceSyncPhase.FAILED]: "failed",
+};
+
+const syncTriggerNames: Partial<Record<SourceSyncTrigger, SourceSyncTriggerName>> = {
+	[SourceSyncTrigger.MANUAL]: "manual",
+	[SourceSyncTrigger.SCHEDULED]: "scheduled",
+	[SourceSyncTrigger.WEBHOOK]: "webhook",
+};
+
+const syncFailureNames: Partial<
+	Record<SourceSyncFailureReason, SourceSyncFailureReasonName>
+> = {
+	[SourceSyncFailureReason.RATE_LIMITED]: "rate_limited",
+	[SourceSyncFailureReason.CREDENTIAL]: "credential",
+	[SourceSyncFailureReason.ACCESS_DENIED]: "access_denied",
+	[SourceSyncFailureReason.NOT_FOUND]: "not_found",
+	[SourceSyncFailureReason.TOO_LARGE]: "too_large",
+	[SourceSyncFailureReason.HOST_UNAVAILABLE]: "host_unavailable",
+	[SourceSyncFailureReason.DELIVERY_FAILED]: "delivery_failed",
+	[SourceSyncFailureReason.OTHER]: "other",
+};
+
+type Stamp = Parameters<typeof timestampDate>[0] | undefined;
+
+function iso(stamp: Stamp): string | undefined {
+	return stamp ? timestampDate(stamp).toISOString() : undefined;
+}
+
+/** Maps the wire progress to the plain view; exported for its tests. */
+export function toSourceSyncView(
+	jobId: string,
+	progress: SourceSyncProgress | undefined,
+): SourceSyncView {
+	const view: SourceSyncView = {
+		jobId,
+		phase: (progress && syncPhaseNames[progress.phase]) ?? "unknown",
+		trigger: (progress && syncTriggerNames[progress.trigger]) ?? "unknown",
+		queuedAt: iso(progress?.queuedAt),
+		fetchingAt: iso(progress?.fetchingAt),
+		compiledAt: iso(progress?.compiledAt),
+		handedOffAt: iso(progress?.handedOffAt),
+		finishedAt: iso(progress?.finishedAt),
+		attempt: progress?.attempt ?? 0,
+		maxAttempts: progress?.maxAttempts ?? 0,
+	};
+	const changes = progress?.changes;
+	if (changes) {
+		view.changes = {
+			files: changes.files,
+			added: changes.added,
+			modified: changes.modified,
+			deleted: changes.deleted,
+			splitKnown: changes.splitKnown,
+			snapshot: changes.snapshot,
+			commit: changes.commit,
+		};
+	}
+	const failure = progress?.failure;
+	if (failure) {
+		view.failure = {
+			reason: syncFailureNames[failure.reason] ?? "other",
+			code: failure.code,
+			message: failure.message,
+			retrying: failure.retrying,
+			retryAt: iso(failure.retryAt),
+		};
+	}
+	return view;
 }
 
 /**
@@ -244,6 +428,26 @@ export function createDatasourceClient(
 	);
 }
 
+function toAccountLinkView(link: DatasourceAccountLink): AccountLinkView {
+	return {
+		id: link.id,
+		userId: link.userId,
+		connector: link.connector,
+		providerAccountId: link.providerAccountId,
+		providerAccountLogin: link.providerAccountLogin,
+	};
+}
+
+function toDomainView(domain: DatasourceVerifiedDomain): DomainView {
+	return {
+		id: domain.id,
+		domain: domain.domain,
+		verified: domain.status === DatasourceDomainStatus.VERIFIED,
+		txtRecordName: domain.txtRecordName,
+		txtRecordValue: domain.txtRecordValue,
+	};
+}
+
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
 	[DatasourceStatus.ACTIVE]: "active",
 	[DatasourceStatus.PAUSED]: "paused",
@@ -261,9 +465,15 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		fileExtensions: source.github ? [...source.github.fileExtensions] : [],
 		branch: source.github?.branch ?? "",
 		boundaryNodeId: source.boundaryNodeId,
+		boundaryLabel: source.boundaryLabel || undefined,
 		webhookConfigured: source.webhookConfigured,
 		status: statusNames[source.status] ?? "unknown",
 		statusReason: source.statusReason || undefined,
+		// Keyed on the gap, which is never empty for a non-conformant source: an
+		// older host sends neither field, and a missing bool decodes as false,
+		// which would flag every source it serves.
+		conformant: source.conformanceGap ? false : undefined,
+		conformanceGap: source.conformanceGap || undefined,
 		lastSyncedAt: source.lastSyncedAt
 			? timestampDate(source.lastSyncedAt).toISOString()
 			: undefined,

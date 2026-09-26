@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
+	"accounts/pkg/datasource/connector"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
 )
@@ -44,7 +45,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
 }
 
 func (h *datasourceConnectHandler) AddSource(
@@ -110,7 +111,7 @@ func (h *datasourceConnectHandler) AddSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
 }
 
 func (h *datasourceConnectHandler) GetDatasourceCatalog(
@@ -121,7 +122,7 @@ func (h *datasourceConnectHandler) GetDatasourceCatalog(
 	if _, err := callerID(ctx); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(datasourceCatalog()), nil
+	return connect.NewResponse(datasourceCatalog(h.svc.DatasourceCatalog())), nil
 }
 
 func (h *datasourceConnectHandler) ListSources(
@@ -142,7 +143,7 @@ func (h *datasourceConnectHandler) ListSources(
 	}
 	out := make([]*gen.Datasource, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, datasourceSourceToProto(source))
+		out = append(out, datasourceSourceToProto(source, h.svc.DatasourceConnectors()))
 	}
 	return connect.NewResponse(&gen.ListSourcesResponse{Datasources: out}), nil
 }
@@ -166,7 +167,7 @@ func (h *datasourceConnectHandler) GetSource(
 		}
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
 }
 
 func (h *datasourceConnectHandler) SyncSource(
@@ -224,6 +225,7 @@ func (h *datasourceConnectHandler) GetSourceSync(
 			JobId: delivery.JobID, State: delivery.State, Execution: delivery.Execution,
 		})
 	}
+	response.Progress = sourceSyncProgressToProto(operation.Progress)
 	return connect.NewResponse(response), nil
 }
 
@@ -318,16 +320,20 @@ func (h *datasourceConnectHandler) MigrateGitHubSourceToApp(
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.MigrateGitHubSourceToAppResponse{
-		Datasource: datasourceSourceToProto(source),
+		Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors()),
 	}), nil
 }
 
-func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource {
+func datasourceSourceToProto(source *business.DatasourceSource, registry *connector.Registry) *gen.Datasource {
+	conformant, gap := business.DatasourceConformance(registry, source.Provider)
 	out := &gen.Datasource{
+		Conformant:         conformant,
+		ConformanceGap:     gap,
 		Id:                 source.ID,
 		OrgId:              source.OrgID,
 		Provider:           datasourceProviderToProto(source.Provider),
 		BoundaryNodeId:     source.BoundaryNodeID,
+		BoundaryLabel:      source.BoundaryLabel,
 		Status:             datasourceStatusToProto(source.Status),
 		StatusReason:       source.StatusReason,
 		WebhookConfigured:  source.WebhookConfigured(),
@@ -448,71 +454,73 @@ func apiCredentialKindToProto(kind string) gen.ApiCredentialKind {
 	}
 }
 
-// datasourceCatalog is the static provider registry the UI enumerates to render
-// the "connect a source" surface. Config field keys match the provider config
-// message field names.
-func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
-	return &gen.GetDatasourceCatalogResponse{
-		Providers: []*gen.DatasourceProviderDescriptor{
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB,
-				DisplayName: "GitHub",
-				Description: "A GitHub repository, pulled on sync and kept fresh through push webhooks.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "repo", DisplayName: "Repository", Help: "owner/name, e.g. codefly-dev/module-saas-starter", Required: true},
-					{Key: "paths", DisplayName: "Paths", Help: "Path prefixes to ingest; empty means the whole repository.", Required: false},
-					{Key: "file_extensions", DisplayName: "File types", Help: "Case-insensitive suffix allowlist such as .md or .mdx, intersected with paths; empty means all types.", Required: false},
-					{Key: "branch", DisplayName: "Branch", Help: "Git ref to pull; empty resolves to the default branch.", Required: false},
-				},
-				SupportsWebhook: true,
-			},
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
-				DisplayName: "HTTP API",
-				Description: "An HTTP API with a stored credential; a configured resource is fetched on sync.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "base_url", DisplayName: "Base URL", Help: "Absolute http(s) URL, e.g. https://api.example.com", Required: true},
-					{Key: "resource_path", DisplayName: "Resource path", Help: "Path fetched on sync, relative to the base URL.", Required: false},
-					{Key: "credential_kind", DisplayName: "Credential kind", Help: "How the credential is sent: bearer, basic, header, query, or oauth2.", Required: true},
-					{Key: "credential_header", DisplayName: "Credential header", Help: "Header name, when the credential kind is header.", Required: false},
-					{Key: "credential_query_param", DisplayName: "Credential query parameter", Help: "Query parameter name, when the credential kind is query.", Required: false},
-					{Key: "oauth2", DisplayName: "OAuth 2.0 config", Help: "Token URL and client id, when the credential kind is oauth2; the refresh token is the credential.", Required: false},
-				},
-				SupportsWebhook: false,
-				SupportedCredentialKinds: []gen.ApiCredentialKind{
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_QUERY,
-					gen.ApiCredentialKind_API_CREDENTIAL_KIND_OAUTH2,
-				},
-			},
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER,
-				DisplayName: "Web crawler",
-				Description: "A documentation website, ingested from its sitemap.xml on sync. Needs no credential.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "sitemap_url", DisplayName: "Sitemap URL", Help: "Absolute http(s) URL of the site's sitemap.xml.", Required: true},
-					{Key: "max_pages", DisplayName: "Max pages", Help: "Upper bound on pages fetched per sync; empty applies the default.", Required: false},
-				},
-				SupportsWebhook: false,
-			},
-			{
-				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD,
-				DisplayName: "Object storage",
-				Description: "An S3-compatible bucket; objects under a prefix are pulled on sync. The credential is the secret access key.",
-				ConfigFields: []*gen.DatasourceConfigField{
-					{Key: "endpoint", DisplayName: "Endpoint", Help: "Absolute http(s) endpoint, e.g. https://s3.us-east-1.amazonaws.com", Required: true},
-					{Key: "region", DisplayName: "Region", Help: "Signing region, e.g. us-east-1.", Required: true},
-					{Key: "bucket", DisplayName: "Bucket", Help: "Bucket to pull from.", Required: true},
-					{Key: "prefix", DisplayName: "Prefix", Help: "Key prefix to pull under; empty pulls the whole bucket.", Required: false},
-					{Key: "access_key_id", DisplayName: "Access key id", Help: "AWS-style access key id; the secret access key is the credential.", Required: true},
-					{Key: "max_objects", DisplayName: "Max objects", Help: "Upper bound on objects fetched per sync; empty applies the default.", Required: false},
-				},
-				SupportsWebhook: false,
-			},
-		},
+// datasourceCatalog projects the host's connector registry onto the catalog a
+// client renders the "connect a source" surface from: every registered
+// provider, whether it conforms to the connector envelope and why not, and
+// whether it accepts a new source. A client offers only those that do.
+func datasourceCatalog(entries []business.DatasourceCatalogEntry) *gen.GetDatasourceCatalogResponse {
+	out := &gen.GetDatasourceCatalogResponse{}
+	for _, e := range entries {
+		d := e.Descriptor
+		entry := &gen.DatasourceProviderDescriptor{
+			Provider:          datasourceProviderEnum[d.Key],
+			Connector:         d.Key,
+			DisplayName:       d.DisplayName,
+			Description:       d.Description,
+			SupportsWebhook:   d.SupportsWebhook,
+			Interface:         datasourceInterfaceEnum[d.Interface],
+			ReadersModel:      datasourceReadersModelEnum[d.Readers],
+			Conformant:        d.Conformant,
+			ConformanceGap:    d.Gap,
+			AcceptsNewSources: e.AcceptsNewSources,
+		}
+		for _, m := range d.CredentialModes {
+			entry.CredentialModes = append(entry.CredentialModes, datasourceCredentialModeEnum[m])
+		}
+		if d.Conformant {
+			entry.Budget = &gen.DatasourceConnectorBudget{
+				MaxItemsPerCall: uint32(d.Budget.MaxItemsPerCall),
+				MaxBytesPerCall: d.Budget.MaxBytesPerCall,
+				MaxItemBytes:    d.Budget.MaxItemBytes,
+			}
+		}
+		for _, f := range d.ConfigFields {
+			entry.ConfigFields = append(entry.ConfigFields, &gen.DatasourceConfigField{
+				Key: f.Key, DisplayName: f.DisplayName, Help: f.Help, Required: f.Required,
+			})
+		}
+		out.Providers = append(out.Providers, entry)
 	}
+	return out
+}
+
+var datasourceInterfaceEnum = map[connector.Interface]gen.DatasourceConnectorInterface{
+	connector.InterfaceFiles:    gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_FILES,
+	connector.InterfacePages:    gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_PAGES,
+	connector.InterfaceRecords:  gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_RECORDS,
+	connector.InterfaceMessages: gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_MESSAGES,
+	connector.InterfaceEvents:   gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_EVENTS,
+}
+
+var datasourceCredentialModeEnum = map[connector.CredentialMode]gen.DatasourceCredentialMode{
+	connector.CredentialNone:         gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_NONE,
+	connector.CredentialOrgApp:       gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_ORG_APP,
+	connector.CredentialUserOAuth:    gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_USER_OAUTH,
+	connector.CredentialStaticSecret: gen.DatasourceCredentialMode_DATASOURCE_CREDENTIAL_MODE_STATIC_SECRET,
+}
+
+var datasourceReadersModelEnum = map[connector.ReadersModel]gen.DatasourceReadersModel{
+	connector.ReadersSourceScoped: gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_SOURCE_SCOPED,
+	connector.ReadersTranslated:   gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_TRANSLATED,
+}
+
+// datasourceProviderEnum maps a connector's registry key onto the wire's
+// provider enum.
+var datasourceProviderEnum = map[string]gen.DatasourceProvider{
+	business.DatasourceProviderGitHub:  gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB,
+	business.DatasourceProviderAPI:     gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
+	business.DatasourceProviderCrawler: gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER,
+	business.DatasourceProviderUpload:  gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD,
 }
 
 func datasourceStatusToProto(status string) gen.DatasourceStatus {

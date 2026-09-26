@@ -26,7 +26,7 @@ func TestAuditExportCarriesTheClientTheCallCameThrough(t *testing.T) {
 		},
 	}
 
-	raw, err := auditToCSV(entries)
+	raw, err := auditToCSV(t.Context(), NewAuditEventResolver(nil), entries)
 	if err != nil {
 		t.Fatalf("auditToCSV: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestAuditExportCarriesTheClientTheCallCameThrough(t *testing.T) {
 		t.Errorf("web-session row client_id = %q, want empty", got)
 	}
 
-	encoded, err := auditToJSON(entries)
+	encoded, err := auditToJSON(t.Context(), NewAuditEventResolver(nil), entries)
 	if err != nil {
 		t.Fatalf("auditToJSON: %v", err)
 	}

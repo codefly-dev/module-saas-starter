@@ -31,6 +31,10 @@ type Handler func(context.Context, *jobsv1.JobEnvelope) error
 type ProcessingError struct {
 	Failure   *jobsv1.JobFailure
 	Retryable bool
+	// NotBefore, when set on a retryable failure, is the earliest the job may be
+	// retried: a provider that named when its limit resets is not retried
+	// before then, whatever the queue's backoff schedule says.
+	NotBefore time.Time
 }
 
 func (e *ProcessingError) Error() string {
@@ -356,10 +360,12 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 		failure = &jobsv1.JobFailure{Code: "jobs.handler_panic", Message: "job handler panicked"}
 	}
 	var processingErr *ProcessingError
+	var notBefore time.Time
 	if errors.As(handlerErr, &processingErr) && processingErr.Failure != nil &&
 		ValidateCommand(processingErr.Failure) == nil {
 		failure = processingErr.Failure
 		retryable = processingErr.Retryable
+		notBefore = processingErr.NotBefore
 	}
 	// Report the failure from here, below the lease-loss and shutdown returns
 	// above: a handler those paths cancelled did not fail, and blaming it made
@@ -392,12 +398,14 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 		return nil
 	}
 
+	retryAt := w.config.Now().UTC().Add(w.config.RetryDelay(envelope.GetAttemptCount()))
+	if notBefore.After(retryAt) {
+		retryAt = notBefore.UTC()
+	}
 	response, err := w.config.Store.Retry(ctx, &jobsv1.RetryJobRequest{
 		Lease:   lease,
 		Failure: failure,
-		RetryAt: timestamppb.New(w.config.Now().UTC().Add(
-			w.config.RetryDelay(envelope.GetAttemptCount()),
-		)),
+		RetryAt: timestamppb.New(retryAt),
 	})
 	if err != nil {
 		return w.finalizationError(err)

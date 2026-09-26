@@ -8,15 +8,36 @@ let currentToken: string | null = null;
 
 export function setToken(token: string | null) {
 	if (currentToken === token) return;
- currentToken = token;
- // Solution remotes keep a stable getter. Notify them synchronously when its
- // value changes so the prior viewer's data does not survive an auth switch.
- // The event carries no token or identity; consumers read their host getter.
- if (typeof window !== "undefined") window.dispatchEvent(new Event("codefly:auth-changed"));
+	currentToken = token;
+	// Solution remotes keep a stable getter. Notify them synchronously when its
+	// value changes so the prior viewer's data does not survive an auth switch.
+	// The event carries no token or identity; consumers read their host getter.
+	if (typeof window !== "undefined")
+		window.dispatchEvent(new Event("codefly:auth-changed"));
 }
 
 export function getToken(): string | null {
 	return currentToken;
+}
+
+/**
+ * Call `listener` whenever the stored token changes; returns an unsubscribe.
+ *
+ * `getToken` is deliberately a stable function over a moving value, so a remote
+ * holding it cannot see a rotation. Handing it this alongside the getter is what
+ * lets the kit stop re-reading on a timer: the events below are the mechanism,
+ * and this is the promise that they exist. `focus` and `storage` are here too
+ * because a session established in another tab changes nothing in this tab's
+ * in-memory store until something makes it look again.
+ */
+export function subscribeToken(listener: () => void): () => void {
+	if (typeof window === "undefined") return () => {};
+	for (const event of ["codefly:auth-changed", "focus", "storage"])
+		window.addEventListener(event, listener);
+	return () => {
+		for (const event of ["codefly:auth-changed", "focus", "storage"])
+			window.removeEventListener(event, listener);
+	};
 }
 
 /**

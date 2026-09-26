@@ -4,6 +4,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { assertSkinRules } from "../src/skin/rules.js";
 import * as composites from "./composites.stories";
+import * as content from "./content.stories";
 import * as foundations from "./foundations.stories";
 import * as controls from "./controls.stories";
 import * as primitives from "./primitives.stories";
@@ -29,6 +30,7 @@ for (const [section, stories] of Object.entries({
 	tables,
 	semanticTables,
 	composites,
+	content,
 })) {
 	for (const [name, story] of Object.entries(stories)) {
 		if (!("render" in story)) continue;

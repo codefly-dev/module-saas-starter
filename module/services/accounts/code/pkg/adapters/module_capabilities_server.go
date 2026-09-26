@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"accounts/pkg/business"
@@ -360,6 +361,60 @@ func (s *ModuleCapabilitiesServer) CancelApproval(ctx context.Context, req *gen.
 	return &emptypb.Empty{}, nil
 }
 
+// moduleAuditFieldKinds maps the wire kind of a declared field to the audit
+// registry's field kind. UNSPECIFIED has no entry: the request validator refuses
+// it, and a kind missing here is refused by the registry's own kind check.
+var moduleAuditFieldKinds = map[gen.ModuleAuditFieldKind]business.FieldKind{
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_STRING:       business.FieldString,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_UUID:         business.FieldUUID,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_INT:          business.FieldInt,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_NUMBER:       business.FieldNumber,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_BOOL:         business.FieldBool,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_ENUM:         business.FieldEnum,
+	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_STRING_ARRAY: business.FieldStringArray,
+}
+
+// moduleAuditDeclarations converts the wire declarations to the registry's
+// declaration shape, the one a solution's manifest is decoded into as well.
+func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []business.AuditEventTypeDeclaration {
+	out := make([]business.AuditEventTypeDeclaration, 0, len(types))
+	for _, t := range types {
+		declaration := business.AuditEventTypeDeclaration{Type: t.GetType(), Description: t.GetDescription()}
+		for _, f := range t.GetFields() {
+			field := business.AuditFieldDeclaration{
+				Name: f.GetName(),
+				Kind: string(moduleAuditFieldKinds[f.GetKind()]),
+				PII:  f.GetPii(),
+			}
+			if len(f.GetValues()) > 0 {
+				field.Values = append([]string(nil), f.GetValues()...)
+			}
+			declaration.Fields = append(declaration.Fields, field)
+		}
+		out = append(out, declaration)
+	}
+	return out
+}
+
+func (s *ModuleCapabilitiesServer) DeclareAuditEventTypes(ctx context.Context, req *gen.ModuleDeclareAuditEventTypesRequest) (*gen.ModuleDeclareAuditEventTypesResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	admitted, takenOver, err := service.ModuleDeclareAuditEventTypes(ctx, caller, req.GetPrefix(), moduleAuditDeclarations(req.GetTypes()))
+	if err != nil {
+		return nil, err
+	}
+	resp := &gen.ModuleDeclareAuditEventTypesResponse{NamespacesTakenOver: takenOver}
+	for _, t := range admitted {
+		resp.AdmittedTypes = append(resp.AdmittedTypes, string(t))
+	}
+	return resp, nil
+}
+
 func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -459,6 +514,72 @@ func writeDatasourceBlobFrames(content []byte, contentType string, stream dataso
 			return nil
 		}
 	}
+}
+
+// FetchDatasourceFiles streams a batch of one source's files at one pinned
+// version: per file, a header frame carrying its provenance and exact size, then
+// bounded data frames. The business layer reads the batch from the source's
+// repository mirror in request order, so nothing is buffered beyond one frame.
+func (s *ModuleCapabilitiesServer) FetchDatasourceFiles(req *gen.FetchDatasourceFilesRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceFilesFrame]) error {
+	return streamDatasourceFiles(stream.Context(), req, stream)
+}
+
+// datasourceFilesSender is the send half both the gRPC and Connect server
+// streams satisfy.
+type datasourceFilesSender interface {
+	Send(*gen.FetchDatasourceFilesFrame) error
+}
+
+func streamDatasourceFiles(ctx context.Context, req *gen.FetchDatasourceFilesRequest, stream datasourceFilesSender) error {
+	if err := Validate(req); err != nil {
+		return err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return err
+	}
+	refs := make([]business.DatasourceFileRequest, 0, len(req.GetFiles()))
+	for _, f := range req.GetFiles() {
+		refs = append(refs, business.DatasourceFileRequest{ItemID: f.GetItemId(), ItemVersion: f.GetItemVersion()})
+	}
+	buf := make([]byte, datasourceBlobChunkBytes)
+	return service.ModuleFetchDatasourceFiles(ctx, caller, req.GetSourceId(), req.GetVersion(), refs,
+		func(file business.DatasourceFile, content io.Reader) error {
+			header := &gen.DatasourceFileHeader{
+				Provenance: &gen.DatasourceProvenance{
+					SourceId:       file.Provenance.SourceID,
+					OrgId:          file.Provenance.OrgID,
+					BoundaryNodeId: file.Provenance.BoundaryNodeID,
+					Version:        file.Provenance.Version,
+					ItemId:         file.Provenance.ItemID,
+					ItemVersion:    file.Provenance.ItemVersion,
+				},
+				Path:        file.Path,
+				ContentType: file.ContentType,
+				Size:        file.Size,
+				// The connector's readers, under the host's source policy.
+				Readers: file.Readers,
+			}
+			if err := stream.Send(&gen.FetchDatasourceFilesFrame{Frame: &gen.FetchDatasourceFilesFrame_Header{Header: header}}); err != nil {
+				return err
+			}
+			for remaining := file.Size; remaining > 0; {
+				n := int64(len(buf))
+				if remaining < n {
+					n = remaining
+				}
+				if _, err := io.ReadFull(content, buf[:n]); err != nil {
+					return err
+				}
+				// The frame owns its bytes: a sender may hold a message past Send.
+				data := append([]byte(nil), buf[:n]...)
+				if err := stream.Send(&gen.FetchDatasourceFilesFrame{Frame: &gen.FetchDatasourceFilesFrame_Data{Data: data}}); err != nil {
+					return err
+				}
+				remaining -= n
+			}
+			return nil
+		})
 }
 
 func (s *ModuleCapabilitiesServer) PlaceRecord(ctx context.Context, req *gen.ModulePlaceRecordRequest) (*gen.ModulePlaceRecordResponse, error) {

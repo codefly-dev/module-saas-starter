@@ -131,15 +131,20 @@ describe("topGroups", () => {
 });
 
 describe("new users come from the registry, not from a guess", () => {
-	it("keeps only the new-user names the registry advertises", () => {
+	it("keeps exactly the names the registry marks", () => {
 		expect(
 			newUserEventTypes([
-				{ name: "saas.user.registered" },
-				{ name: "saas.user.updated" },
+				{ name: "saas.user.registered", marksUserJoined: true },
+				{ name: "saas.user.updated", marksUserJoined: false },
 			]),
 		).toEqual(["saas.user.registered"]);
-		// A registry that renamed both is an empty list, which the tile shows.
-		expect(newUserEventTypes([{ name: "saas.person.joined" }])).toEqual([]);
+		// A registry that renamed the type keeps the name it now advertises —
+		// the client never had to be told.
+		expect(
+			newUserEventTypes([
+				{ name: "saas.person.joined", marksUserJoined: true },
+			]),
+		).toEqual(["saas.person.joined"]);
 	});
 
 	it("counts only the named event types", () => {
@@ -153,6 +158,61 @@ describe("new users come from the registry, not from a guess", () => {
 		).toBe(7);
 		expect(countEventTypes(byType, [])).toBe(0);
 		expect(countEventTypes([], ["saas.user.created"])).toBe(0);
+	});
+
+	// A first sign-in through an org's identity provider is recorded as
+	// saas.user.registered in the org the identity joined (the accounts
+	// resolver's emitUserRegistered), so the SSO tenant is counted by the
+	// registration name like everyone else.
+	//
+	// saas.auth.sso_jit_provisioned must NOT stand in for it. That event says a
+	// membership was provisioned, and the resolver emits it again every time a
+	// locally-removed member is re-provisioned from a still-valid IdP
+	// assertion — counting it counts one person once per removal.
+	it("does not count a membership provisioning as a new user", () => {
+		expect(
+			newUserEventTypes([
+				{ name: "saas.user.registered", marksUserJoined: true },
+				{ name: "saas.user.created", marksUserJoined: true },
+				{ name: "saas.auth.sso_jit_provisioned", marksUserJoined: false },
+			]),
+		).toEqual(["saas.user.registered", "saas.user.created"]);
+		const byType = [
+			bucket(["saas.user.registered"], 5),
+			// the same five people, re-provisioned after a round of removals
+			bucket(["saas.auth.sso_jit_provisioned"], 10),
+			bucket(["saas.auth.login"], 200),
+		];
+		expect(
+			countEventTypes(byType, ["saas.user.created", "saas.user.registered"]),
+		).toBe(5);
+	});
+
+	// The set is defined by event type, never by category: the page counts it
+	// off the unfiltered aggregate (see audit-page.tsx) precisely so a category
+	// drill-down cannot subtract from it.
+	it("counts every marked name wherever its category falls", () => {
+		const marked = newUserEventTypes([
+			{ name: "saas.user.registered", marksUserJoined: true },
+			{ name: "saas.module.joined_from_elsewhere", marksUserJoined: true },
+		]);
+		const byType = [
+			bucket(["saas.user.registered"], 4),
+			bucket(["saas.module.joined_from_elsewhere"], 1),
+		];
+		expect(countEventTypes(byType, marked)).toBe(5);
+	});
+
+	// A server that marks nothing — one older than the registry field, or a
+	// rename nothing carries yet — must empty the set so the caller can say so,
+	// never quietly fall back to a list this module remembers.
+	it("returns nothing when the registry marks nothing", () => {
+		expect(
+			newUserEventTypes([
+				{ name: "saas.user.registered" },
+				{ name: "saas.auth.login" },
+			]),
+		).toEqual([]);
 	});
 });
 

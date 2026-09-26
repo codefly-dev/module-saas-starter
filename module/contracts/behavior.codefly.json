@@ -280,10 +280,12 @@
             "@codefly-dev/ui/chat",
             "@codefly-dev/ui/skin",
             "@codefly-dev/ui/table",
+            "@codefly-dev/ui/content",
             "@codefly-dev/ui/plugin-host",
             "@codefly-dev/ui/plugin-host/runtime",
             "@codefly-dev/ui/plugin-host/ui",
             "@codefly-dev/saas-ui",
+            "@codefly-dev/saas-ui/solution",
             "@codefly-dev/saas-sdk"
           ],
           "versions": "The exact published version of each key is a release fact of the host build, carried by the module package rather than restated here."

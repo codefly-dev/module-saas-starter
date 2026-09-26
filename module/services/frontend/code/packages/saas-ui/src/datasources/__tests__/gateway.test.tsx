@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatasourcesPanel } from "../datasources-panel.js";
 import { createDatasourceClient } from "../gateway.js";
+import { onSourceSyncRequested } from "../sync-requests.js";
 
 const gatewayCatalog = JSON.parse(
 	readFileSync(
@@ -104,6 +105,7 @@ const oneSource = {
 			provider: "DATASOURCE_PROVIDER_GITHUB",
 			github: { repo: "codefly-dev/module-saas-starter", paths: ["docs/"] },
 			boundaryNodeId: "11111111-1111-1111-1111-111111111111",
+			boundaryLabel: "handbook",
 			status: "DATASOURCE_STATUS_ACTIVE",
 			webhookConfigured: true,
 			lastIngestedAt: "2026-09-08T11:30:00Z",
@@ -153,7 +155,24 @@ describe("createDatasourceClient", () => {
 			migrateGitHubSourceToApp: () =>
 				client.migrateGitHubSourceToApp!("org-1", "ds-1"),
 			syncSource: () => client.syncSource("org-1", "ds-1"),
+			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
+			// The stub answers {} to everything; an operation whose answer must
+			// carry a record rejects on it, after the call this test counts.
+			beginAccountLink: () =>
+				client.beginAccountLink!("org-1", "github", "https://host.example.com/"),
+			completeAccountLink: () =>
+				client.completeAccountLink!("org-1", "dl.s", "c").catch(() => undefined),
+			listMyAccountLinks: () => client.listMyAccountLinks!("org-1"),
+			deleteAccountLink: () => client.deleteAccountLink!("org-1", "l1"),
+			getDirectory: () => client.getDirectory!("org-1"),
+			bindGroup: () =>
+				client.bindGroup!("org-1", "github", "acme/x", "t1").catch(() => undefined),
+			unbindGroup: () => client.unbindGroup!("org-1", "b1"),
+			claimDomain: () =>
+				client.claimDomain!("org-1", "example.com").catch(() => undefined),
+			verifyDomain: () => client.verifyDomain!("org-1", "d1").catch(() => undefined),
+			deleteDomain: () => client.deleteDomain!("org-1", "d1"),
 		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
 		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
 		for (const operation of Object.values(operations)) {
@@ -161,6 +180,118 @@ describe("createDatasourceClient", () => {
 			await operation();
 			expect(calls.length).toBeGreaterThan(before);
 		}
+	});
+
+	it("announces every sync it enqueues, so a progress view watches closely at once", async () => {
+		stubFetchSequence([reply({ jobId: "job-1" }), reply({ datasource: { id: "ds-new" } })]);
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+		const heard: string[] = [];
+		const stop = onSourceSyncRequested((id) => heard.push(id));
+		const failing = onSourceSyncRequested(() => {
+			throw new Error("a listener's failure is its own");
+		});
+		await client.syncSource("org-1", "ds-1");
+		await client.addGitHubSource({
+			orgId: "org-1",
+			repo: "acme/example",
+			paths: [],
+			branch: "",
+			targetCollection: "Example",
+			webhookSecret: "",
+		});
+		stop();
+		failing();
+		await client.syncSource("org-1", "ds-1").catch(() => {});
+		expect(heard).toEqual(["ds-1", "ds-new"]);
+	});
+
+	it("reads a source's latest sync as the host's typed phases", async () => {
+		const { calls } = stubFetch({
+			jobId: "22222222-2222-2222-2222-222222222222",
+			state: "JOB_STATE_RETRYING",
+			progress: {
+				phase: "SOURCE_SYNC_PHASE_QUEUED",
+				trigger: "SOURCE_SYNC_TRIGGER_MANUAL",
+				queuedAt: "2026-09-26T12:00:00Z",
+				fetchingAt: "2026-09-26T12:00:01Z",
+				attempt: 1,
+				maxAttempts: 24,
+				failure: {
+					reason: "SOURCE_SYNC_FAILURE_REASON_RATE_LIMITED",
+					code: "datasource.github_unauthenticated_rate_limited",
+					message: "GitHub rate limited the request.",
+					retrying: true,
+					retryAt: "2026-09-26T13:00:00Z",
+				},
+			},
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const sync = await client.getSourceSync!("org-1", "ds-1");
+
+		expect(calls[0].url).toContain(
+			"/api/solutions/guides/proxy/saas.accounts.v1.DatasourceService/GetSourceSync",
+		);
+		// No job id asks for the latest sync, whatever started it.
+		expect(calls[0].body).toEqual({ orgId: "org-1", sourceId: "ds-1" });
+		expect(sync).toEqual({
+			jobId: "22222222-2222-2222-2222-222222222222",
+			phase: "queued",
+			trigger: "manual",
+			queuedAt: "2026-09-26T12:00:00.000Z",
+			fetchingAt: "2026-09-26T12:00:01.000Z",
+			compiledAt: undefined,
+			handedOffAt: undefined,
+			finishedAt: undefined,
+			attempt: 1,
+			maxAttempts: 24,
+			failure: {
+				reason: "rate_limited",
+				code: "datasource.github_unauthenticated_rate_limited",
+				message: "GitHub rate limited the request.",
+				retrying: true,
+				retryAt: "2026-09-26T13:00:00.000Z",
+			},
+		});
+	});
+
+	it("reports the compiled change set, and no sync yet as undefined", async () => {
+		stubFetchSequence([
+			reply({
+				jobId: "22222222-2222-2222-2222-222222222222",
+				state: "JOB_STATE_SUCCEEDED",
+				progress: {
+					phase: "SOURCE_SYNC_PHASE_DONE",
+					trigger: "SOURCE_SYNC_TRIGGER_MANUAL",
+					changes: { files: 42, splitKnown: true, snapshot: true, commit: "c1" },
+				},
+			}),
+			reply({ code: "not_found", message: "datasource: sync not found" }, 404),
+		]);
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const done = await client.getSourceSync!("org-1", "ds-1");
+		expect(done?.phase).toBe("done");
+		// A zero the wire omits is still a count: nothing added, modified or deleted.
+		expect(done?.changes).toEqual({
+			files: 42,
+			added: 0,
+			modified: 0,
+			deleted: 0,
+			splitKnown: true,
+			snapshot: true,
+			commit: "c1",
+		});
+		await expect(client.getSourceSync!("org-1", "ds-2")).resolves.toBeUndefined();
 	});
 
 	it("calls the live DatasourceService through the gateway with the host token", async () => {
@@ -182,6 +313,7 @@ describe("createDatasourceClient", () => {
 				branch: "",
 				fileExtensions: [],
 				boundaryNodeId: "11111111-1111-1111-1111-111111111111",
+				boundaryLabel: "handbook",
 				webhookConfigured: true,
 				status: "active",
 				lastSyncedAt: undefined,
@@ -271,6 +403,40 @@ describe("createDatasourceClient", () => {
 		}
 	});
 
+	it("flags a source the host reports off the connector envelope", async () => {
+		const [source] = oneSource.datasources;
+		stubFetch({
+			datasources: [
+				{ ...source, conformant: false, conformanceGap: "no cursor and no deletions" },
+			],
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.conformant).toBe(false);
+		expect(view.conformanceGap).toBe("no cursor and no deletions");
+	});
+
+	it("does not flag a source from a host that sends no conformance", async () => {
+		// Proto3 omits a false bool, so an older host's source decodes with
+		// conformant=false; only the gap says a provider is off the envelope.
+		const [source] = oneSource.datasources;
+		stubFetch({ datasources: [{ ...source }] });
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.conformant).toBeUndefined();
+		expect(view.conformanceGap).toBeUndefined();
+	});
+
 	it("leaves the reason unset for a source that never left active", async () => {
 		// The wire carries an empty string, not an absent field.
 		const [source] = oneSource.datasources;
@@ -356,7 +522,43 @@ describe("createDatasourceClient", () => {
 	});
 });
 
+function claimsToken(claims: Record<string, unknown>): string {
+	const body = btoa(JSON.stringify(claims))
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+	return `header.${body}.signature`;
+}
+
 describe("DatasourcesPanel gateway binding", () => {
+	it.each([
+		["a member", { or: "member" }, false],
+		["an organization admin", { or: "admin" }, true],
+		["a platform super administrator", { pr: "super_admin" }, true],
+	])(
+		"offers %s the management controls only when their credential names the tier",
+		async (_who, claims, manages) => {
+			stubFetch(oneSource);
+			render(
+				<DatasourcesPanel
+					orgId="org-1"
+					gateway={{
+						apiBase: "/api/solutions/guides/proxy",
+						getAccessToken: () => claimsToken(claims),
+					}}
+				/>,
+			);
+			await screen.findByText("codefly-dev/module-saas-starter");
+			expect(!!screen.queryByRole("button", { name: "Connect GitHub" })).toBe(
+				manages,
+			);
+			expect(!!screen.queryByRole("button", { name: "Sync" })).toBe(manages);
+			expect(!!screen.queryByRole("button", { name: /More actions for/ })).toBe(
+				manages,
+			);
+		},
+	);
+
 	it("self-wires its own React-Query provider and renders live sources", async () => {
 		stubFetch(oneSource);
 

@@ -123,6 +123,94 @@ func TestPlanSolutionRegistration_IdenticalContentRenewsWithoutAdvancing(t *test
 	}
 }
 
+// The registry stores the manifest as jsonb, so the record read back is Postgres'
+// re-serialization of what the host sent — keys reordered, spaces added — never
+// the host's compact bytes. A heartbeat re-sending the same manifest is still a
+// renewal: compared byte for byte, every beat advanced the revision and wrote a
+// registration_updated audit event.
+func TestPlanSolutionRegistration_StoredJSONBFormIsTheSameManifest(t *testing.T) {
+	now := time.Now().UTC()
+	sent := `{"id":"demo","nav":{"title":"Demo","path":"/s/demo","order":60},"frontend":{"type":"module-federation"}}`
+	stored := `{"id": "demo", "nav": {"path": "/s/demo", "order": 60, "title": "Demo"}, "frontend": {"type": "module-federation"}}`
+	current := &SolutionRegistration{
+		SolutionID: "demo", Publisher: "acme", Revision: 5,
+		Frontend: &SolutionFrontendHalf{Revision: 5, Manifest: stored, LeaseExpiresAt: now.Add(time.Second)},
+	}
+	next, changed, err := planSolutionRegistrationWrite(current, frontendWrite("demo", "acme", sent), now)
+	if err != nil {
+		t.Fatalf("renewal: %v", err)
+	}
+	if changed || next.Revision != 5 {
+		t.Fatalf("the stored form of the same manifest advanced the registration (changed=%v revision=%d)", changed, next.Revision)
+	}
+	if !next.Frontend.LeaseExpiresAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("lease not extended: %v", next.Frontend.LeaseExpiresAt)
+	}
+
+	// A real change still is one, however the stored text is spelled.
+	for _, edited := range []string{
+		`{"id":"demo","nav":{"title":"Demo","path":"/s/demo","order":61},"frontend":{"type":"module-federation"}}`,
+		`{"id":"demo","nav":{"title":"Demo","path":"/s/demo","order":60.5},"frontend":{"type":"module-federation"}}`,
+		`{"id":"demo","nav":{"title":"Demo","path":"/s/demo","order":60},"frontend":{"type":"module-federation"},"extra":null}`,
+		`not json`,
+	} {
+		write := frontendWrite("demo", "acme", edited)
+		revision := int64(5)
+		write.ExpectedRevision = &revision
+		if _, changed, err := planSolutionRegistrationWrite(current, write, now); err != nil || !changed {
+			t.Fatalf("an edited manifest read as unchanged: %s (err=%v)", edited, err)
+		}
+	}
+}
+
+// jsonb stores numbers as numeric, which never renders an exponent: a manifest
+// the host sent as 1e-7 reads back as 0.0000001. Comparing the literals as
+// written, every beat of such a manifest advanced the revision — the same
+// churn the jsonb round-trip caused, surviving for exactly the manifests whose
+// numbers Postgres rewrites.
+func TestPlanSolutionRegistration_PostgresNumericFormIsTheSameManifest(t *testing.T) {
+	now := time.Now().UTC()
+	for _, spelling := range []struct{ stored, sent string }{
+		{`{"order": 0.0000001}`, `{"order":1e-7}`},
+		{`{"order": 1000000000000000000000}`, `{"order":1e+21}`},
+		{`{"order": 100}`, `{"order":1E2}`},
+		{`{"order": 1.50}`, `{"order":1.5}`},
+	} {
+		current := &SolutionRegistration{
+			SolutionID: "demo", Publisher: "acme", Revision: 5,
+			Frontend: &SolutionFrontendHalf{Revision: 5, Manifest: spelling.stored, LeaseExpiresAt: now.Add(time.Second)},
+		}
+		next, changed, err := planSolutionRegistrationWrite(current, frontendWrite("demo", "acme", spelling.sent), now)
+		if err != nil {
+			t.Fatalf("%s: renewal: %v", spelling.sent, err)
+		}
+		if changed || next.Revision != 5 {
+			t.Fatalf("%s stored as %s advanced the registration (changed=%v revision=%d)", spelling.sent, spelling.stored, changed, next.Revision)
+		}
+	}
+
+	// A different number is still a different manifest, and a literal too large
+	// to compare by value falls back to comparing the text — which reports a
+	// change, the answer the numeric column refuses the write with anyway.
+	current := &SolutionRegistration{
+		SolutionID: "demo", Publisher: "acme", Revision: 5,
+		Frontend: &SolutionFrontendHalf{Revision: 5, Manifest: `{"order": 0.0000001}`, LeaseExpiresAt: now.Add(time.Second)},
+	}
+	for _, edited := range []string{
+		`{"order":1e-8}`,
+		`{"order":2e-7}`,
+		`{"order":1e999999999}`,
+		`{"order":"1e-7"}`,
+	} {
+		write := frontendWrite("demo", "acme", edited)
+		revision := int64(5)
+		write.ExpectedRevision = &revision
+		if _, changed, err := planSolutionRegistrationWrite(current, write, now); err != nil || !changed {
+			t.Fatalf("an edited manifest read as unchanged: %s (err=%v)", edited, err)
+		}
+	}
+}
+
 // The resurrection rule: a retiring deployment's delayed retry carries either no
 // token or its pre-deletion one, and both must lose to the tombstone.
 func TestPlanSolutionRegistration_TombstoneBlocksResurrection(t *testing.T) {

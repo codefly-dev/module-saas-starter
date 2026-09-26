@@ -306,6 +306,63 @@ export async function PUT(request: Request, { params }: RouteContext) {
 	assertGated(t, scan, "PUT")
 }
 
+// A return type annotation puts a brace between the parameter list and the
+// body just as a destructured parameter does. Reading that brace as the body
+// hid every call the function made: the handler's walk through a helper found
+// no credential check and the gate called a gated route ungated. The same
+// misread on an UNDECLARED route raises nothing at all, which is the direction
+// that ships a credential-gated path with no mesh deny.
+func TestScanRouteModuleReadsPastAReturnTypeAnnotation(t *testing.T) {
+	for _, returnType := range []string{
+		"Promise<{ ok: boolean; body: Response }>",
+		"{ ok: boolean }",
+		"Promise<Response>",
+		"Promise<Record<string, { ok: boolean }>>",
+		"(next: Request) => Promise<Response>",
+	} {
+		t.Run(returnType, func(t *testing.T) {
+			scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+export async function POST(request: Request): Promise<Response> {
+	const answer = await handle(request);
+	return answer.ok ? new Response(null, { status: 204 }) : new Response(null, { status: 401 });
+}
+
+async function handle(request: Request): `+returnType+` {
+	if (!isTrustedInternalCall(request)) {
+		return { ok: false, body: new Response(null, { status: 401 }) };
+	}
+	return { ok: true, body: new Response(null, { status: 204 }) };
+}
+`)
+			assertNoProblems(t, scan)
+			assertGated(t, scan, "POST")
+		})
+	}
+}
+
+// A body the reader cannot locate makes every call inside it invisible. Saying
+// so is what keeps the miss from being silent; dropping the function is how a
+// gated handler reads as ungated and an undeclared route raises nothing.
+func TestScanRouteModuleReportsAFunctionBodyItCannotLocate(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+export async function GET(request: Request): Promise<Response> {
+	return isTrustedInternalCall(request) ? Response.json({ ok: true }) : new Response(null, { status: 401 });
+}
+
+function missingBody(request: Request): void
+`)
+	if len(scan.problems) == 0 {
+		t.Fatal("a function whose body could not be located was dropped in silence")
+	}
+	if !strings.Contains(scan.problems[0], "missingBody") {
+		t.Errorf("problem does not name the function: %q", scan.problems[0])
+	}
+}
+
 func TestScanRouteModuleReadsAnExemptionMarker(t *testing.T) {
 	scan := scanRouteModule("route.ts", `
 import { isTrustedInternalCall } from "@/lib/internal-token";

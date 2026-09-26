@@ -10,6 +10,11 @@ services:
     source:
       kind: grpc
       name: APIKey
+  ApprovalReviewService:
+    handler: approvalReviewConnectHandler
+    source:
+      kind: singleton
+      name: ApprovalReviewSingleton
   AuditService:
     handler: auditConnectHandler
     source:

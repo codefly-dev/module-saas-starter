@@ -32,6 +32,25 @@ func LookupPublished(eventType string) (PublishedEvent, bool) {
 	return e, ok
 }
 
+// publishedNamespaces is every namespace the compose-generated table publishes
+// under. Compose admits a contribution's types only under its own namespace, so
+// each entry here already has its one producer.
+var publishedNamespaces = func() map[string]bool {
+	m := make(map[string]bool)
+	for _, e := range published {
+		m[e.Namespace] = true
+	}
+	return m
+}()
+
+// IsPublishedNamespace reports whether the composed catalog publishes any event
+// type under the namespace — whether a producer already holds it. A registry
+// that admits names at runtime, where compose never sees them, consults this
+// so it cannot hand a second producer a namespace the catalog already assigned.
+func IsPublishedNamespace(namespace string) bool {
+	return publishedNamespaces[namespace]
+}
+
 // followableIndex resolves an event type to the followable resource it reports a
 // change to. Compose keeps the mapping single-valued — an event may be declared
 // followable by at most one resource type — so this is a function rather than a

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -294,6 +295,11 @@ func (s *PostgresStore) AuthorizeEvidenceRead(
 	})
 }
 
+// isMemberPermission is the generated catalog's member grant. It is a variable
+// only so this package's database tests can exercise the SQL branch without a
+// composed catalog; production code never reassigns it.
+var isMemberPermission = business.IsMemberPermission
+
 func workContextPermissionAllowed(
 	ctx context.Context,
 	reader ReadQueryExecutor,
@@ -314,6 +320,21 @@ func workContextPermissionAllowed(
 		            WHERE administrator.org_id = $1
 		              AND administrator.user_id = $2
 		              AND administrator.role IN ('owner', 'admin')
+		        )
+		    )
+		    -- A contributed permission declared for every member (members: true)
+		    -- is held by any current member of the organization, as a person.
+		    -- $5 is false for a delegated actor, so an agent never gains it this
+		    -- way; $10 is decided in Go from the generated catalog, never from
+		    -- the request. Like a NULL-scope assignment it is organization-wide.
+		    OR (
+		        $5
+		        AND $10
+		        AND EXISTS (
+		            SELECT 1
+		            FROM organization_members AS member
+		            WHERE member.org_id = $1
+		              AND member.user_id = $2
 		        )
 		    )
 		    OR EXISTS (
@@ -382,6 +403,75 @@ func workContextPermissionAllowed(
 		              AND (sg_permission.resource = '*' OR sg_permission.resource = $3)
 		              AND (sg_permission.action = '*' OR sg_permission.action = $4)
 		        )
+		    )
+		    -- Content read (business.WorkContextPermission.ContentRead): the
+		    -- owner's standing to read a declared module content type, which this
+		    -- host then authorizes node by node at read time. It is held through
+		    -- the same three bases the read oracles in
+		    -- postgres_readable_sources.go and postgres_layered_access.go accept —
+		    -- a live scope grant (the owner's or a team's), a live record share,
+		    -- or platform read authority — on at least one node. Owner only: an
+		    -- actor's authority is never widened here.
+		    --
+		    -- Every arm is bound to a real node, because the standing this admits
+		    -- has to be standing those oracles would honour. The grant arm gets
+		    -- that from GrantScope, which refuses a scope_path that is not a
+		    -- registered node. A share does not: ShareRecord writes resource_id
+		    -- verbatim, so a share may name a record that was never placed — and
+		    -- a share naming nothing authorizes no read, which is exactly the
+		    -- "the UI says Read and every read is refused" split this branch
+		    -- exists to close. The scope_nodes join is that bound, and it is the
+		    -- same (resource_type, resource_id) correspondence the share branch
+		    -- of accessibleScopesQuery and ListReadableSourcesPage already apply.
+		    OR (
+		        $5
+		        AND $8
+		        AND (
+		            EXISTS (
+		                SELECT 1
+		                FROM scope_grants AS content_grant
+		                JOIN role_permissions AS content_permission
+		                  ON content_permission.role_id = content_grant.role_id
+		                WHERE content_grant.org_id = $1
+		                  AND (content_grant.expires_at IS NULL OR content_grant.expires_at > now())
+		                  AND (content_permission.resource = '*' OR content_permission.resource = $3)
+		                  AND (content_permission.action = '*' OR content_permission.action = $4)
+		                  AND (
+		                      (content_grant.subject_kind = 'principal' AND content_grant.subject_id = $2)
+		                      OR (
+		                          content_grant.subject_kind = 'team'
+		                          AND content_grant.subject_id IN (
+		                              SELECT team_id FROM team_members WHERE user_id = $2
+		                          )
+		                      )
+		                  )
+		            )
+		            OR EXISTS (
+		                SELECT 1
+		                FROM record_shares AS content_share
+		                JOIN role_permissions AS content_permission
+		                  ON content_permission.role_id = content_share.role_id
+		                JOIN scope_nodes AS content_node
+		                  ON content_node.org_id = content_share.org_id
+		                 AND content_node.resource_type = content_share.resource_type
+		                 AND content_node.resource_id = content_share.resource_id
+		                WHERE content_share.org_id = $1
+		                  AND content_share.resource_type = $3
+		                  AND (content_share.expires_at IS NULL OR content_share.expires_at > now())
+		                  AND (content_permission.resource = '*' OR content_permission.resource = $3)
+		                  AND (content_permission.action = '*' OR content_permission.action = $4)
+		                  AND (
+		                      (content_share.subject_kind = 'principal' AND content_share.subject_id = $2)
+		                      OR (
+		                          content_share.subject_kind = 'team'
+		                          AND content_share.subject_id IN (
+		                              SELECT team_id FROM team_members WHERE user_id = $2
+		                          )
+		                      )
+		                  )
+		            )
+		            OR `+platformReadPredicate("$9", "$2")+`
+		        )
 		    )`,
 		orgID,
 		principalID,
@@ -390,6 +480,9 @@ func workContextPermissionAllowed(
 		includeTeamsAndOrgAdministration,
 		permission.ResourceID,
 		includeScopeGrants,
+		permission.ContentRead && permission.ResourceID == "" && permission.Action == "read",
+		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, permission.Action),
+		isMemberPermission(permission.ResourceKind, permission.Action),
 	).Scan(&allowed)
 	return allowed, err
 }

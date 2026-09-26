@@ -2,8 +2,11 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
 )
@@ -12,12 +15,42 @@ import (
 // projection table. Run under the control plane at startup so the DB facet and
 // the Go registry never drift. Types no longer in the catalog are marked
 // deprecated rather than deleted, so historical rows keep a resolvable type.
+//
+// The table also holds the types registered solutions declared, owned by
+// "solution:<id>" (business.SolutionAuditOwnerPrefix). They were never in the
+// code catalog, so the sync leaves them alone: deprecating them at every boot
+// would retire a live solution's vocabulary.
+//
+// A catalog type that collides with one — the same name, or a namespace a
+// solution holds — is refused with business.ErrAuditCatalogCollision before
+// anything is written, never resolved by reassigning the row: historical events
+// of that type were written under the solution's schema, and a release that
+// silently took it over would reinterpret them. The caller fails boot on it.
 func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business.AuditEventDefinition) error {
 	q := s.getQueryExecutor(ctx)
 	names := make([]string, 0, len(defs))
+	namespaces := make([]string, 0, len(defs))
 	for _, d := range defs {
 		names = append(names, string(d.Type))
-		_, err := q.Exec(ctx, `
+		namespaces = append(namespaces, d.Namespace)
+	}
+	var collidingName, collidingOwner string
+	err := q.QueryRow(ctx, `
+		SELECT name, owner FROM audit_event_types
+		WHERE starts_with(owner, $3) AND (name = ANY($1) OR namespace = ANY($2))
+		ORDER BY name LIMIT 1`,
+		names, namespaces, business.SolutionAuditOwnerPrefix).Scan(&collidingName, &collidingOwner)
+	switch {
+	case err == nil:
+		return fmt.Errorf("%w: the code catalog registers a type named or namespaced like %q, which %q declared",
+			business.ErrAuditCatalogCollision, collidingName, collidingOwner)
+	case !errors.Is(err, pgx.ErrNoRows):
+		return err
+	}
+	for _, d := range defs {
+		// The owner condition is the same refusal for a declaration admitted
+		// after the check above: the row is left alone and the sync fails.
+		tag, err := q.Exec(ctx, `
 			INSERT INTO audit_event_types (name, namespace, version, category, owner, payload_schema, deprecated, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
 			ON CONFLICT (name) DO UPDATE SET
@@ -27,15 +60,22 @@ func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business
 				owner = EXCLUDED.owner,
 				payload_schema = EXCLUDED.payload_schema,
 				deprecated = FALSE,
-				updated_at = NOW()`,
-			string(d.Type), d.Namespace, d.Version, string(d.Category), d.Owner, d.PayloadSchemaJSON())
+				updated_at = NOW()
+			WHERE NOT starts_with(audit_event_types.owner, $7)`,
+			string(d.Type), d.Namespace, d.Version, string(d.Category), d.Owner, d.PayloadSchemaJSON(),
+			business.SolutionAuditOwnerPrefix)
 		if err != nil {
 			return err
 		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("%w: the code catalog registers %q, which a solution declared",
+				business.ErrAuditCatalogCollision, d.Type)
+		}
 	}
-	_, err := q.Exec(ctx,
-		`UPDATE audit_event_types SET deprecated = TRUE, updated_at = NOW() WHERE name <> ALL($1)`,
-		names)
+	_, err = q.Exec(ctx,
+		`UPDATE audit_event_types SET deprecated = TRUE, updated_at = NOW()
+		 WHERE name <> ALL($1) AND NOT starts_with(owner, $2)`,
+		names, business.SolutionAuditOwnerPrefix)
 	return err
 }
 

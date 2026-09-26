@@ -63,10 +63,14 @@ func TestRLS_DatasourceSources_CrossTenantBlocked(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listA, 1)
 	require.Equal(t, "acme/a-docs", listA[0].Repo)
+	// The boundary's name is read with the row, under the same org scope, so a
+	// member who lists sources sees the collection named, not its node id.
+	require.Equal(t, "guides", listA[0].BoundaryLabel)
 
 	got, err := testService.GetDatasourceSource(ctx, orgA, sourceA.ID)
 	require.NoError(t, err)
 	require.Equal(t, sourceA.ID, got.ID)
+	require.Equal(t, "guides", got.BoundaryLabel)
 
 	// Cross-tenant read of a known id is hidden by RLS: the service reports
 	// not-found rather than another org's row.
@@ -100,8 +104,27 @@ func TestDatasourceSource_DeleteRemovesRow(t *testing.T) {
 	_, org := mustUserAndOrg(t, ctx, "del-ds@rls-test.com", "del-ds-rls", "Acme DS Del")
 	source := insertDatasourceSource(t, ctx, org, "acme/del-docs")
 
+	// The deleting statement returns the removed row's identity under the tenant
+	// policy, and a second delete of the same id removes nothing and returns
+	// nothing — the store contract the audit record depends on.
 	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		return testStore.DeleteDatasourceSource(ctx, org, source.ID)
+		removed, err := testStore.DeleteDatasourceSource(ctx, org, source.ID)
+		if err != nil {
+			return err
+		}
+		require.NotNil(t, removed)
+		require.Equal(t, business.DatasourceProviderGitHub, removed.Provider)
+		require.Equal(t, "acme/del-docs", removed.Repo)
+		// Equality, not merely non-empty: it is what catches a transposed column
+		// in the statement's RETURNING list.
+		require.Equal(t, source.BoundaryNodeID, removed.BoundaryNodeID)
+
+		again, err := testStore.DeleteDatasourceSource(ctx, org, source.ID)
+		if err != nil {
+			return err
+		}
+		require.Nil(t, again, "deleting a source that is gone removes nothing")
+		return nil
 	}))
 
 	_, err := testService.GetDatasourceSource(ctx, org, source.ID)

@@ -36,8 +36,10 @@ const (
 	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
 	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
 	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/DeclareAuditEventTypes"
 	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	ModuleCapabilitiesService_FetchDatasourceFiles_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles"
 	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
 	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
@@ -92,14 +94,27 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// DeclareAuditEventTypes admits the audit event types a composed module owns,
+	// into the namespaces the operator bound to it; see the request.
+	DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error)
-	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
-	// upstream provider, to the module that resolves a change set's blob sha.
-	// Authorized by the caller principal's datasource-queue grant and the source
-	// row's own org/boundary, not the request tenant.
+	// Deprecated: Do not use.
+	// FetchDatasourceBlob streams one datasource file blob to the module that
+	// resolves a change set's blob sha. Authorized by the caller principal's
+	// datasource-queue grant and the source row's own org/boundary, not the
+	// request tenant. Deprecated: one call per file; FetchDatasourceFiles serves a
+	// whole change set in one call.
 	FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error)
+	// FetchDatasourceFiles streams a batch of files of one source at one pinned
+	// version, read from a single fetch of that version shared by the whole batch.
+	// Authorized like FetchDatasourceBlob: the caller principal's datasource-queue
+	// grant and the source row's own org/boundary. A provider rate limit is
+	// RESOURCE_EXHAUSTED carrying an ErrorInfo (reason DATASOURCE_RATE_LIMITED,
+	// metadata reset_at) and a RetryInfo; a batch past its limits is
+	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
+	FetchDatasourceFiles(ctx context.Context, in *FetchDatasourceFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceFilesFrame], error)
 	// MintModuleRegistration issues the signed, prefix-bound credential a composed
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
@@ -292,6 +307,16 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) DeclareAuditEventTypes(ctx context.Context, in *ModuleDeclareAuditEventTypesRequest, opts ...grpc.CallOption) (*ModuleDeclareAuditEventTypesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleDeclareAuditEventTypesResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModuleListSubjectVisibilityResponse)
@@ -302,6 +327,7 @@ func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Cont
 	return out, nil
 }
 
+// Deprecated: Do not use.
 func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ModuleCapabilitiesService_ServiceDesc.Streams[0], ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName, cOpts...)
@@ -320,6 +346,25 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Contex
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceBlobClient = grpc.ServerStreamingClient[FetchDatasourceBlobChunk]
+
+func (c *moduleCapabilitiesServiceClient) FetchDatasourceFiles(ctx context.Context, in *FetchDatasourceFilesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceFilesFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ModuleCapabilitiesService_ServiceDesc.Streams[1], ModuleCapabilitiesService_FetchDatasourceFiles_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[FetchDatasourceFilesRequest, FetchDatasourceFilesFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ModuleCapabilitiesService_FetchDatasourceFilesClient = grpc.ServerStreamingClient[FetchDatasourceFilesFrame]
 
 func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -454,14 +499,27 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// DeclareAuditEventTypes admits the audit event types a composed module owns,
+	// into the namespaces the operator bound to it; see the request.
+	DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
 	// whole set of other subjects whose rows that viewer may read.
 	ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error)
-	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
-	// upstream provider, to the module that resolves a change set's blob sha.
-	// Authorized by the caller principal's datasource-queue grant and the source
-	// row's own org/boundary, not the request tenant.
+	// Deprecated: Do not use.
+	// FetchDatasourceBlob streams one datasource file blob to the module that
+	// resolves a change set's blob sha. Authorized by the caller principal's
+	// datasource-queue grant and the source row's own org/boundary, not the
+	// request tenant. Deprecated: one call per file; FetchDatasourceFiles serves a
+	// whole change set in one call.
 	FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error
+	// FetchDatasourceFiles streams a batch of files of one source at one pinned
+	// version, read from a single fetch of that version shared by the whole batch.
+	// Authorized like FetchDatasourceBlob: the caller principal's datasource-queue
+	// grant and the source row's own org/boundary. A provider rate limit is
+	// RESOURCE_EXHAUSTED carrying an ErrorInfo (reason DATASOURCE_RATE_LIMITED,
+	// metadata reset_at) and a RetryInfo; a batch past its limits is
+	// FAILED_PRECONDITION carrying an ErrorInfo naming the limit.
+	FetchDatasourceFiles(*FetchDatasourceFilesRequest, grpc.ServerStreamingServer[FetchDatasourceFilesFrame]) error
 	// MintModuleRegistration issues the signed, prefix-bound credential a composed
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
@@ -549,11 +607,17 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
 }
+func (UnimplementedModuleCapabilitiesServiceServer) DeclareAuditEventTypes(context.Context, *ModuleDeclareAuditEventTypesRequest) (*ModuleDeclareAuditEventTypesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeclareAuditEventTypes not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSubjectVisibility not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error {
 	return status.Error(codes.Unimplemented, "method FetchDatasourceBlob not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceFiles(*FetchDatasourceFilesRequest, grpc.ServerStreamingServer[FetchDatasourceFilesFrame]) error {
+	return status.Error(codes.Unimplemented, "method FetchDatasourceFiles not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintModuleRegistration not implemented")
@@ -874,6 +938,24 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_DeclareAuditEventTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleDeclareAuditEventTypesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).DeclareAuditEventTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_DeclareAuditEventTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).DeclareAuditEventTypes(ctx, req.(*ModuleDeclareAuditEventTypesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_ListSubjectVisibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModuleListSubjectVisibilityRequest)
 	if err := dec(in); err != nil {
@@ -902,6 +984,17 @@ func _ModuleCapabilitiesService_FetchDatasourceBlob_Handler(srv interface{}, str
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ModuleCapabilitiesService_FetchDatasourceBlobServer = grpc.ServerStreamingServer[FetchDatasourceBlobChunk]
+
+func _ModuleCapabilitiesService_FetchDatasourceFiles_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(FetchDatasourceFilesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ModuleCapabilitiesServiceServer).FetchDatasourceFiles(m, &grpc.GenericServerStream[FetchDatasourceFilesRequest, FetchDatasourceFilesFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ModuleCapabilitiesService_FetchDatasourceFilesServer = grpc.ServerStreamingServer[FetchDatasourceFilesFrame]
 
 func _ModuleCapabilitiesService_MintModuleRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModuleMintRegistrationRequest)
@@ -1133,6 +1226,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
 		},
 		{
+			MethodName: "DeclareAuditEventTypes",
+			Handler:    _ModuleCapabilitiesService_DeclareAuditEventTypes_Handler,
+		},
+		{
 			MethodName: "ListSubjectVisibility",
 			Handler:    _ModuleCapabilitiesService_ListSubjectVisibility_Handler,
 		},
@@ -1177,6 +1274,11 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "FetchDatasourceBlob",
 			Handler:       _ModuleCapabilitiesService_FetchDatasourceBlob_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "FetchDatasourceFiles",
+			Handler:       _ModuleCapabilitiesService_FetchDatasourceFiles_Handler,
 			ServerStreams: true,
 		},
 	},

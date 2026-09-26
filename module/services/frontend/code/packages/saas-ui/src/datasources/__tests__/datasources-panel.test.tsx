@@ -8,7 +8,7 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { StrictMode, type ReactElement } from "react";
+import { type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectGitHubForm } from "../connect-github-form.js";
 import { DatasourcesPanel } from "../datasources-panel.js";
@@ -92,6 +92,28 @@ describe("DatasourcesPanel", () => {
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
 	});
 
+	it("renders a consumer's detail under each source it was handed", async () => {
+		// The host does not know what an ingesting module has made of a source's
+		// files; the consumer composing both renders that module's view here.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource, secondSource]),
+		});
+		const renderSourceDetail = vi.fn((source: DatasourceView) => (
+			<span>ingestion of {source.id}</span>
+		));
+		renderWithClient(
+			<DatasourcesPanel
+				client={client}
+				orgId="org-1"
+				renderSourceDetail={renderSourceDetail}
+			/>,
+		);
+
+		expect(await screen.findByText("ingestion of ds-1")).toBeTruthy();
+		expect(screen.getByText("ingestion of ds-2")).toBeTruthy();
+		expect(renderSourceDetail).toHaveBeenCalledWith(sampleSource);
+	});
+
 	it("surfaces a degraded source and its reason without being asked", async () => {
 		// The host sets this state, never the tenant, so nothing prompts a reader
 		// to open History looking for it.
@@ -124,6 +146,33 @@ describe("DatasourcesPanel", () => {
 		const explanation = await screen.findByText(/pulls have stopped/i);
 		expect(explanation.textContent).toMatch(/sync/i);
 		expect(explanation.textContent).toMatch(/stays readable/i);
+	});
+
+	it("flags a source whose provider does not meet the connector envelope", async () => {
+		// The host keeps such a source running but takes no new source of its
+		// provider, so the row must say so and carry the host's reason.
+		const flagged: DatasourceView = {
+			...sampleSource,
+			conformant: false,
+			conformanceGap: "no cursor and no deletions",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [flagged]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Non-conformant provider")).toBeTruthy();
+		const note = screen.getByText(/keeps syncing/i);
+		expect(note.textContent).toMatch(/no cursor and no deletions/);
+	});
+
+	it("does not flag a conformant source, or one whose client cannot tell", async () => {
+		const conformant: DatasourceView = { ...sampleSource, conformant: true };
+		const client = fakeClient({
+			listSources: vi.fn(async () => [conformant, secondSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("codefly-dev/other-repo")).toBeTruthy();
+		expect(screen.queryByText("Non-conformant provider")).toBeNull();
 	});
 
 	it("renders the reason for a status other than degraded", async () => {
@@ -166,6 +215,41 @@ describe("DatasourcesPanel", () => {
 		await screen.findByText(sampleSource.repo);
 		expect(screen.queryByText("Active")).toBeNull();
 		expect(screen.queryByText(/pulls have stopped/i)).toBeNull();
+		// The column stays; it is the row that is quiet.
+		expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
+	});
+
+	it("keeps the Status column in place whether or not a row has a state", async () => {
+		// The column used to be derived from the data, so it appeared the moment a
+		// source degraded and vanished when it recovered. `sources` refetches on an
+		// interval, so that shifted every column after Status sideways under
+		// whoever was reading — at exactly the moment something had just broken.
+		const degraded: DatasourceView = {
+			...sampleSource,
+			id: "ds-2",
+			status: "degraded",
+		};
+		const quiet = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		const { unmount } = renderWithClient(
+			<DatasourcesPanel client={quiet} orgId="org-1" />,
+		);
+		await screen.findByText(sampleSource.repo);
+		const columnsWhenQuiet = screen.getAllByRole("columnheader").length;
+		expect(screen.getByRole("columnheader", { name: "Status" })).toBeTruthy();
+		unmount();
+
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource, degraded]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		expect(
+			await screen.findByRole("columnheader", { name: "Status" }),
+		).toBeTruthy();
+		expect(screen.getByText("Degraded")).toBeTruthy();
+		// Same shape either way: no column is gained or lost by the data changing.
+		expect(screen.getAllByRole("columnheader").length).toBe(columnsWhenQuiet);
 	});
 
 	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
@@ -437,7 +521,9 @@ describe("DatasourcesPanel boundary column", () => {
 			listAccessibleScopes: vi.fn(async () => []),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+		expect(
+			await screen.findByText(/You can’t read any collection yet/),
+		).toBeTruthy();
 	});
 
 	it("keeps the grant explainer off when one listed collection is readable", async () => {
@@ -464,7 +550,7 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(
 			await screen.findByText(/You can read this collection/),
 		).toBeTruthy();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
 	});
 
@@ -490,7 +576,7 @@ describe("DatasourcesPanel boundary column", () => {
 			),
 		).toBeTruthy();
 		expect(screen.queryByText(/You do not have read access/)).toBeNull();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 	});
 
 	it("still names no readable collection when only another scope kind is readable", async () => {
@@ -510,7 +596,9 @@ describe("DatasourcesPanel boundary column", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+		expect(
+			await screen.findByText(/You can’t read any collection yet/),
+		).toBeTruthy();
 	});
 
 	it("asks no one for access to a collection when the organization has none", async () => {
@@ -541,7 +629,7 @@ describe("DatasourcesPanel boundary column", () => {
 		// Only a resolved scope answer turns the source row's boundary cell from
 		// "Read permission unresolved" into a verdict.
 		expect(await screen.findByText("No read access")).toBeTruthy();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 	});
 
 	it("refetches boundaries after a source is connected", async () => {
@@ -586,6 +674,22 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(screen.queryByText("No access")).toBeNull();
 	});
 
+	it("names the collection a viewer cannot read, never its node id", async () => {
+		// The host lists the boundary's label with the source for any member, so a
+		// member without a grant sees which collection a source writes into.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...sampleSource, boundaryLabel: "handbook" },
+			]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("handbook")).toBeTruthy();
+		expect(await screen.findByText("No read access")).toBeTruthy();
+		expect(screen.queryByText("11111111")).toBeNull();
+	});
+
 	it("degrades to the boundary id when the lookup fails", async () => {
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource]),
@@ -621,6 +725,14 @@ describe("ConnectGitHubForm", () => {
 		expect(repoInputs[0].id).not.toBe(repoInputs[1].id);
 	});
 });
+
+/** A row's secondary actions live behind its "More actions" menu. */
+async function openRowActions() {
+	fireEvent.click(
+		await screen.findByRole("button", { name: /^More actions for / }),
+	);
+	await screen.findByRole("menu");
+}
 
 it("acknowledges queued sync without claiming ingestion completed", async () => {
 	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
@@ -707,10 +819,30 @@ it.each(["first", "second"])(
 	},
 );
 
+it("keeps Sync on the row and puts the rest behind one menu", async () => {
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	// A row carries two controls, so the table fits a content column rather
+	// than pushing its last actions out of view.
+	await screen.findByRole("button", { name: /^Sync$/ });
+	expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+	expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+	const confirm = vi.fn(() => true);
+	vi.stubGlobal("confirm", confirm);
+	await openRowActions();
+	fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+	expect(confirm).toHaveBeenCalledOnce();
+	await waitFor(() =>
+		expect(client.deleteSource).toHaveBeenCalledWith("org-1", "ds-1"),
+	);
+	vi.unstubAllGlobals();
+});
+
 it("reconnects the same source without creating or deleting a source", async () => {
 	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-	fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+	await openRowActions();
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
 	const token = screen.getByLabelText("New GitHub PAT");
 	expect(token.getAttribute("type")).toBe("password");
 	fireEvent.change(token, { target: { value: "replacement-test-token" } });
@@ -1011,8 +1143,9 @@ describe("GitHub App onboarding", () => {
 			listSources: vi.fn(async () => [sampleSource]),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await openRowActions();
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Use GitHub App" }),
+			await screen.findByRole("menuitem", { name: "Use GitHub App" }),
 		);
 
 		await waitFor(() =>
@@ -1035,8 +1168,11 @@ describe("GitHub App onboarding", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		await screen.findByRole("button", { name: "Reconnect" });
-		expect(screen.queryByRole("button", { name: "Use GitHub App" })).toBeNull();
+		await openRowActions();
+		await screen.findByRole("menuitem", { name: "Reconnect" });
+		expect(
+			screen.queryByRole("menuitem", { name: "Use GitHub App" }),
+		).toBeNull();
 	});
 
 	it("reports a failed migration against the source it names", async () => {
@@ -1050,13 +1186,69 @@ describe("GitHub App onboarding", () => {
 			}),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await openRowActions();
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Use GitHub App" }),
+			await screen.findByRole("menuitem", { name: "Use GitHub App" }),
 		);
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(sampleSource.repo);
 		expect(alert.textContent).toContain("not connected to this organization");
+	});
+
+	it("burns the return leg and names who must finish it when the viewer may not", async () => {
+		// The viewer who follows the provider's redirect need not be the one who
+		// began the install: the App's setup URL is one address, and whoever's
+		// session is live in that browser lands here. Skipping the capture for them
+		// would drop a finished installation without a trace AND leave the
+		// single-use state and the authorization code in the address bar, in
+		// history and in same-origin referrers — the very thing the scrub exists
+		// to prevent.
+		landOn("?installation_id=42&setup_action=install&state=s1&code=oauth-1");
+		const client = appClient();
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+
+		expect(
+			await screen.findByText(
+				/only an organization administrator can connect/i,
+			),
+		).toBeTruthy();
+		expect(window.location.search).toBe("");
+		// Redeeming is the host's to refuse, so the panel does not ask on behalf of
+		// a viewer it can see would be refused.
+		expect(client.completeGitHubAppSetup).not.toHaveBeenCalled();
+		expect(screen.queryByRole("dialog", { name: "Connect GitHub" })).toBeNull();
+	});
+
+	it("redeems the return leg when the viewer's authority arrives after the first render", async () => {
+		// `canManage` is read from a credential the panel only observes, and the
+		// redirect always lands on a cold page load, so an administrator's own
+		// authority can be unknown on the first paint. Frozen at that moment, the
+		// installation would be stranded even once the credential arrives.
+		landOn("?installation_id=42&setup_action=install&state=s1&code=oauth-1");
+		const client = appClient();
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		const panel = (canManage: boolean) => (
+			<QueryClientProvider client={queryClient}>
+				<DatasourcesPanel client={client} orgId="org-1" canManage={canManage} />
+			</QueryClientProvider>
+		);
+		const { rerender } = render(panel(false));
+		await screen.findByText(/only an organization administrator can connect/i);
+		expect(client.completeGitHubAppSetup).not.toHaveBeenCalled();
+
+		rerender(panel(true));
+
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1),
+		);
+		expect(
+			screen.queryByText(/only an organization administrator can connect/i),
+		).toBeNull();
 	});
 
 	it("leaves the redirect alone when the client cannot redeem it", async () => {
@@ -1334,5 +1526,79 @@ describe("GitHub App onboarding", () => {
 				"",
 			),
 		);
+	});
+});
+
+describe("DatasourcesPanel for a viewer who manages nothing", () => {
+	it("offers no control the host would refuse, and keeps the history", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+			listActivity: vi.fn(async () => []),
+		});
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(
+			screen.queryByRole("button", { name: /connect github/i }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Sync" })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /More actions for/ }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: "History of codefly-dev/module-saas-starter",
+			}),
+		).toBeTruthy();
+		// What to do instead: whom to ask, and where they grant it.
+		expect(
+			await screen.findByText(
+				/Ask an organization administrator to grant you read access/,
+			),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("link", { name: /Grant read access/ }),
+		).toBeNull();
+	});
+
+	it("drops the actions column when there is not even a history to read", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+	});
+
+	it("does not offer to connect a repository to an empty organization", async () => {
+		renderWithClient(
+			<DatasourcesPanel
+				client={fakeClient()}
+				orgId="org-1"
+				canManage={false}
+			/>,
+		);
+		expect(
+			await screen.findByText(/An organization administrator connects/),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: /connect a repository/i }),
+		).toBeNull();
+	});
+
+	it("gives an administrator with no readable collection the link to grant one", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		const link = await screen.findByRole("link", {
+			name: "Grant read access to a collection",
+		});
+		expect(link.getAttribute("href")).toBe("/admin/datasources");
 	});
 });

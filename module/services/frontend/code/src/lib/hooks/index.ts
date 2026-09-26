@@ -8,5 +8,4 @@ export * from "./use-invitations";
 export * from "./use-organizations";
 export * from "./use-platform-admin";
 export * from "./use-sessions";
-export * from "./use-teams";
 export * from "./use-users";
