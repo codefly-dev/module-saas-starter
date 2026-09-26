@@ -19,7 +19,7 @@ const graph: DataGraph = {
 			type: "saas.auth.login",
 			description: "Someone signed in.",
 		},
-		{ name: "deal", type: "example.deal.created" },
+		{ name: "order", type: "example.order.created" },
 		{ name: "run", type: "example.run.finished" },
 	],
 	metrics: [
@@ -43,13 +43,13 @@ const graph: DataGraph = {
 			field: "actor_id",
 		},
 		{
-			id: "deals",
+			id: "orders",
 			kind: "source",
-			title: "Deals",
-			filter: { event: "deal" },
+			title: "Orders",
+			filter: { event: "order" },
 			groupBy: "category",
 			aggregation: "count_distinct",
-			field: "payload:deal_id",
+			field: "payload:order_id",
 		},
 		{
 			id: "slow_runs",
@@ -65,16 +65,16 @@ const graph: DataGraph = {
 			percentile: 0.95,
 		},
 		{
-			id: "deals_per_person",
+			id: "orders_per_person",
 			kind: "derived",
 			operation: "ratio",
-			inputs: ["deals", "people"],
+			inputs: ["orders", "people"],
 		},
 		{
 			id: "everything",
 			kind: "derived",
 			operation: "sum",
-			inputs: ["deals", "people", "deals_per_person"],
+			inputs: ["orders", "people", "orders_per_person"],
 		},
 	],
 	dashboards: [],
@@ -94,8 +94,8 @@ describe("describeMetric", () => {
 			"Distinct people (actor_id), per week",
 		);
 		// Grouping one event type by category splits nothing.
-		expect(describeMetric(graph, "deals").counts).toBe(
-			"Distinct deal_id values",
+		expect(describeMetric(graph, "orders").counts).toBe(
+			"Distinct order_id values",
 		);
 	});
 
@@ -112,25 +112,25 @@ describe("describeMetric", () => {
 	});
 
 	it("describes a derived metric by its inputs, and lists every event behind it", () => {
-		expect(describeMetric(graph, "deals_per_person")).toEqual({
-			counts: "Deals divided by People",
+		expect(describeMetric(graph, "orders_per_person")).toEqual({
+			counts: "Orders divided by People",
 			sources: [
-				{ type: "example.deal.created", declared: undefined },
+				{ type: "example.order.created", declared: undefined },
 				{ type: "saas.auth.login", declared: "Someone signed in." },
 			],
 			note: undefined,
 		});
 		// A metric reached twice lists its event once.
 		expect(describeMetric(graph, "everything")).toMatchObject({
-			counts: "Deals plus People plus deals_per_person",
-			sources: [{ type: "example.deal.created" }, { type: "saas.auth.login" }],
+			counts: "Orders plus People plus orders_per_person",
+			sources: [{ type: "example.order.created" }, { type: "saas.auth.login" }],
 		});
 	});
 });
 
 describe("reading each event once", () => {
 	const closes: DataGraph = {
-		events: [{ name: "closed", type: "example.deal.closed" }],
+		events: [{ name: "closed", type: "example.order.closed" }],
 		metrics: [
 			{
 				id: "won",
@@ -199,12 +199,12 @@ describe("reading each event once", () => {
 
 describe("activityGraph", () => {
 	it("counts per day the events behind each source, with its filter unchanged", () => {
-		const activity = activityGraph(graph, "deals_per_person");
+		const activity = activityGraph(graph, "orders_per_person");
 		expect(activity.metrics).toEqual([
 			{
 				id: "activity_0",
 				kind: "source",
-				filter: { event: "deal" },
+				filter: { event: "order" },
 				groupBy: "time",
 				bucket: "day",
 				aggregation: "count",
@@ -265,8 +265,8 @@ describe("recentEventsQueries", () => {
 			},
 		]);
 		expect(
-			recentEventsQueries(graph, "deals_per_person")?.map((q) => q.eventType),
-		).toEqual(["example.deal.created", "saas.auth.login"]);
+			recentEventsQueries(graph, "orders_per_person")?.map((q) => q.eventType),
+		).toEqual(["example.order.created", "saas.auth.login"]);
 	});
 
 	it("gives up on a metric narrowed by collection, which the search cannot do", () => {
@@ -276,7 +276,7 @@ describe("recentEventsQueries", () => {
 				{
 					id: "filed",
 					kind: "source",
-					filter: { event: "deal", collectionId: "col-1" },
+					filter: { event: "order", collectionId: "col-1" },
 					groupBy: "time",
 					bucket: "day",
 					aggregation: "count",

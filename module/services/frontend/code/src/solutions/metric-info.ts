@@ -127,8 +127,8 @@ function covers(broader: MetricFilter, narrower: MetricFilter): boolean {
 }
 
 // The sources whose events are worth reading once: a source another one
-// already covers is dropped, so a win rate (won deals over closed deals) does
-// not read the won deals twice. Sources that only overlap are both kept.
+// already covers is dropped, so a success rate (orders won over orders closed)
+// does not read the orders won twice. Sources that only overlap are both kept.
 function distinctSources(graph: DataGraph, metricId: string): SourceMetric[] {
 	const sources = sourceMetrics(graph, metricId);
 	return sources.filter(
