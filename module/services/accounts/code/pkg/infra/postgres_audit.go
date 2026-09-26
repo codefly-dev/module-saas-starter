@@ -74,7 +74,10 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		entry.ID, string(entry.EventType), entry.SchemaVersion,
 		nilIfNotUUID(entry.ActorID), entry.ActorType,
-		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
+		// resource_id is text: a resource is named by whatever id its owner mints
+		// (a document entry's ULID, an effect key), so it is stored as given.
+		// Only the uuid-typed columns go through nilIfNotUUID.
+		entry.Resource, nilIfEmpty(entry.ResourceID), nilIfNotUUID(entry.OrgID),
 		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt,
 		nilIfNotUUID(entry.ImpersonatedBy), entry.IsImpersonated,
 		nilIfEmpty(entry.ClientID))
