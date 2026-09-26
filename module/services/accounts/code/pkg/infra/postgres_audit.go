@@ -66,11 +66,6 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		payload = []byte("{}")
 	}
 
-	// resource_id is TEXT: an entry a module names (a document entry is a ULID,
-	// a provider object has its own id shape) is as much a resource id as a host
-	// row's UUID, and AUDIT_METRICS.md promises the module-supplied entry_id lands
-	// here. Only the UUID-typed columns go through nilIfNotUUID; running the entry
-	// through it blanked every non-UUID resource id without a trace.
 	_, err = q.Exec(ctx, `
 		INSERT INTO audit_events (
 			id, event_type, schema_version, actor_id, actor_type,
@@ -79,6 +74,9 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		entry.ID, string(entry.EventType), entry.SchemaVersion,
 		nilIfNotUUID(entry.ActorID), entry.ActorType,
+		// resource_id is text: a resource is named by whatever id its owner mints
+		// (a document entry's ULID, an effect key), so it is stored as given.
+		// Only the uuid-typed columns go through nilIfNotUUID.
 		entry.Resource, nilIfEmpty(entry.ResourceID), nilIfNotUUID(entry.OrgID),
 		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt,
 		nilIfNotUUID(entry.ImpersonatedBy), entry.IsImpersonated,

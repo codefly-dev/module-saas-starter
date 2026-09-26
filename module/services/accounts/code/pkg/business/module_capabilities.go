@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"time"
 
@@ -171,8 +172,13 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		// The tenant is sealed into a signed capability and compared against
 		// organization ids, so a malformed one cannot be caught downstream: it
 		// signs, then silently matches no tenant and drops the org from its own
-		// audit record.
-		if err := uuid.Validate(grant.Tenant); err != nil {
+		// audit record. A well-formed one is canonicalized for the same reason:
+		// every comparison downstream is a string compare against the lowercase
+		// hyphenated id Postgres returns, so an uppercase, braced, urn:uuid: or
+		// unhyphenated spelling would pass here and then match its own
+		// organization nowhere.
+		tenant, err := uuid.Parse(grant.Tenant)
+		if err != nil {
 			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
 		}
 		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
@@ -189,7 +195,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 			Namespaces:         grant.Namespaces,
 			Resources:          grant.Resources,
 			CrossTenant:        grant.CrossTenant,
-			Tenant:             grant.Tenant,
+			Tenant:             tenant.String(),
 		}
 	}
 	return registry, nil
@@ -683,12 +689,14 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // unregistered types are rejected, not stored free-form. An empty tenant emits a
 // system-scoped event and requires the cross-tenant grant.
 //
-// actor is a principal id, because that is what the spine's actor column holds.
-// A module that acted for a subject names that subject; a module that acted on
-// its own names its own principal — the principal_id MintModuleWorkContext
-// returns for exactly this purpose — and the row records it as a system actor.
-// Anything else is refused: it used to be accepted and then blanked on write, so
-// the row said nobody did it and the emitter was told it had succeeded.
+// actor is resolved to a principal id, because that is what the spine's actor
+// column holds (resolveModuleAuditActor). A module that acted for a subject
+// names that subject; a module that acted on its own names its own principal or
+// a process label of its own (system:<process>), and the row records the
+// module's principal as a system actor. An actor that resolves to no principal
+// is refused with ErrModuleAuditActorUnresolved before anything is written — it
+// used to be accepted and then blanked on write, so the row said nobody did it
+// and the emitter was told it had succeeded.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
@@ -701,7 +709,7 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	} else if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return err
 	}
-	actorType, err := moduleAuditActorType(caller, actor)
+	actorID, actorType, err := resolveModuleAuditActor(caller, actor)
 	if err != nil {
 		return err
 	}
@@ -723,7 +731,7 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.
 	emit := func(ctx context.Context) error {
-		entry := s.buildAuditEntry(ctx, actor, actorType, EventType(eventType), solution, entryID, tenant, payload)
+		entry := s.buildAuditEntry(ctx, actorID, actorType, EventType(eventType), solution, entryID, tenant, payload)
 		entry.IdempotencyKey = idempotencyKey
 		return s.emitEntryTx(ctx, entry)
 	}
@@ -739,22 +747,50 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	return nil
 }
 
-// moduleAuditActorType checks a module-attributed actor and classifies it. The
-// actor must be a principal id in its one canonical spelling: uuid.Parse also
-// accepts braced, URN, unhyphenated and uppercase forms, and a row stored under
-// one of those would never match a filter or a directory lookup on the canonical
-// id. The caller's own principal is the module acting on its own behalf
-// (system); any other principal is a subject the module acted for (agent).
-func moduleAuditActorType(caller ModuleCaller, actor string) (string, error) {
-	parsed, err := uuid.Parse(actor)
-	if err != nil || parsed.String() != actor {
-		return "", status.Errorf(codes.InvalidArgument,
-			"actor %q is not a principal id: name the subject the module acted for, or the module's own principal (the principal_id MintModuleWorkContext returned) for work it did on its own", actor)
+// ErrModuleAuditActorUnresolved reports that a module-attributed audit actor
+// names no principal the host can record. It is carried as FailedPrecondition,
+// not InvalidArgument: the event itself is well formed and must be kept by the
+// producer's outbox and delivered once the producer (or the host's mapping)
+// names the actor, never settled as a permanent refusal and dropped.
+var ErrModuleAuditActorUnresolved = errors.New("module audit actor names no principal")
+
+// moduleProcessActorPattern is a module's own process label, system:<process>:
+// the name a module gives the work it does on its own (an ingest pass, a
+// producer run) when it has no subject to attribute it to.
+var moduleProcessActorPattern = regexp.MustCompile(`^system:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$`)
+
+// resolveModuleAuditActor maps a module-attributed actor to the principal id
+// the row records and its actor type. The caller's identity is the
+// authenticated module principal, so the host — not the emitter — decides which
+// principal a module's own work belongs to:
+//
+//   - a principal id in any spelling uuid.Parse accepts (canonical, uppercase,
+//     braced, urn:uuid:, unhyphenated) is canonicalized, so a row is stored,
+//     filtered and named under the one text form of its id. The caller's own
+//     principal is the module acting on its own (system); any other principal
+//     is a subject the module acted for (agent).
+//   - system:<process> is the module's own work under a process label, and maps
+//     to the caller's principal as a system actor. The label carries no identity
+//     the spine can hold; the principal it runs as does.
+//   - anything else resolves to no principal and fails loudly with
+//     ErrModuleAuditActorUnresolved — never stored with the actor blanked.
+func resolveModuleAuditActor(caller ModuleCaller, actor string) (actorID, actorType string, err error) {
+	own := caller.PrincipalID
+	if parsed, perr := uuid.Parse(own); perr == nil {
+		own = parsed.String()
 	}
-	if actor == caller.PrincipalID {
-		return ActorTypeSystem, nil
+	if parsed, perr := uuid.Parse(actor); perr == nil {
+		actorID = parsed.String()
+		if actorID == own {
+			return actorID, ActorTypeSystem, nil
+		}
+		return actorID, ActorTypeAgent, nil
 	}
-	return ActorTypeAgent, nil
+	if moduleProcessActorPattern.MatchString(actor) {
+		return own, ActorTypeSystem, nil
+	}
+	return "", "", status.Errorf(codes.FailedPrecondition,
+		"%v: actor %q: name the subject the module acted for (a principal id), or the module's own work as its principal or as system:<process>", ErrModuleAuditActorUnresolved, actor)
 }
 
 // ---------------------------------------------------------------------------
