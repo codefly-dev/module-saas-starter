@@ -21,7 +21,8 @@ This module exposes only:
 
 Accounts transports and the auth-gateway HTTP gateway stay private behind the
 frontend's same-origin API proxy.
-Internal product RPC export is tracked separately by `P1-NET-007`.
+A composed module reaches the internal tier only through the named
+`accounts/authority` endpoint ([INTERNAL_TRANSPORT.md](./INTERNAL_TRANSPORT.md)).
 
 ## Usage metering
 

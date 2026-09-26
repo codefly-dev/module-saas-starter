@@ -21,6 +21,7 @@ func doWork(ctx context.Context) (Clean, error) {
 
 import (
 	"accounts/pkg/adapters"
+	"accounts/pkg/business"
 	"context"
 	"fmt"
 	"os/signal"
@@ -62,6 +63,14 @@ func main() {
 	if net := codefly.For(ctx).WithDefaultNetwork().API(standards.CONNECT).NetworkInstance(); net != nil {
 		config.EndpointConnectPort = shared.Pointer(net.Port)
 	}
+	// The module authority endpoint is declared in service.codefly.yaml, so an
+	// unresolved address is a composition error: fail at start rather than
+	// fall back to a default port that collides with the gRPC listener.
+	authority, err := codefly.For(ctx).Endpoint(business.ModuleAuthorityEndpoint).API(standards.GRPC).ResolveNetworkInstance()
+	if err != nil {
+		panic(fmt.Errorf("resolve the %q endpoint: %w", business.ModuleAuthorityEndpoint, err))
+	}
+	config.EndpointAuthorityPort = shared.Pointer(authority.Port)
 
 	// Complete dependency wiring, plugin registration and fixture seeding before
 	// opening any listener. Starting the generated server first exposes handlers

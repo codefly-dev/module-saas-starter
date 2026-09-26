@@ -59,6 +59,13 @@ func (server *Server) Start(ctx context.Context) error {
 			}
 		}()
 	}
+	if server.Grpc.configuration.EndpointAuthorityPort != nil {
+		go func() {
+			if err := server.Grpc.RunAuthority(ctx); err != nil {
+				panic(err)
+			}
+		}()
+	}
 	if server.Connect != nil {
 		go func() {
 			err := server.Connect.Run(ctx)
@@ -74,4 +81,5 @@ func (server *Server) Stop() {
 	fmt.Println("Stopping server...")
 	server.Grpc.gRPC.GracefulStop()
 	server.Grpc.internalGRPC.GracefulStop()
+	server.Grpc.authorityGRPC.GracefulStop()
 }

@@ -1,0 +1,41 @@
+version: v2
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
+    - file_option: go_package
+      module: buf.build/bufbuild/protovalidate
+  override:
+    - file_option: go_package_prefix
+      value: accounts/pkg/gen
+plugins:
+  # Codefly's versioned proto companion owns the byte-generating toolchain.
+  # Local plugins avoid mutable registry execution and anonymous rate limits.
+  - local: protoc-gen-go
+    out: ../code/pkg/gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: ../code/pkg/gen
+    opt: paths=source_relative
+  - local: protoc-gen-grpc-gateway
+    out: ../code/pkg/gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: ../code/pkg/gen
+    opt: paths=source_relative
+  - local: protoc-gen-openapiv2
+    # This is a checked generator input for the REST-surface compiler, not a
+    # disposable cache. The service declares the directory as Codefly-owned.
+    out: ../generated/openapi-raw
+    strategy: all
+    opt:
+      - allow_merge=true
+      - merge_file_name=api
+  - local: protoc-gen-es
+    out: ../../frontend/code/src/gen
+    strategy: all
+    include_imports: true
+    opt:
+      - target=ts
+      - import_extension=none

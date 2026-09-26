@@ -316,12 +316,13 @@ invitations and expired or revoked API keys release capacity. New event meters
 become active by adding their canonical key to the product plan/override
 catalog; unknown keys resolve to a disabled limit.
 
-The protobuf and storage contract is product-neutral. The current internal
-gRPC listener is multiplexed onto the private REST h2c listener and is not a
-module export. Cross-module product callers must use the generated named
-internal endpoint tracked by `P1-NET-007`; exporting the mixed listener or
-making ingestion public is not an acceptable integration shortcut. See
-`module/USAGE_METERING.md` for the complete producer contract.
+The protobuf and storage contract is product-neutral. The internal gRPC
+listener is multiplexed onto the private REST h2c listener and is not a module
+export. Cross-module callers use the named `accounts/authority` endpoint
+(`P1-NET-007`), which serves only the module surface; `ConsumeUsage` is not on
+it yet because it authorizes on the perimeter credential alone. Exporting the
+mixed listener or making ingestion public is not an acceptable integration
+shortcut. See `module/USAGE_METERING.md` for the complete producer contract.
 
 ## Frontend admin pages
 

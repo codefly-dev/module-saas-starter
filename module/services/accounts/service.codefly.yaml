@@ -34,6 +34,13 @@ workspace-configuration-dependencies:
     - security
     - vault
 endpoints:
+    # The internal tier a composed module may call, on a listener of its own:
+    # only business.ModuleAuthorityProcedures, each behind the internal
+    # credential. A module declares a dependency on this endpoint, never on the
+    # private rest listener (INTERNAL_TRANSPORT.md).
+    - name: authority
+      api: grpc
+      visibility: module
     - name: connect
       visibility: module
     - name: grpc
@@ -49,6 +56,7 @@ spec:
         name: accounts
     deployment:
         endpoint-ports:
+            authority: 9091
             connect: 8080
             grpc: 9090
             rest: 8080

@@ -1,0 +1,1053 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "saas/accounts/v1/work_contexts.proto";
+
+import "buf/validate/validate.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/module_registration.proto";
+import "saas/events/v1/events.proto";
+import "saas/jobs/v1/jobs.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Module-facing platform capability surface (issue #463)
+//
+// ModuleCapabilities is the internal-only gRPC surface a sibling module — one
+// running on its own database, not able to join the saas-starter transaction —
+// uses to reach platform capabilities it would otherwise rebuild: durable job
+// enqueue and lease, user notification, approval requests, and typed audit
+// emission. A composed module is its first consumer.
+//
+// The surface is EXPOSURE_INTERNAL: it is reached over the accounts internal
+// listener behind the cluster-internal token, carrying the caller's
+// gateway-forwarded Work Context. The caller is a module service principal with
+// a bound tenant and a declared set of queues it may enqueue to and claim from;
+// a principal explicitly granted cross-tenant authority may operate on other
+// tenants and enqueue global inbox work.
+//
+// Jobs reuse the saas.jobs.v1 envelope, lease, and lifecycle verbatim. Because
+// the caller cannot join the saas transaction, the module producer contract is
+// at-least-once with idempotency keys (unlike the in-process producer, which
+// commits its outbox row inside the business mutation). Idempotency behaves per
+// module/JOBS.md: the (direction, scope, queue, source, idempotency_key) tuple
+// is unique and request_fingerprint distinguishes an exact retry (DUPLICATE)
+// from conflicting reuse (an idempotency conflict).
+//
+// NOTE ON PACKAGE: issue #463 proposed package saas.platform.v1. The accounts
+// service's code-generation pipeline (service catalog, Connect/gRPC
+// registration) is keyed to a single proto package, saas.accounts.v1, and the
+// 14 existing EXPOSURE_INTERNAL RPCs already live here. The service is defined
+// in saas.accounts.v1 so it flows through that pipeline unchanged; it remains
+// the logical module-facing platform surface.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+// ModuleEnqueueJobRequest names the tenant the work belongs to and carries the
+// same producer-owned NewJob the in-process producer uses. tenant must equal
+// the caller principal's bound tenant unless the principal holds a cross-tenant
+// grant; global-scoped (inbox) work additionally requires that grant.
+message ModuleEnqueueJobRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.NewJob job = 2 [(buf.validate.field).required = true];
+}
+
+message ModuleEnqueueJobResponse {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.JobEnqueueDisposition disposition = 2 [(buf.validate.field).required = true];
+}
+
+// ModuleClaimJobsRequest leases a bounded batch of ready jobs from one queue
+// the caller principal is allowed to claim. Claiming is queue-scoped: a queue
+// is owned by the module that declares it. The response returns the fencing
+// lease on each JobEnvelope; heartbeat and finalization require that token.
+message ModuleClaimJobsRequest {
+  string queue = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string worker_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  uint32 limit = 3 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 100
+  }];
+  google.protobuf.Duration lease_duration = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {nanos: 1000000}
+      lte: {seconds: 3600}
+    }
+  ];
+}
+
+message ModuleClaimJobsResponse {
+  repeated saas.jobs.v1.JobEnvelope jobs = 1;
+}
+
+message ModuleHeartbeatJobRequest {
+  saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration extension = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {nanos: 1000000}
+      lte: {seconds: 3600}
+    }
+  ];
+}
+
+message ModuleHeartbeatJobResponse {
+  saas.jobs.v1.JobLease lease = 1 [(buf.validate.field).required = true];
+}
+
+// ModuleAckJobRequest completes a leased job successfully.
+message ModuleAckJobRequest {
+  saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  // execution is supplied only after the external owner admitted immutable
+  // work. The Host derives owner from the authenticated module principal.
+  string execution_kind = 2 [(buf.validate.field).string = {
+    max_len: 64
+    pattern: "^$|^[a-z][a-z0-9_.-]*$"
+  }];
+  string execution_id = 3 [(buf.validate.field).string.max_len = 255];
+}
+
+// ModuleNackJobRequest fails a leased job. retryable selects a retryable
+// failure (rescheduled at retry_at, or dead-lettered when the attempt budget is
+// exhausted) versus a permanent failure that dead-letters immediately, matching
+// saas.jobs.v1.JobAttemptOutcome.
+message ModuleNackJobRequest {
+  saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  saas.jobs.v1.JobFailure failure = 2 [(buf.validate.field).required = true];
+  bool retryable = 3;
+  google.protobuf.Timestamp retry_at = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+// ModuleNotifyUserRequest routes a notification through the same category
+// policy internal callers use (mandatory categories cannot be suppressed;
+// optional categories consult the user's settings). idempotency_key dedupes
+// redelivery from a module's at-least-once fan-out.
+message ModuleNotifyUserRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  string title = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 998
+  }];
+  string body = 4 [(buf.validate.field).string.max_len = 8192];
+  string type = 5 [(buf.validate.field).string.max_len = 64];
+  string action_url = 6 [(buf.validate.field).string.max_len = 2048];
+  string category = 7 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 32
+  }];
+  string idempotency_key = 8 [(buf.validate.field).string.max_len = 255];
+}
+
+message ModuleNotifyUserResponse {
+  string notification_id = 1;
+  // delivered is false when category policy suppressed the notification (an
+  // optional category the recipient disabled). The call still succeeds.
+  bool delivered = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Approvals
+// ---------------------------------------------------------------------------
+
+// ModuleApprovalPolicy is the non-resume half of the request policy. quorum is
+// the number of DISTINCT approve decisions required (0 defaults to 1).
+message ModuleApprovalPolicy {
+  uint32 quorum = 1 [(buf.validate.field).uint32.lte = 100];
+  repeated string approver_set = 2 [(buf.validate.field).repeated.max_items = 100];
+  bool allow_self = 3;
+}
+
+// ModuleResumeRef is the outbox target the primitive enqueues when the request
+// is approved: the requesting module consumes it on its own queue via
+// ClaimJobs. topic and payload name the resume work; queue is the module queue
+// it lands on.
+message ModuleResumeRef {
+  string queue = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string topic = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  google.protobuf.Struct payload = 3;
+}
+
+message ModuleRequestApprovalRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string resource = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string action = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  google.protobuf.Struct subject = 4;
+  string requested_by = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  ModuleApprovalPolicy policy = 6;
+  ModuleResumeRef resume_ref = 7 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp escalate_at = 9;
+}
+
+message ModuleRequestApprovalResponse {
+  string approval_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ModuleGetApprovalRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string approval_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleApproval is the request head as the module sees it.
+message ModuleApproval {
+  string id = 1;
+  string tenant = 2;
+  string resource = 3;
+  string action = 4;
+  google.protobuf.Struct subject = 5;
+  string requested_by = 6;
+  uint32 quorum = 7;
+  string state = 8;
+  ModuleResumeRef resume_ref = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  google.protobuf.Timestamp escalate_at = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message ModuleCancelApprovalRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string approval_id = 2 [(buf.validate.field).string.uuid = true];
+  string reason = 3 [(buf.validate.field).string.max_len = 1024];
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+// ModuleEmitAuditEventRequest emits a registered audit event onto the tenant's
+// single audit spine. event_type must be registered in the code-owned catalog
+// (unregistered types are rejected, not stored free-form). solution names the
+// emitting solution scope. An empty tenant emits a system-scoped event and
+// requires the caller's cross-tenant grant.
+message ModuleEmitAuditEventRequest {
+  string tenant = 1;
+  string event_type = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string actor = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string solution = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string entry_id = 5 [(buf.validate.field).string.max_len = 255];
+  google.protobuf.Struct fields = 6;
+  // idempotency_key deduplicates retried emits: two emits with the same
+  // (tenant, event_type, idempotency_key) collapse to a single audit row, and
+  // the duplicate returns success without writing again. Empty disables
+  // deduplication (every emit is a distinct event). Scoped by tenant so one
+  // tenant's keys can never suppress another's events.
+  string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
+}
+
+// ---------------------------------------------------------------------------
+// Subject visibility
+// ---------------------------------------------------------------------------
+
+// SubjectVisibilityGrant is one entry of a viewer's visible-subject set: another
+// subject whose rows the viewer may read, and the instant that permission ends.
+//
+// expires_at unset is an open-ended grant. A consuming module evaluates it at
+// the moment of the read — an as-of read travels in data time and never
+// restores the authority that held then — so the host writes the instant and
+// never expires an entry on a timer.
+message SubjectVisibilityGrant {
+  string visible_subject_id = 1 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// ModuleListSubjectVisibilityRequest asks for one viewer's whole visible-subject
+// set in a tenant: the projection of that tenant's team tree onto the viewer.
+//
+// A module that enforces row visibility by owner holds no subject vocabulary and
+// no hierarchy of its own — why one subject may see another's rows is a question
+// about a hierarchy, and the hierarchy is the host's. viewer_subject_id is a
+// host subject id, opaque to the module, which reads it and never interprets it.
+//
+// Authorization is the caller's registered module principal plus the tenant
+// bound to it (or its cross-tenant grant), and the viewer must be a member of
+// that tenant — the same guard NotifyUser and subject-scoped enqueue take.
+message ModuleListSubjectVisibilityRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string viewer_subject_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleListSubjectVisibilityResponse carries the viewer's WHOLE set, read in
+// one transaction. It is deliberately not paginated: the consuming operation is
+// a bulk replace of a viewer's whole set, so a set assembled from pages read in
+// separate transactions could carry a grant that was revoked between two of
+// them, and the module would then reinstate an authority an administrator had
+// already withdrawn. A tenant whose hierarchy makes one viewer's set exceed the
+// server cap is refused with FailedPrecondition rather than answered with a
+// torn set.
+//
+// The set never contains the viewer: seeing one's own rows is ownership, not a
+// grant from the hierarchy, and it is the consuming module's own read predicate
+// that admits it. Order is unspecified — this is a set, and the consumer
+// replaces with all of it.
+message ModuleListSubjectVisibilityResponse {
+  repeated SubjectVisibilityGrant grants = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Datasource blobs
+// ---------------------------------------------------------------------------
+
+// FetchDatasourceBlobRequest asks accounts to re-fetch one file blob from the
+// upstream provider of a connected datasource, by the source that owns it and
+// the blob's content-addressed sha. It is the module's fallback when a compiled
+// change set carried a blob sha instead of inline content (a blob past the
+// inline cap): the module resolves the bytes here rather than holding a GitHub
+// token. Authorization is the caller's module principal (allowed to claim the
+// datasource queue) plus the source row's own org and boundary — not the
+// request tenant — so no per-blob ticket is needed.
+message FetchDatasourceBlobRequest {
+  string source_id = 1 [(buf.validate.field).string.uuid = true];
+  string blob_sha = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
+// FetchDatasourceBlobChunk is one frame of the streamed blob. total_size and
+// content_type are set on every chunk (the stream carries no separate header
+// frame) and stay constant across the stream; data is the next slice of bytes.
+// A blob past the 25 MiB cap is refused before the first chunk.
+message FetchDatasourceBlobChunk {
+  bytes data = 1;
+  int64 total_size = 2;
+  string content_type = 3;
+}
+
+// Domain events (pub/sub, issue #493)
+// ---------------------------------------------------------------------------
+
+// EventDelivery is the ordering guarantee a subscription requests, mirroring
+// events.Delivery in the SDK: UNORDERED fans out with no per-key ordering;
+// ORDERED preserves FIFO within an event's partition key.
+enum EventDelivery {
+  EVENT_DELIVERY_UNSPECIFIED = 0;
+  EVENT_DELIVERY_UNORDERED = 1;
+  EVENT_DELIVERY_ORDERED = 2;
+}
+
+// ModulePublishEventRequest publishes one domain event for the caller's bound
+// tenant. The event type's namespace (the segment before the first dot) must be
+// one the caller's principal declares. The envelope id is the idempotency key:
+// republishing the same id with the identical fact is a no-op, and reusing an
+// id for a different fact is rejected.
+message ModulePublishEventRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  saas.events.v1.EventEnvelope envelope = 2 [(buf.validate.field).required = true];
+}
+
+message ModulePublishEventResponse {
+  // event_id echoes the accepted envelope id — the idempotency key the outbox
+  // stored the event of record under. A republish of the same id carrying the
+  // identical fact returns the same id and is an accepted no-op; reusing the id
+  // for a different fact is rejected with FailedPrecondition.
+  string event_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleSubscribeRequest creates, or idempotently re-affirms, a durable
+// subscription that delivers events matching type_pattern onto queue for the
+// calling principal. type_pattern is an exact type or a single trailing ".*"
+// prefix. An event type declared with internal visibility is not subscribable
+// by a solution principal.
+message ModuleSubscribeRequest {
+  string type_pattern = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+)*(?:\\.\\*)?$"
+  }];
+  string queue = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  EventDelivery delivery = 3;
+}
+
+// ModuleSubscription is one durable subscription row as the module sees it.
+message ModuleSubscription {
+  string id = 1;
+  string subscriber_principal_id = 2;
+  string type_pattern = 3;
+  string queue = 4;
+  EventDelivery delivery = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ModuleSubscribeResponse {
+  ModuleSubscription subscription = 1;
+}
+
+// ModuleUnsubscribeRequest revokes one of the caller's own subscriptions.
+message ModuleUnsubscribeRequest {
+  string subscription_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleListSubscriptionsRequest lists the calling principal's live
+// subscriptions. It carries no filter today.
+message ModuleListSubscriptionsRequest {}
+
+message ModuleListSubscriptionsResponse {
+  repeated ModuleSubscription subscriptions = 1;
+}
+
+// ModuleReplayEventsRequest re-delivers durable events of one type for the
+// caller's tenant, created at or after since, only to the calling principal's
+// own subscriptions. Each redelivery carries a fresh idempotency key so a
+// consumer that already acknowledged the event still receives the replay.
+message ModuleReplayEventsRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string type = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  google.protobuf.Timestamp since = 3;
+}
+
+message ModuleReplayEventsResponse {
+  // redelivered is the number of durable events re-fanned to the caller's
+  // subscriptions.
+  int32 redelivered = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+// ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
+// internal-tier and identifies its caller from the forwarded Work Context —
+// except MintModuleRegistration and MintSolutionRegistration, which a registrant
+// calls at startup, before any user request exists, and which authorize on the
+// registrant's own registration secret.
+// Non-secret, current-viewer source read projection.
+//
+// One row per feeding source, so a boundary fed by several sources is reported
+// once per source and a consumer groups by boundary_id to build a collection
+// tree. Pagination is by source, so a boundary's sources may span pages.
+message ReadableSourceCollection {
+  string source_id = 1;
+  string boundary_id = 2;
+  string origin = 3;
+  string container = 4;
+  string ref = 5;
+  repeated string paths = 6;
+  // The boundary's display name as the scope tree records it.
+  string boundary_label = 7;
+  // Whether read_grants is this viewer's complete view or was withheld.
+  MetadataDisclosure grant_disclosure = 8;
+  // Active scope-tree grants conferring read on this collection's content, the
+  // same set PermissionService/ListCollectionAccess projects to an organization
+  // administrator. A record share is not a collection grant and is not listed
+  // here, so the two surfaces cannot disagree about what a grant is.
+  repeated ReadableCollectionGrant read_grants = 9;
+  CollectionSyncProvenance sync = 10;
+}
+
+// MetadataDisclosure separates "the host withheld this from you" from "there is
+// nothing to report". A viewer whose capability seals no authority over a detail
+// reads WITHHELD and an empty projection of it; under DISCLOSED the projection
+// is complete for this viewer, so an empty one is a real absence.
+enum MetadataDisclosure {
+  METADATA_DISCLOSURE_UNSPECIFIED = 0;
+  METADATA_DISCLOSURE_DISCLOSED = 1;
+  METADATA_DISCLOSURE_WITHHELD = 2;
+}
+
+// ReadableCollectionGrant is one active grant conferring read on a collection's
+// content. It carries display labels rather than the subject, role and grantor
+// identifiers the administrator's view projects. inherited is set when the grant
+// sits on an ancestor of the boundary rather than on the boundary node itself:
+// an inheriting grant is as real as a direct one, and a tree that dropped it
+// would under-report who can read the collection.
+message ReadableCollectionGrant {
+  string subject_label = 1;
+  // "principal" or "team".
+  string subject_kind = 2;
+  string role_name = 3;
+  string scope_path = 4;
+  bool inherited = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// SourceSyncStage names which occurrence CollectionSyncProvenance.at records.
+// The host reports no ingestion-completion stage: once a change set is durably
+// enqueued the consuming module owns the rest, and no host-side fact observes it
+// finishing. A module that needs "ingested" derives it from its own work.
+enum SourceSyncStage {
+  // Nothing has advanced this source yet.
+  SOURCE_SYNC_STAGE_UNSPECIFIED = 0;
+  // Every operation of a provider delivery is durably queued as a change set.
+  // This is enqueue completion, not ingestion completion.
+  SOURCE_SYNC_STAGE_CHANGES_ENQUEUED = 1;
+}
+
+// CollectionSyncProvenance is the host's record of how one feeding source last
+// advanced. requested_at/requested_by_label describe a DIFFERENT occurrence from
+// stage/at — a sync someone asked for, not the ingest it asked for — and are
+// never merged into one "last synced by X at T" line: the request is recorded on
+// the request path, the stage on the ingest path, and a request may be followed
+// by no stage at all.
+//
+// docs/adr/0008-datasource-sync-actor-provenance.md keeps the audit trail the
+// only record of who triggered a sync, so the requester is read from there and
+// disclosed only to a viewer whose capability seals audit:read.
+message CollectionSyncProvenance {
+  SourceSyncStage stage = 1;
+  google.protobuf.Timestamp at = 2;
+  // The provider revision the stage was reached at (a commit, for GitHub).
+  string revision = 3;
+  // The provider delivery that drove it.
+  string trigger = 4;
+  // Whether the requester fields are this viewer's complete view or withheld.
+  MetadataDisclosure requester_disclosure = 5;
+  google.protobuf.Timestamp requested_at = 6;
+  string requested_by_label = 7;
+}
+// Tenant and viewer come exclusively from the verified Work Context.
+message ListReadableSourceCollectionsRequest {
+  int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  string page_token = 2 [(buf.validate.field).string.max_len = 2048];
+}
+message ListReadableSourceCollectionsResponse {
+  repeated ReadableSourceCollection collections = 1;
+  string next_page_token = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Record placement
+// ---------------------------------------------------------------------------
+
+// ModulePlaceRecordRequest binds one of the calling module's own records to a
+// node of the tenant's scope tree. Placement is what makes a record resolvable
+// at all: CheckAccess and ListAccessibleScopes read a record's true scope from
+// its own registered node and accept no caller-supplied path, so a record that
+// was never placed is denied to every subject.
+//
+// resource_type must be one the caller principal's grant declares, which is the
+// authority bound: a module places only records governed by the vocabulary its
+// composition declared for it, so it can neither introduce a resource type it
+// holds no grant for nor re-point another module's records.
+message ModulePlaceRecordRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  // The record's own leaf path, unique within the tenant, whose parent must
+  // already be registered. Labels are the lowercase ltree charset, so an opaque
+  // id is encoded (lowercase, '-' -> '_') before it is used as one.
+  string scope_path = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 512
+    pattern: "^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+  }];
+  string kind = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string label = 4 [(buf.validate.field).string.max_len = 255];
+  string resource_type = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string resource_id = 6 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 512
+  }];
+}
+
+message ModulePlaceRecordResponse {
+  // The scope node the record is placed at. Placing the same record at the same
+  // path again is an accepted no-op returning the same id, which is what the
+  // surface's at-least-once contract needs; placing it at a different path is
+  // refused, because a record resolves through exactly one node and moving it
+  // would silently rewrite who can reach it.
+  string node_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// Exact-record delegated oracle. Tenant and subjects come only from the signed
+// forwarded Work Context; a caller cannot provide a scope path or principal.
+message CheckWorkContextRecordAccessRequest {
+  string resource_type = 1 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string resource_id = 2 [(buf.validate.field).string = {min_len: 1, max_len: 512}];
+  string action = 3 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+}
+message CheckWorkContextRecordAccessResponse {
+  // False also covers an unplaced or inaccessible record; no scope is disclosed.
+  bool allowed = 1;
+  // Actual placed node, disclosed only when every current subject is allowed.
+  string scope_node_id = 2;
+}
+
+// ModuleExchangeDelegatedReadAudienceRequest selects only an installed binding.
+// User identity and authority come exclusively from the signed parent context.
+message ModuleExchangeDelegatedReadAudienceRequest {
+ string binding_id = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ string parent_work_context_token = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+}
+
+// Selects one immutable installed operation binding. The caller chooses only
+// invocation versus receipt lookup; audience, scopes and lifetime are policy.
+message ModuleExchangeDelegatedOperationAudienceRequest {
+ string binding_id = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ string parent_work_context_token = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ bool lookup = 3;
+}
+
+service ModuleCapabilitiesService {
+ // ExchangeDelegatedReadAudience authenticates the module independently of a
+ // current parent context and exchanges only its installed read-only binding.
+ rpc ExchangeDelegatedReadAudience(ModuleExchangeDelegatedReadAudienceRequest) returns (IssuedWorkContext) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: {
+    events: "saas.module.delegated_audience_exchange"
+    emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE
+   }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_SECRET
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
+ // ExchangeDelegatedOperationAudience authenticates the module independently
+ // of a current parent context and exchanges only an installed operation's
+ // invoke scopes, or its read-only receipt-lookup subset.
+ rpc ExchangeDelegatedOperationAudience(ModuleExchangeDelegatedOperationAudienceRequest) returns (IssuedWorkContext) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: {
+    events: "saas.module.delegated_audience_exchange"
+    emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE
+   }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_SECRET
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
+
+  // Checks current owner and every delegated actor against true record placement,
+  // intersected with the verified capability's attenuated resource/action scope.
+  rpc CheckWorkContextRecordAccess(CheckWorkContextRecordAccessRequest) returns (CheckWorkContextRecordAccessResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // The forwarded viewer Work Context names the calling module in its audience;
+  // this read verifies it carries kind-wide read on a content resource type that
+  // module declares, and current owner/actor and collection grants.
+  // The internal listener remains mandatory; callers cannot supply identities.
+  rpc ListReadableSourceCollections(ListReadableSourceCollectionsRequest) returns (ListReadableSourceCollectionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // PlaceRecord places one of the caller's own records at a scope node, so the
+  // access oracles can resolve it. Bounded by the resource types the caller
+  // principal's grant declares.
+  rpc PlaceRecord(ModulePlaceRecordRequest) returns (ModulePlaceRecordResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+  rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
+  rpc ClaimJobs(ModuleClaimJobsRequest) returns (ModuleClaimJobsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // HeartbeatJob renews a live lease by its fencing token.
+  rpc HeartbeatJob(ModuleHeartbeatJobRequest) returns (ModuleHeartbeatJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // AckJob completes a leased job successfully.
+  rpc AckJob(ModuleAckJobRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // NackJob fails a leased job as retryable or permanent.
+  rpc NackJob(ModuleNackJobRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // NotifyUser delivers a notification subject to category policy.
+  rpc NotifyUser(ModuleNotifyUserRequest) returns (ModuleNotifyUserResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // RequestApproval opens a pending approval whose resume job the module claims.
+  rpc RequestApproval(ModuleRequestApprovalRequest) returns (ModuleRequestApprovalResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetApproval returns one approval request on the caller's tenant.
+  rpc GetApproval(ModuleGetApprovalRequest) returns (ModuleApproval) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // CancelApproval withdraws a still-open approval request.
+  rpc CancelApproval(ModuleCancelApprovalRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // EmitAuditEvent records a registered audit event on the tenant's spine.
+  rpc EmitAuditEvent(ModuleEmitAuditEventRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+  // whole set of other subjects whose rows that viewer may read.
+  rpc ListSubjectVisibility(ModuleListSubjectVisibilityRequest) returns (ModuleListSubjectVisibilityResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // FetchDatasourceBlob streams one datasource file blob, re-fetched from the
+  // upstream provider, to the module that resolves a change set's blob sha.
+  // Authorized by the caller principal's datasource-queue grant and the source
+  // row's own org/boundary, not the request tenant.
+  rpc FetchDatasourceBlob(FetchDatasourceBlobRequest) returns (stream FetchDatasourceBlobChunk) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MintModuleRegistration issues the signed, prefix-bound credential a composed
+  // module presents to the gateway to federate its REST surface. Authorized by
+  // the module's own registration secret, not the shared cluster token.
+  rpc MintModuleRegistration(ModuleMintRegistrationRequest) returns (ModuleMintRegistrationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.registration_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MintSolutionRegistration issues the signed, solution-bound credential a
+  // solution presents to the gateway and to the frontend to register, update, or
+  // delete its upstream and its Module-Federation remote. Authorized by the
+  // solution's own registration secret, declared separately from the module
+  // secrets because a solution remote executes in the host origin.
+  rpc MintSolutionRegistration(SolutionMintRegistrationRequest) returns (SolutionMintRegistrationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.solution.registration_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MintModuleWorkContext issues the Work Context a composed module presents to
+  // this surface: owner and sole actor are the module service principal derived
+  // from its registration prefix. Authorized by the module's own registration
+  // secret, like the credential exchange above.
+  rpc MintModuleWorkContext(ModuleMintWorkContextRequest) returns (ModuleMintWorkContextResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.work_context_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MintModuleOperationContext issues, with no person present, a Work Context
+  // addressed to one of the calling module's installed operation audiences.
+  // Authorized by the module's identity secret like MintModuleWorkContext; owner
+  // and sole actor are the module service principal, the tenant is the one its
+  // principal declares, and the scopes are exactly the binding's declared
+  // headless scopes. A binding declaring none is refused.
+  rpc MintModuleOperationContext(ModuleMintOperationContextRequest) returns (ModuleMintOperationContextResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.operation_context_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // PublishEvent appends one domain event to the outbox for the caller's tenant.
+  rpc PublishEvent(ModulePublishEventRequest) returns (ModulePublishEventResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // Subscribe creates or re-affirms a durable subscription for the caller.
+  rpc Subscribe(ModuleSubscribeRequest) returns (ModuleSubscribeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // Unsubscribe revokes one of the caller's own subscriptions.
+  rpc Unsubscribe(ModuleUnsubscribeRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSubscriptions returns the calling principal's live subscriptions.
+  rpc ListSubscriptions(ModuleListSubscriptionsRequest) returns (ModuleListSubscriptionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ReplayEvents re-delivers durable events to the caller's own subscriptions.
+  rpc ReplayEvents(ModuleReplayEventsRequest) returns (ModuleReplayEventsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

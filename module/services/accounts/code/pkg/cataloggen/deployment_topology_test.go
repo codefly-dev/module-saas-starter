@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
+	"accounts/pkg/business"
 	"accounts/pkg/cataloggen"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
 )
@@ -71,14 +72,14 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetServices(), 8)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 5)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 12, endpointCount)
+	require.Equal(t, 13, endpointCount)
 	require.Equal(t, 8, dependencyCount)
 	// The accounts REST surface is reachable only through the gateway; the
 	// gateway's REST surface is module-visible because composed modules and
@@ -111,17 +112,24 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, map[string]bool{"accounts": true, "auth-gateway": true}, privateREST)
 	require.True(t, authGatewayTelemetry)
-	accountsConnectExposed, gatewayRESTExposed := false, false
+	accountsConnectExposed, accountsAuthorityExposed, gatewayRESTExposed := false, false, false
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
 		if endpoint.GetService() == "accounts" && endpoint.GetEndpoint() == "connect" {
 			accountsConnectExposed = true
 		}
+		// The internal tier reaches a composed module only through the named
+		// authority endpoint, never the private rest listener.
+		if endpoint.GetService() == "accounts" && endpoint.GetEndpoint() == "authority" {
+			require.Equal(t, catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_MODULE, endpoint.GetVisibility())
+			accountsAuthorityExposed = true
+		}
 		if endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest" {
 			gatewayRESTExposed = true
 		}
-		require.False(t, endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect")
+		require.False(t, endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect" && endpoint.GetEndpoint() != "authority")
 	}
 	require.True(t, accountsConnectExposed)
+	require.True(t, accountsAuthorityExposed)
 	require.True(t, gatewayRESTExposed)
 	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
@@ -564,4 +572,72 @@ func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	invalidEgress := proto.Clone(catalog).(*catalogv1.DeploymentCatalog)
 	invalidEgress.PublicEgress[0].Ports[0] = 0
 	require.ErrorContains(t, cataloggen.ValidateDeploymentCatalog(invalidEgress), "public egress")
+}
+
+// TestModuleAuthorityCallerIsNarrowedToTheModuleSurface covers the branch the
+// shipped topology does not exercise: a service whose only edge to accounts is
+// the named module authority endpoint is admitted, by its own ServiceAccount,
+// to that endpoint's procedures alone, while the gateway keeps the whole tier.
+func TestModuleAuthorityCallerIsNarrowedToTheModuleSurface(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	documents := withService(t, readDeploymentDocuments(t), "marketing",
+		"endpoints:\n    - name: http\n      visibility: public\n",
+		"service-dependencies:\n    - name: accounts\n      endpoints:\n        - name: authority\nendpoints:\n    - name: http\n      visibility: public\n")
+	documents = withService(t, documents, "marketing",
+		"    mode: ssr\n",
+		"    mode: ssr\n    service-account:\n        name: marketing\n")
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
+	require.NoError(t, err)
+
+	decoder := yaml.NewDecoder(strings.NewReader(string(artifacts.MeshPolicy)))
+	found := false
+	for {
+		var document struct {
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Spec map[string]any `yaml:"spec"`
+		}
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if document.Metadata.Name != "allow-accounts-internal-authority" {
+			continue
+		}
+		found = true
+		rules := document.Spec["rules"].([]any)
+		require.Len(t, rules, 2, "the whole tier for the gateway, the module surface for the module caller")
+		byPrincipal := map[string][]any{}
+		for _, rule := range rules {
+			source := rule.(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
+			paths := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
+			principals := source["principals"].([]any)
+			require.Len(t, principals, 1)
+			byPrincipal[principals[0].(string)] = paths
+		}
+		module := byPrincipal["cluster.local/ns/saas-starter/sa/marketing"]
+		require.Len(t, module, len(business.ModuleAuthorityProcedures()))
+		require.Contains(t, module, "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision")
+		require.NotContains(t, module, "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
+		require.NotContains(t, module, "/saas.accounts.v1.UsageService/ConsumeUsage")
+		require.Contains(t, byPrincipal["cluster.local/ns/saas-starter/sa/auth-gateway"],
+			"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
+	}
+	require.True(t, found)
+}
+
+func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	documents := readDeploymentDocuments(t)
+
+	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: module\n", ""))
+	require.ErrorContains(t, err, "module interface must export accounts/authority")
+
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "    - name: authority\n      api: grpc\n      visibility: module\n", "    - name: authority\n      api: rest\n      visibility: module\n"))
+	require.ErrorContains(t, err, "must be a gRPC endpoint at module visibility")
 }

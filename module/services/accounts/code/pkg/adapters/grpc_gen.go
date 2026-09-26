@@ -52,6 +52,10 @@ type Configuration struct {
 	EndpointGrpcPort    uint16
 	EndpointHttpPort    *uint16
 	EndpointConnectPort *uint16
+	// EndpointAuthorityPort binds the named module authority endpoint
+	// (business.ModuleAuthorityEndpoint): the internal tier narrowed to what a
+	// composed module may call. Nil binds no such listener.
+	EndpointAuthorityPort *uint16
 }
 
 // UserServer handles UserService RPCs.
@@ -134,6 +138,7 @@ type GrpcServer struct {
 	configuration *Configuration
 	gRPC          *grpc.Server
 	internalGRPC  *grpc.Server
+	authorityGRPC *grpc.Server
 	validator     protovalidate.Validator
 }
 
@@ -179,6 +184,17 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 		grpc.ChainStreamInterceptor(grpcStreamAuthInterceptor(getMinter, rpcExposureInternal)),
 	)
 	internalServer := grpc.NewServer(internalOpts...)
+	// The module authority endpoint serves the same handlers as the internal
+	// server behind an interceptor that admits only
+	// business.ModuleAuthorityProcedures. It is a listener of its own so a
+	// composed module depends on a named endpoint this module exports, never
+	// on the private REST listener the full internal tier is multiplexed on.
+	authorityOpts := append([]grpc.ServerOption{}, wooltel.GRPCServerOptions()...)
+	authorityOpts = append(authorityOpts,
+		grpc.ChainUnaryInterceptor(grpcAuthInterceptor(getMinter, rpcExposureModule)),
+		grpc.ChainStreamInterceptor(grpcStreamAuthInterceptor(getMinter, rpcExposureModule)),
+	)
+	authorityServer := grpc.NewServer(authorityOpts...)
 	v, err := protovalidate.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validator: %w", err)
@@ -200,12 +216,14 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 		configuration: c,
 		gRPC:          grpcServer,
 		internalGRPC:  internalServer,
+		authorityGRPC: authorityServer,
 		validator:     v,
 	}
 
 	configurePermissionServerKeys()
 	registerCatalogGRPCServices(grpcServer, s)
 	registerCatalogGRPCServices(internalServer, s)
+	registerCatalogGRPCServices(authorityServer, s)
 	// Server reflection enumerates every registered service and message to any
 	// caller that can reach the port — a discovery convenience locally, needless
 	// recon surface in a deployed environment. Register it only when running
@@ -217,6 +235,25 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	}
 
 	return s, nil
+}
+
+// RunAuthority serves the module authority endpoint. It is plaintext h2c
+// gRPC for the same reason the internal tier is: in-cluster transport security
+// is the mesh's (INTERNAL_TRANSPORT.md).
+func (s *GrpcServer) RunAuthority(ctx context.Context) error {
+	port := s.configuration.EndpointAuthorityPort
+	if port == nil {
+		return nil
+	}
+	fmt.Println("Starting module authority gRPC server at", *port)
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		return fmt.Errorf("failed to listen on the module authority endpoint: %v", err)
+	}
+	if err := s.authorityGRPC.Serve(lis); err != nil {
+		return fmt.Errorf("failed to serve the module authority endpoint: %s", err)
+	}
+	return nil
 }
 
 func (s *GrpcServer) Run(ctx context.Context) error {

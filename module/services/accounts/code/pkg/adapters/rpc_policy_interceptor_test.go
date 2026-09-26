@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 
 	"connectrpc.com/connect"
 	"github.com/codefly-dev/core/wool"
@@ -206,6 +207,36 @@ func TestInternalListenerOnlyAdmitsInternalRPCWithCredential(t *testing.T) {
 
 	_, err = policy.authorize(ctx, "/saas.accounts.v1.UserService/GetSelf")
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+// The module authority endpoint is the internal tier narrowed to what a
+// composed module may call: a module-surface method passes with the internal
+// credential, a host-only internal method and a tenant method never do, and no
+// method passes without the credential.
+func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurfaceWithCredential(t *testing.T) {
+	previousToken := internalToken
+	SetInternalToken("test-internal-token")
+	t.Cleanup(func() { SetInternalToken(previousToken) })
+
+	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureModule}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "test-internal-token"))
+
+	for _, method := range business.ModuleAuthorityProcedures() {
+		_, err := policy.authorize(ctx, method)
+		require.NoError(t, err, method)
+		_, err = policy.authorize(context.Background(), method)
+		require.Equal(t, codes.PermissionDenied, status.Code(err), method)
+	}
+	for _, method := range []string{
+		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
+		"/saas.accounts.v1.PermissionService/CheckPermission",
+		"/saas.accounts.v1.UsageService/ConsumeUsage",
+		"/saas.accounts.v1.UserService/GetSelf",
+	} {
+		_, err := policy.authorize(ctx, method)
+		require.Equal(t, codes.PermissionDenied, status.Code(err), method)
+	}
 }
 
 func TestInternalListenerAcceptsRotationTokenDuringOverlap(t *testing.T) {
