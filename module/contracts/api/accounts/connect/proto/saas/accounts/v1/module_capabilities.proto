@@ -364,21 +364,24 @@ message FetchDatasourceBlobChunk {
 //
 // Every datasource interface (files, pages, records, messages, events) carries
 // the same envelope: the source, its org and boundary, the provider's opaque
-// version the items were listed at, and per-item provenance. This is the files
-// interface: a path-addressed tree whose items are named by a provider item id
-// (for a GitHub source, a git blob id) at a version (for a GitHub source, a
-// commit).
+// version the items were listed at, and per-item provenance. An item is named by
+// a stable provider id (item_id) and carries the version of its content
+// (item_version): the id survives an edit, the version does not. This is the
+// files interface: a path-addressed tree at a version (for a GitHub source, a
+// commit), whose items are identified by their path and versioned by their git
+// blob id.
 // ---------------------------------------------------------------------------
 
 // DatasourceFileRef names one file of a files-interface datasource at the
-// version its request pins: the path the snapshot manifest or change set listed
-// it under, and the provider item id that identifies its content.
+// version its request pins: its stable provider id (for a GitHub source, its
+// path) and the version of its content it was listed with (for a GitHub
+// source, its git blob id).
 message DatasourceFileRef {
-  string path = 1 [(buf.validate.field).string = {
+  string item_id = 1 [(buf.validate.field).string = {
     min_len: 1
     max_len: 4096
   }];
-  string item_id = 2 [(buf.validate.field).string = {
+  string item_version = 2 [(buf.validate.field).string = {
     min_len: 1
     max_len: 255
   }];
@@ -388,9 +391,9 @@ message DatasourceFileRef {
 // at one pinned version, in a single call. version is the provider's opaque
 // version the files were listed at: for a GitHub source, the commit a snapshot
 // manifest or change set names. Every named file must be in the source's scope
-// (its path prefixes and file types) at that version and must carry that
-// version's item id for its path; a request naming anything else is refused
-// whole, before the first frame. At most 1000 files and 64 MiB of content are
+// (its path prefixes and file types) at that version, with the item version the
+// source holds for it there; a request naming anything else is refused whole,
+// before the first frame. At most 1000 files and 64 MiB of content are
 // served per call, and at most 25 MiB per file.
 message FetchDatasourceFilesRequest {
   string source_id = 1 [(buf.validate.field).string.uuid = true];
@@ -406,13 +409,15 @@ message FetchDatasourceFilesRequest {
 
 // DatasourceProvenance is the envelope every item a datasource serves carries,
 // whichever interface serves it: the source, the org and boundary that own it,
-// the provider version it was read at, and the provider's own id for the item.
+// the provider version the source was read at, the provider's stable id for
+// the item, and the version of the item's content.
 message DatasourceProvenance {
   string source_id = 1;
   string org_id = 2;
   string boundary_node_id = 3;
   string version = 4;
   string item_id = 5;
+  string item_version = 6;
 }
 
 // DatasourceItemReadersBasis says where an item's readers came from.

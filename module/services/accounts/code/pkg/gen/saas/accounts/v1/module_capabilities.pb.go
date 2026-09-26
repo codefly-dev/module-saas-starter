@@ -1788,12 +1788,13 @@ func (x *FetchDatasourceBlobChunk) GetContentType() string {
 }
 
 // DatasourceFileRef names one file of a files-interface datasource at the
-// version its request pins: the path the snapshot manifest or change set listed
-// it under, and the provider item id that identifies its content.
+// version its request pins: its stable provider id (for a GitHub source, its
+// path) and the version of its content it was listed with (for a GitHub
+// source, its git blob id).
 type DatasourceFileRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	ItemId        string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemVersion   string                 `protobuf:"bytes,2,opt,name=item_version,json=itemVersion,proto3" json:"item_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1828,16 +1829,16 @@ func (*DatasourceFileRef) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *DatasourceFileRef) GetPath() string {
+func (x *DatasourceFileRef) GetItemId() string {
 	if x != nil {
-		return x.Path
+		return x.ItemId
 	}
 	return ""
 }
 
-func (x *DatasourceFileRef) GetItemId() string {
+func (x *DatasourceFileRef) GetItemVersion() string {
 	if x != nil {
-		return x.ItemId
+		return x.ItemVersion
 	}
 	return ""
 }
@@ -1846,9 +1847,9 @@ func (x *DatasourceFileRef) GetItemId() string {
 // at one pinned version, in a single call. version is the provider's opaque
 // version the files were listed at: for a GitHub source, the commit a snapshot
 // manifest or change set names. Every named file must be in the source's scope
-// (its path prefixes and file types) at that version and must carry that
-// version's item id for its path; a request naming anything else is refused
-// whole, before the first frame. At most 1000 files and 64 MiB of content are
+// (its path prefixes and file types) at that version, with the item version the
+// source holds for it there; a request naming anything else is refused whole,
+// before the first frame. At most 1000 files and 64 MiB of content are
 // served per call, and at most 25 MiB per file.
 type FetchDatasourceFilesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1912,7 +1913,8 @@ func (x *FetchDatasourceFilesRequest) GetFiles() []*DatasourceFileRef {
 
 // DatasourceProvenance is the envelope every item a datasource serves carries,
 // whichever interface serves it: the source, the org and boundary that own it,
-// the provider version it was read at, and the provider's own id for the item.
+// the provider version the source was read at, the provider's stable id for
+// the item, and the version of the item's content.
 type DatasourceProvenance struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	SourceId       string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
@@ -1920,6 +1922,7 @@ type DatasourceProvenance struct {
 	BoundaryNodeId string                 `protobuf:"bytes,3,opt,name=boundary_node_id,json=boundaryNodeId,proto3" json:"boundary_node_id,omitempty"`
 	Version        string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
 	ItemId         string                 `protobuf:"bytes,5,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	ItemVersion    string                 `protobuf:"bytes,6,opt,name=item_version,json=itemVersion,proto3" json:"item_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1985,6 +1988,13 @@ func (x *DatasourceProvenance) GetVersion() string {
 func (x *DatasourceProvenance) GetItemId() string {
 	if x != nil {
 		return x.ItemId
+	}
+	return ""
+}
+
+func (x *DatasourceProvenance) GetItemVersion() string {
+	if x != nil {
+		return x.ItemVersion
 	}
 	return ""
 }
@@ -3722,23 +3732,24 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1d\n" +
 	"\n" +
 	"total_size\x18\x02 \x01(\x03R\ttotalSize\x12!\n" +
-	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\"X\n" +
-	"\x11DatasourceFileRef\x12\x1e\n" +
-	"\x04path\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80 R\x04path\x12#\n" +
-	"\aitem_id\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x06itemId\"\xb2\x01\n" +
+	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\"g\n" +
+	"\x11DatasourceFileRef\x12#\n" +
+	"\aitem_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80 R\x06itemId\x12-\n" +
+	"\fitem_version\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\vitemVersion\"\xb2\x01\n" +
 	"\x1bFetchDatasourceFilesRequest\x12%\n" +
 	"\tsource_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12$\n" +
 	"\aversion\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\aversion\x12F\n" +
-	"\x05files\x18\x03 \x03(\v2#.saas.accounts.v1.DatasourceFileRefB\v\xbaH\b\x92\x01\x05\b\x01\x10\xe8\aR\x05files\"\xa7\x01\n" +
+	"\x05files\x18\x03 \x03(\v2#.saas.accounts.v1.DatasourceFileRefB\v\xbaH\b\x92\x01\x05\b\x01\x10\xe8\aR\x05files\"\xca\x01\n" +
 	"\x14DatasourceProvenance\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x15\n" +
 	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12(\n" +
 	"\x10boundary_node_id\x18\x03 \x01(\tR\x0eboundaryNodeId\x12\x18\n" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x17\n" +
-	"\aitem_id\x18\x05 \x01(\tR\x06itemId\"\x86\x02\n" +
+	"\aitem_id\x18\x05 \x01(\tR\x06itemId\x12!\n" +
+	"\fitem_version\x18\x06 \x01(\tR\vitemVersion\"\x86\x02\n" +
 	"\x15DatasourceItemReaders\x12B\n" +
 	"\x05basis\x18\x01 \x01(\x0e2,.saas.accounts.v1.DatasourceItemReadersBasisR\x05basis\x12\x19\n" +
 	"\buser_ids\x18\x02 \x03(\tR\auserIds\x12\x1b\n" +

@@ -52,7 +52,7 @@ func TestFetchDatasourceFiles_FramesEachFileBehindItsHeader(t *testing.T) {
 	stream := &recordingFilesStream{}
 	err := streamDatasourceFiles(ctx, &gen.FetchDatasourceFilesRequest{
 		SourceId: blobStreamSourceID, Version: filesVersion,
-		Files: []*gen.DatasourceFileRef{{Path: "docs/empty.md", ItemId: filesEmptyID}, {Path: "docs/big.md", ItemId: filesBigID}},
+		Files: []*gen.DatasourceFileRef{{ItemId: "docs/empty.md", ItemVersion: filesEmptyID}, {ItemId: "docs/big.md", ItemVersion: filesBigID}},
 	}, stream)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestFetchDatasourceFiles_FramesEachFileBehindItsHeader(t *testing.T) {
 	}
 	p := files[1].header.GetProvenance()
 	if p.GetSourceId() != blobStreamSourceID || p.GetOrgId() != blobStreamRepoOrg || p.GetBoundaryNodeId() != "boundary-1" ||
-		p.GetVersion() != filesVersion || p.GetItemId() != filesBigID {
+		p.GetVersion() != filesVersion || p.GetItemId() != "docs/big.md" || p.GetItemVersion() != filesBigID {
 		t.Fatalf("provenance = %v", p)
 	}
 	readers := files[1].header.GetReaders()

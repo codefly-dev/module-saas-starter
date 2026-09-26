@@ -46,20 +46,24 @@ const (
 	defaultRateLimitRetry = time.Minute
 )
 
-// DatasourceFileRequest names one file of a batch: its path and the provider
-// item id (a git blob id) the version lists it under.
+// DatasourceFileRequest names one file of a batch: its stable item id (for a
+// GitHub source, its path) and the item version the source version lists it
+// with (a git blob id).
 type DatasourceFileRequest struct {
-	Path   string
-	ItemID string
+	ItemID      string
+	ItemVersion string
 }
 
-// DatasourceProvenance is the envelope every served item carries.
+// DatasourceProvenance is the envelope every served item carries: the source,
+// its org and boundary, the source version read, and the item's stable id and
+// content version.
 type DatasourceProvenance struct {
 	SourceID       string
 	OrgID          string
 	BoundaryNodeID string
 	Version        string
 	ItemID         string
+	ItemVersion    string
 }
 
 // DatasourceFile opens one served file: its provenance, path, the host's
@@ -97,10 +101,10 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 	}
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
-		if ref.Path == "" || seen[ref.Path] || !github.ValidObjectID(ref.ItemID) {
-			return status.Error(codes.InvalidArgument, "every file names a distinct path and a full item id")
+		if ref.ItemID == "" || seen[ref.ItemID] || !github.ValidObjectID(ref.ItemVersion) {
+			return status.Error(codes.InvalidArgument, "every file names a distinct item id and a full item version")
 		}
-		seen[ref.Path] = true
+		seen[ref.ItemID] = true
 	}
 	source, err := s.store.GetDatasourceSourceByID(ctx, sourceID)
 	if err != nil {
@@ -135,11 +139,11 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 	}
 	ids := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		if inScope[ref.Path] != ref.ItemID {
+		if inScope[ref.ItemID] != ref.ItemVersion {
 			return datasourceStatus(codes.NotFound, DatasourceReasonFileNotInVersion,
-				"a named file is not in the source's scope at that version under that item id", nil, 0)
+				"a named file is not in the source's scope at that version with that item version", nil, 0)
 		}
-		ids = append(ids, ref.ItemID)
+		ids = append(ids, ref.ItemVersion)
 	}
 	if err := repo.Fetch(ctx, ids); err != nil {
 		return datasourceGitHubStatus(w, err, "fetch files")
@@ -171,20 +175,13 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 		file := DatasourceFile{
 			Provenance: DatasourceProvenance{
 				SourceID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID,
-				Version: version, ItemID: id,
+				Version: version, ItemID: ref.ItemID, ItemVersion: id,
 			},
-			Path:        ref.Path,
+			Path:        ref.ItemID,
 			ContentType: http.DetectContentType(head),
 			Size:        size,
 		}
-		if err := visit(file, buffered); err != nil {
-			return err
-		}
-		// Record the data access on the source's own tenant spine, one event per
-		// file served, as FetchDatasourceBlob does.
-		s.emit(ctx, caller.PrincipalID, "agent", EventDatasourceBlobFetched, "datasource", source.ID, source.OrgID,
-			map[string]any{"repo": source.Repo, "blob_sha": id, "bytes": size})
-		return nil
+		return visit(file, buffered)
 	})
 	if err != nil {
 		if _, ok := status.FromError(err); ok {
@@ -196,6 +193,11 @@ func (s *Service) ModuleFetchDatasourceFiles(ctx context.Context, caller ModuleC
 		return status.Error(codes.Internal, w.Wrapf(err, "stream files").Error())
 	}
 	w.Info("served datasource files", wool.Field("source", source.ID), wool.Field("files", len(refs)), wool.Field("bytes", total), wool.Field("git_fetches", repo.Fetches()))
+	// Record the data access on the source's own tenant spine: one event for the
+	// whole batch, carrying what it served. A transient audit-write failure must
+	// not fail the read, so this is the fire-and-forget emit.
+	s.emit(ctx, caller.PrincipalID, "agent", EventDatasourceFilesFetched, "datasource", source.ID, source.OrgID,
+		map[string]any{"repo": source.Repo, "version": version, "files": len(refs), "bytes": total})
 	return nil
 }
 
