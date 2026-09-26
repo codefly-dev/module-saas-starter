@@ -93,6 +93,38 @@ func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
 	return false
 }
 
+// HostScopeRoles and HostScopeAudit are the permission resource types this host
+// reads out of a *sealed capability* to decide something of its own, rather than
+// authorizing them node by node the way it authorizes module content:
+// ListReadableSourceCollections reads them from the presented claims to decide
+// how much of a collection's metadata to disclose (its grants, its sync
+// requester).
+//
+// They are therefore reserved: a composition may not declare one as the content
+// of a module. The content-read branch admits an unscoped `read` of declared
+// content on a node grant or share precisely because the host re-authorizes
+// every such read per node — and that justification is simply false for a type
+// the host reads straight off the claims. Declaring `roles` here would let one
+// collection grant mint `roles:read` and so disclose who holds a grant on every
+// collection the holder can see, which an organization-wide role assignment was
+// the only way to reach before.
+//
+// The registry is operator-supplied text this host cannot otherwise check, so
+// the refusal belongs at parse time, where a bad composition fails to boot
+// instead of quietly changing who may mint what.
+const (
+	HostScopeRoles = "roles"
+	HostScopeAudit = "audit"
+)
+
+// IsHostSealedScopeResource reports whether a permission resource type is one
+// the host reads out of a sealed capability for its own decisions. Anything
+// added to the constants above — or any new host decision taken from a
+// capability's sealed scopes — belongs in this set.
+func IsHostSealedScopeResource(resource string) bool {
+	return resource == HostScopeRoles || resource == HostScopeAudit
+}
+
 // ModulePrincipalRegistry maps a module service principal id to its grant.
 type ModulePrincipalRegistry map[string]ModulePrincipalGrant
 
@@ -180,6 +212,14 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		}
 		if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
 			return nil, err
+		}
+		for _, resource := range grant.Resources {
+			if IsHostSealedScopeResource(resource) {
+				return nil, fmt.Errorf(
+					"module principal %q may not declare %q as its content: the host reads that permission out of a sealed capability for its own decisions, so a node grant must never stand in for a role assignment on it",
+					prefix, resource,
+				)
+			}
 		}
 		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
 			ReadAudiences:      grant.ReadAudiences,

@@ -233,7 +233,7 @@ func TestWorkContextScopesMapExactPermissionChecks(t *testing.T) {
 		ResourceKind: "repository",
 		Actions:      []string{"read", "write"},
 		ResourceIds:  []string{"repo:one", "repo:two"},
-	}})
+	}}, noContentReads)
 	require.NoError(t, err)
 	require.Equal(t, []*basev0.WorkScopeV1{{
 		ResourceKind: "repository",
