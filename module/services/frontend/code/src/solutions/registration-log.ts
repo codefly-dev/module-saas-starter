@@ -49,7 +49,7 @@ export type RegistrationRefusal =
 	| "invalid_manifest"
 	| "solution_not_authorized"
 	| "incompatible_runtime"
-	| `registry ${"unavailable" | "conflict" | "forbidden"}`;
+	| `registry ${"unavailable" | "conflict" | "forbidden" | "rejected"}`;
 
 /** A registration beat's outcome, as the endpoint answered it. */
 export type RegistrationBeat =

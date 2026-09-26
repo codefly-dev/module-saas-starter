@@ -88,6 +88,13 @@ func (fakeTxStore) WithControlPlane(ctx context.Context, fn func(context.Context
 	return fn(ctx)
 }
 
+// GetDeclaredAuditEventType: no solution has declared a type in these tests, so
+// a type outside the code catalog resolves to nothing and is refused as
+// unregistered, exactly as before declared types existed.
+func (fakeTxStore) GetDeclaredAuditEventType(context.Context, business.EventType) (*business.DeclaredAuditEventType, error) {
+	return nil, nil
+}
+
 func (f fakeTxStore) OrgMemberExists(_ context.Context, orgID, userID string) (bool, error) {
 	if f.membersErr != nil {
 		return false, f.membersErr

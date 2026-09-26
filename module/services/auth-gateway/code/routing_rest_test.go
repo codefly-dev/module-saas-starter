@@ -129,6 +129,7 @@ func TestReservedV1PrefixesArePinned(t *testing.T) {
 		"accessible-scopes",
 		"acquisition",
 		"api-keys",
+		"approvals",
 		"audit-event-types",
 		"audit-log",
 		"auth",

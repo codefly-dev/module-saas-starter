@@ -187,7 +187,7 @@ func TestDatasourceSourceToProto_ProjectsBoundaryLabel(t *testing.T) {
 		Status:         business.DatasourceStatusActive,
 		BoundaryNodeID: "33333333-3333-3333-3333-333333333333",
 		BoundaryLabel:  "guides",
-	})
+	}, nil)
 	if got := out.GetBoundaryNodeId(); got != "33333333-3333-3333-3333-333333333333" {
 		t.Errorf("boundary_node_id = %q", got)
 	}
