@@ -488,7 +488,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
-	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
+	// v2 names what was removed — v1 recorded an empty payload, so the trail
+	// could not say which repository or which collection lost its source.
+	// `boundary` is the collection (boundary node) the source fed, spelled as
+	// on the document events so one payload filter reads both.
+	revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
+		str("provider"), str("repo"), str("boundary")), 2),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",

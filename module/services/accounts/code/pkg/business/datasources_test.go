@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -702,6 +703,39 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 	if got := audit.types(); len(got) != 1 || got[0] != business.EventDatasourceSourceAdded {
 		t.Fatalf("audit events = %v, want [%s]", got, business.EventDatasourceSourceAdded)
 	}
+}
+
+// Removing a source records what was removed — its provider, repository and the
+// collection it fed — under keys the catalog declares, so the payload is kept
+// rather than dropped. Removing a source that is no longer there removes
+// nothing and records nothing.
+func TestDeleteDatasourceSource_RecordsWhatWasRemoved(t *testing.T) {
+	store := newDatasourceFakeStore()
+	svc, audit := newDatasourceService(store, &recordingProducer{}, nil)
+	source := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "ghp_secret",
+	})
+	if source.BoundaryNodeID == "" {
+		t.Fatal("the added source is bound to no collection; the test needs one")
+	}
+	for range 2 {
+		if err := svc.DeleteDatasourceSource(context.Background(), "actor-1", testOrg, source.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed := audit.entriesOf(business.EventDatasourceSourceRemoved)
+	if len(removed) != 1 {
+		t.Fatalf("removed events = %d, want 1 — the second delete removed nothing", len(removed))
+	}
+	got := removed[0]
+	if got.Resource != "datasource" || got.ResourceID != source.ID {
+		t.Fatalf("removed resource = %s/%s, want datasource/%s", got.Resource, got.ResourceID, source.ID)
+	}
+	want := map[string]any{"provider": business.DatasourceProviderGitHub, "repo": "acme/docs", "boundary": source.BoundaryNodeID}
+	if !reflect.DeepEqual(got.Payload, want) {
+		t.Fatalf("removed payload = %v, want %v", got.Payload, want)
+	}
+	requireDeclaredPayloads(t, audit)
 }
 
 func TestAddGitHubSource_Validation(t *testing.T) {

@@ -993,6 +993,12 @@ func (s *Service) GetDatasourceSource(ctx context.Context, orgID, id string) (*D
 }
 
 // DeleteDatasourceSource removes a Source and its stored credentials.
+//
+// The removal is recorded with what the source was — its provider, repository
+// and the collection (boundary node) it fed — read in the deleting transaction,
+// because once the row is gone nothing else on the trail says which collection
+// lost its source. A source that is not there is not removed, so nothing is
+// recorded for it and the call still succeeds, as it always has.
 func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id string) error {
 	orgID = strings.TrimSpace(orgID)
 	id = strings.TrimSpace(id)
@@ -1000,14 +1006,35 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 		return errors.New("org id and source id are required")
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		source, err := s.store.GetDatasourceSource(ctx, orgID, id)
+		if err != nil {
+			return err
+		}
+		if source == nil {
+			return nil
+		}
 		if err := s.store.DeleteDatasourceSource(ctx, orgID, id); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID, datasourceRemovedPayload(source))
 	}); err != nil {
 		return err
 	}
 	return nil
+}
+
+// datasourceRemovedPayload names the removed source on its audit record. Empty
+// values are omitted rather than recorded as empty strings: a provider with no
+// repository, or a source bound to no collection, has nothing to name.
+func datasourceRemovedPayload(source *DatasourceSource) map[string]any {
+	payload := map[string]any{"provider": source.Provider}
+	if source.Repo != "" {
+		payload["repo"] = source.Repo
+	}
+	if source.BoundaryNodeID != "" {
+		payload["boundary"] = source.BoundaryNodeID
+	}
+	return payload
 }
 
 // SyncDatasourceSource enqueues a durable "reconcile now" request and returns
