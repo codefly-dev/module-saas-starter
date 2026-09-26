@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 var ws = Workspace{Org: "0190aaaa-0000-7000-8000-000000000001", Source: "0190aaaa-0000-7000-8000-000000000002"}
@@ -385,5 +386,52 @@ func TestGitBaseURLFor(t *testing.T) {
 		if got, _ := gitBaseURLFor(in); got != want {
 			t.Errorf("gitBaseURLFor(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The mirrors under one root are bounded together: a sweep discards the least
+// recently used mirrors until the rest fit, and never one an operation holds.
+func TestSweepDiscardsLeastRecentlyUsedMirrors(t *testing.T) {
+	root := t.TempDir()
+	mk := func(name string, age time.Duration, size int) string {
+		dir := filepath.Join(root, "org", name)
+		if err := os.MkdirAll(filepath.Join(dir, "repo.git"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "repo.git", "pack"), make([]byte, size), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		lock := filepath.Join(dir, "lock")
+		if err := os.WriteFile(lock, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		used := time.Now().Add(-age)
+		if err := os.Chtimes(lock, used, used); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	oldest := mk("oldest", 3*time.Hour, 400)
+	held := mk("held", 2*time.Hour, 400)
+	recent := mk("recent", time.Minute, 400)
+
+	sweepMirrors(root, 900, held)
+	if _, err := os.Stat(filepath.Join(oldest, "repo.git")); !os.IsNotExist(err) {
+		t.Fatal("the least recently used mirror survived a sweep over the bound")
+	}
+	for _, dir := range []string{held, recent} {
+		if _, err := os.Stat(filepath.Join(dir, "repo.git")); err != nil {
+			t.Fatalf("the sweep discarded %s, more than it needed to", dir)
+		}
+	}
+
+	// Tighter still: the next least recent is held, so it is skipped, and the
+	// most recent goes instead.
+	sweepMirrors(root, 500, held)
+	if _, err := os.Stat(filepath.Join(held, "repo.git")); err != nil {
+		t.Fatal("a held mirror was discarded")
+	}
+	if _, err := os.Stat(filepath.Join(recent, "repo.git")); !os.IsNotExist(err) {
+		t.Fatal("the sweep stopped over the bound")
 	}
 }

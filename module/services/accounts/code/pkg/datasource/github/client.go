@@ -148,14 +148,12 @@ func New(token, baseURL string, opts ...Option) *Client {
 	return c
 }
 
-// DefaultCacheRoot is where mirrors live when no root is configured: the user
-// cache directory the host resolves, or the temporary directory when it has none.
+// DefaultCacheRoot is where mirrors live when no root is configured: under the
+// temporary directory, the one path a service whose root filesystem is read-only
+// is given to write to. It is scratch space by design — a mirror lost with it
+// costs one refetch.
 func DefaultCacheRoot() string {
-	base, err := os.UserCacheDir()
-	if err != nil || base == "" {
-		base = os.TempDir()
-	}
-	return filepath.Join(base, "codefly-datasource-github")
+	return filepath.Join(os.TempDir(), "codefly-datasource-github")
 }
 
 // Usage reports the REST calls and the git network requests this client made.

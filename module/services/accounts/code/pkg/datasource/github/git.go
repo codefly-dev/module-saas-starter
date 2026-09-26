@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,6 +58,12 @@ var (
 	// maxChangedFiles bounds the files one comparison may report; a larger diff
 	// is reported Truncated and reconciled with a snapshot instead.
 	maxChangedFiles = 1000
+	// maxCacheBytes bounds every mirror under one cache root together. When a
+	// sweep finds them past it, the least recently used mirrors no operation
+	// holds are discarded until they fit.
+	maxCacheBytes int64 = 2 << 30
+	// sweepInterval spaces the sweeps a process runs.
+	sweepInterval = 10 * time.Minute
 )
 
 // Typed refusals a mirror reports.
@@ -126,6 +133,9 @@ func (c *Client) OpenRepository(ctx context.Context, ws Workspace, repo string) 
 		mu.Unlock()
 		return nil, fmt.Errorf("github: lock mirror: %w", err)
 	}
+	// Mark the mirror used, for the sweep's least-recently-used order.
+	now := time.Now()
+	_ = os.Chtimes(filepath.Join(dir, "lock"), now, now)
 	r := &Repository{
 		client: c,
 		bin:    bin,
@@ -141,7 +151,69 @@ func (c *Client) OpenRepository(ctx context.Context, ws Workspace, repo string) 
 		r.release()
 		return nil, err
 	}
+	c.maybeSweep(dir)
 	return r, nil
+}
+
+var lastSweep sync.Map // cache root → time.Time
+
+// maybeSweep runs sweep at most once per sweepInterval per cache root.
+func (c *Client) maybeSweep(holding string) {
+	now := time.Now()
+	if last, ok := lastSweep.Load(c.cacheRoot); ok && now.Sub(last.(time.Time)) < sweepInterval {
+		return
+	}
+	lastSweep.Store(c.cacheRoot, now)
+	sweepMirrors(filepath.Join(c.cacheRoot, "mirrors"), maxCacheBytes, holding)
+}
+
+// sweepMirrors discards the least recently used mirrors under root until the
+// rest fit in limit. A mirror another operation holds is skipped, never waited
+// on, and so is holding (the caller's own).
+func sweepMirrors(root string, limit int64, holding string) {
+	type mirror struct {
+		dir  string
+		used time.Time
+		size int64
+	}
+	var mirrors []mirror
+	var total int64
+	orgs, _ := os.ReadDir(root)
+	for _, org := range orgs {
+		sources, _ := os.ReadDir(filepath.Join(root, org.Name()))
+		for _, src := range sources {
+			dir := filepath.Join(root, org.Name(), src.Name())
+			info, err := os.Stat(filepath.Join(dir, "lock"))
+			if err != nil {
+				continue
+			}
+			size, _ := dirSize(dir)
+			total += size
+			mirrors = append(mirrors, mirror{dir: dir, used: info.ModTime(), size: size})
+		}
+	}
+	sort.Slice(mirrors, func(i, j int) bool { return mirrors[i].used.Before(mirrors[j].used) })
+	for _, m := range mirrors {
+		if total <= limit {
+			return
+		}
+		if m.dir == holding {
+			continue
+		}
+		lock, err := os.OpenFile(filepath.Join(m.dir, "lock"), os.O_RDWR, 0o600)
+		if err != nil {
+			continue
+		}
+		if syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+			_ = lock.Close()
+			continue
+		}
+		if os.RemoveAll(filepath.Join(m.dir, "repo.git")) == nil {
+			total -= m.size
+		}
+		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = lock.Close()
+	}
 }
 
 // Repository is one source's mirror, held exclusively between OpenRepository
