@@ -1,4 +1,7 @@
-export { CollectionReadBoundary, CollectionGrants } from "./datasources/collection-access.js";
+export {
+	CollectionGrants,
+	CollectionReadBoundary,
+} from "./datasources/collection-access.js";
 export { ConnectGitHubForm } from "./datasources/connect-github-form.js";
 export {
 	DatasourcesPanel,
@@ -23,8 +26,8 @@ export {
 export type {
 	AccessibleScopeView,
 	CollectionAccessView,
-	CollectionGrantView,
 	CollectionGrantSubject,
+	CollectionGrantView,
 	ConnectGitHubInput,
 	DatasourceClient,
 	DatasourceProviderName,
@@ -32,3 +35,19 @@ export type {
 	DatasourceView,
 } from "./datasources/types.js";
 export { parsePaths } from "./datasources/util.js";
+export {
+	COLLECTION_ACCESS_PATH,
+	NoReadableCollection,
+	type NoReadableCollectionProps,
+	type SolutionBinding,
+	type SolutionRequestBinding,
+	SolutionRequestError,
+	type SolutionResource,
+	solutionFetch,
+	solutionJson,
+	useAccessToken,
+	useSolutionJson,
+	useViewerEpoch,
+	viewerAdministersOrganization,
+	viewerIdentity,
+} from "./solution/index.js";

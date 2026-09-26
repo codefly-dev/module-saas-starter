@@ -962,6 +962,8 @@
 				"@connectrpc/connect",
 				"@tanstack/react-query",
 				"react",
+				"../solution/no-readable-collection.js",
+				"../solution/viewer.js",
 				"./connect-github-form.js",
 				"./gateway.js",
 				"./queries.js",
@@ -988,6 +990,29 @@
 				{
 					"file": "packages/saas-ui/stories/datasources.stories.tsx",
 					"export": "ProviderError"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/saas-ui/src/solution/no-readable-collection.tsx",
+			"imports": [],
+			"owner": "@codefly-dev/saas-ui",
+			"disposition": "already canonical",
+			"reason": "Owner package implementation: what every solution shows a viewer who may read no collection.",
+			"stories": [
+				{
+					"file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
+					"export": "Member"
+				},
+				{
+					"file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
+					"export": "Administrator"
+				},
+				{
+					"file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
+					"export": "Chat"
 				}
 			],
 			"coverage": "owner stories; browser/skin verification pending",

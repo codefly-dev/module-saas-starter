@@ -63,10 +63,14 @@ func TestRLS_DatasourceSources_CrossTenantBlocked(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listA, 1)
 	require.Equal(t, "acme/a-docs", listA[0].Repo)
+	// The boundary's name is read with the row, under the same org scope, so a
+	// member who lists sources sees the collection named, not its node id.
+	require.Equal(t, "guides", listA[0].BoundaryLabel)
 
 	got, err := testService.GetDatasourceSource(ctx, orgA, sourceA.ID)
 	require.NoError(t, err)
 	require.Equal(t, sourceA.ID, got.ID)
+	require.Equal(t, "guides", got.BoundaryLabel)
 
 	// Cross-tenant read of a known id is hidden by RLS: the service reports
 	// not-found rather than another org's row.

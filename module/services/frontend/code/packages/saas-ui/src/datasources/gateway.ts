@@ -261,6 +261,7 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		fileExtensions: source.github ? [...source.github.fileExtensions] : [],
 		branch: source.github?.branch ?? "",
 		boundaryNodeId: source.boundaryNodeId,
+		boundaryLabel: source.boundaryLabel || undefined,
 		webhookConfigured: source.webhookConfigured,
 		status: statusNames[source.status] ?? "unknown",
 		statusReason: source.statusReason || undefined,

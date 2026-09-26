@@ -166,6 +166,25 @@ describe("DatasourcesPanel", () => {
 		await screen.findByText(sampleSource.repo);
 		expect(screen.queryByText("Active")).toBeNull();
 		expect(screen.queryByText(/pulls have stopped/i)).toBeNull();
+		// A table of quiet rows carries no Status column at all.
+		expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
+	});
+
+	it("shows the Status column once any row has a state to show", async () => {
+		const degraded: DatasourceView = {
+			...sampleSource,
+			id: "ds-2",
+			status: "degraded",
+		};
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource, degraded]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByRole("columnheader", { name: "Status" }),
+		).toBeTruthy();
+		expect(screen.getByText("Degraded")).toBeTruthy();
 	});
 
 	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
@@ -437,7 +456,9 @@ describe("DatasourcesPanel boundary column", () => {
 			listAccessibleScopes: vi.fn(async () => []),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+		expect(
+			await screen.findByText(/You can’t read any collection yet/),
+		).toBeTruthy();
 	});
 
 	it("keeps the grant explainer off when one listed collection is readable", async () => {
@@ -464,7 +485,7 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(
 			await screen.findByText(/You can read this collection/),
 		).toBeTruthy();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
 	});
 
@@ -490,7 +511,7 @@ describe("DatasourcesPanel boundary column", () => {
 			),
 		).toBeTruthy();
 		expect(screen.queryByText(/You do not have read access/)).toBeNull();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 	});
 
 	it("still names no readable collection when only another scope kind is readable", async () => {
@@ -510,7 +531,9 @@ describe("DatasourcesPanel boundary column", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+		expect(
+			await screen.findByText(/You can’t read any collection yet/),
+		).toBeTruthy();
 	});
 
 	it("asks no one for access to a collection when the organization has none", async () => {
@@ -541,7 +564,7 @@ describe("DatasourcesPanel boundary column", () => {
 		// Only a resolved scope answer turns the source row's boundary cell from
 		// "Read permission unresolved" into a verdict.
 		expect(await screen.findByText("No read access")).toBeTruthy();
-		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.queryByText(/You can’t read any collection yet/)).toBeNull();
 	});
 
 	it("refetches boundaries after a source is connected", async () => {
@@ -586,6 +609,22 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(screen.queryByText("No access")).toBeNull();
 	});
 
+	it("names the collection a viewer cannot read, never its node id", async () => {
+		// The host lists the boundary's label with the source for any member, so a
+		// member without a grant sees which collection a source writes into.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...sampleSource, boundaryLabel: "handbook" },
+			]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("handbook")).toBeTruthy();
+		expect(await screen.findByText("No read access")).toBeTruthy();
+		expect(screen.queryByText("11111111")).toBeNull();
+	});
+
 	it("degrades to the boundary id when the lookup fails", async () => {
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource]),
@@ -621,6 +660,14 @@ describe("ConnectGitHubForm", () => {
 		expect(repoInputs[0].id).not.toBe(repoInputs[1].id);
 	});
 });
+
+/** A row's secondary actions live behind its "More actions" menu. */
+async function openRowActions() {
+	fireEvent.click(
+		await screen.findByRole("button", { name: /^More actions for / }),
+	);
+	await screen.findByRole("menu");
+}
 
 it("acknowledges queued sync without claiming ingestion completed", async () => {
 	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
@@ -707,10 +754,30 @@ it.each(["first", "second"])(
 	},
 );
 
+it("keeps Sync on the row and puts the rest behind one menu", async () => {
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	// A row carries two controls, so the table fits a content column rather
+	// than pushing its last actions out of view.
+	await screen.findByRole("button", { name: /^Sync$/ });
+	expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+	expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+	const confirm = vi.fn(() => true);
+	vi.stubGlobal("confirm", confirm);
+	await openRowActions();
+	fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+	expect(confirm).toHaveBeenCalledOnce();
+	await waitFor(() =>
+		expect(client.deleteSource).toHaveBeenCalledWith("org-1", "ds-1"),
+	);
+	vi.unstubAllGlobals();
+});
+
 it("reconnects the same source without creating or deleting a source", async () => {
 	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
 	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-	fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+	await openRowActions();
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
 	const token = screen.getByLabelText("New GitHub PAT");
 	expect(token.getAttribute("type")).toBe("password");
 	fireEvent.change(token, { target: { value: "replacement-test-token" } });
@@ -1011,8 +1078,9 @@ describe("GitHub App onboarding", () => {
 			listSources: vi.fn(async () => [sampleSource]),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await openRowActions();
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Use GitHub App" }),
+			await screen.findByRole("menuitem", { name: "Use GitHub App" }),
 		);
 
 		await waitFor(() =>
@@ -1035,8 +1103,11 @@ describe("GitHub App onboarding", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		await screen.findByRole("button", { name: "Reconnect" });
-		expect(screen.queryByRole("button", { name: "Use GitHub App" })).toBeNull();
+		await openRowActions();
+		await screen.findByRole("menuitem", { name: "Reconnect" });
+		expect(
+			screen.queryByRole("menuitem", { name: "Use GitHub App" }),
+		).toBeNull();
 	});
 
 	it("reports a failed migration against the source it names", async () => {
@@ -1050,8 +1121,9 @@ describe("GitHub App onboarding", () => {
 			}),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await openRowActions();
 		fireEvent.click(
-			await screen.findByRole("button", { name: "Use GitHub App" }),
+			await screen.findByRole("menuitem", { name: "Use GitHub App" }),
 		);
 
 		const alert = await screen.findByRole("alert");
@@ -1334,5 +1406,79 @@ describe("GitHub App onboarding", () => {
 				"",
 			),
 		);
+	});
+});
+
+describe("DatasourcesPanel for a viewer who manages nothing", () => {
+	it("offers no control the host would refuse, and keeps the history", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+			listActivity: vi.fn(async () => []),
+		});
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(
+			screen.queryByRole("button", { name: /connect github/i }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Sync" })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /More actions for/ }),
+		).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: "History of codefly-dev/module-saas-starter",
+			}),
+		).toBeTruthy();
+		// What to do instead: whom to ask, and where they grant it.
+		expect(
+			await screen.findByText(
+				/Ask an organization administrator to grant you read access/,
+			),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("link", { name: /Grant read access/ }),
+		).toBeNull();
+	});
+
+	it("drops the actions column when there is not even a history to read", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+	});
+
+	it("does not offer to connect a repository to an empty organization", async () => {
+		renderWithClient(
+			<DatasourcesPanel
+				client={fakeClient()}
+				orgId="org-1"
+				canManage={false}
+			/>,
+		);
+		expect(
+			await screen.findByText(/An organization administrator connects/),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: /connect a repository/i }),
+		).toBeNull();
+	});
+
+	it("gives an administrator with no readable collection the link to grant one", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		const link = await screen.findByRole("link", {
+			name: "Grant read access to a collection",
+		});
+		expect(link.getAttribute("href")).toBe("/admin/datasources");
 	});
 });

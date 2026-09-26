@@ -328,6 +328,7 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 		OrgId:              source.OrgID,
 		Provider:           datasourceProviderToProto(source.Provider),
 		BoundaryNodeId:     source.BoundaryNodeID,
+		BoundaryLabel:      source.BoundaryLabel,
 		Status:             datasourceStatusToProto(source.Status),
 		StatusReason:       source.StatusReason,
 		WebhookConfigured:  source.WebhookConfigured(),

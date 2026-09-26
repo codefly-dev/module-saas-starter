@@ -104,6 +104,7 @@ const oneSource = {
 			provider: "DATASOURCE_PROVIDER_GITHUB",
 			github: { repo: "codefly-dev/module-saas-starter", paths: ["docs/"] },
 			boundaryNodeId: "11111111-1111-1111-1111-111111111111",
+			boundaryLabel: "handbook",
 			status: "DATASOURCE_STATUS_ACTIVE",
 			webhookConfigured: true,
 			lastIngestedAt: "2026-09-08T11:30:00Z",
@@ -182,6 +183,7 @@ describe("createDatasourceClient", () => {
 				branch: "",
 				fileExtensions: [],
 				boundaryNodeId: "11111111-1111-1111-1111-111111111111",
+				boundaryLabel: "handbook",
 				webhookConfigured: true,
 				status: "active",
 				lastSyncedAt: undefined,
@@ -356,7 +358,43 @@ describe("createDatasourceClient", () => {
 	});
 });
 
+function claimsToken(claims: Record<string, unknown>): string {
+	const body = btoa(JSON.stringify(claims))
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+	return `header.${body}.signature`;
+}
+
 describe("DatasourcesPanel gateway binding", () => {
+	it.each([
+		["a member", { or: "member" }, false],
+		["an organization admin", { or: "admin" }, true],
+		["a platform super administrator", { pr: "super_admin" }, true],
+	])(
+		"offers %s the management controls only when their credential names the tier",
+		async (_who, claims, manages) => {
+			stubFetch(oneSource);
+			render(
+				<DatasourcesPanel
+					orgId="org-1"
+					gateway={{
+						apiBase: "/api/solutions/guides/proxy",
+						getAccessToken: () => claimsToken(claims),
+					}}
+				/>,
+			);
+			await screen.findByText("codefly-dev/module-saas-starter");
+			expect(!!screen.queryByRole("button", { name: "Connect GitHub" })).toBe(
+				manages,
+			);
+			expect(!!screen.queryByRole("button", { name: "Sync" })).toBe(manages);
+			expect(!!screen.queryByRole("button", { name: /More actions for/ })).toBe(
+				manages,
+			);
+		},
+	);
+
 	it("self-wires its own React-Query provider and renders live sources", async () => {
 		stubFetch(oneSource);
 

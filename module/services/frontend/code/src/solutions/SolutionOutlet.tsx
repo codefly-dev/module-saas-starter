@@ -296,48 +296,15 @@ export interface SolutionRemote {
 	exposedModule: string;
 }
 
-/** Props the host injects into every solution page. */
-export interface SolutionPageProps {
-	solutionId: string;
-	/**
-	 * Same-origin base for ALL of a remote's backend calls — its own service and
-	 * the host's platform services alike. ONE base covers both because the host
-	 * proxy routes on the path, not on the base: a Connect procedure shaped
-	 * `saas.<pkg>.v1.<Service>/<Method>` goes to the API gateway's root, exactly
-	 * where a host page's own call lands, and everything else goes to this
-	 * solution's registered upstream (`api/solutions/[id]/proxy/[...path]`).
-	 *
-	 * So a kit component the host hands a remote — `<DatasourcesPanel gateway>`
-	 * calls the host's `saas.accounts.v1.DatasourceService` — works over this
-	 * base unchanged. Do NOT add a second "host" base: it would be the same
-	 * destination reached a second way, and a remote built against a base an
-	 * older host does not inject receives `undefined` and throws inside
-	 * `SolutionErrorBoundary`, blanking the page instead of failing one panel.
-	 */
-	apiBase: string;
-	/** Host-owned access-token getter — the remote never touches the token store. */
-	getAccessToken: () => string | null;
-	/**
-	 * Host-owned refresh: exchanges the httpOnly session for a fresh access token
-	 * (single-flight) and resolves to it, or null if the session is gone. The
-	 * remote hands this to `<DatasourcesPanel gateway>` so a data call that hits
-	 * the token's expiry mid-session recovers instead of failing — the same
-	 * mid-session recovery the portal's own transport does.
-	 */
-	refreshAccessToken: () => Promise<string | null>;
-	/**
-	 * Host-owned authed fetch: stamps the bearer token, and on a 401 exchanges
-	 * the session for a fresh token (single-flight) and retries the request once.
-	 * If the session is truly gone the host has already redirected to login. A
-	 * solution making raw REST calls uses this instead of hand-rolling
-	 * `fetch(..., { Authorization: Bearer getAccessToken() })`, so every solution
-	 * gets the portal's refresh-then-retry recovery — and the dead-session
-	 * auto-relogin — for free, rather than surfacing a bare `HTTP 401`.
-	 */
-	authedFetch: (
-		input: RequestInfo | URL,
-		init?: RequestInit,
-	) => Promise<Response>;
+/**
+ * Props the host injects into every solution page. The backend binding —
+ * `solutionId`, `apiBase` and the token accessors — is the kit's
+ * `SolutionBinding`, the one definition a remote's own helpers read
+ * (`solutionFetch`, `useSolutionJson`, `useViewerEpoch` in
+ * `@codefly-dev/saas-ui`); this adds only what the host alone knows how to
+ * construct.
+ */
+export interface SolutionPageProps extends SaasUi.SolutionBinding {
 	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
