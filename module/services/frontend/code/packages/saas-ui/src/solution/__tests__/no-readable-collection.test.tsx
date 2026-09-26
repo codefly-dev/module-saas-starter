@@ -56,8 +56,8 @@ describe("NoReadableCollection", () => {
 	});
 
 	it("gives an administrator the link to make the grant", () => {
-		render(<NoReadableCollection canGrant subject="answers" />);
-		expect(screen.getByText(/no answers to show/)).toBeTruthy();
+		render(<NoReadableCollection canGrant subject="documents to answer from" />);
+		expect(screen.getByText(/so there are no documents to answer from\./)).toBeTruthy();
 		const link = screen.getByRole("link", {
 			name: "Grant read access to a collection",
 		});

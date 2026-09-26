@@ -412,7 +412,7 @@ function DatasourcesPanelView({
 					<div role="status">
 						<NoReadableCollection
 							canGrant={canManage}
-							subject="ingested documents"
+							subject="ingested documents to show"
 						/>
 					</div>
 				) : null}

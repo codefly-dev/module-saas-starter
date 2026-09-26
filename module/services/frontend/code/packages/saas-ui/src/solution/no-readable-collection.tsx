@@ -13,7 +13,8 @@ export interface NoReadableCollectionProps {
 	 * the notice offers; the grant is authorized by the host.
 	 */
 	canGrant: boolean;
-	/** What the page would have shown, for the first sentence: "documents". */
+	/** What the page would have shown, ending the first sentence ("…, so there
+	 *  are no documents to show."). Default "documents to show". */
 	subject?: string;
 	/** Where grants are made. Default {@link COLLECTION_ACCESS_PATH}. */
 	grantsHref?: string;
@@ -32,14 +33,14 @@ export interface NoReadableCollectionProps {
  */
 export function NoReadableCollection({
 	canGrant,
-	subject = "documents",
+	subject = "documents to show",
 	grantsHref = COLLECTION_ACCESS_PATH,
 	className,
 }: NoReadableCollectionProps) {
 	return (
 		<div data-slot="no-readable-collection" className={className}>
 			<p className="type-emphasis">
-				You can’t read any collection yet, so there are no {subject} to show.
+				You can’t read any collection yet, so there are no {subject}.
 			</p>
 			{canGrant ? (
 				<p className="type-body text-muted-foreground">
