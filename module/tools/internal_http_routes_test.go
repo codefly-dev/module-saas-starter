@@ -399,7 +399,10 @@ func scanRouteModule(file, source string) routeModuleScan {
 		scan.problems = append(scan.problems, fmt.Sprintf("%s: delimiters do not balance after comments and literals are removed, so this module cannot be read reliably; the gate refuses to report it as ungated", file))
 		return scan
 	}
-	bodies := moduleScopeFunctions(code)
+	bodies, unreadable := moduleScopeFunctions(code)
+	for _, name := range unreadable {
+		scan.problems = append(scan.problems, fmt.Sprintf("%s: the body of top-level function %s could not be located, so every credential check inside it is invisible to this gate", file, name))
+	}
 	names, importSpans := gateLocalNames(code)
 
 	for _, reference := range gateReferencePattern(names).FindAllStringIndex(code, -1) {
@@ -498,19 +501,30 @@ func calledNames(body string) []string {
 	return names
 }
 
-// moduleScopeFunctions maps each top-level function declaration to its body.
-// Only column-zero declarations count: a function nested inside a handler is
-// not the binding an aliased export can name, and treating it as one let it
-// shadow the real one.
-func moduleScopeFunctions(code string) map[string][2]int {
+// moduleScopeFunctions maps each top-level function declaration to its body,
+// and names every declaration whose body could not be located. Only
+// column-zero declarations count: a function nested inside a handler is not
+// the binding an aliased export can name, and treating it as one let it shadow
+// the real one.
+//
+// The unreadable names are returned rather than dropped because dropping them
+// is the silent direction of this gate: a function whose body cannot be read
+// makes every call inside it invisible, so a handler that does verify a
+// credential reads as ungated, and an undeclared one then raises nothing at
+// all.
+func moduleScopeFunctions(code string) (map[string][2]int, []string) {
 	bodies := make(map[string][2]int)
+	var unreadable []string
 	for _, match := range functionDefinition.FindAllStringSubmatchIndex(code, -1) {
+		name := code[match[2]:match[3]]
 		start, end := functionBody(code, match[1]-1)
-		if start >= 0 {
-			bodies[code[match[2]:match[3]]] = [2]int{start, end}
+		if start < 0 {
+			unreadable = append(unreadable, name)
+			continue
 		}
+		bodies[name] = [2]int{start, end}
 	}
-	return bodies
+	return bodies, unreadable
 }
 
 func bodySpans(bodies map[string][2]int) [][]int {
@@ -549,7 +563,12 @@ func exportedHandlers(code string) map[string]string {
 
 // functionBody returns the span of the body following the parameter list that
 // opens at parenthesis. The parameter list is matched first because a
-// destructured parameter opens a brace before the body does.
+// destructured parameter opens a brace before the body does, and a return type
+// annotation is stepped over for the same reason: `): Promise<{ ... }> {` puts
+// a brace between the parameter list and the body too. Reading that one as the
+// body hid every call the function made, which reported a correctly gated
+// handler as ungated — and, for a handler whose route is not declared, would
+// have left it silently out of the gate with no mesh deny rendered for it.
 func functionBody(code string, parenthesis int) (int, int) {
 	if parenthesis < 0 || parenthesis >= len(code) || code[parenthesis] != '(' {
 		return -1, -1
@@ -558,16 +577,55 @@ func functionBody(code string, parenthesis int) (int, int) {
 	if closing < 0 {
 		return -1, -1
 	}
-	brace := strings.IndexByte(code[closing:], '{')
+	brace := bodyBrace(code, closing+1)
 	if brace < 0 {
 		return -1, -1
 	}
-	brace += closing
 	end := matchDelimiter(code, brace, '{', '}')
 	if end < 0 {
 		return -1, -1
 	}
 	return brace, end + 1
+}
+
+// bodyBrace finds the brace that opens a function body, starting just past the
+// parameter list. Without a return type annotation the next brace is the body,
+// as it always was. With one, everything up to the body is type syntax: a brace
+// inside `<...>`, `(...)` or `[...]` belongs to that type, and a bare object
+// type — `): { ok: boolean } {` — is the one brace group a further brace
+// follows. Returns -1 when no body brace can be identified, which the caller
+// reports rather than treating the function as bodiless.
+func bodyBrace(code string, from int) int {
+	if nextSymbol(code, from) != ':' {
+		brace := strings.IndexByte(code[from:], '{')
+		if brace < 0 {
+			return -1
+		}
+		return from + brace
+	}
+	depth := 0
+	for index := from; index < len(code); index++ {
+		switch code[index] {
+		case '<', '(', '[':
+			depth++
+		case '>', ')', ']':
+			// `=>` in a function type closes nothing; the guard keeps the depth
+			// from going negative and swallowing the body brace.
+			if depth > 0 {
+				depth--
+			}
+		case '{':
+			closed := matchDelimiter(code, index, '{', '}')
+			if closed < 0 {
+				return -1
+			}
+			if depth == 0 && nextSymbol(code, closed+1) != '{' {
+				return index
+			}
+			index = closed
+		}
+	}
+	return -1
 }
 
 func matchDelimiter(code string, start int, open, closed byte) int {
