@@ -99,6 +99,25 @@ describe("parseManifest", () => {
     (noExposed.frontend as Record<string, unknown>).exposedModule = "";
     expect(parseManifest(noExposed)).toBeNull();
   });
+
+  // The id is a slug everywhere it is used — it names the proxy base in a URL
+  // path and it is echoed into a server log line — but it was the one slug
+  // nothing checked, so any non-empty string got through.
+  it("holds the id to the same slug rule every surface id answers to", () => {
+    for (const id of [
+      'x\nsolution registration: "audit" registered (revision 999, active)',
+      "../../etc",
+      "Audit",
+      "has space",
+      "-leading",
+      "trailing-",
+    ]) {
+      expect(parseManifest(baseManifest({ id }))).toBeNull();
+    }
+    for (const id of ["audit", "a", "a-b_c9"]) {
+      expect(parseManifest(baseManifest({ id }))?.id).toBe(id);
+    }
+  });
 });
 
 describe("parseManifest dashboard slot", () => {
@@ -457,6 +476,7 @@ describe("registry snapshot", () => {
     const g = globalThis as Record<string, unknown>;
     g.__solutionSnapshot = null;
     g.__solutionSnapshotInFlight = null;
+    g.__solutionSnapshotFailure = null;
     getEndpoints.mockReturnValue([
       { service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
     ]);
@@ -467,6 +487,53 @@ describe("registry snapshot", () => {
     vi.unstubAllGlobals();
     getEndpoints.mockReset();
     getWorkspaceSecret.mockReset();
+  });
+
+  // Every browser polling the navigation drives this read, so a registry
+  // outage printed a line per read for as long as it lasted — and the
+  // registration endpoint's own per-request line is switched off for that path
+  // in next.config.mjs, which leaves this the only thing saying the registry is
+  // unreachable. It has to stay readable, and it has to say when it ends.
+  it("reports an unreadable registry as one condition, and its recovery", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const g = globalThis as Record<string, unknown>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("down", { status: 503 })),
+    );
+    for (let read = 0; read < 9; read++) {
+      g.__solutionSnapshot = null;
+      g.__solutionSnapshotInFlight = null;
+      expect(await loadSolutions()).toBe("unavailable");
+    }
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain("gateway answered 503");
+
+    // Still failing at a milestone says so again; silence while it is still
+    // broken is the other way this goes wrong.
+    g.__solutionSnapshot = null;
+    g.__solutionSnapshotInFlight = null;
+    expect(await loadSolutions()).toBe("unavailable");
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(String(error.mock.calls[1]?.[0])).toContain("after 10 reads");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        snapshotResponse([
+          { id: "a", status: "active", manifest: manifestFor("a", 1) },
+        ]),
+      ),
+    );
+    g.__solutionSnapshot = null;
+    g.__solutionSnapshotInFlight = null;
+    expect(await loadSolutions()).not.toBe("unavailable");
+    expect(String(info.mock.calls[0]?.[0])).toContain(
+      "snapshot readable again after 10 failed reads",
+    );
+    error.mockRestore();
+    info.mockRestore();
   });
 
   it("serves active registrations ordered for the navigation", async () => {

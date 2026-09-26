@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
+	"math/big"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -308,9 +309,8 @@ func unchangedSolutionHalf(record *SolutionRegistration, write SolutionRegistrat
 // Compared byte for byte, every heartbeat of an unchanged solution read as a
 // change: a new registry revision, a solution.registration_updated audit event
 // and a registry cache invalidation on every replica, once per beat, forever.
-// Two texts are the same manifest when they decode to equal values (numbers
-// kept as written, so a numeric change is never lost to float rounding). Text
-// that does not decode is compared as bytes, as before.
+// Two texts are the same manifest when they decode to equal values. Text that
+// does not decode is compared as bytes, as before.
 func sameManifest(stored, sent string) bool {
 	if stored == sent {
 		return true
@@ -320,7 +320,7 @@ func sameManifest(stored, sent string) bool {
 	if storedErr != nil || sentErr != nil {
 		return false
 	}
-	return reflect.DeepEqual(storedValue, sentValue)
+	return sameJSONValue(storedValue, sentValue)
 }
 
 func decodeManifest(text string) (any, error) {
@@ -334,6 +334,103 @@ func decodeManifest(text string) (any, error) {
 		return nil, errors.New("trailing data after the manifest")
 	}
 	return value, nil
+}
+
+// sameJSONValue compares two decoded manifests the way the column they live in
+// does. reflect.DeepEqual cannot: json.Number holds the literal as written, so
+// it compares spellings, and jsonb stores numbers as numeric — which never
+// renders an exponent. A manifest carrying 1e-7 comes back as 0.0000001 and
+// every heartbeat of it read as a change, which is the whole bug this function
+// exists to stop, surviving for exactly the manifests whose numbers Postgres
+// rewrites.
+func sameJSONValue(stored, sent any) bool {
+	switch left := stored.(type) {
+	case map[string]any:
+		right, ok := sent.(map[string]any)
+		if !ok || len(left) != len(right) {
+			return false
+		}
+		for key, value := range left {
+			other, present := right[key]
+			if !present || !sameJSONValue(value, other) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		right, ok := sent.([]any)
+		if !ok || len(left) != len(right) {
+			return false
+		}
+		for index := range left {
+			if !sameJSONValue(left[index], right[index]) {
+				return false
+			}
+		}
+		return true
+	case json.Number:
+		right, ok := sent.(json.Number)
+		return ok && sameJSONNumber(left, right)
+	case string:
+		right, ok := sent.(string)
+		return ok && left == right
+	case bool:
+		right, ok := sent.(bool)
+		return ok && left == right
+	case nil:
+		return sent == nil
+	default:
+		return false
+	}
+}
+
+// maxComparableNumberExponent bounds the exponent a number literal may carry
+// before it is compared as text instead. A rational built from 1e999999999
+// would be materialised digit by digit, and the literal is caller-supplied:
+// the write that carries it is refused by the numeric column anyway, so
+// falling back to a text comparison costs a renewal that was never going to
+// land and spends no memory reaching that answer.
+const maxComparableNumberExponent = 10000
+
+// maxComparableNumberDigits bounds the mantissa for the same reason.
+const maxComparableNumberDigits = 4096
+
+// sameJSONNumber compares two JSON number literals by value, which is what
+// jsonb's own equality does once they are numerics. big.Rat is exact over
+// every JSON number — they are all finite decimals — so no change is lost to
+// float rounding.
+func sameJSONNumber(stored, sent json.Number) bool {
+	if stored == sent {
+		return true
+	}
+	if !comparableNumber(stored) || !comparableNumber(sent) {
+		return false
+	}
+	left, leftOK := new(big.Rat).SetString(string(stored))
+	right, rightOK := new(big.Rat).SetString(string(sent))
+	if !leftOK || !rightOK {
+		return false
+	}
+	return left.Cmp(right) == 0
+}
+
+func comparableNumber(literal json.Number) bool {
+	text := string(literal)
+	if len(text) > maxComparableNumberDigits {
+		return false
+	}
+	exponent := strings.IndexAny(text, "eE")
+	if exponent < 0 {
+		return true
+	}
+	magnitude, err := strconv.Atoi(strings.TrimPrefix(text[exponent+1:], "+"))
+	if err != nil {
+		return false
+	}
+	if magnitude < 0 {
+		magnitude = -magnitude
+	}
+	return magnitude <= maxComparableNumberExponent
 }
 
 func renewSolutionHalf(record *SolutionRegistration, write SolutionRegistrationWrite, leaseUntil time.Time) {

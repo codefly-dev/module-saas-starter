@@ -292,6 +292,51 @@ describe("solutions register route auth", () => {
 		);
 	});
 
+	it("reports a key set outage and its end, not one line per beat and not silence", async () => {
+		// An unverified beat names no registrant, so holding it under a stand-in
+		// one could never recover: nothing unverified ever succeeds. The outage
+		// was one line, an hour ago, while every solution's own entry still read
+		// "registered" — and a refused credential arriving during the same
+		// outage alternated with it and printed on every beat.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const scope = globalThis as Record<string, unknown>;
+		scope.__solutionRegistrationLog = undefined;
+		scope.__solutionRegistrationAuthority = undefined;
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("upstream restarting", { status: 502 })),
+		);
+		for (let beat = 0; beat < 5; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+			// A beat carrying no credential is judged without reaching the key
+			// set, so it is refused 401 inside the same window. Sharing one slot
+			// with the outage, the two alternated and printed on every beat.
+			expect((await POST(postRequest(manifestBody()))).status).toBe(401);
+		}
+		expect(warn).toHaveBeenCalledTimes(2);
+		expect(String(warn.mock.calls[0]?.[0])).toContain(
+			"the registration key set is unreachable",
+		);
+		expect(String(warn.mock.calls[1]?.[0])).toContain(
+			"a beat presented a credential this host does not accept",
+		);
+
+		// The key set is probed on a backoff, so the recovering beat is the
+		// first one past that window rather than the first after the gateway
+		// returns.
+		vi.stubGlobal("fetch", fakeGateway());
+		(globalThis as Record<string, unknown>).__solutionRegistrationJwks =
+			undefined;
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+		expect(String(info.mock.calls[0]?.[0])).toContain(
+			"the registration key set is reachable again; it answered 503 for 5 beats",
+		);
+	});
+
 	it("answers 503, not a refusal, when the key set it verifies against is unreachable", async () => {
 		// A restarting gateway is not a wrong credential. Told 401, a registrant
 		// goes looking for a provisioning or ownership fault that does not exist.

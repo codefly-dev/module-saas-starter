@@ -6,9 +6,11 @@ import {
 	verifySolutionRegistration,
 } from "@/solutions/registration-authority";
 import {
+	observeAuthorityReachable,
+	observeAuthorityRefusal,
 	observeRegistrationBeat,
 	observeRegistrationRemoved,
-	UNVERIFIED_REGISTRANT,
+	type RegistrationRefusal,
 } from "@/solutions/registration-log";
 import {
 	loadSolutions,
@@ -61,17 +63,23 @@ async function authorize(
 	const verdict = await verifySolutionRegistration(
 		request.headers.get(SOLUTION_REGISTRATION_HEADER),
 	);
+	// Recorded here, where the verdict is known, and not as a registrant state:
+	// a beat that did not verify names no registrant this host believes. The
+	// key set being unreachable lasts many beats and is one condition, not one
+	// per beat — and a beat that DOES verify is the only evidence the key set
+	// is reachable again, which is why the recovery is recorded here too.
 	if (verdict === "unavailable") {
-		// Logged by the caller, as a change of state: the key set being
-		// unreachable lasts many beats and is one event, not one per beat.
+		observeAuthorityRefusal("unreachable");
 		return Response.json(
 			{ error: "registration_authority_unavailable" },
 			{ status: 503, headers: { "retry-after": "5" } },
 		);
 	}
 	if (verdict === "invalid" || !consumeRegistrationToken(verdict)) {
+		observeAuthorityRefusal("refused");
 		return Response.json({ error: "unauthorized" }, { status: 401 });
 	}
+	observeAuthorityReachable();
 	return verdict;
 }
 
@@ -83,49 +91,59 @@ async function authorize(
  * registration as it left it.
  */
 export async function POST(request: Request): Promise<Response> {
-	const { solution, response, reason } = await registerBeat(request);
-	if (response.ok) {
-		const body = (await response.clone().json()) as {
-			revision: number;
-			status: string;
-		};
-		observeRegistrationBeat(solution, {
-			ok: true,
-			revision: body.revision,
-			status: body.status,
-		});
-	} else {
-		observeRegistrationBeat(solution, {
-			ok: false,
-			httpStatus: response.status,
-			reason: reason ?? "refused",
-		});
+	const answer = await registerBeat(request);
+	switch (answer.outcome) {
+		case "unverified":
+			// The credential never verified, so there is no registrant to
+			// attribute this beat to; authorize() already recorded it against
+			// the credential check itself.
+			break;
+		case "registered": {
+			const body = (await answer.response.clone().json()) as {
+				revision: number;
+				status: string;
+			};
+			observeRegistrationBeat(answer.solution, {
+				ok: true,
+				revision: body.revision,
+				status: body.status,
+			});
+			break;
+		}
+		default:
+			observeRegistrationBeat(answer.solution, {
+				ok: false,
+				httpStatus: answer.response.status,
+				reason: answer.reason,
+				detail: answer.detail,
+			});
 	}
-	return response;
+	return answer.response;
 }
 
 /**
- * One beat's answer, with the registrant it is attributed to — the verified
- * solution id, or {@link UNVERIFIED_REGISTRANT} when the credential was not
- * accepted — and, for a refusal, the reason an operator reads.
+ * One beat's answer.
+ *
+ * Three outcomes rather than a response plus optional fields: a beat whose
+ * credential did not verify has no registrant to name, and a refusal always
+ * has a reason. Spelling that out is what keeps the caller from needing a
+ * default for a reason that is never actually absent.
  */
-interface BeatAnswer {
-	solution: string;
-	response: Response;
-	reason?: string;
-}
+type BeatAnswer =
+	| { outcome: "unverified"; response: Response }
+	| { outcome: "registered"; solution: string; response: Response }
+	| {
+			outcome: "refused";
+			solution: string;
+			response: Response;
+			reason: RegistrationRefusal;
+			detail?: string;
+	  };
 
 async function registerBeat(request: Request): Promise<BeatAnswer> {
 	const claims = await authorize(request);
 	if (claims instanceof Response) {
-		return {
-			solution: UNVERIFIED_REGISTRANT,
-			response: claims,
-			reason:
-				claims.status === 503
-					? "registration key set unreachable (answered 503, not a refusal of the credential)"
-					: "credential not accepted",
-		};
+		return { outcome: "unverified", response: claims };
 	}
 	const solution = claims.solution;
 	let body: unknown;
@@ -133,6 +151,7 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
 		body = await request.json();
 	} catch {
 		return {
+			outcome: "refused",
 			solution,
 			response: Response.json({ error: "invalid_json" }, { status: 400 }),
 			reason: "invalid_json",
@@ -141,6 +160,7 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
 	const manifest = parseManifest(body);
 	if (!manifest) {
 		return {
+			outcome: "refused",
 			solution,
 			response: Response.json({ error: "invalid_manifest" }, { status: 422 }),
 			reason: "invalid_manifest",
@@ -148,12 +168,14 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
 	}
 	if (manifest.id !== claims.solution) {
 		return {
+			outcome: "refused",
 			solution,
 			response: Response.json(
 				{ error: "solution_not_authorized" },
 				{ status: 403 },
 			),
-			reason: `solution_not_authorized (manifest names "${manifest.id}")`,
+			reason: "solution_not_authorized",
+			detail: `manifest names "${manifest.id}"`,
 		};
 	}
 	// Compatibility is enforced BEFORE the write, so an incompatible remote never
@@ -163,12 +185,14 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
 	const verdict = checkRuntimeCompatibility(manifest);
 	if (!verdict.compatible) {
 		return {
+			outcome: "refused",
 			solution,
 			response: Response.json(
 				{ error: "incompatible_runtime", reasons: verdict.reasons },
 				{ status: 409 },
 			),
-			reason: `incompatible_runtime: ${verdict.reasons.join("; ")}`,
+			reason: "incompatible_runtime",
+			detail: verdict.reasons.join("; "),
 		};
 	}
 	// A solution whose registration was deregistered has to say so to come back:
@@ -184,12 +208,14 @@ async function registerBeat(request: Request): Promise<BeatAnswer> {
 	});
 	if (!result.ok) {
 		return {
+			outcome: "refused",
 			solution,
 			response: writeFailure(result.reason),
 			reason: `registry ${result.reason}`,
 		};
 	}
 	return {
+		outcome: "registered",
 		solution,
 		response: Response.json({
 			ok: true,
