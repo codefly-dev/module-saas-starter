@@ -166,5 +166,8 @@ refusals stay distinct: `401` for an unproven module, `412` with body
 `DELEGATION_MISSING` when the source has no active delegation to the module (a
 person must reconnect it — read from accounts' `google.rpc.ErrorInfo`, never
 from the message), and `403` when the delegation named is revoked or not usable
-by the module. The design is in
+by the module — body `DELEGATION_REVOKED` or `DELEGATION_INVALID`, read from the
+same `ErrorInfo`. Only those two reasons are relayed; any other denial is a bare
+`403` with body `forbidden`, so the gateway never says more about a delegation
+than accounts decided to. The design is in
 [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-from-a-source-delegation).

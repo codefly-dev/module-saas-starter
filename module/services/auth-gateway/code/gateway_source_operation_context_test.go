@@ -188,7 +188,15 @@ func TestGateway_ModuleSourceOperationContext_FailsClosed(t *testing.T) {
 }
 
 func missingDelegation(reason, domain string) error {
-	refused := status.New(codes.FailedPrecondition, "no active delegation")
+	return delegationRefusal(codes.FailedPrecondition, reason, domain)
+}
+
+func refusedDelegation(reason, domain string) error {
+	return delegationRefusal(codes.PermissionDenied, reason, domain)
+}
+
+func delegationRefusal(code codes.Code, reason, domain string) error {
+	refused := status.New(code, "delegation refused")
 	detailed, err := refused.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: domain})
 	if err != nil {
 		panic(err)
@@ -198,20 +206,30 @@ func missingDelegation(reason, domain string) error {
 
 // accounts owns the decision; the gateway keeps its outcomes distinguishable.
 // Only a FailedPrecondition carrying accounts' DELEGATION_MISSING reason is the
-// 412 a module reads as "a person must reconnect this source".
+// 412 a module reads as "a person must reconnect this source", and only a
+// PermissionDenied carrying DELEGATION_REVOKED or DELEGATION_INVALID names its
+// reason in the 403 body; every other refusal stays a bare `forbidden`, so the
+// gateway never says more about a delegation than accounts decided to.
 func TestGateway_ModuleSourceOperationContext_RelaysAccountsOutcome(t *testing.T) {
 	for name, test := range map[string]struct {
-		err  error
-		want int
+		err      error
+		want     int
+		wantBody string
 	}{
-		"unproven module":     {status.Error(codes.Unauthenticated, "denied"), http.StatusUnauthorized},
-		"revoked or invalid":  {status.Error(codes.PermissionDenied, "denied"), http.StatusForbidden},
-		"rejected request":    {status.Error(codes.InvalidArgument, "bad"), http.StatusBadRequest},
-		"delegation missing":  {missingDelegation(sourceDelegationMissingReason, solutionRegistryErrorDomain), http.StatusPreconditionFailed},
-		"foreign reason":      {missingDelegation("SOMETHING_ELSE", solutionRegistryErrorDomain), http.StatusBadGateway},
-		"foreign domain":      {missingDelegation(sourceDelegationMissingReason, "example.com"), http.StatusBadGateway},
-		"issuer unconfigured": {status.Error(codes.FailedPrecondition, "unconfigured"), http.StatusBadGateway},
-		"outage":              {status.Error(codes.Internal, "boom"), http.StatusBadGateway},
+		"unproven module":             {status.Error(codes.Unauthenticated, "denied"), http.StatusUnauthorized, "unauthorized"},
+		"untyped denial":              {status.Error(codes.PermissionDenied, "denied"), http.StatusForbidden, "forbidden"},
+		"delegation revoked":          {refusedDelegation(sourceDelegationRevokedReason, solutionRegistryErrorDomain), http.StatusForbidden, "DELEGATION_REVOKED"},
+		"delegation invalid":          {refusedDelegation(sourceDelegationInvalidReason, solutionRegistryErrorDomain), http.StatusForbidden, "DELEGATION_INVALID"},
+		"denial with foreign reason":  {refusedDelegation("TENANT_MISMATCH", solutionRegistryErrorDomain), http.StatusForbidden, "forbidden"},
+		"denial with foreign domain":  {refusedDelegation(sourceDelegationRevokedReason, "example.com"), http.StatusForbidden, "forbidden"},
+		"missing reason on a denial":  {refusedDelegation(sourceDelegationMissingReason, solutionRegistryErrorDomain), http.StatusForbidden, "forbidden"},
+		"rejected request":            {status.Error(codes.InvalidArgument, "bad"), http.StatusBadRequest, "invalid request"},
+		"delegation missing":          {missingDelegation(sourceDelegationMissingReason, solutionRegistryErrorDomain), http.StatusPreconditionFailed, "DELEGATION_MISSING"},
+		"revoked reason on a precond": {missingDelegation(sourceDelegationRevokedReason, solutionRegistryErrorDomain), http.StatusBadGateway, "source operation context unavailable"},
+		"foreign reason":              {missingDelegation("SOMETHING_ELSE", solutionRegistryErrorDomain), http.StatusBadGateway, "source operation context unavailable"},
+		"foreign domain":              {missingDelegation(sourceDelegationMissingReason, "example.com"), http.StatusBadGateway, "source operation context unavailable"},
+		"issuer unconfigured":         {status.Error(codes.FailedPrecondition, "unconfigured"), http.StatusBadGateway, "source operation context unavailable"},
+		"outage":                      {status.Error(codes.Internal, "boom"), http.StatusBadGateway, "source operation context unavailable"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			gw, mint := newSourceOperationContextHarness(t)
@@ -222,17 +240,18 @@ func TestGateway_ModuleSourceOperationContext_RelaysAccountsOutcome(t *testing.T
 
 			require.Equal(t, test.want, w.Code)
 			require.Equal(t, 1, mint.requestCount)
-			if test.want == http.StatusPreconditionFailed {
-				require.Equal(t, sourceDelegationMissingReason, w.Body.String())
-			}
+			require.Equal(t, test.wantBody, w.Body.String())
 		})
 	}
 }
 
-// The reason string is a wire contract with accounts
-// (adapters.SourceDelegationMissingReason); pin it on this side.
-func TestGateway_ModuleSourceOperationContext_MissingReasonIsTheWireContract(t *testing.T) {
+// The reason strings are a wire contract with accounts
+// (adapters.SourceDelegation{Missing,Revoked,Invalid}Reason); pin them on this
+// side.
+func TestGateway_ModuleSourceOperationContext_ReasonsAreTheWireContract(t *testing.T) {
 	require.Equal(t, "DELEGATION_MISSING", sourceDelegationMissingReason)
+	require.Equal(t, "DELEGATION_REVOKED", sourceDelegationRevokedReason)
+	require.Equal(t, "DELEGATION_INVALID", sourceDelegationInvalidReason)
 	require.Equal(t, "/modules/_source-operation-context", moduleSourceOperationContextPath)
 }
 

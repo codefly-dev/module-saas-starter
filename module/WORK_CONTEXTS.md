@@ -333,10 +333,16 @@ tenant) exactly; a read exchange always does.
 
 | Answer | gRPC code | ErrorInfo reason | Gateway | Meaning |
 | --- | --- | --- | --- | --- |
-| Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412` | The source has no active delegation to this module. A person must connect or reconnect it. |
-| Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403` | The delegation was revoked, or was just found unsupported and revoked. |
-| Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
+| Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412`, body `DELEGATION_MISSING` | The source has no active delegation to this module. A person must connect or reconnect it. |
+| Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403`, body `DELEGATION_REVOKED` | The delegation was revoked, or was just found unsupported and revoked. |
+| Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403`, body `DELEGATION_INVALID` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
 | Unproven | `UNAUTHENTICATED` | — | `401` | The module's identity secret was not accepted. |
+
+The gateway's refusal body is the plain-text reason, read from the
+`ErrorInfo` and never from the message, and it relays only the three reasons
+above on their own status: a `PERMISSION_DENIED` with no reason, another
+reason, or another domain is a bare `403` with body `forbidden`, so the gateway
+never says more about a delegation than accounts decided to.
 
 **Audit.** `saas.datasource.delegation.created` on connect and reconnect,
 `saas.datasource.delegation.used` on every mint (written once the capability
@@ -349,7 +355,8 @@ which the sync job it was handed already names — and present the context to th
 binding's audience; mint again rather than holding one past its minute. Read
 `412`/`DELEGATION_MISSING` as "this source needs a person to reconnect it" and
 surface it that way; read `403` as the same outcome for a delegation that has
-ended. Never fall back to the module's own authority.
+ended (`DELEGATION_REVOKED`) or that this module may not use
+(`DELEGATION_INVALID`). Never fall back to the module's own authority.
 
 The gateway exchange is `POST /modules/_source-operation-context`
 ([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)).
