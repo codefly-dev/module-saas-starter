@@ -22,11 +22,19 @@ import (
 // binding that declares none cannot be minted headless at all, and one that
 // declares some is bounded by InvokeScopes, so the module acting alone can never
 // do more with an audience than it could on a person's behalf.
+//
+// SourceDelegationScopes is the third, equally separate grant: what a datasource
+// source's sync may do when a person connected the source and so delegated it
+// to this binding (MintSourceOperationContext). Declaring it is what makes the
+// binding the one a connect records a delegation for; at most one binding of a
+// module may declare it, and like HeadlessScopes it is bounded by InvokeScopes,
+// because the context it yields acts on that person's behalf.
 type ModuleOperationAudience struct {
-	Audience       string                 `json:"audience"`
-	InvokeScopes   []ModuleOperationScope `json:"invoke_scopes"`
-	LookupScopes   []ModuleOperationScope `json:"lookup_scopes"`
-	HeadlessScopes []ModuleOperationScope `json:"headless_scopes,omitempty"`
+	Audience               string                 `json:"audience"`
+	InvokeScopes           []ModuleOperationScope `json:"invoke_scopes"`
+	LookupScopes           []ModuleOperationScope `json:"lookup_scopes"`
+	HeadlessScopes         []ModuleOperationScope `json:"headless_scopes,omitempty"`
+	SourceDelegationScopes []ModuleOperationScope `json:"source_delegation_scopes,omitempty"`
 }
 
 type ModuleOperationScope struct {
@@ -122,6 +130,23 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 		if binding.HeadlessScopes != nil && (!validOperationScopes(binding.HeadlessScopes, false) || !operationScopesSubset(binding.HeadlessScopes, binding.InvokeScopes)) {
 			return fmt.Errorf("invalid installed module operation audience headless scopes")
 		}
+		// The same two rules for the source-delegation grant: absent is "this
+		// binding receives no delegation", present but empty is a mistake.
+		if binding.SourceDelegationScopes != nil && (!validOperationScopes(binding.SourceDelegationScopes, false) || !operationScopesSubset(binding.SourceDelegationScopes, binding.InvokeScopes)) {
+			return fmt.Errorf("invalid installed module operation audience source delegation scopes")
+		}
+	}
+	// A connect names exactly one binding per module, so two bindings both
+	// accepting delegations would leave the host to guess which one a person
+	// meant to delegate to. Refuse the declaration instead of choosing.
+	delegating := 0
+	for _, binding := range bindings {
+		if binding.SourceDelegationScopes != nil {
+			delegating++
+		}
+	}
+	if delegating > 1 {
+		return fmt.Errorf("at most one installed module operation audience binding may declare source delegation scopes")
 	}
 	return nil
 }

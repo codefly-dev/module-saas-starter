@@ -137,8 +137,12 @@ var authorities = map[string]Authority{
 	"datasource_group_bindings": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"datasource_domains":        {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"github_app_setups":         {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
-	"github_app_installations":  {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
-	"delegation_grants":         {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"source_delegations": {
+		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
+		Notes: "Revoked, never deleted: a delegation keeps its record after the source or the person it names is gone.",
+	},
+	"github_app_installations": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"delegation_grants":        {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"domain_events": {
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "tenant_id",
 		Notes: "Read-only tenant policy; publication goes through the SECURITY DEFINER outbox operation.",

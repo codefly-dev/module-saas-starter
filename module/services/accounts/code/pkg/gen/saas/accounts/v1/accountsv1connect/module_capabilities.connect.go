@@ -105,6 +105,9 @@ const (
 	// ModuleCapabilitiesServiceMintModuleOperationContextProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintModuleOperationContext RPC.
 	ModuleCapabilitiesServiceMintModuleOperationContextProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext"
+	// ModuleCapabilitiesServiceMintSourceOperationContextProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintSourceOperationContext RPC.
+	ModuleCapabilitiesServiceMintSourceOperationContextProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
 	// ModuleCapabilitiesServicePublishEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's PublishEvent RPC.
 	ModuleCapabilitiesServicePublishEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
@@ -208,6 +211,17 @@ type ModuleCapabilitiesServiceClient interface {
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
 	MintModuleOperationContext(context.Context, *connect.Request[v1.ModuleMintOperationContextRequest]) (*connect.Response[v1.ModuleMintOperationContextResponse], error)
+	// MintSourceOperationContext issues the Work Context one datasource source's
+	// sync runs with: owned by the person who connected the source, actored by
+	// the calling module's service principal, in the source's organization, with
+	// exactly the source_delegation_scopes of the binding the person delegated
+	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// every mint re-checks that the delegation is active, the source exists, the
+	// person is still an owner or admin of the organization, and the binding is
+	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
+	// source has no active delegation to the module; PERMISSION_DENIED means the
+	// delegation named is revoked or unusable.
+	MintSourceOperationContext(context.Context, *connect.Request[v1.ModuleMintSourceOperationContextRequest]) (*connect.Response[v1.ModuleMintSourceOperationContextResponse], error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -369,6 +383,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleOperationContext")),
 			connect.WithClientOptions(opts...),
 		),
+		mintSourceOperationContext: connect.NewClient[v1.ModuleMintSourceOperationContextRequest, v1.ModuleMintSourceOperationContextResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintSourceOperationContextProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSourceOperationContext")),
+			connect.WithClientOptions(opts...),
+		),
 		publishEvent: connect.NewClient[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServicePublishEventProcedure,
@@ -427,6 +447,7 @@ type moduleCapabilitiesServiceClient struct {
 	mintSolutionRegistration           *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
 	mintModuleWorkContext              *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
 	mintModuleOperationContext         *connect.Client[v1.ModuleMintOperationContextRequest, v1.ModuleMintOperationContextResponse]
+	mintSourceOperationContext         *connect.Client[v1.ModuleMintSourceOperationContextRequest, v1.ModuleMintSourceOperationContextResponse]
 	publishEvent                       *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
 	subscribe                          *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
 	unsubscribe                        *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
@@ -557,6 +578,12 @@ func (c *moduleCapabilitiesServiceClient) MintModuleOperationContext(ctx context
 	return c.mintModuleOperationContext.CallUnary(ctx, req)
 }
 
+// MintSourceOperationContext calls
+// saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext.
+func (c *moduleCapabilitiesServiceClient) MintSourceOperationContext(ctx context.Context, req *connect.Request[v1.ModuleMintSourceOperationContextRequest]) (*connect.Response[v1.ModuleMintSourceOperationContextResponse], error) {
+	return c.mintSourceOperationContext.CallUnary(ctx, req)
+}
+
 // PublishEvent calls saas.accounts.v1.ModuleCapabilitiesService.PublishEvent.
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, req *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
 	return c.publishEvent.CallUnary(ctx, req)
@@ -668,6 +695,17 @@ type ModuleCapabilitiesServiceHandler interface {
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
 	MintModuleOperationContext(context.Context, *connect.Request[v1.ModuleMintOperationContextRequest]) (*connect.Response[v1.ModuleMintOperationContextResponse], error)
+	// MintSourceOperationContext issues the Work Context one datasource source's
+	// sync runs with: owned by the person who connected the source, actored by
+	// the calling module's service principal, in the source's organization, with
+	// exactly the source_delegation_scopes of the binding the person delegated
+	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// every mint re-checks that the delegation is active, the source exists, the
+	// person is still an owner or admin of the organization, and the binding is
+	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
+	// source has no active delegation to the module; PERMISSION_DENIED means the
+	// delegation named is revoked or unusable.
+	MintSourceOperationContext(context.Context, *connect.Request[v1.ModuleMintSourceOperationContextRequest]) (*connect.Response[v1.ModuleMintSourceOperationContextResponse], error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -825,6 +863,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleOperationContext")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceMintSourceOperationContextHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintSourceOperationContextProcedure,
+		svc.MintSourceOperationContext,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSourceOperationContext")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServicePublishEventHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServicePublishEventProcedure,
 		svc.PublishEvent,
@@ -903,6 +947,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceMintModuleWorkContextHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleOperationContextProcedure:
 			moduleCapabilitiesServiceMintModuleOperationContextHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintSourceOperationContextProcedure:
+			moduleCapabilitiesServiceMintSourceOperationContextHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServicePublishEventProcedure:
 			moduleCapabilitiesServicePublishEventHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceSubscribeProcedure:
@@ -1012,6 +1058,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleWorkContext(conte
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleOperationContext(context.Context, *connect.Request[v1.ModuleMintOperationContextRequest]) (*connect.Response[v1.ModuleMintOperationContextResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintSourceOperationContext(context.Context, *connect.Request[v1.ModuleMintSourceOperationContextRequest]) (*connect.Response[v1.ModuleMintSourceOperationContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {

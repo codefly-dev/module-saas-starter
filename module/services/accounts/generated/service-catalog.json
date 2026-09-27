@@ -117,8 +117,10 @@
         "/saas.accounts.v1.DatasourceService/GetSource",
         "/saas.accounts.v1.DatasourceService/GetSourceSync",
         "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
+        "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
         "/saas.accounts.v1.DatasourceService/ListSources",
         "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+        "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
         "/saas.accounts.v1.DatasourceService/SyncSource",
         "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
         "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
@@ -227,6 +229,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
         "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+        "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
         "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
@@ -3216,6 +3219,55 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "ListSourceDelegations",
+      "input_type": "saas.accounts.v1.ListSourceDelegationsRequest",
+      "output_type": "saas.accounts.v1.ListSourceDelegationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "List the organization's source delegations, with who delegated each source to which module binding and why a revoked one ended.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/ListSources",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -3310,6 +3362,57 @@
       },
       "policy_tier": "org_admin",
       "description": "Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "RevokeSourceDelegation",
+      "input_type": "saas.accounts.v1.RevokeSourceDelegationRequest",
+      "output_type": "saas.accounts.v1.RevokeSourceDelegationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.delegation.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Revoke one of the organization's source delegations.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6052,6 +6155,51 @@
       },
       "policy_tier": "internal",
       "description": "Issue a solution the signed credential it registers its gateway upstream and frontend remote with.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "MintSourceOperationContext",
+      "input_type": "saas.accounts.v1.ModuleMintSourceOperationContextRequest",
+      "output_type": "saas.accounts.v1.ModuleMintSourceOperationContextResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.datasource.delegation.used"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Issue a composed module the Work Context a datasource source's sync runs with, from the delegation the person who connected it made.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

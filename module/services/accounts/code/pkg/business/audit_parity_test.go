@@ -40,6 +40,11 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceAccessLost,
 	EventDatasourceSourceAccessRestored,
 	EventDatasourceSourceRecovered,
+	// A connect or reconnect records a delegation only when a composed module
+	// declares a binding that accepts one, so none of the four RPCs that do it
+	// (AddSource, AddGitHubSource, SyncSource with a replacement credential,
+	// MigrateGitHubSourceToApp) declares it as its success record.
+	EventSourceDelegationCreated,
 	EventDocumentArchived,
 	// A document module's operator redrive reports this through EmitAuditEvent.
 	EventDocumentDeadLetterRedriven,

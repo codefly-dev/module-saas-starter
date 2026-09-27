@@ -224,6 +224,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The source-delegation exchange (/modules/_source-operation-context): the
+	// same perimeter, for a context a person's connect-time delegation of a
+	// datasource source yields.
+	if g.handleModuleSourceOperationContext(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)

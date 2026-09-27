@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/module_registration.proto.
  */
 export const file_saas_accounts_v1_module_registration: GenFile = /*@__PURE__*/
-  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoABCh9Tb2x1dGlvbk1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0EkEKC3NvbHV0aW9uX2lkGAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiYQogU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAieAocTW9kdWxlTWludFdvcmtDb250ZXh0UmVxdWVzdBI8CgZwcmVmaXgYASABKAlCLLpIKXInEAEYPzIhXlthLXowLTldKD86W2EtejAtOS1dKlthLXowLTldKT8kEhoKBnNlY3JldBgCIAEoCUIKukgHcgUQARiABCKEAQodTW9kdWxlTWludFdvcmtDb250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCSKaAQohTW9kdWxlTWludE9wZXJhdGlvbkNvbnRleHRSZXF1ZXN0EjwKBnByZWZpeBgBIAEoCUIsukgpcicQARg/MiFeW2EtejAtOV0oPzpbYS16MC05LV0qW2EtejAtOV0pPyQSGgoGc2VjcmV0GAIgASgJQgq6SAdyBRABGIAEEhsKB2JpbmRpbmcYAyABKAlCCrpIB3IFEAEYgAEirAEKIk1vZHVsZU1pbnRPcGVyYXRpb25Db250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCRIQCghhdWRpZW5jZRgFIAEoCRIPCgdiaW5kaW5nGAYgASgJQr8BChRjb20uc2Fhcy5hY2NvdW50cy52MUIXTW9kdWxlUmVnaXN0cmF0aW9uUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoABCh9Tb2x1dGlvbk1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0EkEKC3NvbHV0aW9uX2lkGAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiYQogU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAieAocTW9kdWxlTWludFdvcmtDb250ZXh0UmVxdWVzdBI8CgZwcmVmaXgYASABKAlCLLpIKXInEAEYPzIhXlthLXowLTldKD86W2EtejAtOS1dKlthLXowLTldKT8kEhoKBnNlY3JldBgCIAEoCUIKukgHcgUQARiABCKEAQodTW9kdWxlTWludFdvcmtDb250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCSKaAQohTW9kdWxlTWludE9wZXJhdGlvbkNvbnRleHRSZXF1ZXN0EjwKBnByZWZpeBgBIAEoCUIsukgpcicQARg/MiFeW2EtejAtOV0oPzpbYS16MC05LV0qW2EtejAtOV0pPyQSGgoGc2VjcmV0GAIgASgJQgq6SAdyBRABGIAEEhsKB2JpbmRpbmcYAyABKAlCCrpIB3IFEAEYgAEirAEKIk1vZHVsZU1pbnRPcGVyYXRpb25Db250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCRIQCghhdWRpZW5jZRgFIAEoCRIPCgdiaW5kaW5nGAYgASgJItoBCidNb2R1bGVNaW50U291cmNlT3BlcmF0aW9uQ29udGV4dFJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQSIQoNZGVsZWdhdGlvbl9pZBgDIAEoCUIIukgFcgOwAQFIABIdCglzb3VyY2VfaWQYBCABKAlCCLpIBXIDsAEBSABCEwoKZGVsZWdhdGlvbhIFukgCCAEi+AEKKE1vZHVsZU1pbnRTb3VyY2VPcGVyYXRpb25Db250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCRIQCghhdWRpZW5jZRgFIAEoCRIPCgdiaW5kaW5nGAYgASgJEhUKDWRlbGVnYXRpb25faWQYByABKAkSEQoJc291cmNlX2lkGAggASgJEhoKEm93bmVyX3ByaW5jaXBhbF9pZBgJIAEoCUK/AQoUY29tLnNhYXMuYWNjb3VudHMudjFCF01vZHVsZVJlZ2lzdHJhdGlvblByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * ModuleMintRegistrationRequest asks for the credential a module presents to
@@ -265,4 +265,130 @@ export type ModuleMintOperationContextResponse = Message<"saas.accounts.v1.Modul
  */
 export const ModuleMintOperationContextResponseSchema: GenMessage<ModuleMintOperationContextResponse> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_module_registration, 7);
+
+/**
+ * ModuleMintSourceOperationContextRequest asks for a Work Context that runs one
+ * datasource source's sync with the authority a person delegated when they
+ * connected (or reconnected) the source. It authenticates exactly like
+ * ModuleMintWorkContextRequest, with the module's identity secret for `prefix`.
+ *
+ * The caller names the delegation — by its id, or by the source whose active
+ * delegation to this module is meant — and nothing else. Tenant, owner,
+ * audience, scopes and lifetime come from the delegation and the binding it
+ * names: the source's organization, the person who connected it, and exactly
+ * that binding's `source_delegation_scopes`.
+ *
+ * @generated from message saas.accounts.v1.ModuleMintSourceOperationContextRequest
+ */
+export type ModuleMintSourceOperationContextRequest = Message<"saas.accounts.v1.ModuleMintSourceOperationContextRequest"> & {
+  /**
+   * @generated from field: string prefix = 1;
+   */
+  prefix: string;
+
+  /**
+   * @generated from field: string secret = 2;
+   */
+  secret: string;
+
+  /**
+   * @generated from oneof saas.accounts.v1.ModuleMintSourceOperationContextRequest.delegation
+   */
+  delegation: {
+    /**
+     * delegation_id names one delegation. A revoked one is refused with
+     * PERMISSION_DENIED; one that does not exist, belongs to another module,
+     * or is in an organization the module does not serve is refused the same
+     * way, indistinguishably.
+     *
+     * @generated from field: string delegation_id = 3;
+     */
+    value: string;
+    case: "delegationId";
+  } | {
+    /**
+     * source_id names a source; its active delegation to the calling module is
+     * used. A source with none is FAILED_PRECONDITION, reason
+     * DELEGATION_MISSING: a person must connect or reconnect it.
+     *
+     * @generated from field: string source_id = 4;
+     */
+    value: string;
+    case: "sourceId";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleMintSourceOperationContextRequest.
+ * Use `create(ModuleMintSourceOperationContextRequestSchema)` to create a new message.
+ */
+export const ModuleMintSourceOperationContextRequestSchema: GenMessage<ModuleMintSourceOperationContextRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_registration, 8);
+
+/**
+ * ModuleMintSourceOperationContextResponse carries the signed capability and
+ * what it asserts, so a module can attribute and route its call without
+ * parsing it.
+ *
+ * @generated from message saas.accounts.v1.ModuleMintSourceOperationContextResponse
+ */
+export type ModuleMintSourceOperationContextResponse = Message<"saas.accounts.v1.ModuleMintSourceOperationContextResponse"> & {
+  /**
+   * @generated from field: string token = 1;
+   */
+  token: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 2;
+   */
+  expiresAt?: Timestamp;
+
+  /**
+   * principal_id is the calling module's service principal: the actor.
+   *
+   * @generated from field: string principal_id = 3;
+   */
+  principalId: string;
+
+  /**
+   * tenant is the source's organization.
+   *
+   * @generated from field: string tenant = 4;
+   */
+  tenant: string;
+
+  /**
+   * @generated from field: string audience = 5;
+   */
+  audience: string;
+
+  /**
+   * @generated from field: string binding = 6;
+   */
+  binding: string;
+
+  /**
+   * @generated from field: string delegation_id = 7;
+   */
+  delegationId: string;
+
+  /**
+   * @generated from field: string source_id = 8;
+   */
+  sourceId: string;
+
+  /**
+   * owner_principal_id is the person who delegated the source: the owner.
+   *
+   * @generated from field: string owner_principal_id = 9;
+   */
+  ownerPrincipalId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleMintSourceOperationContextResponse.
+ * Use `create(ModuleMintSourceOperationContextResponseSchema)` to create a new message.
+ */
+export const ModuleMintSourceOperationContextResponseSchema: GenMessage<ModuleMintSourceOperationContextResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_registration, 9);
 

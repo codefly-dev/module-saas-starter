@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **235 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **238 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -60,8 +60,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DatasourceService/GetSource` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | Read one connected datasource in the org. |
 | `/saas.accounts.v1.DatasourceService/GetSourceSync` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | Read one source sync's typed stages, durable lifecycle and module-reported execution references; with no job id, the source's latest sync. |
 | `/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | List the caller's own linked provider accounts. |
+| `/saas.accounts.v1.DatasourceService/ListSourceDelegations` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | List the organization's source delegations, with who delegated each source to which module binding and why a revoked one ended. |
 | `/saas.accounts.v1.DatasourceService/ListSources` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | List the org's connected datasources. |
 | `/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.credential.updated | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history. |
+| `/saas.accounts.v1.DatasourceService/RevokeSourceDelegation` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.delegation.revoked | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Revoke one of the organization's source delegations. |
 | `/saas.accounts.v1.DatasourceService/SyncSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.source.synced | FORBIDDEN / STANDARD_WRITE | SECRET → INTERNAL | Pull the source's current contents and enqueue ingestion deliveries. |
 | `/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.group_unbound | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Remove a provider group binding. |
 | `/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.domain_verified | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Verify a claimed domain by its DNS TXT record. |
@@ -116,6 +118,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.registration_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a composed module the signed credential it registers its gateway REST prefix with. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.module.work_context_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a composed module the Work Context its service principal calls this surface with. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.registration_minted | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a solution the signed credential it registers its gateway upstream and frontend remote with. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.datasource.delegation.used | FORBIDDEN / INTERNAL | SECRET → SECRET | Issue a composed module the Work Context a datasource source's sync runs with, from the delegation the person who connected it made. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/NackJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Fail a leased job as retryable or permanent. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Notify a user subject to category policy. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Place one of the caller's own records at a scope node. |
@@ -247,9 +250,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 47
+- `internal`: 48
 - `mfa`: 3
-- `org_admin`: 52
+- `org_admin`: 54
 - `org_member`: 48
 - `platform_admin`: 24
 - `public`: 18

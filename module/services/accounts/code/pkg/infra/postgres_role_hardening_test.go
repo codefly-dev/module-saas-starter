@@ -72,7 +72,8 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"github_app_setups":                    {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"github_app_installations":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
-	"domain_events":                        {selectRows: true}, // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
+	"source_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
+	"domain_events":                        {selectRows: true},                                     // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
 	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all

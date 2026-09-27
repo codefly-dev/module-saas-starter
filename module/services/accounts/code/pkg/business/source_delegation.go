@@ -1,0 +1,674 @@
+package business
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	gen "accounts/pkg/gen/saas/accounts/v1"
+)
+
+// A source delegation is the record that a person, by connecting a datasource
+// source (or reconnecting it), delegated that source's sync to one installed
+// operation binding of a consuming module. The module later presents it to
+// MintSourceOperationContext and receives a short-lived operation context owned
+// by that person, in the source's organization, carrying exactly the binding's
+// source_delegation_scopes — never the module's own authority.
+//
+// Which module and which binding a delegation names is decided by declared
+// configuration, never by a request: the one operation binding of each module
+// principal that declares `source_delegation_scopes` and whose declared tenancy
+// covers the source's organization. A source is a host concept; the module that
+// consumes it does not get to pick what it is delegated.
+//
+// The row only records what was delegated. Authority is re-derived on every
+// mint and every revision check from current facts — the source still exists,
+// the person is still an active member holding an org administrator role (the
+// authority that let them connect), and the binding is unchanged — so a
+// revocation that no event hook marked still takes effect immediately.
+
+// SourceOperationContextTTL bounds a context minted from a source delegation:
+// the operation-context ceiling, for the same reason (ModuleOperationContextTTL).
+const SourceOperationContextTTL = ModuleOperationContextTTL
+
+// Revocation reasons, as stored in source_delegations.revoked_reason.
+const (
+	// SourceDelegationRevokedByAdmin: an org administrator revoked it.
+	SourceDelegationRevokedByAdmin = "revoked"
+	// SourceDelegationReplaced: the source was reconnected; a new delegation
+	// under the reconnecting person replaced this one in the same transaction.
+	SourceDelegationReplaced = "replaced"
+	// SourceDelegationSourceDeleted: the source no longer exists.
+	SourceDelegationSourceDeleted = "source_deleted"
+	// SourceDelegationMemberRemoved: the person is no longer a member of the org.
+	SourceDelegationMemberRemoved = "member_removed"
+	// SourceDelegationPermissionLost: the person is a member but no longer holds
+	// the org administrator role that let them connect the source.
+	SourceDelegationPermissionLost = "permission_lost"
+	// SourceDelegationUserInactive: the person's account is deleted or suspended.
+	SourceDelegationUserInactive = "user_inactive"
+	// SourceDelegationBindingChanged: the module no longer declares the binding,
+	// or its audience or delegation scopes changed since the person connected.
+	SourceDelegationBindingChanged = "binding_changed"
+)
+
+// SourceDelegationRevocationReasons is every stored reason, in the order the
+// wire enum declares them.
+var SourceDelegationRevocationReasons = []string{
+	SourceDelegationRevokedByAdmin,
+	SourceDelegationReplaced,
+	SourceDelegationSourceDeleted,
+	SourceDelegationMemberRemoved,
+	SourceDelegationPermissionLost,
+	SourceDelegationUserInactive,
+	SourceDelegationBindingChanged,
+}
+
+// SourceDelegation is one row of source_delegations.
+type SourceDelegation struct {
+	ID            string
+	OrgID         string
+	SourceID      string
+	PrincipalID   string
+	ModulePrefix  string
+	BindingID     string
+	BindingDigest string
+	CreatedAt     time.Time
+	RevokedAt     *time.Time
+	RevokedReason string
+	RevokedBy     string
+}
+
+// Active reports whether the delegation has not been revoked.
+func (d *SourceDelegation) Active() bool { return d != nil && d.RevokedAt == nil }
+
+// SourceDelegationFilter selects active delegations to revoke. OrgID is always
+// required; every other set field narrows the match.
+type SourceDelegationFilter struct {
+	OrgID        string
+	ID           string
+	SourceID     string
+	PrincipalID  string
+	ModulePrefix string
+}
+
+// SourceDelegationFacts are the current facts a delegation is re-checked
+// against. MemberRole and UserStatus are empty when there is no such row;
+// the revisions are zero when there is no revision row.
+type SourceDelegationFacts struct {
+	SourceExists         bool
+	MemberRole           string
+	UserStatus           string
+	OrganizationRevision uint64
+	PrincipalRevision    uint64
+}
+
+// EffectiveRevision is the person's authorization revision in the org — the
+// same value a person-owned Work Context seals (WorkContextAuthorityFacts).
+func (f *SourceDelegationFacts) EffectiveRevision() uint64 {
+	if f.PrincipalRevision > f.OrganizationRevision {
+		return f.PrincipalRevision
+	}
+	return f.OrganizationRevision
+}
+
+// revocation reports why the facts no longer support a delegation, or "" when
+// they do. The order is the order an administrator reads it in: a deleted
+// source before anything about the person.
+func (f *SourceDelegationFacts) revocation() string {
+	switch {
+	case !f.SourceExists:
+		return SourceDelegationSourceDeleted
+	case f.MemberRole == "":
+		return SourceDelegationMemberRemoved
+	case f.UserStatus != "active":
+		return SourceDelegationUserInactive
+	case !sourceDelegationConnectRole(f.MemberRole):
+		return SourceDelegationPermissionLost
+	default:
+		return ""
+	}
+}
+
+// sourceDelegationConnectRole reports whether an org role carries the authority
+// that connecting (and reconnecting) a source requires: DatasourceService's
+// AddSource, AddGitHubSource, SyncSource and MigrateGitHubSourceToApp all
+// declare TENANT_REQUIREMENT_ORG_ADMIN, which the handlers enforce as the
+// owner or admin role. A platform operator's bypass of that check is not a
+// role in the organization, so it is never recorded as one.
+func sourceDelegationConnectRole(role string) bool {
+	return role == "owner" || role == "admin"
+}
+
+var (
+	// ErrSourceDelegationMissing: the source has no active delegation to the
+	// calling module. A person must connect or reconnect the source.
+	ErrSourceDelegationMissing = errors.New("source has no active delegation to this module")
+	// ErrSourceDelegationRevoked: the named delegation is revoked, or was just
+	// found no longer supported by current facts and revoked.
+	ErrSourceDelegationRevoked = errors.New("source delegation is revoked")
+	// ErrSourceDelegationInvalid: the delegation does not exist, belongs to
+	// another module, or names an organization the module does not serve. The
+	// three are deliberately indistinguishable.
+	ErrSourceDelegationInvalid = errors.New("source delegation is not usable by this module")
+	// ErrSourceDelegationNotFound: an administrator named a delegation that is
+	// not in their organization.
+	ErrSourceDelegationNotFound = errors.New("source delegation not found")
+	// ErrSourceDelegationContextStale: a revision check presented a context the
+	// delegation it was minted from no longer confirms.
+	ErrSourceDelegationContextStale = errors.New("source delegation context is not confirmed by a current delegation")
+)
+
+// SourceDelegationBindingDigest fingerprints what a binding lets a delegation
+// confer — its audience and its source_delegation_scopes, nothing else — so a
+// delegation recorded against one shape is refused once the shape changes.
+func SourceDelegationBindingDigest(binding ModuleOperationAudience) string {
+	encoded, err := json.Marshal(struct {
+		Audience string                 `json:"audience"`
+		Scopes   []ModuleOperationScope `json:"scopes"`
+	}{binding.Audience, binding.SourceDelegationScopes})
+	if err != nil {
+		// Plain strings and slices; they cannot fail to encode.
+		panic("source delegation: binding does not encode: " + err.Error())
+	}
+	sum := sha256.Sum256(append([]byte("codefly.saas.source-delegation-binding.v1\x00"), encoded...))
+	return hex.EncodeToString(sum[:])
+}
+
+// SourceDelegationContextRevision is the authorization revision a context
+// minted from a delegation is sealed with. It binds the delegation row, the
+// binding shape it was recorded against, and the person's authorization
+// revision in the org, so CheckAuthorizationRevision stops confirming it the
+// moment the delegation is revoked or replaced, the binding changes, or the
+// person's membership, role or account status moves (the database bumps that
+// revision on each). It is never zero.
+func SourceDelegationContextRevision(delegationID, bindingDigest string, personRevision uint64) uint64 {
+	material := strings.Join([]string{delegationID, bindingDigest, strconv.FormatUint(personRevision, 10)}, "\x00")
+	sum := sha256.Sum256(append([]byte("codefly.saas.source-delegation-context.v1\x00"), material...))
+	revision := binary.BigEndian.Uint64(sum[:8]) & (1<<63 - 1)
+	if revision == 0 {
+		return 1
+	}
+	return revision
+}
+
+// coversTenant reports whether a module principal serves an organization: its
+// declared tenant, or every tenant when it holds the cross-tenant grant.
+func (g ModulePrincipalGrant) coversTenant(orgID string) bool {
+	return g.CrossTenant || g.Tenant == orgID
+}
+
+// sourceDelegationBinding is the one binding of a module that accepts source
+// delegations, if it declares one.
+func (g ModulePrincipalGrant) sourceDelegationBinding() (string, ModuleOperationAudience, bool) {
+	ids := make([]string, 0, len(g.OperationAudiences))
+	for id := range g.OperationAudiences {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		if binding := g.OperationAudiences[id]; binding.SourceDelegationScopes != nil {
+			return id, binding, true
+		}
+	}
+	return "", ModuleOperationAudience{}, false
+}
+
+// currentSourceDelegationBinding resolves the binding a delegation names as the
+// module declares it now, refusing one that is gone, invalid, no longer
+// accepting delegations, or changed in audience or scopes.
+func (g ModulePrincipalGrant) currentSourceDelegationBinding(delegation *SourceDelegation) (ModuleOperationAudience, bool) {
+	binding, declared := g.OperationAudiences[delegation.BindingID]
+	if !declared || binding.SourceDelegationScopes == nil ||
+		validateOperationAudiences(g.Prefix, map[string]ModuleOperationAudience{delegation.BindingID: binding}) != nil ||
+		SourceDelegationBindingDigest(binding) != delegation.BindingDigest {
+		return ModuleOperationAudience{}, false
+	}
+	return binding, true
+}
+
+// SourceDelegationTarget is one module binding a connect in an organization
+// records a delegation for.
+type SourceDelegationTarget struct {
+	Prefix    string
+	BindingID string
+	Binding   ModuleOperationAudience
+}
+
+// SourceDelegationTargets lists, sorted by module prefix, the binding of every
+// declared module that accepts source delegations and serves orgID.
+func (r ModulePrincipalRegistry) SourceDelegationTargets(orgID string) []SourceDelegationTarget {
+	var targets []SourceDelegationTarget
+	for _, grant := range r {
+		if !grant.coversTenant(orgID) {
+			continue
+		}
+		if id, binding, ok := grant.sourceDelegationBinding(); ok {
+			targets = append(targets, SourceDelegationTarget{Prefix: grant.Prefix, BindingID: id, Binding: binding})
+		}
+	}
+	slices.SortFunc(targets, func(a, b SourceDelegationTarget) int { return strings.Compare(a.Prefix, b.Prefix) })
+	return targets
+}
+
+// ---------------------------------------------------------------------------
+// Recording and revoking
+// ---------------------------------------------------------------------------
+
+// recordSourceDelegationsTx records the delegations a connect or reconnect of
+// sourceID by actorID makes, inside the caller's organization transaction:
+// for every module binding that accepts delegations in this organization, any
+// active delegation of the source to that module is revoked as replaced and a
+// new one is recorded under actorID. Both commit with the connect or not at
+// all, so a reconnect can never leave a source with two delegations or none.
+//
+// A connect by someone who is not, in this organization, an owner or admin
+// records nothing: the platform operator's bypass of the connect check is not a
+// role a later mint could re-check. The source then reads as having no
+// delegation until an administrator of the organization reconnects it.
+func (s *Service) recordSourceDelegationsTx(ctx context.Context, actorID, orgID, sourceID string) error {
+	targets := s.modulePrincipals.SourceDelegationTargets(orgID)
+	if len(targets) == 0 {
+		return nil
+	}
+	role, err := s.store.SourceDelegationMemberRole(ctx, orgID, actorID)
+	if err != nil {
+		return fmt.Errorf("resolve connecting member role: %w", err)
+	}
+	if !sourceDelegationConnectRole(role) {
+		return nil
+	}
+	for _, target := range targets {
+		replaced, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{
+			OrgID: orgID, SourceID: sourceID, ModulePrefix: target.Prefix,
+		}, SourceDelegationReplaced, actorID)
+		if err != nil {
+			return fmt.Errorf("revoke replaced source delegation: %w", err)
+		}
+		for _, previous := range replaced {
+			if err := s.emitSourceDelegationRevokedTx(ctx, actorID, previous, SourceDelegationReplaced); err != nil {
+				return err
+			}
+		}
+		delegation := &SourceDelegation{
+			ID:            NewIDString(),
+			OrgID:         orgID,
+			SourceID:      sourceID,
+			PrincipalID:   actorID,
+			ModulePrefix:  target.Prefix,
+			BindingID:     target.BindingID,
+			BindingDigest: SourceDelegationBindingDigest(target.Binding),
+		}
+		if err := s.store.InsertSourceDelegation(ctx, delegation); err != nil {
+			return fmt.Errorf("record source delegation: %w", err)
+		}
+		if err := s.emitTx(ctx, actorID, "user", EventSourceDelegationCreated, "datasource", sourceID, orgID,
+			sourceDelegationPayload(delegation)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// revokeSourceDelegationsTx revokes every active delegation the filter matches,
+// inside the caller's transaction, and records each revocation. It is how the
+// events that end a delegation — a source deleted, a member removed or
+// demoted — mark the row in the same transaction as the event itself. The mint
+// re-checks the same facts regardless, so a writer that bypasses these paths
+// still cannot keep a delegation alive.
+func (s *Service) revokeSourceDelegationsTx(ctx context.Context, actorID string, filter SourceDelegationFilter, reason string) error {
+	revoked, err := s.store.RevokeSourceDelegations(ctx, filter, reason, actorID)
+	if err != nil {
+		return fmt.Errorf("revoke source delegations: %w", err)
+	}
+	for _, delegation := range revoked {
+		if err := s.emitSourceDelegationRevokedTx(ctx, actorID, delegation, reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// emitSourceDelegationRevokedTx records a revocation a person's action caused.
+// A revocation the mint detected is recorded by the mint itself, as the system.
+func (s *Service) emitSourceDelegationRevokedTx(ctx context.Context, actorID string, delegation *SourceDelegation, reason string) error {
+	return s.emitTx(ctx, actorID, "user", EventSourceDelegationRevoked, "datasource", delegation.SourceID, delegation.OrgID,
+		sourceDelegationRevokedPayload(delegation, reason))
+}
+
+func sourceDelegationRevokedPayload(delegation *SourceDelegation, reason string) map[string]any {
+	payload := sourceDelegationPayload(delegation)
+	payload["reason"] = reason
+	return payload
+}
+
+func sourceDelegationPayload(delegation *SourceDelegation) map[string]any {
+	return map[string]any{
+		"delegation_id": delegation.ID,
+		"source_id":     delegation.SourceID,
+		"principal_id":  delegation.PrincipalID,
+		"module":        delegation.ModulePrefix,
+		"binding_id":    delegation.BindingID,
+	}
+}
+
+// ListSourceDelegations lists an organization's delegations, newest first: one
+// source's when sourceID is set, and revoked ones too when includeRevoked.
+func (s *Service) ListSourceDelegations(ctx context.Context, orgID, sourceID string, includeRevoked bool) ([]*SourceDelegation, error) {
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" {
+		return nil, errors.New("org id is required")
+	}
+	var out []*SourceDelegation
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		list, err := s.store.ListSourceDelegations(ctx, orgID, strings.TrimSpace(sourceID), includeRevoked)
+		out = list
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RevokeSourceDelegation revokes one delegation of the organization and
+// returns it as stored. Revoking one already revoked changes and records
+// nothing. A delegation that is not in the organization is
+// ErrSourceDelegationNotFound, whether or not it exists elsewhere.
+func (s *Service) RevokeSourceDelegation(ctx context.Context, actorID, orgID, id string) (*SourceDelegation, error) {
+	orgID = strings.TrimSpace(orgID)
+	id = strings.TrimSpace(id)
+	if orgID == "" || id == "" {
+		return nil, errors.New("org id and delegation id are required")
+	}
+	var out *SourceDelegation
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: orgID, ID: id}, SourceDelegationRevokedByAdmin, actorID)
+		if err != nil {
+			return err
+		}
+		if len(revoked) == 1 {
+			out = revoked[0]
+			return s.emitSourceDelegationRevokedTx(ctx, actorID, out, SourceDelegationRevokedByAdmin)
+		}
+		existing, err := s.store.GetSourceDelegation(ctx, orgID, id)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return ErrSourceDelegationNotFound
+		}
+		out = existing
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Minting
+// ---------------------------------------------------------------------------
+
+// SourceDelegationRef names what a module mints from: a delegation id, or a
+// source id whose active delegation to the calling module is used. Exactly one
+// is set.
+type SourceDelegationRef struct {
+	DelegationID string
+	SourceID     string
+}
+
+// SourceOperationContextAuthority is what one mint from a delegation asserts.
+// ModuleWorkContextAuthority names the calling module's principal (the actor)
+// with Tenant set to the delegation's organization; the owner is the person.
+type SourceOperationContextAuthority struct {
+	ModuleWorkContextAuthority
+	ModulePrefix     string
+	OwnerPrincipalID string
+	Delegation       SourceDelegation
+	Audience         string
+	Scopes           []ModuleOperationScope
+	Revision         uint64
+}
+
+// WireScopes projects the binding's delegation scopes onto the signing surface.
+func (a SourceOperationContextAuthority) WireScopes() []*gen.WorkContextScope {
+	return wireOperationScopes(a.Scopes)
+}
+
+// AuthorizeSourceOperationContext resolves the context a composed module may be
+// issued from a source delegation, failing closed on every check:
+//
+//   - the module proves its identity exactly as for its own Work Context (the
+//     identity secret for its prefix) — otherwise ErrModuleRegistrationDenied;
+//   - the delegation exists, names this module, and belongs to an organization
+//     the module serves — otherwise ErrSourceDelegationInvalid (by id) or
+//     ErrSourceDelegationMissing (by source, when it has no active delegation
+//     to this module);
+//   - it is active — otherwise ErrSourceDelegationRevoked;
+//   - the binding is still declared, still accepts delegations, and is
+//     unchanged in audience and scopes; the source still exists; the person is
+//     still an active member holding an owner or admin role. A failure here
+//     revokes the row with the reason, records it, and is
+//     ErrSourceDelegationRevoked.
+//
+// The tenant is the delegation's organization; nothing in the request names it.
+func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, secret string, ref SourceDelegationRef) (SourceOperationContextAuthority, error) {
+	identity, err := s.ModuleAuthorizeWorkContext(prefix, secret)
+	if err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	grant, registered := s.modulePrincipals[identity.PrincipalID]
+	if !registered {
+		return SourceOperationContextAuthority{}, ErrModuleRegistrationDenied
+	}
+	if (ref.DelegationID == "") == (ref.SourceID == "") {
+		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
+	}
+
+	var (
+		authority SourceOperationContextAuthority
+		revokeAs  string
+		stale     *SourceDelegation
+	)
+	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var delegation *SourceDelegation
+		var err error
+		if ref.DelegationID != "" {
+			delegation, err = s.store.GetSourceDelegation(ctx, "", ref.DelegationID)
+			if err != nil {
+				return err
+			}
+			if delegation == nil || delegation.ModulePrefix != grant.Prefix || !grant.coversTenant(delegation.OrgID) {
+				return ErrSourceDelegationInvalid
+			}
+			if !delegation.Active() {
+				return ErrSourceDelegationRevoked
+			}
+		} else {
+			delegation, err = s.store.ActiveSourceDelegation(ctx, ref.SourceID, grant.Prefix)
+			if err != nil {
+				return err
+			}
+			if delegation == nil {
+				return ErrSourceDelegationMissing
+			}
+			if !grant.coversTenant(delegation.OrgID) {
+				return ErrSourceDelegationInvalid
+			}
+		}
+		binding, current := grant.currentSourceDelegationBinding(delegation)
+		if !current {
+			revokeAs, stale = SourceDelegationBindingChanged, delegation
+			return nil
+		}
+		facts, err := s.store.SourceDelegationFacts(ctx, delegation.OrgID, delegation.PrincipalID, delegation.SourceID)
+		if err != nil {
+			return err
+		}
+		if reason := facts.revocation(); reason != "" {
+			revokeAs, stale = reason, delegation
+			return nil
+		}
+		personRevision := facts.EffectiveRevision()
+		if personRevision == 0 {
+			// A member with no authorization revision is a database that broke
+			// its own invariant; nothing can be sealed that a consumer could
+			// later confirm.
+			return ErrSourceDelegationInvalid
+		}
+		authority = SourceOperationContextAuthority{
+			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: identity.PrincipalID, Tenant: delegation.OrgID},
+			ModulePrefix:               grant.Prefix,
+			OwnerPrincipalID:           delegation.PrincipalID,
+			Delegation:                 *delegation,
+			Audience:                   binding.Audience,
+			Scopes:                     cloneOperationScopes(binding.SourceDelegationScopes),
+			Revision:                   SourceDelegationContextRevision(delegation.ID, delegation.BindingDigest, personRevision),
+		}
+		return nil
+	})
+	if err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	if stale != nil {
+		// Marked in its own transaction: the refusal above must not roll back
+		// the record of why the delegation ended.
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: stale.OrgID, ID: stale.ID}, revokeAs, "")
+			if err != nil {
+				return err
+			}
+			for _, delegation := range revoked {
+				if err := s.emitTx(ctx, identity.PrincipalID, "system", EventSourceDelegationRevoked, "datasource",
+					delegation.SourceID, delegation.OrgID, sourceDelegationRevokedPayload(delegation, revokeAs)); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return SourceOperationContextAuthority{}, err
+		}
+		return SourceOperationContextAuthority{}, ErrSourceDelegationRevoked
+	}
+	return authority, nil
+}
+
+// RecordSourceOperationContextMint commits the durable record of one use of a
+// delegation, once the capability exists; the caller withholds the capability
+// when it cannot. It re-reads the delegation in the same transaction and
+// refuses (ErrSourceDelegationRevoked) when it was revoked while the capability
+// was being signed, so a revocation that raced the mint is never outrun.
+func (s *Service) RecordSourceOperationContextMint(ctx context.Context, authority SourceOperationContextAuthority) error {
+	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		current, err := s.store.GetSourceDelegation(ctx, authority.Delegation.OrgID, authority.Delegation.ID)
+		if err != nil {
+			return err
+		}
+		if !current.Active() {
+			return ErrSourceDelegationRevoked
+		}
+		payload := sourceDelegationPayload(&authority.Delegation)
+		payload["audience"] = authority.Audience
+		payload["scopes"] = operationScopeGrants(authority.Scopes)
+		return s.emitTx(ctx, authority.PrincipalID, "system", EventSourceDelegationUsed, "datasource",
+			authority.Delegation.SourceID, authority.Delegation.OrgID, payload)
+	})
+}
+
+func cloneOperationScopes(scopes []ModuleOperationScope) []ModuleOperationScope {
+	out := make([]ModuleOperationScope, 0, len(scopes))
+	for _, scope := range scopes {
+		out = append(out, ModuleOperationScope{
+			ResourceKind: scope.ResourceKind,
+			Actions:      slices.Clone(scope.Actions),
+			ResourceIDs:  slices.Clone(scope.ResourceIDs),
+		})
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// Revision check
+// ---------------------------------------------------------------------------
+
+// CheckSourceDelegationContextRevision confirms a Work Context minted from a
+// source delegation — owned by a person, with a declared module principal as
+// its actor. It reports handled=false for any other shape (the owner is itself
+// a module principal, or no actor is one), so the caller falls through to the
+// checks every other context takes.
+//
+// A handled context is confirmed only when all of these hold now; anything else
+// is ErrSourceDelegationContextStale:
+//   - exactly two subjects, the owner then one declared module principal;
+//   - the module serves orgID and holds an ACTIVE delegation from the owner in
+//     orgID whose binding is unchanged, whose source exists, and whose person
+//     is still an active owner or admin there;
+//   - the revision equals SourceDelegationContextRevision of that delegation at
+//     the person's current authorization revision;
+//   - both subjects' scopes lie within that binding's source_delegation_scopes.
+func (s *Service) CheckSourceDelegationContextRevision(
+	ctx context.Context, orgID, ownerPrincipalID string, revision uint64, subjects []ModuleOperationRevisionSubject,
+) (handled bool, err error) {
+	if _, ownerIsModule := s.modulePrincipals[ownerPrincipalID]; ownerIsModule {
+		return false, nil
+	}
+	var grant ModulePrincipalGrant
+	moduleActor := false
+	for _, subject := range subjects[min(1, len(subjects)):] {
+		if candidate, isModule := s.modulePrincipals[subject.PrincipalID]; isModule {
+			grant, moduleActor = candidate, true
+			break
+		}
+	}
+	if !moduleActor {
+		return false, nil
+	}
+	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID ||
+		subjects[1].PrincipalID != ModulePrincipalID(grant.Prefix) || !grant.coversTenant(orgID) {
+		return true, ErrSourceDelegationContextStale
+	}
+	confirmed := false
+	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		delegations, err := s.store.ActiveSourceDelegationsForPrincipal(ctx, orgID, ownerPrincipalID, grant.Prefix)
+		if err != nil {
+			return err
+		}
+		for _, delegation := range delegations {
+			binding, current := grant.currentSourceDelegationBinding(delegation)
+			if !current {
+				continue
+			}
+			if !operationScopesSubset(subjects[0].Scopes, binding.SourceDelegationScopes) ||
+				!operationScopesSubset(subjects[1].Scopes, binding.SourceDelegationScopes) {
+				continue
+			}
+			facts, err := s.store.SourceDelegationFacts(ctx, orgID, ownerPrincipalID, delegation.SourceID)
+			if err != nil {
+				return err
+			}
+			if facts.revocation() != "" || facts.EffectiveRevision() == 0 {
+				continue
+			}
+			if SourceDelegationContextRevision(delegation.ID, delegation.BindingDigest, facts.EffectiveRevision()) == revision {
+				confirmed = true
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return true, err
+	}
+	if !confirmed {
+		return true, ErrSourceDelegationContextStale
+	}
+	return true, nil
+}
