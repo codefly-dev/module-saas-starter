@@ -12,14 +12,16 @@ import (
 	"testing"
 	"time"
 
+	cache "github.com/codefly-dev/interface-cache/go/cache"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/fixtures"
 	"accounts/pkg/adapters"
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
-	"accounts/pkg/cache"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/membership"
 )
 
 type fixtureMembershipFailureStore struct {
@@ -88,15 +90,24 @@ organizations:
 	require.Len(t, organizations, 1)
 	orgID := organizations[0].Id
 	setEntitlementLimit(t, ctx, orgID, owner.Uuid, business.EntitlementSeats, 0)
-	membershipCache := cache.NewOrgMembershipCache(cache.NewMemory())
+	membershipCache, err := membership.New(ctx, cache.NewMemory(), testStore)
+	require.NoError(t, err)
 	adapters.WithOrgMembershipCache(membershipCache)
 	testService.SetMembershipInvalidator(adapters.NewCacheInvalidator())
 	t.Cleanup(func() {
 		testService.SetMembershipInvalidator(nil)
 		adapters.WithOrgMembershipCache(nil)
+		membershipCache.Close()
 	})
+	// Each fixture member is not yet a member: warm that negative answer, as
+	// the member's own authorization check would.
+	memberCtx := func(memberID string) context.Context {
+		return auth.WithVerifiedDatabaseIdentity(ctx, memberID, orgID)
+	}
 	for _, memberID := range fixtureMemberIDs {
-		require.NoError(t, membershipCache.Set(ctx, orgID, memberID, &cache.OrgMembership{}))
+		role, err := membershipCache.Role(memberCtx(memberID), orgID, memberID)
+		require.NoError(t, err)
+		require.Empty(t, role)
 	}
 
 	writeFixture(`    members:
@@ -116,9 +127,12 @@ organizations:
 		return err
 	}))
 	require.Len(t, members, 4)
+	// Seeding invalidated each negative entry: the cache now answers with the
+	// role the store holds, well inside the negative entry's TTL.
 	for _, memberID := range fixtureMemberIDs {
-		_, err := membershipCache.Get(ctx, orgID, memberID)
-		require.ErrorIs(t, err, cache.ErrNotFound)
+		role, err := membershipCache.Role(memberCtx(memberID), orgID, memberID)
+		require.NoError(t, err)
+		require.NotEmpty(t, role, "seeding %s must invalidate its cached non-membership", memberID)
 	}
 }
 

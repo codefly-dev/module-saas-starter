@@ -62,12 +62,16 @@ github.com/codefly-dev/core v0.5.11-0.20260926231217-d481a2d49683 h1:/vzymsu5B9N
 github.com/codefly-dev/core v0.5.11-0.20260926231217-d481a2d49683/go.mod h1:SVF+t040X+9pAXAqBnNE/JkXwmw9peVuKnHKFSOzyzk=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
+github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=
+github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba/go.mod h1:OQDNwz4rpEGfq7VC/FjvmQGlo9H8gH8fIDcZhKIe8iQ=
 github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e h1:V8YSUvAm0QQgHY9V0QmHiHuvf+beHnI10D6cJLWB2eI=
 github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e/go.mod h1:X0JAk/gnr6ZcjuPsM+5jvisqY4iyTC1SeVac93iWX8A=
 github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260926212413-b91ce91eb23e h1:NlcOB8YN/372aNAGGkkFnT0du++qCFyilYVZLuqkogI=
 github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260926212413-b91ce91eb23e/go.mod h1:BbqUHTJEnmH3oxYblfjS3Oh9AUw14YaEFVV4Y19yQPY=
 github.com/codefly-dev/service-postgres v0.0.129 h1:g9HEW8NBB4XWrtaHU2/HZmARwwbBNuaZBJ1raGgQyg0=
 github.com/codefly-dev/service-postgres v0.0.129/go.mod h1:Mm2q0Y5FU0vY6ZX1vjhxQ+GUzA8Hii1cuTfwEmc8Dwg=
+github.com/codefly-dev/service-redis/cache v0.2.0 h1:MKeyXFTIiZMnz5bdndb6YTsahws8DjmLTldtz/nH6EQ=
+github.com/codefly-dev/service-redis/cache v0.2.0/go.mod h1:bP1kDx4E6UWWIHNkzekfj2NbhSPPDdfRHAdfLC24fCA=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
 github.com/containerd/errdefs v1.0.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
 github.com/containerd/errdefs/pkg v0.3.0 h1:9IKJ06FvyNlexW690DXuQNx2KA2cUJXx151Xdx3ZPPE=

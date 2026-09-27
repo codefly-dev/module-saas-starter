@@ -15,15 +15,16 @@ import (
 	"accounts/pkg/billing"
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
-	"accounts/pkg/cache"
 	"accounts/pkg/datasource"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
+	"accounts/pkg/membership"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
+	"accounts/pkg/redisstate"
 	"accounts/pkg/vaultconnection"
 	"context"
 	ed25519core "crypto/ed25519"
@@ -628,31 +629,53 @@ func doWork(ctx context.Context) (Clean, error) {
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
 
-	// Cache wiring — optional. When the `cache` dependency is declared in
-	// service.codefly.yaml and Redis is reachable, org-membership lookups
-	// get a 30s TTL cache backed by Redis (per-tenant keyed as
-	// "orgmember:<orgID>:<userID>"). When the dep is absent or Redis is
-	// unreachable, NewRedisCache returns nil and the app runs without
-	// caching — zero behavior change, just slower auth checks.
+	// Redis wiring — optional. When the `cache` dependency is declared in
+	// service.codefly.yaml, one client on it carries two different things:
+	//
+	//   - org membership, a CACHE of the store: a codefly.dev/cache stack
+	//     (in-process tier, the shared Redis layer, the store as origin) that
+	//     every membership mutation invalidates across replicas;
+	//   - revocation markers, OAuth nonces and rate-limit counters, which are
+	//     authoritative STATE with no origin behind them (pkg/redisstate) and
+	//     fail closed on a Redis error. That server must run noeviction.
+	//
+	// When the dependency is absent the app runs without either: membership
+	// reads go to the DB, and revocation / nonces / rate limits fall back to
+	// their single-process defaults. A dependency that is declared but whose
+	// connection does not parse, or whose server cannot be reached to subscribe
+	// to invalidations, fails boot: a membership cache that cannot hear
+	// another replica's invalidation would serve a removed member's role.
 	var closeCache func() error
 	rateLimiterWired := false
-	if redisCache, c, rerr := infra.NewRedisCache(ctx); rerr == nil && redisCache != nil {
-		orgCache := cache.NewOrgMembershipCache(redisCache)
-		adapters.WithOrgMembershipCache(orgCache)
+	redisClient, err := infra.NewRedisClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if redisClient != nil {
+		membershipCache, err := membership.New(ctx, infra.MembershipCacheLayer(redisClient), store)
+		if err != nil {
+			_ = redisClient.Close()
+			return nil, fmt.Errorf("org membership cache: %w", err)
+		}
+		adapters.WithOrgMembershipCache(membershipCache)
 		service.SetMembershipInvalidator(adapters.NewCacheInvalidator())
+		state := redisstate.NewRedis(redisClient)
 		// Wire Redis-backed access-token revocation. Without this,
 		// Logout only kills the refresh chain — old access tokens
 		// remain valid until natural expiry (15 min default).
-		minter.SetRevoker(cache.NewTokenRevoker(redisCache))
+		minter.SetRevoker(redisstate.NewTokenRevoker(state))
 		// Redis-backed OAuth-state one-shot list so a captured state can't be
 		// replayed within its TTL across replicas (the in-memory default only
 		// covers a single process).
-		stateSigner.SetNonceConsumer(cache.NewOAuthNonceConsumer(redisCache))
+		stateSigner.SetNonceConsumer(redisstate.NewOAuthNonceConsumer(state))
 		// Per-org / per-API-key rate limiting. Falls back to
-		// allow-all if redisCache is nil (no Redis available).
-		adapters.WithRateLimiter(cache.NewRateLimiter(redisCache))
+		// allow-all when no Redis is wired.
+		adapters.WithRateLimiter(redisstate.NewRateLimiter(state))
 		rateLimiterWired = true
-		closeCache = c
+		closeCache = func() error {
+			membershipCache.Close()
+			return redisClient.Close()
+		}
 	}
 	if anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired) {
 		w.Warn("ANONYMOUS ENDPOINTS UNPROTECTED — abuse protection is disabled AND no Redis rate limiter is wired, so Authenticate/RegisterUser/JoinWaitlist/SendMagicLink have NO app-layer throttle; enable ABUSE_PROTECTION_MODE=turnstile or wire the cache dependency before serving production traffic")
@@ -1155,11 +1178,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		auditEmitter.Close()
 		sw.Info("audit emitter closed")
 		if closeCache != nil {
-			sw.Info("closing redis cache")
+			sw.Info("closing redis client")
 			if err := closeCache(); err != nil {
-				sw.Warn("redis cache close failed", wool.ErrField(err))
+				sw.Warn("redis client close failed", wool.ErrField(err))
 			} else {
-				sw.Info("redis cache closed")
+				sw.Info("redis client closed")
 			}
 		}
 		sw.Info("closing store")

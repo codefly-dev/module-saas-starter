@@ -1,4 +1,4 @@
-package cache
+package redisstate
 
 import (
 	"context"
@@ -7,16 +7,16 @@ import (
 
 const oauthNoncePrefix = "oauth-nonce:"
 
-// OAuthNonceConsumer records single-use OAuth-state nonces in the shared cache
+// OAuthNonceConsumer records single-use OAuth-state nonces in shared Redis state
 // so a captured state cannot be replayed across replicas within its TTL. It
 // satisfies auth.NonceConsumer.
 type OAuthNonceConsumer struct {
-	cache Cache
+	state State
 }
 
-// NewOAuthNonceConsumer wraps a Cache as the OAuth-state one-shot list.
-func NewOAuthNonceConsumer(c Cache) *OAuthNonceConsumer {
-	return &OAuthNonceConsumer{cache: c}
+// NewOAuthNonceConsumer wraps State as the OAuth-state one-shot list.
+func NewOAuthNonceConsumer(s State) *OAuthNonceConsumer {
+	return &OAuthNonceConsumer{state: s}
 }
 
 // Consume atomically increments the nonce's counter and arms its TTL on the
@@ -27,7 +27,7 @@ func (c *OAuthNonceConsumer) Consume(ctx context.Context, nonce string, ttl time
 	if nonce == "" {
 		return false, nil
 	}
-	count, err := c.cache.Incr(ctx, oauthNoncePrefix+nonce, ttl)
+	count, err := c.state.Incr(ctx, oauthNoncePrefix+nonce, ttl)
 	if err != nil {
 		return false, err
 	}

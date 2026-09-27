@@ -1,4 +1,4 @@
-package cache_test
+package redisstate_test
 
 import (
 	"context"
@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"accounts/pkg/cache"
+	"accounts/pkg/redisstate"
 )
 
 func TestRateLimiter_AllowUntilLimit(t *testing.T) {
-	rl := cache.NewRateLimiter(cache.NewMemory())
+	rl := redisstate.NewRateLimiter(redisstate.NewMemory())
 	ctx := context.Background()
 
 	// 3 reqs/window. First 3 must pass; 4th must fail.
@@ -38,7 +38,7 @@ func TestRateLimiter_AllowUntilLimit(t *testing.T) {
 
 func TestRateLimiter_PerKeyIsolation(t *testing.T) {
 	// Org A burns its budget; Org B is unaffected.
-	rl := cache.NewRateLimiter(cache.NewMemory())
+	rl := redisstate.NewRateLimiter(redisstate.NewMemory())
 	ctx := context.Background()
 	for i := 0; i < 5; i++ {
 		_, _, _, _ = rl.Allow(ctx, "org:A", 5, time.Minute)
@@ -56,7 +56,7 @@ func TestRateLimiter_AtomicUnderConcurrentBurst(t *testing.T) {
 	// requests — the atomic INCR forbids the Get/Set race that would let
 	// two goroutines read the same count and both write count+1, letting
 	// the budget be overspent.
-	rl := cache.NewRateLimiter(cache.NewMemory())
+	rl := redisstate.NewRateLimiter(redisstate.NewMemory())
 	ctx := context.Background()
 
 	const limit = 100
@@ -89,7 +89,7 @@ func TestRateLimiter_AtomicUnderConcurrentBurst(t *testing.T) {
 }
 
 func TestRateLimiter_ZeroLimitIsUnlimited(t *testing.T) {
-	rl := cache.NewRateLimiter(cache.NewMemory())
+	rl := redisstate.NewRateLimiter(redisstate.NewMemory())
 	ctx := context.Background()
 	for i := 0; i < 100; i++ {
 		if allowed, _, _, _ := rl.Allow(ctx, "k", 0, time.Minute); !allowed {
@@ -101,7 +101,7 @@ func TestRateLimiter_ZeroLimitIsUnlimited(t *testing.T) {
 func TestRateLimiter_NilCacheIsAllowAll(t *testing.T) {
 	// Production fallback: if Redis is unwired, the limiter must
 	// degrade gracefully to allow-all rather than mass-rejecting.
-	rl := cache.NewRateLimiter(nil)
+	rl := redisstate.NewRateLimiter(nil)
 	ctx := context.Background()
 	for i := 0; i < 50; i++ {
 		if allowed, _, _, _ := rl.Allow(ctx, "k", 1, time.Minute); !allowed {
@@ -112,7 +112,7 @@ func TestRateLimiter_NilCacheIsAllowAll(t *testing.T) {
 
 func TestRateLimiter_NilReceiverIsAllowAll(t *testing.T) {
 	// Defensive: forgetting to construct the limiter must NOT panic.
-	var rl *cache.RateLimiter
+	var rl *redisstate.RateLimiter
 	allowed, _, _, err := rl.Allow(context.Background(), "k", 1, time.Minute)
 	if err != nil || !allowed {
 		t.Errorf("nil receiver must allow without error; got allowed=%v err=%v", allowed, err)

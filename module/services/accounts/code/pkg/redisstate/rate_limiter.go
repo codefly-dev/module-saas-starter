@@ -1,4 +1,4 @@
-package cache
+package redisstate
 
 import (
 	"context"
@@ -13,17 +13,16 @@ import (
 // fits the typical SaaS rate-limit policy ("1000 reqs/min per org"
 // is a window, not a sustained-rate guarantee).
 //
-// Falls back to allow-all when the cache layer is missing — same
-// pattern as the org-membership cache. The DB / business gates are
-// the real correctness guard; rate limiting is overload protection,
+// Falls back to allow-all when no state is wired. The DB / business
+// gates are the real correctness guard; rate limiting is overload protection,
 // not authorization.
 type RateLimiter struct {
-	cache Cache
+	state State
 }
 
-// NewRateLimiter wraps a Cache (memory in tests, Redis in prod).
-func NewRateLimiter(c Cache) *RateLimiter {
-	return &RateLimiter{cache: c}
+// NewRateLimiter wraps State (memory in tests, Redis in prod).
+func NewRateLimiter(s State) *RateLimiter {
+	return &RateLimiter{state: s}
 }
 
 const rateLimitPrefix = "ratelimit:"
@@ -36,7 +35,7 @@ const rateLimitPrefix = "ratelimit:"
 //   - remaining: budget left in the current window
 //   - resetAt: when the current window rolls over
 //
-// limit ≤ 0 disables the check (unlimited). nil cache = unlimited.
+// limit ≤ 0 disables the check (unlimited). nil state = unlimited.
 //
 // Window keys are bucketed to the floor of (now / window) so two api
 // instances using the same wall clock land on the same Redis key —
@@ -47,7 +46,7 @@ func (r *RateLimiter) Allow(
 	limit int,
 	window time.Duration,
 ) (allowed bool, remaining int, resetAt time.Time, err error) {
-	if r == nil || r.cache == nil || limit <= 0 || window <= 0 {
+	if r == nil || r.state == nil || limit <= 0 || window <= 0 {
 		return true, limit, time.Time{}, nil
 	}
 
@@ -60,7 +59,7 @@ func (r *RateLimiter) Allow(
 	// the shared counter, so the budget can't be overspent by a Get/Set
 	// read-modify-write race. TTL runs slightly past the window end so
 	// clock skew between instances doesn't evict a live bucket early.
-	count, err := r.cache.Incr(ctx, bucketKey, window+5*time.Second)
+	count, err := r.state.Incr(ctx, bucketKey, window+5*time.Second)
 	if err != nil {
 		// Soft-fail: treat backing-store errors as allow. Rate limiting
 		// is best-effort overload protection; we don't want a Redis blip

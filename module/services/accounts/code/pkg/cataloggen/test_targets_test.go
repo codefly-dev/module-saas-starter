@@ -25,6 +25,7 @@ func TestAccountsPureTargetExcludesDependencyHarnesses(t *testing.T) {
 		"pkg/infra/postgres_webhooks_test.go",
 		"pkg/auth/pg/session_store_test.go",
 		"pkg/billing/pg/store_test.go",
+		"pkg/redisintegration/main_test.go",
 	} {
 		dir, file := filepath.Split(filepath.Join(codeRoot, path))
 		included, err := pure.MatchFile(dir, file)
@@ -64,7 +65,7 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &catalog))
 	require.Equal(t, 1, catalog.SchemaVersion)
 	require.Equal(t, "whole-service-and-dependency-closure", catalog.Fallback)
-	require.Len(t, catalog.Targets, 5)
+	require.Len(t, catalog.Targets, 6)
 	accountsManifest, err := os.ReadFile("../../../service.codefly.yaml")
 	require.NoError(t, err)
 	var manifest struct {
@@ -83,7 +84,11 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 		"infra-db":    "infra/postgres_webhooks_test.go",
 		"auth-db":     "auth/pg/session_store_test.go",
 		"billing-db":  "billing/pg/store_test.go",
+		"redis-db":    "redisintegration/main_test.go",
 	}
+	// Only the Redis suite starts the cache: it exists to prove the membership
+	// cache stack and the Redis state against the real server.
+	startsCache := map[string]bool{"redis-db": true}
 	for _, target := range catalog.Targets {
 		require.False(t, target.Complete, "native discovery and resolved identities are still required")
 		for _, input := range []string{
@@ -106,7 +111,11 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 		} else {
 			require.Contains(t, target.RuntimeServices, "store")
 			require.NotContains(t, target.RuntimeServices, "telemetry")
-			require.NotContains(t, target.RuntimeServices, "cache")
+			if startsCache[target.Suite] {
+				require.Contains(t, target.RuntimeServices, "cache")
+			} else {
+				require.NotContains(t, target.RuntimeServices, "cache")
+			}
 			harness, ok := harnesses[target.Suite]
 			require.True(t, ok, target.Suite)
 			document, err := parser.ParseFile(token.NewFileSet(), filepath.Join("..", harness), nil, 0)

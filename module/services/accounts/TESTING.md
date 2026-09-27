@@ -9,6 +9,7 @@ Run commands from `module/services/accounts/code`:
 | Infra database | `go test ./pkg/infra` | store | 90s |
 | Authentication database | `go test ./pkg/auth/pg` | store | 120s |
 | Billing database | `go test ./pkg/billing/pg` | store | 120s |
+| Redis | `go test ./pkg/redisintegration` | cache, store | 120s |
 
 For a source-inspection gate, use for example
 `go test -tags=pure ./pkg/business -run '^TestAuditDurability' -count=1`.
@@ -22,8 +23,11 @@ The default `go test ./...` and `codefly ci run` retain all existing default tes
 The pure command is an additional fast check, not a replacement release gate.
 Database targets also retain their package's pure tests. They serialize setup,
 execution and teardown through the existing package lock. Business tests use
-Vault for hashing and encrypted credentials. None of these suites uses telemetry
-or Redis; dependency exclusions prevent those services from building or starting.
+Vault for hashing and encrypted credentials. None of them uses telemetry, and
+only the Redis target starts the `cache` service: it proves the org-membership
+cache stack across two instances and the Redis-held revocation, nonce and
+rate-limit state against the real server. Dependency exclusions prevent every
+other service from building or starting.
 
 With `go test -v`, database harnesses emit JSON timing records to stderr for
 `dependency-setup` and `test-execution`, naming the suite, requested services,
