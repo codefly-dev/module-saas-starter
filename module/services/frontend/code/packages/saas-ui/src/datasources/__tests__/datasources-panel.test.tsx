@@ -861,6 +861,52 @@ it("reconnects the same source without creating or deleting a source", async () 
 	);
 });
 
+it("reconnects a public source without a credential when the client can", async () => {
+	const reconnectSource = vi.fn(async () => "job-reconnect");
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource]),
+		reconnectSource,
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	await openRowActions();
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+	const token = screen.getByLabelText("New GitHub PAT (optional)");
+	expect(token.hasAttribute("required")).toBe(false);
+	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
+	await waitFor(() =>
+		expect(reconnectSource).toHaveBeenCalledWith("org-1", "ds-1", undefined),
+	);
+	expect(client.syncSource).not.toHaveBeenCalled();
+	expect((await screen.findByRole("status")).textContent).toContain(
+		"Reconnected. Sync queued",
+	);
+});
+
+it("reconnects with a replacement PAT through the reconnect call when the client has one", async () => {
+	const reconnectSource = vi.fn(async () => "job-reconnect");
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource]),
+		reconnectSource,
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	await openRowActions();
+	fireEvent.click(await screen.findByRole("menuitem", { name: "Reconnect" }));
+	fireEvent.change(screen.getByLabelText("New GitHub PAT (optional)"), {
+		target: { value: "replacement-test-token" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
+	await waitFor(() =>
+		expect(reconnectSource).toHaveBeenCalledWith(
+			"org-1",
+			"ds-1",
+			"replacement-test-token",
+		),
+	);
+	expect((await screen.findByRole("status")).textContent).toContain(
+		"Credential replaced",
+	);
+});
+
 describe("GitHub App onboarding", () => {
 	const appRepositories = [
 		{

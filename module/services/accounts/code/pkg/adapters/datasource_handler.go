@@ -182,7 +182,12 @@ func (h *datasourceConnectHandler) SyncSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	jobID, err := h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
+	var jobID string
+	if req.Msg.Reconnect {
+		jobID, err = h.svc.ReconnectDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
+	} else {
+		jobID, err = h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
+	}
 	if err != nil {
 		var failure *jobs.ProcessingError
 		if errors.As(err, &failure) {

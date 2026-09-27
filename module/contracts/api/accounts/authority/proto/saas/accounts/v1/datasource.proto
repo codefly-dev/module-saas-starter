@@ -447,6 +447,14 @@ message SyncSourceRequest {
   // Optional replacement PAT: validate and encrypt for this existing GitHub
   // source before queuing sync. Empty keeps the saved credential. Never returned.
   string access_token = 3 [(buf.validate.field).string.max_len = 4096];
+  // Reconnect the source: from now on its syncs run on behalf of the caller,
+  // exactly as when a person connects it (the source's delegations move to the
+  // caller). A replacement access_token is always a reconnect. Without one,
+  // only a GitHub source that holds no credential (a public repository)
+  // reconnects this way: the repository is proved still readable without a
+  // credential, then the delegation is recorded and a sync is queued. A source
+  // that holds a credential reconnects only with a replacement for it.
+  bool reconnect = 4;
 }
 
 message SyncSourceResponse {

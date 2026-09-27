@@ -417,3 +417,42 @@ func uniqueTokens(tokens []string) []string {
 	}
 	return out
 }
+
+// A public source holds no credential to replace, so it reconnects without one:
+// GitHub is asked again whether the repository is public, then a sync is queued.
+func TestReconnect_PublicSourceWithoutACredentialQueuesASync(t *testing.T) {
+	h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", commit: "HEAD", public: true})
+	source := h.publicSource(t)
+
+	jobID, err := h.svc.ReconnectDatasourceSource(context.Background(), "actor-1", testOrg, source.ID, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, jobID)
+	require.Equal(t, "public", h.stored(t, source.ID).GitHubCredentialKind, "a reconnect without a credential stores none")
+	require.Empty(t, h.stored(t, source.ID).CredentialSecretRef)
+}
+
+// A public source reconnects without a credential only while GitHub still serves
+// it to a request that carries none.
+func TestReconnect_RefusedWhenTheRepositoryIsNoLongerPublic(t *testing.T) {
+	gh := &fakeGitHub{defaultBranch: "main", commit: "HEAD", public: true}
+	h := newPublicHarness(t, gh)
+	source := h.publicSource(t)
+	gh.public = false
+
+	_, err := h.svc.ReconnectDatasourceSource(context.Background(), "actor-1", testOrg, source.ID, "")
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+	require.Contains(t, status.Convert(err).Message(), "PAT")
+}
+
+// A source that holds a credential is never reconnected by reaffirming it: the
+// person who reconnects must supply the replacement.
+func TestReconnect_CredentialedSourceNeedsAReplacement(t *testing.T) {
+	h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", commit: "HEAD", public: true})
+	source := h.publicSource(t)
+	_, err := h.svc.ReconnectDatasourceSource(context.Background(), "actor-1", testOrg, source.ID, "ghp_new")
+	require.NoError(t, err)
+
+	_, err = h.svc.ReconnectDatasourceSource(context.Background(), "actor-1", testOrg, source.ID, "")
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+	require.Contains(t, status.Convert(err).Message(), "saved credential")
+}
