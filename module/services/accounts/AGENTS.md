@@ -211,7 +211,9 @@ that authority (`pkg/business/source_delegation.go`):
   active delegation: reconnect), `PERMISSION_DENIED` + `DELEGATION_REVOKED` or
   `DELEGATION_INVALID` (indistinguishable from absent), `UNAUTHENTICATED` for an
   unproven module. The reasons are `google.rpc.ErrorInfo` under
-  `accounts.saas.codefly.dev`, a wire contract the gateway pins too.
+  `accounts.saas.codefly.dev`, a wire contract the gateway pins too: it answers
+  `412` with body `DELEGATION_MISSING`, `403` with body `DELEGATION_REVOKED` or
+  `DELEGATION_INVALID`, and a bare `403 forbidden` for any other denial.
 - **Administration.** `DatasourceService/ListSourceDelegations` and
   `RevokeSourceDelegation` (`TENANT_REQUIREMENT_ORG_ADMIN`, like the other
   datasource administration) show and end an organization's delegations.

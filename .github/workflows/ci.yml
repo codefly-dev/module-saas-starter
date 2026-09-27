@@ -328,6 +328,7 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
+            qualification/module-authority/go.sum
       - name: Validate module agent
         env:
           GOWORK: "off"
@@ -338,6 +339,16 @@ jobs:
         run: |
           (cd libraries/source-read-sdk/go && go test ./... && go vet ./...)
           bash scripts/ci/test-source-read.sh
+      # The published module-authority client against the real host: the
+      # auth-gateway's module broker and accounts' internal tier and authority
+      # endpoint, each served by a helper test compiled from its own service
+      # module. A fake of either seam once hid that the client could not reach
+      # a real host at all.
+      - name: Run the module-authority client against the real host
+        working-directory: qualification/module-authority
+        env:
+          GOWORK: "off"
+        run: go test ./... && go vet ./...
       - name: Reject direct Codefly runtime-carrier access
         working-directory: module/tools
         env:

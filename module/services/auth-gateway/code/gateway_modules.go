@@ -716,6 +716,19 @@ const mintSourceOperationContextMethod = "/saas.accounts.v1.ModuleCapabilitiesSe
 // each side pins them.
 const sourceDelegationMissingReason = "DELEGATION_MISSING"
 
+// sourceDelegationRevokedReason and sourceDelegationInvalidReason are the
+// ErrorInfo reasons accounts attaches to a PermissionDenied refusal of a
+// delegation (adapters.SourceDelegationRevokedReason and
+// adapters.SourceDelegationInvalidReason). The 403 carries them so a module can
+// tell "the person withdrew it" from "no delegation this module may use" —
+// accounts has already chosen to reveal that much; the gateway relays exactly
+// these two and nothing else, so an unrecognised refusal stays a bare
+// `forbidden`.
+const (
+	sourceDelegationRevokedReason = "DELEGATION_REVOKED"
+	sourceDelegationInvalidReason = "DELEGATION_INVALID"
+)
+
 // handleModuleSourceOperationContext serves POST
 // /modules/_source-operation-context. It returns true when it has handled the
 // request.
@@ -727,7 +740,9 @@ const sourceDelegationMissingReason = "DELEGATION_MISSING"
 //   - 401: the module is not proven;
 //   - 412: the source has no active delegation to the module — a person must
 //     connect or reconnect it (body `DELEGATION_MISSING`);
-//   - 403: the delegation named is revoked, or not usable by this module.
+//   - 403: the delegation named is revoked (body `DELEGATION_REVOKED`), or not
+//     usable by this module (body `DELEGATION_INVALID`); any other refusal is a
+//     bare `forbidden`.
 func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != moduleSourceOperationContextPath {
 		return false
@@ -779,11 +794,16 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 		case codes.Unauthenticated:
 			httpError(w, http.StatusUnauthorized, "unauthorized")
 		case codes.PermissionDenied:
-			httpError(w, http.StatusForbidden, "forbidden")
+			switch reason := sourceDelegationReason(err); reason {
+			case sourceDelegationRevokedReason, sourceDelegationInvalidReason:
+				httpError(w, http.StatusForbidden, reason)
+			default:
+				httpError(w, http.StatusForbidden, "forbidden")
+			}
 		case codes.InvalidArgument:
 			httpError(w, http.StatusBadRequest, "invalid request")
 		case codes.FailedPrecondition:
-			if isSourceDelegationMissing(err) {
+			if sourceDelegationReason(err) == sourceDelegationMissingReason {
 				httpError(w, http.StatusPreconditionFailed, sourceDelegationMissingReason)
 				return true
 			}
@@ -819,16 +839,17 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 	return true
 }
 
-// isSourceDelegationMissing reads the structured ErrorInfo, never the message.
-func isSourceDelegationMissing(err error) bool {
+// sourceDelegationReason returns the reason of the first google.rpc.ErrorInfo
+// under accounts' domain, or "" when there is none. It reads the structured
+// detail, never the message; the caller decides which reasons it relays.
+func sourceDelegationReason(err error) string {
 	for _, detail := range status.Convert(err).Details() {
 		if info, ok := detail.(*errdetails.ErrorInfo); ok &&
-			info.GetReason() == sourceDelegationMissingReason &&
 			info.GetDomain() == solutionRegistryErrorDomain {
-			return true
+			return info.GetReason()
 		}
 	}
-	return false
+	return ""
 }
 
 func (s *ExtAuthz) mintSourceOperationContext(
