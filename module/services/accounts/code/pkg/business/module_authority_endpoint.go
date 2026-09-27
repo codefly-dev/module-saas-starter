@@ -104,6 +104,7 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
 	"/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
+	"/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
 	"/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
 	"/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
 	"/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",

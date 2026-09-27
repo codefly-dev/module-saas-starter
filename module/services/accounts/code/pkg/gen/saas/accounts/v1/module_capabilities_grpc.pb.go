@@ -32,6 +32,7 @@ const (
 	ModuleCapabilitiesService_AckJob_FullMethodName                             = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
 	ModuleCapabilitiesService_NackJob_FullMethodName                            = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
 	ModuleCapabilitiesService_NotifyUser_FullMethodName                         = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_NotifyOrgAdmins_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins"
 	ModuleCapabilitiesService_RequestApproval_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
 	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
 	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
@@ -87,6 +88,9 @@ type ModuleCapabilitiesServiceClient interface {
 	NackJob(ctx context.Context, in *ModuleNackJobRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(ctx context.Context, in *ModuleNotifyUserRequest, opts ...grpc.CallOption) (*ModuleNotifyUserResponse, error)
+	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
+	// see the request.
+	NotifyOrgAdmins(ctx context.Context, in *ModuleNotifyOrgAdminsRequest, opts ...grpc.CallOption) (*ModuleNotifyOrgAdminsResponse, error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(ctx context.Context, in *ModuleRequestApprovalRequest, opts ...grpc.CallOption) (*ModuleRequestApprovalResponse, error)
 	// GetApproval returns one approval request on the caller's tenant.
@@ -273,6 +277,16 @@ func (c *moduleCapabilitiesServiceClient) NotifyUser(ctx context.Context, in *Mo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModuleNotifyUserResponse)
 	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_NotifyUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) NotifyOrgAdmins(ctx context.Context, in *ModuleNotifyOrgAdminsRequest, opts ...grpc.CallOption) (*ModuleNotifyOrgAdminsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleNotifyOrgAdminsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_NotifyOrgAdmins_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -513,6 +527,9 @@ type ModuleCapabilitiesServiceServer interface {
 	NackJob(context.Context, *ModuleNackJobRequest) (*emptypb.Empty, error)
 	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(context.Context, *ModuleNotifyUserRequest) (*ModuleNotifyUserResponse, error)
+	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
+	// see the request.
+	NotifyOrgAdmins(context.Context, *ModuleNotifyOrgAdminsRequest) (*ModuleNotifyOrgAdminsResponse, error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *ModuleRequestApprovalRequest) (*ModuleRequestApprovalResponse, error)
 	// GetApproval returns one approval request on the caller's tenant.
@@ -627,6 +644,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) NackJob(context.Context, *Mo
 }
 func (UnimplementedModuleCapabilitiesServiceServer) NotifyUser(context.Context, *ModuleNotifyUserRequest) (*ModuleNotifyUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method NotifyUser not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) NotifyOrgAdmins(context.Context, *ModuleNotifyOrgAdminsRequest) (*ModuleNotifyOrgAdminsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method NotifyOrgAdmins not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) RequestApproval(context.Context, *ModuleRequestApprovalRequest) (*ModuleRequestApprovalResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestApproval not implemented")
@@ -898,6 +918,24 @@ func _ModuleCapabilitiesService_NotifyUser_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ModuleCapabilitiesServiceServer).NotifyUser(ctx, req.(*ModuleNotifyUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_NotifyOrgAdmins_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleNotifyOrgAdminsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).NotifyOrgAdmins(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_NotifyOrgAdmins_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).NotifyOrgAdmins(ctx, req.(*ModuleNotifyOrgAdminsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1262,6 +1300,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NotifyUser",
 			Handler:    _ModuleCapabilitiesService_NotifyUser_Handler,
+		},
+		{
+			MethodName: "NotifyOrgAdmins",
+			Handler:    _ModuleCapabilitiesService_NotifyOrgAdmins_Handler,
 		},
 		{
 			MethodName: "RequestApproval",

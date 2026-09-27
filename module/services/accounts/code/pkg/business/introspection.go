@@ -167,6 +167,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/HeartbeatJob":                       "Renew a live job lease by its fencing token.",
 	"ModuleCapabilitiesService/AckJob":                             "Complete a leased job successfully.",
 	"ModuleCapabilitiesService/NackJob":                            "Fail a leased job as retryable or permanent.",
+	"ModuleCapabilitiesService/NotifyOrgAdmins":                    "Notify a tenant's administrators, resolved at send time.",
 	"ModuleCapabilitiesService/NotifyUser":                         "Notify a user subject to category policy.",
 	"ModuleCapabilitiesService/RequestApproval":                    "Open a pending approval whose resume job the module claims.",
 	"ModuleCapabilitiesService/GetApproval":                        "Read one approval request on the caller's tenant.",

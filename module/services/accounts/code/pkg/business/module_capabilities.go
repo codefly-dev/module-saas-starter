@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"sort"
 	"time"
 
 	"accounts/pkg/datasource/github"
@@ -556,12 +557,115 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 		IdempotencyKey: in.IdempotencyKey,
 	})
 	if err != nil {
+		if errors.Is(err, ErrNotificationIdempotencyConflict) {
+			return ModuleNotifyUserResult{}, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+		}
 		return ModuleNotifyUserResult{}, err
 	}
 	if notification == nil {
 		return ModuleNotifyUserResult{Delivered: false}, nil
 	}
 	return ModuleNotifyUserResult{NotificationID: notification.ID, Delivered: true}, nil
+}
+
+// ModuleNotifyOrgAdminsInput is NotifyOrgAdmins' request: a notification for a
+// tenant's administrators, whom the host resolves. There is deliberately no
+// recipient field.
+type ModuleNotifyOrgAdminsInput struct {
+	Tenant         string
+	Title          string
+	Body           string
+	Type           string
+	ActionURL      string
+	Category       string
+	IdempotencyKey string
+}
+
+// ModuleNotifyOrgAdmins notifies the administrators of one tenant — its members
+// holding the admin or owner role, resolved when the call is made and each
+// notified once. It carries NotifyUser's authorization (the caller's grant, the
+// tenant it is bound to, a known category and type) and per-recipient category
+// policy, and it tells the module only whether anyone received it: never who,
+// never how many. With an idempotency key, each recipient's row is keyed on the
+// key and the recipient, so a redelivered call converges on the rows it already
+// wrote. The send is audited with the recipient and delivery counts.
+func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller, in ModuleNotifyOrgAdminsInput) (bool, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return false, err
+	}
+	if err := authorizeTenant(caller, grant, in.Tenant); err != nil {
+		return false, err
+	}
+	if _, err := notificationCategoryIsMandatory(NotificationCategory(in.Category)); err != nil {
+		return false, status.Errorf(codes.InvalidArgument, "invalid notification category %q", in.Category)
+	}
+	if !ValidNotificationType(in.Type) {
+		return false, status.Errorf(codes.InvalidArgument, "invalid notification type %q: must be one of %v", in.Type, NotificationTypes)
+	}
+	var members []*gen.OrgMembership
+	if err := s.store.WithOrgTx(ctx, in.Tenant, func(ctx context.Context) error {
+		var err error
+		members, err = s.store.ListOrgMembers(ctx, in.Tenant)
+		return err
+	}); err != nil {
+		return false, status.Error(codes.Internal, "cannot resolve the tenant's administrators")
+	}
+	admins := orgAdministratorIDs(members)
+	delivered := 0
+	for _, userID := range admins {
+		key := ""
+		if in.IdempotencyKey != "" {
+			key = in.IdempotencyKey + "/org-admin/" + userID
+		}
+		notification, err := s.CreateNotification(ctx, CreateNotificationInput{
+			UserID:         userID,
+			OrgID:          in.Tenant,
+			Title:          in.Title,
+			Body:           in.Body,
+			Type:           in.Type,
+			ActionURL:      in.ActionURL,
+			Category:       NotificationCategory(in.Category),
+			IdempotencyKey: key,
+		})
+		if err != nil {
+			if errors.Is(err, ErrNotificationIdempotencyConflict) {
+				return false, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+			}
+			return false, status.Error(codes.Internal, "cannot notify the tenant's administrators")
+		}
+		if notification != nil {
+			delivered++
+		}
+	}
+	payload := map[string]any{
+		"prefix": grant.Prefix, "category": in.Category, "type": in.Type,
+		"recipients": len(admins), "delivered": delivered,
+	}
+	if in.IdempotencyKey != "" {
+		payload["idempotency_key"] = in.IdempotencyKey
+	}
+	s.emit(ctx, caller.PrincipalID, ActorTypeSystem, EventModuleOrgAdminsNotified, "organization", in.Tenant, in.Tenant, payload)
+	return delivered > 0, nil
+}
+
+// orgAdministratorIDs is each member holding the admin or owner role, once, in
+// a stable order.
+func orgAdministratorIDs(members []*gen.OrgMembership) []string {
+	seen := map[string]bool{}
+	var ids []string
+	for _, member := range members {
+		role := member.GetRole()
+		if role != gen.OrgRole_ORG_ROLE_ADMIN && role != gen.OrgRole_ORG_ROLE_OWNER {
+			continue
+		}
+		if id := member.GetUserId(); id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ---------------------------------------------------------------------------

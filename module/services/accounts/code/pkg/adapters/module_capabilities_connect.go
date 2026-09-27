@@ -52,6 +52,10 @@ func (h *moduleCapabilitiesConnectHandler) NackJob(ctx context.Context, req *con
 	return unary(ctx, req, h.inner.NackJob)
 }
 
+func (h *moduleCapabilitiesConnectHandler) NotifyOrgAdmins(ctx context.Context, req *connect.Request[gen.ModuleNotifyOrgAdminsRequest]) (*connect.Response[gen.ModuleNotifyOrgAdminsResponse], error) {
+	return unary(ctx, req, h.inner.NotifyOrgAdmins)
+}
+
 func (h *moduleCapabilitiesConnectHandler) NotifyUser(ctx context.Context, req *connect.Request[gen.ModuleNotifyUserRequest]) (*connect.Response[gen.ModuleNotifyUserResponse], error) {
 	return unary(ctx, req, h.inner.NotifyUser)
 }

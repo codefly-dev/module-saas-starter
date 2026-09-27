@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
 	"google.golang.org/grpc/codes"
@@ -1299,4 +1302,164 @@ func TestModuleEmitAuditEvent_RequestOnlyGuardsRejectBeforeAnyStoreAccess(t *tes
 	err = svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
 		moduleTenantA, "saas.document.ingested", moduleUserA, "example-solution", "entry-1", "", fields)
 	requireCode(t, err, codes.InvalidArgument)
+}
+
+// orgAdminsStore serves a tenant's membership to NotifyOrgAdmins and records
+// every notification written, so a test can say exactly who was notified.
+type orgAdminsStore struct {
+	fakeTxStore
+	members  map[string][]*gen.OrgMembership
+	notified []*business.Notification
+}
+
+func (s *orgAdminsStore) ListOrgMembers(_ context.Context, orgID string) ([]*gen.OrgMembership, error) {
+	return s.members[orgID], nil
+}
+
+// CreateNotification keeps the store's idempotency contract: a repeated row id
+// with the same content converges, and with different content conflicts.
+func (s *orgAdminsStore) CreateNotification(_ context.Context, n *business.Notification) error {
+	for _, existing := range s.notified {
+		if existing.ID == n.ID && existing.Body != n.Body {
+			return business.ErrNotificationIdempotencyConflict
+		}
+	}
+	s.notified = append(s.notified, n)
+	return nil
+}
+
+const (
+	orgOwner  = "55555555-5555-5555-5555-555555555555"
+	orgAdmin  = "66666666-6666-6666-6666-666666666666"
+	orgMember = "77777777-7777-7777-7777-777777777777"
+)
+
+func newOrgAdminsFixture(t *testing.T) (*business.Service, *orgAdminsStore, *capturingAuditEmitter) {
+	t.Helper()
+	store := &orgAdminsStore{members: map[string][]*gen.OrgMembership{
+		moduleTenantA: {
+			{OrgId: moduleTenantA, UserId: orgOwner, Role: gen.OrgRole_ORG_ROLE_OWNER},
+			{OrgId: moduleTenantA, UserId: orgAdmin, Role: gen.OrgRole_ORG_ROLE_ADMIN},
+			{OrgId: moduleTenantA, UserId: orgMember, Role: gen.OrgRole_ORG_ROLE_MEMBER},
+			// The same administrator listed twice is notified once.
+			{OrgId: moduleTenantA, UserId: orgAdmin, Role: gen.OrgRole_ORG_ROLE_ADMIN},
+		},
+		moduleTenantB: {{OrgId: moduleTenantB, UserId: moduleUserB, Role: gen.OrgRole_ORG_ROLE_OWNER}},
+	}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	spine := &capturingAuditEmitter{}
+	svc.SetAuditEmitter(spine)
+	return svc, store, spine
+}
+
+func adminNotice(tenant, notificationType, key string) business.ModuleNotifyOrgAdminsInput {
+	return business.ModuleNotifyOrgAdminsInput{
+		Tenant: tenant, Title: "A delegation was revoked", Body: "Reconnect the source.",
+		Type: notificationType, Category: "security", IdempotencyKey: key,
+	}
+}
+
+// Only the tenant's administrators — owner and admin, once each — are notified;
+// a plain member gets nothing, and the module learns only that someone did.
+func TestModuleNotifyOrgAdmins_NotifiesOnlyAdministratorsOnce(t *testing.T) {
+	svc, store, spine := newOrgAdminsFixture(t)
+	delivered, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "warning", ""))
+	if err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+	if !delivered {
+		t.Fatal("delivered = false, want true")
+	}
+	var recipients []string
+	for _, n := range store.notified {
+		recipients = append(recipients, n.UserID)
+		if n.OrgID != moduleTenantA || n.Type != "warning" {
+			t.Errorf("notification %+v", n)
+		}
+	}
+	sort.Strings(recipients)
+	if want := []string{orgOwner, orgAdmin}; !slices.Equal(recipients, want) {
+		t.Fatalf("recipients = %v, want %v", recipients, want)
+	}
+	// Audited with counts; the recipients are the host's and appear nowhere.
+	var audited *business.AuditEntry
+	for i := range spine.entries {
+		if spine.entries[i].EventType == business.EventModuleOrgAdminsNotified {
+			audited = &spine.entries[i]
+		}
+	}
+	if audited == nil {
+		t.Fatal("no saas.module.org_admins_notified entry")
+	}
+	if audited.Payload["recipients"] != 2 || audited.Payload["delivered"] != 2 {
+		t.Errorf("audit payload %v", audited.Payload)
+	}
+	for _, value := range audited.Payload {
+		if value == orgOwner || value == orgAdmin {
+			t.Errorf("audit payload names a recipient: %v", audited.Payload)
+		}
+	}
+}
+
+// With an idempotency key, a redelivered call converges on the rows the first
+// wrote: each recipient's row id is the same.
+func TestModuleNotifyOrgAdmins_IdempotencyKeyIsPerRecipient(t *testing.T) {
+	svc, store, _ := newOrgAdminsFixture(t)
+	for i := 0; i < 2; i++ {
+		if _, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "", "delegation-revoked-7")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := map[string]map[string]bool{}
+	for _, n := range store.notified {
+		if ids[n.UserID] == nil {
+			ids[n.UserID] = map[string]bool{}
+		}
+		ids[n.UserID][n.ID] = true
+	}
+	if len(ids) != 2 {
+		t.Fatalf("recipients = %d, want 2", len(ids))
+	}
+	seen := map[string]bool{}
+	for user, rows := range ids {
+		if len(rows) != 1 {
+			t.Errorf("%s got %d distinct rows across a redelivery, want 1", user, len(rows))
+		}
+		for id := range rows {
+			if seen[id] {
+				t.Errorf("two recipients share row id %s", id)
+			}
+			seen[id] = true
+		}
+	}
+}
+
+// A different notification under a key already used is the caller's error,
+// FailedPrecondition, never Internal.
+func TestModuleNotifyOrgAdmins_KeyReusedForDifferentContentIsFailedPrecondition(t *testing.T) {
+	svc, _, _ := newOrgAdminsFixture(t)
+	if _, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "info", "key-1")); err != nil {
+		t.Fatal(err)
+	}
+	changed := adminNotice(moduleTenantA, "info", "key-1")
+	changed.Body = "something else"
+	_, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), changed)
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// A module bound to one tenant cannot notify another's administrators, and an
+// unknown type or category is the caller's error; none of them writes anything.
+func TestModuleNotifyOrgAdmins_RefusedBeforeAnyWrite(t *testing.T) {
+	svc, store, _ := newOrgAdminsFixture(t)
+	_, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantB, "info", ""))
+	requireCode(t, err, codes.PermissionDenied)
+	_, err = svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "sync", ""))
+	requireCode(t, err, codes.InvalidArgument)
+	bad := adminNotice(moduleTenantA, "info", "")
+	bad.Category = "not-a-category"
+	_, err = svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), bad)
+	requireCode(t, err, codes.InvalidArgument)
+	if len(store.notified) != 0 {
+		t.Fatalf("a refused call wrote %d notifications", len(store.notified))
+	}
 }

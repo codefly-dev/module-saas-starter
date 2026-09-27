@@ -33,7 +33,7 @@ func (s *PostgresStore) CreateNotification(ctx context.Context, n *business.Noti
 		return err
 	}
 	if result.RowsAffected() == 0 {
-		return errors.New("notification idempotency key conflicts with an existing notification")
+		return business.ErrNotificationIdempotencyConflict
 	}
 	return nil
 }

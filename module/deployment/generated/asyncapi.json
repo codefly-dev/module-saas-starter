@@ -1230,6 +1230,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.module.org_admins_notified": {
+      "address": "saas.module.org_admins_notified",
+      "title": "saas.module.org_admins_notified",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module.org_admins_notified"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.module.registration_minted": {
       "address": "saas.module.registration_minted",
       "title": "saas.module.registration_minted",
@@ -2734,6 +2745,13 @@
       },
       "title": "saas publishes saas.module.operation_context_minted"
     },
+    "send:saas.module.org_admins_notified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module.org_admins_notified"
+      },
+      "title": "saas publishes saas.module.org_admins_notified"
+    },
     "send:saas.module.registration_minted": {
       "action": "send",
       "channel": {
@@ -3965,6 +3983,13 @@
       "saas.module.operation_context_minted": {
         "name": "saas.module.operation_context_minted",
         "title": "saas.module.operation_context_minted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module.org_admins_notified": {
+        "name": "saas.module.org_admins_notified",
+        "title": "saas.module.org_admins_notified",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

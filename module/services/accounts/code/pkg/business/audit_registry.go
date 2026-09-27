@@ -282,7 +282,9 @@ const (
 	EventModuleOperationContextMint EventType = "saas.module.operation_context_minted"
 	EventDelegatedAudienceExchange  EventType = "saas.module.delegated_audience_exchange"
 	// A composed module declared audit event types of its own (DeclareAuditEventTypes).
-	EventModuleAuditTypesDeclared    EventType = "saas.module.audit_types_declared"
+	EventModuleAuditTypesDeclared EventType = "saas.module.audit_types_declared"
+	// A composed module notified a tenant's administrators (NotifyOrgAdmins).
+	EventModuleOrgAdminsNotified     EventType = "saas.module.org_admins_notified"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
@@ -500,6 +502,10 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
 	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
+	observation(EventModuleOrgAdminsNotified, CategorySystem, "A composed module notified a tenant's administrators; the host resolved the recipients.",
+		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, str("category"), str("type"),
+		PayloadField{Name: "recipients", Kind: FieldInt, Required: true}, PayloadField{Name: "delivered", Kind: FieldInt, Required: true},
+		str("idempotency_key")),
 	mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
 		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over")),
 	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),

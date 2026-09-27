@@ -278,6 +278,31 @@ func (s *ModuleCapabilitiesServer) NackJob(ctx context.Context, req *gen.ModuleN
 	return &emptypb.Empty{}, nil
 }
 
+// NotifyOrgAdmins returns only whether any administrator received the
+// notification: the recipients stay the host's.
+func (s *ModuleCapabilitiesServer) NotifyOrgAdmins(ctx context.Context, req *gen.ModuleNotifyOrgAdminsRequest) (*gen.ModuleNotifyOrgAdminsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	delivered, err := service.ModuleNotifyOrgAdmins(ctx, caller, business.ModuleNotifyOrgAdminsInput{
+		Tenant:         req.GetTenant(),
+		Title:          req.GetTitle(),
+		Body:           req.GetBody(),
+		Type:           req.GetType(),
+		ActionURL:      req.GetActionUrl(),
+		Category:       req.GetCategory(),
+		IdempotencyKey: req.GetIdempotencyKey(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModuleNotifyOrgAdminsResponse{Delivered: delivered}, nil
+}
+
 func (s *ModuleCapabilitiesServer) NotifyUser(ctx context.Context, req *gen.ModuleNotifyUserRequest) (*gen.ModuleNotifyUserResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
