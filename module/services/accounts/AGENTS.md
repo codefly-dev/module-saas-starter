@@ -201,12 +201,40 @@ that authority (`pkg/business/source_delegation.go`):
   delegation in another, a `cross_tenant` module gains nothing, and a principal
   gains no cross-organization reach from a delegation beyond the one binding it
   names.
-- **Exchange.** `ExchangeDelegatedOperationAudience` of a parent whose actor hop
-  is a declared module principal carrying a delegation id admits the parent's
-  tenant by re-checking that delegation (`ConfirmSourceDelegationParent`), not by
-  the caller's `authorizeTenant`; the parent must still be addressed to the
-  caller and the child is attenuated to the caller's binding. A parent without
-  such a hop, and every read exchange, keep `authorizeTenant` unchanged.
+- **Exchange, by parent token.** `ExchangeDelegatedOperationAudience` of a parent
+  whose actor hop is a declared module principal carrying a delegation id admits
+  the parent's tenant by re-checking that delegation
+  (`ConfirmSourceDelegationParent`), not by the caller's `authorizeTenant`; the
+  parent must still be addressed to the caller and the child is attenuated to the
+  caller's binding. A parent without such a hop, and every read exchange, keep
+  `authorizeTenant` unchanged. Exactly one actor hop is accepted: a delegation
+  grants to one actor, and an audience exchange appends none, so a deeper chain
+  is a shape the delegation never granted and is refused.
+- **Exchange, by grant reference — how work outlives a Work Context.** The same
+  RPC takes `delegation_id` instead of a parent
+  (`AuthorizeDelegationReferenceExchange`). Two fields, not a `oneof` — moving a
+  published field into one is a breaking contract change `buf breaking` refuses —
+  with a message-level validation rule requiring exactly one, so setting both or
+  neither is `INVALID_ARGUMENT` before a handler runs. Nothing is presented and nothing need
+  still be valid: the delegation is re-read and re-checked against current facts
+  on every call, and a fresh 60-second child is minted from it. A task running
+  for an hour therefore holds an identifier rather than a capability, and renews
+  simply by exchanging again — there is no window in which it must still hold a
+  valid token to obtain the next, which is what made long work impossible before.
+  A revoke lands on the next call; work already in flight is not recalled.
+
+  The reference is not a bearer capability because **only the module the
+  delegating binding names as its audience may present it** — the delegating
+  module itself cannot, and an id learned by anyone else authorizes nothing. That
+  is the same link the parent-token arm enforces through the parent's audience.
+  `binding_id` is the caller's own binding; the child's actor scopes are that
+  binding's invoke scopes, or its read-only lookup subset, intersected with the
+  delegation's scopes (`intersectOperationScopes`), and a lookup the delegation
+  does not cover is refused rather than issued empty. The capability is otherwise
+  identical in shape to a mint's — the actor hop is the *delegating* module's
+  principal, not the caller's — so the revision check confirms it unchanged.
+  `ExchangeDelegatedReadAudience` deliberately has no reference arm: a source
+  delegation authorizes operation bindings only.
 - **Codes.** `FAILED_PRECONDITION` + `DELEGATION_MISSING` (the source has no
   active delegation: reconnect), `PERMISSION_DENIED` + `DELEGATION_REVOKED` or
   `DELEGATION_INVALID` (indistinguishable from absent), `UNAUTHENTICATED` for an
@@ -217,8 +245,14 @@ that authority (`pkg/business/source_delegation.go`):
 - **Administration.** `DatasourceService/ListSourceDelegations` and
   `RevokeSourceDelegation` (`TENANT_REQUIREMENT_ORG_ADMIN`, like the other
   datasource administration) show and end an organization's delegations.
-- **Audit.** `saas.datasource.delegation.created`, `.used` (every mint) and
-  `.revoked` (with `reason`).
+- **Audit.** `saas.datasource.delegation.created`, `.used` (v2 — every mint,
+  reference-backed or not, with `lookup` saying whether the capability could
+  produce the effect or only recover its receipt) and `.revoked` (with `reason`).
+  Every exchange attempt also emits `saas.module.delegated_audience_exchange`
+  (v2), carrying `delegation_id` when a reference was presented. `owner_principal_id`
+  is no longer required on that type: a parent that does not verify and a
+  reference that resolves to nothing both name nobody, and requiring it would have
+  dropped exactly those refusals.
 
 The worked example is in
 [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-from-a-source-delegation).

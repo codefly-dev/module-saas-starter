@@ -51,13 +51,32 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
+	// A parent that does not parse or verify names nobody, so until this point
+	// there is no owner to record. That used to mean these refusals — the ones
+	// a probe produces — were not recorded at all, because the record required
+	// an owner. It no longer does, so they are.
+	refuseUnidentifiedParent := func() error {
+		err := status.Error(codes.PermissionDenied, "invalid delegated parent")
+		if service != nil {
+			service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
+				Caller:      caller,
+				ActorID:     caller.PrincipalID,
+				BindingKind: request.kind,
+				BindingID:   request.bindingID,
+				Lookup:      request.lookup,
+				Outcome:     business.DelegatedAudienceExchangeRefused,
+				RefusalCode: delegatedAudienceRefusalCode(err),
+			})
+		}
+		return err
+	}
 	token, err := workcontext.ParseWorkContextToken(encodedParent)
 	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, "invalid delegated parent")
+		return nil, refuseUnidentifiedParent()
 	}
 	verified, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
 	if err != nil || verified.TenantId == "" || verified.OwnerPrincipalId == "" {
-		return nil, status.Error(codes.PermissionDenied, "invalid delegated parent")
+		return nil, refuseUnidentifiedParent()
 	}
 	// Identity is sealed in the verified parent and bounded by the authenticated
 	// module installation. No user-supplied owner/actor enters database context.
@@ -163,6 +182,114 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	return issued, nil
 }
 
+// exchangeDelegationReference is the arm that carries long-running delegated
+// work: the caller presents a reference to a host-owned, revocable grant and no
+// capability at all.
+//
+// It is deliberately a mint and not an exchange. There is no parent to
+// attenuate against, so the child's ceiling comes from the delegation and the
+// binding the person made it to, re-read on every call — which is also why this
+// arm is not bounded by any token's remaining life and can be called again
+// after the previous child has already expired. That is the whole of the
+// renewal path for work in submit mode: a fresh short capability, never a
+// renewed one, with no moment at which the worker must still hold a valid token
+// in order to obtain the next.
+//
+// The caller's own module Work Context is still required, and still
+// authenticates the caller rather than the parent — a reference is an
+// identifier, not a credential, and on its own it authorizes nothing.
+func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Context, delegationID string, request delegatedAudienceRequest) (*gen.IssuedWorkContext, error) {
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
+		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
+	}
+	authority := WorkContextSingleton()
+	if authority == nil || authority.signer == nil || authority.configureErr != nil {
+		return nil, status.Error(codes.Unavailable, "work context authority unavailable")
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if service == nil {
+		return nil, status.Error(codes.Unavailable, "source delegation authority is unavailable")
+	}
+	// The owner is unknown until the delegation resolves, and stays unknown when
+	// it does not. The reference is what identifies the attempt in that case,
+	// which is why a refusal here is still a complete record.
+	granted := business.SourceOperationContextAuthority{}
+	audit := func(outcome string, exchangeErr error) {
+		service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
+			Caller:       caller,
+			OwnerID:      granted.OwnerPrincipalID,
+			DelegationID: delegationID,
+			ActorID:      caller.PrincipalID,
+			Tenant:       granted.Tenant,
+			BindingKind:  request.kind,
+			BindingID:    request.bindingID,
+			Audience:     granted.Audience,
+			Lookup:       request.lookup,
+			Outcome:      outcome,
+			RefusalCode:  delegatedAudienceRefusalCode(exchangeErr),
+		})
+	}
+	granted, err = service.AuthorizeDelegationReferenceExchange(ctx, caller, delegationID, request.bindingID, request.lookup)
+	if err != nil {
+		err = delegationReferenceError(err)
+		audit(business.DelegatedAudienceExchangeRefused, err)
+		return nil, err
+	}
+	token, signed, err := authority.StartSourceOperationTask(granted)
+	if err != nil {
+		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
+			err = status.Error(codes.Unavailable, "work context authority unavailable")
+		} else {
+			err = mapWorkContextError(err)
+		}
+		audit(business.DelegatedAudienceExchangeRefused, err)
+		return nil, err
+	}
+	// The delegation is re-read once more in the transaction that records the
+	// mint, so a revocation that raced the signing withholds the capability
+	// instead of being outrun by it. Nothing signed above is returned unless
+	// this commits.
+	if err := service.RecordSourceOperationContextMint(ctx, granted); err != nil {
+		err = delegationReferenceError(err)
+		audit(business.DelegatedAudienceExchangeRefused, err)
+		return nil, err
+	}
+	audit(business.DelegatedAudienceExchangeIssued, nil)
+	return issuedWorkContext(token, signed), nil
+}
+
+// delegationReferenceError maps a refused reference. Every way a delegation can
+// fail to authorize is PermissionDenied and says the same thing, so a caller
+// cannot tell an id that names nothing from one that names another module's
+// delegation from one that was revoked a second ago. Only a genuine outage is
+// Unavailable, because only an outage is worth retrying.
+func delegationReferenceError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, business.ErrSourceDelegationInvalid),
+		errors.Is(err, business.ErrSourceDelegationRevoked),
+		errors.Is(err, business.ErrSourceDelegationMissing),
+		errors.Is(err, business.ErrSourceDelegationContextStale):
+		return status.Error(codes.PermissionDenied, "source delegation no longer authorizes this work")
+	case errors.Is(err, business.ErrSourceDelegationLookupUnauthorized):
+		return status.Error(codes.PermissionDenied, "source delegation does not authorize receipt lookup for this binding")
+	case errors.Is(err, business.ErrModuleRegistrationDenied):
+		return status.Error(codes.Unauthenticated, "module source operation context denied")
+	case status.Code(err) != codes.Unknown:
+		return err
+	default:
+		return status.Error(codes.Unavailable, "source delegation authority is unavailable")
+	}
+}
+
 func delegatedAudienceActorID(parent *basev0.WorkContextV1) string {
 	actors := parent.GetActorChain()
 	if len(actors) == 0 {
@@ -189,7 +316,7 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Con
 	}
 	// A source delegation authorizes operation bindings only; a read exchange
 	// keeps the caller's own tenant check whatever the parent carries.
-	return s.exchangeDelegatedAudience(ctx, req.ParentWorkContextToken, delegatedAudienceRequest{bindingID: req.BindingId, kind: "read"}, func(caller business.ModuleCaller, tenant, parentAudience string, _ *business.SourceDelegation) (delegatedAudienceBinding, error) {
+	return s.exchangeDelegatedAudience(ctx, req.GetParentWorkContextToken(), delegatedAudienceRequest{bindingID: req.GetBindingId(), kind: "read"}, func(caller business.ModuleCaller, tenant, parentAudience string, _ *business.SourceDelegation) (delegatedAudienceBinding, error) {
 		binding, err := service.ModuleReadAudience(caller, tenant, parentAudience, req.BindingId)
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(), policy: binding}, err
 	})
@@ -199,7 +326,16 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return s.exchangeDelegatedAudience(ctx, req.ParentWorkContextToken, delegatedAudienceRequest{bindingID: req.BindingId, kind: "operation", lookup: req.Lookup}, func(caller business.ModuleCaller, tenant, parentAudience string, delegation *business.SourceDelegation) (delegatedAudienceBinding, error) {
+	request := delegatedAudienceRequest{bindingID: req.GetBindingId(), kind: "operation", lookup: req.GetLookup()}
+	// The two arms, whose exclusivity Validate has already enforced. A grant
+	// reference is not a weaker spelling of a parent token: it presents no
+	// capability, so nothing the caller holds bounds what it gets, and
+	// everything that would have come from a parent is re-read from the
+	// delegation instead.
+	if delegationID := req.GetDelegationId(); delegationID != "" {
+		return s.exchangeDelegationReference(ctx, delegationID, request)
+	}
+	return s.exchangeDelegatedAudience(ctx, req.GetParentWorkContextToken(), request, func(caller business.ModuleCaller, tenant, parentAudience string, delegation *business.SourceDelegation) (delegatedAudienceBinding, error) {
 		var binding business.ModuleOperationAudience
 		var err error
 		if delegation != nil {

@@ -217,7 +217,8 @@ func str(name string) PayloadField { return PayloadField{Name: name, Kind: Field
 func strs(name string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldStringArray}
 }
-func uid(name string) PayloadField { return PayloadField{Name: name, Kind: FieldUUID} }
+func uid(name string) PayloadField     { return PayloadField{Name: name, Kind: FieldUUID} }
+func boolean(name string) PayloadField { return PayloadField{Name: name, Kind: FieldBool} }
 func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
 }
@@ -511,8 +512,23 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
 	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
 		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
-	observation(EventDelegatedAudienceExchange, CategoryAccess, "A composed module's installed delegated-audience exchange was issued or refused.",
-		PayloadField{Name: "owner_principal_id", Kind: FieldUUID, Required: true},
+	// v2 adds `delegation_id` and stops requiring `owner_principal_id`.
+	//
+	// The exchange now has two arms. One presents a live parent capability, and
+	// a verified parent always names the person it acts for — that arm still
+	// always writes `owner_principal_id`, and a test holds it to that. The
+	// other presents only a reference to a revocable grant, and a refusal there
+	// can happen before any person has been identified: an id that names no
+	// delegation, or one belonging to another module, is refused
+	// indistinguishably and truthfully identifies nobody.
+	//
+	// Requiring the field would have left exactly those refusals unrecorded,
+	// which is the one kind of refusal an authority surface most needs to keep.
+	// `delegation_id` is what identifies them instead, so a probe against a
+	// grant reference is legible even when no owner was ever resolved.
+	revised(observation(EventDelegatedAudienceExchange, CategoryAccess, "A composed module's installed delegated-audience exchange was issued or refused.",
+		PayloadField{Name: "owner_principal_id", Kind: FieldUUID},
+		uid("delegation_id"),
 		PayloadField{Name: "actor_principal_id", Kind: FieldUUID, Required: true},
 		PayloadField{Name: "module_principal_id", Kind: FieldString, Required: true},
 		PayloadField{Name: "binding_kind", Kind: FieldEnum, Required: true, Enum: []string{"read", "operation"}},
@@ -520,7 +536,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("audience"),
 		PayloadField{Name: "lookup", Kind: FieldBool, Required: true},
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
-		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}),
+		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
 	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
@@ -663,8 +679,12 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("installation_id")),
 	mutation(EventSourceDelegationCreated, CategoryAccess, "A person connecting a datasource delegated its sync to a module's installed operation binding.",
 		sourceDelegationFields...),
-	mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
-		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"))...),
+	// v2 records `lookup`: a delegation now mints for one call at a time, and a
+	// capability narrowed to recovering a receipt carries strictly less than
+	// one that may produce the effect. A trail that cannot tell the two apart
+	// cannot answer what a module was actually let do.
+	revised(mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
+		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup"))...), 2),
 	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
 		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),

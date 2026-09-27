@@ -851,10 +851,44 @@ message ModuleExchangeDelegatedReadAudienceRequest {
 
 // Selects one immutable installed operation binding. The caller chooses only
 // invocation versus receipt lookup; audience, scopes and lifetime are policy.
+//
+// The caller presents its authority one of two ways, and exactly one:
+//
+//   - parent_work_context_token, a live capability it already holds. The child
+//     is attenuated against that parent and expires with it, so work that
+//     outlives the parent cannot be authorized this way at all.
+//   - delegation_id, a reference to a host-owned, revocable source delegation.
+//     No capability is presented, none is held, and none needs to still be
+//     valid: the host re-checks the delegation live and mints a fresh short
+//     child from it. This is how work longer than any Work Context stays
+//     authorized — the caller holds the reference, never a token — and how it
+//     renews, by exchanging again against the same reference. A revocation
+//     takes effect on the next exchange.
+//
+// Not a oneof, though the two are exclusive and it is the shape this would
+// otherwise take. Moving field 2 into one changes its presence and is a
+// breaking contract change (`buf breaking`), which this surface does not get to
+// make to a published field. The exclusivity is enforced here instead, so it is
+// still the contract and not a convention: a request setting both, or neither,
+// is INVALID_ARGUMENT before any handler sees it.
 message ModuleExchangeDelegatedOperationAudienceRequest {
+ option (buf.validate.message).cel = {
+  id: "exchange_delegated_operation_audience.one_authority"
+  message: "exactly one of parent_work_context_token and delegation_id is required"
+  expression: "(this.parent_work_context_token != '') != (this.delegation_id != '')"
+ };
  string binding_id = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
- string parent_work_context_token = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string parent_work_context_token = 2 [(buf.validate.field).string.max_len = 32768];
  bool lookup = 3;
+ // delegation_id names one source delegation. It must be the delegation a
+ // person made to the module whose installed binding names this caller as its
+ // audience; one belonging to another module, one this caller is not the
+ // audience of, and one that is revoked or does not exist are all refused with
+ // PERMISSION_DENIED, indistinguishably. Empty means the parent arm is in use.
+ string delegation_id = 4 [
+  (buf.validate.field).string.uuid = true,
+  (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE
+ ];
 }
 
 service ModuleCapabilitiesService {

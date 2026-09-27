@@ -4015,13 +4015,39 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) GetParentWorkContextToken()
 
 // Selects one immutable installed operation binding. The caller chooses only
 // invocation versus receipt lookup; audience, scopes and lifetime are policy.
+//
+// The caller presents its authority one of two ways, and exactly one:
+//
+//   - parent_work_context_token, a live capability it already holds. The child
+//     is attenuated against that parent and expires with it, so work that
+//     outlives the parent cannot be authorized this way at all.
+//   - delegation_id, a reference to a host-owned, revocable source delegation.
+//     No capability is presented, none is held, and none needs to still be
+//     valid: the host re-checks the delegation live and mints a fresh short
+//     child from it. This is how work longer than any Work Context stays
+//     authorized — the caller holds the reference, never a token — and how it
+//     renews, by exchanging again against the same reference. A revocation
+//     takes effect on the next exchange.
+//
+// Not a oneof, though the two are exclusive and it is the shape this would
+// otherwise take. Moving field 2 into one changes its presence and is a
+// breaking contract change (`buf breaking`), which this surface does not get to
+// make to a published field. The exclusivity is enforced here instead, so it is
+// still the contract and not a convention: a request setting both, or neither,
+// is INVALID_ARGUMENT before any handler sees it.
 type ModuleExchangeDelegatedOperationAudienceRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	BindingId              string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
 	ParentWorkContextToken string                 `protobuf:"bytes,2,opt,name=parent_work_context_token,json=parentWorkContextToken,proto3" json:"parent_work_context_token,omitempty"`
 	Lookup                 bool                   `protobuf:"varint,3,opt,name=lookup,proto3" json:"lookup,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// delegation_id names one source delegation. It must be the delegation a
+	// person made to the module whose installed binding names this caller as its
+	// audience; one belonging to another module, one this caller is not the
+	// audience of, and one that is revoked or does not exist are all refused with
+	// PERMISSION_DENIED, indistinguishably. Empty means the parent arm is in use.
+	DelegationId  string `protobuf:"bytes,4,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ModuleExchangeDelegatedOperationAudienceRequest) Reset() {
@@ -4073,6 +4099,13 @@ func (x *ModuleExchangeDelegatedOperationAudienceRequest) GetLookup() bool {
 		return x.Lookup
 	}
 	return false
+}
+
+func (x *ModuleExchangeDelegatedOperationAudienceRequest) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
 }
 
 var File_saas_accounts_v1_module_capabilities_proto protoreflect.FileDescriptor
@@ -4372,13 +4405,15 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\tbindingId\x12F\n" +
-	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\"\xbc\x01\n" +
+	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\"\xb9\x03\n" +
 	"/ModuleExchangeDelegatedOperationAudienceRequest\x12)\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\tbindingId\x12F\n" +
-	"\x19parent_work_context_token\x18\x02 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x12\x16\n" +
-	"\x06lookup\x18\x03 \x01(\bR\x06lookup*\xb8\x02\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\tbindingId\x12D\n" +
+	"\x19parent_work_context_token\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\x80\x80\x02R\x16parentWorkContextToken\x12\x16\n" +
+	"\x06lookup\x18\x03 \x01(\bR\x06lookup\x120\n" +
+	"\rdelegation_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\fdelegationId:\xca\x01\xbaH\xc6\x01\x1a\xc3\x01\n" +
+	"3exchange_delegated_operation_audience.one_authority\x12Fexactly one of parent_work_context_token and delegation_id is required\x1aD(this.parent_work_context_token != '') != (this.delegation_id != '')*\xb8\x02\n" +
 	"\x14ModuleAuditFieldKind\x12'\n" +
 	"#MODULE_AUDIT_FIELD_KIND_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eMODULE_AUDIT_FIELD_KIND_STRING\x10\x01\x12 \n" +

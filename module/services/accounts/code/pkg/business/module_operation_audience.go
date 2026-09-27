@@ -210,3 +210,58 @@ func wireOperationScopes(scopes []ModuleOperationScope) []*gen.WorkContextScope 
 	}
 	return out
 }
+
+// intersectOperationScopes returns what both scope sets allow, in the canonical
+// shape validOperationScopes requires: kinds sorted and unique, actions and
+// resource ids sorted and unique, and a kind dropped entirely when nothing of
+// it survives rather than kept with an empty action list.
+//
+// It reads an empty ResourceIDs exactly as operationScopesSubset does — as "any
+// resource of this kind" — so an unrestricted scope intersected with a listed
+// one yields the list, and two listed ones yield only the ids in both. A kind
+// present in one set and not the other contributes nothing.
+//
+// The result is a subset of both inputs by construction, which is what makes it
+// safe to seal into a capability: it can only ever narrow.
+func intersectOperationScopes(left, right []ModuleOperationScope) []ModuleOperationScope {
+	byKind := make(map[string]ModuleOperationScope, len(right))
+	for _, scope := range right {
+		byKind[scope.ResourceKind] = scope
+	}
+	out := make([]ModuleOperationScope, 0, len(left))
+	for _, scope := range left {
+		other, ok := byKind[scope.ResourceKind]
+		if !ok {
+			continue
+		}
+		actions := intersectOperationValues(scope.Actions, other.Actions)
+		if len(actions) == 0 {
+			continue
+		}
+		var ids []string
+		switch {
+		case len(scope.ResourceIDs) == 0:
+			ids = slices.Clone(other.ResourceIDs)
+		case len(other.ResourceIDs) == 0:
+			ids = slices.Clone(scope.ResourceIDs)
+		default:
+			// Both name resources, so only those in both survive. No overlap is
+			// no authority over that kind at all, not authority over all of it.
+			if ids = intersectOperationValues(scope.ResourceIDs, other.ResourceIDs); len(ids) == 0 {
+				continue
+			}
+		}
+		out = append(out, ModuleOperationScope{ResourceKind: scope.ResourceKind, Actions: actions, ResourceIDs: ids})
+	}
+	return out
+}
+
+func intersectOperationValues(left, right []string) []string {
+	out := make([]string, 0, min(len(left), len(right)))
+	for _, value := range left {
+		if _, found := slices.BinarySearch(right, value); found {
+			out = append(out, value)
+		}
+	}
+	return out
+}
