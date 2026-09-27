@@ -1289,6 +1289,51 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	return response.GetJobId(), nil
 }
 
+// ReconnectDatasourceSource reconnects a source as actorID and queues a sync:
+// from now on the source's syncs run on behalf of actorID, exactly as after a
+// connect. A replacement token is the credential reconnect SyncDatasourceSource
+// already performs. Without one, only a GitHub source that holds no credential
+// (a public repository) reconnects: GitHub must still serve the repository to a
+// request that carries none, and the source must still hold no credential once
+// its row is locked, so a reconnect never records a delegation for a source
+// whose credential a concurrent replacement just changed. A source that holds a
+// credential reconnects only by replacing it, never by reaffirming it.
+func (s *Service) ReconnectDatasourceSource(ctx context.Context, actorID, orgID, id, replacementToken string) (string, error) {
+	if strings.TrimSpace(replacementToken) != "" {
+		return s.SyncDatasourceSource(ctx, actorID, orgID, id, replacementToken)
+	}
+	source, err := s.GetDatasourceSource(ctx, orgID, id)
+	if err != nil {
+		return "", err
+	}
+	if source.Provider != DatasourceProviderGitHub || source.GitHubCredentialKind != githubCredentialKindPublic {
+		return "", status.Error(codes.FailedPrecondition,
+			"This source holds a saved credential. Reconnect it with a replacement PAT, or move it to the GitHub App.")
+	}
+	public, err := s.resolvePublicGitHubRepository(ctx, source.Repo, source.Branch)
+	if err != nil {
+		return "", err
+	}
+	if !public {
+		return "", status.Error(codes.FailedPrecondition,
+			"GitHub no longer serves this repository without a credential. Reconnect it with a repository-scoped fine-grained PAT.")
+	}
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id)
+		if err != nil {
+			return err
+		}
+		if ref != "" {
+			return status.Error(codes.FailedPrecondition,
+				"This source was given a credential while it was being reconnected. Reconnect it with a replacement PAT.")
+		}
+		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
+	}); err != nil {
+		return "", err
+	}
+	return s.SyncDatasourceSource(ctx, actorID, orgID, id)
+}
+
 func (s *Service) GetDatasourceSync(ctx context.Context, orgID, sourceID, jobID string) (*DatasourceSyncOperation, error) {
 	if _, err := s.GetDatasourceSource(ctx, orgID, sourceID); err != nil {
 		return nil, err

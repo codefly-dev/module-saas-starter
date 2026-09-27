@@ -247,6 +247,19 @@ export interface DatasourceClient {
 	/** Enqueues an async pull; resolves to the durable job id. */
 	syncSource(orgId: string, id: string, accessToken?: string): Promise<string>;
 	/**
+	 * Reconnects a source as the viewer and enqueues a sync; resolves to the
+	 * durable job id. From then on the source's syncs run on behalf of the
+	 * viewer, as after a connect. With `accessToken` the saved PAT is replaced;
+	 * without one only a source that holds no credential (a public repository)
+	 * reconnects. Optional so a consumer adapting its own client keeps
+	 * compiling: without it, a reconnect needs a replacement PAT.
+	 */
+	reconnectSource?(
+		orgId: string,
+		id: string,
+		accessToken?: string,
+	): Promise<string>;
+	/**
 	 * Reads one sync of a source — the job `syncSource` returned, or with no job
 	 * id the source's latest, whatever started it. Resolves `undefined` when the
 	 * source has no sync yet. Optional so a consumer adapting its own client

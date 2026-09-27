@@ -155,6 +155,7 @@ describe("createDatasourceClient", () => {
 			migrateGitHubSourceToApp: () =>
 				client.migrateGitHubSourceToApp!("org-1", "ds-1"),
 			syncSource: () => client.syncSource("org-1", "ds-1"),
+			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 			// The stub answers {} to everything; an operation whose answer must
@@ -650,6 +651,32 @@ it("serializes a replacement credential only for reconnect on the existing sourc
 		accessToken: "test-only-replacement",
 	});
 	expect(calls[1].body).toEqual({ orgId: "org-1", id: "source-1" });
+});
+
+it("asks for a reconnect, with or without a replacement credential", async () => {
+	const { calls } = stubFetch({ jobId: "job-2" });
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	await expect(client.reconnectSource!("org-1", "source-1")).resolves.toBe(
+		"job-2",
+	);
+	await client.reconnectSource!("org-1", "source-1", "test-only-replacement");
+	expect(calls[0].url).toContain(
+		"saas.accounts.v1.DatasourceService/SyncSource",
+	);
+	expect(calls[0].body).toEqual({
+		orgId: "org-1",
+		id: "source-1",
+		reconnect: true,
+	});
+	expect(calls[1].body).toEqual({
+		orgId: "org-1",
+		id: "source-1",
+		reconnect: true,
+		accessToken: "test-only-replacement",
+	});
 });
 
 it("connects to the selected node without deriving authority from its label", async () => {

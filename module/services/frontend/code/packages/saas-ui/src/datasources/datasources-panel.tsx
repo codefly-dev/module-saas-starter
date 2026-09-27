@@ -165,6 +165,7 @@ function DatasourcesPanelView({
 	const beginAppSetup = client.beginGitHubAppSetup?.bind(client);
 	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
 	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
+	const reconnectSource = client.reconnectSource?.bind(client);
 
 	// The return leg, captured once during the first render: the redirect's
 	// parameters are a property of the URL the page loaded with, so the value has
@@ -663,6 +664,7 @@ function DatasourcesPanelView({
 			{canManage && reconnecting && (
 				<ReconnectSource
 					source={reconnecting}
+					credentialOptional={reconnectSource !== undefined}
 					pending={reconnectPending}
 					error={reconnectError}
 					onCancel={() => {
@@ -672,13 +674,13 @@ function DatasourcesPanelView({
 						setReconnectPending(true);
 						setReconnectError(undefined);
 						try {
-							const jobId = await client.syncSource(
-								orgId,
-								reconnecting.id,
-								token,
-							);
+							const jobId = reconnectSource
+								? await reconnectSource(orgId, reconnecting.id, token || undefined)
+								: await client.syncSource(orgId, reconnecting.id, token);
 							setSyncNotice(
-								`Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
+								token
+									? `Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`
+									: `Reconnected. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
 							);
 							setReconnecting(null);
 							onSyncEnqueued?.(jobId);
@@ -1198,12 +1200,15 @@ function SourceHistory({
 
 function ReconnectSource({
 	source,
+	credentialOptional,
 	pending,
 	error,
 	onSubmit,
 	onCancel,
 }: {
 	source: DatasourceView;
+	/** The client reconnects a source that holds no credential without one. */
+	credentialOptional: boolean;
 	pending: boolean;
 	error?: string;
 	onSubmit: (token: string) => Promise<void>;
@@ -1216,7 +1221,7 @@ function ReconnectSource({
 			className="space-y-3 rounded-lg border p-4"
 			onSubmit={(event) => {
 				event.preventDefault();
-				if (!pending && token.trim()) {
+				if (!pending && (credentialOptional || token.trim())) {
 					const replacement = token.trim();
 					setToken("");
 					void onSubmit(replacement);
@@ -1225,15 +1230,16 @@ function ReconnectSource({
 		>
 			<h3 className="font-medium">Reconnect {source.repo}</h3>
 			<p className="text-sm text-muted-foreground">
-				Replace the saved PAT and start a sync. Your source, collection,
-				content, and history are preserved.
+				{credentialOptional
+					? "Its syncs will run on your behalf from now on. Enter a new PAT to replace the saved one, or leave it empty for a public repository. A sync starts right away; your source, collection, content, and history are preserved."
+					: "Replace the saved PAT and start a sync. Your source, collection, content, and history are preserved."}
 			</p>
 			<Label className="block text-sm">
-				New GitHub PAT
+				{credentialOptional ? "New GitHub PAT (optional)" : "New GitHub PAT"}
 				<Input
 					type="password"
 					autoComplete="new-password"
-					required
+					required={!credentialOptional}
 					maxLength={4096}
 					value={token}
 					disabled={pending}
@@ -1242,7 +1248,10 @@ function ReconnectSource({
 			</Label>
 			{error && <p role="alert">{error}</p>}
 			<div className="flex gap-2">
-				<Button type="submit" disabled={pending || !token.trim()}>
+				<Button
+					type="submit"
+					disabled={pending || (!credentialOptional && !token.trim())}
+				>
 					{pending ? "Validating and reconnecting…" : "Reconnect and sync"}
 				</Button>
 				<Button

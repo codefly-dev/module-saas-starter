@@ -293,6 +293,16 @@ export function datasourceClientOverTransport(
 			notifySourceSyncRequested(id);
 			return response.jobId;
 		},
+		async reconnectSource(orgId, id, accessToken) {
+			const response = await client.syncSource({
+				orgId,
+				id,
+				reconnect: true,
+				...(accessToken ? { accessToken } : {}),
+			});
+			notifySourceSyncRequested(id);
+			return response.jobId;
+		},
 		async getSourceSync(orgId, sourceId, jobId) {
 			try {
 				const response = await client.getSourceSync({

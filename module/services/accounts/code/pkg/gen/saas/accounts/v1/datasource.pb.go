@@ -2415,7 +2415,15 @@ type SyncSourceRequest struct {
 	Id    string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	// Optional replacement PAT: validate and encrypt for this existing GitHub
 	// source before queuing sync. Empty keeps the saved credential. Never returned.
-	AccessToken   string `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	AccessToken string `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	// Reconnect the source: from now on its syncs run on behalf of the caller,
+	// exactly as when a person connects it (the source's delegations move to the
+	// caller). A replacement access_token is always a reconnect. Without one,
+	// only a GitHub source that holds no credential (a public repository)
+	// reconnects this way: the repository is proved still readable without a
+	// credential, then the delegation is recorded and a sync is queued. A source
+	// that holds a credential reconnects only with a replacement for it.
+	Reconnect     bool `protobuf:"varint,4,opt,name=reconnect,proto3" json:"reconnect,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2469,6 +2477,13 @@ func (x *SyncSourceRequest) GetAccessToken() string {
 		return x.AccessToken
 	}
 	return ""
+}
+
+func (x *SyncSourceRequest) GetReconnect() bool {
+	if x != nil {
+		return x.Reconnect
+	}
+	return false
 }
 
 type SyncSourceResponse struct {
@@ -5336,11 +5351,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x11GetSourceResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
-	"datasource\"{\n" +
+	"datasource\"\x99\x01\n" +
 	"\x11SyncSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12+\n" +
-	"\faccess_token\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vaccessToken\"+\n" +
+	"\faccess_token\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vaccessToken\x12\x1c\n" +
+	"\treconnect\x18\x04 \x01(\bR\treconnect\"+\n" +
 	"\x12SyncSourceResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\x82\x01\n" +
 	"\x14GetSourceSyncRequest\x12\x1f\n" +

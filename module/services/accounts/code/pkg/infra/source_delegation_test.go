@@ -558,3 +558,50 @@ func TestSourceDelegation_BindingChanged(t *testing.T) {
 	require.ErrorIs(t, err, business.ErrSourceDelegationRevoked)
 	require.Equal(t, business.SourceDelegationBindingChanged, w.only(t, w.org, sourceID, delegationModule).RevokedReason)
 }
+
+// publicDelegationGitHub serves every repository to a request with no credential.
+type publicDelegationGitHub struct{ delegationGitHub }
+
+func (publicDelegationGitHub) RepositoryIsPublic(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+// A public source holds no credential to replace, so reconnecting it without
+// one moves its delegation to the person who reconnected — exactly as a
+// credential reconnect does — and the previous one is revoked as replaced.
+func TestSourceDelegation_PublicSourceReconnectsWithoutACredential(t *testing.T) {
+	w := newDelegationWorld(t)
+	w.svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return publicDelegationGitHub{} })
+	source, err := w.svc.AddSource(testCtx, w.admin, business.AddSourceInput{
+		OrgID: w.org, Provider: business.DatasourceProviderGitHub, CollectionLabel: "handbook-" + business.NewIDString()[:8],
+		Repo: "acme/handbook", Branch: "main",
+	})
+	require.NoError(t, err)
+	previous := w.only(t, w.org, source.ID, delegationModule)
+	require.Equal(t, w.admin, previous.PrincipalID)
+
+	_, err = w.svc.ReconnectDatasourceSource(testCtx, w.other, w.org, source.ID, "")
+	require.NoError(t, err)
+
+	var active, replaced *business.SourceDelegation
+	all, err := w.svc.ListSourceDelegations(testCtx, w.org, source.ID, true)
+	require.NoError(t, err)
+	for _, d := range all {
+		if d.ModulePrefix != delegationModule {
+			continue
+		}
+		if d.Active() {
+			active = d
+		} else {
+			replaced = d
+		}
+	}
+	require.NotNil(t, active)
+	require.NotNil(t, replaced)
+	require.Equal(t, previous.ID, replaced.ID)
+	require.Equal(t, business.SourceDelegationReplaced, replaced.RevokedReason)
+	require.Equal(t, w.other, active.PrincipalID)
+	authority, err := w.mint(business.SourceDelegationRef{SourceID: source.ID})
+	require.NoError(t, err)
+	require.Equal(t, w.other, authority.OwnerPrincipalID)
+}
