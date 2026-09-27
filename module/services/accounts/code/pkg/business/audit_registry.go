@@ -419,7 +419,7 @@ const (
 	EventSourceDelegationCreated EventType = "saas.datasource.delegation.created"
 	EventSourceDelegationUsed    EventType = "saas.datasource.delegation.used"
 	EventSourceDelegationRevoked EventType = "saas.datasource.delegation.revoked"
-	EventFeatureFlagUpdated                EventType = "saas.feature_flag.updated"
+	EventFeatureFlagUpdated      EventType = "saas.feature_flag.updated"
 
 	// Domain-event pub/sub (issue #493). A subscription is a standing grant of
 	// delivery, so its create and revoke are audited on the tenant spine; a

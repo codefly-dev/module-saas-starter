@@ -338,11 +338,13 @@ func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
 		mutate func(*sourceDelegationMemoryStore)
 		reason string
 	}{
-		"source deleted":  {func(s *sourceDelegationMemoryStore) { s.facts.SourceExists = false }, business.SourceDelegationSourceDeleted},
-		"member removed":  {func(s *sourceDelegationMemoryStore) { s.facts.MemberRole = "" }, business.SourceDelegationMemberRemoved},
-		"demoted":         {func(s *sourceDelegationMemoryStore) { s.facts.MemberRole = "member" }, business.SourceDelegationPermissionLost},
-		"user deleted":    {func(s *sourceDelegationMemoryStore) { s.facts.UserStatus = "deleted" }, business.SourceDelegationUserInactive},
-		"binding changed": {func(s *sourceDelegationMemoryStore) { s.delegations[delegationID].BindingDigest = "0" + s.delegations[delegationID].BindingDigest[1:] }, business.SourceDelegationBindingChanged},
+		"source deleted": {func(s *sourceDelegationMemoryStore) { s.facts.SourceExists = false }, business.SourceDelegationSourceDeleted},
+		"member removed": {func(s *sourceDelegationMemoryStore) { s.facts.MemberRole = "" }, business.SourceDelegationMemberRemoved},
+		"demoted":        {func(s *sourceDelegationMemoryStore) { s.facts.MemberRole = "member" }, business.SourceDelegationPermissionLost},
+		"user deleted":   {func(s *sourceDelegationMemoryStore) { s.facts.UserStatus = "deleted" }, business.SourceDelegationUserInactive},
+		"binding changed": {func(s *sourceDelegationMemoryStore) {
+			s.delegations[delegationID].BindingDigest = "0" + s.delegations[delegationID].BindingDigest[1:]
+		}, business.SourceDelegationBindingChanged},
 	} {
 		t.Run(name, func(t *testing.T) {
 			store, audit := installSourceDelegationService(t)
