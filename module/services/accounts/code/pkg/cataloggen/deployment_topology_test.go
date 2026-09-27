@@ -157,7 +157,7 @@ func TestDeploymentSpecIsStrictAndComplete(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "    deployment:\n        endpoint-ports:\n", "    deployment:\n        unknown: true\n        endpoint-ports:\n"))
+		withService(t, documents, "accounts", "        endpoint-ports:\n", "        unknown: true\n        endpoint-ports:\n"))
 	require.ErrorContains(t, err, "field unknown not found")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
@@ -684,17 +684,39 @@ func TestTenantOnlyCallerIsNotOnTheInternalAuthorityPolicy(t *testing.T) {
 	require.Contains(t, byPrincipal, "cluster.local/ns/saas-starter/sa/auth-gateway")
 }
 
-// The authority endpoint binds a listener of its own, so a topology that gives
-// it a port another endpoint already binds is refused at render — which is what
-// lets the service treat an unresolved address at startup as a runtime gap
-// rather than panicking over a collision it cannot have.
-func TestDeploymentTopologyRefusesAnAuthorityPortCollision(t *testing.T) {
+// The authority endpoint binds the port Codefly allocates for a named
+// endpoint, keyed by the name a workspace composes the module under, so the
+// module's own view records it as allocated at render and carries no port for
+// it. A declared pod port would be a second, silently ignored source of the
+// same fact, so it is refused — whatever its value.
+func TestDeploymentTopologyAuthorityPortIsAllocatedAtRender(t *testing.T) {
 	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	documents := readDeploymentDocuments(t)
 
-	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, readDeploymentDocuments(t), "accounts",
-			"            authority: 9091\n", "            authority: 9090\n"))
-	require.ErrorContains(t, err, "cannot share port 9090 with endpoint \"grpc\"")
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
+	require.NoError(t, err)
+	for _, service := range artifacts.Catalog.GetServices() {
+		for _, endpoint := range service.GetEndpoints() {
+			if service.GetName() == "accounts" && endpoint.GetName() == "authority" {
+				require.Zero(t, endpoint.GetPort(), "authority's pod port is allocated at render")
+			} else {
+				require.NotZero(t, endpoint.GetPort(), "%s/%s declares its pod port", service.GetName(), endpoint.GetName())
+			}
+			require.Zero(t, endpoint.GetServicePort(), "%s/%s: Service ports exist only in a composing render", service.GetName(), endpoint.GetName())
+		}
+	}
+
+	for _, port := range []string{"9091", "9090"} {
+		_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+			withService(t, documents, "accounts", "            connect: 8080\n", "            authority: "+port+"\n            connect: 8080\n"))
+		require.ErrorContains(t, err, `endpoint "authority" declares pod port `+port)
+	}
+
+	// Only a named endpoint Codefly allocates for may leave its port
+	// undeclared; the conventional endpoint of an API still must declare it.
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "            grpc: 9090\n", ""))
+	require.ErrorContains(t, err, `endpoint "grpc" has no port`)
 }
 
 // An Istio ALLOW policy with an empty `rules` denies every request to the

@@ -210,8 +210,12 @@ type ingressRoutePlan struct {
 	name     string
 	service  string
 	endpoint string
-	port     uint32
-	hosts    []string
+	// port is the pod port the ingress gateway's traffic arrives on (what the
+	// AuthorizationPolicy and NetworkPolicy match); servicePort is the
+	// Kubernetes Service port the VirtualService routes to.
+	port        uint32
+	servicePort uint32
+	hosts       []string
 }
 
 type deploymentTopology struct {
@@ -280,11 +284,16 @@ type topologySecretServiceConfigurationEntry struct {
 	Key string `yaml:"key"`
 }
 
+// topologyEndpoint carries both of an endpoint's ports. Port is the pod port
+// the process binds — what a NetworkPolicy and an Istio AuthorizationPolicy
+// match. ServicePort is the Kubernetes Service port Codefly's render allocates
+// (network.DeployedEndpointPorts) — what a VirtualService destination names.
 type topologyEndpoint struct {
-	Name       string `yaml:"name"`
-	API        string `yaml:"api,omitempty"`
-	Visibility string `yaml:"visibility"`
-	Port       uint32 `yaml:"port"`
+	Name        string `yaml:"name"`
+	API         string `yaml:"api,omitempty"`
+	Visibility  string `yaml:"visibility"`
+	Port        uint32 `yaml:"port"`
+	ServicePort uint32 `yaml:"service_port"`
 }
 
 type topologyDependency struct {
@@ -730,10 +739,11 @@ func validateIngressRoutes(
 			return fmt.Errorf("environment %q ingress route %q declares no exact hosts", environment.Name, route.Name)
 		}
 		planned := ingressRoutePlan{
-			name:     route.Name,
-			service:  route.Service,
-			endpoint: route.Endpoint,
-			port:     endpoint.Port,
+			name:        route.Name,
+			service:     route.Service,
+			endpoint:    route.Endpoint,
+			port:        endpoint.Port,
+			servicePort: endpoint.ServicePort,
 		}
 		for _, host := range route.Hosts {
 			host = strings.TrimSpace(host)
@@ -1212,7 +1222,7 @@ func topologyIstioResources(
 			"match": []any{map[string]any{"uri": map[string]string{"prefix": "/"}}},
 			"route": []any{map[string]any{"destination": map[string]any{
 				"host": topologyKubernetesServiceName(service) + "." + namespace + ".svc.cluster.local",
-				"port": map[string]any{"number": route.port},
+				"port": map[string]any{"number": route.servicePort},
 			}}},
 			"timeout": "30s",
 		}}
@@ -1238,7 +1248,7 @@ func topologyIstioResources(
 				"match": matches,
 				"route": []any{map[string]any{"destination": map[string]any{
 					"host": topologyKubernetesServiceName(service) + "." + namespace + ".svc.cluster.local",
-					"port": map[string]any{"number": route.port},
+					"port": map[string]any{"number": route.servicePort},
 				}}},
 				"timeout": "30s",
 			})
@@ -1706,7 +1716,7 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 		kubernetesApps[kubernetesApp] = service.Name
 		endpoints := make(map[string]struct{}, len(service.Endpoints))
 		for _, endpoint := range service.Endpoints {
-			if endpoint.Port == 0 || endpoint.Port > 65535 {
+			if endpoint.Port == 0 || endpoint.Port > 65535 || endpoint.ServicePort == 0 || endpoint.ServicePort > 65535 {
 				return deploymentTopology{}, fmt.Errorf("deployment topology endpoint %s/%s has invalid port", service.Name, endpoint.Name)
 			}
 			if _, exists := endpoints[endpoint.Name]; exists {

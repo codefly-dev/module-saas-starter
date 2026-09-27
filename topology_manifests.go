@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/network"
 	"gopkg.in/yaml.v3"
 )
 
@@ -147,24 +150,38 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 		PublicEgressPorts:                  spec.PublicEgressPorts,
 		Spec:                               manifest.Spec,
 	}
+	// Two ports per endpoint, from two owners. The Service port is the one
+	// in-cluster allocation Codefly's render gives the endpoint
+	// (network.DeployedEndpointPorts, keyed by the name the workspace composes
+	// this module under): it is what a Kubernetes Service and a VirtualService
+	// destination name, and nothing here may re-declare it. The pod port is what
+	// the process binds: an agent that binds a fixed port (postgres, redis,
+	// vault, the Next.js server) declares it under spec.deployment.endpoint-ports,
+	// and an endpoint that binds its allocated port (a go-grpc named endpoint)
+	// declares none and takes the Service port.
+	coreEndpoints := make([]*basev0.Endpoint, 0, len(manifest.Endpoints))
+	for _, endpoint := range manifest.Endpoints {
+		coreEndpoints = append(coreEndpoints, &basev0.Endpoint{
+			Name: endpoint.Name, Api: endpointAPI(endpoint.Name, endpoint.API), Visibility: endpointVisibility(endpoint.Visibility),
+		})
+	}
+	deployed, err := network.DeployedEndpointPorts(context.Background(), moduleName, service.name, coreEndpoints)
+	if err != nil {
+		return topologyService{}, fmt.Errorf("service %q: allocate deployed ports: %w", service.name, err)
+	}
 	seen := make(map[string]bool, len(manifest.Endpoints))
 	for _, endpoint := range manifest.Endpoints {
-		// The manifest's own defaults: an endpoint's API is its name unless it
-		// says otherwise, and an endpoint is private unless it says otherwise.
-		api := endpoint.API
-		if api == "" {
-			api = endpoint.Name
-		}
-		visibility := endpoint.Visibility
-		if visibility == "" {
-			visibility = "private"
-		}
+		api := endpointAPI(endpoint.Name, endpoint.API)
+		visibility := endpointVisibility(endpoint.Visibility)
+		servicePort := uint32(deployed[endpoint.Name])
 		port, declared := spec.EndpointPorts[endpoint.Name]
 		if !declared {
-			return topologyService{}, fmt.Errorf("service %q endpoint %q has no port under spec.%s.endpoint-ports", service.name, endpoint.Name, deploymentSpecKey)
+			port = servicePort
 		}
 		seen[endpoint.Name] = true
-		entry.Endpoints = append(entry.Endpoints, topologyEndpoint{Name: endpoint.Name, API: api, Visibility: visibility, Port: port})
+		entry.Endpoints = append(entry.Endpoints, topologyEndpoint{
+			Name: endpoint.Name, API: api, Visibility: visibility, Port: port, ServicePort: servicePort,
+		})
 	}
 	for endpoint := range spec.EndpointPorts {
 		if !seen[endpoint] {
@@ -185,6 +202,23 @@ func loadServiceTopology(moduleName string, service serviceDefinition) (topology
 		entry.Dependencies = append(entry.Dependencies, edge)
 	}
 	return entry, nil
+}
+
+// endpointAPI and endpointVisibility are the manifest's own defaults: an
+// endpoint's API is its name unless it says otherwise, and an endpoint is
+// private unless it says otherwise.
+func endpointAPI(name, api string) string {
+	if api == "" {
+		return name
+	}
+	return api
+}
+
+func endpointVisibility(visibility string) string {
+	if visibility == "" {
+		return "private"
+	}
+	return visibility
 }
 
 func decodeDeploymentSpecManifest(service string, spec map[string]any) (deploymentSpecManifest, error) {

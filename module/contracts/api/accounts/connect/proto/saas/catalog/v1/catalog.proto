@@ -140,12 +140,22 @@ message DeploymentService {
   repeated ServiceDependency dependencies = 3;
 }
 
-// CodeflyEndpoint is one named runtime endpoint and its deployment port.
+// CodeflyEndpoint is one named runtime endpoint and its deployment ports.
+//
+// Two ports, from two owners. `port` is the pod port the process binds, which
+// network and mesh policy match. `service_port` is the Kubernetes Service port
+// Codefly allocates in-cluster, which a route destination names. The Service
+// port, and the pod port of an endpoint that binds its allocation (a go-grpc
+// named endpoint), are an allocation keyed by the name the workspace composes
+// the module under, so they exist only once a composition renders: the
+// module's own repository view leaves them 0, "allocated at render", and the
+// composing render fills both.
 message CodeflyEndpoint {
   string name = 1;
   CodeflyAPI api = 2;
   EndpointVisibility visibility = 3;
   uint32 port = 4;
+  uint32 service_port = 5;
 }
 
 // ServiceDependency grants one caller only the named target endpoints.

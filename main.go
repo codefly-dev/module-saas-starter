@@ -588,10 +588,11 @@ func normalizeGeneratedDeploymentMetadata(
 		endpoints := make([]any, 0, len(service.Endpoints))
 		for _, endpoint := range service.Endpoints {
 			endpoints = append(endpoints, map[string]any{
-				"name":       endpoint.Name,
-				"api":        "CODEFLY_API_" + strings.ToUpper(endpoint.API),
-				"visibility": "ENDPOINT_VISIBILITY_" + strings.ToUpper(endpoint.Visibility),
-				"port":       endpoint.Port,
+				"name":         endpoint.Name,
+				"api":          "CODEFLY_API_" + strings.ToUpper(endpoint.API),
+				"visibility":   "ENDPOINT_VISIBILITY_" + strings.ToUpper(endpoint.Visibility),
+				"port":         endpoint.Port,
+				"service_port": endpoint.ServicePort,
 			})
 		}
 		dependencies := make([]any, 0, len(service.Dependencies))

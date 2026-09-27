@@ -221,12 +221,21 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 			visibility = "private"
 		}
 		port, declared := spec.EndpointPorts[endpoint.Name]
+		allocated := false
 		if !declared {
-			return deploymentServiceBinding{}, fmt.Errorf("service %q endpoint %q has no port under spec.%s.endpoint-ports", name, endpoint.Name, deploymentSpecKey)
+			// Only an endpoint Codefly allocates a port for may leave it
+			// undeclared: a named endpoint sharing its API with another (the
+			// conventional endpoint of an API takes the API's standard port). Any
+			// other undeclared endpoint is a missing declaration and fails here
+			// rather than rendering a policy that names no port.
+			if !allocatedAtRender(endpoint.Name, api, manifest.Endpoints) {
+				return deploymentServiceBinding{}, fmt.Errorf("service %q endpoint %q has no port under spec.%s.endpoint-ports", name, endpoint.Name, deploymentSpecKey)
+			}
+			allocated = true
 		}
 		seen[endpoint.Name] = true
 		service.Endpoints = append(service.Endpoints, deploymentEndpointBinding{
-			Name: endpoint.Name, API: api, Visibility: visibility, Port: port,
+			Name: endpoint.Name, API: api, Visibility: visibility, Port: port, AllocatedAtRender: allocated,
 		})
 	}
 	for endpoint := range spec.EndpointPorts {
@@ -266,4 +275,26 @@ func decodeDeploymentSpec(service string, spec map[string]any) (deploymentSpec, 
 		return deploymentSpec{}, fmt.Errorf("service %q spec.%s: %w", service, deploymentSpecKey, err)
 	}
 	return decoded, nil
+}
+
+// allocatedAtRender reports whether Codefly allocates the endpoint's port (and
+// the service binds that allocation) rather than giving it its API's standard
+// port: a named endpoint whose API another endpoint of the service also uses.
+// It mirrors the rule core's network.DeployedEndpointPorts applies, which the
+// composing render calls with the composed module name.
+func allocatedAtRender(name, api string, endpoints []manifestEndpoint) bool {
+	if name == api {
+		return false
+	}
+	count := 0
+	for _, endpoint := range endpoints {
+		other := endpoint.API
+		if other == "" {
+			other = endpoint.Name
+		}
+		if other == api {
+			count++
+		}
+	}
+	return count > 1
 }

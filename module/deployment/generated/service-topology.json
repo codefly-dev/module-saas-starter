@@ -9,8 +9,7 @@
         {
           "name": "authority",
           "api": "CODEFLY_API_GRPC",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE",
-          "port": 9091
+          "visibility": "ENDPOINT_VISIBILITY_MODULE"
         },
         {
           "name": "connect",
