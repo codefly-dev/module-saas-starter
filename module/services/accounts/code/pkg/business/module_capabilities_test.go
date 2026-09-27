@@ -747,6 +747,44 @@ func TestModuleNotifyUser_InvalidCategoryRejected(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 }
 
+// A type outside the store's set is refused as the caller's error, before any
+// read or write, rather than reaching the store's CHECK constraint as Internal.
+func TestModuleNotifyUser_InvalidTypeRejectedBeforeAnyWrite(t *testing.T) {
+	store := &notifyRecordingStore{fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}}}
+	svc := newModuleServiceWithStore(t, store, &fakeJobBackend{}, false)
+	for _, bad := range []string{"sync", "Info", "document", " info"} {
+		_, err := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
+			Tenant: moduleTenantA, UserID: moduleUserA, Title: "Title", Body: "Body", Type: bad, Category: "product",
+		})
+		requireCode(t, err, codes.InvalidArgument)
+	}
+	if store.created != 0 || store.membershipReads != 0 {
+		t.Fatalf("a refused type read %d memberships and wrote %d notifications", store.membershipReads, store.created)
+	}
+	for _, good := range append([]string{""}, business.NotificationTypes...) {
+		if !business.ValidNotificationType(good) {
+			t.Errorf("%q should be a valid notification type", good)
+		}
+	}
+}
+
+// notifyRecordingStore counts the membership reads and notification writes a
+// ModuleNotifyUser call makes.
+type notifyRecordingStore struct {
+	fakeTxStore
+	created, membershipReads int
+}
+
+func (s *notifyRecordingStore) OrgMemberExists(ctx context.Context, orgID, userID string) (bool, error) {
+	s.membershipReads++
+	return s.fakeTxStore.OrgMemberExists(ctx, orgID, userID)
+}
+
+func (s *notifyRecordingStore) CreateNotification(context.Context, *business.Notification) error {
+	s.created++
+	return nil
+}
+
 // TestModuleNotifyUser_NonMemberRejected pins the fix for cross-tenant
 // notification injection: notifying a user who is not a member of the tenant is
 // denied before any notification is created.

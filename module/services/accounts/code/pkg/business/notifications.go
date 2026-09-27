@@ -3,6 +3,7 @@ package business
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -40,6 +41,34 @@ type UnreadResourceReference struct {
 }
 
 var ErrInvalidNotificationPageToken = errors.New("invalid notification page token")
+
+// ErrInvalidNotificationType reports a notification type outside
+// NotificationTypes. It is refused before any write: the store's CHECK
+// constraint would refuse it too, but as a failed insert the caller cannot tell
+// from an outage.
+var ErrInvalidNotificationType = errors.New("invalid notification type")
+
+// NotificationTypes is every presentation type a notification may carry. It is
+// the notifications_type_check constraint's set, and a database test
+// (TestNotificationTypesMatchTheStoreConstraint) holds the two to each other,
+// so a type the store would refuse is refused here first. An empty type means
+// "info".
+var NotificationTypes = []string{"info", "success", "warning", "error", "billing", "security"}
+
+// ValidNotificationType reports whether t is a type the store accepts; the
+// empty type is accepted, as it defaults to "info".
+func ValidNotificationType(t string) bool {
+	if t == "" {
+		return true
+	}
+	for _, allowed := range NotificationTypes {
+		if t == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 var ErrInvalidNotificationFilter = errors.New("invalid notification filter")
 
 // NotificationFilter narrows a caller-owned inbox before pagination.
@@ -75,6 +104,9 @@ func (s *Service) CreateNotification(
 	input CreateNotificationInput,
 ) (*Notification, error) {
 	w := wool.Get(ctx).In("CreateNotification")
+	if !ValidNotificationType(input.Type) {
+		return nil, fmt.Errorf("%w %q", ErrInvalidNotificationType, input.Type)
+	}
 	mandatory, err := notificationCategoryIsMandatory(input.Category)
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot create notification")
