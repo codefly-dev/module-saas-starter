@@ -13,15 +13,32 @@ const { getEndpoints, getWorkspaceSecret } = vi.hoisted(() => ({
 }));
 vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
 
+import type {
+  SolutionEntitlement,
+  ViewerEntitlements,
+} from "@/solutions/entitlements";
 import {
   browserManifestUrl,
+  cachedProjection,
+  entitledSolutions,
   findSolution,
+  invalidateProjections,
   loadSolutions,
+  navProjection,
   parseManifest,
   registerSolution,
   surfacesProjection,
   unregisterSolution,
 } from "@/solutions/registry";
+
+// The entitlement every projection now requires. A healthy one is the ordinary
+// case: the org installed the solution and the viewer's team was granted it.
+const granted: SolutionEntitlement = {
+  id: "audit",
+  healthy: true,
+  scopeNodeId: "11111111-1111-1111-1111-111111111111",
+};
+const grantedButUnhealthy: SolutionEntitlement = { ...granted, healthy: false };
 
 function baseManifest(overrides: Record<string, unknown> = {}) {
   return {
@@ -381,11 +398,12 @@ describe("surfacesProjection", () => {
   ]);
 
   it("projects only the asked-for kind, named by the solution", () => {
-    expect(surfacesProjection(manifest, "word")).toEqual({
+    expect(surfacesProjection(manifest, "word", granted)).toEqual({
       id: "audit",
       title: "Audit",
       // Without this the declared module path resolves against nothing.
       origin: "https://audit.internal",
+      available: true,
       surfaces: [
         {
           id: "footnote",
@@ -402,14 +420,14 @@ describe("surfacesProjection", () => {
   });
 
   it("carries the origin without the manifest path it came from", () => {
-    const projected = surfacesProjection(manifest, "word");
+    const projected = surfacesProjection(manifest, "word", granted);
     expect(projected?.origin).toBe("https://audit.internal");
     expect(JSON.stringify(projected)).not.toContain("mf-manifest.json");
   });
 
   it("reports nothing for a kind the solution does not serve", () => {
-    expect(surfacesProjection(manifest, "excel")).toBeNull();
-    expect(surfacesProjection(withSurfaces([]), "word")).toBeNull();
+    expect(surfacesProjection(manifest, "excel", granted)).toBeNull();
+    expect(surfacesProjection(withSurfaces([]), "word", granted)).toBeNull();
   });
 
   it("does not hand out a reference into the cached snapshot", () => {
@@ -428,7 +446,7 @@ describe("surfacesProjection", () => {
         events: ["documents.entry.*"],
       },
     ]);
-    const surface = surfacesProjection(cached, "word")?.surfaces[0];
+    const surface = surfacesProjection(cached, "word", granted)?.surfaces[0];
     if (surface === undefined) throw new Error("expected one surface");
     surface.title = "Rewritten";
     surface.events?.push("injected");
@@ -834,13 +852,166 @@ describe("surfacesProjection for a solution served through the host", () => {
   })();
 
   it("resolves modules against this host's origin, under the solution's proxy", () => {
-    expect(surfacesProjection(manifest, "word", "https://app.example")).toMatchObject({
+    expect(surfacesProjection(manifest, "word", granted, "https://app.example")).toMatchObject({
       origin: "https://app.example",
       surfaces: [{ module: "/api/solutions/audit/proxy/assets/surfaces/footnote.js" }],
     });
   });
 
   it("leaves the solution out when there is no host origin to resolve against", () => {
-    expect(surfacesProjection(manifest, "word")).toBeNull();
+    expect(surfacesProjection(manifest, "word", granted)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-organization, per-viewer narrowing (issue #949)
+// ---------------------------------------------------------------------------
+
+function entitlements(
+  overrides: Partial<ViewerEntitlements> & {
+    solutions?: SolutionEntitlement[];
+  } = {},
+): ViewerEntitlements {
+  const { solutions = [granted], ...rest } = overrides;
+  return {
+    org: "org-acme",
+    viewer: "viewer-1",
+    byId: new Map(solutions.map((entitlement) => [entitlement.id, entitlement])),
+    revision: solutions.map((s) => `${s.id}:${s.healthy}`).join("|"),
+    ...rest,
+  };
+}
+
+function manifestFor(id: string) {
+  const parsed = parseManifest(
+    baseManifest({ id, nav: { title: id, path: `/s/${id}` } }),
+  );
+  if (parsed === null) throw new Error("fixture manifest must parse");
+  return parsed;
+}
+
+describe("entitledSolutions", () => {
+  it("leaves out a deployed solution the organization has not installed", () => {
+    // The whole point of the narrowing: registered is not the same as usable.
+    const registered = [manifestFor("audit"), manifestFor("ledger")];
+    const pairs = entitledSolutions(registered, entitlements());
+    expect(pairs.map(({ manifest }) => manifest.id)).toEqual(["audit"]);
+  });
+
+  it("gives two teams in one organization genuinely different sets", () => {
+    const registered = [
+      manifestFor("audit"),
+      manifestFor("ledger"),
+      manifestFor("intake"),
+    ];
+    // Same org, same registered set, different grants — which is the acceptance
+    // case: the answer must be a function of the viewer, not of the deployment.
+    const reviewers = entitlements({
+      viewer: "viewer-in-reviewers",
+      solutions: [granted],
+    });
+    const clerks = entitlements({
+      viewer: "viewer-in-clerks",
+      solutions: [
+        { id: "ledger", healthy: true, scopeNodeId: "node-ledger" },
+        { id: "intake", healthy: true, scopeNodeId: "node-intake" },
+      ],
+    });
+    expect(
+      entitledSolutions(registered, reviewers).map(({ manifest }) => manifest.id),
+    ).toEqual(["audit"]);
+    expect(
+      entitledSolutions(registered, clerks).map(({ manifest }) => manifest.id),
+    ).toEqual(["ledger", "intake"]);
+  });
+
+  it("narrows after a revocation", () => {
+    const registered = [manifestFor("audit"), manifestFor("ledger")];
+    const before = entitlements({
+      solutions: [
+        granted,
+        { id: "ledger", healthy: true, scopeNodeId: "node-ledger" },
+      ],
+    });
+    expect(entitledSolutions(registered, before)).toHaveLength(2);
+    // The grant on `ledger` is revoked: the authority stops returning it, so the
+    // projection stops carrying it. Nothing about the registration changed.
+    const after = entitlements({ solutions: [granted] });
+    expect(
+      entitledSolutions(registered, after).map(({ manifest }) => manifest.id),
+    ).toEqual(["audit"]);
+  });
+
+  it("ignores an entitlement for a solution this deployment does not serve", () => {
+    // An org can hold an installation for a solution that was deregistered or
+    // has not registered yet. That is not an error to report into a menu.
+    const pairs = entitledSolutions(
+      [manifestFor("audit")],
+      entitlements({
+        solutions: [
+          granted,
+          { id: "retired", healthy: true, scopeNodeId: "node-retired" },
+        ],
+      }),
+    );
+    expect(pairs.map(({ manifest }) => manifest.id)).toEqual(["audit"]);
+  });
+});
+
+describe("projection availability", () => {
+  it("keeps an unhealthy installation visible and marks it unavailable", () => {
+    // Visible, because the org installed it and the viewer was granted it —
+    // hiding it sends someone looking for a grant that already exists. Not
+    // available, because it must not be routed as though it were serving.
+    expect(navProjection(manifestFor("audit"), grantedButUnhealthy)).toEqual({
+      id: "audit",
+      nav: { title: "audit", path: "/s/audit" },
+      available: false,
+    });
+  });
+
+  it("marks a healthy installation available", () => {
+    expect(navProjection(manifestFor("audit"), granted).available).toBe(true);
+  });
+});
+
+describe("cachedProjection", () => {
+  beforeEach(() => {
+    invalidateProjections();
+  });
+
+  it("recomputes when the authority revision moves", () => {
+    const compute = vi.fn(() => ["audit"]);
+    const before = entitlements();
+    expect(cachedProjection(before, "word", 1, compute)).toEqual(["audit"]);
+    // Same key: reused.
+    cachedProjection(before, "word", 1, compute);
+    expect(compute).toHaveBeenCalledTimes(1);
+    // A revoke moves the revision, so the key moves and the menu is recomputed.
+    // Without this a cached projection outlives the grant that justified it —
+    // the one failure this cache key exists to prevent.
+    cachedProjection(entitlements({ solutions: [] }), "word", 1, compute);
+    expect(compute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not share a projection between organizations, viewers or kinds", () => {
+    const compute = vi.fn(() => ["audit"]);
+    const base = entitlements();
+    cachedProjection(base, "word", 1, compute);
+    cachedProjection({ ...base, org: "org-other" }, "word", 1, compute);
+    cachedProjection({ ...base, viewer: "viewer-2" }, "word", 1, compute);
+    cachedProjection(base, "excel", 1, compute);
+    // Four distinct keys — one per dimension the projection depends on.
+    expect(compute).toHaveBeenCalledTimes(4);
+  });
+
+  it("recomputes when the registered set moves under an unchanged grant", () => {
+    const compute = vi.fn(() => ["audit"]);
+    const base = entitlements();
+    cachedProjection(base, "word", 1, compute);
+    // A re-registration with a new nav title moves no grant, so the authority
+    // revision is identical; the registry revision is what must catch it.
+    cachedProjection(base, "word", 2, compute);
+    expect(compute).toHaveBeenCalledTimes(2);
   });
 });

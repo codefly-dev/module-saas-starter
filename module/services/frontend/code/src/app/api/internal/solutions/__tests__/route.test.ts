@@ -53,6 +53,20 @@ function fakeGateway() {
 				})),
 			});
 		}
+		// The viewer projection beside this one is authenticated and narrowed per
+		// viewer (#949); this file compares the two projections' FIELDS, so every
+		// registered solution is entitled here.
+		if (url.pathname === "/solutions/_entitlements") {
+			return respond({
+				org: "org-acme",
+				viewer: "viewer-1",
+				solutions: [...stored.keys()].map((id) => ({
+					id,
+					healthy: true,
+					scopeNodeId: `node-${id}`,
+				})),
+			});
+		}
 		return respond({ error: "unexpected" }, 500);
 	});
 }
@@ -224,10 +238,15 @@ describe("internal solution detail lookup", () => {
 		expect(audit).not.toHaveProperty("dashboard");
 	});
 
-	it("serves detail the public navigation projection withholds", async () => {
+	it("serves detail the viewer navigation projection withholds", async () => {
 		await register();
 
-		const publicBody = (await publicGET().then((r) => r.json())) as {
+		const viewerRequest = new Request("http://frontend/api/solutions/register", {
+			headers: { authorization: "Bearer viewer-token" },
+		});
+		const publicBody = (await publicGET(viewerRequest).then((r) =>
+			r.json(),
+		)) as {
 			solutions: Array<Record<string, unknown>>;
 		};
 		const publicAudit = publicBody.solutions.find((s) => s.id === "audit");

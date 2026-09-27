@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+
+// ============================================================================
+// Per-viewer solution entitlement (issue #949)
+//
+// A viewer should see the solutions their organization installed and their teams
+// were granted, and nothing else. Answering that needs two authority facts read
+// together: what the organization has installed (installations) and which of
+// those installations' authority-root scope nodes the viewer may act on (the
+// grant + share union every scope decision resolves through).
+//
+// They are answered by ONE read, in one org transaction, rather than by joining
+// two RPCs in a caller: read separately, a revoke landing between the two calls
+// yields a menu entry whose grant is already gone, and the revision a consumer
+// caches on would describe no state that ever existed.
+//
+// These messages live in their own file with deliberately minimal imports — the
+// same reason solution_registry.proto does — so the auth-gateway can generate
+// the same types from the same source proto without vendoring the policy
+// options. The service that serves them is
+// solution_entitlements_service.proto, which accounts alone needs.
+// ============================================================================
+
+// SolutionEntitlement is one installed solution a subject may use. It is
+// deliberately a projection of the installation, not the installation: a
+// consumer of this message renders a menu, and the owner of record, the
+// succession set and the agent principal are no part of that.
+message SolutionEntitlement {
+  // The installed solution's identifier. This is the key a consumer joins
+  // against its own registered set — for the host's solution registry, the
+  // registered manifest `id`.
+  string solution_identifier = 1;
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  // The installation's authority-root scope node — the node the viewer's grant
+  // had to reach for this entitlement to exist. Carried so a consumer can say
+  // which boundary admitted a solution without a second lookup.
+  string root_scope_node_id = 3 [(buf.validate.field).string.uuid = true];
+  // Whether the installation is healthy right now, resolved live from the same
+  // authority facts GetInstallation reports.
+  //
+  // A bool rather than a copy of InstallationHealth on purpose. A consumer of
+  // this message shows an unhealthy solution as unavailable and never renders
+  // the reason — an operator reads that from GetInstallation — so restating that
+  // enum here would be a second copy of a value set to keep in lockstep. This
+  // reduces it instead, by the one rule that survives the enum growing: anything
+  // that is not HEALTHY is not healthy.
+  bool healthy = 4;
+  // Deliberately no platform-administrator basis field. The scope union admits a
+  // platform super_admin for the action `read` alone, and using a solution is not
+  // a read, so that branch can never contribute an entitlement here — a field
+  // reporting it would be permanently false. A super_admin sees an organization's
+  // installations through GetInstallation / ListInstallations, not by appearing to
+  // be entitled to them.
+}
+
+message ListSolutionEntitlementsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // The subject whose entitlements to enumerate. A principal: a team's
+  // entitlements reach a member through the team grant, which the underlying
+  // union already resolves, so asking about a principal answers "everything this
+  // person may use" including what a team confers.
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 -> server default; capped so an organization with many
+  // installations can never return an unbounded result in one call.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 4;
+}
+
+message ListSolutionEntitlementsResponse {
+  repeated SolutionEntitlement entitlements = 1;
+  // Set when more entitlements remain; pass it back as page_token. Empty on the
+  // last page.
+  string next_page_token = 2;
+}
+
+// Deliberately NOT here: a revision or fingerprint field. A consumer that caches
+// a projection built from these rows keys it on a digest of the rows it actually
+// received, which is exact by construction. A revision computed server-side would
+// have to describe either one page or a set larger than the caller read, and the
+// paginated case makes the two disagree. The ordering is deterministic (keyset on
+// installation id), so a consumer's own digest is stable across reads that return
+// the same entitlements.

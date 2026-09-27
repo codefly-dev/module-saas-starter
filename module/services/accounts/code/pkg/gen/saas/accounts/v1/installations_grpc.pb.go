@@ -25,6 +25,7 @@ const (
 	InstallationService_UninstallSolution_FullMethodName             = "/saas.accounts.v1.InstallationService/UninstallSolution"
 	InstallationService_TransferInstallationOwnership_FullMethodName = "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"
 	InstallationService_GetInstallation_FullMethodName               = "/saas.accounts.v1.InstallationService/GetInstallation"
+	InstallationService_ListInstallations_FullMethodName             = "/saas.accounts.v1.InstallationService/ListInstallations"
 )
 
 // InstallationServiceClient is the client API for InstallationService service.
@@ -54,6 +55,15 @@ type InstallationServiceClient interface {
 	// can see when an installation has gone unhealthy (owner offboarded, agent
 	// disabled, grant expired) before the next headless task fails closed.
 	GetInstallation(ctx context.Context, in *GetInstallationRequest, opts ...grpc.CallOption) (*GetInstallationResponse, error)
+	// ListInstallations enumerates one organization's installations with their live
+	// health. It is internal-tier on purpose: it takes the organization as a request
+	// field, so only a caller holding the cluster-internal credential may ask, and
+	// the tenant it asks about is the one the auth-gateway projected from a verified
+	// identity — never one a browser supplied. It sits beside
+	// PermissionService.ListAccessibleScopes for that reason: the two are read
+	// together to answer what a viewer's organization installed and what that viewer
+	// was granted.
+	ListInstallations(ctx context.Context, in *ListInstallationsRequest, opts ...grpc.CallOption) (*ListInstallationsResponse, error)
 }
 
 type installationServiceClient struct {
@@ -104,6 +114,16 @@ func (c *installationServiceClient) GetInstallation(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *installationServiceClient) ListInstallations(ctx context.Context, in *ListInstallationsRequest, opts ...grpc.CallOption) (*ListInstallationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInstallationsResponse)
+	err := c.cc.Invoke(ctx, InstallationService_ListInstallations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InstallationServiceServer is the server API for InstallationService service.
 // All implementations must embed UnimplementedInstallationServiceServer
 // for forward compatibility.
@@ -131,6 +151,15 @@ type InstallationServiceServer interface {
 	// can see when an installation has gone unhealthy (owner offboarded, agent
 	// disabled, grant expired) before the next headless task fails closed.
 	GetInstallation(context.Context, *GetInstallationRequest) (*GetInstallationResponse, error)
+	// ListInstallations enumerates one organization's installations with their live
+	// health. It is internal-tier on purpose: it takes the organization as a request
+	// field, so only a caller holding the cluster-internal credential may ask, and
+	// the tenant it asks about is the one the auth-gateway projected from a verified
+	// identity — never one a browser supplied. It sits beside
+	// PermissionService.ListAccessibleScopes for that reason: the two are read
+	// together to answer what a viewer's organization installed and what that viewer
+	// was granted.
+	ListInstallations(context.Context, *ListInstallationsRequest) (*ListInstallationsResponse, error)
 	mustEmbedUnimplementedInstallationServiceServer()
 }
 
@@ -152,6 +181,9 @@ func (UnimplementedInstallationServiceServer) TransferInstallationOwnership(cont
 }
 func (UnimplementedInstallationServiceServer) GetInstallation(context.Context, *GetInstallationRequest) (*GetInstallationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetInstallation not implemented")
+}
+func (UnimplementedInstallationServiceServer) ListInstallations(context.Context, *ListInstallationsRequest) (*ListInstallationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListInstallations not implemented")
 }
 func (UnimplementedInstallationServiceServer) mustEmbedUnimplementedInstallationServiceServer() {}
 func (UnimplementedInstallationServiceServer) testEmbeddedByValue()                             {}
@@ -246,6 +278,24 @@ func _InstallationService_GetInstallation_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InstallationService_ListInstallations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInstallationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).ListInstallations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_ListInstallations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).ListInstallations(ctx, req.(*ListInstallationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InstallationService_ServiceDesc is the grpc.ServiceDesc for InstallationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -268,6 +318,10 @@ var InstallationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInstallation",
 			Handler:    _InstallationService_GetInstallation_Handler,
+		},
+		{
+			MethodName: "ListInstallations",
+			Handler:    _InstallationService_ListInstallations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

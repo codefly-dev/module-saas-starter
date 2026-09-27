@@ -171,7 +171,7 @@ They are frequently conflated. In this module they are not the same, and the
 boundary is deliberate:
 
 - **Deployment registration** (this document) is cluster-wide and governs
-  **UI and API availability**: whether `/s/{id}` renders a remote and whether
+  **route and page exposure**: whether `/s/{id}` renders a remote and whether
   `/solutions/{id}/…` proxies. It is per-deployment, not per-organization.
 - **Per-org installation** (`InstallationService/InstallSolution`) governs
   **agent authority only**. Installing composes an agent principal, a
@@ -190,14 +190,55 @@ boundary is deliberate:
 **The limitation, stated plainly:** uninstalling a solution in one organization
 revokes that organization's agent authority — the principal and its standing
 grant — and does **not** remove the solution's nav entry, page, or gateway route,
-for that organization or any other. A registered solution's UI and API surface is
-visible to every tenant of the deployment; its ability to *act* on a tenant's
-behalf as an agent is what installation confers and uninstall withdraws. Other
+for that organization or any other. Its ability to *act* on a tenant's behalf as
+an agent is what installation confers and uninstall withdraws. Other
 tenants are unaffected either way, because installation state is per-org.
 
-If a deployment needs per-tenant admission before route or page exposure, that is
-an additional gate on top of this model — a tenant check in the solution page and
-proxy route — and is not implemented here.
+### What the projections answer (issue #949)
+
+Registration stays deployment-wide, but the **projections** answer per organization
+and per viewer. `GET /api/solutions/register` (the navigation menu) and
+`GET /api/solutions/surfaces?client=<kind>` (the per-client surface listing) return
+only the solutions the caller's organization has installed **and** the caller's
+teams were granted. They used to answer the same registered set to everyone, so a
+menu was a function of what was *deployed* rather than of what the viewer may
+*use*.
+
+Both are therefore **authenticated**, and answer `401` to an unauthenticated
+caller rather than an empty list — `[]` would be indistinguishable from "your
+organization installed nothing". The verified organization and viewer come from one
+place only: the gateway's `ext_authz`, read through
+`GET /solutions/_entitlements`. Nothing in a route handler may derive them —
+`lib/auth-session.ts` decodes an access token without verifying it, so an
+organization taken from there is one the caller chose.
+
+The authority answer is `SolutionEntitlementService.ListSolutionEntitlements`,
+which reads the installation set and the scope grant + share union in **one**
+transaction, so the two can never describe different moments. The join key is the
+solution id: `installations.solution_identifier` is the registered manifest `id`.
+
+Four distinctions the projections keep:
+
+- An installed, granted solution whose installation is **unhealthy** stays listed,
+  marked unavailable. The organization installed it and the viewer was granted it,
+  so hiding it would send someone looking for a grant that already exists; what it
+  must not do is route as though it were serving.
+- A **deployed but uninstalled** solution is invisible to viewers.
+- A newly installed solution reaches **no team** until a grant is written.
+  Installing writes a standing grant for the *agent principal* only. A grant at an
+  ancestor node (the organization root) does reach a solution node, because that is
+  the scope tree's own hierarchical rule and the same union `CheckAccess` resolves
+  — narrowing tighter here would hide what an authority check permits.
+- An unreadable registry is still `503`, and a missing or malformed `client` still
+  `400`. Neither ever renders as an empty list.
+
+Backend authorization is unchanged and remains the real boundary: a client holding
+a stale menu still has every call denied by the authority it calls.
+
+**Route and page exposure is still deployment-wide.** `/s/{id}` renders and
+`/solutions/{id}/…` proxies for any caller the gateway authenticates, whatever any
+organization installed. Per-tenant admission *there* would be an additional gate —
+a tenant check in the solution page and proxy route — and is not implemented here.
 
 ## 5. Rollout
 

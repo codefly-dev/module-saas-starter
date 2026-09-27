@@ -12,6 +12,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -321,6 +322,92 @@ func sameStringSet(a, b []string) bool {
 	slices.Sort(sortedA)
 	slices.Sort(sortedB)
 	return slices.Equal(sortedA, sortedB)
+}
+
+// installationStatusColumn is the inverse of installationStatusFromColumn: the
+// column value an enum selects, or "" for UNSPECIFIED, which selects every row.
+func installationStatusColumn(status gen.InstallationStatus) string {
+	switch status {
+	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
+		return "active"
+	case gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:
+		return "revoked"
+	default:
+		return ""
+	}
+}
+
+// ListInstallations returns one page of an org's installations with health
+// resolved live for each, keyset-paginated on id.
+//
+// id is the keyset rather than solution_identifier or created_at because it is the
+// only column that is unique across the whole table: (org_id, solution_identifier)
+// is unique only among ACTIVE rows, so a revoked install of the same solution
+// would make that cursor skip or repeat a row, and created_at is not unique at
+// all. The cursor is therefore stable and total whatever the status filter is.
+//
+// RLS confines every read to the caller's tenant; the explicit org_id predicate is
+// a second gate on top of that floor, in the same spirit as the scope listing.
+func (s *PostgresStore) ListInstallations(
+	ctx context.Context, orgID string, status gen.InstallationStatus, pageToken string, limit int,
+) ([]*gen.InstallationSummary, error) {
+	w := wool.Get(ctx).In("ListInstallations", wool.Field("org_id", orgID))
+	executor := s.getQueryExecutor(ctx)
+
+	// A page token is a uuid this store itself emitted. Canonicalize it rather
+	// than binding it raw: comparing on id::text means an unparseable cursor
+	// simply matches nothing instead of aborting the transaction on a uuid cast
+	// (the same trap the scope point check hit), and a uuid has several accepted
+	// spellings but one text form.
+	cursor := ""
+	if pageToken != "" {
+		parsed, err := uuid.Parse(pageToken)
+		if err != nil {
+			return nil, business.NewStoreError(
+				fmt.Errorf("page_token %q is not a cursor this listing issued", pageToken),
+				business.ErrTypeValidation,
+			)
+		}
+		cursor = parsed.String()
+	}
+
+	rows, err := executor.Query(ctx,
+		`SELECT `+installationColumns+`
+		 FROM installations
+		 WHERE org_id = $1
+		   AND ($2 = '' OR status = $2)
+		   AND ($3 = '' OR id::text > $3)
+		 ORDER BY id
+		 LIMIT $4`,
+		orgID, installationStatusColumn(status), cursor, limit)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list installations")
+	}
+	defer rows.Close()
+
+	var installations []*gen.Installation
+	for rows.Next() {
+		installation, e := scanInstallation(rows)
+		if e != nil {
+			return nil, w.Wrapf(e, "failed to scan installation")
+		}
+		installations = append(installations, installation)
+	}
+	if e := rows.Err(); e != nil {
+		return nil, w.Wrapf(e, "failed to read installations")
+	}
+	// Health resolution runs after the cursor is exhausted, never inside the
+	// loop: it issues its own queries on the same connection, and pgx will not
+	// serve those while rows from this query are still being read.
+	summaries := make([]*gen.InstallationSummary, 0, len(installations))
+	for _, installation := range installations {
+		health, e := s.resolveInstallationHealth(ctx, executor, installation)
+		if e != nil {
+			return nil, w.Wrapf(e, "failed to resolve installation health")
+		}
+		summaries = append(summaries, &gen.InstallationSummary{Installation: installation, Health: health})
+	}
+	return summaries, nil
 }
 
 // GetInstallation loads one installation and resolves its health live from the

@@ -54,6 +54,11 @@ type InstallationStore interface {
 	// The bool reports whether this call actually flipped an active installation
 	// to revoked, so the caller emits the audit event exactly once.
 	UninstallSolution(ctx context.Context, orgID, installationID string) (*gen.Installation, bool, error)
+	// ListInstallations returns one page of an org's installations with their live
+	// health, ordered on the keyset the cursor advances. limit is the page size the
+	// caller wants PLUS one: the extra row is how the caller detects a further page
+	// without a second count query, exactly as ListAccessibleScopes does.
+	ListInstallations(ctx context.Context, orgID string, status gen.InstallationStatus, pageToken string, limit int) ([]*gen.InstallationSummary, error)
 }
 
 func (s *Service) installationStore() InstallationStore {
@@ -142,6 +147,49 @@ func (s *Service) GetInstallation(ctx context.Context, orgID, installationID str
 		return nil, gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED, w.Wrapf(err, "cannot get installation")
 	}
 	return installation, health, nil
+}
+
+// listInstallationsDefaultPageSize / …MaxPageSize bound the listing. The max
+// mirrors the proto ceiling; the default is generous because the caller this
+// exists for — a solution projection — wants an organization's whole installed
+// set and would otherwise page for it on every menu read.
+const (
+	listInstallationsDefaultPageSize = 200
+	listInstallationsMaxPageSize     = 500
+)
+
+// ListInstallations enumerates one organization's installations with the health
+// resolved live beside each, so a caller rendering an installed solution as
+// unavailable does not need a GetInstallation per row. Always org-scoped, so it
+// runs under WithOrgTx and RLS confines it to that tenant. Cursor-paginated with
+// the same over-fetch-one idiom as ListAccessibleScopes.
+func (s *Service) ListInstallations(ctx context.Context, req *gen.ListInstallationsRequest) (*gen.ListInstallationsResponse, error) {
+	w := wool.Get(ctx).In("ListInstallations", wool.Field("org_id", req.GetOrgId()))
+	pageSize := int(req.GetPageSize())
+	if pageSize <= 0 {
+		pageSize = listInstallationsDefaultPageSize
+	}
+	if pageSize > listInstallationsMaxPageSize {
+		pageSize = listInstallationsMaxPageSize
+	}
+
+	var summaries []*gen.InstallationSummary
+	if err := s.store.WithOrgTx(ctx, req.GetOrgId(), func(ctx context.Context) error {
+		out, e := s.installationStore().ListInstallations(ctx, req.GetOrgId(), req.GetStatus(), req.GetPageToken(), pageSize+1)
+		summaries = out
+		return e
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot list installations")
+	}
+
+	var nextToken string
+	if len(summaries) > pageSize {
+		summaries = summaries[:pageSize]
+		// The cursor is the last RETURNED row's key, not the over-fetched row's:
+		// the next page must resume at the row after the one the caller saw.
+		nextToken = summaries[pageSize-1].GetInstallation().GetId()
+	}
+	return &gen.ListInstallationsResponse{Installations: summaries, NextPageToken: nextToken}, nil
 }
 
 // TransferInstallationOwnership reassigns the owner of record and replaces the

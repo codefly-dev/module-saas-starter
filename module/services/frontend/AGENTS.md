@@ -37,15 +37,21 @@ activating a remote.
 
 ## Three projections, deliberately separate
 
-- `GET /api/solutions/register` is **unauthenticated** and returns exactly the
-  public navigation projection — `{id, nav}` per solution and nothing else. It is
-  what the sidebar polls, and it answers `503` — **never an empty list** — when
-  this replica cannot read the registry.
+Two of them are **per viewer** (issue #949): they answer the solutions the
+caller's organization installed and the caller's teams were granted, not the
+deployment-wide registered set.
+
+- `GET /api/solutions/register` is **authenticated** and returns the navigation
+  projection — `{id, nav, available}` per entitled solution and nothing else. It is
+  what the sidebar polls (through `authedFetch`, so a lapsed access token is
+  exchanged and retried rather than emptying the menu). It answers `401` to an
+  unauthenticated caller and `503` when the registry or the authority cannot be
+  read — **never an empty list** for either.
 - `GET /api/solutions/surfaces?client=<kind>`
-  (`src/app/api/solutions/surfaces/route.ts`) is the same class of public
-  projection for a client that is **not** this host's web app: per solution, its
-  `id`, its title, its `origin`, and the declared `surfaces` whose `client`
-  matches. The kind is required and must be slug-shaped — absent is `400`,
+  (`src/app/api/solutions/surfaces/route.ts`) is the same class of projection for a
+  client that is **not** this host's web app: per entitled solution, its `id`, its
+  title, its `origin`, whether it is `available`, and the declared `surfaces` whose
+  `client` matches. The kind is required and must be slug-shaped — absent is `400`,
   malformed is `400`, never the unfiltered set and never a misleading empty
   list — and an unreadable registry is again `503`. The host does not enumerate
   client kinds: which ones exist is deployment configuration (the
@@ -55,6 +61,25 @@ activating a remote.
   origin, so withholding it would not keep the origin from anyone who can use a
   surface — it would only make the answer unusable. The manifest path and the
   backend service are still withheld.
+
+**Where the identity comes from, and why not from here.** Neither route may derive
+the organization. `src/lib/auth-session.ts` can read an `org` claim, but
+`decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
+narrowed on it would let a caller read another tenant's menu by editing one field.
+These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
+forwards `/v1/*` and `/saas.accounts.v1.*` only), so no `ext_authz` stamp reaches
+them either. `src/solutions/entitlements.ts` therefore forwards the caller's
+credential to `GET /solutions/_entitlements` on the gateway, which authenticates
+it, projects the organization and viewer from its own check, and answers from
+accounts. `module/tools/solution_registration_boundary_test.go` holds both halves:
+the projections must consult that read, and must not name the local decoders.
+
+An installed, granted solution whose installation is unhealthy stays listed with
+`available: false` — the grant exists, so hiding it would send someone looking for
+one that already does; it simply is not routed as serving. The projection cache is
+keyed on organization, viewer, a digest of the entitlement answer, and client kind,
+so a grant or a revoke moves the key and a cached menu cannot outlive the grant
+that justified it.
 - Everything else a manifest carries (`frontend`, `backend`) is deployment
   topology, served instead by `GET /api/internal/solutions`
   (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal
