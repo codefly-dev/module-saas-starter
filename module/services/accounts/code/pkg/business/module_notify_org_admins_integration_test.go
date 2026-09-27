@@ -40,11 +40,26 @@ func TestModuleNotifyOrgAdmins_ReachesOnlyTheTenantsAdministrators(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, delivered)
 
+	// Only this call's rows are counted: a person's inbox also carries what the
+	// rest of the host sends them (membership changes reach an owner, for one),
+	// which is not this capability's to assert on. A second row from this call
+	// would still be counted, and fail.
+	const title = "A delegation was revoked"
 	inbox := func(user string) []*business.Notification {
 		t.Helper()
 		rows, _, err := testService.ListNotifications(testCtx, user, 50, "")
 		require.NoError(t, err)
-		return rows
+		var mine []*business.Notification
+		var others []string
+		for _, row := range rows {
+			if row.Title == title {
+				mine = append(mine, row)
+			} else {
+				others = append(others, row.Type+": "+row.Title)
+			}
+		}
+		t.Logf("%s also holds %d unrelated notification(s): %v", user, len(others), others)
+		return mine
 	}
 	for _, administrator := range []string{owner, admin} {
 		rows := inbox(administrator)
