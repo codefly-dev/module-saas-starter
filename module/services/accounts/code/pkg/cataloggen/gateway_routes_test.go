@@ -51,7 +51,6 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	require.Equal(t, "connect", legacy.GetUpstreamEndpoint())
 
 	renamed := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: module\n", "    - name: connect-api\n      api: connect\n      visibility: module\n")
-	renamed = withService(t, renamed, "accounts", "            connect: 8080\n", "            connect-api: 8080\n")
 	renamed = withService(t, renamed, "auth-gateway", "        - name: connect\n", "        - name: connect-api\n")
 	renamed = withModule(t, renamed, "          endpoint: connect\n", "          endpoint: connect-api\n")
 	renamedRoutes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, renamed)

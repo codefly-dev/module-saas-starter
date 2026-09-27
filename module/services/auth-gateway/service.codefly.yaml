@@ -41,6 +41,7 @@ spec:
     service-account:
         name: auth-gateway
     deployment:
-        endpoint-ports:
-            grpc: 9090
-            rest: 8080
+        # No endpoint-ports: go-grpc binds every endpoint on the port Codefly
+        # allocates for it, so each pod port is its deployed port, which the
+        # render takes from Codefly. endpoint-ports is only for a port the
+        # process binds at a fixed number the allocation does not give it.

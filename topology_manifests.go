@@ -226,6 +226,11 @@ func decodeDeploymentSpecManifest(service string, spec map[string]any) (deployme
 	if !exists {
 		return deploymentSpecManifest{}, fmt.Errorf("service %q manifest has no spec.%s block", service, deploymentSpecKey)
 	}
+	if raw == nil {
+		// A block holding only comments: the service states no deployment
+		// fact of its own (every pod port is its allocation).
+		return deploymentSpecManifest{}, nil
+	}
 	encoded, err := yaml.Marshal(raw)
 	if err != nil {
 		return deploymentSpecManifest{}, fmt.Errorf("service %q spec.%s: %w", service, deploymentSpecKey, err)

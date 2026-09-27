@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/codefly-dev/core/standards"
 	"gopkg.in/yaml.v3"
 )
 
@@ -223,15 +224,17 @@ func assembleServiceBinding(moduleName, name string, document []byte) (deploymen
 		port, declared := spec.EndpointPorts[endpoint.Name]
 		allocated := false
 		if !declared {
-			// Only an endpoint Codefly allocates a port for may leave it
-			// undeclared: a named endpoint sharing its API with another (the
-			// conventional endpoint of an API takes the API's standard port). Any
-			// other undeclared endpoint is a missing declaration and fails here
-			// rather than rendering a policy that names no port.
-			if !allocatedAtRender(endpoint.Name, api, manifest.Endpoints) {
-				return deploymentServiceBinding{}, fmt.Errorf("service %q endpoint %q has no port under spec.%s.endpoint-ports", name, endpoint.Name, deploymentSpecKey)
+			// An undeclared pod port is the endpoint's own allocation: the
+			// process binds the port Codefly deploys it on. The conventional
+			// endpoint of an API with its API's standard port to itself is
+			// allocated that standard port whatever the composition; any other
+			// allocation is keyed by the composed module name, which does not
+			// exist in this view, so it is allocated at render.
+			if standard, ok := standardAllocation(endpoint.Name, api, manifest.Endpoints); ok {
+				port = standard
+			} else {
+				allocated = true
 			}
-			allocated = true
 		}
 		seen[endpoint.Name] = true
 		service.Endpoints = append(service.Endpoints, deploymentEndpointBinding{
@@ -264,6 +267,11 @@ func decodeDeploymentSpec(service string, spec map[string]any) (deploymentSpec, 
 	if !exists {
 		return deploymentSpec{}, fmt.Errorf("service %q manifest has no spec.%s block", service, deploymentSpecKey)
 	}
+	if raw == nil {
+		// A block holding only comments: the service states no deployment
+		// fact of its own (every pod port is its allocation).
+		return deploymentSpec{}, nil
+	}
 	encoded, err := yaml.Marshal(raw)
 	if err != nil {
 		return deploymentSpec{}, fmt.Errorf("service %q spec.%s: %w", service, deploymentSpecKey, err)
@@ -277,24 +285,33 @@ func decodeDeploymentSpec(service string, spec map[string]any) (deploymentSpec, 
 	return decoded, nil
 }
 
-// allocatedAtRender reports whether Codefly allocates the endpoint's port (and
-// the service binds that allocation) rather than giving it its API's standard
-// port: a named endpoint whose API another endpoint of the service also uses.
-// It mirrors the rule core's network.DeployedEndpointPorts applies, which the
-// composing render calls with the composed module name.
-func allocatedAtRender(name, api string, endpoints []manifestEndpoint) bool {
-	if name == api {
-		return false
+// standardAllocation reports the port Codefly allocates the endpoint when that
+// does not depend on the composition: the conventional endpoint of its API
+// (named after the API, or the API's only endpoint) whose standard port no
+// other conventional endpoint of the service also claims. It is the
+// composition-independent part of core's network.DeployedEndpointPorts, which
+// the composing render calls for every endpoint.
+func standardAllocation(name, api string, endpoints []manifestEndpoint) (uint32, bool) {
+	apiOf := func(endpoint manifestEndpoint) string {
+		if endpoint.API != "" {
+			return endpoint.API
+		}
+		return endpoint.Name
 	}
-	count := 0
+	counts := map[string]int{}
 	for _, endpoint := range endpoints {
-		other := endpoint.API
-		if other == "" {
-			other = endpoint.Name
-		}
-		if other == api {
-			count++
+		counts[apiOf(endpoint)]++
+	}
+	conventional := func(name, api string) bool { return name == api || counts[api] == 1 }
+	if !conventional(name, api) {
+		return 0, false
+	}
+	port := uint32(standards.Port(api))
+	for _, other := range endpoints {
+		otherAPI := apiOf(other)
+		if other.Name != name && conventional(other.Name, otherAPI) && uint32(standards.Port(otherAPI)) == port {
+			return 0, false
 		}
 	}
-	return count > 1
+	return port, true
 }
