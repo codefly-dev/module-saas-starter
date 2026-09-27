@@ -7,7 +7,7 @@ description: |
 agent:
     kind: codefly:service
     name: go-grpc
-    version: 0.1.48-dev.99c5102c6abe
+    version: 0.1.48-dev.e87db5e08865
     publisher: codefly.dev
 service-dependencies:
     - name: accounts
