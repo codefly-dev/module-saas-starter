@@ -11,7 +11,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -79,9 +79,9 @@ func mintModuleOperationContext(prefix, secret, binding string) (*gen.ModuleMint
 
 func verifyOperationContext(t *testing.T, token string) *basev0.WorkContextV1 {
 	t.Helper()
-	parsed, err := codefly.ParseWorkContextToken(token)
+	parsed, err := workcontext.ParseWorkContextToken(token)
 	require.NoError(t, err)
-	verified, err := WorkContextSingleton().verifier.Verify(parsed, codefly.WorkContextExpectations{
+	verified, err := WorkContextSingleton().verifier.Verify(parsed, workcontext.WorkContextExpectations{
 		Issuer:   WorkContextSingleton().issuer,
 		Audience: "modelservice",
 	})
@@ -111,7 +111,7 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.Equal(t, "modelservice", signed.GetAudience())
 	require.Equal(t, moduleWorkContextTenant, signed.GetTenantId())
 	require.Equal(t, principalID, signed.GetOwnerPrincipalId())
-	require.Equal(t, codefly.WorkContextReplayIdempotent, signed.GetReplayPolicy())
+	require.Equal(t, workcontext.WorkContextReplayIdempotent, signed.GetReplayPolicy())
 	require.LessOrEqual(t, signed.GetExpiresAtUnix()-signed.GetIssuedAtUnix(), int64(business.ModuleOperationContextTTL/time.Second))
 	want := []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}, ResourceIds: []string{"profile-digest"}}}
 	requireScopes(t, want, signed.GetAuthorityScopes())
@@ -237,10 +237,10 @@ func TestStartModuleOperationTaskRefusesTheCapabilitySurfaceAudience(t *testing.
 	}
 
 	_, _, err := WorkContextSingleton().StartModuleOperationTask(authority)
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid)
 
 	authority.Audience = "modelservice"
 	authority.Scopes = nil
 	_, _, err = WorkContextSingleton().StartModuleOperationTask(authority)
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid, "a capability with no scopes is never minted")
+	require.ErrorIs(t, err, workcontext.ErrWorkContextInvalid, "a capability with no scopes is never minted")
 }
