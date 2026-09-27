@@ -305,6 +305,15 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 		if err := s.store.AddOrgMember(ctx, req.OrgId, req.UserId, role); err != nil {
 			return err
 		}
+		// A member left without an administrator role no longer holds what
+		// connecting a source required, so the sources they delegated stop
+		// delegating in this same transaction. The mint re-checks the role
+		// anyway; this records when and why.
+		if !sourceDelegationConnectRole(role) {
+			if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: req.OrgId, PrincipalID: req.UserId}, SourceDelegationPermissionLost); err != nil {
+				return err
+			}
+		}
 		// Read org name within the same tx so RLS lets us through.
 		if o, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && o != nil {
 			orgName = o.Name
@@ -401,6 +410,9 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 			return w.Wrapf(err, "cannot remove dependent team memberships")
 		}
 		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
+			return err
+		}
+		if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: req.OrgId, PrincipalID: req.UserId}, SourceDelegationMemberRemoved); err != nil {
 			return err
 		}
 		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -413,7 +414,12 @@ const (
 
 	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
 	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
-	EventFeatureFlagUpdated                EventType = "saas.feature_flag.updated"
+	// A person's connect-time delegation of a source's sync to one module
+	// binding (source_delegation.go): recorded, used for a mint, and revoked.
+	EventSourceDelegationCreated EventType = "saas.datasource.delegation.created"
+	EventSourceDelegationUsed    EventType = "saas.datasource.delegation.used"
+	EventSourceDelegationRevoked EventType = "saas.datasource.delegation.revoked"
+	EventFeatureFlagUpdated      EventType = "saas.feature_flag.updated"
 
 	// Domain-event pub/sub (issue #493). A subscription is a standing grant of
 	// delivery, so its create and revoke are audited on the tenant spine; a
@@ -649,6 +655,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDatasourceDomainRemoved, CategorySystem, "A claimed domain was removed.", str("domain")),
 	mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
 		str("installation_id")),
+	mutation(EventSourceDelegationCreated, CategoryAccess, "A person connecting a datasource delegated its sync to a module's installed operation binding.",
+		sourceDelegationFields...),
+	mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
+		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"))...),
+	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
+		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
@@ -787,6 +799,10 @@ var webhookAdminFields = []PayloadField{
 // and `version` name the write; `boundary` is the data boundary (scope node) it
 // landed in; actor/owner principal ids and `initiator` (a provenance string,
 // e.g. a webhook delivery id) make a solution-owned write attributable (#473).
+// sourceDelegationFields is what every source delegation event names: which
+// delegation, of which source, by which person, to which module binding.
+var sourceDelegationFields = []PayloadField{uid("delegation_id"), uid("source_id"), uid("principal_id"), str("module"), str("binding_id")}
+
 var sourceSyncFields = []PayloadField{str("solution"), str("job_id"), str("repo"), str("commit"), PayloadField{Name: "processed", Kind: FieldInt}, PayloadField{Name: "new_versions", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "failed", Kind: FieldInt}, str("reason"), str("code"), str("trigger"), PayloadField{Name: "attempt", Kind: FieldInt}, PayloadField{Name: "retryable", Kind: FieldBool}}
 
 var documentFields = []PayloadField{

@@ -41,6 +41,8 @@ const (
 	DatasourceService_ClaimDatasourceDomain_FullMethodName         = "/saas.accounts.v1.DatasourceService/ClaimDatasourceDomain"
 	DatasourceService_VerifyDatasourceDomain_FullMethodName        = "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
 	DatasourceService_DeleteDatasourceDomain_FullMethodName        = "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain"
+	DatasourceService_ListSourceDelegations_FullMethodName         = "/saas.accounts.v1.DatasourceService/ListSourceDelegations"
+	DatasourceService_RevokeSourceDelegation_FullMethodName        = "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation"
 )
 
 // DatasourceServiceClient is the client API for DatasourceService service.
@@ -121,6 +123,15 @@ type DatasourceServiceClient interface {
 	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
 	// nothing there.
 	DeleteDatasourceDomain(ctx context.Context, in *DeleteDatasourceDomainRequest, opts ...grpc.CallOption) (*DeleteDatasourceDomainResponse, error)
+	// ListSourceDelegations lists the organization's source delegations: which
+	// source, which person, which module and binding, when, and — for a revoked
+	// one — when and why it ended.
+	ListSourceDelegations(ctx context.Context, in *ListSourceDelegationsRequest, opts ...grpc.CallOption) (*ListSourceDelegationsResponse, error)
+	// RevokeSourceDelegation revokes one of the organization's source
+	// delegations. The module can no longer mint from it; the source syncs again
+	// only once a person reconnects it. Revoking one already revoked changes
+	// nothing.
+	RevokeSourceDelegation(ctx context.Context, in *RevokeSourceDelegationRequest, opts ...grpc.CallOption) (*RevokeSourceDelegationResponse, error)
 }
 
 type datasourceServiceClient struct {
@@ -341,6 +352,26 @@ func (c *datasourceServiceClient) DeleteDatasourceDomain(ctx context.Context, in
 	return out, nil
 }
 
+func (c *datasourceServiceClient) ListSourceDelegations(ctx context.Context, in *ListSourceDelegationsRequest, opts ...grpc.CallOption) (*ListSourceDelegationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSourceDelegationsResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_ListSourceDelegations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) RevokeSourceDelegation(ctx context.Context, in *RevokeSourceDelegationRequest, opts ...grpc.CallOption) (*RevokeSourceDelegationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeSourceDelegationResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_RevokeSourceDelegation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatasourceServiceServer is the server API for DatasourceService service.
 // All implementations must embed UnimplementedDatasourceServiceServer
 // for forward compatibility.
@@ -419,6 +450,15 @@ type DatasourceServiceServer interface {
 	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
 	// nothing there.
 	DeleteDatasourceDomain(context.Context, *DeleteDatasourceDomainRequest) (*DeleteDatasourceDomainResponse, error)
+	// ListSourceDelegations lists the organization's source delegations: which
+	// source, which person, which module and binding, when, and — for a revoked
+	// one — when and why it ended.
+	ListSourceDelegations(context.Context, *ListSourceDelegationsRequest) (*ListSourceDelegationsResponse, error)
+	// RevokeSourceDelegation revokes one of the organization's source
+	// delegations. The module can no longer mint from it; the source syncs again
+	// only once a person reconnects it. Revoking one already revoked changes
+	// nothing.
+	RevokeSourceDelegation(context.Context, *RevokeSourceDelegationRequest) (*RevokeSourceDelegationResponse, error)
 	mustEmbedUnimplementedDatasourceServiceServer()
 }
 
@@ -491,6 +531,12 @@ func (UnimplementedDatasourceServiceServer) VerifyDatasourceDomain(context.Conte
 }
 func (UnimplementedDatasourceServiceServer) DeleteDatasourceDomain(context.Context, *DeleteDatasourceDomainRequest) (*DeleteDatasourceDomainResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteDatasourceDomain not implemented")
+}
+func (UnimplementedDatasourceServiceServer) ListSourceDelegations(context.Context, *ListSourceDelegationsRequest) (*ListSourceDelegationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSourceDelegations not implemented")
+}
+func (UnimplementedDatasourceServiceServer) RevokeSourceDelegation(context.Context, *RevokeSourceDelegationRequest) (*RevokeSourceDelegationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeSourceDelegation not implemented")
 }
 func (UnimplementedDatasourceServiceServer) mustEmbedUnimplementedDatasourceServiceServer() {}
 func (UnimplementedDatasourceServiceServer) testEmbeddedByValue()                           {}
@@ -891,6 +937,42 @@ func _DatasourceService_DeleteDatasourceDomain_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatasourceService_ListSourceDelegations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSourceDelegationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).ListSourceDelegations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_ListSourceDelegations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).ListSourceDelegations(ctx, req.(*ListSourceDelegationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_RevokeSourceDelegation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeSourceDelegationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).RevokeSourceDelegation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_RevokeSourceDelegation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).RevokeSourceDelegation(ctx, req.(*RevokeSourceDelegationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatasourceService_ServiceDesc is the grpc.ServiceDesc for DatasourceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -981,6 +1063,14 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteDatasourceDomain",
 			Handler:    _DatasourceService_DeleteDatasourceDomain_Handler,
+		},
+		{
+			MethodName: "ListSourceDelegations",
+			Handler:    _DatasourceService_ListSourceDelegations_Handler,
+		},
+		{
+			MethodName: "RevokeSourceDelegation",
+			Handler:    _DatasourceService_RevokeSourceDelegation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

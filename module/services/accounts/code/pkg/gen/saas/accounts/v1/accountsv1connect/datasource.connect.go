@@ -97,6 +97,12 @@ const (
 	// DatasourceServiceDeleteDatasourceDomainProcedure is the fully-qualified name of the
 	// DatasourceService's DeleteDatasourceDomain RPC.
 	DatasourceServiceDeleteDatasourceDomainProcedure = "/saas.accounts.v1.DatasourceService/DeleteDatasourceDomain"
+	// DatasourceServiceListSourceDelegationsProcedure is the fully-qualified name of the
+	// DatasourceService's ListSourceDelegations RPC.
+	DatasourceServiceListSourceDelegationsProcedure = "/saas.accounts.v1.DatasourceService/ListSourceDelegations"
+	// DatasourceServiceRevokeSourceDelegationProcedure is the fully-qualified name of the
+	// DatasourceService's RevokeSourceDelegation RPC.
+	DatasourceServiceRevokeSourceDelegationProcedure = "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation"
 )
 
 // DatasourceServiceClient is a client for the saas.accounts.v1.DatasourceService service.
@@ -172,6 +178,15 @@ type DatasourceServiceClient interface {
 	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
 	// nothing there.
 	DeleteDatasourceDomain(context.Context, *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error)
+	// ListSourceDelegations lists the organization's source delegations: which
+	// source, which person, which module and binding, when, and — for a revoked
+	// one — when and why it ended.
+	ListSourceDelegations(context.Context, *connect.Request[v1.ListSourceDelegationsRequest]) (*connect.Response[v1.ListSourceDelegationsResponse], error)
+	// RevokeSourceDelegation revokes one of the organization's source
+	// delegations. The module can no longer mint from it; the source syncs again
+	// only once a person reconnects it. Revoking one already revoked changes
+	// nothing.
+	RevokeSourceDelegation(context.Context, *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error)
 }
 
 // NewDatasourceServiceClient constructs a client for the saas.accounts.v1.DatasourceService
@@ -311,6 +326,18 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(datasourceServiceMethods.ByName("DeleteDatasourceDomain")),
 			connect.WithClientOptions(opts...),
 		),
+		listSourceDelegations: connect.NewClient[v1.ListSourceDelegationsRequest, v1.ListSourceDelegationsResponse](
+			httpClient,
+			baseURL+DatasourceServiceListSourceDelegationsProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("ListSourceDelegations")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeSourceDelegation: connect.NewClient[v1.RevokeSourceDelegationRequest, v1.RevokeSourceDelegationResponse](
+			httpClient,
+			baseURL+DatasourceServiceRevokeSourceDelegationProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("RevokeSourceDelegation")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -337,6 +364,8 @@ type datasourceServiceClient struct {
 	claimDatasourceDomain         *connect.Client[v1.ClaimDatasourceDomainRequest, v1.ClaimDatasourceDomainResponse]
 	verifyDatasourceDomain        *connect.Client[v1.VerifyDatasourceDomainRequest, v1.VerifyDatasourceDomainResponse]
 	deleteDatasourceDomain        *connect.Client[v1.DeleteDatasourceDomainRequest, v1.DeleteDatasourceDomainResponse]
+	listSourceDelegations         *connect.Client[v1.ListSourceDelegationsRequest, v1.ListSourceDelegationsResponse]
+	revokeSourceDelegation        *connect.Client[v1.RevokeSourceDelegationRequest, v1.RevokeSourceDelegationResponse]
 }
 
 // AddGitHubSource calls saas.accounts.v1.DatasourceService.AddGitHubSource.
@@ -446,6 +475,16 @@ func (c *datasourceServiceClient) DeleteDatasourceDomain(ctx context.Context, re
 	return c.deleteDatasourceDomain.CallUnary(ctx, req)
 }
 
+// ListSourceDelegations calls saas.accounts.v1.DatasourceService.ListSourceDelegations.
+func (c *datasourceServiceClient) ListSourceDelegations(ctx context.Context, req *connect.Request[v1.ListSourceDelegationsRequest]) (*connect.Response[v1.ListSourceDelegationsResponse], error) {
+	return c.listSourceDelegations.CallUnary(ctx, req)
+}
+
+// RevokeSourceDelegation calls saas.accounts.v1.DatasourceService.RevokeSourceDelegation.
+func (c *datasourceServiceClient) RevokeSourceDelegation(ctx context.Context, req *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error) {
+	return c.revokeSourceDelegation.CallUnary(ctx, req)
+}
+
 // DatasourceServiceHandler is an implementation of the saas.accounts.v1.DatasourceService service.
 type DatasourceServiceHandler interface {
 	// AddGitHubSource registers a GitHub repository as a datasource, encrypts and
@@ -519,6 +558,15 @@ type DatasourceServiceHandler interface {
 	// DeleteDatasourceDomain removes a claimed domain; "anyone in the domain" then grants
 	// nothing there.
 	DeleteDatasourceDomain(context.Context, *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error)
+	// ListSourceDelegations lists the organization's source delegations: which
+	// source, which person, which module and binding, when, and — for a revoked
+	// one — when and why it ended.
+	ListSourceDelegations(context.Context, *connect.Request[v1.ListSourceDelegationsRequest]) (*connect.Response[v1.ListSourceDelegationsResponse], error)
+	// RevokeSourceDelegation revokes one of the organization's source
+	// delegations. The module can no longer mint from it; the source syncs again
+	// only once a person reconnects it. Revoking one already revoked changes
+	// nothing.
+	RevokeSourceDelegation(context.Context, *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error)
 }
 
 // NewDatasourceServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -654,6 +702,18 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		connect.WithSchema(datasourceServiceMethods.ByName("DeleteDatasourceDomain")),
 		connect.WithHandlerOptions(opts...),
 	)
+	datasourceServiceListSourceDelegationsHandler := connect.NewUnaryHandler(
+		DatasourceServiceListSourceDelegationsProcedure,
+		svc.ListSourceDelegations,
+		connect.WithSchema(datasourceServiceMethods.ByName("ListSourceDelegations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceRevokeSourceDelegationHandler := connect.NewUnaryHandler(
+		DatasourceServiceRevokeSourceDelegationProcedure,
+		svc.RevokeSourceDelegation,
+		connect.WithSchema(datasourceServiceMethods.ByName("RevokeSourceDelegation")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.DatasourceService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DatasourceServiceAddGitHubSourceProcedure:
@@ -698,6 +758,10 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceVerifyDatasourceDomainHandler.ServeHTTP(w, r)
 		case DatasourceServiceDeleteDatasourceDomainProcedure:
 			datasourceServiceDeleteDatasourceDomainHandler.ServeHTTP(w, r)
+		case DatasourceServiceListSourceDelegationsProcedure:
+			datasourceServiceListSourceDelegationsHandler.ServeHTTP(w, r)
+		case DatasourceServiceRevokeSourceDelegationProcedure:
+			datasourceServiceRevokeSourceDelegationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -789,4 +853,12 @@ func (UnimplementedDatasourceServiceHandler) VerifyDatasourceDomain(context.Cont
 
 func (UnimplementedDatasourceServiceHandler) DeleteDatasourceDomain(context.Context, *connect.Request[v1.DeleteDatasourceDomainRequest]) (*connect.Response[v1.DeleteDatasourceDomainResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.DeleteDatasourceDomain is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) ListSourceDelegations(context.Context, *connect.Request[v1.ListSourceDelegationsRequest]) (*connect.Response[v1.ListSourceDelegationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.ListSourceDelegations is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) RevokeSourceDelegation(context.Context, *connect.Request[v1.RevokeSourceDelegationRequest]) (*connect.Response[v1.RevokeSourceDelegationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.RevokeSourceDelegation is not implemented"))
 }

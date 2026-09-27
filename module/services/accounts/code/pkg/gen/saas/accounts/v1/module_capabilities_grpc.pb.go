@@ -44,6 +44,7 @@ const (
 	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
 	ModuleCapabilitiesService_MintModuleOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleOperationContext"
+	ModuleCapabilitiesService_MintSourceOperationContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
 	ModuleCapabilitiesService_PublishEvent_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
 	ModuleCapabilitiesService_Subscribe_FullMethodName                          = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
 	ModuleCapabilitiesService_Unsubscribe_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -137,6 +138,17 @@ type ModuleCapabilitiesServiceClient interface {
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
 	MintModuleOperationContext(ctx context.Context, in *ModuleMintOperationContextRequest, opts ...grpc.CallOption) (*ModuleMintOperationContextResponse, error)
+	// MintSourceOperationContext issues the Work Context one datasource source's
+	// sync runs with: owned by the person who connected the source, actored by
+	// the calling module's service principal, in the source's organization, with
+	// exactly the source_delegation_scopes of the binding the person delegated
+	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// every mint re-checks that the delegation is active, the source exists, the
+	// person is still an owner or admin of the organization, and the binding is
+	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
+	// source has no active delegation to the module; PERMISSION_DENIED means the
+	// delegation named is revoked or unusable.
+	MintSourceOperationContext(ctx context.Context, in *ModuleMintSourceOperationContextRequest, opts ...grpc.CallOption) (*ModuleMintSourceOperationContextResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -406,6 +418,16 @@ func (c *moduleCapabilitiesServiceClient) MintModuleOperationContext(ctx context
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) MintSourceOperationContext(ctx context.Context, in *ModuleMintSourceOperationContextRequest, opts ...grpc.CallOption) (*ModuleMintSourceOperationContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleMintSourceOperationContextResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintSourceOperationContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModulePublishEventResponse)
@@ -542,6 +564,17 @@ type ModuleCapabilitiesServiceServer interface {
 	// principal declares, and the scopes are exactly the binding's declared
 	// headless scopes. A binding declaring none is refused.
 	MintModuleOperationContext(context.Context, *ModuleMintOperationContextRequest) (*ModuleMintOperationContextResponse, error)
+	// MintSourceOperationContext issues the Work Context one datasource source's
+	// sync runs with: owned by the person who connected the source, actored by
+	// the calling module's service principal, in the source's organization, with
+	// exactly the source_delegation_scopes of the binding the person delegated
+	// to. Authorized by the module's identity secret like MintModuleWorkContext;
+	// every mint re-checks that the delegation is active, the source exists, the
+	// person is still an owner or admin of the organization, and the binding is
+	// unchanged. FAILED_PRECONDITION with reason DELEGATION_MISSING means the
+	// source has no active delegation to the module; PERMISSION_DENIED means the
+	// delegation named is revoked or unusable.
+	MintSourceOperationContext(context.Context, *ModuleMintSourceOperationContextRequest) (*ModuleMintSourceOperationContextResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -630,6 +663,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) MintModuleWorkContext(contex
 }
 func (UnimplementedModuleCapabilitiesServiceServer) MintModuleOperationContext(context.Context, *ModuleMintOperationContextRequest) (*ModuleMintOperationContextResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintModuleOperationContext not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintSourceOperationContext(context.Context, *ModuleMintSourceOperationContextRequest) (*ModuleMintSourceOperationContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintSourceOperationContext not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
@@ -1068,6 +1104,24 @@ func _ModuleCapabilitiesService_MintModuleOperationContext_Handler(srv interface
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_MintSourceOperationContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleMintSourceOperationContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintSourceOperationContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintSourceOperationContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintSourceOperationContext(ctx, req.(*ModuleMintSourceOperationContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModulePublishEventRequest)
 	if err := dec(in); err != nil {
@@ -1248,6 +1302,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MintModuleOperationContext",
 			Handler:    _ModuleCapabilitiesService_MintModuleOperationContext_Handler,
+		},
+		{
+			MethodName: "MintSourceOperationContext",
+			Handler:    _ModuleCapabilitiesService_MintSourceOperationContext_Handler,
 		},
 		{
 			MethodName: "PublishEvent",

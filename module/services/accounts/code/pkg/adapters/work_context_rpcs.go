@@ -125,6 +125,13 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	if handled, err := checkModuleOperationContextRevision(req); handled {
 		return nil, err
 	}
+	// A context minted from a source delegation is owned by a person but
+	// actored by a declared module principal, which the store path cannot
+	// resolve (a module principal is not a registered agent). It is confirmed
+	// against the delegation it was minted from instead.
+	if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
+		return nil, err
+	}
 	if s == nil || s.consumer == nil {
 		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
 	}

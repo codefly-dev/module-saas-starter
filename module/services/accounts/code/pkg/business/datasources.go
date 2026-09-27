@@ -614,8 +614,13 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		if err := s.fillBoundaryLabel(ctx, source); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-			map[string]any{"repo": source.Repo, "provider": source.Provider, "credential_kind": credential.Kind})
+		if err := s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
+			map[string]any{"repo": source.Repo, "provider": source.Provider, "credential_kind": credential.Kind}); err != nil {
+			return err
+		}
+		// Connecting delegates the source's sync to the module bindings that
+		// accept it, in the same transaction as the source itself.
+		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
@@ -850,7 +855,10 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			payload["repo"] = source.Repo
 			payload["credential_kind"] = credentialKind
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload)
+		if err := s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload); err != nil {
+			return err
+		}
+		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
@@ -1139,7 +1147,12 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 		if removed == nil {
 			return nil
 		}
-		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID, datasourceRemovedPayload(removed))
+		if err := s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID, datasourceRemovedPayload(removed)); err != nil {
+			return err
+		}
+		// A source that is gone delegates nothing; mark its delegations in the
+		// transaction that removed it.
+		return s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID, SourceID: id}, SourceDelegationSourceDeleted)
 	}); err != nil {
 		return err
 	}
@@ -1219,8 +1232,13 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 				// store dropped its credential-less marker with this write.
 				source.CredentialSecretRef = encrypted
 				source.GitHubCredentialKind = ""
-				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID,
-					map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindPAT})
+				if err := s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID,
+					map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindPAT}); err != nil {
+					return err
+				}
+				// Replacing the credential is a reconnect: the delegation moves to
+				// the person who reconnected, atomically with the credential.
+				return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
 			}); err != nil {
 				return "", err
 			}

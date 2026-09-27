@@ -155,3 +155,16 @@ brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
 (bad internal token, missing or wrong secret, undeclared module) and `403` when a
 proven module names a binding it may not mint with no person present. What the
 binding yields — audience, scopes, lifetime — is accounts' decision alone.
+
+`POST /modules/_source-operation-context` is the source-delegation sibling, on
+the same perimeter and headers, with body `{"prefix": "<module>", "source_id":
+"<uuid>"}` or `{"prefix": "<module>", "delegation_id": "<uuid>"}` (exactly one).
+It brokers to `ModuleCapabilitiesService/MintSourceOperationContext` and answers
+`{work_context, expires_at, principal_id, owner_principal_id, tenant, audience,
+binding, delegation_id, source_id}` with `cache-control: no-store`. Three
+refusals stay distinct: `401` for an unproven module, `412` with body
+`DELEGATION_MISSING` when the source has no active delegation to the module (a
+person must reconnect it — read from accounts' `google.rpc.ErrorInfo`, never
+from the message), and `403` when the delegation named is revoked or not usable
+by the module. The design is in
+[../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-from-a-source-delegation).

@@ -58,6 +58,7 @@ import (
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -692,6 +693,153 @@ func (s *ExtAuthz) mintModuleOperationContext(
 	response := &accountsv1.ModuleMintOperationContextResponse{}
 	request := &accountsv1.ModuleMintOperationContextRequest{Prefix: prefix, Secret: secret, Binding: binding}
 	if err := s.backendConn.Invoke(ctx, mintModuleOperationContextMethod, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+// moduleSourceOperationContextPath serves the source-delegation exchange: a
+// module presents its identity secret and a delegation — by id, or by the
+// source whose active delegation to the module is meant — and receives the
+// short-lived Work Context that source's sync runs with, owned by the person
+// who connected the source.
+const moduleSourceOperationContextPath = "/modules/_source-operation-context"
+
+// mintSourceOperationContextMethod is accounts' source-delegation mint.
+// EXPOSURE_INTERNAL like the other module exchanges.
+const mintSourceOperationContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
+
+// sourceDelegationMissingReason is the google.rpc.ErrorInfo reason accounts
+// attaches when the source has no active delegation to the module
+// (adapters.SourceDelegationMissingReason, under the domain the solution
+// registry's refusals use). The two strings are a wire contract; a test on
+// each side pins them.
+const sourceDelegationMissingReason = "DELEGATION_MISSING"
+
+// handleModuleSourceOperationContext serves POST
+// /modules/_source-operation-context. It returns true when it has handled the
+// request.
+//
+// It brokers exactly as handleModuleOperationContext does, on the same
+// perimeter (cluster-internal token plus the module's identity secret), and
+// decides nothing: accounts alone holds the delegation and re-checks it. Three
+// refusals are worth telling apart, and the status says which:
+//   - 401: the module is not proven;
+//   - 412: the source has no active delegation to the module — a person must
+//     connect or reconnect it (body `DELEGATION_MISSING`);
+//   - 403: the delegation named is revoked, or not usable by this module.
+func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != moduleSourceOperationContextPath {
+		return false
+	}
+	if r.Method != http.MethodPost {
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return true
+	}
+
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return true
+	}
+	secret := r.Header.Get(moduleSecretHeader)
+	if secret == "" {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return true
+	}
+
+	var payload struct {
+		Prefix       string `json:"prefix"`
+		DelegationID string `json:"delegation_id"`
+		SourceID     string `json:"source_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
+		httpError(w, http.StatusBadRequest, "invalid json")
+		return true
+	}
+	if !validCatalogIdentity(payload.Prefix) {
+		httpError(w, http.StatusBadRequest, "invalid prefix")
+		return true
+	}
+	request := &accountsv1.ModuleMintSourceOperationContextRequest{Prefix: payload.Prefix, Secret: secret}
+	switch {
+	case payload.DelegationID != "" && payload.SourceID == "" && len(payload.DelegationID) <= 64:
+		request.Delegation = &accountsv1.ModuleMintSourceOperationContextRequest_DelegationId{DelegationId: payload.DelegationID}
+	case payload.SourceID != "" && payload.DelegationID == "" && len(payload.SourceID) <= 64:
+		request.Delegation = &accountsv1.ModuleMintSourceOperationContextRequest_SourceId{SourceId: payload.SourceID}
+	default:
+		httpError(w, http.StatusBadRequest, "exactly one of delegation_id or source_id is required")
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	defer cancel()
+	issued, err := g.authz.mintSourceOperationContext(ctx, request)
+	if err != nil {
+		switch status.Code(err) {
+		case codes.Unauthenticated:
+			httpError(w, http.StatusUnauthorized, "unauthorized")
+		case codes.PermissionDenied:
+			httpError(w, http.StatusForbidden, "forbidden")
+		case codes.InvalidArgument:
+			httpError(w, http.StatusBadRequest, "invalid request")
+		case codes.FailedPrecondition:
+			if isSourceDelegationMissing(err) {
+				httpError(w, http.StatusPreconditionFailed, sourceDelegationMissingReason)
+				return true
+			}
+			httpError(w, http.StatusBadGateway, "source operation context unavailable")
+		default:
+			httpError(w, http.StatusBadGateway, "source operation context unavailable")
+		}
+		return true
+	}
+
+	// The same snake_case shape as /modules/_operation-context, plus what this
+	// exchange adds: whose authority the context carries and which delegation
+	// and source it was minted from.
+	body, err := json.Marshal(map[string]string{
+		"work_context":       issued.GetToken(),
+		"expires_at":         issued.GetExpiresAt().AsTime().UTC().Format(time.RFC3339),
+		"principal_id":       issued.GetPrincipalId(),
+		"owner_principal_id": issued.GetOwnerPrincipalId(),
+		"tenant":             issued.GetTenant(),
+		"audience":           issued.GetAudience(),
+		"binding":            issued.GetBinding(),
+		"delegation_id":      issued.GetDelegationId(),
+		"source_id":          issued.GetSourceId(),
+	})
+	if err != nil {
+		httpError(w, http.StatusBadGateway, "source operation context unavailable")
+		return true
+	}
+	w.Header().Set("content-type", "application/json")
+	w.Header().Set("cache-control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+	return true
+}
+
+// isSourceDelegationMissing reads the structured ErrorInfo, never the message.
+func isSourceDelegationMissing(err error) bool {
+	for _, detail := range status.Convert(err).Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok &&
+			info.GetReason() == sourceDelegationMissingReason &&
+			info.GetDomain() == solutionRegistryErrorDomain {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *ExtAuthz) mintSourceOperationContext(
+	ctx context.Context, request *accountsv1.ModuleMintSourceOperationContextRequest,
+) (*accountsv1.ModuleMintSourceOperationContextResponse, error) {
+	if s.backendConn == nil {
+		return nil, fmt.Errorf("accounts connection not configured")
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	response := &accountsv1.ModuleMintSourceOperationContextResponse{}
+	if err := s.backendConn.Invoke(ctx, mintSourceOperationContextMethod, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil

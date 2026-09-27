@@ -230,5 +230,129 @@ A composed module reaches it through the gateway's `POST
 /modules/_operation-context` ([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)),
 which brokers to accounts exactly as `/modules/_work-context` does.
 
+## Operation contexts from a source delegation
+
+A datasource source's sync is neither of the cases above. It runs as a module
+task — scheduled, triggered by a provider webhook, or started by a person — with
+nobody signed in, yet it must not run on the module's own authority: it reads
+and writes one organization's content because a person in that organization
+connected the source. `ModuleCapabilitiesService.MintSourceOperationContext`
+turns that act of connecting into the authority the task runs with.
+
+**The delegation is recorded at connect time.** When an owner or admin of an
+organization connects a source (`AddSource`, `AddGitHubSource`) or reconnects
+it (a replacement credential on `SyncSource`, `MigrateGitHubSourceToApp`), the
+host records, in the same transaction, one `source_delegations` row per composed
+module that accepts delegations there: the source, the organization, the person,
+the module's prefix, the one operation binding that accepts delegations, and a
+digest of that binding's audience and delegation scopes. A reconnect revokes the
+previous row (`replaced`) and records a new one under the reconnecting person,
+atomically. Sources connected before a module declared a binding carry no
+delegation; nothing backfills one, so a person must reconnect them.
+
+**Which module and binding is declared, never requested.** An operation binding
+accepts delegations by declaring `source_delegation_scopes` — like
+`headless_scopes`, an optional list in the canonical scope shape that must be a
+subset of its `invoke_scopes` (the context acts on a person's behalf). At most
+one binding of a module may declare it, and a connect delegates to that binding
+of every module that declares one. The declaration is the whole opt-in:
+
+```json
+{"docstore":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"source-sync":{"audience":"docstore-ingest","invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}}}
+```
+
+**The mint.** The module authenticates exactly as for its own Work Context and
+names either a `delegation_id` or a `source_id` (whose active delegation to the
+calling module is used). The tenant, the owner, the audience and the scopes all
+come from the delegation. Every mint re-checks, failing closed on each: the
+caller is the module the delegation names; the delegation is active; the binding is still
+declared, still accepts delegations, and is unchanged in audience and scopes;
+the source exists; the person is still a member, still an owner or admin (the
+role connecting a source requires), and their account is active. The child is:
+
+- `aud` = the binding's `audience`, never `module-capabilities`;
+- tenant = the source's organization;
+- owner = the person; sole actor = the module's service principal (kind
+  `service`), whose hop carries the delegation's id;
+- authority scopes and the actor's granted scopes = **exactly** the binding's
+  `source_delegation_scopes`;
+- a 60-second lifetime and the idempotent replay policy;
+- an authorization revision that binds the delegation row, the binding digest
+  and the person's authorization revision in the organization
+  (`business.SourceDelegationContextRevision`, never zero).
+
+**Revocation.** A delegation ends when an organization administrator revokes it
+(`DatasourceService/RevokeSourceDelegation`), when the source is reconnected, when
+the source is deleted, when the person is removed from the organization, and
+when the person is left without an owner or admin role. The service paths for
+the last three mark the row in the event's own transaction. None of that is
+relied on: the mint re-checks every fact, and on finding one false it revokes
+the row with the reason (`source_deleted`, `member_removed`, `permission_lost`,
+`user_inactive`, `binding_changed`), records it, and refuses. A row is never
+deleted; `DatasourceService/ListSourceDelegations` shows administrators who
+delegated what to which module binding, and when and why it ended.
+
+**Revision check.** `WorkContextService/CheckAuthorizationRevision` recognises a
+context owned by a person and actored by a declared module principal, and
+confirms it only while the module holds an active delegation from that owner in
+that organization whose binding is unchanged, whose source exists and whose
+person still holds the connect role, whose revision recomputes to the sealed one
+at the person's current authorization revision, and whose delegation scopes
+cover both subjects. Revoking or replacing the delegation, a membership or role
+change, or a binding change therefore invalidates outstanding contexts at the
+next hop. Every refusal is `PermissionDenied`.
+
+**The delegation authorizes the organization; `cross_tenant` is never
+consulted.** Neither the recording, the mint, the revision check nor the
+exchange below reads a module's `tenant` or `cross_tenant`. A module bound to
+one tenant mints for a delegation in another; a module holding `cross_tenant`
+gains nothing here, and a principal gains no cross-organization reach from a
+delegation beyond the one binding it names.
+
+**Exchanging a delegation-bearing parent.** The minted context is addressed to
+the binding's audience, which may be another composed module (a runtime that
+executes the sync). That module passes it to
+`ModuleCapabilitiesService/ExchangeDelegatedOperationAudience` as the parent,
+naming one of its own operation bindings, as for any delegated parent. When the
+verified parent's single actor hop is a declared module principal carrying a
+delegation id, the exchange re-checks that delegation exactly as the revision
+check does — active, in the parent's tenant, from the parent's owner, to that
+module, binding unchanged, source present, person still an owner or admin, the
+sealed revision recomputing — and that delegation, not the caller's declared
+tenant, admits the parent's tenant; the id in the token is only a pointer. The
+rest is unchanged: the parent must be addressed to the caller's prefix, the
+binding must be one the caller declares, and the child is attenuated to that
+binding's scopes, which must lie within the parent's. The child keeps the
+parent's owner, actor hop and revision, so the revision check confirms it the
+same way and stops the moment the delegation ends. A parent with no module
+actor hop keeps today's tenant check (`cross_tenant` or the caller's own
+tenant) exactly; a read exchange always does.
+
+**Codes** (on the RPC, with a `google.rpc.ErrorInfo` under the domain
+`accounts.saas.codefly.dev`, and relayed by the gateway):
+
+| Answer | gRPC code | ErrorInfo reason | Gateway | Meaning |
+| --- | --- | --- | --- | --- |
+| Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412` | The source has no active delegation to this module. A person must connect or reconnect it. |
+| Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403` | The delegation was revoked, or was just found unsupported and revoked. |
+| Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
+| Unproven | `UNAUTHENTICATED` | — | `401` | The module's identity secret was not accepted. |
+
+**Audit.** `saas.datasource.delegation.created` on connect and reconnect,
+`saas.datasource.delegation.used` on every mint (written once the capability
+exists; the capability is withheld when it cannot be written, or when the
+delegation was revoked while it was being signed), and
+`saas.datasource.delegation.revoked` with its `reason` on every revocation.
+
+**What a consuming module does.** Mint once per task admission — by `source_id`,
+which the sync job it was handed already names — and present the context to the
+binding's audience; mint again rather than holding one past its minute. Read
+`412`/`DELEGATION_MISSING` as "this source needs a person to reconnect it" and
+surface it that way; read `403` as the same outcome for a delegation that has
+ended. Never fall back to the module's own authority.
+
+The gateway exchange is `POST /modules/_source-operation-context`
+([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)).
+
 The transport all of this is carried on, and what a client library must and
 must not require of it, is [INTERNAL_TRANSPORT.md](./INTERNAL_TRANSPORT.md).

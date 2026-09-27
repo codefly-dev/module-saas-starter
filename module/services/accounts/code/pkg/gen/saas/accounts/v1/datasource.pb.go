@@ -664,6 +664,81 @@ func (DatasourceDomainStatus) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{9}
 }
 
+// SourceDelegationRevocation says why a source delegation stopped delegating.
+type SourceDelegationRevocation int32
+
+const (
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_UNSPECIFIED SourceDelegationRevocation = 0
+	// An org administrator revoked it (RevokeSourceDelegation).
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_REVOKED SourceDelegationRevocation = 1
+	// The source was reconnected; a delegation under the reconnecting person
+	// replaced this one.
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_REPLACED SourceDelegationRevocation = 2
+	// The source was deleted.
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_SOURCE_DELETED SourceDelegationRevocation = 3
+	// The person who connected it is no longer a member of the organization.
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED SourceDelegationRevocation = 4
+	// The person is a member but no longer an owner or admin, the role
+	// connecting a source requires.
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST SourceDelegationRevocation = 5
+	// The person's account is deleted or suspended.
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_USER_INACTIVE SourceDelegationRevocation = 6
+	// The module no longer declares the binding, or its audience or delegation
+	// scopes changed since the person connected.
+	SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED SourceDelegationRevocation = 7
+)
+
+// Enum value maps for SourceDelegationRevocation.
+var (
+	SourceDelegationRevocation_name = map[int32]string{
+		0: "SOURCE_DELEGATION_REVOCATION_UNSPECIFIED",
+		1: "SOURCE_DELEGATION_REVOCATION_REVOKED",
+		2: "SOURCE_DELEGATION_REVOCATION_REPLACED",
+		3: "SOURCE_DELEGATION_REVOCATION_SOURCE_DELETED",
+		4: "SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED",
+		5: "SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST",
+		6: "SOURCE_DELEGATION_REVOCATION_USER_INACTIVE",
+		7: "SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED",
+	}
+	SourceDelegationRevocation_value = map[string]int32{
+		"SOURCE_DELEGATION_REVOCATION_UNSPECIFIED":     0,
+		"SOURCE_DELEGATION_REVOCATION_REVOKED":         1,
+		"SOURCE_DELEGATION_REVOCATION_REPLACED":        2,
+		"SOURCE_DELEGATION_REVOCATION_SOURCE_DELETED":  3,
+		"SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED":  4,
+		"SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST": 5,
+		"SOURCE_DELEGATION_REVOCATION_USER_INACTIVE":   6,
+		"SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED": 7,
+	}
+)
+
+func (x SourceDelegationRevocation) Enum() *SourceDelegationRevocation {
+	p := new(SourceDelegationRevocation)
+	*p = x
+	return p
+}
+
+func (x SourceDelegationRevocation) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceDelegationRevocation) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_datasource_proto_enumTypes[10].Descriptor()
+}
+
+func (SourceDelegationRevocation) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_datasource_proto_enumTypes[10]
+}
+
+func (x SourceDelegationRevocation) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceDelegationRevocation.Descriptor instead.
+func (SourceDelegationRevocation) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{10}
+}
+
 // GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
 // datasource. The access token and webhook signing secret are never carried
 // here; they live only as SecretCipher envelopes in the credential store.
@@ -4798,6 +4873,327 @@ func (*DeleteDatasourceDomainResponse) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{59}
 }
 
+// SourceDelegation records that a person, by connecting a source, delegated
+// its sync to one installed operation binding of a consuming module. Which
+// module and binding is declared configuration, never chosen by a caller.
+type SourceDelegation struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SourceId string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	// principal_id is the person who connected (or last reconnected) the source.
+	PrincipalId string `protobuf:"bytes,3,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	// module is the consuming module's registration prefix.
+	Module string `protobuf:"bytes,4,opt,name=module,proto3" json:"module,omitempty"`
+	// binding is the key of the module's operation_audiences entry the
+	// delegation confers the source_delegation_scopes of.
+	Binding   string                 `protobuf:"bytes,5,opt,name=binding,proto3" json:"binding,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// revoked_at is unset while the delegation is active.
+	RevokedAt  *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
+	Revocation SourceDelegationRevocation `protobuf:"varint,8,opt,name=revocation,proto3,enum=saas.accounts.v1.SourceDelegationRevocation" json:"revocation,omitempty"`
+	// revoked_by is the person whose action revoked it; empty when the host
+	// revoked it on finding it no longer supported.
+	RevokedBy     string `protobuf:"bytes,9,opt,name=revoked_by,json=revokedBy,proto3" json:"revoked_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceDelegation) Reset() {
+	*x = SourceDelegation{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceDelegation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceDelegation) ProtoMessage() {}
+
+func (x *SourceDelegation) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceDelegation.ProtoReflect.Descriptor instead.
+func (*SourceDelegation) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *SourceDelegation) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SourceDelegation) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *SourceDelegation) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
+	}
+	return ""
+}
+
+func (x *SourceDelegation) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *SourceDelegation) GetBinding() string {
+	if x != nil {
+		return x.Binding
+	}
+	return ""
+}
+
+func (x *SourceDelegation) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *SourceDelegation) GetRevokedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return nil
+}
+
+func (x *SourceDelegation) GetRevocation() SourceDelegationRevocation {
+	if x != nil {
+		return x.Revocation
+	}
+	return SourceDelegationRevocation_SOURCE_DELEGATION_REVOCATION_UNSPECIFIED
+}
+
+func (x *SourceDelegation) GetRevokedBy() string {
+	if x != nil {
+		return x.RevokedBy
+	}
+	return ""
+}
+
+type ListSourceDelegationsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// source_id narrows the listing to one source.
+	SourceId *string `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3,oneof" json:"source_id,omitempty"`
+	// include_revoked lists revoked delegations too, with why they ended.
+	IncludeRevoked bool `protobuf:"varint,3,opt,name=include_revoked,json=includeRevoked,proto3" json:"include_revoked,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListSourceDelegationsRequest) Reset() {
+	*x = ListSourceDelegationsRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSourceDelegationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSourceDelegationsRequest) ProtoMessage() {}
+
+func (x *ListSourceDelegationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSourceDelegationsRequest.ProtoReflect.Descriptor instead.
+func (*ListSourceDelegationsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *ListSourceDelegationsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListSourceDelegationsRequest) GetSourceId() string {
+	if x != nil && x.SourceId != nil {
+		return *x.SourceId
+	}
+	return ""
+}
+
+func (x *ListSourceDelegationsRequest) GetIncludeRevoked() bool {
+	if x != nil {
+		return x.IncludeRevoked
+	}
+	return false
+}
+
+type ListSourceDelegationsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Newest first.
+	Delegations   []*SourceDelegation `protobuf:"bytes,1,rep,name=delegations,proto3" json:"delegations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSourceDelegationsResponse) Reset() {
+	*x = ListSourceDelegationsResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSourceDelegationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSourceDelegationsResponse) ProtoMessage() {}
+
+func (x *ListSourceDelegationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSourceDelegationsResponse.ProtoReflect.Descriptor instead.
+func (*ListSourceDelegationsResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *ListSourceDelegationsResponse) GetDelegations() []*SourceDelegation {
+	if x != nil {
+		return x.Delegations
+	}
+	return nil
+}
+
+type RevokeSourceDelegationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSourceDelegationRequest) Reset() {
+	*x = RevokeSourceDelegationRequest{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSourceDelegationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSourceDelegationRequest) ProtoMessage() {}
+
+func (x *RevokeSourceDelegationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSourceDelegationRequest.ProtoReflect.Descriptor instead.
+func (*RevokeSourceDelegationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *RevokeSourceDelegationRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *RevokeSourceDelegationRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type RevokeSourceDelegationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Delegation    *SourceDelegation      `protobuf:"bytes,1,opt,name=delegation,proto3" json:"delegation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSourceDelegationResponse) Reset() {
+	*x = RevokeSourceDelegationResponse{}
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSourceDelegationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSourceDelegationResponse) ProtoMessage() {}
+
+func (x *RevokeSourceDelegationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_datasource_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSourceDelegationResponse.ProtoReflect.Descriptor instead.
+func (*RevokeSourceDelegationResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_datasource_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *RevokeSourceDelegationResponse) GetDelegation() *SourceDelegation {
+	if x != nil {
+		return x.Delegation
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_datasource_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
@@ -5117,7 +5513,37 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1dDeleteDatasourceDomainRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\" \n" +
-	"\x1eDeleteDatasourceDomainResponse*\xb7\x01\n" +
+	"\x1eDeleteDatasourceDomainResponse\"\xf7\x02\n" +
+	"\x10SourceDelegation\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tsource_id\x18\x02 \x01(\tR\bsourceId\x12!\n" +
+	"\fprincipal_id\x18\x03 \x01(\tR\vprincipalId\x12\x16\n" +
+	"\x06module\x18\x04 \x01(\tR\x06module\x12\x18\n" +
+	"\abinding\x18\x05 \x01(\tR\abinding\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12L\n" +
+	"\n" +
+	"revocation\x18\b \x01(\x0e2,.saas.accounts.v1.SourceDelegationRevocationR\n" +
+	"revocation\x12\x1d\n" +
+	"\n" +
+	"revoked_by\x18\t \x01(\tR\trevokedBy\"\xa2\x01\n" +
+	"\x1cListSourceDelegationsRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12*\n" +
+	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\bsourceId\x88\x01\x01\x12'\n" +
+	"\x0finclude_revoked\x18\x03 \x01(\bR\x0eincludeRevokedB\f\n" +
+	"\n" +
+	"_source_id\"e\n" +
+	"\x1dListSourceDelegationsResponse\x12D\n" +
+	"\vdelegations\x18\x01 \x03(\v2\".saas.accounts.v1.SourceDelegationR\vdelegations\"Z\n" +
+	"\x1dRevokeSourceDelegationRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
+	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"d\n" +
+	"\x1eRevokeSourceDelegationResponse\x12B\n" +
+	"\n" +
+	"delegation\x18\x01 \x01(\v2\".saas.accounts.v1.SourceDelegationR\n" +
+	"delegation*\xb7\x01\n" +
 	"\x12DatasourceProvider\x12#\n" +
 	"\x1fDATASOURCE_PROVIDER_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aDATASOURCE_PROVIDER_GITHUB\x10\x01\x12\x1b\n" +
@@ -5179,7 +5605,16 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x16DatasourceDomainStatus\x12(\n" +
 	"$DATASOURCE_DOMAIN_STATUS_UNSPECIFIED\x10\x00\x12$\n" +
 	" DATASOURCE_DOMAIN_STATUS_PENDING\x10\x01\x12%\n" +
-	"!DATASOURCE_DOMAIN_STATUS_VERIFIED\x10\x022\xe5\x1d\n" +
+	"!DATASOURCE_DOMAIN_STATUS_VERIFIED\x10\x02*\x95\x03\n" +
+	"\x1aSourceDelegationRevocation\x12,\n" +
+	"(SOURCE_DELEGATION_REVOCATION_UNSPECIFIED\x10\x00\x12(\n" +
+	"$SOURCE_DELEGATION_REVOCATION_REVOKED\x10\x01\x12)\n" +
+	"%SOURCE_DELEGATION_REVOCATION_REPLACED\x10\x02\x12/\n" +
+	"+SOURCE_DELEGATION_REVOCATION_SOURCE_DELETED\x10\x03\x12/\n" +
+	"+SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED\x10\x04\x120\n" +
+	",SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST\x10\x05\x12.\n" +
+	"*SOURCE_DELEGATION_REVOCATION_USER_INACTIVE\x10\x06\x120\n" +
+	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xd2 \n" +
 	"\x11DatasourceService\x12\xac\x01\n" +
 	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01: \n" +
@@ -5237,7 +5672,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1fsaas.datasource.domain_verified\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xc3\x01\n" +
 	"\x16DeleteDatasourceDomain\x12/.saas.accounts.v1.DeleteDatasourceDomainRequest\x1a0.saas.accounts.v1.DeleteDatasourceDomainResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
-	"\x1esaas.datasource.domain_removed\x10\x02@\x01H\x04P\x02X\x03`\x01B\xb7\x01\n" +
+	"\x1esaas.datasource.domain_removed\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xa0\x01\n" +
+	"\x15ListSourceDelegations\x12..saas.accounts.v1.ListSourceDelegationsRequest\x1a/.saas.accounts.v1.ListSourceDelegationsResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xc7\x01\n" +
+	"\x16RevokeSourceDelegation\x12/.saas.accounts.v1.RevokeSourceDelegationRequest\x1a0.saas.accounts.v1.RevokeSourceDelegationResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
+	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01B\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fDatasourceProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -5252,8 +5692,8 @@ func file_saas_accounts_v1_datasource_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_datasource_proto_rawDescData
 }
 
-var file_saas_accounts_v1_datasource_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_saas_accounts_v1_datasource_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
+var file_saas_accounts_v1_datasource_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
+var file_saas_accounts_v1_datasource_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_saas_accounts_v1_datasource_proto_goTypes = []any{
 	(DatasourceProvider)(0),                       // 0: saas.accounts.v1.DatasourceProvider
 	(DatasourceStatus)(0),                         // 1: saas.accounts.v1.DatasourceStatus
@@ -5265,181 +5705,196 @@ var file_saas_accounts_v1_datasource_proto_goTypes = []any{
 	(SourceSyncFailureReason)(0),                  // 7: saas.accounts.v1.SourceSyncFailureReason
 	(SourceSyncTrigger)(0),                        // 8: saas.accounts.v1.SourceSyncTrigger
 	(DatasourceDomainStatus)(0),                   // 9: saas.accounts.v1.DatasourceDomainStatus
-	(*GitHubDatasourceConfig)(nil),                // 10: saas.accounts.v1.GitHubDatasourceConfig
-	(*ApiOAuth2Config)(nil),                       // 11: saas.accounts.v1.ApiOAuth2Config
-	(*ApiDatasourceConfig)(nil),                   // 12: saas.accounts.v1.ApiDatasourceConfig
-	(*CrawlerDatasourceConfig)(nil),               // 13: saas.accounts.v1.CrawlerDatasourceConfig
-	(*UploadDatasourceConfig)(nil),                // 14: saas.accounts.v1.UploadDatasourceConfig
-	(*Datasource)(nil),                            // 15: saas.accounts.v1.Datasource
-	(*AddGitHubSourceRequest)(nil),                // 16: saas.accounts.v1.AddGitHubSourceRequest
-	(*AddGitHubSourceResponse)(nil),               // 17: saas.accounts.v1.AddGitHubSourceResponse
-	(*AddSourceRequest)(nil),                      // 18: saas.accounts.v1.AddSourceRequest
-	(*AddSourceResponse)(nil),                     // 19: saas.accounts.v1.AddSourceResponse
-	(*DatasourceConfigField)(nil),                 // 20: saas.accounts.v1.DatasourceConfigField
-	(*DatasourceConnectorBudget)(nil),             // 21: saas.accounts.v1.DatasourceConnectorBudget
-	(*DatasourceProviderDescriptor)(nil),          // 22: saas.accounts.v1.DatasourceProviderDescriptor
-	(*GetDatasourceCatalogRequest)(nil),           // 23: saas.accounts.v1.GetDatasourceCatalogRequest
-	(*GetDatasourceCatalogResponse)(nil),          // 24: saas.accounts.v1.GetDatasourceCatalogResponse
-	(*ListSourcesRequest)(nil),                    // 25: saas.accounts.v1.ListSourcesRequest
-	(*ListSourcesResponse)(nil),                   // 26: saas.accounts.v1.ListSourcesResponse
-	(*GetSourceRequest)(nil),                      // 27: saas.accounts.v1.GetSourceRequest
-	(*GetSourceResponse)(nil),                     // 28: saas.accounts.v1.GetSourceResponse
-	(*SyncSourceRequest)(nil),                     // 29: saas.accounts.v1.SyncSourceRequest
-	(*SyncSourceResponse)(nil),                    // 30: saas.accounts.v1.SyncSourceResponse
-	(*GetSourceSyncRequest)(nil),                  // 31: saas.accounts.v1.GetSourceSyncRequest
-	(*SourceSyncDelivery)(nil),                    // 32: saas.accounts.v1.SourceSyncDelivery
-	(*SourceSyncChanges)(nil),                     // 33: saas.accounts.v1.SourceSyncChanges
-	(*SourceSyncFailure)(nil),                     // 34: saas.accounts.v1.SourceSyncFailure
-	(*SourceSyncProgress)(nil),                    // 35: saas.accounts.v1.SourceSyncProgress
-	(*GetSourceSyncResponse)(nil),                 // 36: saas.accounts.v1.GetSourceSyncResponse
-	(*DeleteSourceRequest)(nil),                   // 37: saas.accounts.v1.DeleteSourceRequest
-	(*DeleteSourceResponse)(nil),                  // 38: saas.accounts.v1.DeleteSourceResponse
-	(*GitHubAppRepository)(nil),                   // 39: saas.accounts.v1.GitHubAppRepository
-	(*BeginGitHubAppSetupRequest)(nil),            // 40: saas.accounts.v1.BeginGitHubAppSetupRequest
-	(*BeginGitHubAppSetupResponse)(nil),           // 41: saas.accounts.v1.BeginGitHubAppSetupResponse
-	(*CompleteGitHubAppSetupRequest)(nil),         // 42: saas.accounts.v1.CompleteGitHubAppSetupRequest
-	(*CompleteGitHubAppSetupResponse)(nil),        // 43: saas.accounts.v1.CompleteGitHubAppSetupResponse
-	(*MigrateGitHubSourceToAppRequest)(nil),       // 44: saas.accounts.v1.MigrateGitHubSourceToAppRequest
-	(*MigrateGitHubSourceToAppResponse)(nil),      // 45: saas.accounts.v1.MigrateGitHubSourceToAppResponse
-	(*DatasourceAccountLink)(nil),                 // 46: saas.accounts.v1.DatasourceAccountLink
-	(*DatasourceGroupBinding)(nil),                // 47: saas.accounts.v1.DatasourceGroupBinding
-	(*DatasourceVerifiedDomain)(nil),              // 48: saas.accounts.v1.DatasourceVerifiedDomain
-	(*DatasourceDirectoryTeam)(nil),               // 49: saas.accounts.v1.DatasourceDirectoryTeam
-	(*BeginDatasourceAccountLinkRequest)(nil),     // 50: saas.accounts.v1.BeginDatasourceAccountLinkRequest
-	(*BeginDatasourceAccountLinkResponse)(nil),    // 51: saas.accounts.v1.BeginDatasourceAccountLinkResponse
-	(*CompleteDatasourceAccountLinkRequest)(nil),  // 52: saas.accounts.v1.CompleteDatasourceAccountLinkRequest
-	(*CompleteDatasourceAccountLinkResponse)(nil), // 53: saas.accounts.v1.CompleteDatasourceAccountLinkResponse
-	(*ListMyDatasourceAccountLinksRequest)(nil),   // 54: saas.accounts.v1.ListMyDatasourceAccountLinksRequest
-	(*ListMyDatasourceAccountLinksResponse)(nil),  // 55: saas.accounts.v1.ListMyDatasourceAccountLinksResponse
-	(*DeleteDatasourceAccountLinkRequest)(nil),    // 56: saas.accounts.v1.DeleteDatasourceAccountLinkRequest
-	(*DeleteDatasourceAccountLinkResponse)(nil),   // 57: saas.accounts.v1.DeleteDatasourceAccountLinkResponse
-	(*GetDatasourceDirectoryRequest)(nil),         // 58: saas.accounts.v1.GetDatasourceDirectoryRequest
-	(*GetDatasourceDirectoryResponse)(nil),        // 59: saas.accounts.v1.GetDatasourceDirectoryResponse
-	(*BindDatasourceGroupRequest)(nil),            // 60: saas.accounts.v1.BindDatasourceGroupRequest
-	(*BindDatasourceGroupResponse)(nil),           // 61: saas.accounts.v1.BindDatasourceGroupResponse
-	(*UnbindDatasourceGroupRequest)(nil),          // 62: saas.accounts.v1.UnbindDatasourceGroupRequest
-	(*UnbindDatasourceGroupResponse)(nil),         // 63: saas.accounts.v1.UnbindDatasourceGroupResponse
-	(*ClaimDatasourceDomainRequest)(nil),          // 64: saas.accounts.v1.ClaimDatasourceDomainRequest
-	(*ClaimDatasourceDomainResponse)(nil),         // 65: saas.accounts.v1.ClaimDatasourceDomainResponse
-	(*VerifyDatasourceDomainRequest)(nil),         // 66: saas.accounts.v1.VerifyDatasourceDomainRequest
-	(*VerifyDatasourceDomainResponse)(nil),        // 67: saas.accounts.v1.VerifyDatasourceDomainResponse
-	(*DeleteDatasourceDomainRequest)(nil),         // 68: saas.accounts.v1.DeleteDatasourceDomainRequest
-	(*DeleteDatasourceDomainResponse)(nil),        // 69: saas.accounts.v1.DeleteDatasourceDomainResponse
-	(*timestamppb.Timestamp)(nil),                 // 70: google.protobuf.Timestamp
-	(v1.JobState)(0),                              // 71: saas.jobs.v1.JobState
-	(*v1.JobExecutionReference)(nil),              // 72: saas.jobs.v1.JobExecutionReference
+	(SourceDelegationRevocation)(0),               // 10: saas.accounts.v1.SourceDelegationRevocation
+	(*GitHubDatasourceConfig)(nil),                // 11: saas.accounts.v1.GitHubDatasourceConfig
+	(*ApiOAuth2Config)(nil),                       // 12: saas.accounts.v1.ApiOAuth2Config
+	(*ApiDatasourceConfig)(nil),                   // 13: saas.accounts.v1.ApiDatasourceConfig
+	(*CrawlerDatasourceConfig)(nil),               // 14: saas.accounts.v1.CrawlerDatasourceConfig
+	(*UploadDatasourceConfig)(nil),                // 15: saas.accounts.v1.UploadDatasourceConfig
+	(*Datasource)(nil),                            // 16: saas.accounts.v1.Datasource
+	(*AddGitHubSourceRequest)(nil),                // 17: saas.accounts.v1.AddGitHubSourceRequest
+	(*AddGitHubSourceResponse)(nil),               // 18: saas.accounts.v1.AddGitHubSourceResponse
+	(*AddSourceRequest)(nil),                      // 19: saas.accounts.v1.AddSourceRequest
+	(*AddSourceResponse)(nil),                     // 20: saas.accounts.v1.AddSourceResponse
+	(*DatasourceConfigField)(nil),                 // 21: saas.accounts.v1.DatasourceConfigField
+	(*DatasourceConnectorBudget)(nil),             // 22: saas.accounts.v1.DatasourceConnectorBudget
+	(*DatasourceProviderDescriptor)(nil),          // 23: saas.accounts.v1.DatasourceProviderDescriptor
+	(*GetDatasourceCatalogRequest)(nil),           // 24: saas.accounts.v1.GetDatasourceCatalogRequest
+	(*GetDatasourceCatalogResponse)(nil),          // 25: saas.accounts.v1.GetDatasourceCatalogResponse
+	(*ListSourcesRequest)(nil),                    // 26: saas.accounts.v1.ListSourcesRequest
+	(*ListSourcesResponse)(nil),                   // 27: saas.accounts.v1.ListSourcesResponse
+	(*GetSourceRequest)(nil),                      // 28: saas.accounts.v1.GetSourceRequest
+	(*GetSourceResponse)(nil),                     // 29: saas.accounts.v1.GetSourceResponse
+	(*SyncSourceRequest)(nil),                     // 30: saas.accounts.v1.SyncSourceRequest
+	(*SyncSourceResponse)(nil),                    // 31: saas.accounts.v1.SyncSourceResponse
+	(*GetSourceSyncRequest)(nil),                  // 32: saas.accounts.v1.GetSourceSyncRequest
+	(*SourceSyncDelivery)(nil),                    // 33: saas.accounts.v1.SourceSyncDelivery
+	(*SourceSyncChanges)(nil),                     // 34: saas.accounts.v1.SourceSyncChanges
+	(*SourceSyncFailure)(nil),                     // 35: saas.accounts.v1.SourceSyncFailure
+	(*SourceSyncProgress)(nil),                    // 36: saas.accounts.v1.SourceSyncProgress
+	(*GetSourceSyncResponse)(nil),                 // 37: saas.accounts.v1.GetSourceSyncResponse
+	(*DeleteSourceRequest)(nil),                   // 38: saas.accounts.v1.DeleteSourceRequest
+	(*DeleteSourceResponse)(nil),                  // 39: saas.accounts.v1.DeleteSourceResponse
+	(*GitHubAppRepository)(nil),                   // 40: saas.accounts.v1.GitHubAppRepository
+	(*BeginGitHubAppSetupRequest)(nil),            // 41: saas.accounts.v1.BeginGitHubAppSetupRequest
+	(*BeginGitHubAppSetupResponse)(nil),           // 42: saas.accounts.v1.BeginGitHubAppSetupResponse
+	(*CompleteGitHubAppSetupRequest)(nil),         // 43: saas.accounts.v1.CompleteGitHubAppSetupRequest
+	(*CompleteGitHubAppSetupResponse)(nil),        // 44: saas.accounts.v1.CompleteGitHubAppSetupResponse
+	(*MigrateGitHubSourceToAppRequest)(nil),       // 45: saas.accounts.v1.MigrateGitHubSourceToAppRequest
+	(*MigrateGitHubSourceToAppResponse)(nil),      // 46: saas.accounts.v1.MigrateGitHubSourceToAppResponse
+	(*DatasourceAccountLink)(nil),                 // 47: saas.accounts.v1.DatasourceAccountLink
+	(*DatasourceGroupBinding)(nil),                // 48: saas.accounts.v1.DatasourceGroupBinding
+	(*DatasourceVerifiedDomain)(nil),              // 49: saas.accounts.v1.DatasourceVerifiedDomain
+	(*DatasourceDirectoryTeam)(nil),               // 50: saas.accounts.v1.DatasourceDirectoryTeam
+	(*BeginDatasourceAccountLinkRequest)(nil),     // 51: saas.accounts.v1.BeginDatasourceAccountLinkRequest
+	(*BeginDatasourceAccountLinkResponse)(nil),    // 52: saas.accounts.v1.BeginDatasourceAccountLinkResponse
+	(*CompleteDatasourceAccountLinkRequest)(nil),  // 53: saas.accounts.v1.CompleteDatasourceAccountLinkRequest
+	(*CompleteDatasourceAccountLinkResponse)(nil), // 54: saas.accounts.v1.CompleteDatasourceAccountLinkResponse
+	(*ListMyDatasourceAccountLinksRequest)(nil),   // 55: saas.accounts.v1.ListMyDatasourceAccountLinksRequest
+	(*ListMyDatasourceAccountLinksResponse)(nil),  // 56: saas.accounts.v1.ListMyDatasourceAccountLinksResponse
+	(*DeleteDatasourceAccountLinkRequest)(nil),    // 57: saas.accounts.v1.DeleteDatasourceAccountLinkRequest
+	(*DeleteDatasourceAccountLinkResponse)(nil),   // 58: saas.accounts.v1.DeleteDatasourceAccountLinkResponse
+	(*GetDatasourceDirectoryRequest)(nil),         // 59: saas.accounts.v1.GetDatasourceDirectoryRequest
+	(*GetDatasourceDirectoryResponse)(nil),        // 60: saas.accounts.v1.GetDatasourceDirectoryResponse
+	(*BindDatasourceGroupRequest)(nil),            // 61: saas.accounts.v1.BindDatasourceGroupRequest
+	(*BindDatasourceGroupResponse)(nil),           // 62: saas.accounts.v1.BindDatasourceGroupResponse
+	(*UnbindDatasourceGroupRequest)(nil),          // 63: saas.accounts.v1.UnbindDatasourceGroupRequest
+	(*UnbindDatasourceGroupResponse)(nil),         // 64: saas.accounts.v1.UnbindDatasourceGroupResponse
+	(*ClaimDatasourceDomainRequest)(nil),          // 65: saas.accounts.v1.ClaimDatasourceDomainRequest
+	(*ClaimDatasourceDomainResponse)(nil),         // 66: saas.accounts.v1.ClaimDatasourceDomainResponse
+	(*VerifyDatasourceDomainRequest)(nil),         // 67: saas.accounts.v1.VerifyDatasourceDomainRequest
+	(*VerifyDatasourceDomainResponse)(nil),        // 68: saas.accounts.v1.VerifyDatasourceDomainResponse
+	(*DeleteDatasourceDomainRequest)(nil),         // 69: saas.accounts.v1.DeleteDatasourceDomainRequest
+	(*DeleteDatasourceDomainResponse)(nil),        // 70: saas.accounts.v1.DeleteDatasourceDomainResponse
+	(*SourceDelegation)(nil),                      // 71: saas.accounts.v1.SourceDelegation
+	(*ListSourceDelegationsRequest)(nil),          // 72: saas.accounts.v1.ListSourceDelegationsRequest
+	(*ListSourceDelegationsResponse)(nil),         // 73: saas.accounts.v1.ListSourceDelegationsResponse
+	(*RevokeSourceDelegationRequest)(nil),         // 74: saas.accounts.v1.RevokeSourceDelegationRequest
+	(*RevokeSourceDelegationResponse)(nil),        // 75: saas.accounts.v1.RevokeSourceDelegationResponse
+	(*timestamppb.Timestamp)(nil),                 // 76: google.protobuf.Timestamp
+	(v1.JobState)(0),                              // 77: saas.jobs.v1.JobState
+	(*v1.JobExecutionReference)(nil),              // 78: saas.jobs.v1.JobExecutionReference
 }
 var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	2,  // 0: saas.accounts.v1.ApiDatasourceConfig.credential_kind:type_name -> saas.accounts.v1.ApiCredentialKind
-	11, // 1: saas.accounts.v1.ApiDatasourceConfig.oauth2:type_name -> saas.accounts.v1.ApiOAuth2Config
+	12, // 1: saas.accounts.v1.ApiDatasourceConfig.oauth2:type_name -> saas.accounts.v1.ApiOAuth2Config
 	0,  // 2: saas.accounts.v1.Datasource.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	10, // 3: saas.accounts.v1.Datasource.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
+	11, // 3: saas.accounts.v1.Datasource.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
 	1,  // 4: saas.accounts.v1.Datasource.status:type_name -> saas.accounts.v1.DatasourceStatus
-	70, // 5: saas.accounts.v1.Datasource.created_at:type_name -> google.protobuf.Timestamp
-	70, // 6: saas.accounts.v1.Datasource.updated_at:type_name -> google.protobuf.Timestamp
-	70, // 7: saas.accounts.v1.Datasource.last_synced_at:type_name -> google.protobuf.Timestamp
-	12, // 8: saas.accounts.v1.Datasource.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
-	13, // 9: saas.accounts.v1.Datasource.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
-	14, // 10: saas.accounts.v1.Datasource.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	70, // 11: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
-	15, // 12: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	76, // 5: saas.accounts.v1.Datasource.created_at:type_name -> google.protobuf.Timestamp
+	76, // 6: saas.accounts.v1.Datasource.updated_at:type_name -> google.protobuf.Timestamp
+	76, // 7: saas.accounts.v1.Datasource.last_synced_at:type_name -> google.protobuf.Timestamp
+	13, // 8: saas.accounts.v1.Datasource.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
+	14, // 9: saas.accounts.v1.Datasource.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
+	15, // 10: saas.accounts.v1.Datasource.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
+	76, // 11: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
+	16, // 12: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
 	0,  // 13: saas.accounts.v1.AddSourceRequest.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	10, // 14: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
-	12, // 15: saas.accounts.v1.AddSourceRequest.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
-	13, // 16: saas.accounts.v1.AddSourceRequest.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
-	14, // 17: saas.accounts.v1.AddSourceRequest.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	15, // 18: saas.accounts.v1.AddSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	11, // 14: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
+	13, // 15: saas.accounts.v1.AddSourceRequest.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
+	14, // 16: saas.accounts.v1.AddSourceRequest.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
+	15, // 17: saas.accounts.v1.AddSourceRequest.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
+	16, // 18: saas.accounts.v1.AddSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
 	0,  // 19: saas.accounts.v1.DatasourceProviderDescriptor.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	20, // 20: saas.accounts.v1.DatasourceProviderDescriptor.config_fields:type_name -> saas.accounts.v1.DatasourceConfigField
+	21, // 20: saas.accounts.v1.DatasourceProviderDescriptor.config_fields:type_name -> saas.accounts.v1.DatasourceConfigField
 	2,  // 21: saas.accounts.v1.DatasourceProviderDescriptor.supported_credential_kinds:type_name -> saas.accounts.v1.ApiCredentialKind
 	3,  // 22: saas.accounts.v1.DatasourceProviderDescriptor.interface:type_name -> saas.accounts.v1.DatasourceConnectorInterface
 	4,  // 23: saas.accounts.v1.DatasourceProviderDescriptor.credential_modes:type_name -> saas.accounts.v1.DatasourceCredentialMode
 	5,  // 24: saas.accounts.v1.DatasourceProviderDescriptor.readers_model:type_name -> saas.accounts.v1.DatasourceReadersModel
-	21, // 25: saas.accounts.v1.DatasourceProviderDescriptor.budget:type_name -> saas.accounts.v1.DatasourceConnectorBudget
-	22, // 26: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
-	15, // 27: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
-	15, // 28: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	71, // 29: saas.accounts.v1.SourceSyncDelivery.state:type_name -> saas.jobs.v1.JobState
-	72, // 30: saas.accounts.v1.SourceSyncDelivery.execution:type_name -> saas.jobs.v1.JobExecutionReference
+	22, // 25: saas.accounts.v1.DatasourceProviderDescriptor.budget:type_name -> saas.accounts.v1.DatasourceConnectorBudget
+	23, // 26: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
+	16, // 27: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
+	16, // 28: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	77, // 29: saas.accounts.v1.SourceSyncDelivery.state:type_name -> saas.jobs.v1.JobState
+	78, // 30: saas.accounts.v1.SourceSyncDelivery.execution:type_name -> saas.jobs.v1.JobExecutionReference
 	7,  // 31: saas.accounts.v1.SourceSyncFailure.reason:type_name -> saas.accounts.v1.SourceSyncFailureReason
-	70, // 32: saas.accounts.v1.SourceSyncFailure.retry_at:type_name -> google.protobuf.Timestamp
+	76, // 32: saas.accounts.v1.SourceSyncFailure.retry_at:type_name -> google.protobuf.Timestamp
 	6,  // 33: saas.accounts.v1.SourceSyncProgress.phase:type_name -> saas.accounts.v1.SourceSyncPhase
 	8,  // 34: saas.accounts.v1.SourceSyncProgress.trigger:type_name -> saas.accounts.v1.SourceSyncTrigger
-	70, // 35: saas.accounts.v1.SourceSyncProgress.queued_at:type_name -> google.protobuf.Timestamp
-	70, // 36: saas.accounts.v1.SourceSyncProgress.fetching_at:type_name -> google.protobuf.Timestamp
-	70, // 37: saas.accounts.v1.SourceSyncProgress.compiled_at:type_name -> google.protobuf.Timestamp
-	70, // 38: saas.accounts.v1.SourceSyncProgress.handed_off_at:type_name -> google.protobuf.Timestamp
-	70, // 39: saas.accounts.v1.SourceSyncProgress.finished_at:type_name -> google.protobuf.Timestamp
-	33, // 40: saas.accounts.v1.SourceSyncProgress.changes:type_name -> saas.accounts.v1.SourceSyncChanges
-	34, // 41: saas.accounts.v1.SourceSyncProgress.failure:type_name -> saas.accounts.v1.SourceSyncFailure
-	71, // 42: saas.accounts.v1.GetSourceSyncResponse.state:type_name -> saas.jobs.v1.JobState
-	32, // 43: saas.accounts.v1.GetSourceSyncResponse.deliveries:type_name -> saas.accounts.v1.SourceSyncDelivery
-	35, // 44: saas.accounts.v1.GetSourceSyncResponse.progress:type_name -> saas.accounts.v1.SourceSyncProgress
-	70, // 45: saas.accounts.v1.BeginGitHubAppSetupResponse.expires_at:type_name -> google.protobuf.Timestamp
-	39, // 46: saas.accounts.v1.CompleteGitHubAppSetupResponse.repositories:type_name -> saas.accounts.v1.GitHubAppRepository
-	15, // 47: saas.accounts.v1.MigrateGitHubSourceToAppResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	70, // 48: saas.accounts.v1.DatasourceAccountLink.created_at:type_name -> google.protobuf.Timestamp
-	70, // 49: saas.accounts.v1.DatasourceGroupBinding.created_at:type_name -> google.protobuf.Timestamp
+	76, // 35: saas.accounts.v1.SourceSyncProgress.queued_at:type_name -> google.protobuf.Timestamp
+	76, // 36: saas.accounts.v1.SourceSyncProgress.fetching_at:type_name -> google.protobuf.Timestamp
+	76, // 37: saas.accounts.v1.SourceSyncProgress.compiled_at:type_name -> google.protobuf.Timestamp
+	76, // 38: saas.accounts.v1.SourceSyncProgress.handed_off_at:type_name -> google.protobuf.Timestamp
+	76, // 39: saas.accounts.v1.SourceSyncProgress.finished_at:type_name -> google.protobuf.Timestamp
+	34, // 40: saas.accounts.v1.SourceSyncProgress.changes:type_name -> saas.accounts.v1.SourceSyncChanges
+	35, // 41: saas.accounts.v1.SourceSyncProgress.failure:type_name -> saas.accounts.v1.SourceSyncFailure
+	77, // 42: saas.accounts.v1.GetSourceSyncResponse.state:type_name -> saas.jobs.v1.JobState
+	33, // 43: saas.accounts.v1.GetSourceSyncResponse.deliveries:type_name -> saas.accounts.v1.SourceSyncDelivery
+	36, // 44: saas.accounts.v1.GetSourceSyncResponse.progress:type_name -> saas.accounts.v1.SourceSyncProgress
+	76, // 45: saas.accounts.v1.BeginGitHubAppSetupResponse.expires_at:type_name -> google.protobuf.Timestamp
+	40, // 46: saas.accounts.v1.CompleteGitHubAppSetupResponse.repositories:type_name -> saas.accounts.v1.GitHubAppRepository
+	16, // 47: saas.accounts.v1.MigrateGitHubSourceToAppResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	76, // 48: saas.accounts.v1.DatasourceAccountLink.created_at:type_name -> google.protobuf.Timestamp
+	76, // 49: saas.accounts.v1.DatasourceGroupBinding.created_at:type_name -> google.protobuf.Timestamp
 	9,  // 50: saas.accounts.v1.DatasourceVerifiedDomain.status:type_name -> saas.accounts.v1.DatasourceDomainStatus
-	70, // 51: saas.accounts.v1.DatasourceVerifiedDomain.verified_at:type_name -> google.protobuf.Timestamp
-	70, // 52: saas.accounts.v1.DatasourceVerifiedDomain.created_at:type_name -> google.protobuf.Timestamp
-	70, // 53: saas.accounts.v1.BeginDatasourceAccountLinkResponse.expires_at:type_name -> google.protobuf.Timestamp
-	46, // 54: saas.accounts.v1.CompleteDatasourceAccountLinkResponse.link:type_name -> saas.accounts.v1.DatasourceAccountLink
-	46, // 55: saas.accounts.v1.ListMyDatasourceAccountLinksResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
-	46, // 56: saas.accounts.v1.GetDatasourceDirectoryResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
-	47, // 57: saas.accounts.v1.GetDatasourceDirectoryResponse.bindings:type_name -> saas.accounts.v1.DatasourceGroupBinding
-	48, // 58: saas.accounts.v1.GetDatasourceDirectoryResponse.domains:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
-	49, // 59: saas.accounts.v1.GetDatasourceDirectoryResponse.teams:type_name -> saas.accounts.v1.DatasourceDirectoryTeam
-	47, // 60: saas.accounts.v1.BindDatasourceGroupResponse.binding:type_name -> saas.accounts.v1.DatasourceGroupBinding
-	48, // 61: saas.accounts.v1.ClaimDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
-	48, // 62: saas.accounts.v1.VerifyDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
-	16, // 63: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
-	18, // 64: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
-	23, // 65: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
-	25, // 66: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
-	27, // 67: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
-	29, // 68: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
-	31, // 69: saas.accounts.v1.DatasourceService.GetSourceSync:input_type -> saas.accounts.v1.GetSourceSyncRequest
-	37, // 70: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
-	40, // 71: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:input_type -> saas.accounts.v1.BeginGitHubAppSetupRequest
-	42, // 72: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:input_type -> saas.accounts.v1.CompleteGitHubAppSetupRequest
-	44, // 73: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:input_type -> saas.accounts.v1.MigrateGitHubSourceToAppRequest
-	50, // 74: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:input_type -> saas.accounts.v1.BeginDatasourceAccountLinkRequest
-	52, // 75: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:input_type -> saas.accounts.v1.CompleteDatasourceAccountLinkRequest
-	54, // 76: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:input_type -> saas.accounts.v1.ListMyDatasourceAccountLinksRequest
-	56, // 77: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:input_type -> saas.accounts.v1.DeleteDatasourceAccountLinkRequest
-	58, // 78: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:input_type -> saas.accounts.v1.GetDatasourceDirectoryRequest
-	60, // 79: saas.accounts.v1.DatasourceService.BindDatasourceGroup:input_type -> saas.accounts.v1.BindDatasourceGroupRequest
-	62, // 80: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:input_type -> saas.accounts.v1.UnbindDatasourceGroupRequest
-	64, // 81: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:input_type -> saas.accounts.v1.ClaimDatasourceDomainRequest
-	66, // 82: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:input_type -> saas.accounts.v1.VerifyDatasourceDomainRequest
-	68, // 83: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:input_type -> saas.accounts.v1.DeleteDatasourceDomainRequest
-	17, // 84: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
-	19, // 85: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
-	24, // 86: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
-	26, // 87: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
-	28, // 88: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
-	30, // 89: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
-	36, // 90: saas.accounts.v1.DatasourceService.GetSourceSync:output_type -> saas.accounts.v1.GetSourceSyncResponse
-	38, // 91: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
-	41, // 92: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:output_type -> saas.accounts.v1.BeginGitHubAppSetupResponse
-	43, // 93: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:output_type -> saas.accounts.v1.CompleteGitHubAppSetupResponse
-	45, // 94: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:output_type -> saas.accounts.v1.MigrateGitHubSourceToAppResponse
-	51, // 95: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:output_type -> saas.accounts.v1.BeginDatasourceAccountLinkResponse
-	53, // 96: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:output_type -> saas.accounts.v1.CompleteDatasourceAccountLinkResponse
-	55, // 97: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:output_type -> saas.accounts.v1.ListMyDatasourceAccountLinksResponse
-	57, // 98: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:output_type -> saas.accounts.v1.DeleteDatasourceAccountLinkResponse
-	59, // 99: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:output_type -> saas.accounts.v1.GetDatasourceDirectoryResponse
-	61, // 100: saas.accounts.v1.DatasourceService.BindDatasourceGroup:output_type -> saas.accounts.v1.BindDatasourceGroupResponse
-	63, // 101: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:output_type -> saas.accounts.v1.UnbindDatasourceGroupResponse
-	65, // 102: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:output_type -> saas.accounts.v1.ClaimDatasourceDomainResponse
-	67, // 103: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:output_type -> saas.accounts.v1.VerifyDatasourceDomainResponse
-	69, // 104: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:output_type -> saas.accounts.v1.DeleteDatasourceDomainResponse
-	84, // [84:105] is the sub-list for method output_type
-	63, // [63:84] is the sub-list for method input_type
-	63, // [63:63] is the sub-list for extension type_name
-	63, // [63:63] is the sub-list for extension extendee
-	0,  // [0:63] is the sub-list for field type_name
+	76, // 51: saas.accounts.v1.DatasourceVerifiedDomain.verified_at:type_name -> google.protobuf.Timestamp
+	76, // 52: saas.accounts.v1.DatasourceVerifiedDomain.created_at:type_name -> google.protobuf.Timestamp
+	76, // 53: saas.accounts.v1.BeginDatasourceAccountLinkResponse.expires_at:type_name -> google.protobuf.Timestamp
+	47, // 54: saas.accounts.v1.CompleteDatasourceAccountLinkResponse.link:type_name -> saas.accounts.v1.DatasourceAccountLink
+	47, // 55: saas.accounts.v1.ListMyDatasourceAccountLinksResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
+	47, // 56: saas.accounts.v1.GetDatasourceDirectoryResponse.links:type_name -> saas.accounts.v1.DatasourceAccountLink
+	48, // 57: saas.accounts.v1.GetDatasourceDirectoryResponse.bindings:type_name -> saas.accounts.v1.DatasourceGroupBinding
+	49, // 58: saas.accounts.v1.GetDatasourceDirectoryResponse.domains:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
+	50, // 59: saas.accounts.v1.GetDatasourceDirectoryResponse.teams:type_name -> saas.accounts.v1.DatasourceDirectoryTeam
+	48, // 60: saas.accounts.v1.BindDatasourceGroupResponse.binding:type_name -> saas.accounts.v1.DatasourceGroupBinding
+	49, // 61: saas.accounts.v1.ClaimDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
+	49, // 62: saas.accounts.v1.VerifyDatasourceDomainResponse.domain:type_name -> saas.accounts.v1.DatasourceVerifiedDomain
+	76, // 63: saas.accounts.v1.SourceDelegation.created_at:type_name -> google.protobuf.Timestamp
+	76, // 64: saas.accounts.v1.SourceDelegation.revoked_at:type_name -> google.protobuf.Timestamp
+	10, // 65: saas.accounts.v1.SourceDelegation.revocation:type_name -> saas.accounts.v1.SourceDelegationRevocation
+	71, // 66: saas.accounts.v1.ListSourceDelegationsResponse.delegations:type_name -> saas.accounts.v1.SourceDelegation
+	71, // 67: saas.accounts.v1.RevokeSourceDelegationResponse.delegation:type_name -> saas.accounts.v1.SourceDelegation
+	17, // 68: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
+	19, // 69: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
+	24, // 70: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
+	26, // 71: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
+	28, // 72: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
+	30, // 73: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
+	32, // 74: saas.accounts.v1.DatasourceService.GetSourceSync:input_type -> saas.accounts.v1.GetSourceSyncRequest
+	38, // 75: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
+	41, // 76: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:input_type -> saas.accounts.v1.BeginGitHubAppSetupRequest
+	43, // 77: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:input_type -> saas.accounts.v1.CompleteGitHubAppSetupRequest
+	45, // 78: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:input_type -> saas.accounts.v1.MigrateGitHubSourceToAppRequest
+	51, // 79: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:input_type -> saas.accounts.v1.BeginDatasourceAccountLinkRequest
+	53, // 80: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:input_type -> saas.accounts.v1.CompleteDatasourceAccountLinkRequest
+	55, // 81: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:input_type -> saas.accounts.v1.ListMyDatasourceAccountLinksRequest
+	57, // 82: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:input_type -> saas.accounts.v1.DeleteDatasourceAccountLinkRequest
+	59, // 83: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:input_type -> saas.accounts.v1.GetDatasourceDirectoryRequest
+	61, // 84: saas.accounts.v1.DatasourceService.BindDatasourceGroup:input_type -> saas.accounts.v1.BindDatasourceGroupRequest
+	63, // 85: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:input_type -> saas.accounts.v1.UnbindDatasourceGroupRequest
+	65, // 86: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:input_type -> saas.accounts.v1.ClaimDatasourceDomainRequest
+	67, // 87: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:input_type -> saas.accounts.v1.VerifyDatasourceDomainRequest
+	69, // 88: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:input_type -> saas.accounts.v1.DeleteDatasourceDomainRequest
+	72, // 89: saas.accounts.v1.DatasourceService.ListSourceDelegations:input_type -> saas.accounts.v1.ListSourceDelegationsRequest
+	74, // 90: saas.accounts.v1.DatasourceService.RevokeSourceDelegation:input_type -> saas.accounts.v1.RevokeSourceDelegationRequest
+	18, // 91: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
+	20, // 92: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
+	25, // 93: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
+	27, // 94: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
+	29, // 95: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
+	31, // 96: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
+	37, // 97: saas.accounts.v1.DatasourceService.GetSourceSync:output_type -> saas.accounts.v1.GetSourceSyncResponse
+	39, // 98: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
+	42, // 99: saas.accounts.v1.DatasourceService.BeginGitHubAppSetup:output_type -> saas.accounts.v1.BeginGitHubAppSetupResponse
+	44, // 100: saas.accounts.v1.DatasourceService.CompleteGitHubAppSetup:output_type -> saas.accounts.v1.CompleteGitHubAppSetupResponse
+	46, // 101: saas.accounts.v1.DatasourceService.MigrateGitHubSourceToApp:output_type -> saas.accounts.v1.MigrateGitHubSourceToAppResponse
+	52, // 102: saas.accounts.v1.DatasourceService.BeginDatasourceAccountLink:output_type -> saas.accounts.v1.BeginDatasourceAccountLinkResponse
+	54, // 103: saas.accounts.v1.DatasourceService.CompleteDatasourceAccountLink:output_type -> saas.accounts.v1.CompleteDatasourceAccountLinkResponse
+	56, // 104: saas.accounts.v1.DatasourceService.ListMyDatasourceAccountLinks:output_type -> saas.accounts.v1.ListMyDatasourceAccountLinksResponse
+	58, // 105: saas.accounts.v1.DatasourceService.DeleteDatasourceAccountLink:output_type -> saas.accounts.v1.DeleteDatasourceAccountLinkResponse
+	60, // 106: saas.accounts.v1.DatasourceService.GetDatasourceDirectory:output_type -> saas.accounts.v1.GetDatasourceDirectoryResponse
+	62, // 107: saas.accounts.v1.DatasourceService.BindDatasourceGroup:output_type -> saas.accounts.v1.BindDatasourceGroupResponse
+	64, // 108: saas.accounts.v1.DatasourceService.UnbindDatasourceGroup:output_type -> saas.accounts.v1.UnbindDatasourceGroupResponse
+	66, // 109: saas.accounts.v1.DatasourceService.ClaimDatasourceDomain:output_type -> saas.accounts.v1.ClaimDatasourceDomainResponse
+	68, // 110: saas.accounts.v1.DatasourceService.VerifyDatasourceDomain:output_type -> saas.accounts.v1.VerifyDatasourceDomainResponse
+	70, // 111: saas.accounts.v1.DatasourceService.DeleteDatasourceDomain:output_type -> saas.accounts.v1.DeleteDatasourceDomainResponse
+	73, // 112: saas.accounts.v1.DatasourceService.ListSourceDelegations:output_type -> saas.accounts.v1.ListSourceDelegationsResponse
+	75, // 113: saas.accounts.v1.DatasourceService.RevokeSourceDelegation:output_type -> saas.accounts.v1.RevokeSourceDelegationResponse
+	91, // [91:114] is the sub-list for method output_type
+	68, // [68:91] is the sub-list for method input_type
+	68, // [68:68] is the sub-list for extension type_name
+	68, // [68:68] is the sub-list for extension extendee
+	0,  // [0:68] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_datasource_proto_init() }
@@ -5459,13 +5914,14 @@ func file_saas_accounts_v1_datasource_proto_init() {
 		(*AddSourceRequest_BoundaryNodeId)(nil),
 		(*AddSourceRequest_CollectionLabel)(nil),
 	}
+	file_saas_accounts_v1_datasource_proto_msgTypes[61].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_datasource_proto_rawDesc), len(file_saas_accounts_v1_datasource_proto_rawDesc)),
-			NumEnums:      10,
-			NumMessages:   60,
+			NumEnums:      11,
+			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

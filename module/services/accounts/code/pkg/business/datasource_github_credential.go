@@ -337,8 +337,12 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 		// The store dropped a public source's credential-less marker with the
 		// envelope write; the returned source must say the same.
 		source.GitHubCredentialKind = ""
-		return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", id, orgID,
-			map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindApp})
+		if err := s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", id, orgID,
+			map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindApp}); err != nil {
+			return err
+		}
+		// Re-pointing the credential is a reconnect (see SyncDatasourceSource).
+		return s.recordSourceDelegationsTx(ctx, actorID, orgID, id)
 	}); err != nil {
 		return nil, err
 	}

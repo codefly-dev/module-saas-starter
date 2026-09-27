@@ -51,6 +51,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration
               - /saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext
               - /saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration
+              - /saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext
               - /saas.accounts.v1.ModuleCapabilitiesService/NackJob
               - /saas.accounts.v1.ModuleCapabilitiesService/NotifyUser
               - /saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord

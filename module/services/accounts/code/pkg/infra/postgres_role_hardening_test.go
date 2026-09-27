@@ -72,7 +72,8 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"github_app_setups":                    {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"github_app_installations":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
-	"domain_events":                        {selectRows: true}, // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
+	"source_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
+	"domain_events":                        {selectRows: true},                                     // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
 	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all
@@ -368,6 +369,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// a monotonic cursor revision. The control plane reads, inserts,
 			// and updates both; organization deletion uses the FK cascade.
 			if relation == "approval_requests" || relation == "source_read_revisions" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// source_delegations are revoked, never deleted: the record of what a
+			// person delegated outlives the source and the person it names.
+			// Organization deletion removes them through the FK cascade.
+			if relation == "source_delegations" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// approval_decisions is append-only like actor_chain_journal: read and

@@ -243,6 +243,38 @@ type Store interface {
 	ListDatasourceDomains(ctx context.Context, orgID string) ([]*DatasourceDomain, error)
 	GetDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
 	MarkDatasourceDomainVerified(ctx context.Context, orgID, id string, at time.Time) error
+
+	// Source delegations (source_delegation.go, migration 9). The tenant-facing
+	// calls run inside the organization's transaction; the module-facing mint
+	// and revision check run under the control plane and name the organization
+	// in every predicate themselves.
+	//
+	// InsertSourceDelegation records one active delegation. A second active
+	// delegation for the same source and module is refused by the database.
+	InsertSourceDelegation(ctx context.Context, delegation *SourceDelegation) error
+	// RevokeSourceDelegations stamps every ACTIVE delegation the filter matches
+	// as revoked, and returns the rows it revoked. It never reopens or rewrites
+	// one already revoked.
+	RevokeSourceDelegations(ctx context.Context, filter SourceDelegationFilter, reason, revokedBy string) ([]*SourceDelegation, error)
+	// ListSourceDelegations lists the org's delegations, newest first; one
+	// source's when sourceID is set, and only active ones unless includeRevoked.
+	ListSourceDelegations(ctx context.Context, orgID, sourceID string, includeRevoked bool) ([]*SourceDelegation, error)
+	// GetSourceDelegation reads one delegation by id in orgID, or by id alone
+	// when orgID is empty (control plane only). Nil when there is none.
+	GetSourceDelegation(ctx context.Context, orgID, id string) (*SourceDelegation, error)
+	// ActiveSourceDelegation is the active delegation of one source to one
+	// module, nil when there is none (control plane).
+	ActiveSourceDelegation(ctx context.Context, sourceID, modulePrefix string) (*SourceDelegation, error)
+	// ActiveSourceDelegationsForPrincipal lists one person's active delegations
+	// in orgID to one module (control plane).
+	ActiveSourceDelegationsForPrincipal(ctx context.Context, orgID, principalID, modulePrefix string) ([]*SourceDelegation, error)
+	// SourceDelegationFacts reads, in one statement, the current facts a
+	// delegation is re-checked against (control plane).
+	SourceDelegationFacts(ctx context.Context, orgID, principalID, sourceID string) (*SourceDelegationFacts, error)
+	// SourceDelegationMemberRole is the person's current role in orgID ("owner",
+	// "admin", "member"), empty when they are not a member. Runs inside the
+	// organization's transaction.
+	SourceDelegationMemberRole(ctx context.Context, orgID, userID string) (string, error)
 	// DeleteDatasourceDomain returns the removed domain, nil if none.
 	DeleteDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
 	// LinkedDatasourceUsers maps provider account ids to linked host users.

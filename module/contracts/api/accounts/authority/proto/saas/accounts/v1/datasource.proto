@@ -867,6 +867,72 @@ message DeleteDatasourceDomainRequest {
 
 message DeleteDatasourceDomainResponse {}
 
+// SourceDelegationRevocation says why a source delegation stopped delegating.
+enum SourceDelegationRevocation {
+  SOURCE_DELEGATION_REVOCATION_UNSPECIFIED = 0;
+  // An org administrator revoked it (RevokeSourceDelegation).
+  SOURCE_DELEGATION_REVOCATION_REVOKED = 1;
+  // The source was reconnected; a delegation under the reconnecting person
+  // replaced this one.
+  SOURCE_DELEGATION_REVOCATION_REPLACED = 2;
+  // The source was deleted.
+  SOURCE_DELEGATION_REVOCATION_SOURCE_DELETED = 3;
+  // The person who connected it is no longer a member of the organization.
+  SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED = 4;
+  // The person is a member but no longer an owner or admin, the role
+  // connecting a source requires.
+  SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST = 5;
+  // The person's account is deleted or suspended.
+  SOURCE_DELEGATION_REVOCATION_USER_INACTIVE = 6;
+  // The module no longer declares the binding, or its audience or delegation
+  // scopes changed since the person connected.
+  SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED = 7;
+}
+
+// SourceDelegation records that a person, by connecting a source, delegated
+// its sync to one installed operation binding of a consuming module. Which
+// module and binding is declared configuration, never chosen by a caller.
+message SourceDelegation {
+  string id = 1;
+  string source_id = 2;
+  // principal_id is the person who connected (or last reconnected) the source.
+  string principal_id = 3;
+  // module is the consuming module's registration prefix.
+  string module = 4;
+  // binding is the key of the module's operation_audiences entry the
+  // delegation confers the source_delegation_scopes of.
+  string binding = 5;
+  google.protobuf.Timestamp created_at = 6;
+  // revoked_at is unset while the delegation is active.
+  google.protobuf.Timestamp revoked_at = 7;
+  SourceDelegationRevocation revocation = 8;
+  // revoked_by is the person whose action revoked it; empty when the host
+  // revoked it on finding it no longer supported.
+  string revoked_by = 9;
+}
+
+message ListSourceDelegationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // source_id narrows the listing to one source.
+  optional string source_id = 2 [(buf.validate.field).string.uuid = true];
+  // include_revoked lists revoked delegations too, with why they ended.
+  bool include_revoked = 3;
+}
+
+message ListSourceDelegationsResponse {
+  // Newest first.
+  repeated SourceDelegation delegations = 1;
+}
+
+message RevokeSourceDelegationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message RevokeSourceDelegationResponse {
+  SourceDelegation delegation = 1;
+}
+
 // DatasourceService is the tenant-facing surface a solution drives (directly or
 // through the generated SDK) to declare and operate connected datasources.
 service DatasourceService {
@@ -1329,6 +1395,52 @@ service DatasourceService {
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "saas.datasource.domain_removed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSourceDelegations lists the organization's source delegations: which
+  // source, which person, which module and binding, when, and — for a revoked
+  // one — when and why it ended.
+  rpc ListSourceDelegations(ListSourceDelegationsRequest) returns (ListSourceDelegationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // RevokeSourceDelegation revokes one of the organization's source
+  // delegations. The module can no longer mint from it; the source syncs again
+  // only once a person reconnects it. Revoking one already revoked changes
+  // nothing.
+  rpc RevokeSourceDelegation(RevokeSourceDelegationRequest) returns (RevokeSourceDelegationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.delegation.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
