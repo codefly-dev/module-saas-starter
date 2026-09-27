@@ -405,6 +405,39 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.delegation.created": {
+      "address": "saas.datasource.delegation.created",
+      "title": "saas.datasource.delegation.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.delegation.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.delegation.revoked": {
+      "address": "saas.datasource.delegation.revoked",
+      "title": "saas.datasource.delegation.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.delegation.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.delegation.used": {
+      "address": "saas.datasource.delegation.used",
+      "title": "saas.datasource.delegation.used",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.delegation.used"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.domain_claimed": {
       "address": "saas.datasource.domain_claimed",
       "title": "saas.datasource.domain_claimed",
@@ -2176,6 +2209,27 @@
       },
       "title": "saas publishes saas.datasource.credential.updated"
     },
+    "send:saas.datasource.delegation.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.delegation.created"
+      },
+      "title": "saas publishes saas.datasource.delegation.created"
+    },
+    "send:saas.datasource.delegation.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.delegation.revoked"
+      },
+      "title": "saas publishes saas.datasource.delegation.revoked"
+    },
+    "send:saas.datasource.delegation.used": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.delegation.used"
+      },
+      "title": "saas publishes saas.datasource.delegation.used"
+    },
     "send:saas.datasource.domain_claimed": {
       "action": "send",
       "channel": {
@@ -3386,6 +3440,27 @@
       "saas.datasource.credential.updated": {
         "name": "saas.datasource.credential.updated",
         "title": "saas.datasource.credential.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.delegation.created": {
+        "name": "saas.datasource.delegation.created",
+        "title": "saas.datasource.delegation.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.delegation.revoked": {
+        "name": "saas.datasource.delegation.revoked",
+        "title": "saas.datasource.delegation.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.delegation.used": {
+        "name": "saas.datasource.delegation.used",
+        "title": "saas.datasource.delegation.used",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

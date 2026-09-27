@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:f62b415287dd7c61cf7537bd89069ee53a01bd244b2bdc7fbac3a30d63972969",
+      "digest": "sha256:a19b4bee7be55a3f002d03adaa74f258460194829ff795045a5800b02882d2d9",
       "services": [
         {
           "name": "APIKeyService",
@@ -122,8 +122,10 @@
             "/saas.accounts.v1.DatasourceService/GetSource",
             "/saas.accounts.v1.DatasourceService/GetSourceSync",
             "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
+            "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
             "/saas.accounts.v1.DatasourceService/ListSources",
             "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+            "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
             "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
@@ -232,6 +234,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
             "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
@@ -466,7 +469,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:f62b415287dd7c61cf7537bd89069ee53a01bd244b2bdc7fbac3a30d63972969",
+      "digest": "sha256:a19b4bee7be55a3f002d03adaa74f258460194829ff795045a5800b02882d2d9",
       "services": [
         {
           "name": "APIKeyService",
@@ -578,8 +581,10 @@
             "/saas.accounts.v1.DatasourceService/GetSource",
             "/saas.accounts.v1.DatasourceService/GetSourceSync",
             "/saas.accounts.v1.DatasourceService/ListMyDatasourceAccountLinks",
+            "/saas.accounts.v1.DatasourceService/ListSourceDelegations",
             "/saas.accounts.v1.DatasourceService/ListSources",
             "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+            "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
             "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
@@ -688,6 +693,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
             "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
@@ -922,7 +928,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:e567933bbffb4001803bd01a9148eb19dc6977910caa676ce74d1ec15d17fb01",
+      "digest": "sha256:1e16c229254bdd9f81ab4bdda478351db06a1edad36d6899938e72ea39b363da",
       "services": [
         {
           "name": "AuthGatewayService",
