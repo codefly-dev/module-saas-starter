@@ -171,8 +171,8 @@ test("report passes when the pushed range carries only no-reply identities", () 
 });
 
 test("report fails on a squash author that landed on main, without printing the address", () => {
-  // GitHub takes a squash commit's author from the merging account's profile email, so a personal
-  // address lands on main even when every branch commit the pull-request run saw was clean.
+  // GitHub takes a squash commit's author from the pull request author's account email, so a
+  // personal address lands on main even when every branch commit the pull-request run saw was clean.
   withRepo((root) => {
     const before = git(root, ["rev-parse", "HEAD"]).trim();
     commitAs(root, "feat: squashed", "jane@example.com");
@@ -182,11 +182,16 @@ test("report fails on a squash author that landed on main, without printing the 
     // Its remediation is the account setting or a declaration, never a rewrite the landed commit can no longer take.
     assert.match(out.stderr, /Keep my email address/i);
     assert.doesNotMatch(out.stderr, /rebase/i);
+    // It names who owns the landed address — the pull request's author — not the merger: that is
+    // the account whose setting, or whose declaration, prevents the next one.
+    assert.match(out.stderr, /pull request author's account email/);
+    assert.match(out.stderr, /not from whoever merges it/);
+    assert.doesNotMatch(out.stderr, /merging account/);
   });
 });
 
-// The owner may accept an address beyond GitHub's no-reply forms (the merging account's own, which
-// GitHub puts on every squash). It is declared as a digest, never written, and accepted exactly.
+// The owner may accept an address beyond GitHub's no-reply forms (a pull request author's own, which
+// GitHub puts on that author's squash). It is declared as a digest, never written, and accepted exactly.
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 
 test("a declared address is accepted on both fields; an undeclared one still fails", () => {

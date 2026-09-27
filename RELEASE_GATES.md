@@ -512,11 +512,12 @@ address with a note saying whose it is and why, never the address itself, so the
 tree carries no organization name; the gate reads it strictly and fails closed on
 a malformed file.
 
-GitHub writes a squash commit's author from the *merging account's* profile
-email, not from the commit it squashes. That address is what lands on `main`, so
-the merging account either merges with **Settings → Emails → "Keep my email
-address private"** switched on, or its address is declared. The owner has
-declared the merging account's contribution address.
+GitHub writes a squash commit's author from the *pull request author's* account
+email — not from the commits it squashes, and not from whoever merges it. That
+address is what lands on `main`, so every contributor either opens pull requests
+with **Settings → Emails → "Keep my email address private"** switched on, or the
+owner declares their address. The owner has declared their own contribution
+address; a contributor's is the owner's decision, per person.
 
 The gate runs on `pull_request`, from the *current* base tip to the head sha; over
 that range it fails, because those commits are still the contributor's to rewrite.
