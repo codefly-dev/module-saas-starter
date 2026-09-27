@@ -59,7 +59,7 @@ func runSessionStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
-	setupDone := testdb.Measure("auth-db", "dependency-setup", []string{"store"}, 120*time.Second)
+	setupDone := testdb.MeasureSetup("auth-db", []string{"store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
@@ -68,7 +68,7 @@ func runSessionStoreTests(m *testing.M) int {
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),
 	)
-	setupDone(err != nil)
+	setupDone(err)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1

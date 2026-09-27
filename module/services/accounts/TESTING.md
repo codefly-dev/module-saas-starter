@@ -30,13 +30,12 @@ With `go test -v`, database harnesses emit JSON timing records to stderr for
 elapsed milliseconds, readiness budget and failure status. A failed dependency
 setup emits no execution record. Go compilation precedes these records and
 fixture initialization sits between setup and execution. These records do not
-claim to measure either. Codefly's flow status carries a single readiness flag in
-both the pinned Core release and the latest one, so naming the service that
-exceeded its budget needs new SDK/CLI lifecycle evidence, not a dependency bump.
-That signal is requested in [Core #476](https://github.com/codefly-dev/core/issues/476).
-A test pins `FlowStatus` to its single field, so a signal carried there fails it;
-one delivered as a new message or streaming RPC would not. Re-read this section
-when #476 lands rather than trusting that test to notice.
+claim to measure either. A failed setup record also names the service it is
+attributable to, from the per-service readiness Core reports
+([Core #476](https://github.com/codefly-dev/core/issues/476)): `pending` lists
+the services that had not become ready when the budget ran out, and
+`failed_to_start` the ones the flow reported it cannot start. Both are absent
+when setup failed before readiness was evaluated.
 Keep the Codefly debug log with failures.
 
 ### Isolated request-pool qualification

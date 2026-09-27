@@ -105,7 +105,7 @@ func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
-	setupDone := testdb.Measure("business-db", "dependency-setup", []string{"store", "vault"}, 5*time.Minute)
+	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 5*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
@@ -121,7 +121,7 @@ func runBusinessTests(m *testing.M) int {
 		sdk.WithTimeout(5*time.Minute),
 		sdk.WithSilence("store"),
 	)
-	setupDone(err != nil)
+	setupDone(err)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1

@@ -383,12 +383,14 @@ module-trust:
   repositories:
     codefly/saas-starter: https://github.com/codefly-dev/module-saas-starter
   signers:
-    https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main: <base64 Ed25519 public key>
+    codefly/saas-starter:
+      https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main: <base64 Ed25519 public key>
 ```
 
 `codefly/saas-starter` is the package id from
 `module/module.package.codefly.yaml`; the signer is the workflow identity the
-release was signed under. Every `module-package/vX.Y.Z` release publishes both
+release was signed under, scoped to that package id so its key vouches for no
+other package. Every `module-package/vX.Y.Z` release publishes both
 with the public key filled in — copy the block out of the release notes, or
 download the release's `module-trust.yaml` asset, which is written during
 signing from the key the signature was verified against and so always matches

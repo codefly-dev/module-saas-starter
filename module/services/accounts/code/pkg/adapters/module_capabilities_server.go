@@ -10,7 +10,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
-	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -44,7 +44,7 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 	if !ok {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
-	values := md.Get(codefly.WorkContextHeaderName)
+	values := md.Get(workcontext.WorkContextHeaderName)
 	if len(values) == 0 || values[0] == "" {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
