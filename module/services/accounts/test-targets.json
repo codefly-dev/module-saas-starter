@@ -156,6 +156,39 @@
         "module/module.codefly.yaml"
       ],
       "complete": false
+    },
+    {
+      "suite": "redis-db",
+      "phase": "test",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "./pkg/redisintegration"
+      ],
+      "runtime_services": [
+        "cache",
+        "store"
+      ],
+      "setup_budget_seconds": 120,
+      "input_roots": [
+        "module/services/accounts/",
+        "module/services/store/migrations/",
+        "module/tools/",
+        "module/deployment/",
+        "module/configurations/",
+        "module/module.package.codefly.yaml",
+        "module/services/store/",
+        "module/services/cache/",
+        "module/services/vault/",
+        "module/contracts/",
+        "module/generated/",
+        "module/fixtures/",
+        "module/public/",
+        "module/flake.nix",
+        "module/module.codefly.yaml"
+      ],
+      "complete": false
     }
   ]
 }

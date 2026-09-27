@@ -12,7 +12,10 @@ application-settable bypass is gone, replaced by the `app_control_plane` role.
 > Layered on top of:
 >
 > - cache: tenant-scoped key prefixes (`pkg/cache/cache.go:Scoped`,
->   `TenantPrefix`, `UserPrefix`) — already shipped.
+>   `TenantPrefix`, `UserPrefix`) — already shipped. *(Since removed, #927: the
+>   org-membership cache moved to a codefly.dev/cache stack in
+>   `pkg/membership`, which partitions every key by tenant, and nothing else
+>   used the helpers.)*
 > - handler authz: `requireOrgAdmin` / `requireOrgMember` /
 >   `requireScope` — already shipped.
 

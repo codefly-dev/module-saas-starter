@@ -38,27 +38,28 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
-	"accounts/pkg/cache"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/membership"
+	"accounts/pkg/redisstate"
 )
 
-// orgMembershipCache is wired from adapters.WithService when the cache
-// service is reachable. Nil means "no cache" — all auth helpers fall
-// back to a direct DB call with no behavior change. Never short-circuit
-// a cache error to a 5xx; the DB is always truth.
-var orgMembershipCache *cache.OrgMembershipCache
+// orgMembershipCache is wired from work.go when the cache dependency is.
+// Nil means "no cache" — all auth helpers fall back to a direct DB call
+// with no behavior change. The stack degrades a Redis failure to the
+// store itself; the DB is always truth.
+var orgMembershipCache *membership.Cache
 
 // rateLimiter is the shared per-key request-budget tracker. Wired in
 // work.go (or stays nil when no Redis is configured, in which case
 // the rate-limit interceptor falls through to allow-all).
-var rateLimiter *cache.RateLimiter
+var rateLimiter *redisstate.RateLimiter
 
 var recentStepUpMaxAge = auth.DefaultRecentStepUpMaxAge
 
 // WithRateLimiter installs the rate limiter. Idempotent — pass nil
 // to disable. Only safe to call before the gRPC + Connect servers
 // register their interceptors (which the work.go boot order does).
-func WithRateLimiter(r *cache.RateLimiter) { rateLimiter = r }
+func WithRateLimiter(r *redisstate.RateLimiter) { rateLimiter = r }
 
 // SetRecentStepUpMaxAge installs the operator-selected freshness window.
 // Startup validates the Codefly-provided duration before calling this setter.
@@ -71,13 +72,13 @@ func SetRecentStepUpMaxAge(maxAge time.Duration) {
 // WithOrgMembershipCache lets the main() wire a cache after the service
 // is constructed. Separate from WithService so caching is opt-in: a
 // dev running without Redis just doesn't call this.
-func WithOrgMembershipCache(c *cache.OrgMembershipCache) {
+func WithOrgMembershipCache(c *membership.Cache) {
 	orgMembershipCache = c
 }
 
-// lookupMembership consults cache first, falls back to DB, and fills
-// the cache on DB hit. Returns (role, err) where role == "" + err == nil
-// means "verified not-a-member" (still cached as a negative entry).
+// lookupMembership reads through the membership cache when one is wired,
+// and straight from the DB otherwise. Returns (role, err) where role == ""
+// + err == nil means "verified not-a-member" (cached as a negative entry).
 //
 // The Store read goes through service-postgres in production. It derives
 // tenant/user from the verified request principal, checks these artifact IDs
@@ -85,33 +86,22 @@ func WithOrgMembershipCache(c *cache.OrgMembershipCache) {
 func lookupMembership(ctx context.Context, orgID, userID string) (string, error) {
 	// A cache is an optimization, not an authority. Validate the requested
 	// tuple against the private identity installed by the trusted auth
-	// interceptor before even constructing a Redis key. service-postgres
+	// interceptor before any cache layer is consulted. service-postgres
 	// repeats this invariant on cache miss before it opens a DB transaction.
 	if err := auth.RequireVerifiedDatabaseScope(ctx, orgID, userID); err != nil {
 		return "", err
 	}
 	if orgMembershipCache != nil {
-		if m, err := orgMembershipCache.Get(ctx, orgID, userID); err == nil {
-			return m.Role, nil
-		}
-		// ErrNotFound or any cache error → fall through to DB. We don't
-		// distinguish: the DB is always truth, and cache failures should
-		// never block an authorized request.
+		return orgMembershipCache.Role(ctx, orgID, userID)
 	}
-	membership, err := service.Store().GetOrgMembership(ctx, orgID, userID)
+	found, err := service.Store().GetOrgMembership(ctx, orgID, userID)
 	if err != nil {
 		return "", err
 	}
-	var role string
-	if membership != nil {
-		role = membership.Role.String()
+	if found == nil {
+		return "", nil
 	}
-	if orgMembershipCache != nil {
-		// Cache negative lookups too — saves DB hits for "not a member"
-		// probes that would otherwise bypass the cache on every request.
-		_ = orgMembershipCache.Set(ctx, orgID, userID, &cache.OrgMembership{Role: role})
-	}
-	return role, nil
+	return found.Role.String(), nil
 }
 
 func membershipLookupStatus(message string, err error) error {

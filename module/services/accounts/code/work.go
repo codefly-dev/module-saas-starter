@@ -15,15 +15,16 @@ import (
 	"accounts/pkg/billing"
 	pgbilling "accounts/pkg/billing/pg"
 	"accounts/pkg/business"
-	"accounts/pkg/cache"
 	"accounts/pkg/datasource"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
+	"accounts/pkg/membership"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
+	"accounts/pkg/redisstate"
 	"accounts/pkg/vaultconnection"
 	"context"
 	ed25519core "crypto/ed25519"
@@ -41,6 +42,7 @@ import (
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
+	otelmetric "go.opentelemetry.io/otel/metric"
 )
 
 func init() {
@@ -628,31 +630,56 @@ func doWork(ctx context.Context) (Clean, error) {
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
 
-	// Cache wiring — optional. When the `cache` dependency is declared in
-	// service.codefly.yaml and Redis is reachable, org-membership lookups
-	// get a 30s TTL cache backed by Redis (per-tenant keyed as
-	// "orgmember:<orgID>:<userID>"). When the dep is absent or Redis is
-	// unreachable, NewRedisCache returns nil and the app runs without
-	// caching — zero behavior change, just slower auth checks.
+	// Redis wiring. accounts declares the `cache` dependency, and one client on
+	// it carries two different things:
+	//
+	//   - org membership, a CACHE of the store: a codefly.dev/cache stack
+	//     (in-process tier, the shared Redis layer, the store as origin) that
+	//     every membership mutation invalidates across replicas;
+	//   - revocation markers, OAuth nonces and rate-limit counters, which are
+	//     authoritative STATE with no origin behind them (pkg/redisstate) and
+	//     fail closed on a Redis error. That server must run noeviction.
+	//
+	// A connection that is missing, unreadable or malformed fails boot: it is a
+	// configuration error, and running on would drop revocation silently. A
+	// server that cannot be REACHED is not: the membership stack retries for a
+	// bounded time, then runs store-only (every membership read goes to the
+	// store, which is never stale), loudly, while revocation and nonces keep
+	// failing closed per request until Redis answers.
 	var closeCache func() error
 	rateLimiterWired := false
-	if redisCache, c, rerr := infra.NewRedisCache(ctx); rerr == nil && redisCache != nil {
-		orgCache := cache.NewOrgMembershipCache(redisCache)
-		adapters.WithOrgMembershipCache(orgCache)
-		service.SetMembershipInvalidator(adapters.NewCacheInvalidator())
-		// Wire Redis-backed access-token revocation. Without this,
-		// Logout only kills the refresh chain — old access tokens
-		// remain valid until natural expiry (15 min default).
-		minter.SetRevoker(cache.NewTokenRevoker(redisCache))
-		// Redis-backed OAuth-state one-shot list so a captured state can't be
-		// replayed within its TTL across replicas (the in-memory default only
-		// covers a single process).
-		stateSigner.SetNonceConsumer(cache.NewOAuthNonceConsumer(redisCache))
-		// Per-org / per-API-key rate limiting. Falls back to
-		// allow-all if redisCache is nil (no Redis available).
-		adapters.WithRateLimiter(cache.NewRateLimiter(redisCache))
-		rateLimiterWired = true
-		closeCache = c
+	redisClient, err := infra.NewRedisClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	membershipCache, err := membership.Connect(ctx, infra.MembershipCacheLayer(redisClient), store, membership.BootRetry,
+		membership.WithEviction(infra.LegacyMembershipKeyEvictor(redisClient)))
+	if err != nil {
+		_ = redisClient.Close()
+		return nil, fmt.Errorf("org membership cache: %w", err)
+	}
+	if cause := membershipCache.StoreOnly(); cause != nil {
+		w.Error("ORG MEMBERSHIP CACHE IS STORE-ONLY — Redis could not be reached at boot, so every membership check reads the store until this replica restarts", wool.ErrField(cause))
+	}
+	registerMembershipCacheHealth(membershipCache)
+	adapters.WithOrgMembershipCache(membershipCache)
+	service.SetMembershipInvalidator(adapters.NewCacheInvalidator())
+	state := redisstate.NewRedis(redisClient)
+	// Wire Redis-backed access-token revocation. Without this,
+	// Logout only kills the refresh chain — old access tokens
+	// remain valid until natural expiry (15 min default).
+	minter.SetRevoker(redisstate.NewTokenRevoker(state))
+	// Redis-backed OAuth-state one-shot list so a captured state can't be
+	// replayed within its TTL across replicas (the in-memory default only
+	// covers a single process).
+	stateSigner.SetNonceConsumer(redisstate.NewOAuthNonceConsumer(state))
+	// Per-org / per-API-key rate limiting. Falls back to
+	// allow-all if the Redis call fails.
+	adapters.WithRateLimiter(redisstate.NewRateLimiter(state))
+	rateLimiterWired = true
+	closeCache = func() error {
+		membershipCache.Close()
+		return redisClient.Close()
 	}
 	if anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired) {
 		w.Warn("ANONYMOUS ENDPOINTS UNPROTECTED — abuse protection is disabled AND no Redis rate limiter is wired, so Authenticate/RegisterUser/JoinWaitlist/SendMagicLink have NO app-layer throttle; enable ABUSE_PROTECTION_MODE=turnstile or wire the cache dependency before serving production traffic")
@@ -1994,4 +2021,31 @@ func configureModuleIdentity(service *business.Service) error {
 	}
 	service.SetModuleIdentitySecrets(secrets)
 	return nil
+}
+
+// registerMembershipCacheHealth makes a store-only membership cache visible
+// beyond the boot log: a degraded `membership-cache` component on /v1/status
+// (still 200 — the replica serves, from the store) and the
+// saas.accounts.membership_cache.store_only gauge (1 while store-only).
+func registerMembershipCacheHealth(c *membership.Cache) {
+	adapters.RegisterStatusProbe(adapters.StatusProbe{
+		Name:  "membership-cache",
+		Check: func(context.Context) error { return c.StoreOnly() },
+	})
+	gauge, err := otel.Meter("github.com/codefly-dev/module-saas-starter/accounts").Int64ObservableGauge(
+		"saas.accounts.membership_cache.store_only",
+		otelmetric.WithDescription("1 while org membership reads bypass the cache and go to the store because Redis was unreachable at boot."),
+	)
+	if err != nil {
+		return
+	}
+	_, _ = otel.Meter("github.com/codefly-dev/module-saas-starter/accounts").RegisterCallback(
+		func(_ context.Context, o otelmetric.Observer) error {
+			var storeOnly int64
+			if c.StoreOnly() != nil {
+				storeOnly = 1
+			}
+			o.ObserveInt64(gauge, storeOnly)
+			return nil
+		}, gauge)
 }

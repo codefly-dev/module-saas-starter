@@ -41,7 +41,7 @@ the auth-gateway in front so this code path isn't reached.
 | Auth tokens  | Ed25519 JWT, OWASP refresh-token rotation            |
 | Identity     | WorkOS / Auth0 / Google / generic OIDC (prod), fixture (dev) |
 | Database     | Postgres                                             |
-| Cache        | Redis (org-membership, 30s TTL, invalidation hooks)  |
+| Cache        | codefly.dev/cache stack for org membership: in-process tier + Redis over the store, 30s TTL, cross-replica invalidation. Revocation, OAuth nonces and rate limits are Redis *state* (noeviction), not cache |
 | Secrets      | Vault (signing key + integrations)                   |
 | Email        | Resend (prod), log-only fake (dev)                   |
 | Billing      | Stripe (checkout, portal, webhook)                   |

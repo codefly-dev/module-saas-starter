@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
-	"accounts/pkg/cache"
+	"accounts/pkg/redisstate"
 
 	"github.com/codefly-dev/core/wool"
 )
@@ -52,7 +52,7 @@ func defaultRateLimitConfig() rateLimitConfig {
 
 // rateLimitInterceptor builds the Connect interceptor. limiter may be
 // nil (no Redis wired) — interceptor falls through to allow-all.
-func rateLimitInterceptor(limiter *cache.RateLimiter) connect.UnaryInterceptorFunc {
+func rateLimitInterceptor(limiter *redisstate.RateLimiter) connect.UnaryInterceptorFunc {
 	cfg := defaultRateLimitConfig()
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {

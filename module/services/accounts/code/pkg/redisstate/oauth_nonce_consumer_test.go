@@ -1,4 +1,4 @@
-package cache_test
+package redisstate_test
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"accounts/pkg/cache"
+	"accounts/pkg/redisstate"
 )
 
 func TestOAuthNonceConsumer_FirstUseThenReplay(t *testing.T) {
 	ctx := context.Background()
-	c := cache.NewOAuthNonceConsumer(cache.NewMemory())
+	c := redisstate.NewOAuthNonceConsumer(redisstate.NewMemory())
 
 	first, err := c.Consume(ctx, "nonce-1", time.Minute)
 	require.NoError(t, err)
