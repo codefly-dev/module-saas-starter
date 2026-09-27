@@ -28,9 +28,10 @@ concurrency:
 
 jobs:
   # The pull-request identity step in base-integrity cannot see the squash the merge produces.
-  # GitHub takes a squash commit's author from the merging account's profile email, not from the
-  # commit it squashes, so a branch that passed still lands a personal address on `main` when that
-  # account has not turned on "Keep my email address private" — and that object does not exist
+  # GitHub takes a squash commit's author from the pull request author's account email, not from
+  # the commits it squashes nor from whoever merges, so a branch that passed still lands a personal
+  # address on `main` when that account has not turned on "Keep my email address private" — and
+  # that object does not exist
   # until the merge is performed, after every required check has reported. This push run over the
   # range the push added is the post-merge tripwire: it cannot stop the commit, only report the
   # growth instead of letting the count rise unseen. Scoped to before..sha, never history, so it

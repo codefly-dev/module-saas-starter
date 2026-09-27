@@ -28,9 +28,10 @@
 // reach by construction, which is what makes this the step with no blast radius.
 //
 // `check` cannot see the one identity it most needs to: the squash merge produces. GitHub takes a
-// squash commit's AUTHOR from the merging account's profile email, not from the commit it squashes,
-// so a branch whose every commit `check` passed still lands a personal address on `main` when that
-// account has "Keep my email address private" switched off. That object does not exist until the
+// squash commit's AUTHOR from the pull request author's account email — not from the commits it
+// squashes, and not from whoever merges it — so a branch whose every commit `check` passed still
+// lands a personal address on `main` when the author's account has "Keep my email address private"
+// switched off. That object does not exist until the
 // merge is performed, after every required check has reported, so nothing on the pull request can
 // catch it. `report` is that missing half: run on `push` over the range the push added, it cannot
 // stop the commit — landed, and its identity can no longer be scrubbed — but it turns the growth
@@ -175,10 +176,11 @@ function report(base, tip) {
     console.error(
       `\nFAIL: ${errors.length} identity field(s) already published on main. The commit is landed ` +
         `and its identity can no longer be scrubbed, so this reports the growth rather than ` +
-        `preventing it. GitHub takes a squash commit's author from the merging account's profile ` +
-        `email, so the merging account's address is what lands. Either that account merges with ` +
-        `"Keep my email addresses private" on, or the owner declares its address in ` +
-        `tools/commit-identity.json (as a sha256, with a note) before the next merge.`,
+        `preventing it. GitHub takes a squash commit's author from the pull request author's ` +
+        `account email, not from whoever merges it, so the pull request author's address is what ` +
+        `lands. Either that author turns on "Keep my email addresses private" before opening their ` +
+        `next pull request, or the owner declares the address in tools/commit-identity.json (as a ` +
+        `sha256, with a note).`,
     );
     process.exit(1);
   }
