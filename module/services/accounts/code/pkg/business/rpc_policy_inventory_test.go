@@ -47,6 +47,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
 		"/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
 		"/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
+		"/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
 		"/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
 		"/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
 		"/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",

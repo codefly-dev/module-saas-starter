@@ -69,6 +69,9 @@ const (
 	// ModuleCapabilitiesServiceNotifyUserProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's NotifyUser RPC.
 	ModuleCapabilitiesServiceNotifyUserProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	// ModuleCapabilitiesServiceNotifyOrgAdminsProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's NotifyOrgAdmins RPC.
+	ModuleCapabilitiesServiceNotifyOrgAdminsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins"
 	// ModuleCapabilitiesServiceRequestApprovalProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's RequestApproval RPC.
 	ModuleCapabilitiesServiceRequestApprovalProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
@@ -159,6 +162,9 @@ type ModuleCapabilitiesServiceClient interface {
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
 	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
+	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
+	// see the request.
+	NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
 	// GetApproval returns one approval request on the caller's tenant.
@@ -311,6 +317,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("NotifyUser")),
 			connect.WithClientOptions(opts...),
 		),
+		notifyOrgAdmins: connect.NewClient[v1.ModuleNotifyOrgAdminsRequest, v1.ModuleNotifyOrgAdminsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceNotifyOrgAdminsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("NotifyOrgAdmins")),
+			connect.WithClientOptions(opts...),
+		),
 		requestApproval: connect.NewClient[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceRequestApprovalProcedure,
@@ -435,6 +447,7 @@ type moduleCapabilitiesServiceClient struct {
 	ackJob                             *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
 	nackJob                            *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
 	notifyUser                         *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
+	notifyOrgAdmins                    *connect.Client[v1.ModuleNotifyOrgAdminsRequest, v1.ModuleNotifyOrgAdminsResponse]
 	requestApproval                    *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
 	getApproval                        *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
 	cancelApproval                     *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
@@ -512,6 +525,11 @@ func (c *moduleCapabilitiesServiceClient) NackJob(ctx context.Context, req *conn
 // NotifyUser calls saas.accounts.v1.ModuleCapabilitiesService.NotifyUser.
 func (c *moduleCapabilitiesServiceClient) NotifyUser(ctx context.Context, req *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error) {
 	return c.notifyUser.CallUnary(ctx, req)
+}
+
+// NotifyOrgAdmins calls saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins.
+func (c *moduleCapabilitiesServiceClient) NotifyOrgAdmins(ctx context.Context, req *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error) {
+	return c.notifyOrgAdmins.CallUnary(ctx, req)
 }
 
 // RequestApproval calls saas.accounts.v1.ModuleCapabilitiesService.RequestApproval.
@@ -643,6 +661,9 @@ type ModuleCapabilitiesServiceHandler interface {
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
 	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
+	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
+	// see the request.
+	NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
 	// GetApproval returns one approval request on the caller's tenant.
@@ -791,6 +812,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("NotifyUser")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceNotifyOrgAdminsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceNotifyOrgAdminsProcedure,
+		svc.NotifyOrgAdmins,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("NotifyOrgAdmins")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceRequestApprovalHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceRequestApprovalProcedure,
 		svc.RequestApproval,
@@ -923,6 +950,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceNackJobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceNotifyUserProcedure:
 			moduleCapabilitiesServiceNotifyUserHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceNotifyOrgAdminsProcedure:
+			moduleCapabilitiesServiceNotifyOrgAdminsHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceRequestApprovalProcedure:
 			moduleCapabilitiesServiceRequestApprovalHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceGetApprovalProcedure:
@@ -1010,6 +1039,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) NackJob(context.Context, *c
 
 func (UnimplementedModuleCapabilitiesServiceHandler) NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.NotifyUser is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error) {

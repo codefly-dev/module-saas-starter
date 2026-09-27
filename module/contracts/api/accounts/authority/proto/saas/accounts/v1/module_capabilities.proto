@@ -165,6 +165,39 @@ message ModuleNotifyUserResponse {
   bool delivered = 2;
 }
 
+// ModuleNotifyOrgAdminsRequest notifies the administrators of one tenant — its
+// members holding the admin or owner role, resolved when the call is made — for
+// a condition only an administrator can act on (a revoked delegation, a source
+// that lost access). The module never names a recipient and never learns who
+// they are: the host resolves them and returns none. Category policy applies to
+// each recipient as for NotifyUser, and idempotency_key dedupes redelivery per
+// recipient.
+message ModuleNotifyOrgAdminsRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string title = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 998
+  }];
+  string body = 3 [(buf.validate.field).string.max_len = 8192];
+  // One of the notification types: info, success, warning, error, billing,
+  // security. Empty means info.
+  string type = 4 [(buf.validate.field).string.max_len = 64];
+  string action_url = 5 [(buf.validate.field).string.max_len = 2048];
+  string category = 6 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 32
+  }];
+  string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
+}
+
+// ModuleNotifyOrgAdminsResponse says only whether any administrator received the
+// notification. It is false when the tenant has no administrator or category
+// policy suppressed it for every one; the call still succeeds. It carries no
+// recipient and no count.
+message ModuleNotifyOrgAdminsResponse {
+  bool delivered = 1;
+}
+
 // ---------------------------------------------------------------------------
 // Approvals
 // ---------------------------------------------------------------------------
@@ -993,6 +1026,24 @@ service ModuleCapabilitiesService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
+  // see the request.
+  rpc NotifyOrgAdmins(ModuleNotifyOrgAdminsRequest) returns (ModuleNotifyOrgAdminsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.org_admins_notified"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_INTERNAL
       request_sensitivity: SENSITIVITY_CONFIDENTIAL

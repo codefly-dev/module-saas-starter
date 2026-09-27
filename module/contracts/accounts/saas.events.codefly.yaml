@@ -451,6 +451,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.module.org_admins_notified
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.module.registration_minted
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
