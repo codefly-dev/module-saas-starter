@@ -1070,13 +1070,23 @@ func (x *DeploymentService) GetDependencies() []*ServiceDependency {
 	return nil
 }
 
-// CodeflyEndpoint is one named runtime endpoint and its deployment port.
+// CodeflyEndpoint is one named runtime endpoint and its deployment ports.
+//
+// Two ports, from two owners. `port` is the pod port the process binds, which
+// network and mesh policy match. `service_port` is the Kubernetes Service port
+// Codefly allocates in-cluster, which a route destination names. The Service
+// port, and the pod port of an endpoint that binds its allocation (a go-grpc
+// named endpoint), are an allocation keyed by the name the workspace composes
+// the module under, so they exist only once a composition renders: the
+// module's own repository view leaves them 0, "allocated at render", and the
+// composing render fills both.
 type CodeflyEndpoint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Api           CodeflyAPI             `protobuf:"varint,2,opt,name=api,proto3,enum=saas.catalog.v1.CodeflyAPI" json:"api,omitempty"`
 	Visibility    EndpointVisibility     `protobuf:"varint,3,opt,name=visibility,proto3,enum=saas.catalog.v1.EndpointVisibility" json:"visibility,omitempty"`
 	Port          uint32                 `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
+	ServicePort   uint32                 `protobuf:"varint,5,opt,name=service_port,json=servicePort,proto3" json:"service_port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1135,6 +1145,13 @@ func (x *CodeflyEndpoint) GetVisibility() EndpointVisibility {
 func (x *CodeflyEndpoint) GetPort() uint32 {
 	if x != nil {
 		return x.Port
+	}
+	return 0
+}
+
+func (x *CodeflyEndpoint) GetServicePort() uint32 {
+	if x != nil {
+		return x.ServicePort
 	}
 	return 0
 }
@@ -2535,14 +2552,15 @@ const file_saas_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x11DeploymentService\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12>\n" +
 	"\tendpoints\x18\x02 \x03(\v2 .saas.catalog.v1.CodeflyEndpointR\tendpoints\x12F\n" +
-	"\fdependencies\x18\x03 \x03(\v2\".saas.catalog.v1.ServiceDependencyR\fdependencies\"\xad\x01\n" +
+	"\fdependencies\x18\x03 \x03(\v2\".saas.catalog.v1.ServiceDependencyR\fdependencies\"\xd0\x01\n" +
 	"\x0fCodeflyEndpoint\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12-\n" +
 	"\x03api\x18\x02 \x01(\x0e2\x1b.saas.catalog.v1.CodeflyAPIR\x03api\x12C\n" +
 	"\n" +
 	"visibility\x18\x03 \x01(\x0e2#.saas.catalog.v1.EndpointVisibilityR\n" +
 	"visibility\x12\x12\n" +
-	"\x04port\x18\x04 \x01(\rR\x04port\"K\n" +
+	"\x04port\x18\x04 \x01(\rR\x04port\x12!\n" +
+	"\fservice_port\x18\x05 \x01(\rR\vservicePort\"K\n" +
 	"\x11ServiceDependency\x12\x18\n" +
 	"\aservice\x18\x01 \x01(\tR\aservice\x12\x1c\n" +
 	"\tendpoints\x18\x02 \x03(\tR\tendpoints\"\x8b\x01\n" +

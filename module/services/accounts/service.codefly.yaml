@@ -57,8 +57,11 @@ spec:
     service-account:
         name: accounts
     deployment:
+        # Pod ports, for the ports this service binds at a fixed number. The
+        # authority endpoint declares none: go-grpc binds the port Codefly
+        # allocates for a named endpoint, so its pod port is its deployed
+        # (Service) port, which the render takes from Codefly and never from here.
         endpoint-ports:
-            authority: 9091
             connect: 8080
             grpc: 9090
             rest: 8080

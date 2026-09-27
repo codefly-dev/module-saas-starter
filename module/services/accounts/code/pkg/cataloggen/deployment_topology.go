@@ -120,11 +120,17 @@ type secretServiceConfigurationEntry struct {
 	Key string `yaml:"key"`
 }
 
+// deploymentEndpointBinding is one endpoint of the module's own repository
+// view. Port is the pod port the service binds; it is 0 exactly when the
+// endpoint binds the port Codefly allocates for it (AllocatedAtRender), which
+// depends on the name a workspace composes the module under and so does not
+// exist until a composition renders.
 type deploymentEndpointBinding struct {
-	Name       string `yaml:"name"`
-	API        string `yaml:"api"`
-	Visibility string `yaml:"visibility"`
-	Port       uint32 `yaml:"port"`
+	Name              string `yaml:"name"`
+	API               string `yaml:"api"`
+	Visibility        string `yaml:"visibility"`
+	Port              uint32 `yaml:"port"`
+	AllocatedAtRender bool   `yaml:"allocated_at_render,omitempty"`
 }
 
 type deploymentDependencyBinding struct {
@@ -213,20 +219,13 @@ func validateModuleAuthorityEndpoint(serviceCatalog *catalogv1.ServiceCatalog, b
 	if endpoint.API != "grpc" || endpoint.Visibility != "module" {
 		return fmt.Errorf("service %q endpoint %q must be a gRPC endpoint at module visibility, got api=%q visibility=%q", owner, name, endpoint.API, endpoint.Visibility)
 	}
-	// The endpoint binds a listener of its own, so its port may not be one
-	// another endpoint already binds — unlike `connect` and `rest`, which are
-	// deliberately multiplexed onto one port. A collision is a composition
-	// error and belongs here: the service resolves this port at startup and a
-	// second bind on it would fail after the process is already serving.
-	for _, service := range bindings.Services {
-		if service.Name != owner {
-			continue
-		}
-		for _, other := range service.Endpoints {
-			if other.Name != name && other.Port == endpoint.Port {
-				return fmt.Errorf("service %q endpoint %q binds a listener of its own and cannot share port %d with endpoint %q", owner, name, endpoint.Port, other.Name)
-			}
-		}
+	// The endpoint binds a listener of its own, on the port Codefly allocates
+	// for a named endpoint — keyed by the composed module name, distinct from
+	// every other endpoint's by construction (the allocation refuses a
+	// collision). A declared pod port would be a second, silently ignored
+	// source of the same fact, so it is refused.
+	if !endpoint.AllocatedAtRender {
+		return fmt.Errorf("service %q endpoint %q declares pod port %d under spec.%s.endpoint-ports; it binds the port Codefly allocates for it, so it must declare none", owner, name, endpoint.Port, deploymentSpecKey)
 	}
 	for _, exported := range bindings.Interface {
 		if exported.Service == owner && exported.Endpoint == name {
@@ -333,7 +332,7 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 
 		previousEndpoint := ""
 		for _, endpoint := range service.Endpoints {
-			if !endpointNamePattern.MatchString(endpoint.Name) || endpoint.Port == 0 || endpoint.Port > 65535 {
+			if !endpointNamePattern.MatchString(endpoint.Name) || endpoint.Port > 65535 || (endpoint.Port == 0) != endpoint.AllocatedAtRender {
 				return fmt.Errorf("service %q endpoint %q is incomplete", service.Name, endpoint.Name)
 			}
 			if previousEndpoint != "" && endpoint.Name <= previousEndpoint {
@@ -615,7 +614,10 @@ func ValidateDeploymentCatalog(catalog *catalogv1.DeploymentCatalog) error {
 		services[service.GetName()] = service
 		previousEndpoint := ""
 		for _, endpoint := range service.GetEndpoints() {
-			if endpoint == nil || !endpointNamePattern.MatchString(endpoint.GetName()) || endpoint.GetPort() == 0 || endpoint.GetPort() > 65535 ||
+			// Port 0 is "allocated at render" (see CodeflyEndpoint); a Service
+			// port without a pod port never is.
+			if endpoint == nil || !endpointNamePattern.MatchString(endpoint.GetName()) || endpoint.GetPort() > 65535 ||
+				endpoint.GetServicePort() > 65535 || (endpoint.GetPort() == 0 && endpoint.GetServicePort() != 0) ||
 				endpoint.GetApi() == catalogv1.CodeflyAPI_CODEFLY_API_UNSPECIFIED || endpoint.GetVisibility() == catalogv1.EndpointVisibility_ENDPOINT_VISIBILITY_UNSPECIFIED ||
 				(previousEndpoint != "" && endpoint.GetName() <= previousEndpoint) {
 				return fmt.Errorf("service %q endpoints are incomplete or unsorted", service.GetName())
@@ -789,6 +791,11 @@ func deploymentNetworkEdges(bindings deploymentBindings) []networkEdge {
 			endpoints := endpointBindingsByName(services[dependency.Service].Endpoints)
 			portSet := make(map[uint32]bool)
 			for _, endpoint := range dependency.Endpoints {
+				// A port allocated at render is not known here; the composing
+				// render, which knows it, names it in the policy it installs.
+				if endpoints[endpoint].AllocatedAtRender {
+					continue
+				}
 				portSet[endpoints[endpoint].Port] = true
 			}
 			ports := make([]uint32, 0, len(portSet))

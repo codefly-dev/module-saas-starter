@@ -1322,11 +1322,17 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 			t.Errorf("VirtualService route %q port = %v, want %d", name, renderedPort, port)
 		}
 	}
+	// The VirtualService routes to the Kubernetes Service port Codefly
+	// allocates (8080 for an http endpoint), not the pod port the Next.js
+	// server binds (3000): the agent's Service maps 8080 to targetPort 3000,
+	// and a destination naming 3000 names no port the Service has. The
+	// AuthorizationPolicy below matches the pod port, which is what traffic
+	// arrives on at the workload.
 	assertRoute(
 		"marketing",
 		`^www\.identity\.localhost(:[0-9]+)?$`,
 		"marketing.identity-local.svc.cluster.local",
-		3000,
+		8080,
 	)
 	assertRoute(
 		"product",
