@@ -8,27 +8,46 @@ import (
 	"testing"
 )
 
-// The registration/installation boundary is a DECISION, not an accident: a
-// deployment-wide solution registration governs UI and API availability, while a
-// per-org installation governs only the solution agent's authority. Uninstalling
-// therefore does not take a page or a gateway route away — from that
-// organization or any other.
+// The registration/installation boundary is a DECISION, not an accident, and it
+// MOVED — partly — with issue #949.
 //
-// module/SOLUTION_REGISTRATION.md §4 states that limitation. These tests keep
-// the statement and the code from drifting apart in either direction: the doc
-// must say it, and the registration surfaces must not quietly grow the coupling
-// the doc says they do not have.
+// What it was: a deployment-wide registration governed UI and API availability,
+// while a per-org installation governed only the solution agent's authority, so
+// nothing about a tenant affected what any surface served.
+//
+// What it is now: the PROJECTIONS — the navigation menu and the per-client surface
+// listing — answer per organization and per viewer, narrowed through installations
+// and the viewer's scope grants. What did NOT move is route and page exposure:
+// `/s/{id}` still renders and `/solutions/{id}/…` still proxies for any caller the
+// gateway authenticates, whatever any organization installed. Uninstalling still
+// takes no page or route away.
+//
+// So this file now guards two things rather than one, and the halves pull in
+// opposite directions. The surfaces that must STAY installation-blind are scanned
+// for coupling as before; the projections that must now BE installation-aware are
+// asserted to consult it, so the narrowing cannot silently regress to the
+// deployment-wide answer it replaced. module/SOLUTION_REGISTRATION.md §4 states
+// both halves, and the claim test below keeps the doc and the code together.
 
 // registrationSurfaces are the files that decide whether a solution's UI and API
-// are served. None of them may consult installation, entitlement, or tenant
-// state — if one ever does, the documented boundary has moved and the doc has to
-// move with it.
+// are SERVED — route and page exposure, which remains deployment-wide. None of
+// them may consult installation, entitlement, or tenant state; if one ever does,
+// that half of the boundary has moved too and the doc has to move with it.
+//
+// The projection surfaces are deliberately absent: they are covered by
+// TestSolutionProjectionsNarrowByInstallation below, which requires the opposite.
 var registrationSurfaces = []string{
-	"services/frontend/code/src/app/api/solutions/register/route.ts",
-	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
-	"services/frontend/code/src/solutions/registry.ts",
 	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx",
 	"services/auth-gateway/code/gateway_solutions.go",
+}
+
+// projectionSurfaces are the files that decide what a VIEWER is shown. Each must
+// consult the per-viewer entitlement read, because a projection that does not is
+// the deployment-wide listing this issue removed — and that regression would look
+// like working code, since every viewer would simply see everything.
+var projectionSurfaces = []string{
+	"services/frontend/code/src/app/api/solutions/register/route.ts",
+	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
 }
 
 // installationCoupling are the identifiers that would signal a registration
@@ -105,9 +124,80 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		"governs **agent authority only**",
 		"does **not** remove the solution's nav entry, page, or gateway route",
 		"Other tenants are unaffected",
+		// The half that moved with #949. Without these the doc would still read as
+		// though every caller saw every registered solution.
+		"the **projections** answer per organization and per viewer",
+		"`installations.solution_identifier` is the registered manifest `id`",
 	} {
 		if !strings.Contains(document, strings.Join(strings.Fields(claim), " ")) {
 			t.Errorf("SOLUTION_REGISTRATION.md no longer states %q", claim)
+		}
+	}
+}
+
+// TestSolutionProjectionsNarrowByInstallation is the inverse of the scan above:
+// these files MUST consult the per-viewer entitlement read.
+//
+// It exists because the regression it catches is invisible. A projection that
+// stopped narrowing would not throw, would not fail a type check and would return
+// a perfectly well-formed list — just the deployment-wide one, to every viewer.
+// Asserting the coupling is present is the only way that shows up as a failure.
+func TestSolutionProjectionsNarrowByInstallation(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	for _, relative := range projectionSurfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		// The entitlement read, and the narrowing that consumes it. Naming both
+		// means a file cannot pass by importing the authority answer and then
+		// projecting the unnarrowed set anyway.
+		for _, identifier := range []string{
+			"viewerEntitlements",
+			"entitledSolutions",
+		} {
+			if !strings.Contains(code, identifier) {
+				t.Errorf(
+					"%s does not reference %q: a solution projection must narrow through installations and the viewer's grants (SOLUTION_REGISTRATION.md §4, issue #949), never answer the deployment-wide set",
+					relative, identifier,
+				)
+			}
+		}
+	}
+}
+
+// TestSolutionProjectionsDoNotDeriveIdentityLocally keeps the projections off the
+// one shortcut that would make the narrowing worthless.
+//
+// `lib/auth-session.ts` can read an organization out of an access token, but
+// `decodeJWTPayload` only base64-decodes it — it verifies nothing. A projection
+// that narrowed on that would let any caller read another tenant's menu by editing
+// one claim, and it would pass every other test in this file: it consults
+// installation state, it narrows, and it is wrong.
+func TestSolutionProjectionsDoNotDeriveIdentityLocally(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	surfaces := append([]string{
+		"services/frontend/code/src/solutions/entitlements.ts",
+		"services/frontend/code/src/solutions/registry.ts",
+	}, projectionSurfaces...)
+	for _, relative := range surfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		for _, forbidden := range []string{
+			"extractSessionContext",
+			"decodeJWTPayload",
+			"extractRoles",
+		} {
+			if strings.Contains(code, forbidden) {
+				t.Errorf(
+					"%s references %q: it decodes an access token without verifying it, so an organization read from it is one the CALLER chose. The verified tenant and viewer come from the gateway's ext_authz stamp (services/frontend/code/src/solutions/entitlements.ts)",
+					relative, forbidden,
+				)
+			}
 		}
 	}
 }

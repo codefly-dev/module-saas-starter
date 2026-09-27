@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/installations.proto.
  */
 export const file_saas_accounts_v1_installations: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEilwMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEhsKE3NvbHV0aW9uX2lkZW50aWZpZXIYBCABKAkSJAoSb3duZXJfcHJpbmNpcGFsX2lkGAUgASgJQgi6SAVyA7ABARIeChZjb19vd25lcl9wcmluY2lwYWxfaWRzGAYgAygJEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgHIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAggASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoKcmV2b2tlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAIgBAUINCgtfcmV2b2tlZF9hdCKmAwoWSW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiQKEGFnZW50X2lkZW50aWZpZXIYAiABKAlCCrpIB3IFEAEYgAQSJwoTc29sdXRpb25faWRlbnRpZmllchgDIAEoCUIKukgHcgUQARiABBIeCgxkaXNwbGF5X25hbWUYBCABKAlCCLpIBXIDGIAEEiIKEHJvb3Rfc2NvcGVfbGFiZWwYBiABKAlCCLpIBXIDGIAEEhkKB3JvbGVfaWQYByABKAlCCLpIBXIDsAEBEicKEm93bmVyX3ByaW5jaXBhbF9pZBgIIAEoCUILukgI2AEBcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgJIAMoCUIPukgMkgEJECAiBXIDsAEBEioKEWFsbG93ZWRfYXVkaWVuY2VzGAogAygJQg+6SAySAQkQQCIFcgMYgAQSJwoOYWxsb3dlZF9zY29wZXMYCyADKAlCD7pIDJIBCRBAIgVyAxiAAUoECAUQBlIPcm9vdF9zY29wZV9wYXRoIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCp6ChJJbnN0YWxsYXRpb25TdGF0dXMSIwofSU5TVEFMTEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGklOU1RBTExBVElPTl9TVEFUVVNfQUNUSVZFEAESHwobSU5TVEFMTEFUSU9OX1NUQVRVU19SRVZPS0VEEAIqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBTLvBgoTSW5zdGFsbGF0aW9uU2VydmljZRK6AQoPSW5zdGFsbFNvbHV0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsU29sdXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24iXcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvaW5zdGFsbGF0aW9ucxLSAQoRVW5pbnN0YWxsU29sdXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ5wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLnJldm9rZWQQAkABSARQA1gDYAGC0+STAjI6ASoiLS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnVuaW5zdGFsbBKJAgodVHJhbnNmZXJJbnN0YWxsYXRpb25Pd25lcnNoaXASNi5zYWFzLmFjY291bnRzLnYxLlRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIo8BwvMYSwgCEAQqDAoGb3JnX2lkEAIYATABOisKJ3NhYXMuaW5zdGFsbGF0aW9uLm93bmVyc2hpcF90cmFuc2ZlcnJlZBACQAFIBFADWANgAYLT5JMCOjoBKiI1L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dHJhbnNmZXJPd25lcnNoaXASuQEKD0dldEluc3RhbGxhdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2UiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfWIGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEilwMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEhsKE3NvbHV0aW9uX2lkZW50aWZpZXIYBCABKAkSJAoSb3duZXJfcHJpbmNpcGFsX2lkGAUgASgJQgi6SAVyA7ABARIeChZjb19vd25lcl9wcmluY2lwYWxfaWRzGAYgAygJEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgHIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAggASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoKcmV2b2tlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAIgBAUINCgtfcmV2b2tlZF9hdCKmAwoWSW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiQKEGFnZW50X2lkZW50aWZpZXIYAiABKAlCCrpIB3IFEAEYgAQSJwoTc29sdXRpb25faWRlbnRpZmllchgDIAEoCUIKukgHcgUQARiABBIeCgxkaXNwbGF5X25hbWUYBCABKAlCCLpIBXIDGIAEEiIKEHJvb3Rfc2NvcGVfbGFiZWwYBiABKAlCCLpIBXIDGIAEEhkKB3JvbGVfaWQYByABKAlCCLpIBXIDsAEBEicKEm93bmVyX3ByaW5jaXBhbF9pZBgIIAEoCUILukgI2AEBcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgJIAMoCUIPukgMkgEJECAiBXIDsAEBEioKEWFsbG93ZWRfYXVkaWVuY2VzGAogAygJQg+6SAySAQkQQCIFcgMYgAQSJwoOYWxsb3dlZF9zY29wZXMYCyADKAlCD7pIDJIBCRBAIgVyAxiAAUoECAUQBlIPcm9vdF9zY29wZV9wYXRoIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCKdAQoYTGlzdEluc3RhbGxhdGlvbnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkigQEKE0luc3RhbGxhdGlvblN1bW1hcnkSNAoMaW5zdGFsbGF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24SNAoGaGVhbHRoGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25IZWFsdGgicgoZTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZRI8Cg1pbnN0YWxsYXRpb25zGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdW1tYXJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSp6ChJJbnN0YWxsYXRpb25TdGF0dXMSIwofSU5TVEFMTEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGklOU1RBTExBVElPTl9TVEFUVVNfQUNUSVZFEAESHwobSU5TVEFMTEFUSU9OX1NUQVRVU19SRVZPS0VEEAIqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBTL4BwoTSW5zdGFsbGF0aW9uU2VydmljZRK6AQoPSW5zdGFsbFNvbHV0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsU29sdXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24iXcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvaW5zdGFsbGF0aW9ucxLSAQoRVW5pbnN0YWxsU29sdXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ5wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLnJldm9rZWQQAkABSARQA1gDYAGC0+STAjI6ASoiLS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnVuaW5zdGFsbBKJAgodVHJhbnNmZXJJbnN0YWxsYXRpb25Pd25lcnNoaXASNi5zYWFzLmFjY291bnRzLnYxLlRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIo8BwvMYSwgCEAQqDAoGb3JnX2lkEAIYATABOisKJ3NhYXMuaW5zdGFsbGF0aW9uLm93bmVyc2hpcF90cmFuc2ZlcnJlZBACQAFIBFADWANgAYLT5JMCOjoBKiI1L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dHJhbnNmZXJPd25lcnNoaXASuQEKD0dldEluc3RhbGxhdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2UiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfRKGAQoRTGlzdEluc3RhbGxhdGlvbnMSKi5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnN0YWxsYXRpb25zUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * Installation is one solution's bound identity in an org. Server-assigned ids;
@@ -271,6 +271,104 @@ export const GetInstallationResponseSchema: GenMessage<GetInstallationResponse> 
   messageDesc(file_saas_accounts_v1_installations, 5);
 
 /**
+ * ListInstallationsRequest asks what one organization has installed. Every other
+ * RPC on this service names a single installation, so until this existed nothing
+ * could answer "what has this org installed?" — which is the authority read a
+ * per-organization solution projection is built on (issue #949).
+ *
+ * @generated from message saas.accounts.v1.ListInstallationsRequest
+ */
+export type ListInstallationsRequest = Message<"saas.accounts.v1.ListInstallationsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
+   * caller that must see only live installs asks for ACTIVE explicitly rather
+   * than leaning on a default that would silently widen if the enum grew.
+   *
+   * @generated from field: saas.accounts.v1.InstallationStatus status = 2;
+   */
+  status: InstallationStatus;
+
+  /**
+   * Page bound. 0 -> server default; capped so an organization with many
+   * installations can never return an unbounded result in one call.
+   *
+   * @generated from field: int32 page_size = 3;
+   */
+  pageSize: number;
+
+  /**
+   * Opaque cursor from a previous response's next_page_token; empty for page one.
+   *
+   * @generated from field: string page_token = 4;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListInstallationsRequest.
+ * Use `create(ListInstallationsRequestSchema)` to create a new message.
+ */
+export const ListInstallationsRequestSchema: GenMessage<ListInstallationsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 6);
+
+/**
+ * InstallationSummary is one row of the listing: the installation, plus the health
+ * resolved live beside it exactly as GetInstallation resolves it for one. Health
+ * travels with the row because a consumer that renders an installed solution as
+ * unavailable would otherwise need one GetInstallation per installation.
+ *
+ * @generated from message saas.accounts.v1.InstallationSummary
+ */
+export type InstallationSummary = Message<"saas.accounts.v1.InstallationSummary"> & {
+  /**
+   * @generated from field: saas.accounts.v1.Installation installation = 1;
+   */
+  installation?: Installation;
+
+  /**
+   * @generated from field: saas.accounts.v1.InstallationHealth health = 2;
+   */
+  health: InstallationHealth;
+};
+
+/**
+ * Describes the message saas.accounts.v1.InstallationSummary.
+ * Use `create(InstallationSummarySchema)` to create a new message.
+ */
+export const InstallationSummarySchema: GenMessage<InstallationSummary> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 7);
+
+/**
+ * @generated from message saas.accounts.v1.ListInstallationsResponse
+ */
+export type ListInstallationsResponse = Message<"saas.accounts.v1.ListInstallationsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.InstallationSummary installations = 1;
+   */
+  installations: InstallationSummary[];
+
+  /**
+   * Set when more installations remain; pass it back as page_token. Empty on the
+   * last page.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListInstallationsResponse.
+ * Use `create(ListInstallationsResponseSchema)` to create a new message.
+ */
+export const ListInstallationsResponseSchema: GenMessage<ListInstallationsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 8);
+
+/**
  * InstallationStatus is the lifecycle of an installation row. An uninstall is a
  * soft delete (status=revoked, revoked_at set) so the agent, grants, and audit
  * trail remain resolvable.
@@ -406,6 +504,23 @@ export const InstallationService: GenService<{
     methodKind: "unary";
     input: typeof GetInstallationRequestSchema;
     output: typeof GetInstallationResponseSchema;
+  },
+  /**
+   * ListInstallations enumerates one organization's installations with their live
+   * health. It is internal-tier on purpose: it takes the organization as a request
+   * field, so only a caller holding the cluster-internal credential may ask, and
+   * the tenant it asks about is the one the auth-gateway projected from a verified
+   * identity — never one a browser supplied. It sits beside
+   * PermissionService.ListAccessibleScopes for that reason: the two are read
+   * together to answer what a viewer's organization installed and what that viewer
+   * was granted.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.ListInstallations
+   */
+  listInstallations: {
+    methodKind: "unary";
+    input: typeof ListInstallationsRequestSchema;
+    output: typeof ListInstallationsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_installations, 0);

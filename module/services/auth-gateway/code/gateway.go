@@ -58,6 +58,11 @@ type Gateway struct {
 	registeredTransport http.RoundTripper
 	// registrationReplay makes each solution-registration credential single-use.
 	registrationReplay *registrationReplayGuard
+	// solutionEntitlements answers what one viewer may use (#949). Set after
+	// construction, like workContext: a nil client fails the entitlement surface
+	// closed rather than answering an empty projection, which would retract every
+	// solution a viewer is currently using.
+	solutionEntitlements solutionEntitlementClient
 	workContext        *workContextVerifier
 }
 

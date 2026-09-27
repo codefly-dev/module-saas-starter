@@ -83,6 +83,16 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		return true
 	}
 
+	// The per-viewer control segments dispatch from their own file, so that what
+	// remains BELOW in this one is the proxy decision alone — registered, active,
+	// authenticated, routed — with no reference to any tenant's installations. That
+	// separation is load-bearing: route and page exposure stays deployment-wide
+	// while the projections do not, and module/tools' boundary test reads this file
+	// to hold the first half of that (SOLUTION_REGISTRATION.md §4).
+	if g.handleSolutionViewerSegment(w, r, rest) {
+		return true
+	}
+
 	id, path, _ := strings.Cut(rest, "/")
 	if id == "" {
 		httpError(w, http.StatusNotFound, "solution not specified")

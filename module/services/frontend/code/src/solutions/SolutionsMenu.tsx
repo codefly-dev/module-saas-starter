@@ -3,9 +3,18 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
+import { authedFetch } from "@/lib/connect/token-store";
+
 interface SolutionNav {
 	id: string;
 	nav: { title: string; path: string; order?: number };
+	/**
+	 * False when the solution is installed and granted but its installation is
+	 * not healthy. It stays in the menu, disabled: the organization did install it
+	 * and this viewer was granted it, so hiding it would send someone looking for
+	 * a grant that already exists.
+	 */
+	available?: boolean;
 }
 
 // Single shared poll loop for the registered-solutions list. Every mounted
@@ -27,21 +36,32 @@ function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
 		return (
 			item.id === other.id &&
 			item.nav.title === other.nav.title &&
-			item.nav.path === other.nav.path
+			item.nav.path === other.nav.path &&
+			// Availability is rendered, so a change in it must re-render. Leaving it
+			// out of the comparison would freeze a solution's disabled state for the
+			// life of the page.
+			item.available === other.available
 		);
 	});
 }
 
 async function refresh(): Promise<void> {
 	try {
-		const response = await fetch("/api/solutions/register", {
+		// The menu is this viewer's own (#949), so the listing is authenticated and
+		// answers what THIS viewer may use. authedFetch attaches the host's bearer
+		// and, on a lapsed access token, exchanges it once and retries — the same
+		// recovery every other authenticated call gets. A bare fetch would 401 on
+		// every poll after the access token aged out and empty a working menu.
+		const response = await authedFetch("/api/solutions/register", {
 			cache: "no-store",
 		});
 		if (!response.ok) {
-			// The listing answers 503 when this replica cannot read the registry.
-			// Treating that as "no solutions" would empty a working nav on a
-			// blip: an unreadable registry is not an empty one, which is the
-			// whole reason the route distinguishes them.
+			// Every non-OK answer keeps the last known list. 503 is an unreadable
+			// registry or an authority that could not answer; 401 is a session this
+			// poll could not refresh, which the transport's own recovery handles by
+			// redirecting. Treating any of them as "no solutions" would empty a
+			// working nav on a blip — the reason the route distinguishes them from an
+			// empty projection at all.
 			return;
 		}
 		const data: { solutions?: SolutionNav[] } = await response.json();
@@ -96,30 +116,56 @@ export function SolutionsMenu({ variant = "list" }: { variant?: "list" | "cards"
 	if (variant === "cards") {
 		return (
 			<div className="grid gap-3 sm:grid-cols-2">
-				{solutions.map((solution) => (
-					<Link
-						key={solution.id}
-						href={solution.nav.path}
-						className="rounded-xl border p-4 transition-colors hover:bg-accent/40"
-					>
-						<div className="text-sm font-medium">{solution.nav.title}</div>
-						<div className="text-xs opacity-60">{solution.id}</div>
-					</Link>
-				))}
+				{solutions.map((solution) =>
+					solution.available === false ? (
+						// Rendered, not linked. The grant exists, so the entry belongs
+						// here; the installation does not currently serve, so following
+						// it would fail after a navigation rather than before one.
+						<div
+							key={solution.id}
+							aria-disabled="true"
+							title="This solution is installed but not available right now."
+							className="rounded-xl border p-4 opacity-50"
+						>
+							<div className="text-sm font-medium">{solution.nav.title}</div>
+							<div className="text-xs opacity-60">Unavailable</div>
+						</div>
+					) : (
+						<Link
+							key={solution.id}
+							href={solution.nav.path}
+							className="rounded-xl border p-4 transition-colors hover:bg-accent/40"
+						>
+							<div className="text-sm font-medium">{solution.nav.title}</div>
+							<div className="text-xs opacity-60">{solution.id}</div>
+						</Link>
+					),
+				)}
 			</div>
 		);
 	}
 	return (
 		<nav className="flex flex-col gap-1">
-			{solutions.map((solution) => (
-				<Link
-					key={solution.id}
-					href={solution.nav.path}
-					className="rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/40"
-				>
-					{solution.nav.title}
-				</Link>
-			))}
+			{solutions.map((solution) =>
+				solution.available === false ? (
+					<span
+						key={solution.id}
+						aria-disabled="true"
+						title="This solution is installed but not available right now."
+						className="rounded-md px-3 py-2 text-sm opacity-50"
+					>
+						{solution.nav.title}
+					</span>
+				) : (
+					<Link
+						key={solution.id}
+						href={solution.nav.path}
+						className="rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/40"
+					>
+						{solution.nav.title}
+					</Link>
+				),
+			)}
 		</nav>
 	);
 }
