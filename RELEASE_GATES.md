@@ -506,13 +506,17 @@ the decision.
 the count growing. Every non-merge commit in `<base>..<head>` must carry a GitHub
 no-reply address — `<id>+<login>@users.noreply.github.com`, or the bare
 `noreply@github.com` GitHub itself commits as for a squash, a web edit or a
-merge-queue entry.
+merge-queue entry — or an address the owner has **declared** in
+`tools/commit-identity.json`. A declaration is the sha256 of the lowercased
+address with a note saying whose it is and why, never the address itself, so the
+tree carries no organization name; the gate reads it strictly and fails closed on
+a malformed file.
 
-Setting `user.email` to that address is necessary but, with squash merging, not
-sufficient: GitHub writes the squash commit's author from the *merging account's*
-profile email, not from the commit it squashes, so a branch every check passed
-still lands a personal address on `main` unless that account also has **Settings →
-Emails → "Keep my email address private"** switched on. Set both.
+GitHub writes a squash commit's author from the *merging account's* profile
+email, not from the commit it squashes. That address is what lands on `main`, so
+the merging account either merges with **Settings → Emails → "Keep my email
+address private"** switched on, or its address is declared. The owner has
+declared the merging account's contribution address.
 
 The gate runs on `pull_request`, from the *current* base tip to the head sha; over
 that range it fails, because those commits are still the contributor's to rewrite.
@@ -522,8 +526,9 @@ red tripwire never skips the release gates that need `base-integrity`), over
 That run cannot stop the squash it inspects: the object does not exist until the
 merge is performed, after every required check has reported. It is a tripwire, not
 a barrier — it turns the growth the gate measures into a visible failure on `main`
-instead of a count that rises unseen, and its remediation is the account setting
-above, because the landed commit can no longer be rewritten.
+instead of a count that rises unseen. It judges against the same allowlist as
+`check`, declarations included, and its remediation is the account setting or a
+declaration above, because the landed commit can no longer be rewritten.
 
 Two exclusions, both load-bearing — get either wrong and the gate fails pull
 requests on commits their authors cannot rewrite.

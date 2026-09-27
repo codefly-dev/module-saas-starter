@@ -7,12 +7,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { identityErrors, parseCommits, logArgs } from "./commit-identity-gate.mjs";
+import { identityErrors, parseCommits, logArgs, accepted, loadDeclaredIdentities } from "./commit-identity-gate.mjs";
 
 const commit = (sha, author, committer = author) => ({ sha, author, committer });
 
@@ -40,8 +41,8 @@ test("a bot's no-reply address needs no special case", () => {
 test("an employer domain fails, and the address never reaches the report", () => {
   const out = identityErrors([commit("d1e2f3a4" + "0".repeat(32), "dev@zorpco.example")]);
   assert.deepEqual(out, [
-    "commit d1e2f3a4: author email is not a GitHub no-reply address",
-    "commit d1e2f3a4: committer email is not a GitHub no-reply address",
+    "commit d1e2f3a4: author email is neither a GitHub no-reply address nor a declared one",
+    "commit d1e2f3a4: committer email is neither a GitHub no-reply address nor a declared one",
   ]);
   // The whole point of the redaction: CI logs are public, so a rejected address — which is by
   // definition one this repository should not publish — must not survive into the failure.
@@ -51,7 +52,7 @@ test("an employer domain fails, and the address never reaches the report", () =>
 test("author and committer are judged separately", () => {
   // The case a rebase produces: rewriting the committer leaves the original author in place.
   assert.deepEqual(identityErrors([commit("e".repeat(40), "jane@example.com", NOREPLY)]), [
-    "commit eeeeeeee: author email is not a GitHub no-reply address",
+    "commit eeeeeeee: author email is neither a GitHub no-reply address nor a declared one",
   ]);
 });
 
@@ -92,8 +93,8 @@ test("every commit in a range is reported, not just the first", () => {
     commit("cccccccc" + "0".repeat(32), NOREPLY, "dev@zorpco.example"),
   ]);
   assert.deepEqual(out, [
-    "commit aaaaaaaa: author email is not a GitHub no-reply address",
-    "commit cccccccc: committer email is not a GitHub no-reply address",
+    "commit aaaaaaaa: author email is neither a GitHub no-reply address nor a declared one",
+    "commit cccccccc: committer email is neither a GitHub no-reply address nor a declared one",
   ]);
 });
 
@@ -178,10 +179,45 @@ test("report fails on a squash author that landed on main, without printing the 
     const out = cli(root, ["report", before, "HEAD"]);
     assert.equal(out.status, 1, out.stdout + out.stderr);
     assert.doesNotMatch(out.stderr, /jane@example\.com/);
-    // Its remediation is the account setting, never a rewrite the landed commit can no longer take.
+    // Its remediation is the account setting or a declaration, never a rewrite the landed commit can no longer take.
     assert.match(out.stderr, /Keep my email address/i);
     assert.doesNotMatch(out.stderr, /rebase/i);
   });
+});
+
+// The owner may accept an address beyond GitHub's no-reply forms (the merging account's own, which
+// GitHub puts on every squash). It is declared as a digest, never written, and accepted exactly.
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+
+test("a declared address is accepted on both fields; an undeclared one still fails", () => {
+  const declared = new Set([sha("owner@acme.example")]);
+  assert.deepEqual(identityErrors([commit("5".repeat(40), "Owner@Acme.example ", "owner@acme.example")], declared), []);
+  assert.equal(identityErrors([commit("6".repeat(40), "other@acme.example")], declared).length, 2);
+  assert.equal(accepted("owner@acme.example.evil", declared), false, "a digest matches the whole address only");
+});
+
+test("the declaration file is read strictly and fails closed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "commit-identity-decl-"));
+  const file = join(dir, "commit-identity.json");
+  try {
+    writeFileSync(file, JSON.stringify({ schema: "saas.commit-identity.v1", accepted: [{ h: sha("x@acme.example"), note: "owner" }] }));
+    assert.ok(loadDeclaredIdentities(file).has(sha("x@acme.example")));
+    for (const bad of [
+      "not json",
+      JSON.stringify({ schema: "other", accepted: [] }),
+      JSON.stringify({ schema: "saas.commit-identity.v1", accepted: [{ h: "x@acme.example", note: "a literal, not a digest" }] }),
+      JSON.stringify({ schema: "saas.commit-identity.v1", accepted: [{ h: sha("x@acme.example") }] }),
+    ]) {
+      writeFileSync(file, bad);
+      assert.throws(() => loadDeclaredIdentities(file), undefined, bad);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the shipped declaration file loads, and declares only digests", () => {
+  for (const h of loadDeclaredIdentities()) assert.match(h, /^[0-9a-f]{64}$/);
 });
 
 test("an unknown subcommand is a usage error", () => {

@@ -37,10 +37,40 @@
 // the gate measures into a visible failure instead of a count that rises unseen.
 
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
+
+// The addresses accepted beyond GitHub's no-reply forms are declared, not written here:
+// tools/commit-identity.json lists each as the sha256 of its lowercased address, so the tree never
+// carries an address (or the organization in its domain) while the gate still admits it exactly.
+// A declaration is an owner decision, with a note saying whose address it is and why.
+const DECLARED_PATH = join(dirname(SCRIPT_PATH), "commit-identity.json");
+
+const digest = (address) => createHash("sha256").update(address).digest("hex");
+
+// Fails closed: a declaration file that cannot be read or is malformed throws, so a broken
+// allowlist never silently narrows to "GitHub no-reply only" or widens to "anything".
+export function loadDeclaredIdentities(path = DECLARED_PATH) {
+  const document = JSON.parse(readFileSync(path, "utf8"));
+  if (document?.schema !== "saas.commit-identity.v1" || !Array.isArray(document.accepted)) {
+    throw new Error(`${path}: not a saas.commit-identity.v1 document`);
+  }
+  const digests = new Set();
+  for (const entry of document.accepted) {
+    if (
+      typeof entry?.h !== "string" || !/^[0-9a-f]{64}$/.test(entry.h) ||
+      typeof entry.note !== "string" || !entry.note.trim()
+    ) {
+      throw new Error(`${path}: every accepted entry needs a sha256 "h" and a "note" saying whose address it is`);
+    }
+    digests.add(entry.h);
+  }
+  return digests;
+}
 
 // GitHub's own two identity forms, and nothing else. The per-account no-reply address covers
 // humans, Dependabot and github-actions[bot] alike (`<id>+<login>@users.noreply.github.com`);
@@ -49,18 +79,20 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const NOREPLY_SUFFIX = "@users.noreply.github.com";
 const GITHUB_NOREPLY = "noreply@github.com";
 
-const accepted = (email) => {
+export const accepted = (email, declared = new Set()) => {
   const address = email.trim().toLowerCase();
-  return address === GITHUB_NOREPLY || address.endsWith(NOREPLY_SUFFIX);
+  return address === GITHUB_NOREPLY || address.endsWith(NOREPLY_SUFFIX) || declared.has(digest(address));
 };
 
-export function identityErrors(commits) {
+export function identityErrors(commits, declared = loadDeclaredIdentities()) {
   const errors = [];
   for (const { sha, author, committer } of commits) {
     // Both fields, separately: a rebase rewrites the committer and leaves the author untouched,
     // so a branch fixed by rebasing alone still publishes the original author address.
     for (const [field, email] of [["author", author], ["committer", committer]]) {
-      if (!accepted(email ?? "")) errors.push(`commit ${sha.slice(0, 8)}: ${field} email is not a GitHub no-reply address`);
+      if (!accepted(email ?? "", declared)) {
+        errors.push(`commit ${sha.slice(0, 8)}: ${field} email is neither a GitHub no-reply address nor a declared one`);
+      }
     }
   }
   return errors;
@@ -128,7 +160,7 @@ function check(base, tip) {
     );
     process.exit(1);
   }
-  console.log(`✓ ${range.length} commit(s) carry a GitHub no-reply identity.`);
+  console.log(`✓ ${range.length} commit(s) carry a GitHub no-reply or declared identity.`);
 }
 
 // The post-merge counterpart. Its remediation is not `check`'s — the commit is already on `main`
@@ -144,12 +176,13 @@ function report(base, tip) {
       `\nFAIL: ${errors.length} identity field(s) already published on main. The commit is landed ` +
         `and its identity can no longer be scrubbed, so this reports the growth rather than ` +
         `preventing it. GitHub takes a squash commit's author from the merging account's profile ` +
-        `email, so pointing user.email at the no-reply address is not enough on its own — also turn ` +
-        `on Settings → Emails → "Keep my email addresses private" before the next merge.`,
+        `email, so the merging account's address is what lands. Either that account merges with ` +
+        `"Keep my email addresses private" on, or the owner declares its address in ` +
+        `tools/commit-identity.json (as a sha256, with a note) before the next merge.`,
     );
     process.exit(1);
   }
-  console.log(`✓ ${range.length} commit(s) landed on main carry a GitHub no-reply identity.`);
+  console.log(`✓ ${range.length} commit(s) landed on main carry a GitHub no-reply or declared identity.`);
 }
 
 if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
