@@ -2,9 +2,12 @@ package adapters
 
 import (
 	"context"
+
 	"sync"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -29,9 +32,11 @@ const (
 	delegationID     = "99999999-9999-4999-8999-999999999999"
 )
 
-// delegationPrincipals declares a cross-tenant module whose "source-sync"
-// binding accepts source delegations, and a second module without one.
-const delegationPrincipals = `{"docstore":{"tenant":"` + moduleWorkContextTenant + `","cross_tenant":true,"operation_audiences":{` +
+// delegationPrincipals declares a module bound to another tenant, without
+// cross_tenant, whose "source-sync" binding accepts source delegations — the
+// delegation alone admits the delegation's organization — and a second module
+// without one.
+const delegationPrincipals = `{"docstore":{"tenant":"` + moduleWorkContextTenant + `","operation_audiences":{` +
 	`"source-sync":{"audience":"ingestservice",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
@@ -322,8 +327,8 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 	})
 	t.Run("refuses another tenant", func(t *testing.T) {
 		store, request := mint(t)
-		// The module serves every tenant, so the refusal is the absence of a
-		// delegation in that one, not the module's tenancy.
+		// The module's declared tenancy is never consulted, so the refusal is
+		// the absence of a delegation in that tenant.
 		store.delegations[delegationID].OrgID = moduleWorkContextTenant
 		request.OrgId = delegationOrg
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
@@ -362,4 +367,34 @@ func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
 			require.Empty(t, audit.of(business.EventSourceDelegationUsed))
 		})
 	}
+}
+
+// A parent with no delegation hop keeps today's tenant check exactly: a module
+// bound to another tenant without cross_tenant cannot exchange a parent in this
+// one, and the same module declared cross_tenant can.
+func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *testing.T) {
+	_, facts, client, _ := sourceReadFixture(t)
+	parentToken, _, err := workContextSingleton.signer.StartTask(workcontext.StartTaskInput{
+		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
+		TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222",
+		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: workcontext.WorkContextReplayIdempotent,
+		AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}}},
+	})
+	require.NoError(t, err)
+	exchange := func(crossTenant bool) error {
+		registry := installedOperationRegistry(true)
+		grant := registry[business.ModulePrincipalID("example")]
+		grant.Tenant, grant.CrossTenant = moduleWorkContextTenant, crossTenant
+		registry[business.ModulePrincipalID("example")] = grant
+		service.SetModuleCapabilities(nil, nil, registry)
+		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: moduleWorkContextTenant})
+		require.NoError(t, err)
+		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parentToken.Encoded()})
+		req.Header().Set(workcontext.WorkContextHeaderName, module.Encoded())
+		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
+		_, err = client.ExchangeDelegatedOperationAudience(context.Background(), req)
+		return err
+	}
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(exchange(false)))
+	require.NoError(t, exchange(true))
 }

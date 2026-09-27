@@ -31,6 +31,7 @@ const (
 	delegationBinding      = "source-sync"
 	otherModule            = "reports"
 	otherModuleSecret      = "reports-secret"
+	runtimeModule          = "runtime"
 )
 
 func delegationDigest(secret string) string {
@@ -38,17 +39,36 @@ func delegationDigest(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// delegationRegistry declares a cross-tenant module whose one binding accepts
-// source delegations, and a second module bound to otherTenant that declares
-// one too — so "another module's delegation" is a real, minted one.
+// delegationRegistry declares three modules, every one bound to otherTenant and
+// none holding cross_tenant — the delegation, never the declared tenancy, is
+// what admits an organization:
+//   - docstore, whose one binding accepts source delegations and is addressed
+//     to the runtime module;
+//   - reports, which accepts delegations too, so "another module's delegation"
+//     is a real, minted one;
+//   - runtime, which exchanges a delegation-bearing parent addressed to it
+//     through its own "ingest" binding.
 func delegationRegistry(t *testing.T, otherTenant string) business.ModulePrincipalRegistry {
 	t.Helper()
+	return delegationRegistryWith(t, otherTenant, false)
+}
+
+func delegationRegistryWith(t *testing.T, otherTenant string, crossTenant bool) business.ModulePrincipalRegistry {
+	t.Helper()
+	cross := ""
+	if crossTenant {
+		cross = `"cross_tenant":true,`
+	}
 	registry, err := business.ParseModulePrincipalRegistry(`{` +
-		`"` + delegationModule + `":{"tenant":"` + otherTenant + `","cross_tenant":true,"operation_audiences":{` +
-		`"` + delegationBinding + `":{"audience":"ingestservice",` +
+		`"` + delegationModule + `":{"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
+		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
-		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}},` +
+		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read","write"]}]}}},` +
+		`"` + runtimeModule + `":{"tenant":"` + otherTenant + `",` + cross + `"operation_audiences":{` +
+		`"ingest":{"audience":"docstore-ingest",` +
+		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
+		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}},` +
 		`"` + otherModule + `":{"tenant":"` + otherTenant + `","operation_audiences":{` +
 		`"sync":{"audience":"reportservice",` +
 		`"invoke_scopes":[{"resource_kind":"reports","actions":["read","write"]}],` +
@@ -80,12 +100,15 @@ func (a *delegationAudit) EmitTx(ctx context.Context, entry business.AuditEntry)
 	return nil
 }
 
+// of lists the records of one event about one source's delegation to the
+// docstore module — the module these tests follow; a connect records one for
+// every accepting module.
 func (a *delegationAudit) of(event business.EventType, sourceID string) []business.AuditEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var out []business.AuditEntry
 	for _, entry := range a.entries {
-		if entry.EventType == event && entry.ResourceID == sourceID {
+		if entry.EventType == event && entry.ResourceID == sourceID && entry.Payload["module"] == delegationModule {
 			out = append(out, entry)
 		}
 	}
@@ -230,11 +253,12 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	// The single-tenant module serves another organization, so this connect
-	// delegates to the cross-tenant module alone.
-	delegations := w.active(t, w.org, sourceID)
-	require.Len(t, delegations, 1)
-	delegation := delegations[0]
+	// Every module whose binding declares source_delegation_scopes receives one,
+	// though both are bound to another organization and neither holds
+	// cross_tenant; the runtime module declares no such binding and receives
+	// none.
+	require.Len(t, w.active(t, w.org, sourceID), 2)
+	delegation := w.only(t, w.org, sourceID, delegationModule)
 	require.Equal(t, delegationModule, delegation.ModulePrefix)
 	require.Equal(t, delegationBinding, delegation.BindingID)
 	require.Equal(t, w.admin, delegation.PrincipalID)
@@ -254,8 +278,8 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 			require.Equal(t, w.org, authority.Tenant, "the tenant is the source's organization")
 			require.Equal(t, w.admin, authority.OwnerPrincipalID)
 			require.Equal(t, business.ModulePrincipalID(delegationModule), authority.PrincipalID)
-			require.Equal(t, "ingestservice", authority.Audience)
-			require.Equal(t, []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"write"}}}, authority.Scopes)
+			require.Equal(t, runtimeModule, authority.Audience)
+			require.Equal(t, []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}, authority.Scopes)
 			require.Equal(t, delegation.ID, authority.Delegation.ID)
 			require.NotZero(t, authority.Revision)
 
@@ -266,13 +290,13 @@ func TestSourceDelegation_ConnectThenMint(t *testing.T) {
 	used := w.audit.of(business.EventSourceDelegationUsed, sourceID)
 	require.Len(t, used, 2)
 	require.Equal(t, "system", used[0].ActorType)
-	require.Equal(t, []string{"collections:write"}, used[0].Payload["scopes"])
+	require.Equal(t, []string{"collections:read", "collections:write"}, used[0].Payload["scopes"])
 }
 
 func TestSourceDelegation_ExplicitRevoke(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
-	delegation := w.active(t, w.org, sourceID)[0]
+	delegation := w.only(t, w.org, sourceID, delegationModule)
 	authority, err := w.mint(business.SourceDelegationRef{DelegationID: delegation.ID})
 	require.NoError(t, err)
 
@@ -307,7 +331,7 @@ func TestSourceDelegation_PersonLeavesTheOrganization(t *testing.T) {
 	t.Run("removed through the service", func(t *testing.T) {
 		w := newDelegationWorld(t)
 		sourceID := w.connect(t, w.org, w.admin)
-		delegation := w.active(t, w.org, sourceID)[0]
+		delegation := w.only(t, w.org, sourceID, delegationModule)
 		authority, err := w.mint(business.SourceDelegationRef{SourceID: sourceID})
 		require.NoError(t, err)
 
@@ -377,7 +401,7 @@ func TestSourceDelegation_SourceDeleted(t *testing.T) {
 	t.Run("through the service", func(t *testing.T) {
 		w := newDelegationWorld(t)
 		sourceID := w.connect(t, w.org, w.admin)
-		delegation := w.active(t, w.org, sourceID)[0]
+		delegation := w.only(t, w.org, sourceID, delegationModule)
 		authority, err := w.mint(business.SourceDelegationRef{SourceID: sourceID})
 		require.NoError(t, err)
 
@@ -406,35 +430,34 @@ func TestSourceDelegation_SourceDeleted(t *testing.T) {
 func TestSourceDelegation_CrossOrganizationAndCrossModule(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceA := w.connect(t, w.org, w.admin)
-	delegationA := w.active(t, w.org, sourceA)[0]
-	// A source in the other organization delegates to both modules: the
-	// single-tenant one serves it.
+	delegationA := w.only(t, w.org, sourceA, delegationModule)
+	reportsA := w.only(t, w.org, sourceA, otherModule)
 	sourceB := w.connect(t, w.otherOrg, w.other)
 	require.Len(t, w.active(t, w.otherOrg, sourceB), 2)
 	delegationB := w.only(t, w.otherOrg, sourceB, otherModule)
 
-	// Another module's delegation, by id and by source.
+	// Another module's delegation is refused, in both directions; by source,
+	// each module resolves only its own.
 	_, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: delegationA.ID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
-	_, err = w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{SourceID: sourceA})
-	require.ErrorIs(t, err, business.ErrSourceDelegationMissing)
+	_, err = w.mint(business.SourceDelegationRef{DelegationID: reportsA.ID})
+	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
+	bySource, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{SourceID: sourceA})
+	require.NoError(t, err)
+	require.Equal(t, reportsA.ID, bySource.Delegation.ID)
 	// ... and indistinguishable from one that does not exist.
 	_, err = w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: business.NewIDString()})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 
-	// The single-tenant module mints only in its own organization.
+	// Both organizations are reached through their delegations alone.
 	authorityB, err := w.svc.AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: delegationB.ID})
 	require.NoError(t, err)
 	require.Equal(t, w.otherOrg, authorityB.Tenant)
 	require.Equal(t, "reportservice", authorityB.Audience)
 
-	// Cross-org: once the composition stops letting the module serve the
-	// delegation's organization, the same id is refused as unusable.
-	narrowed := delegationRegistry(t, w.otherOrg)
-	grant := narrowed[business.ModulePrincipalID(delegationModule)]
-	grant.CrossTenant = false
-	narrowed[business.ModulePrincipalID(delegationModule)] = grant
-	_, err = w.service(t, narrowed).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleSecret, business.SourceDelegationRef{DelegationID: delegationA.ID})
+	// A cross-tenant grant adds nothing: another module's delegation stays
+	// refused however widely the caller is declared.
+	_, err = w.service(t, delegationRegistryWith(t, w.otherOrg, true)).AuthorizeSourceOperationContext(testCtx, otherModule, otherModuleSecret, business.SourceDelegationRef{DelegationID: delegationA.ID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationInvalid)
 
 	// A context minted in one organization is not confirmed for another.
@@ -457,15 +480,22 @@ func TestSourceDelegation_CrossOrganizationAndCrossModule(t *testing.T) {
 func TestSourceDelegation_ReconnectReplaces(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
-	previous := w.active(t, w.org, sourceID)[0]
+	previous := w.only(t, w.org, sourceID, delegationModule)
 	outstanding, err := w.mint(business.SourceDelegationRef{SourceID: sourceID})
 	require.NoError(t, err)
 
 	_, err = w.svc.SyncDatasourceSource(testCtx, w.other, w.org, sourceID, "pat-replacement")
 	require.NoError(t, err)
 
-	list, err := w.svc.ListSourceDelegations(testCtx, w.org, sourceID, true)
+	all, err := w.svc.ListSourceDelegations(testCtx, w.org, sourceID, true)
 	require.NoError(t, err)
+	require.Len(t, all, 4, "both accepting modules' delegations are replaced")
+	var list []*business.SourceDelegation
+	for _, d := range all {
+		if d.ModulePrefix == delegationModule {
+			list = append(list, d)
+		}
+	}
 	require.Len(t, list, 2)
 	var active, replaced *business.SourceDelegation
 	for _, d := range list {
@@ -518,11 +548,11 @@ func TestSourceDelegation_BindingChanged(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := business.ParseModulePrincipalRegistry(`{"` + delegationModule + `":{"tenant":"` + w.otherOrg + `","cross_tenant":true,"operation_audiences":{` +
-		`"` + delegationBinding + `":{"audience":"ingestservice",` +
+	widened, err := business.ParseModulePrincipalRegistry(`{"` + delegationModule + `":{"tenant":"` + w.otherOrg + `","operation_audiences":{` +
+		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
-		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read","write"]}]}}}}`)
+		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)
 	require.NoError(t, err)
 	_, err = w.service(t, widened).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleSecret, business.SourceDelegationRef{SourceID: sourceID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationRevoked)

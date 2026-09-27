@@ -173,7 +173,7 @@ that authority (`pkg/business/source_delegation.go`):
 - **Recorded at connect.** `AddSource`, `AddGitHubSource`, a replacement
   credential on `SyncSource`, and `MigrateGitHubSourceToApp` record, in their own
   transaction, one delegation per module whose one binding declares
-  `source_delegation_scopes` and whose tenancy covers the organization — only
+  `source_delegation_scopes` — the declaration is the whole opt-in — only
   when the actor is an owner or admin *of the organization* (a platform
   operator's bypass records none). A reconnect revokes the previous one as
   `replaced` and records a new one under the reconnecting person, atomically.
@@ -195,6 +195,18 @@ that authority (`pkg/business/source_delegation.go`):
   — which recognises a person-owned context with a module actor and confirms it
   from the delegation rather than the row-backed agent path — stops confirming it
   once any of them moves.
+- **The delegation authorizes the organization; `cross_tenant` is never
+  consulted.** Recording, the mint, the revision check and the exchange ignore a
+  module's `tenant` and `cross_tenant`: a module bound to one tenant mints for a
+  delegation in another, a `cross_tenant` module gains nothing, and a principal
+  gains no cross-organization reach from a delegation beyond the one binding it
+  names.
+- **Exchange.** `ExchangeDelegatedOperationAudience` of a parent whose actor hop
+  is a declared module principal carrying a delegation id admits the parent's
+  tenant by re-checking that delegation (`ConfirmSourceDelegationParent`), not by
+  the caller's `authorizeTenant`; the parent must still be addressed to the
+  caller and the child is attenuated to the caller's binding. A parent without
+  such a hop, and every read exchange, keep `authorizeTenant` unchanged.
 - **Codes.** `FAILED_PRECONDITION` + `DELEGATION_MISSING` (the source has no
   active delegation: reconnect), `PERMISSION_DENIED` + `DELEGATION_REVOKED` or
   `DELEGATION_INVALID` (indistinguishable from absent), `UNAUTHENTICATED` for an

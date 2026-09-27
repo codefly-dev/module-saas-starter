@@ -628,9 +628,9 @@ type isModuleMintSourceOperationContextRequest_Delegation interface {
 
 type ModuleMintSourceOperationContextRequest_DelegationId struct {
 	// delegation_id names one delegation. A revoked one is refused with
-	// PERMISSION_DENIED; one that does not exist, belongs to another module,
-	// or is in an organization the module does not serve is refused the same
-	// way, indistinguishably.
+	// PERMISSION_DENIED; one that does not exist or belongs to another module
+	// is refused the same way, indistinguishably. The module's declared tenant
+	// and cross_tenant grant play no part: the delegation authorizes its org.
 	DelegationId string `protobuf:"bytes,3,opt,name=delegation_id,json=delegationId,proto3,oneof"`
 }
 

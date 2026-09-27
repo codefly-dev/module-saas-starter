@@ -169,6 +169,32 @@ func (s *Service) ModuleOperationAudience(caller ModuleCaller, tenant, parentAud
 	return binding, nil
 }
 
+// ModuleOperationAudienceForDelegation resolves the calling module's operation
+// binding for a parent whose tenant a source delegation authorizes. It is
+// ModuleOperationAudience without the tenant check: the caller has already
+// re-checked the delegation (ConfirmSourceDelegationParent) — active, in the
+// parent's tenant, from the parent's owner — and that delegation, not the
+// caller's declared tenant or cross_tenant grant, is what admits the tenant.
+// The parent must still be addressed to the caller, and the binding must still
+// be one the caller declares.
+func (s *Service) ModuleOperationAudienceForDelegation(caller ModuleCaller, delegation *SourceDelegation, parentAudience, bindingID string) (ModuleOperationAudience, error) {
+	if !delegation.Active() {
+		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "source delegation is not active")
+	}
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return ModuleOperationAudience{}, err
+	}
+	if grant.Prefix == "" || parentAudience != grant.Prefix {
+		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "incoming module audience mismatch")
+	}
+	binding, ok := grant.OperationAudiences[bindingID]
+	if !ok || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
+		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "installed operation audience required")
+	}
+	return binding, nil
+}
+
 func (b ModuleOperationAudience) WireScopes(lookup bool) []*gen.WorkContextScope {
 	scopes := b.InvokeScopes
 	if lookup {

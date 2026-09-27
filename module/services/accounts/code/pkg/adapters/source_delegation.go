@@ -33,8 +33,8 @@ const (
 	// a reconnect, or because the host found the source, the person's
 	// membership or role, or the binding no longer supports it.
 	SourceDelegationRevokedReason = "DELEGATION_REVOKED"
-	// SourceDelegationInvalidReason: the delegation does not exist, belongs to
-	// another module, or is in an organization the module does not serve.
+	// SourceDelegationInvalidReason: the delegation does not exist or belongs
+	// to another module.
 	SourceDelegationInvalidReason = "DELEGATION_INVALID"
 )
 

@@ -297,9 +297,9 @@ export type ModuleMintSourceOperationContextRequest = Message<"saas.accounts.v1.
   delegation: {
     /**
      * delegation_id names one delegation. A revoked one is refused with
-     * PERMISSION_DENIED; one that does not exist, belongs to another module,
-     * or is in an organization the module does not serve is refused the same
-     * way, indistinguishably.
+     * PERMISSION_DENIED; one that does not exist or belongs to another module
+     * is refused the same way, indistinguishably. The module's declared tenant
+     * and cross_tenant grant play no part: the delegation authorizes its org.
      *
      * @generated from field: string delegation_id = 3;
      */

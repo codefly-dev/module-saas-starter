@@ -255,19 +255,17 @@ accepts delegations by declaring `source_delegation_scopes` — like
 `headless_scopes`, an optional list in the canonical scope shape that must be a
 subset of its `invoke_scopes` (the context acts on a person's behalf). At most
 one binding of a module may declare it, and a connect delegates to that binding
-of every module whose declared tenancy covers the organization (its `tenant`, or
-every tenant with `cross_tenant`):
+of every module that declares one. The declaration is the whole opt-in:
 
 ```json
-{"docstore":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","cross_tenant":true,"operation_audiences":{"source-sync":{"audience":"docstore-ingest","invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}}}
+{"docstore":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"source-sync":{"audience":"docstore-ingest","invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],"source_delegation_scopes":[{"resource_kind":"collections","actions":["write"]}]}}}}
 ```
 
 **The mint.** The module authenticates exactly as for its own Work Context and
 names either a `delegation_id` or a `source_id` (whose active delegation to the
 calling module is used). The tenant, the owner, the audience and the scopes all
 come from the delegation. Every mint re-checks, failing closed on each: the
-caller is the module the delegation names, and its tenancy covers the
-delegation's organization; the delegation is active; the binding is still
+caller is the module the delegation names; the delegation is active; the binding is still
 declared, still accepts delegations, and is unchanged in audience and scopes;
 the source exists; the person is still a member, still an owner or admin (the
 role connecting a source requires), and their account is active. The child is:
@@ -304,6 +302,32 @@ cover both subjects. Revoking or replacing the delegation, a membership or role
 change, or a binding change therefore invalidates outstanding contexts at the
 next hop. Every refusal is `PermissionDenied`.
 
+**The delegation authorizes the organization; `cross_tenant` is never
+consulted.** Neither the recording, the mint, the revision check nor the
+exchange below reads a module's `tenant` or `cross_tenant`. A module bound to
+one tenant mints for a delegation in another; a module holding `cross_tenant`
+gains nothing here, and a principal gains no cross-organization reach from a
+delegation beyond the one binding it names.
+
+**Exchanging a delegation-bearing parent.** The minted context is addressed to
+the binding's audience, which may be another composed module (a runtime that
+executes the sync). That module passes it to
+`ModuleCapabilitiesService/ExchangeDelegatedOperationAudience` as the parent,
+naming one of its own operation bindings, as for any delegated parent. When the
+verified parent's single actor hop is a declared module principal carrying a
+delegation id, the exchange re-checks that delegation exactly as the revision
+check does — active, in the parent's tenant, from the parent's owner, to that
+module, binding unchanged, source present, person still an owner or admin, the
+sealed revision recomputing — and that delegation, not the caller's declared
+tenant, admits the parent's tenant; the id in the token is only a pointer. The
+rest is unchanged: the parent must be addressed to the caller's prefix, the
+binding must be one the caller declares, and the child is attenuated to that
+binding's scopes, which must lie within the parent's. The child keeps the
+parent's owner, actor hop and revision, so the revision check confirms it the
+same way and stops the moment the delegation ends. A parent with no module
+actor hop keeps today's tenant check (`cross_tenant` or the caller's own
+tenant) exactly; a read exchange always does.
+
 **Codes** (on the RPC, with a `google.rpc.ErrorInfo` under the domain
 `accounts.saas.codefly.dev`, and relayed by the gateway):
 
@@ -311,7 +335,7 @@ next hop. Every refusal is `PermissionDenied`.
 | --- | --- | --- | --- | --- |
 | Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412` | The source has no active delegation to this module. A person must connect or reconnect it. |
 | Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403` | The delegation was revoked, or was just found unsupported and revoked. |
-| Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403` | No such delegation for this module in an organization it serves — deliberately indistinguishable from one that does not exist. |
+| Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
 | Unproven | `UNAUTHENTICATED` | — | `401` | The module's identity secret was not accepted. |
 
 **Audit.** `saas.datasource.delegation.created` on connect and reconnect,
