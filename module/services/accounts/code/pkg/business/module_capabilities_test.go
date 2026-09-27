@@ -1316,7 +1316,14 @@ func (s *orgAdminsStore) ListOrgMembers(_ context.Context, orgID string) ([]*gen
 	return s.members[orgID], nil
 }
 
+// CreateNotification keeps the store's idempotency contract: a repeated row id
+// with the same content converges, and with different content conflicts.
 func (s *orgAdminsStore) CreateNotification(_ context.Context, n *business.Notification) error {
+	for _, existing := range s.notified {
+		if existing.ID == n.ID && existing.Body != n.Body {
+			return business.ErrNotificationIdempotencyConflict
+		}
+	}
 	s.notified = append(s.notified, n)
 	return nil
 }
@@ -1425,6 +1432,19 @@ func TestModuleNotifyOrgAdmins_IdempotencyKeyIsPerRecipient(t *testing.T) {
 			seen[id] = true
 		}
 	}
+}
+
+// A different notification under a key already used is the caller's error,
+// FailedPrecondition, never Internal.
+func TestModuleNotifyOrgAdmins_KeyReusedForDifferentContentIsFailedPrecondition(t *testing.T) {
+	svc, _, _ := newOrgAdminsFixture(t)
+	if _, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), adminNotice(moduleTenantA, "info", "key-1")); err != nil {
+		t.Fatal(err)
+	}
+	changed := adminNotice(moduleTenantA, "info", "key-1")
+	changed.Body = "something else"
+	_, err := svc.ModuleNotifyOrgAdmins(context.Background(), moduleCaller(), changed)
+	requireCode(t, err, codes.FailedPrecondition)
 }
 
 // A module bound to one tenant cannot notify another's administrators, and an

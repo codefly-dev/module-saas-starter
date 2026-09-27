@@ -69,12 +69,23 @@ func TestModuleNotifyOrgAdmins_ReachesOnlyTheTenantsAdministrators(t *testing.T)
 	}
 	require.Empty(t, inbox(member), "a member who is not an administrator is not notified")
 
-	// A redelivery converges on the rows already written.
+	// A redelivery — the same notification under the same key — converges on
+	// the rows already written.
 	_, err = svc.ModuleNotifyOrgAdmins(testCtx, caller, business.ModuleNotifyOrgAdminsInput{
-		Tenant: org, Title: "A delegation was revoked", Type: "warning", Category: "security", IdempotencyKey: "delegation-revoked-1",
+		Tenant: org, Title: title, Body: "Reconnect the source.",
+		Type: "warning", Category: "security", IdempotencyKey: "delegation-revoked-1",
 	})
 	require.NoError(t, err)
 	require.Len(t, inbox(owner), 1, "the idempotency key dedupes a redelivery")
+
+	// A different notification under a key already used is the caller's error,
+	// not a storage failure, and changes nothing.
+	_, err = svc.ModuleNotifyOrgAdmins(testCtx, caller, business.ModuleNotifyOrgAdminsInput{
+		Tenant: org, Title: title, Body: "A different body.",
+		Type: "warning", Category: "security", IdempotencyKey: "delegation-revoked-1",
+	})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+	require.Equal(t, "Reconnect the source.", inbox(owner)[0].Body)
 
 	_, err = svc.ModuleNotifyOrgAdmins(testCtx, caller, business.ModuleNotifyOrgAdminsInput{
 		Tenant: otherOrg, Title: "cross-tenant", Type: "info", Category: "security",

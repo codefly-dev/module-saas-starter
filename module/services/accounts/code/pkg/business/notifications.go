@@ -48,6 +48,12 @@ var ErrInvalidNotificationPageToken = errors.New("invalid notification page toke
 // from an outage.
 var ErrInvalidNotificationType = errors.New("invalid notification type")
 
+// ErrNotificationIdempotencyConflict reports an idempotency key reused for a
+// notification that differs from the one it first wrote. A redelivery with the
+// same content converges on the existing row; different content under the same
+// key is the caller's error, never a storage failure.
+var ErrNotificationIdempotencyConflict = errors.New("notification idempotency key conflicts with an existing notification")
+
 // NotificationTypes is every presentation type a notification may carry. It is
 // the notifications_type_check constraint's set, and a database test
 // (TestNotificationTypesMatchTheStoreConstraint) holds the two to each other,

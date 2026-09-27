@@ -557,6 +557,9 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 		IdempotencyKey: in.IdempotencyKey,
 	})
 	if err != nil {
+		if errors.Is(err, ErrNotificationIdempotencyConflict) {
+			return ModuleNotifyUserResult{}, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+		}
 		return ModuleNotifyUserResult{}, err
 	}
 	if notification == nil {
@@ -626,6 +629,9 @@ func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller
 			IdempotencyKey: key,
 		})
 		if err != nil {
+			if errors.Is(err, ErrNotificationIdempotencyConflict) {
+				return false, status.Error(codes.FailedPrecondition, "idempotency key already used for a different notification")
+			}
 			return false, status.Error(codes.Internal, "cannot notify the tenant's administrators")
 		}
 		if notification != nil {
