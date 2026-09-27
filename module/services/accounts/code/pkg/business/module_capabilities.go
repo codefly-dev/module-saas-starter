@@ -536,6 +536,12 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 	if _, err := notificationCategoryIsMandatory(NotificationCategory(in.Category)); err != nil {
 		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification category %q", in.Category)
 	}
+	// Refused here, before the membership read and the write: a type outside
+	// the store's set would otherwise reach its CHECK constraint and surface as
+	// Internal, which a module's outbox retries forever instead of fixing.
+	if !ValidNotificationType(in.Type) {
+		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification type %q: must be one of %v", in.Type, NotificationTypes)
+	}
 	if err := s.requireTenantMember(ctx, in.Tenant, in.UserID); err != nil {
 		return ModuleNotifyUserResult{}, err
 	}
