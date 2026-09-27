@@ -239,6 +239,39 @@ function walk(dir, out, base) {
   return out;
 }
 
+// The files the gate judges: what git tracks (committed or staged) when the scan root is inside
+// a work tree, because that is what can be published — an untracked or ignored file, such as a
+// local build output, is not, and failing on it reports something no push would carry. Staged
+// files count, so the pre-commit hook still sees a file the commit is about to add. Outside a
+// work tree (a consumer copy without VCS) there is nothing to ask, so the tree is walked.
+export function scanFiles(scanRoot) {
+  let listed;
+  try {
+    listed = execFileSync("git", ["-C", scanRoot, "ls-files", "-z", "--cached"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 256 * 1024 * 1024,
+    });
+  } catch {
+    return walk(scanRoot, [], scanRoot);
+  }
+  const files = new Set();
+  for (const rel of listed.split("\0")) {
+    if (!rel) continue;
+    const abs = join(scanRoot, rel);
+    // A tracked path deleted in the work tree has no content to read; a symlink is skipped for
+    // the reason walk gives (modules/<name> points back at module/).
+    let st;
+    try {
+      st = lstatSync(abs);
+    } catch {
+      continue;
+    }
+    if (st.isFile()) files.add(rel);
+  }
+  return [...files];
+}
+
 // Widen to the repository root when running against canonical, so root *.md and .github/ are
 // covered; stay inside the module when running in a consumer copy. Same test module-verify
 // uses for its public-claim scan.
@@ -260,7 +293,7 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
   const allowed = loadAllowlist(moduleRoot);
   const errors = [];
 
-  for (const rel of walk(scanRoot, [], scanRoot).sort()) {
+  for (const rel of scanFiles(scanRoot).sort()) {
     if (SKIP_FILE(rel) || allowed.has(rel)) continue;
 
     // A content-only scan misses a file that names a product in its own filename — which is

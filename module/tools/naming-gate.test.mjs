@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
-import { namingErrors, canonicalScanRoot, messageErrors, commitMessageBody } from "./naming-gate.mjs";
+import { namingErrors, canonicalScanRoot, messageErrors, commitMessageBody, scanFiles } from "./naming-gate.mjs";
 
 const digest = (value) => createHash("sha256").update(value.toLowerCase()).digest("hex");
 
@@ -213,6 +213,33 @@ test("a file too large to scan is reported, never skipped silently", () => {
     run({ "big.md": big }, { allowlist: [{ path: "big.md", reason: "generated", ticket: "#1" }] }),
     [],
   );
+});
+
+// The gate says it judges tracked content, and in a work tree it does: an untracked file and a
+// gitignored build output carrying a denylisted token are not publishable and must not fail the
+// scan, while the same file once staged — which the pre-commit hook sees — does.
+test("in a git work tree only tracked or staged files are scanned", () => {
+  const root = termsRoot();
+  const git = (...args) =>
+    execFileSync("git", ["-C", root, ...args], { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+  try {
+    git("init", "-q");
+    writeFileSync(join(root, ".gitignore"), "build-output/\n");
+    writeFileSync(join(root, "clean.md"), "nothing to see\n");
+    git("add", "-A");
+    git("-c", "user.email=ci@example.com", "-c", "user.name=CI", "commit", "-q", "-m", "fixture");
+    mkdirSync(join(root, "build-output"), { recursive: true });
+    writeFileSync(join(root, "build-output", "binary"), "linked for ZorpCo\n");
+    writeFileSync(join(root, "draft.md"), "notes about ZorpCo\n");
+
+    assert.deepEqual(namingErrors(root, root), [], "untracked and ignored files are not judged");
+    assert.ok(!scanFiles(root).includes("draft.md"));
+
+    git("add", "draft.md");
+    assert.match(namingErrors(root, root).join("\n"), /draft\.md:1: forbidden name \(ZorpCo\)/, "a staged file is");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("a directory carrying tracked content is not pruned", () => {
