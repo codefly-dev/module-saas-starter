@@ -171,3 +171,13 @@ same `ErrorInfo`. Only those two reasons are relayed; any other denial is a bare
 `403` with body `forbidden`, so the gateway never says more about a delegation
 than accounts decided to. The design is in
 [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-from-a-source-delegation).
+
+These three routes are the wire contract of the published module-authority
+client (`saas-sdk-go/moduleauthority`), which mints here and exchanges on
+accounts' `authority` endpoint — never with a Connect call to this gateway,
+which answers 404 for every internal procedure. In the canonical repository,
+`qualification/module-authority` drives that client against this gateway's real
+handler and accounts' real internal tier and `authority` endpoint, each run as a
+helper test from its own module (`TestModuleAuthorityContractGateway` here,
+`TestModuleAuthorityContractHost` in accounts). Change a path, header, JSON
+field, status or refusal body here and that qualification is what fails.

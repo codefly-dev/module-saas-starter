@@ -439,7 +439,7 @@ reverse, fails the `release-contract` job.
 | `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
 | `provider-shim` | provider setup scripts stay non-writing shims | `node --test scripts/setup/*.test.mjs` |
 | `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
-| `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, and the exported API contract | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check` |
+| `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, the exported API contract, and the published module-authority client against the real host | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check`, `go test ./...` in `qualification/module-authority` |
 | `module-package` | the package contract, protobuf compatibility, generator determinism, published conformance suites, and byte-identical archive builds | `go test ./...` **in `module/tools` only**, `go run ./cmd/module-package …`, `buf breaking`, `npm run test:published-plugin-contract` |
 
 Two of those `go test ./...` invocations are worth reading carefully. This
@@ -450,7 +450,12 @@ agent, the host, the generated reference composition) and the `module-package`
 one runs in `module/tools`; neither compiles, let alone tests,
 `services/accounts/code` or `services/auth-gateway/code`. Those are tested by
 `codefly-quality` and `codefly-build` through their service plugins. Nothing in
-this repository presents a root `go test ./...` as service coverage.
+this repository presents a root `go test ./...` as service coverage. The
+module-authority qualification in the same job is not service coverage either:
+it compiles each of those two services' test binaries only to run one helper
+from each — the real gateway handler and accounts' real internal tier and
+authority endpoint — as the host its published client is driven against. The
+service suites themselves stay with `codefly-quality`.
 
 ## Vulnerability policy and its one exemption
 

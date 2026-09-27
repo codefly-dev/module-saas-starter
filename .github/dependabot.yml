@@ -45,12 +45,14 @@
 version: 2
 
 updates:
-  # The repository-root tooling module and the published SDKs. The
+  # The repository-root tooling module, the published SDKs, and the
+  # module-authority qualification that runs one of them against the host. The
   # five modules under module/ are base files; see rule 1.
   - package-ecosystem: gomod
     directories:
       - /
       - /libraries/source-read-sdk/go
+      - /qualification/module-authority
     schedule:
       interval: weekly
     open-pull-requests-limit: 1
