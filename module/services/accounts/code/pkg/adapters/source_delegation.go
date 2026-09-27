@@ -141,6 +141,17 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 	if err != nil || len(scopes) == 0 {
 		return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context scopes", workcontext.ErrWorkContextInvalid)
 	}
+	// A plain mint grants the actor everything the person delegated. A
+	// reference-backed exchange grants it only what this call needs, already
+	// narrowed to the delegation, so the hop carries less than the owner does —
+	// the same shape the signer's attenuation produces on the parent-token arm.
+	actorScopes := cloneWorkScopes(scopes)
+	if len(authority.ActorScopes) > 0 {
+		_, actorScopes, err = workContextScopes(authority.WireActorScopes(), mintContentReads(authority.Audience))
+		if err != nil || len(actorScopes) == 0 {
+			return workcontext.WorkContextToken{}, nil, fmt.Errorf("%w: source operation context actor scopes", workcontext.ErrWorkContextInvalid)
+		}
+	}
 	return s.signer.StartTask(workcontext.StartTaskInput{
 		Audience:              authority.Audience,
 		TenantID:              authority.Tenant,
@@ -154,7 +165,7 @@ func (s *WorkContextAuthorityServer) StartSourceOperationTask(
 			PrincipalId:   authority.PrincipalID,
 			PrincipalKind: business.PrincipalKindService,
 			DelegationId:  authority.Delegation.ID,
-			GrantedScopes: cloneWorkScopes(scopes),
+			GrantedScopes: actorScopes,
 		}},
 		TTL: business.SourceOperationContextTTL,
 	})

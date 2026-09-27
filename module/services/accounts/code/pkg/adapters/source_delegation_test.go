@@ -237,6 +237,9 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 				"delegation_id": delegationID, "source_id": delegationSource, "principal_id": delegationPerson,
 				"module": "docstore", "binding_id": "source-sync",
 				"audience": "ingestservice", "scopes": []string{"collections:write"},
+				// A plain mint is never the receipt-lookup narrowing, and the
+				// trail says so rather than leaving it to be inferred.
+				"lookup": false,
 			}, used[0].Payload)
 		})
 	}

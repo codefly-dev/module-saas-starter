@@ -30,9 +30,59 @@ Interactive calls can continue using the existing owner-bearer
 
 `ModuleCapabilitiesService.ExchangeDelegatedOperationAudience` applies the same
 identity, tenant, current-authority, journal, recheck, lifetime and secrecy
-rules to an installed operation binding. Its request contains the parent,
-`binding_id`, and a `lookup` selector only. The caller cannot supply the target
-audience, scopes, actions, resource ids or TTL.
+rules to an installed operation binding. Its request contains the authority it
+presents, `binding_id`, and a `lookup` selector only. The caller cannot supply
+the target audience, scopes, actions, resource ids or TTL.
+
+The authority is exactly one of two things, and which one it is decides how long
+the work behind it may run.
+
+- `parent_work_context_token` is a live capability the caller holds. The child
+  is attenuated against it and expires with it, so nothing admitted this way can
+  outlive the parent — in practice 60 seconds, and never more than the
+  15-minute ceiling every Work Context has.
+- `delegation_id` is a **reference** to a host-owned, revocable source
+  delegation. No capability is presented and none needs to still be valid. The
+  host re-reads the delegation, re-checks it against current facts, and mints a
+  fresh short child from it.
+
+They are two fields rather than a `oneof`: moving a published field into one
+changes its presence and is a breaking contract change, which this surface does
+not get to make. The exclusivity is a message-level validation rule instead, so
+it is still the contract — a request setting both, or neither, is
+`INVALID_ARGUMENT` before any handler sees it.
+
+The second is how work longer than any Work Context stays authorized: the
+caller keeps an identifier, never a token, and exchanges again for each call.
+Because that exchange depends on nothing the caller holds, it succeeds after the
+previous child has already expired — which is the whole of the renewal path for
+work in submit mode. Nothing is renewed; a fresh capability is minted under a
+live re-check, and `WorkContextService.RenewWorkContext` stays parent-token-only
+and is not the tool for this.
+
+A reference is an identifier, not a bearer capability, and one fact makes that
+true: a delegation is a grant to one binding of one module, and that binding
+declares the audience it may call. **Only the module named as that audience may
+present the reference.** The delegating module itself cannot, and neither can
+anyone who merely learns the id; both are refused as `PERMISSION_DENIED`,
+indistinguishably from an id that names nothing. This is the same link the
+parent-token arm enforces by requiring the parent's audience to equal the
+caller's prefix — read from the delegation directly, because there is no parent
+to read it from.
+
+`binding_id` names the **caller's own** installed binding, not the delegation's.
+The child's audience is that binding's, and its actor scopes are that binding's
+invoke scopes — or its read-only lookup subset — intersected with what the
+person actually delegated. A lookup the delegation does not cover is refused
+rather than issued empty. The capability is otherwise indistinguishable from
+what the parent-token arm produces: owned by the person, one actor hop carrying
+the delegating module's principal and the delegation id, sealed to the same
+revision, so `CheckAuthorizationRevision` confirms it and a revoke stops
+confirming it at the next hop.
+
+A revocation takes effect on the **next call**. Work already in flight is not
+recalled — this is a live re-check before each mint, not an atomic cross-service
+fence — so a run whose delegation is revoked mid-flight closes partial.
 
 An operation binding declares canonical invoke scopes and a read-only lookup
 subset:
@@ -44,10 +94,18 @@ subset:
 Resource kinds, actions and resource ids are sorted and unique; wildcards are
 refused. Lookup scopes must be a subset of invoke scopes and may contain only
 `read`. Removing or changing the installed binding revokes the exchange on the
-next call, including the post-signing policy recheck. Every verified-parent
-attempt emits a credential-free `saas.module.delegated_audience_exchange`
-observation with owner, effective actor, authenticated module, binding,
-selected audience when known, and an `issued` or sanitized `refused` outcome.
+next call, including the post-signing policy recheck. Every attempt emits a
+credential-free `saas.module.delegated_audience_exchange` observation (v2) with
+the effective actor, the authenticated module, the binding, the selected
+audience when known, the grant reference when one was presented, and an `issued`
+or sanitized `refused` outcome.
+
+The owner is recorded whenever one has been identified, which is every case past
+the parent check and every issued mint. It is **absent** in exactly two: a
+parent that does not verify, and a reference that resolves to no delegation.
+Both name nobody, and both are kept rather than dropped for want of a name —
+they are the refusals a probe produces, and the reference or the module that
+presented it is what identifies them.
 
 ## A worked installed operation binding
 

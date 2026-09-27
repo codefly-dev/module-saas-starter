@@ -11,17 +11,23 @@ const (
 // record of one installed audience exchange. Every identity field comes from
 // verified Work Contexts; callers must never populate it from request metadata.
 type DelegatedAudienceExchangeObservation struct {
-	Caller      ModuleCaller
-	OwnerID     string
-	Actor       *Principal
-	ActorID     string
-	Tenant      string
-	BindingKind string
-	BindingID   string
-	Audience    string
-	Lookup      bool
-	Outcome     string
-	RefusalCode string
+	Caller ModuleCaller
+	// OwnerID is the person the exchange acts for. Empty only on the
+	// reference arm, and only when the grant reference resolved to no
+	// delegation at all, so no person was ever identified.
+	OwnerID string
+	// DelegationID is the grant reference presented, on the arm that presents
+	// one. It is what makes a refusal legible when OwnerID cannot be.
+	DelegationID string
+	Actor        *Principal
+	ActorID      string
+	Tenant       string
+	BindingKind  string
+	BindingID    string
+	Audience     string
+	Lookup       bool
+	Outcome      string
+	RefusalCode  string
 }
 
 // ObserveDelegatedAudienceExchange records an issue or refusal independently
@@ -29,13 +35,18 @@ type DelegatedAudienceExchangeObservation struct {
 // mutates no durable domain row, while refusals must survive by definition.
 func (s *Service) ObserveDelegatedAudienceExchange(ctx context.Context, observation DelegatedAudienceExchangeObservation) {
 	payload := map[string]any{
-		"owner_principal_id":  observation.OwnerID,
 		"actor_principal_id":  observation.ActorID,
 		"module_principal_id": observation.Caller.PrincipalID,
 		"binding_kind":        observation.BindingKind,
 		"binding_id":          observation.BindingID,
 		"lookup":              observation.Lookup,
 		"outcome":             observation.Outcome,
+	}
+	if observation.OwnerID != "" {
+		payload["owner_principal_id"] = observation.OwnerID
+	}
+	if observation.DelegationID != "" {
+		payload["delegation_id"] = observation.DelegationID
 	}
 	if observation.Audience != "" {
 		payload["audience"] = observation.Audience

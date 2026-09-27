@@ -172,3 +172,59 @@ func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testi
 	require.False(t, handled)
 	require.NoError(t, err)
 }
+
+// The intersection is the ceiling a reference-backed exchange applies in place
+// of the signer's attenuation, so it has to be right in the direction that
+// matters: never granting what one side withholds.
+func TestIntersectOperationScopesNarrowsAndNeverWidens(t *testing.T) {
+	for name, tc := range map[string]struct {
+		left, right, want []ModuleOperationScope
+	}{
+		"actions in both survive": {
+			left:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}},
+			right: []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}},
+			want:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}},
+		},
+		"a kind only one side names contributes nothing": {
+			left: []ModuleOperationScope{
+				{ResourceKind: "collections", Actions: []string{"read"}},
+				{ResourceKind: "receipts", Actions: []string{"read"}},
+			},
+			right: []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}},
+			want:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}},
+		},
+		"no action in common drops the kind rather than granting it emptily": {
+			left:  []ModuleOperationScope{{ResourceKind: "reports", Actions: []string{"write"}}},
+			right: []ModuleOperationScope{{ResourceKind: "reports", Actions: []string{"read"}}},
+			want:  nil,
+		},
+		"an unrestricted side takes the other's resource ids": {
+			left:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}},
+			right: []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c1", "c2"}}},
+			want:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c1", "c2"}}},
+		},
+		"two listed sides keep only the ids in both": {
+			left:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c1", "c2"}}},
+			right: []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c2", "c3"}}},
+			want:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c2"}}},
+		},
+		"disjoint resource ids are no authority over the kind, not authority over all of it": {
+			left:  []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c1"}}},
+			right: []ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}, ResourceIDs: []string{"c9"}}},
+			want:  nil,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := intersectOperationScopes(tc.left, tc.right)
+			if len(tc.want) == 0 {
+				require.Empty(t, got)
+				return
+			}
+			require.Equal(t, tc.want, got)
+			// The property the capability depends on, asserted rather than
+			// read off the table: a result is always within both inputs.
+			require.True(t, operationScopesSubset(got, tc.left))
+			require.True(t, operationScopesSubset(got, tc.right))
+		})
+	}
+}

@@ -171,6 +171,11 @@ var (
 	// ErrSourceDelegationContextStale: a revision check presented a context the
 	// delegation it was minted from no longer confirms.
 	ErrSourceDelegationContextStale = errors.New("source delegation context is not confirmed by a current delegation")
+	// ErrSourceDelegationLookupUnauthorized: the binding's receipt-lookup
+	// scopes and what the person delegated do not overlap, so this delegation
+	// authorizes producing an effect but not recovering its receipt. A refusal
+	// rather than an empty capability: an unauthorized lookup must say so.
+	ErrSourceDelegationLookupUnauthorized = errors.New("source delegation does not authorize receipt lookup for this binding")
 )
 
 // SourceDelegationBindingDigest fingerprints what a binding lets a delegation
@@ -433,13 +438,27 @@ type SourceOperationContextAuthority struct {
 	OwnerPrincipalID string
 	Delegation       SourceDelegation
 	Audience         string
-	Scopes           []ModuleOperationScope
-	Revision         uint64
+	// Scopes is what the person delegated: the owner's authority in the minted
+	// capability.
+	Scopes []ModuleOperationScope
+	// ActorScopes is what this one call may do with it — the caller's binding
+	// narrowed to Scopes. Empty means the actor is granted Scopes whole, which
+	// is what a plain mint from the delegation seals.
+	ActorScopes []ModuleOperationScope
+	// Lookup records that this capability was narrowed to receipt lookup, so
+	// the durable record of the mint says which of the two it was.
+	Lookup   bool
+	Revision uint64
 }
 
 // WireScopes projects the binding's delegation scopes onto the signing surface.
 func (a SourceOperationContextAuthority) WireScopes() []*gen.WorkContextScope {
 	return wireOperationScopes(a.Scopes)
+}
+
+// WireActorScopes projects what this one call may do onto the signing surface.
+func (a SourceOperationContextAuthority) WireActorScopes() []*gen.WorkContextScope {
+	return wireOperationScopes(a.ActorScopes)
 }
 
 // AuthorizeSourceOperationContext resolves the context a composed module may be
@@ -469,7 +488,43 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 	if !registered {
 		return SourceOperationContextAuthority{}, ErrModuleRegistrationDenied
 	}
-	if (ref.DelegationID == "") == (ref.SourceID == "") {
+	return s.authorizeSourceDelegation(ctx, identity.PrincipalID, grant, ref)
+}
+
+// AuthorizeDelegationReferenceExchange resolves the capability one call of
+// long-running delegated work may be issued, from a reference to a delegation
+// and nothing else — no parent capability is presented, and none is held.
+//
+// This is what lets work outlive every Work Context. The caller keeps an
+// identifier; the authority behind it is re-read here on every call, so a task
+// running for an hour is checked as hard on its thousandth call as its first,
+// and a revocation between two calls refuses the second.
+//
+// A reference is not a bearer capability, and what stops it becoming one is the
+// same fact the parent-token arm relies on. A delegation is a grant to one
+// binding of one module, and that binding declares the audience it may call.
+// Only the module named as that audience may present the reference: an id
+// learned by anyone else resolves to a delegation that does not authorize
+// calling them, and is refused. The parent-token arm enforces exactly this by
+// requiring the parent's audience to be the caller's prefix; here the same link
+// is read from the delegation directly, because there is no parent to read it
+// from.
+//
+// The capability is deliberately indistinguishable from the one the
+// parent-token arm produces — owned by the person, one actor hop carrying the
+// delegating module and the delegation id, sealed to the same revision — so the
+// revision check confirms it and a consumer cannot tell which arm admitted the
+// work. Its scopes are the caller's binding narrowed to what the person
+// delegated, which is the ceiling the signer's attenuation would have applied
+// had there been a parent.
+func (s *Service) AuthorizeDelegationReferenceExchange(
+	ctx context.Context, caller ModuleCaller, delegationID, bindingID string, lookup bool,
+) (SourceOperationContextAuthority, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	if delegationID == "" || bindingID == "" {
 		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
 	}
 
@@ -479,6 +534,122 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 		stale     *SourceDelegation
 	)
 	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		delegation, err := s.store.GetSourceDelegation(ctx, "", delegationID)
+		if err != nil {
+			return err
+		}
+		if delegation == nil {
+			return ErrSourceDelegationInvalid
+		}
+		if !delegation.Active() {
+			return ErrSourceDelegationRevoked
+		}
+		// The delegating module is the one the person granted to, which is not
+		// the caller: the caller is the module that grant authorizes calling.
+		delegating, declared := s.modulePrincipals[ModulePrincipalID(delegation.ModulePrefix)]
+		if !declared {
+			return ErrSourceDelegationInvalid
+		}
+		granted, current := delegating.currentSourceDelegationBinding(delegation)
+		if !current {
+			revokeAs, stale = SourceDelegationBindingChanged, delegation
+			return nil
+		}
+		// The audience link, and the whole reason a reference is safe to hold.
+		// Refused as invalid rather than as a different code, so a module that
+		// obtained an id it was never the audience of learns nothing from the
+		// refusal beyond the fact that it cannot use it.
+		if granted.Audience != grant.Prefix {
+			return ErrSourceDelegationInvalid
+		}
+		binding, installed := grant.OperationAudiences[bindingID]
+		if !installed || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
+			return ErrSourceDelegationInvalid
+		}
+		// What this call may do: the caller's own binding, for invoking or for
+		// recovering a receipt, and never more than the person delegated.
+		reach := binding.InvokeScopes
+		if lookup {
+			reach = binding.LookupScopes
+		}
+		actorScopes := intersectOperationScopes(reach, granted.SourceDelegationScopes)
+		if len(actorScopes) == 0 {
+			if lookup {
+				return ErrSourceDelegationLookupUnauthorized
+			}
+			return ErrSourceDelegationInvalid
+		}
+		facts, err := s.store.SourceDelegationFacts(ctx, delegation.OrgID, delegation.PrincipalID, delegation.SourceID)
+		if err != nil {
+			return err
+		}
+		if reason := facts.revocation(); reason != "" {
+			revokeAs, stale = reason, delegation
+			return nil
+		}
+		personRevision := facts.EffectiveRevision()
+		if personRevision == 0 {
+			return ErrSourceDelegationInvalid
+		}
+		authority = SourceOperationContextAuthority{
+			// The actor is the delegating module, exactly as a mint from this
+			// delegation would seal it — not the caller, which is the audience.
+			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: ModulePrincipalID(delegation.ModulePrefix), Tenant: delegation.OrgID},
+			ModulePrefix:               delegation.ModulePrefix,
+			OwnerPrincipalID:           delegation.PrincipalID,
+			Delegation:                 *delegation,
+			Audience:                   binding.Audience,
+			Scopes:                     cloneOperationScopes(granted.SourceDelegationScopes),
+			ActorScopes:                cloneOperationScopes(actorScopes),
+			Lookup:                     lookup,
+			Revision:                   SourceDelegationContextRevision(delegation.ID, delegation.BindingDigest, personRevision),
+		}
+		return nil
+	})
+	if err != nil {
+		return SourceOperationContextAuthority{}, err
+	}
+	if stale != nil {
+		if err := s.revokeStaleDelegation(ctx, caller.PrincipalID, stale, revokeAs); err != nil {
+			return SourceOperationContextAuthority{}, err
+		}
+		return SourceOperationContextAuthority{}, ErrSourceDelegationRevoked
+	}
+	return authority, nil
+}
+
+// revokeStaleDelegation marks a delegation whose facts no longer support it,
+// in its own transaction: the refusal that follows must not roll back the
+// record of why the delegation ended.
+func (s *Service) revokeStaleDelegation(ctx context.Context, principalID string, stale *SourceDelegation, reason string) error {
+	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: stale.OrgID, ID: stale.ID}, reason, "")
+		if err != nil {
+			return err
+		}
+		for _, delegation := range revoked {
+			if err := s.emitTx(ctx, principalID, "system", EventSourceDelegationRevoked, "datasource",
+				delegation.SourceID, delegation.OrgID, sourceDelegationRevokedPayload(delegation, reason)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Service) authorizeSourceDelegation(
+	ctx context.Context, principalID string, grant ModulePrincipalGrant, ref SourceDelegationRef,
+) (SourceOperationContextAuthority, error) {
+	if (ref.DelegationID == "") == (ref.SourceID == "") {
+		return SourceOperationContextAuthority{}, ErrSourceDelegationInvalid
+	}
+
+	var (
+		authority SourceOperationContextAuthority
+		revokeAs  string
+		stale     *SourceDelegation
+	)
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var delegation *SourceDelegation
 		var err error
 		if ref.DelegationID != "" {
@@ -522,7 +693,7 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 			return ErrSourceDelegationInvalid
 		}
 		authority = SourceOperationContextAuthority{
-			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: identity.PrincipalID, Tenant: delegation.OrgID},
+			ModuleWorkContextAuthority: ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: delegation.OrgID},
 			ModulePrefix:               grant.Prefix,
 			OwnerPrincipalID:           delegation.PrincipalID,
 			Delegation:                 *delegation,
@@ -536,21 +707,7 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 		return SourceOperationContextAuthority{}, err
 	}
 	if stale != nil {
-		// Marked in its own transaction: the refusal above must not roll back
-		// the record of why the delegation ended.
-		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: stale.OrgID, ID: stale.ID}, revokeAs, "")
-			if err != nil {
-				return err
-			}
-			for _, delegation := range revoked {
-				if err := s.emitTx(ctx, identity.PrincipalID, "system", EventSourceDelegationRevoked, "datasource",
-					delegation.SourceID, delegation.OrgID, sourceDelegationRevokedPayload(delegation, revokeAs)); err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
+		if err := s.revokeStaleDelegation(ctx, principalID, stale, revokeAs); err != nil {
 			return SourceOperationContextAuthority{}, err
 		}
 		return SourceOperationContextAuthority{}, ErrSourceDelegationRevoked
@@ -575,6 +732,7 @@ func (s *Service) RecordSourceOperationContextMint(ctx context.Context, authorit
 		payload := sourceDelegationPayload(&authority.Delegation)
 		payload["audience"] = authority.Audience
 		payload["scopes"] = operationScopeGrants(authority.Scopes)
+		payload["lookup"] = authority.Lookup
 		return s.emitTx(ctx, authority.PrincipalID, "system", EventSourceDelegationUsed, "datasource",
 			authority.Delegation.SourceID, authority.Delegation.OrgID, payload)
 	})
