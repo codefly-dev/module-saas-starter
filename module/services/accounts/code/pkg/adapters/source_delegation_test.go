@@ -277,3 +277,87 @@ func TestSourceDelegationReasonsAreTheWireContract(t *testing.T) {
 	require.Equal(t, "DELEGATION_INVALID", SourceDelegationInvalidReason)
 	require.Equal(t, "accounts.saas.codefly.dev", SolutionRegistryErrorDomain)
 }
+
+// A consumer re-checks authority at every hop: the revision check confirms a
+// freshly minted context, and stops confirming it the moment the delegation is
+// revoked, the person's authorization revision moves, or a scope is widened.
+func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
+	mint := func(t *testing.T) (*sourceDelegationMemoryStore, *gen.CheckAuthorizationRevisionRequest) {
+		store, _ := installSourceDelegationService(t)
+		resp, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{DelegationID: delegationID})
+		require.NoError(t, err)
+		request := revisionRequestFromClaims(verifySourceContext(t, resp.GetToken()))
+		require.NoError(t, Validate(request))
+		return store, request
+	}
+
+	t.Run("confirms a minted context", func(t *testing.T) {
+		_, request := mint(t)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.NoError(t, err)
+	})
+	t.Run("refuses after revoke", func(t *testing.T) {
+		store, request := mint(t)
+		store.revoke(t)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses once the person's revision moves", func(t *testing.T) {
+		store, request := mint(t)
+		store.facts.PrincipalRevision++
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses once the person is demoted", func(t *testing.T) {
+		store, request := mint(t)
+		store.facts.MemberRole = "member"
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses a widened scope", func(t *testing.T) {
+		_, request := mint(t)
+		request.Subjects[1].Scopes[0].Actions = []string{"read", "write"}
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses another tenant", func(t *testing.T) {
+		store, request := mint(t)
+		// The module serves every tenant, so the refusal is the absence of a
+		// delegation in that one, not the module's tenancy.
+		store.delegations[delegationID].OrgID = moduleWorkContextTenant
+		request.OrgId = delegationOrg
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+}
+
+// A stale delegation found at mint time is revoked with its reason, recorded as
+// the system, and refused — and the record survives the refusal.
+func TestMintSourceOperationContextRevokesWhatNoLongerHolds(t *testing.T) {
+	for name, test := range map[string]struct {
+		mutate func(*sourceDelegationMemoryStore)
+		reason string
+	}{
+		"source deleted":  {func(s *sourceDelegationMemoryStore) { s.facts.SourceExists = false }, business.SourceDelegationSourceDeleted},
+		"member removed":  {func(s *sourceDelegationMemoryStore) { s.facts.MemberRole = "" }, business.SourceDelegationMemberRemoved},
+		"demoted":         {func(s *sourceDelegationMemoryStore) { s.facts.MemberRole = "member" }, business.SourceDelegationPermissionLost},
+		"user deleted":    {func(s *sourceDelegationMemoryStore) { s.facts.UserStatus = "deleted" }, business.SourceDelegationUserInactive},
+		"binding changed": {func(s *sourceDelegationMemoryStore) { s.delegations[delegationID].BindingDigest = "0" + s.delegations[delegationID].BindingDigest[1:] }, business.SourceDelegationBindingChanged},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, audit := installSourceDelegationService(t)
+			test.mutate(store)
+
+			_, err := mintSourceContext("docstore", "docstore-secret", business.SourceDelegationRef{SourceID: delegationSource})
+			requireRefusal(t, err, codes.PermissionDenied, SourceDelegationRevokedReason)
+
+			require.False(t, store.delegations[delegationID].Active())
+			require.Equal(t, test.reason, store.delegations[delegationID].RevokedReason)
+			revoked := audit.of(business.EventSourceDelegationRevoked)
+			require.Len(t, revoked, 1)
+			require.Equal(t, "system", revoked[0].ActorType)
+			require.Equal(t, test.reason, revoked[0].Payload["reason"])
+			require.Empty(t, audit.of(business.EventSourceDelegationUsed))
+		})
+	}
+}

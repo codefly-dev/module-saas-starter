@@ -371,6 +371,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "approval_requests" || relation == "source_read_revisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
+			// source_delegations are revoked, never deleted: the record of what a
+			// person delegated outlives the source and the person it names.
+			// Organization deletion removes them through the FK cascade.
+			if relation == "source_delegations" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
 			// approval_decisions is append-only like actor_chain_journal: read and
 			// insert, never update or delete (an immutable trigger rejects those).
 			if relation == "approval_decisions" {
