@@ -157,15 +157,11 @@ func TestDeploymentSpecIsStrictAndComplete(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "        endpoint-ports:\n", "        unknown: true\n        endpoint-ports:\n"))
+		withService(t, documents, "cache", "        endpoint-ports:\n", "        unknown: true\n        endpoint-ports:\n"))
 	require.ErrorContains(t, err, "field unknown not found")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "            rest: 8080\n", ""))
-	require.ErrorContains(t, err, `endpoint "rest" has no port`)
-
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "            rest: 8080\n", "            rest: 8080\n            ghost: 1\n"))
+		withService(t, documents, "cache", "            write: 6379\n", "            write: 6379\n            ghost: 1\n"))
 	require.ErrorContains(t, err, `names unknown endpoint "ghost"`)
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
@@ -708,15 +704,35 @@ func TestDeploymentTopologyAuthorityPortIsAllocatedAtRender(t *testing.T) {
 
 	for _, port := range []string{"9091", "9090"} {
 		_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-			withService(t, documents, "accounts", "            connect: 8080\n", "            authority: "+port+"\n            connect: 8080\n"))
+			withService(t, documents, "accounts", "        public-egress-ports:\n", "        endpoint-ports:\n            authority: "+port+"\n        public-egress-ports:\n"))
 		require.ErrorContains(t, err, `endpoint "authority" declares pod port `+port)
 	}
+}
 
-	// Only a named endpoint Codefly allocates for may leave its port
-	// undeclared; the conventional endpoint of an API still must declare it.
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "accounts", "            grpc: 9090\n", ""))
-	require.ErrorContains(t, err, `endpoint "grpc" has no port`)
+// A go-grpc service binds every endpoint on the port Codefly allocates for it,
+// so it declares no pod port: the conventional endpoint of an API with its
+// standard port to itself is allocated that port whatever the composition —
+// connect on 8081, grpc on 9090, rest on 8080 — and a service that binds a
+// fixed port (redis, postgres, vault, the Next.js server) keeps its
+// declaration.
+func TestDeploymentTopologyPodPortIsTheAllocationUnlessDeclared(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, readDeploymentDocuments(t))
+	require.NoError(t, err)
+	ports := map[string]uint32{}
+	for _, service := range artifacts.Catalog.GetServices() {
+		for _, endpoint := range service.GetEndpoints() {
+			ports[service.GetName()+"/"+endpoint.GetName()] = endpoint.GetPort()
+		}
+	}
+	for endpoint, want := range map[string]uint32{
+		"accounts/connect": 8081, "accounts/grpc": 9090, "accounts/rest": 8080, "accounts/authority": 0,
+		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080, "telemetry/grpc": 9090,
+		"cache/read": 6379, "cache/write": 6379, "store/tcp": 5432, "vault/http": 8200,
+		"frontend/http": 3000, "marketing/http": 3000,
+	} {
+		require.Equal(t, want, ports[endpoint], endpoint)
+	}
 }
 
 // An Istio ALLOW policy with an empty `rules` denies every request to the

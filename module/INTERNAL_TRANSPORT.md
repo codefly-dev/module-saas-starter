@@ -69,10 +69,10 @@ and must not widen anything. The whole tier goes only to a caller that declared
 one of accounts' private endpoints, the mixed `rest`/`grpc` listeners it is
 actually served on; a composed module cannot declare one, because the render
 refuses a dependency on a private endpoint. A caller that declared neither is in
-no rule at all. This matters because Istio matches on request path with no port,
-and `connect` shares its port with the multiplexed private `rest` listener: a
-caller wrongly classified as whole-tier could send the internal methods there
-with the internal credential the `authority` endpoint already requires. A valid
+no rule at all. This matters because Istio matches on request path with no port:
+a caller wrongly classified as whole-tier could send the internal methods to the
+private `rest` listener, which multiplexes the internal tier, with the internal
+credential the `authority` endpoint already requires. A valid
 credential does not
 substitute for it — the connection is refused before any token is read — and
 neither does a network route: the policy is deny-by-default for every principal
