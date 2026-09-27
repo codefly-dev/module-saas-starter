@@ -1,0 +1,9 @@
+{
+  "schema": "saas.commit-identity.v1",
+  "accepted": [
+    {
+      "h": "0bdd62bc8c412aee6d8dc6981df059fb504bc31097211f40e6072f8b2a6324c3",
+      "note": "The contribution address of the account that merges to main. GitHub authors a squash merge with the merging account's profile email; the owner accepts that address (2026-09-27). Held as a sha256 of the lowercased address, never the address itself, so the tree carries no organization name."
+    }
+  ]
+}

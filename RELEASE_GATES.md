@@ -506,8 +506,29 @@ the decision.
 the count growing. Every non-merge commit in `<base>..<head>` must carry a GitHub
 no-reply address — `<id>+<login>@users.noreply.github.com`, or the bare
 `noreply@github.com` GitHub itself commits as for a squash, a web edit or a
-merge-queue entry. It runs on `pull_request` only; against `main` it would fail
-on what is already published.
+merge-queue entry — or an address the owner has **declared** in
+`tools/commit-identity.json`. A declaration is the sha256 of the lowercased
+address with a note saying whose it is and why, never the address itself, so the
+tree carries no organization name; the gate reads it strictly and fails closed on
+a malformed file.
+
+GitHub writes a squash commit's author from the *merging account's* profile
+email, not from the commit it squashes. That address is what lands on `main`, so
+the merging account either merges with **Settings → Emails → "Keep my email
+address private"** switched on, or its address is declared. The owner has
+declared the merging account's contribution address.
+
+The gate runs on `pull_request`, from the *current* base tip to the head sha; over
+that range it fails, because those commits are still the contributor's to rewrite.
+It also runs on `push` to `main`, in a job of its own (`Landed commit identity`, so a
+red tripwire never skips the release gates that need `base-integrity`), over
+`${{ github.event.before }}..${{ github.sha }}` — the commits that push added, never history — as `report` rather than `check`.
+That run cannot stop the squash it inspects: the object does not exist until the
+merge is performed, after every required check has reported. It is a tripwire, not
+a barrier — it turns the growth the gate measures into a visible failure on `main`
+instead of a count that rises unseen. It judges against the same allowlist as
+`check`, declarations included, and its remediation is the account setting or a
+declaration above, because the landed commit can no longer be rewritten.
 
 Two exclusions, both load-bearing — get either wrong and the gate fails pull
 requests on commits their authors cannot rewrite.
