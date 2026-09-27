@@ -92,7 +92,7 @@ Its authority is declared in the `module-capabilities` group's
 | `namespaces` | event publish |
 | `resources` | the permission resource types its own content is governed by, bounding both the content reads this host authorizes for it and the records it may place at a scope node |
 | `read_audiences` | installed read-only bindings from a retained parent to a fixed audience and canonical scopes |
-| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, a read-only lookup subset, and optional `headless_scopes` (a subset of the invoke scopes) that alone may be minted with no person present |
+| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, a read-only lookup subset, optional `headless_scopes` (a subset of the invoke scopes) that alone may be minted with no person present, and optional `source_delegation_scopes` (a subset of the invoke scopes, on at most one binding) that a person's connect of a datasource source delegates |
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
@@ -161,6 +161,53 @@ undeclared prefix, the same tenant existence check — and the request adds only
 
 The worked example and the configuration shape are in
 [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-with-no-person-present).
+
+## Source delegations: a sync runs with the connecting person's authority
+
+A datasource source's sync runs as a module task with nobody signed in, but it
+must act in the source's organization with authority traceable to the person who
+connected the source — never with the module's own. `source_delegations`
+(migration `9_source_delegations`, tenant RLS, revoked never deleted) records
+that authority (`pkg/business/source_delegation.go`):
+
+- **Recorded at connect.** `AddSource`, `AddGitHubSource`, a replacement
+  credential on `SyncSource`, and `MigrateGitHubSourceToApp` record, in their own
+  transaction, one delegation per module whose one binding declares
+  `source_delegation_scopes` and whose tenancy covers the organization — only
+  when the actor is an owner or admin *of the organization* (a platform
+  operator's bypass records none). A reconnect revokes the previous one as
+  `replaced` and records a new one under the reconnecting person, atomically.
+  Existing sources are not backfilled.
+- **Revoked on the event, re-checked on every mint.** `DeleteDatasourceSource`,
+  `RemoveOrgMember` and a demotion through `AddOrgMember` revoke in their own
+  transaction; the mint and the revision check re-read the source, membership,
+  role, account status and binding anyway, and a mint that finds one false
+  revokes the row with the reason and refuses.
+- **The mint.** `ModuleCapabilitiesService/MintSourceOperationContext`
+  (`EXPOSURE_INTERNAL`, brokered by the gateway's
+  `/modules/_source-operation-context`) authenticates like
+  `MintModuleWorkContext` and takes a `delegation_id` or a `source_id`. The child
+  is owned by the person, actored by the module principal (the hop carries the
+  delegation id), in the source's organization, addressed to the binding's
+  audience with exactly its delegation scopes, for 60 seconds. Its revision
+  (`business.SourceDelegationContextRevision`) binds the delegation, the binding
+  digest and the person's authorization revision, so `CheckAuthorizationRevision`
+  — which recognises a person-owned context with a module actor and confirms it
+  from the delegation rather than the row-backed agent path — stops confirming it
+  once any of them moves.
+- **Codes.** `FAILED_PRECONDITION` + `DELEGATION_MISSING` (the source has no
+  active delegation: reconnect), `PERMISSION_DENIED` + `DELEGATION_REVOKED` or
+  `DELEGATION_INVALID` (indistinguishable from absent), `UNAUTHENTICATED` for an
+  unproven module. The reasons are `google.rpc.ErrorInfo` under
+  `accounts.saas.codefly.dev`, a wire contract the gateway pins too.
+- **Administration.** `DatasourceService/ListSourceDelegations` and
+  `RevokeSourceDelegation` (`TENANT_REQUIREMENT_ORG_ADMIN`, like the other
+  datasource administration) show and end an organization's delegations.
+- **Audit.** `saas.datasource.delegation.created`, `.used` (every mint) and
+  `.revoked` (with `reason`).
+
+The worked example is in
+[../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md#operation-contexts-from-a-source-delegation).
 
 ## Subject visibility is a projection, not a module's own vocabulary
 
