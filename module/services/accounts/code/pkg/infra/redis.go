@@ -15,9 +15,10 @@ import (
 // users share it: the authoritative state in pkg/redisstate, and the membership
 // cache's shared layer (MembershipCacheLayer). It does not contact the server.
 //
-// Returns (nil, nil) when the cache dependency is not wired, which callers treat
-// as "run without Redis". A connection that is wired but does not parse is a
-// configuration error and is returned.
+// accounts declares `cache` in its service.codefly.yaml, so a connection that
+// is missing, unreadable or malformed is a configuration error and is
+// returned: running on without it would silently drop token revocation,
+// cross-replica nonces and rate limiting.
 //
 // Which server it reaches: `redis.connection` names the primary, the process
 // behind the `write` endpoint. At agent 0.0.94 there are no replicas at all
@@ -31,8 +32,10 @@ func NewRedisClient(ctx context.Context) (*goredis.Client, error) {
 
 	connection, err := codefly.For(ctx).Service("cache").Secret("redis", "connection")
 	if err != nil {
-		w.Debug("cache dep not wired, running without redis", wool.ErrField(err))
-		return nil, nil
+		return nil, w.Wrapf(err, "the cache dependency's redis connection is unavailable (accounts declares cache in service.codefly.yaml and cannot run without it)")
+	}
+	if connection == "" {
+		return nil, w.NewError("the cache dependency's redis connection is empty (accounts declares cache in service.codefly.yaml and cannot run without it)")
 	}
 	options, err := goredis.ParseURL(connection)
 	if err != nil {
@@ -58,4 +61,21 @@ const membershipCachePrefix = "accounts:membership"
 // changes who opens the client and the key prefix, nothing a reader observes.
 func MembershipCacheLayer(client goredis.UniversalClient) cache.Layer {
 	return rediscache.New(client, rediscache.WithPrefix(membershipCachePrefix))
+}
+
+// LegacyMembershipKeyEvictor deletes the key the previous release's
+// OrgMembershipCache kept for (org, user): "t:<org>:u:<user>:orgmember". During
+// a rollout, replicas on the previous release still read that key; deleting it
+// on every invalidation lets a membership change served by a new replica evict
+// their copies too. The other direction has no shim: a change served by an old
+// replica deletes only this key, so new replicas can serve their copy for up to
+// the membership stack's shared TTL (30s) until the rollout completes.
+//
+// TODO(#927): remove in the first deploy-counter release after the one that
+// ships this (v0.0.79 is the latest tag today: if this ships in v0.0.80,
+// remove it in v0.0.81). By then no replica reads the old key.
+func LegacyMembershipKeyEvictor(client goredis.UniversalClient) func(ctx context.Context, orgID, userID string) error {
+	return func(ctx context.Context, orgID, userID string) error {
+		return client.Del(ctx, "t:"+orgID+":u:"+userID+":orgmember").Err()
+	}
 }

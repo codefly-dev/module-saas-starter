@@ -5,6 +5,8 @@ package redisintegration_test
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -217,4 +219,84 @@ func TestUnreachableRedisFallsThroughToTheStore(t *testing.T) {
 		require.Equal(t, gen.OrgRole_ORG_ROLE_OWNER.String(), role)
 	}
 	require.GreaterOrEqual(t, store.loads.Load(), int64(1))
+}
+
+// unreachableClient is a client with the real connection's options, pointed at
+// a port on the same host that was just released: nothing listens there, so
+// every dial is refused, the way an unreachable cache is at boot.
+func unreachableClient(t *testing.T) *goredis.Client {
+	t.Helper()
+	real, err := infra.NewRedisClient(testCtx)
+	require.NoError(t, err)
+	options := *real.Options()
+	require.NoError(t, real.Close())
+	host, _, err := net.SplitHostPort(options.Addr)
+	require.NoError(t, err)
+	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
+	require.NoError(t, err)
+	options.Addr = listener.Addr().String()
+	require.NoError(t, listener.Close())
+	client := goredis.NewClient(&options)
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
+
+// A cache that cannot be reached at boot: Connect retries within
+// BootRetry, then runs store-only, and every read is the store's current
+// answer — a removal is seen on the next check, with no invalidation at all.
+func TestUnreachableRedisAtBootRunsStoreOnlyAndIsNeverStale(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	user := seedUser(t)
+	setRole(t, org, user, "admin")
+	store := &countingStore{}
+	client := unreachableClient(t)
+
+	started := time.Now()
+	c, err := membership.Connect(testCtx, infra.MembershipCacheLayer(client), store, membership.BootRetry,
+		membership.WithEviction(infra.LegacyMembershipKeyEvictor(client)))
+	require.NoError(t, err, "an unreachable cache is not a boot failure")
+	t.Cleanup(c.Close)
+	require.Error(t, c.StoreOnly())
+	require.ErrorContains(t, c.StoreOnly(), "attempt 5 of 5")
+	require.Less(t, time.Since(started), 15*time.Second, "the retry is bounded")
+
+	role, err := c.Role(memberOf(org, user), org, user)
+	require.NoError(t, err)
+	require.Equal(t, gen.OrgRole_ORG_ROLE_ADMIN.String(), role)
+
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.RemoveOrgMember(ctx, org, user)
+	}))
+	role, err = c.Role(memberOf(org, user), org, user)
+	require.NoError(t, err)
+	require.Empty(t, role, "store-only sees the removal on the next check")
+
+	setRole(t, org, user, "member")
+	role, err = c.Role(memberOf(org, user), org, user)
+	require.NoError(t, err)
+	require.Equal(t, gen.OrgRole_ORG_ROLE_MEMBER.String(), role)
+	require.EqualValues(t, 3, store.loads.Load(), "every read went to the store")
+
+	_, err = c.Role(memberOf(org, seedUser(t)), org, user)
+	require.ErrorIs(t, err, auth.ErrVerifiedDatabaseScopeMismatch)
+}
+
+// Rollout shim (#927): an invalidation on a new replica deletes the key the
+// previous release's replicas read, so their copies go too.
+func TestInvalidationEvictsThePreviousReleasesKey(t *testing.T) {
+	user := seedUser(t)
+	org := seedOrg(t, user)
+	client := stateClient(t)
+	c, err := membership.New(testCtx, infra.MembershipCacheLayer(client), &countingStore{},
+		membership.WithEviction(infra.LegacyMembershipKeyEvictor(client)))
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+
+	legacy := "t:" + org + ":u:" + user + ":orgmember"
+	require.NoError(t, client.Set(testCtx, legacy, "ORG_ROLE_ADMIN", 30*time.Second).Err())
+	require.NoError(t, c.Invalidate(testCtx, strings.ToUpper(org), user))
+	n, err := client.Exists(testCtx, legacy).Result()
+	require.NoError(t, err)
+	require.Zero(t, n, "the previous release's copy is gone")
 }

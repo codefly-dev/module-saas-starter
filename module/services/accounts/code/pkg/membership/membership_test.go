@@ -3,6 +3,7 @@ package membership_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -166,30 +167,141 @@ func TestTwoInstancesShareFillsAndInvalidations(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "b's in-process copy must be evicted by a's invalidation")
 }
 
-func TestInvalidateOrgReachesEveryListedMember(t *testing.T) {
-	store := newCountingStore()
-	org := uuid.NewString()
-	users := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
-	c := newCache(t, cache.NewMemory(), store)
-	for _, user := range users {
-		store.set(org, user, gen.OrgRole_ORG_ROLE_MEMBER)
-		_, err := c.Role(verified(org, user), org, user)
-		require.NoError(t, err)
-	}
-
-	for _, user := range users {
-		store.set(org, user, gen.OrgRole_ORG_ROLE_UNSPECIFIED)
-	}
-	require.NoError(t, c.InvalidateOrg(context.Background(), org, users))
-	for _, user := range users {
-		role, err := c.Role(verified(org, user), org, user)
-		require.NoError(t, err)
-		require.Empty(t, role)
-	}
-}
-
-func TestInvalidateRefusesAnEmptyKey(t *testing.T) {
+func TestInvalidateRefusesAnIDThatIsNotAUUID(t *testing.T) {
 	c := newCache(t, cache.NewMemory(), newCountingStore())
 	require.Error(t, c.Invalidate(context.Background(), "", uuid.NewString()))
 	require.Error(t, c.Invalidate(context.Background(), uuid.NewString(), ""))
+	require.Error(t, c.Invalidate(context.Background(), "acme", uuid.NewString()))
+	require.Error(t, c.Invalidate(context.Background(), uuid.Nil.String(), uuid.NewString()))
+}
+
+// The scope check and the store accept every spelling uuid.Parse does. One
+// membership must still be one key: an invalidation under any spelling reaches
+// a copy cached under any other.
+func TestEverySpellingOfAnIDIsOneKey(t *testing.T) {
+	spellings := map[string]func(string) string{
+		"upper":  strings.ToUpper,
+		"braced": func(id string) string { return "{" + id + "}" },
+		"urn":    func(id string) string { return "urn:uuid:" + id },
+		"bare":   func(id string) string { return strings.ReplaceAll(id, "-", "") },
+	}
+	for name, spell := range spellings {
+		t.Run(name, func(t *testing.T) {
+			store := newCountingStore()
+			org, user := uuid.NewString(), uuid.NewString()
+			store.set(org, user, gen.OrgRole_ORG_ROLE_ADMIN)
+			c := newCache(t, cache.NewMemory(), store)
+			ctx := verified(org, user)
+
+			// Warmed under the alternate spelling, invalidated canonically.
+			role, err := c.Role(ctx, spell(org), spell(user))
+			require.NoError(t, err)
+			require.Equal(t, gen.OrgRole_ORG_ROLE_ADMIN.String(), role)
+			store.set(org, user, gen.OrgRole_ORG_ROLE_UNSPECIFIED)
+			require.NoError(t, c.Invalidate(context.Background(), org, user))
+			role, err = c.Role(ctx, spell(org), spell(user))
+			require.NoError(t, err)
+			require.Empty(t, role, "a canonical invalidation must reach the %s spelling", name)
+
+			// Warmed canonically, invalidated under the alternate spelling.
+			store.set(org, user, gen.OrgRole_ORG_ROLE_MEMBER)
+			require.NoError(t, c.Invalidate(context.Background(), org, user))
+			role, err = c.Role(ctx, org, user)
+			require.NoError(t, err)
+			require.Equal(t, gen.OrgRole_ORG_ROLE_MEMBER.String(), role)
+			store.set(org, user, gen.OrgRole_ORG_ROLE_UNSPECIFIED)
+			require.NoError(t, c.Invalidate(context.Background(), spell(org), spell(user)))
+			role, err = c.Role(ctx, org, user)
+			require.NoError(t, err)
+			require.Empty(t, role, "a %s-spelled invalidation must reach the canonical copy", name)
+		})
+	}
+}
+
+func TestInvalidateRunsTheEvictionHookWithCanonicalIDs(t *testing.T) {
+	var got [][2]string
+	c, err := membership.New(context.Background(), cache.NewMemory(), newCountingStore(),
+		membership.WithEviction(func(_ context.Context, orgID, userID string) error {
+			got = append(got, [2]string{orgID, userID})
+			return nil
+		}))
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	org, user := uuid.NewString(), uuid.NewString()
+
+	require.NoError(t, c.Invalidate(context.Background(), strings.ToUpper(org), "{"+user+"}"))
+	require.Equal(t, [][2]string{{org, user}}, got)
+
+	boom := errors.New("legacy eviction failed")
+	c, err = membership.New(context.Background(), cache.NewMemory(), newCountingStore(),
+		membership.WithEviction(func(context.Context, string, string) error { return boom }))
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	require.ErrorIs(t, c.Invalidate(context.Background(), org, user), boom, "an eviction failure is reported")
+}
+
+// unreachable is a shared layer whose change notices cannot be subscribed to
+// until it has refused `failures` times: the Notifier failure Connect retries.
+// The real unreachable server is exercised by the redis-db suite.
+type unreachable struct {
+	*cache.Memory
+	failures int
+	calls    atomic.Int64
+}
+
+func (u *unreachable) Subscribe(ctx context.Context, fn func(string)) (func(), error) {
+	if u.calls.Add(1) <= int64(u.failures) {
+		return nil, errors.New("dial tcp: connection refused")
+	}
+	return u.Memory.Subscribe(ctx, fn)
+}
+
+var fastRetry = membership.Retry{Attempts: 3, Wait: time.Millisecond, AttemptTimeout: time.Second}
+
+func TestConnectRetriesAnUnreachableLayerWithinItsBudget(t *testing.T) {
+	store := newCountingStore()
+	shared := &unreachable{Memory: cache.NewMemory(), failures: 2}
+	c, err := membership.Connect(context.Background(), shared, store, fastRetry)
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	require.NoError(t, c.StoreOnly(), "the third attempt reaches the layer")
+	require.EqualValues(t, 3, shared.calls.Load())
+}
+
+func TestConnectFallsBackToStoreOnlyWhichIsNeverStale(t *testing.T) {
+	store := newCountingStore()
+	org, user := uuid.NewString(), uuid.NewString()
+	store.set(org, user, gen.OrgRole_ORG_ROLE_ADMIN)
+	shared := &unreachable{Memory: cache.NewMemory(), failures: 1 << 30}
+	var evicted atomic.Int64
+	c, err := membership.Connect(context.Background(), shared, store, fastRetry,
+		membership.WithEviction(func(context.Context, string, string) error { evicted.Add(1); return nil }))
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	require.ErrorContains(t, c.StoreOnly(), "attempt 3 of 3")
+	require.EqualValues(t, 3, shared.calls.Load())
+	ctx := verified(org, user)
+
+	role, err := c.Role(ctx, org, user)
+	require.NoError(t, err)
+	require.Equal(t, gen.OrgRole_ORG_ROLE_ADMIN.String(), role)
+	// No invalidation: store-only reads the removal on the very next call.
+	store.set(org, user, gen.OrgRole_ORG_ROLE_UNSPECIFIED)
+	role, err = c.Role(ctx, org, user)
+	require.NoError(t, err)
+	require.Empty(t, role)
+	require.EqualValues(t, 2, store.loads.Load(), "every read goes to the store")
+
+	_, err = c.Role(verified(org, uuid.NewString()), org, user)
+	require.ErrorIs(t, err, auth.ErrVerifiedDatabaseScopeMismatch, "store-only keeps the scope check")
+	require.NoError(t, c.Invalidate(context.Background(), org, user))
+	require.EqualValues(t, 1, evicted.Load(), "store-only still evicts what other replicas hold")
+}
+
+func TestConnectStopsWhenItsContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	shared := &unreachable{Memory: cache.NewMemory(), failures: 1 << 30}
+	_, err := membership.Connect(ctx, shared, newCountingStore(), membership.Retry{Attempts: 3, Wait: time.Hour, AttemptTimeout: time.Second})
+	require.ErrorIs(t, err, context.Canceled)
 }

@@ -119,8 +119,8 @@ revocation store cannot be consulted, the check answers 503 unless
 `SIDECAR_REVOCATION_FAIL_OPEN` is explicitly `true` in the `security`
 configuration group (the setting keeps its historical key name). With no revoker
 wired at all — local development without Redis — the check uses a no-op revoker
-and nothing is revoked, matching accounts' own `NoopTokenRevoker` so both paths
-behave alike.
+and nothing is revoked. accounts has no such mode: it declares its `cache`
+dependency and refuses to boot without that connection (#927).
 
 What the path still does *not* do: no database, no identity-provider API, no
 policy evaluation per request. Steady-state overhead is one Ed25519 verify plus
