@@ -10,6 +10,7 @@ import {
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatasourcesPanel } from "../datasources-panel.js";
+import { SourceExecutionRestricted } from "../source-execution-access.js";
 import { SourceSyncProgress } from "../sync-progress.js";
 import { describeSync } from "../sync-progress-model.js";
 import { notifySourceSyncRequested } from "../sync-requests.js";
@@ -565,6 +566,85 @@ describe("the panel's execution extension point", () => {
 			}),
 		);
 		expect(await screen.findByText("member execution")).toBeTruthy();
+	});
+
+	it("never leaves an empty card that reads as 'never synced'", async () => {
+		// The trap this guards: the runs behind a sync belong to the module that
+		// started them, so a viewer whose permission covers only their OWN runs
+		// gets a successful EMPTY answer — and an empty card sits directly under a
+		// panel whose empty state says the source has never synced. Two correct
+		// components, one false statement. The host cannot tell "none" from "not
+		// yours", so it must not let silence pick one.
+		const client = fakeClient();
+		renderWithClient(
+			<DatasourcesPanel
+				client={client}
+				orgId="org-1"
+				canManage={false}
+				renderSourceExecution={() => null}
+			/>,
+		);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Execution of example-org/example-repo",
+			}),
+		);
+
+		expect(
+			await screen.findByText(/you may not have permission to see them/i),
+		).toBeTruthy();
+	});
+
+	it("treats every empty render the same way", async () => {
+		// `null`, `undefined`, `false` and `[]` all mean "rendered nothing" from a
+		// render prop; a consumer returning any of them meant the same thing.
+		for (const empty of [undefined, false, []] as const) {
+			const client = fakeClient();
+			const view = renderWithClient(
+				<DatasourcesPanel
+					client={client}
+					orgId="org-1"
+					canManage={false}
+					renderSourceExecution={() => empty}
+				/>,
+			);
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name: "Execution of example-org/example-repo",
+				}),
+			);
+			expect(
+				await screen.findByText(/you may not have permission to see them/i),
+			).toBeTruthy();
+			view.unmount();
+		}
+	});
+
+	it("says so explicitly when the consumer reports the viewer may not read the runs", async () => {
+		// A consumer that CAN tell "not yours" from "none" says which, and the kit
+		// carries the sentence so it reads the same wherever it appears.
+		const client = fakeClient();
+		renderWithClient(
+			<DatasourcesPanel
+				client={client}
+				orgId="org-1"
+				canManage={false}
+				renderSourceExecution={() => <SourceExecutionRestricted />}
+			/>,
+		);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Execution of example-org/example-repo",
+			}),
+		);
+
+		expect(
+			await screen.findByText(
+				"Sync runs are visible to organization administrators.",
+			),
+		).toBeTruthy();
+		// And it must not also claim there is nothing to show.
+		expect(screen.queryByText(/you may not have permission/i)).toBeNull();
 	});
 
 	it("closes the execution view", async () => {
