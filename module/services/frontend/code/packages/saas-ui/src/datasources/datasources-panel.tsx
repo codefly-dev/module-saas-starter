@@ -101,6 +101,29 @@ interface DatasourcesPanelBaseProps {
 	 * `sync` is the host's projection of the sync the action was opened for, so a
 	 * consumer can resolve it to whatever key its execution store is aged on
 	 * without re-reading it.
+	 *
+	 * Three things the host cannot enforce for you, because it may not name the
+	 * module that runs the work — and each of them fails by SUCCEEDING, which is
+	 * why they are written down rather than left to be discovered:
+	 *
+	 * 1. **Pass this only for a viewer who may read the organization's
+	 *    executions.** Durable work for a sync is admitted by the module that
+	 *    ingests it, not by the person reading this panel, so a caller-scoped
+	 *    "my own runs" read is not a weaker version of the organization read —
+	 *    it is a correct answer to a different question, and its answer here is
+	 *    an empty page. The panel's own empty state says "this source has never
+	 *    synced", so a viewer without that permission would be told something
+	 *    false by two correct components.
+	 * 2. **Distinguish "no runs" from "you may not see the runs"** in whatever
+	 *    you render, for the same reason.
+	 * 3. **Never report a count taken from a page of results.** One sync can
+	 *    produce many runs, and the host already knows how many without paging:
+	 *    `sync.changes.snapshot ? 1 : sync.changes.files`, which on the
+	 *    incremental path *is* the hand-off count by construction. Show that
+	 *    beside the runs you loaded rather than as a count of them — the two
+	 *    disagreeing is then real information (work that was never admitted)
+	 *    instead of a paging bug. Note it is only final once the sync is
+	 *    terminal: read mid-sync it counts the hand-offs enqueued so far.
 	 */
 	renderSourceExecution?: (context: {
 		source: DatasourceView;

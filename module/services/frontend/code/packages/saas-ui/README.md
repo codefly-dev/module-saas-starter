@@ -99,6 +99,26 @@ components:
   since an empty panel promising an execution view is worse than not offering
   one. The host renders the frame and hands you the sync it resolved; what runs
   the work is a module this package may not name, so the view itself is yours.
+
+  Three rules the host cannot enforce for you, each of which fails by
+  *succeeding*:
+  - **Pass the slot only for a viewer who may read the organization's
+    executions.** The durable work behind a sync is admitted by the module that
+    ingests it, not by the person reading the panel, so a caller-scoped "my own
+    runs" read is a correct answer to a different question — and its answer here
+    is an empty page. The panel's own empty state says "this source has never
+    synced", so an under-permissioned viewer is told something false by two
+    correct components.
+  - **Distinguish "no runs" from "you may not see the runs"** in what you
+    render, for the same reason.
+  - **Never report a count taken from a page of results.** One sync can produce
+    many runs, and the host already knows how many without paging:
+    `sync.changes.snapshot ? 1 : sync.changes.files` — on the incremental path
+    that *is* the hand-off count by construction, counted after the source's
+    path and extension filters. Show it beside the runs you loaded, not as a
+    count of them, so the two disagreeing reads as work that was never admitted
+    rather than as a paging bug. It is final only once the sync is terminal:
+    mid-sync it counts the hand-offs enqueued so far.
   A source whose provider does not yet meet the host's datasource connector
   envelope is badged **Non-conformant provider** with the host's stated gap:
   it keeps syncing, but the host connects no new source of that provider. The
