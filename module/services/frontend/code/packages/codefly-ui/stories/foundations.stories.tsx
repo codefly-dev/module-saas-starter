@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import {
 	Button,
+	DelayedLoading,
 	Field,
 	Input,
 	Pagination,
@@ -248,6 +249,56 @@ export const ProgressSteps = {
 					valueText={`Step ${value / 25} of 4`}
 				/>
 			))}
+		</div>
+	),
+};
+
+/**
+ * The rule made visible: press the button and watch. A fast wait shows nothing
+ * at all; a slow one shows the indicator and holds it long enough to read.
+ * Side by side is the only way to see that the fast case is genuinely silent
+ * rather than merely brief.
+ */
+function DelayedLoadingDemo({
+	waitMs,
+	title,
+}: {
+	waitMs: number;
+	title: string;
+}) {
+	const [active, setActive] = useState(false);
+	return (
+		<div className="flex items-center gap-3">
+			<Button
+				type="button"
+				variant="outline"
+				onClick={() => {
+					setActive(true);
+					setTimeout(() => setActive(false), waitMs);
+				}}
+			>
+				{title}
+			</Button>
+			<DelayedLoading active={active} label={`${title} in progress`} />
+		</div>
+	);
+}
+
+export const DelayedLoadingTimings = {
+	render: () => (
+		<div className="flex flex-col gap-4">
+			<DelayedLoadingDemo
+				waitMs={120}
+				title="Fast wait (120ms) — shows nothing"
+			/>
+			<DelayedLoadingDemo
+				waitMs={220}
+				title="Just past the delay (220ms) — still holds"
+			/>
+			<DelayedLoadingDemo
+				waitMs={1500}
+				title="Slow wait (1.5s) — shows and holds"
+			/>
 		</div>
 	),
 };

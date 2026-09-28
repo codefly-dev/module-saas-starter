@@ -65,6 +65,16 @@ export {
 	type DateFieldProps,
 	type DateFieldVariant,
 } from "./date-field.js";
+export {
+	DelayedLoading,
+	type DelayedLoadingOptions,
+	type DelayedLoadingProps,
+	LOADING_DELAY_MS,
+	LOADING_MIN_VISIBLE_MS,
+	Spinner,
+	type SpinnerProps,
+	useDelayedLoading,
+} from "./delayed-loading.js";
 // Overlays
 export {
 	Dialog,

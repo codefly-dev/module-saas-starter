@@ -587,6 +587,24 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
     },
     {
+      "source": "packages/codefly-ui/src/layout/delayed-loading.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "The product rule that a loading indicator never flashes, as a primitive: nothing before 200ms, at least 300ms once shown. Carries Spinner (role=status, required label) and the useDelayedLoading hook for surfaces that are not a subtree.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/foundations.stories.tsx",
+          "export": "DelayedLoadingTimings"
+        }
+      ],
+      "coverage": "owner stories and unit tests with fake timers; browser/skin verification pending",
+      "remaining": "Verify the spin animation under reduced-motion and external skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/dialog.tsx",
       "imports": [
         "@base-ui/react/dialog",
