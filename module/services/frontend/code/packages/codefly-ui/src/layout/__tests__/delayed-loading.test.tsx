@@ -217,6 +217,18 @@ describe("Spinner", () => {
 		expect(status.getAttribute("aria-busy")).toBe("true");
 	});
 
+	it("fades rather than spins for a reader who asked for reduced motion", () => {
+		// Rotation is vestibular-triggering. Dropping the animation entirely would
+		// leave a ring that sits still and conveys nothing, so the reduced-motion
+		// case fades instead — busy either way, but only one moves through space.
+		vi.useRealTimers();
+		const { container } = render(<Spinner label="Loading" />);
+
+		const ring = container.querySelector("[aria-hidden='true']");
+		expect(ring?.className).toContain("motion-safe:animate-spin");
+		expect(ring?.className).toContain("motion-reduce:animate-pulse");
+	});
+
 	it("hides the ring itself from assistive technology", () => {
 		vi.useRealTimers();
 		const { container } = render(<Spinner label="Loading" />);

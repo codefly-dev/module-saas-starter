@@ -225,6 +225,12 @@ unless you are inside something that already gates it.
 The clock is read in effects and timers, never during render, so two renders of
 the same state can never disagree about what is on screen.
 
+`Spinner` fades rather than rotates for a reader who asked for reduced motion
+(`motion-safe:animate-spin` / `motion-reduce:animate-pulse`). Rotation is
+vestibular-triggering, and dropping the animation entirely would leave a ring
+that sits still and conveys nothing — both forms say "busy"; only one of them
+moves through space.
+
 ## Every blocking surface has a way out
 
 A surface that covers the page must always let the user leave it, and the kit

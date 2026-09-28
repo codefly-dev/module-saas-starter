@@ -601,8 +601,8 @@
           "export": "DelayedLoadingTimings"
         }
       ],
-      "coverage": "owner stories and unit tests with fake timers; browser/skin verification pending",
-      "remaining": "Verify the spin animation under reduced-motion and external skins."
+      "coverage": "owner stories and unit tests with fake timers, including the reduced-motion split; browser/skin verification pending",
+      "remaining": "Verify the fade/spin split under external skins in a browser."
     },
     {
       "source": "packages/codefly-ui/src/layout/dialog.tsx",

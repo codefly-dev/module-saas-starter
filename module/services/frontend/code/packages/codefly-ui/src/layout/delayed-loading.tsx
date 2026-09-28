@@ -116,7 +116,12 @@ export function Spinner({ label, size = "md", className }: SpinnerProps) {
 			<span
 				aria-hidden="true"
 				className={cn(
-					"inline-block animate-spin rounded-full border-2 border-current border-t-transparent",
+					"inline-block rounded-full border-2 border-current border-t-transparent",
+					// Rotation is vestibular-triggering, so a reader who asked for
+					// reduced motion gets a fade instead of a spin rather than a ring
+					// that sits still and conveys nothing. Both still say "busy"; only
+					// one of them moves through space.
+					"motion-safe:animate-spin motion-reduce:animate-pulse",
 					size === "sm" ? "size-3" : "size-4",
 				)}
 			/>
