@@ -73,11 +73,25 @@ export interface ViewerEntitlements {
  */
 export type EntitlementFailure =
 	| "unauthenticated"
+	| "no_organization"
 	| "forbidden"
+	| "rate_limited"
 	| "unavailable";
 
 const GATEWAY_ENTITLEMENTS_PATH = "/solutions/_entitlements";
 const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
+
+/**
+ * The header the gateway uses to name its OWN refusals on this endpoint, and the
+ * values it sends (gateway_solution_entitlements.go). Status alone cannot
+ * separate them: a refused cluster-internal token and a refused user bearer are
+ * both 401, and reading the first as the second would tell every signed-in user
+ * to re-authenticate over a deployment fault — and drive a refresh-token rotation
+ * on every menu poll.
+ */
+const REFUSAL_HEADER = "X-Codefly-Entitlement-Refusal";
+const REFUSAL_INTERNAL_CREDENTIAL = "internal-credential";
+const REFUSAL_NO_ORGANIZATION = "no-organization";
 
 /**
  * How long the gateway gets to answer. It asks accounts under its own 10s budget,
@@ -226,11 +240,25 @@ export async function viewerEntitlements(
 		console.error("solution entitlements: gateway unreachable", err);
 		return "unavailable";
 	}
+	const refusal = response.headers.get(REFUSAL_HEADER);
+	if (refusal === REFUSAL_INTERNAL_CREDENTIAL) {
+		// This process's own credential, not the viewer's. An outage of this
+		// replica, answered 503 — never relayed as the user being signed out.
+		console.error(
+			"solution entitlements: the gateway refused this frontend's internal credential",
+		);
+		return "unavailable";
+	}
 	if (response.status === 401) return "unauthenticated";
-	// A credential that authenticated but carries no organization, or one the
-	// authority refused. It is distinct from 401: re-authenticating would not
-	// change it, so a consumer must not be sent back through login.
+	// Authenticated, but with no organization to answer for. Distinct from 401:
+	// re-authenticating would not change it, so a consumer must not be sent back
+	// through login.
+	if (refusal === REFUSAL_NO_ORGANIZATION) return "no_organization";
+	// A 403 verdict from ext_authz on the user's credential.
 	if (response.status === 403) return "forbidden";
+	// The viewer's organization spent its read budget. Relayed as 429 so a client
+	// backs off, rather than as an outage it would retry immediately.
+	if (response.status === 429) return "rate_limited";
 	if (!response.ok) {
 		console.error(`solution entitlements: gateway answered ${response.status}`);
 		return "unavailable";
@@ -241,4 +269,34 @@ export async function viewerEntitlements(
 		return "unavailable";
 	}
 	return parsed;
+}
+
+/**
+ * The response a projection route answers for a failed entitlement read — one
+ * mapping, so the two routes cannot drift into describing the same failure
+ * differently. None of these is an empty list: each is a reason the caller acts on
+ * differently (sign in, pick an organization, back off, retry later).
+ */
+export function entitlementFailureResponse(
+	failure: EntitlementFailure,
+): Response {
+	switch (failure) {
+		case "unauthenticated":
+			return Response.json({ error: "unauthenticated" }, { status: 401 });
+		case "no_organization":
+			return Response.json({ error: "no_organization" }, { status: 403 });
+		case "forbidden":
+			return Response.json({ error: "forbidden" }, { status: 403 });
+		case "rate_limited":
+			return Response.json({ error: "rate_limited" }, { status: 429 });
+		case "unavailable":
+			return Response.json({ error: "authority_unavailable" }, { status: 503 });
+	}
+}
+
+/** Narrows a read's result to its failure, for the routes' early return. */
+export function isEntitlementFailure(
+	result: ViewerEntitlements | EntitlementFailure,
+): result is EntitlementFailure {
+	return typeof result === "string";
 }

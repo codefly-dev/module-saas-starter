@@ -15,11 +15,8 @@ const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
 vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
 
 import { DELETE, GET, POST } from "@/app/api/solutions/register/route";
-import {
-	findSolution,
-	navProjection,
-	type SolutionManifest,
-} from "@/solutions/registry";
+import { navProjection } from "@/solutions/projections";
+import { findSolution, type SolutionManifest } from "@/solutions/registry";
 
 const TOKEN = "internal-test-token";
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");

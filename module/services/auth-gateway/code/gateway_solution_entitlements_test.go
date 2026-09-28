@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -235,4 +238,101 @@ func TestGatewaySolutionEntitlements_EmptySetIsAnAnswer(t *testing.T) {
 	body := decodeEntitlements(t, w.Body.Bytes())
 	require.Empty(t, body.Usable)
 	require.NotEmpty(t, body.Org)
+}
+
+// signImpersonationToken mints the token an impersonation session carries: `sub`
+// stays the real actor and `acting` names the user being viewed.
+func signImpersonationToken(t *testing.T, priv ed25519.PrivateKey, actor, acting, org string) string {
+	t.Helper()
+	return signAccessToken(t, priv, accessKeyID(priv.Public().(ed25519.PublicKey)), accessClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   actor,
+			Audience:  jwt.ClaimStrings{"saas-starter"},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			ID:        "jti-impersonation",
+		},
+		OrgID:          org,
+		OrgRole:        "member",
+		SessionID:      uuid.Must(uuid.NewV7()).String(),
+		ActingAsUserID: acting,
+	})
+}
+
+// During impersonation the menu is the IMPERSONATED user's. accounts authorizes
+// against the effective subject, so asking about the real actor would show an
+// administrator their own grants inside someone else's organization — never the
+// menu the user they are debugging actually sees.
+func TestGatewaySolutionEntitlements_ImpersonationAsksAboutTheImpersonatedUser(t *testing.T) {
+	gw, authority, priv := entitlementGateway(t)
+	actor := uuid.Must(uuid.NewV7()).String()
+	viewed := uuid.Must(uuid.NewV7()).String()
+	org := uuid.Must(uuid.NewV7()).String()
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, entitlementRequest("test-internal-token", signImpersonationToken(t, priv, actor, viewed, org)))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, authority.calls, 1)
+	require.Equal(t, viewed, authority.calls[0].GetSubjectId(), "the effective subject, not the real actor")
+	require.Equal(t, org, authority.calls[0].GetOrgId())
+	require.Equal(t, viewed, decodeEntitlements(t, w.Body.Bytes()).Viewer)
+}
+
+// A caller cannot put itself into someone else's menu by sending the
+// impersonation header: it is stripped before ext_authz stamps its own.
+func TestGatewaySolutionEntitlements_IgnoresCallerSuppliedActingHeader(t *testing.T) {
+	gw, authority, priv := entitlementGateway(t)
+	req := entitlementRequest("test-internal-token", signValidToken(t, priv))
+	req.Header.Set("X-Acting-As-User-Id", "33333333-3333-3333-3333-333333333333")
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, authority.calls, 1)
+	require.NotEqual(t, "33333333-3333-3333-3333-333333333333", authority.calls[0].GetSubjectId())
+}
+
+// Every read fans into the authority, so it spends the per-org budget like the
+// equivalent catalog read. Unmetered, a signed-in browser could drive unbounded
+// accounts load through the menu poll.
+func TestGatewaySolutionEntitlements_SpendsThePerOrgBudget(t *testing.T) {
+	gw, authority, priv := entitlementGateway(t)
+	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
+	gw.rateLimiter = NewRateLimiter(1)
+	// One token, so every request keys on the same stamped X-Org-Id.
+	token := signValidToken(t, priv)
+
+	got429 := false
+	for i := 0; i < 5; i++ {
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, entitlementRequest("test-internal-token", token))
+		if w.Code == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+	require.True(t, got429, "the entitlement read must draw on the per-org budget")
+	require.Less(t, len(authority.calls), 5, "a throttled request must not reach the authority")
+}
+
+// The endpoint's OWN refusals are named, so a caller can tell a fault in its
+// cluster credential from a verdict on the user's. Both are 401 on the wire.
+func TestGatewaySolutionEntitlements_NamesItsOwnRefusals(t *testing.T) {
+	gw, _, priv := entitlementGateway(t)
+
+	internal := httptest.NewRecorder()
+	gw.ServeHTTP(internal, entitlementRequest("wrong-internal-token", signValidToken(t, priv)))
+	require.Equal(t, http.StatusUnauthorized, internal.Code)
+	require.Equal(t, "internal-credential", internal.Header().Get("X-Codefly-Entitlement-Refusal"))
+
+	user := httptest.NewRecorder()
+	gw.ServeHTTP(user, entitlementRequest("test-internal-token", "not-a-token"))
+	require.Equal(t, http.StatusUnauthorized, user.Code)
+	require.Empty(t, user.Header().Get("X-Codefly-Entitlement-Refusal"),
+		"a refused USER credential is ext_authz's verdict, not this endpoint's refusal")
 }

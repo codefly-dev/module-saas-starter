@@ -49,8 +49,8 @@ func (s *PostgresStore) ListSolutionEntitlements(
 
 	// $1 subject, $2 resource_type, $3 action, $4 org, $5 the node kind this
 	// narrows to, $6 platform admissibility — the parameter contract
-	// accessibleScopesQuery documents — then $7 cursor and $8 limit, appended by
-	// this query.
+	// accessibleScopesQuery documents. The shared listing numbers its own
+	// parameters after these.
 	//
 	// The node predicate is the node KIND rather than a candidate id set: a
 	// solution's authority root is the one node per install of kind `solution`, so
@@ -67,51 +67,29 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	// boundary: a team grant written directly at the solution node outlives the
 	// uninstall (the node is retained for a reinstall to reuse), and without this
 	// predicate an uninstalled solution would stay in a granted team's menu.
-	rows, err := executor.Query(ctx,
-		`SELECT `+installationColumns+`
-		 FROM installations
-		 WHERE org_id = $4
-		   AND status = 'active'
-		   AND root_scope_node_id::text IN (`+admitted+`)
-		   AND ($7 = '' OR id::text > $7)
-		 ORDER BY id
-		 LIMIT $8`,
+	//
+	// Through the SAME listing ListInstallations reads, narrowed by the admitted
+	// set, so the two reads share one query, one keyset and one health definition,
+	// and health for every row is resolved inside this one statement.
+	summaries, err := s.listInstallationSummaries(ctx, executor, orgID, "active", cursor, limit,
+		"i.root_scope_node_id::text IN ("+admitted+")",
 		subjectID, business.ResourceTypeSolution, business.ActionUseSolution, orgID,
 		business.ScopeNodeKindSolution,
-		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, business.ActionUseSolution),
-		cursor, limit)
+		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, business.ActionUseSolution))
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list solution entitlements")
 	}
-	defer rows.Close()
 
-	var installations []*gen.Installation
-	for rows.Next() {
-		installation, e := scanInstallation(rows)
-		if e != nil {
-			return nil, w.Wrapf(e, "failed to scan entitled installation")
-		}
-		installations = append(installations, installation)
-	}
-	if e := rows.Err(); e != nil {
-		return nil, w.Wrapf(e, "failed to read solution entitlements")
-	}
-
-	// Health resolution issues its own queries, so it runs after this cursor is
-	// drained rather than inside the loop.
-	out := make([]*gen.SolutionEntitlement, 0, len(installations))
-	for _, installation := range installations {
-		health, e := s.resolveInstallationHealth(ctx, executor, installation)
-		if e != nil {
-			return nil, w.Wrapf(e, "failed to resolve entitled installation health")
-		}
+	out := make([]*gen.SolutionEntitlement, 0, len(summaries))
+	for _, summary := range summaries {
+		installation := summary.GetInstallation()
 		out = append(out, &gen.SolutionEntitlement{
 			SolutionIdentifier: installation.GetSolutionIdentifier(),
 			InstallationId:     installation.GetId(),
 			RootScopeNodeId:    installation.GetRootScopeNodeId(),
 			// Anything that is not HEALTHY is not healthy: the reduction survives
 			// the health enum growing, which a copy of its value set would not.
-			Healthy: health == gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY,
+			Healthy: summary.GetHealth() == gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY,
 		})
 	}
 	return out, nil

@@ -40,6 +40,8 @@ interface EntitlementAnswer {
 	unhealthy?: string[];
 	/** Answer the entitlement read with this status instead of 200. */
 	status?: number;
+	/** The gateway's own refusal name (X-Codefly-Entitlement-Refusal), if any. */
+	refusal?: string;
 	org?: string;
 	viewer?: string;
 }
@@ -58,8 +60,13 @@ function gatewayServing(
 		const path = new URL(target).pathname;
 		if (path === "/solutions/_entitlements") {
 			if (entitlements.status !== undefined && entitlements.status !== 200) {
+				const headers = new Headers();
+				if (entitlements.refusal) {
+					headers.set("X-Codefly-Entitlement-Refusal", entitlements.refusal);
+				}
 				return new Response(JSON.stringify({ error: "refused" }), {
 					status: entitlements.status,
+					headers,
 				});
 			}
 			// The gateway answers 401 itself when no credential was forwarded; this
@@ -360,10 +367,42 @@ describe("solutions surfaces route", () => {
 	});
 
 	it("answers 403 when the session carries no organization", async () => {
-		vi.stubGlobal("fetch", gatewayServing([audit], { status: 403 }));
+		vi.stubGlobal(
+			"fetch",
+			gatewayServing([audit], { status: 403, refusal: "no-organization" }),
+		);
 		const res = await GET(request("?client=word"));
 		expect(res.status).toBe(403);
 		expect(await res.json()).toEqual({ error: "no_organization" });
+	});
+
+	it("answers 403 forbidden, not no_organization, for an ext_authz refusal", async () => {
+		// Only the gateway's own named refusal means "no organization"; a bare 403
+		// is a verdict on the user's credential and must not be relabelled.
+		vi.stubGlobal("fetch", gatewayServing([audit], { status: 403 }));
+		const res = await GET(request("?client=word"));
+		expect(res.status).toBe(403);
+		expect(await res.json()).toEqual({ error: "forbidden" });
+	});
+
+	it("answers 503, not 401, when the gateway refuses this frontend's internal credential", async () => {
+		// A deployment fault on the frontend's own credential. Relayed as 401 it
+		// would tell every signed-in viewer to re-authenticate, and make the menu's
+		// authedFetch rotate the refresh token on every poll.
+		vi.stubGlobal(
+			"fetch",
+			gatewayServing([audit], { status: 401, refusal: "internal-credential" }),
+		);
+		const res = await GET(request("?client=word"));
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({ error: "authority_unavailable" });
+	});
+
+	it("relays 429 when the organization spent its read budget", async () => {
+		vi.stubGlobal("fetch", gatewayServing([audit], { status: 429 }));
+		const res = await GET(request("?client=word"));
+		expect(res.status).toBe(429);
+		expect(await res.json()).toEqual({ error: "rate_limited" });
 	});
 
 	it("answers 503, never an empty list, when the authority cannot answer", async () => {

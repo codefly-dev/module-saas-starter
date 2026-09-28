@@ -1,11 +1,17 @@
 import { requestPublicOrigin } from "@/lib/public-origin";
-import { viewerEntitlements } from "@/solutions/entitlements";
+import {
+	entitlementFailureResponse,
+	isEntitlementFailure,
+	viewerEntitlements,
+} from "@/solutions/entitlements";
 import {
 	cachedProjection,
 	entitledSolutions,
+	surfacesProjection,
+} from "@/solutions/projections";
+import {
 	isClientKind,
 	loadSolutionsWithRevision,
-	surfacesProjection,
 	type SolutionClientSurfaces,
 } from "@/solutions/registry";
 
@@ -56,17 +62,8 @@ export async function GET(request: Request): Promise<Response> {
 	// Asked before the registry is read: a caller with no standing to see any
 	// projection must not be able to probe whether the registry is healthy.
 	const entitlements = await viewerEntitlements(request);
-	if (entitlements === "unauthenticated") {
-		return Response.json({ error: "unauthenticated" }, { status: 401 });
-	}
-	if (entitlements === "forbidden") {
-		return Response.json({ error: "no_organization" }, { status: 403 });
-	}
-	if (entitlements === "unavailable") {
-		// The authority could not answer. Distinct from an empty entitlement set
-		// for the same reason an unreadable registry is distinct from an empty one:
-		// answering [] would silently retract every surface a client is showing.
-		return Response.json({ error: "authority_unavailable" }, { status: 503 });
+	if (isEntitlementFailure(entitlements)) {
+		return entitlementFailureResponse(entitlements);
 	}
 	const registered = await loadSolutionsWithRevision();
 	// An empty registry and an unreadable one must not render the same: the
