@@ -225,6 +225,32 @@ unless you are inside something that already gates it.
 The clock is read in effects and timers, never during render, so two renders of
 the same state can never disagree about what is on screen.
 
+**A surface with an empty state needs three states, not two.** Feeding the
+delayed boolean straight into a renderer says "not loading" during the delay,
+and the branch after that is usually the empty one — so "No documents yet", and
+its invitation to go and connect something, flashes for the first 200 ms of
+every load. That is worse than the indicator the delay was meant to spare the
+reader, because it is not merely noise, it is wrong. Every list, table and panel
+with an empty state has this shape:
+
+```tsx
+const { indicator, quiet } = useLoadingPhase(query.isPending);
+if (indicator) return <Spinner label="Loading documents" />;
+if (quiet) return null;              // too early to say anything at all
+if (!documents.length) return <EmptyState … />;
+```
+
+`DelayedLoading` cannot express this — a component that renders `null` while
+hidden gives its caller no way to tell "hidden because idle" from "hidden
+because it is too early to speak" — so reach for `useLoadingPhase` wherever
+"nothing yet" is not neutral.
+
+**Do not put any of these inside a `Suspense` fallback.** They hold state, and a
+fallback that holds state makes React re-render the boundary's *content* when
+that state settles: one mount and two renders of the child, which re-runs its
+`useMemo` and can rebuild whatever that memo constructs. Gate it at the
+boundary's parent instead; a fallback should be a pure element.
+
 `Spinner` fades rather than rotates for a reader who asked for reduced motion
 (`motion-safe:animate-spin` / `motion-reduce:animate-pulse`). Rotation is
 vestibular-triggering, and dropping the animation entirely would leave a ring

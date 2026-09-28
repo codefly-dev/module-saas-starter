@@ -1286,6 +1286,24 @@
       "remaining": "Add owner stories for the account link, the group bindings and the pending and verified domains, then verify under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/source-execution-access.tsx",
+      "imports": [
+        "react",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "'You may not read these runs', for a source's execution view. The runs belong to the module that started them, so a viewer scoped to their own runs gets a successful empty answer that would otherwise read as 'never synced'.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ExecutionRestricted"
+        }
+      ],
+      "coverage": "owner story and unit tests; browser/skin verification pending",
+      "remaining": "Verify the wording with a real member on a cell once the execution view can mount."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/sync-progress.tsx",
       "imports": [
         "@codefly-dev/ui/layout",

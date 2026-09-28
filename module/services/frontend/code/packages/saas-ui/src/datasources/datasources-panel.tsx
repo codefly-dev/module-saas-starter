@@ -115,7 +115,10 @@ interface DatasourcesPanelBaseProps {
 	 *    synced", so a viewer without that permission would be told something
 	 *    false by two correct components.
 	 * 2. **Distinguish "no runs" from "you may not see the runs"** in whatever
-	 *    you render, for the same reason.
+	 *    you render, for the same reason. Render `SourceExecutionRestricted`
+	 *    for the second, so the sentence reads the same wherever it appears.
+	 *    Rendering nothing gets the host's neutral fallback, which names both
+	 *    readings rather than letting silence pick one.
 	 * 3. **Never report a count taken from a page of results.** One sync can
 	 *    produce many runs, and the host already knows how many without paging:
 	 *    `sync.changes.snapshot ? 1 : sync.changes.files`, which on the
@@ -1307,6 +1310,37 @@ function SourceSyncWatch({
 }
 
 /**
+ * The consumer's rendering, or the host saying plainly that there is none.
+ *
+ * A consumer that renders nothing would otherwise leave an empty card directly
+ * beneath a panel whose own empty state says the source has never synced — and
+ * an empty answer here most often means the viewer may not read these runs, not
+ * that there are none. The host cannot tell those apart (it may not name the
+ * module that runs the work, let alone evaluate its permissions), so it says
+ * the one true thing it knows and points at the two readings rather than
+ * letting silence pick one.
+ *
+ * A consumer that *can* tell them apart renders `SourceExecutionRestricted`
+ * instead, and never reaches this.
+ */
+function SourceExecutionBody({ children }: { children: ReactNode }) {
+	// `null`, `undefined`, `false` and `[]` all mean "rendered nothing" from a
+	// render prop, and a caller returning any of them meant the same thing.
+	const rendered =
+		children !== null &&
+		children !== undefined &&
+		children !== false &&
+		!(Array.isArray(children) && children.length === 0);
+	if (rendered) return <>{children}</>;
+	return (
+		<p role="status" className="type-body text-muted-foreground">
+			No runs to show for this sync. If you expected some, you may not have
+			permission to see them.
+		</p>
+	);
+}
+
+/**
  * The consumer's execution view for one source, in a card the host owns.
  *
  * The host reads the sync so the consumer is handed a resolved projection
@@ -1352,7 +1386,9 @@ function SourceExecution({
 						label={`Loading the execution of ${source.repo}`}
 					/>
 				) : (
-					render({ source, ...(sync ? { sync } : {}) })
+					<SourceExecutionBody>
+						{render({ source, ...(sync ? { sync } : {}) })}
+					</SourceExecutionBody>
 				)}
 			</Card>
 		</section>

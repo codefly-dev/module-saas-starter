@@ -6,12 +6,20 @@ import {
 	LOADING_MIN_VISIBLE_MS,
 	Spinner,
 	useDelayedLoading,
+	useLoadingPhase,
 } from "../delayed-loading.js";
 
 afterEach(cleanup);
 
 beforeEach(() => {
-	vi.useFakeTimers({ shouldAdvanceTime: true });
+	// Deliberately NOT `shouldAdvanceTime: true`. With it, the fake clock also
+	// advances with real time, so the milliseconds a loaded machine spends
+	// between `render()` and the first `advance()` are added to the wait — and
+	// an assertion that 180ms has not yet reached the 200ms delay fires the
+	// timer instead, intermittently, only under load. This file drives the
+	// clock itself and polls nothing (no `findBy*`, no `waitFor`), so it has no
+	// use for real time and every boundary here is exact.
+	vi.useFakeTimers();
 });
 afterEach(() => {
 	vi.useRealTimers();
@@ -236,5 +244,77 @@ describe("Spinner", () => {
 		// The label carries the meaning; a second announcement of the decoration
 		// would read as noise.
 		expect(container.querySelector("[aria-hidden='true']")).not.toBeNull();
+	});
+});
+
+describe("useLoadingPhase keeps an empty state from flashing", () => {
+	// The bug this exists to prevent, reported by a consuming kit: feeding the
+	// delayed boolean straight into a renderer says "not loading" during the
+	// delay, and the branch after that is usually the empty state. So "No
+	// documents yet" and its invitation to go and connect something flash for
+	// the first 200ms of every load — worse than the indicator the delay was
+	// meant to spare the reader, because it is not noise, it is wrong.
+	function List({ active, items }: { active: boolean; items: string[] }) {
+		const { indicator, quiet } = useLoadingPhase(active);
+		if (indicator) return <p>Loading…</p>;
+		if (quiet) return null;
+		if (!items.length) return <p>No documents yet</p>;
+		return <p>{items.length} documents</p>;
+	}
+
+	it("says nothing at all while the wait is too young to speak", async () => {
+		const { rerender } = render(<List active items={[]} />);
+
+		// The delay window: not the indicator, and NOT the empty state.
+		expect(screen.queryByText("Loading…")).toBeNull();
+		expect(screen.queryByText("No documents yet")).toBeNull();
+
+		await advance(LOADING_DELAY_MS - 20);
+		expect(screen.queryByText("No documents yet")).toBeNull();
+
+		// Answer arrives inside the window: straight to the content, never
+		// having shown either.
+		rerender(<List active={false} items={["a"]} />);
+		await advance(5_000);
+		expect(screen.getByText("1 documents")).toBeTruthy();
+		expect(screen.queryByText("Loading…")).toBeNull();
+	});
+
+	it("shows the indicator once the wait earns one, then the empty state", async () => {
+		const { rerender } = render(<List active items={[]} />);
+		await advance(LOADING_DELAY_MS);
+		expect(screen.getByText("Loading…")).toBeTruthy();
+		expect(screen.queryByText("No documents yet")).toBeNull();
+
+		rerender(<List active={false} items={[]} />);
+		await advance(LOADING_MIN_VISIBLE_MS);
+
+		// Genuinely empty, and only now is that the truth.
+		expect(screen.getByText("No documents yet")).toBeTruthy();
+		expect(screen.queryByText("Loading…")).toBeNull();
+	});
+
+	it("is quiet only while waiting, so an idle empty list says so at once", async () => {
+		render(<List active={false} items={[]} />);
+
+		expect(screen.getByText("No documents yet")).toBeTruthy();
+	});
+
+	it("never reports indicator and quiet at the same time", async () => {
+		const seen: string[] = [];
+		function Probe({ active }: { active: boolean }) {
+			const { indicator, quiet } = useLoadingPhase(active);
+			seen.push(`${indicator}/${quiet}`);
+			return null;
+		}
+		const { rerender } = render(<Probe active />);
+		await advance(LOADING_DELAY_MS + 50);
+		rerender(<Probe active={false} />);
+		await advance(LOADING_MIN_VISIBLE_MS + 50);
+
+		expect(seen).not.toContain("true/true");
+		// And it did pass through both of the states that matter.
+		expect(seen).toContain("false/true");
+		expect(seen).toContain("true/false");
 	});
 });

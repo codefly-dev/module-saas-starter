@@ -6,6 +6,7 @@ import {
 	DatasourcesPanel,
 	type DatasourceView,
 	describeSync,
+	SourceExecutionRestricted,
 	SourceSyncProgress,
 	type SourceSyncView,
 } from "../src/index.js";
@@ -225,4 +226,14 @@ export const ConnectionPending = {
 			onSubmit={() => {}}
 		/>
 	),
+};
+
+/**
+ * What a viewer sees when the runs behind a sync are not theirs to read. The
+ * point of the story is the wording: it has to be obviously different from
+ * "this source has never synced", which is what the panel says a few lines
+ * above when there is genuinely nothing.
+ */
+export const ExecutionRestricted = {
+	render: () => <SourceExecutionRestricted />,
 };

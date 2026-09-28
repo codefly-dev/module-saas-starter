@@ -27,6 +27,7 @@ export {
 	type ConnectGitHubValues,
 	connectGitHubSchema,
 } from "./datasources/schema.js";
+export { SourceExecutionRestricted } from "./datasources/source-execution-access.js";
 export {
 	SourceSyncProgress,
 	useSourceSync,

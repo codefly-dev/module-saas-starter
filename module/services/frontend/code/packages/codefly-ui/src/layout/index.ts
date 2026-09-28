@@ -71,9 +71,11 @@ export {
 	type DelayedLoadingProps,
 	LOADING_DELAY_MS,
 	LOADING_MIN_VISIBLE_MS,
+	type LoadingPhase,
 	Spinner,
 	type SpinnerProps,
 	useDelayedLoading,
+	useLoadingPhase,
 } from "./delayed-loading.js";
 // Overlays
 export {

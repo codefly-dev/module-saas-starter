@@ -110,7 +110,15 @@ components:
     synced", so an under-permissioned viewer is told something false by two
     correct components.
   - **Distinguish "no runs" from "you may not see the runs"** in what you
-    render, for the same reason.
+    render, for the same reason. The kit carries that sentence:
+    `<SourceExecutionRestricted />` renders "Sync runs are visible to
+    organization administrators." so it reads the same wherever it appears.
+    Render it when your viewer cannot read the organization's runs — it names
+    no module and no permission, because which authority governs this is yours
+    to know. If you render *nothing* the host says the neutral thing instead
+    ("No runs to show for this sync. If you expected some, you may not have
+    permission to see them."), since it cannot tell the two apart and must not
+    let silence pick one.
   - **Never report a count taken from a page of results.** One sync can produce
     many runs, and the host already knows how many without paging:
     `sync.changes.snapshot ? 1 : sync.changes.files` — on the incremental path
