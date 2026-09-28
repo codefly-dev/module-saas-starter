@@ -87,6 +87,9 @@ message SolutionRegistration {
   optional SolutionBackendBinding backend = 6;
   google.protobuf.Timestamp updated_at = 7;
   optional google.protobuf.Timestamp tombstoned_at = 8;
+  // The binding that declared this record, absent when the record exists because
+  // a runtime registered itself (issue #952).
+  optional SolutionDeclaredBinding declared = 9;
 }
 
 // SolutionFrontendRegistration is the caller-supplied frontend half. Revision
@@ -176,4 +179,95 @@ message ListSolutionRegistrationsResponse {
   // Highest revision in the registry, tombstones included. Two consumers that
   // report the same registry_revision have converged on the same state.
   int64 registry_revision = 2;
+}
+
+// ============================================================================
+// Declared solution presence (issue #952)
+//
+// A SolutionHostBinding is the document delivery hands this host: which solution
+// runs here, at which generation. The host reconciles it into the registration
+// record above. These messages are the read surface, and they keep the three
+// facts apart on purpose — an operator's first question is which of them is
+// wrong.
+// ============================================================================
+
+// SolutionDeclaredBinding is the declaration that produced a registration
+// record. Its presence on a SolutionRegistration is what makes the record
+// declared, and a declared record answers a heartbeat differently: the heartbeat
+// may refresh the lease, the upstream address and the manifest, and may not
+// create presence, replace the release, repoint the route or erase a tombstone.
+message SolutionDeclaredBinding {
+  // Stable ID of the deployment instance that declared this record. It is not
+  // the solution id: a binding ID identifies one instance and may carry
+  // characters a path segment may not.
+  string binding_id = 1;
+  // The generation of that binding the host applied into this record.
+  uint64 generation = 2;
+  // publisher/name@version of the applied generation: the release a heartbeat
+  // may not replace.
+  string release = 3;
+}
+
+// SolutionHostBindingGeneration is one generation of one document. The document
+// is carried whole, canonically encoded, because "what is this host running" and
+// "what has it been asked to run" are both answers an operator needs in full.
+message SolutionHostBindingGeneration {
+  uint64 generation = 1;
+  // The canonical digest of the document, which is how a rewritten generation is
+  // told from a re-read of the applied one.
+  string digest = 2;
+  string document = 3;
+  google.protobuf.Timestamp at = 4;
+}
+
+// SolutionHostBindingAppliedGeneration is the generation this host reconciled,
+// and what it reconciled it into.
+message SolutionHostBindingAppliedGeneration {
+  SolutionHostBindingGeneration generation = 1;
+  // A tombstone generation: the binding is declared absent. It is not an
+  // absence — the generation stays on the record, so a late or replayed older
+  // generation is still refused after a removal.
+  bool removed = 2;
+  // The route aliases the applied generation holds. A tombstone holds none.
+  repeated string routes = 3;
+  // The registration record this generation reconciled into. A tombstone keeps
+  // the key it withdrew, which is the only way it knows what to withdraw.
+  string solution_id = 4;
+  string release = 5;
+}
+
+// SolutionHostBindingState is one binding's whole state: desired, applied, and
+// why they differ. Observed state is deliberately not here — it is the lease and
+// the endpoints on SolutionRegistration, reported by the runtime — so that a
+// solution declared and unhealthy reads differently from one never declared.
+message SolutionHostBindingState {
+  string binding_id = 1;
+  string host_coordinate = 2;
+  string host_component = 3;
+  // The newest generation delivery has shown this host, whether or not it
+  // passed.
+  optional SolutionHostBindingGeneration desired = 4;
+  // The generation this host applied. Absent means nothing has ever passed, so
+  // nothing about this binding is being served.
+  optional SolutionHostBindingAppliedGeneration applied = 5;
+  // The generation delivery is showing that this host has not applied, or 0 when
+  // desired and applied agree.
+  uint64 pending_generation = 6;
+  // Why the pending generation was not applied. Empty when nothing is pending.
+  string pending_reason = 7;
+  optional google.protobuf.Timestamp pending_since = 8;
+  // The registration record this binding declares, when it has applied one. It
+  // carries the observed half: which endpoints registered, whether their leases
+  // are live, and the derived status.
+  optional SolutionRegistration registration = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// ListSolutionHostBindingsRequest reads every declared binding. There is one set
+// per deployment and it holds tens of bindings at most, so a consumer rebuilds
+// its view from a full snapshot.
+message ListSolutionHostBindingsRequest {}
+
+message ListSolutionHostBindingsResponse {
+  repeated SolutionHostBindingState bindings = 1;
 }

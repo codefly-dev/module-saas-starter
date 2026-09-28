@@ -289,6 +289,10 @@ const (
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
+	// EventSolutionHostBindingApplied records that this host reconciled a
+	// declared generation (issue #952). It is emitted by the reconcile pass, not
+	// by a request, so it is declared outside the RPC surface.
+	EventSolutionHostBindingApplied EventType = "saas.solution.host_binding_applied"
 	EventAPIKeyRevoked               EventType = "saas.api_key.revoked"
 	EventRoleCreated                 EventType = "saas.role.created"
 	EventRoleUpdated                 EventType = "saas.role.updated"
@@ -540,6 +544,10 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
 	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
+	mutation(EventSolutionHostBindingApplied, CategoryAccess,
+		"The host reconciled a declared SolutionHostBinding generation.",
+		str("binding_id"), str("solution_id"), PayloadField{Name: "generation", Kind: FieldInt},
+		str("digest"), str("release"), boolean("removed"), strs("routes")),
 	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
 	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
 	mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions")),

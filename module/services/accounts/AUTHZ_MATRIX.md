@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **239 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **240 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -199,6 +199,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.SSOAdminService/GetSSO` | unary | `GET /v1/sso/{org_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read org SSO state. |
 | `/saas.accounts.v1.SSOAdminService/StartSetup` | unary | `POST /v1/sso/setup` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.sso.setup.started | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Mint WorkOS portal link. |
 | `/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.registration_deleted | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Deregister a solution and leave a tombstone that blocks resurrection. |
+| `/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read the declared solution bindings: desired, applied and why they differ. |
 | `/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read the solution registry snapshot a replica rebuilds its cache from. |
 | `/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.registration_updated | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Write or renew one half of a solution's durable runtime registration. |
 | `/saas.accounts.v1.TeamService/AddMember` | unary | `POST /v1/teams/{team_id}/members` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | team_id → TEAM/TEAM_TO_ORGANIZATION | SUCCESS: saas.team.member_added | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Add a user to a team. |
@@ -251,7 +252,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 49
+- `internal`: 50
 - `mfa`: 3
 - `org_admin`: 54
 - `org_member`: 48

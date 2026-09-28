@@ -49,6 +49,22 @@ var (
 	// ErrSolutionRegistrationHalfMissing is returned when a write names neither
 	// half.
 	ErrSolutionRegistrationHalfMissing = errors.New("solution registration must carry exactly one half")
+	// ErrSolutionRegistrationDeclaredWithdrawn is returned when a heartbeat
+	// lands on a record whose declaration removed it. A declared removal is a
+	// tombstone GENERATION, and unlike an operator's deregistration it cannot be
+	// revived by a caller naming the tombstone's revision: the next reconcile
+	// pass would withdraw it again, so accepting the write would serve a
+	// solution delivery has declared absent.
+	ErrSolutionRegistrationDeclaredWithdrawn = errors.New("solution registration was withdrawn by its declared binding")
+	// ErrSolutionRegistrationDeclaredRoute is returned when a heartbeat for a
+	// declared record names a service alias other than the declared one. The
+	// route is the declaration's to decide; a heartbeat reports where the
+	// workload is, never what it is addressed as.
+	ErrSolutionRegistrationDeclaredRoute = errors.New("solution registration route is declared and cannot be repointed by a heartbeat")
+	// ErrSolutionRegistrationDeclared is returned when a caller tries to
+	// deregister a declared record. Removal is a tombstone generation from
+	// delivery, not a runtime's or an operator's DELETE.
+	ErrSolutionRegistrationDeclared = errors.New("solution registration is declared; removal is a tombstone generation")
 	// ErrSolutionRegistrationIdentityRequired is returned when a write names no
 	// solution id or no publisher. Distinct from the half rules: such a request
 	// is not addressable at all, and reporting it as a half problem sends the
@@ -87,13 +103,32 @@ type SolutionBackendHalf struct {
 	LeaseExpiresAt  time.Time
 }
 
+// SolutionDeclaredBinding is the declaration that produced this record: the
+// SolutionHostBinding delivery handed the host, and the generation of it the
+// host applied (solution_host_bindings.go, issue #952).
+//
+// Its presence is what makes a record DECLARED, and a declared record answers a
+// heartbeat differently: see planSolutionRegistrationWrite. A nil here is an
+// undeclared record — every record was one before declared presence existed —
+// and its heartbeat path is unchanged.
+type SolutionDeclaredBinding struct {
+	BindingID  string
+	Generation uint64
+	// Release is publisher/name@version of the applied generation. It is the
+	// release a heartbeat may not replace.
+	Release string
+}
+
 // SolutionRegistration is the canonical record for one solution.
 type SolutionRegistration struct {
-	SolutionID   string
-	Publisher    string
-	Revision     int64
-	Frontend     *SolutionFrontendHalf
-	Backend      *SolutionBackendHalf
+	SolutionID string
+	Publisher  string
+	Revision   int64
+	Frontend   *SolutionFrontendHalf
+	Backend    *SolutionBackendHalf
+	// Declared is the binding that declared this record, or nil when the record
+	// exists because a runtime registered itself.
+	Declared     *SolutionDeclaredBinding
 	UpdatedAt    time.Time
 	TombstonedAt *time.Time
 }
@@ -277,6 +312,42 @@ func planSolutionRegistrationWrite(
 		return nil, false, ErrSolutionRegistrationStale
 	}
 
+	// The mixed window (issue #952). Until the runtimes stop self-registering,
+	// this path and the reconciler both write this record, and the rule that
+	// makes that safe is asymmetric: a heartbeat for a DECLARED record may only
+	// refresh what the declaration does not own.
+	//
+	// What the declaration owns is presence, the release and the route. What a
+	// heartbeat owns is observation: that the workload is alive (the lease),
+	// where it answers (the upstream) and what page it serves (the manifest) —
+	// none of which the document carries, deliberately, because an address
+	// frozen into a delivery document is a resolution result that was true on one
+	// cluster until something moved.
+	//
+	// A record becomes declared when a generation APPLIES, never when a document
+	// arrives, so every check below is skipped for a binding whose document has
+	// not passed. That is what stops a refused document from taking a working
+	// self-registered solution offline, and it is why an UNDECLARED record — every
+	// record until delivery declares one — reaches none of this.
+	if current.Declared != nil {
+		if current.TombstonedAt != nil {
+			// Declared absent. The revive-by-revision path below exists for an
+			// operator's deregistration; a declared removal is re-asserted by
+			// the next reconcile pass, so honouring the heartbeat would serve a
+			// solution for one interval and then withdraw it again.
+			return nil, false, ErrSolutionRegistrationDeclaredWithdrawn
+		}
+		if write.Backend != nil && write.Backend.ServiceAlias != current.SolutionID {
+			// The declared route alias IS the record's solution id: that is how
+			// the host addresses it, and how the reconciler resolved the record
+			// from the document. A heartbeat naming a different alias is asking
+			// to be addressed as something delivery did not declare.
+			return nil, false, fmt.Errorf("%w: %q is declared as %q, the heartbeat named %q",
+				ErrSolutionRegistrationDeclaredRoute, current.SolutionID,
+				current.SolutionID, write.Backend.ServiceAlias)
+		}
+	}
+
 	if current.TombstonedAt != nil {
 		// Re-registering a removed solution is allowed, but only for a caller
 		// that has seen the tombstone and named its revision. A retry still
@@ -288,6 +359,10 @@ func planSolutionRegistrationWrite(
 			SolutionID: current.SolutionID,
 			Publisher:  current.Publisher,
 			UpdatedAt:  now,
+			// An undeclared tombstone by construction: a declared one was
+			// refused above. Carried through so the field is written from the
+			// record rather than dropped by omission if that ever changes.
+			Declared: current.Declared,
 		}
 		applySolutionHalf(next, write, leaseUntil)
 		return next, true, nil
@@ -509,6 +584,15 @@ func (s *Service) DeleteSolutionRegistration(
 		}
 		if expectedRevision != nil && *expectedRevision != current.Revision {
 			return ErrSolutionRegistrationStale
+		}
+		if current.Declared != nil {
+			// Declared presence is removed by a tombstone GENERATION, which the
+			// reconciler applies through its own withdrawal path. Accepting a
+			// DELETE here would remove the record for exactly as long as it
+			// takes the next pass to re-apply the declaration, which is a worse
+			// answer than refusing and saying why.
+			return fmt.Errorf("%w: %q is declared by binding %q",
+				ErrSolutionRegistrationDeclared, solutionID, current.Declared.BindingID)
 		}
 		if current.TombstonedAt != nil {
 			result = current
