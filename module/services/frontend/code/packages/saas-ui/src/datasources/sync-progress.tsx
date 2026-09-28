@@ -77,6 +77,8 @@ export function useSourceSync(
 	sync?: SourceSyncView;
 	report?: SyncProgressReport;
 	now: number;
+	/** True while the first read is outstanding; never true for a client that cannot read one. */
+	pending: boolean;
 	unavailable: boolean;
 } {
 	const getSourceSync = client.getSourceSync?.bind(client);
@@ -120,6 +122,7 @@ export function useSourceSync(
 	return {
 		...(sync ? { sync, report: describeSync(sync, { now }) } : {}),
 		now,
+		pending: !!getSourceSync && query.isPending,
 		unavailable: !getSourceSync,
 	};
 }

@@ -417,6 +417,78 @@ describe("the panel's live sync progress", () => {
 	});
 });
 
+describe("the panel does not flash a loading indicator", () => {
+	it("never shows the list's loading line for a wait shorter than the delay", async () => {
+		// The product rule: an indicator appears only if the wait passes the
+		// delay. A warm cache is the common case, and it must render the table
+		// with no intervening state at all.
+		//
+		// Asserting only after the table arrives would prove nothing — the line is
+		// gone by then whether or not it ever appeared. So hold the answer, check
+		// inside the window, and release.
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			let release: (value: DatasourceView[]) => void = () => {};
+			const client = fakeClient({
+				listSources: vi.fn(
+					() =>
+						new Promise<DatasourceView[]>((resolve) => {
+							release = resolve;
+						}),
+				),
+			});
+			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(150);
+			});
+			expect(screen.queryByText("Loading data sources…")).toBeNull();
+
+			await act(async () => {
+				release([source]);
+			});
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(500);
+			});
+			// It resolved inside the window, so the line must never have appeared.
+			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			expect(screen.getByText("example-org/example-repo")).toBeTruthy();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("shows the list's loading line once the wait passes the delay", async () => {
+		// The other half: a slow list must still say something, or the panel is
+		// simply blank while it waits.
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			let release: (value: DatasourceView[]) => void = () => {};
+			const client = fakeClient({
+				listSources: vi.fn(
+					() =>
+						new Promise<DatasourceView[]>((resolve) => {
+							release = resolve;
+						}),
+				),
+			});
+			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(250);
+			});
+			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+
+			await act(async () => {
+				release([source]);
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe("the panel's execution extension point", () => {
 	it("offers no execution action when no view was handed in", async () => {
 		const client = fakeClient({ listActivity: vi.fn(async () => []) });

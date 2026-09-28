@@ -5,6 +5,7 @@ import {
 	Banner,
 	Button,
 	Card,
+	DelayedLoading,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -573,7 +574,12 @@ function DatasourcesPanelView({
 				)}
 
 				{list.isLoading ? (
-					<PanelMessage>Loading data sources…</PanelMessage>
+					// Nothing for a fast list, and no blink for a slow one. A cached answer
+					// arrives well inside the delay, so the common case renders the table
+					// with no intervening state at all.
+					<DelayedLoading active label="Loading data sources">
+						<PanelMessage>Loading data sources…</PanelMessage>
+					</DelayedLoading>
 				) : list.isError ? (
 					<PanelMessage tone="error">
 						Couldn&apos;t load data sources. Retry shortly or check the service
@@ -1301,7 +1307,7 @@ function SourceExecution({
 	}) => ReactNode;
 	onClose: () => void;
 }) {
-	const { sync } = useSourceSync(client, orgId, source);
+	const { sync, pending } = useSourceSync(client, orgId, source);
 	return (
 		<section aria-label={`Execution of ${source.repo}`}>
 			<Card
@@ -1312,7 +1318,19 @@ function SourceExecution({
 					</Button>
 				}
 			>
-				{render({ source, ...(sync ? { sync } : {}) })}
+				{/* The consumer is handed the resolved sync so it can key its own view
+				    on it, so its view waits for that read rather than mounting against
+				    an absent key and remounting when one arrives. A cached read
+				    resolves well inside the delay, so opening the view normally shows
+				    no indicator at all. */}
+				{pending ? (
+					<DelayedLoading
+						active
+						label={`Loading the execution of ${source.repo}`}
+					/>
+				) : (
+					render({ source, ...(sync ? { sync } : {}) })
+				)}
 			</Card>
 		</section>
 	);
@@ -1358,7 +1376,9 @@ function SourceHistory({
 					refreshes automatically.
 				</p>
 				{history.isPending ? (
-					<p>Loading history…</p>
+					<DelayedLoading active label="Loading sync history">
+						<p>Loading history…</p>
+					</DelayedLoading>
 				) : history.error ? (
 					<p role="alert">Could not load history: {messageOf(history.error)}</p>
 				) : !history.data?.length ? (

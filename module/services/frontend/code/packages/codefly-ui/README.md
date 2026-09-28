@@ -177,6 +177,60 @@ and skipped so the compiled default always renders.
 `Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
 optional actions and dismissal. The caller owns data, authorization and read state.
 
+## A loading indicator never flashes
+
+A product-wide rule, and it lives here so every kit gets it by composing rather
+than by remembering: **an indicator that appears and vanishes tells the reader
+nothing they could not already see, while pulling their eye off what they were
+reading.** Two numbers make that unwritable-otherwise:
+
+- Nothing is shown for the first **200 ms** (`LOADING_DELAY_MS`). Most waits end
+  inside that window — a warm cache, a local read — and they render their
+  answer with no intervening state at all.
+- Once something *has* appeared it stays for at least **300 ms**
+  (`LOADING_MIN_VISIBLE_MS`). Without a floor, a wait that ends just past the
+  delay shows its indicator for a few milliseconds: the same blink, moved later
+  rather than removed.
+
+```tsx
+import { DelayedLoading, Spinner, useDelayedLoading } from "@codefly-dev/ui/layout";
+
+// The common case: the kit owns the timing and the indicator.
+<DelayedLoading active={query.isPending} label="Loading data sources" />
+
+// Your own indicator, the kit's timing.
+<DelayedLoading active={query.isPending} label="Loading data sources">
+  <PanelMessage>Loading data sources…</PanelMessage>
+</DelayedLoading>
+
+// The decision alone, for a surface that is not a subtree — a disabled button,
+// a row that dims, an aria-busy on a container you already render.
+const busy = useDelayedLoading(query.isPending);
+```
+
+`active` is simply whether the thing you are waiting for is outstanding; the
+hook owns everything else. A wait that restarts while the indicator is up does
+**not** restart the delay, so a series of quick refetches cannot tear the
+indicator down and build it back up — that is the same flicker arriving by
+another route. `delayMs` and `minVisibleMs` are overridable per call for a
+surface whose timings genuinely differ; prefer the defaults, because the point
+of a shared rule is that surfaces agree.
+
+`Spinner` is the kit's busy indicator — `role="status"`, polite, with a
+**required** `label`, because a spinner with no accessible name announces that
+*something* is happening, which is the one thing the reader can already see.
+Rendered directly it has no delay and will flash; reach for `DelayedLoading`
+unless you are inside something that already gates it.
+
+The clock is read in effects and timers, never during render, so two renders of
+the same state can never disagree about what is on screen.
+
+`Spinner` fades rather than rotates for a reader who asked for reduced motion
+(`motion-safe:animate-spin` / `motion-reduce:animate-pulse`). Rotation is
+vestibular-triggering, and dropping the animation entirely would leave a ring
+that sits still and conveys nothing — both forms say "busy"; only one of them
+moves through space.
+
 ## Every blocking surface has a way out
 
 A surface that covers the page must always let the user leave it, and the kit
