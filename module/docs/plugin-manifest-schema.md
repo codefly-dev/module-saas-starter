@@ -107,11 +107,21 @@ On a registered solution's page the host renders every declared dashboard in a
 the solution; the solution stays mounted while the dashboard is open. A
 solution that declares no dashboard gets no tab bar. Each viewer can arrange a
 dashboard for themselves: reorder its declared widgets, remove
-them, and re-add the ones they removed. The declared widgets, in declared order,
-are where every viewer starts, and a widget declared later reaches viewers who
-already rearranged. A viewer's arrangement is a preference (ADR 0007): it never
-adds a metric the dashboard does not draw, so a metric declared only as a
-derived metric's input stays off the page.
+them, and re-add the ones they removed. The declared widgets, in declared order
+and in their declared sections, are where every viewer starts, and a widget
+declared later reaches viewers who already rearranged, in its declared section.
+A viewer's arrangement is a preference (ADR 0007): it never adds a metric the
+dashboard does not draw, so a metric declared only as a derived metric's input
+stays off the page.
+
+Sections are declared by the solution; a viewer only groups and arranges the
+tiles. A viewer can move a tile into another section, rename, reorder and
+remove sections, and add sections of their own, which start empty and are
+filled by dragging tiles in. A removed section's tiles move to the section
+above it (below, for the first), and a section's + puts a removed widget back
+into that section. A section the solution declares later still appears for a
+viewer who rearranged; one the viewer removed stays removed. None of this
+reaches other viewers or the declaration.
 
 The schema owns the per-node field formats — including the shape rules that
 cross fields: a metric carries a `bucket` exactly when it groups by `time`, a
