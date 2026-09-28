@@ -25,3 +25,23 @@ ALTER TABLE public.audit_event_types
 -- admitted.
 ALTER TABLE public.audit_event_types
   ADD CONSTRAINT audit_event_types_visibility CHECK (visibility IN ('tenant', 'external'));
+
+-- The relay is what decides whether an event may leave the platform, and it runs
+-- as app_job_worker: that is the role holding SELECT, UPDATE on
+-- public.domain_events, which is how it reads the journal and marks a row
+-- published. Deciding deliverability for a type module-compose never saw means
+-- reading this registry on that same transaction, so the role needs to see it.
+--
+-- Read-only, and strictly less than the role already holds: this table carries
+-- type names, owners and payload schemas for a whole deployment and no tenant
+-- rows at all, while domain_events — which app_job_worker already selects —
+-- carries the event bodies themselves.
+--
+-- Without this grant the new path fails in a way that hides itself. The lookup
+-- short-circuits on the compiled catalog, so every code-owned type keeps being
+-- delivered and only a solution- or module-declared type reaches the table; the
+-- read is refused, the relay treats a failed read as an error rather than a
+-- "no" (it must — refusing on it would silently drop a delivery that is owed),
+-- and the whole relay pass aborts. postgres_declared_audit_relay_test.go fails
+-- without this line.
+GRANT SELECT ON TABLE public.audit_event_types TO app_job_worker;
