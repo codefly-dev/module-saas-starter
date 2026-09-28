@@ -268,6 +268,12 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 			ctx = connector.WithPriority(ctx, connector.PriorityInteractive)
 		}
 
+		// The sync this delivery is, for the hand-off jobs it will enqueue. Set
+		// here rather than per topic: the reconcile path already passes the id
+		// down for its idempotency key, but the push path passed nothing, so a
+		// webhook-driven sync handed off work that named no run at all.
+		ctx = withSyncJobID(ctx, envelope.GetId())
+
 		switch envelope.GetTopic() {
 		case datasourcePushTopic:
 			_, err := s.CompileGitHubDelivery(ctx, source, envelope.GetPayload(), envelope.GetAttributes()[attrDeliveryID])
@@ -523,7 +529,10 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, conn
 				attrCommit:     commit,
 				attrDeliveryID: deliveryID,
 				attrSourceRef:  ref,
-			}, s.snapshotChangeAttributes(ctx, conn, src, source, commit, len(manifest.Files))),
+			}, withAttributes(
+				s.snapshotChangeAttributes(ctx, conn, src, source, commit, len(manifest.Files)),
+				syncJobAttributes(ctx),
+			)),
 		},
 	}); err != nil {
 		return "", w.Wrapf(err, "enqueue snapshot")
@@ -690,7 +699,7 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 			Payload:        payload,
 			ContentType:    "application/json",
 			MaxAttempts:    datasourceIngestMaxAttempts,
-			Attributes: map[string]string{
+			Attributes: withAttributes(map[string]string{
 				attrSourceID:   source.ID,
 				attrOrgID:      source.OrgID,
 				attrBoundaryID: source.BoundaryNodeID,
@@ -702,7 +711,7 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 				attrChangeType: op.changeType,
 				attrDeliveryID: deliveryID,
 				attrChangeSet:  changeSet,
-			},
+			}, syncJobAttributes(ctx)),
 		},
 	})
 	return err

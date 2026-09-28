@@ -134,6 +134,17 @@ const (
 	// the connector's API client rather than inlining an oversized payload.
 	maxIngestPayload = 960 * 1024
 
+	// The sync a hand-off belongs to: the id of the durable sync job the host
+	// keys its whole phase projection on, and the id SourceSyncView.jobId
+	// reports. It is the only identifier tying a hand-off job back to the run
+	// that produced it, so whichever module admits work for that hand-off can
+	// correlate its own records with the sync a person is looking at.
+	//
+	// Stamped on every hand-off path or none: a value present on a reconcile and
+	// absent on a webhook delivery would make a correlated view silently
+	// incomplete rather than visibly broken.
+	attrSyncJobID = "datasource.sync.job_id"
+
 	attrSourceID   = "datasource.source_id"
 	attrOrgID      = "datasource.org_id"
 	attrBoundaryID = "datasource.boundary_id"
