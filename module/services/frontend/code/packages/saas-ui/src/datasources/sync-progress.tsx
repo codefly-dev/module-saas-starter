@@ -155,6 +155,24 @@ const progressTone: Record<
 };
 
 /**
+ * Where the sync is on the ladder, in words — so the phase is legible without
+ * colour and without reading a bar.
+ *
+ * A failed sync's bar is deliberately full: one frozen part-way is
+ * indistinguishable from one still moving slowly. That makes the step read as a
+ * contradiction unless it says the sync *stopped* there — a full bar over "Step
+ * 2 of 4" looks like a rendering fault rather than a sync that got two phases
+ * in.
+ */
+function stepLine(report: SyncProgressReport): string {
+	if (report.step <= 0) return "Not started";
+	const where = `${Math.min(report.step, report.stepCount)} of ${report.stepCount}`;
+	const line =
+		report.tone === "danger" ? `Stopped at step ${where}` : `Step ${where}`;
+	return report.commit ? `${line} · ${report.commit.slice(0, 7)}` : line;
+}
+
+/**
  * One sync's live progress, inside a card.
  *
  * `role="status"` and not `role="alert"`: a sync's phases are polite updates a
@@ -217,14 +235,10 @@ export function SourceSyncProgress({
 					label={`Sync progress for ${source.repo}`}
 					valueText={report.headline}
 				/>
-				<p className="type-body text-muted-foreground">
-					{/* The ladder in words, so the phase is legible without colour and
-					    without reading a bar. */}
-					{report.step > 0
-						? `Step ${Math.min(report.step, report.stepCount)} of ${report.stepCount}`
-						: "Not started"}
-					{report.commit && ` · ${report.commit.slice(0, 7)}`}
-				</p>
+				{/* One string rather than interpolated fragments: split across text
+				    nodes a screen reader may pause mid-phrase, and "Step", "2" and
+				    "of 4" stop being findable as the sentence they read as. */}
+				<p className="type-body text-muted-foreground">{stepLine(report)}</p>
 				{report.counts.length > 0 && (
 					<dl className="flex flex-wrap gap-x-4 gap-y-1 type-body">
 						{report.counts.map((count) => (

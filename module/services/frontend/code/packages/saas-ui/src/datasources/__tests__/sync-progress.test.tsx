@@ -136,6 +136,7 @@ describe("SourceSyncProgress", () => {
 				report={describeSync(
 					sync({
 						phase: "failed",
+						fetchingAt: ago(60_000),
 						finishedAt: ago(1_000),
 						failure: {
 							reason: "credential",
@@ -154,6 +155,26 @@ describe("SourceSyncProgress", () => {
 		expect(screen.getByText("Sync failed")).toBeTruthy();
 		expect(screen.getByText("The stored credential was refused.")).toBeTruthy();
 		expect(screen.getByText("Failed")).toBeTruthy();
+		// The bar is deliberately full for a failed sync, so the step has to say
+		// the sync STOPPED there. "Step 2 of 4" under a full bar reads as a
+		// rendering fault rather than as a sync that got two phases in.
+		expect(screen.getByText("Stopped at step 2 of 4")).toBeTruthy();
+		expect(bar().getAttribute("aria-valuenow")).toBe("100");
+	});
+
+	it("says plain Step for a sync that is still going", () => {
+		render(
+			<SourceSyncProgress
+				source={source}
+				report={describeSync(
+					sync({ phase: "fetching", fetchingAt: ago(1_000) }),
+					{ now: NOW },
+				)}
+			/>,
+		);
+
+		expect(screen.getByText("Step 2 of 4")).toBeTruthy();
+		expect(screen.queryByText(/Stopped at/)).toBeNull();
 	});
 
 	it("announces a running sync politely, so each phase does not interrupt the reader", () => {
