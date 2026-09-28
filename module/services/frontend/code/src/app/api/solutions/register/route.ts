@@ -12,12 +12,18 @@ import {
 	observeRegistrationRemoved,
 	type RegistrationRefusal,
 } from "@/solutions/registration-log";
-import { viewerEntitlements } from "@/solutions/entitlements";
+import {
+	entitlementFailureResponse,
+	isEntitlementFailure,
+	viewerEntitlements,
+} from "@/solutions/entitlements";
 import {
 	cachedProjection,
 	entitledSolutions,
-	loadSolutionsWithRevision,
 	navProjection,
+} from "@/solutions/projections";
+import {
+	loadSolutionsWithRevision,
 	parseManifest,
 	registerSolution,
 	type SolutionWriteResult,
@@ -308,17 +314,8 @@ export async function DELETE(request: Request): Promise<Response> {
 // indistinguishable from an organization that installed nothing.
 export async function GET(request: Request): Promise<Response> {
 	const entitlements = await viewerEntitlements(request);
-	if (entitlements === "unauthenticated") {
-		return Response.json({ error: "unauthenticated" }, { status: 401 });
-	}
-	if (entitlements === "forbidden") {
-		return Response.json({ error: "no_organization" }, { status: 403 });
-	}
-	if (entitlements === "unavailable") {
-		// The authority could not answer. Never an empty list: the menu holds its
-		// last known set rather than emptying on an authority blip, exactly as it
-		// does for an unreadable registry.
-		return Response.json({ error: "authority_unavailable" }, { status: 503 });
+	if (isEntitlementFailure(entitlements)) {
+		return entitlementFailureResponse(entitlements);
 	}
 	const registered = await loadSolutionsWithRevision();
 	// An empty registry and an unreadable one must not render the same: the

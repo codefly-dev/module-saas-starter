@@ -54,6 +54,23 @@ func (g *Gateway) handleSolutionViewerSegment(w http.ResponseWriter, r *http.Req
 
 const listSolutionEntitlementsMethod = "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
 
+// solutionEntitlementRefusalHeader names which of this endpoint's OWN refusals
+// an answer is, so the caller can tell them apart from an ext_authz verdict on the
+// user's credential. Status codes alone cannot: a refused internal credential and
+// a refused user bearer are both 401, and a caller that read the first as the
+// second would tell every signed-in user to re-authenticate over a server-side
+// credential fault (and drive a refresh-token rotation on every poll).
+const solutionEntitlementRefusalHeader = "X-Codefly-Entitlement-Refusal"
+
+const (
+	// refusalInternalCredential: the CALLING SERVICE's cluster-internal token was
+	// not accepted. A deployment fault, never the user's.
+	refusalInternalCredential = "internal-credential"
+	// refusalNoOrganization: the user authenticated, but the session names no
+	// organization, so there is no org-scoped set to answer.
+	refusalNoOrganization = "no-organization"
+)
+
 // errSolutionEntitlementsUnbounded is what a cursor that never terminates
 // produces. It is an error rather than a truncated answer because a short list is
 // indistinguishable from a smaller entitled set, and a consumer would narrow a
@@ -144,6 +161,7 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+		w.Header().Set(solutionEntitlementRefusalHeader, refusalInternalCredential)
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -181,27 +199,66 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 	// The verified identity, read from what the check just stamped — never from
 	// the request as it arrived.
 	org := r.Header.Get("X-Org-Id")
-	viewer := r.Header.Get("X-User-Id")
+	viewer := effectiveViewer(r)
 	if org == "" || viewer == "" {
 		// Authenticated, but carrying no organization: a session that has not
 		// selected one cannot have an org-scoped entitlement set. That is a
 		// property of the credential, not an outage, and not an empty tenant's
 		// menu either — so it is refused rather than answered with [].
+		w.Header().Set(solutionEntitlementRefusalHeader, refusalNoOrganization)
 		httpError(w, http.StatusForbidden, "no organization in this session")
 		return
 	}
 
-	entries, err := g.collectSolutionEntitlements(r.Context(), org, viewer)
-	if err != nil {
-		// The authority could not answer. 503, never an empty list: the frontend
-		// distinguishes the two and holds its last projection rather than emptying
-		// a working menu.
-		httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
+	// Every read here fans into the authority — the grant union plus health for
+	// each entitled installation — so it draws on the same per-org budget as the
+	// equivalent catalog read. Without it this would be the one unmetered path
+	// from a signed-in browser into accounts (the defect #513 closed for the
+	// solution proxy): the menu polls, and nothing in front of it limits a poll.
+	// The limiter keys on the X-Org-Id the check just stamped, and fails open on
+	// a limiter-backend outage exactly as a StandardRead catalog route does.
+	entry := &RouteEntry{
+		Service:        "solution:_entitlements",
+		UpstreamPath:   r.URL.Path,
+		Protected:      true,
+		RateLimitClass: edgeRateLimitClassStandardRead,
+	}
+	answer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entries, err := g.collectSolutionEntitlements(r.Context(), org, viewer)
+		if err != nil {
+			// The authority could not answer. 503, never an empty list: the
+			// frontend distinguishes the two and holds its last projection rather
+			// than emptying a working menu.
+			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
+			return
+		}
+		writeSolutionJSON(w, http.StatusOK, solutionEntitlementProjection{
+			Org: org, Viewer: viewer, Usable: entries,
+		})
+	})
+	if g.rateLimiter == nil {
+		answer.ServeHTTP(w, r)
 		return
 	}
-	writeSolutionJSON(w, http.StatusOK, solutionEntitlementProjection{
-		Org: org, Viewer: viewer, Usable: entries,
-	})
+	g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry),
+		entry.AuthenticationFactorAttempt, answer).ServeHTTP(w, r)
+}
+
+// effectiveViewer is whose entitlements the menu is for: the impersonated user
+// while an impersonation is active, otherwise the caller.
+//
+// ext_authz stamps X-User-Id with the token's `sub`, which during impersonation
+// stays the REAL actor, and names the user being viewed in X-Acting-As-User-Id.
+// accounts authorizes every request against that effective subject
+// (auth.RequestIdentity.EffectiveSubject), so a projection that read X-User-Id
+// alone would show an impersonating administrator their own grants inside the
+// impersonated user's organization — never the menu that user actually sees,
+// which is the one thing impersonation is used to check.
+func effectiveViewer(r *http.Request) string {
+	if acting := r.Header.Get("X-Acting-As-User-Id"); acting != "" {
+		return acting
+	}
+	return r.Header.Get("X-User-Id")
 }
 
 // collectSolutionEntitlements reads every page of the viewer's entitled set. A

@@ -3,10 +3,6 @@ import "server-only";
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
 import { getEndpoints, getWorkspaceSecret } from "codefly";
 
-import type {
-	SolutionEntitlement,
-	ViewerEntitlements,
-} from "@/solutions/entitlements";
 import { isStandingConditionMilestone } from "@/solutions/registration-log";
 
 /**
@@ -105,7 +101,7 @@ export interface SolutionSurface {
 	events?: string[];
 }
 
-/** The public navigation projection (see navProjection). */
+/** The per-viewer navigation projection (see navProjection in projections.ts). */
 export type SolutionNav = Pick<SolutionManifest, "id" | "nav"> & {
 	/**
 	 * False when the solution is installed and granted but its installation is
@@ -124,7 +120,7 @@ export type SolutionNav = Pick<SolutionManifest, "id" | "nav"> & {
 /** The internal detail projection (see detailProjection). */
 export type SolutionDetail = Omit<SolutionManifest, "dashboard" | "surfaces">;
 
-/** The per-client surface projection (see surfacesProjection). */
+/** The per-client surface projection (see surfacesProjection in projections.ts). */
 export interface SolutionClientSurfaces {
 	id: string;
 	title: string;
@@ -148,6 +144,15 @@ const SAFE_SLUG = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
  * correctly-spelled kind that nobody serves.
  */
 export function isClientKind(value: string): boolean {
+	return SAFE_SLUG.test(value);
+}
+
+/**
+ * Whether a value is shaped like a registered solution id — the rule parseManifest
+ * admits an id by, and the gateway's own. A value that fails it can never name a
+ * registration, however it was spelled elsewhere.
+ */
+export function isSolutionId(value: string): boolean {
 	return SAFE_SLUG.test(value);
 }
 
@@ -739,212 +744,6 @@ export async function findSolution(
 	const current = await snapshot();
 	if (current === null) return "unavailable";
 	return current.byId.get(id) ?? null;
-}
-
-/**
- * The registered solutions this viewer may use, each paired with the entitlement
- * that admitted it, in the order the registry ordered them.
- *
- * The join key is the solution id: `installations.solution_identifier` on the
- * authority side and the registered manifest `id` here. It is the only identifier
- * both sides hold — an installation carries no reference to a registration record
- * — and SOLUTION_REGISTRATION.md §4 states the correspondence.
- *
- * A registered solution with no entitlement is absent: deployed but uninstalled,
- * or installed but not granted to this viewer, are both invisible. An entitlement
- * with no registration is absent too, and deliberately quiet — an organization may
- * hold an installation for a solution this deployment does not serve (it was
- * deregistered, or has not registered yet), and that is not an error to report to
- * the viewer whose menu is being drawn.
- */
-export function entitledSolutions(
-	registered: SolutionManifest[],
-	entitlements: ViewerEntitlements,
-): Array<{ manifest: SolutionManifest; entitlement: SolutionEntitlement }> {
-	const pairs: Array<{
-		manifest: SolutionManifest;
-		entitlement: SolutionEntitlement;
-	}> = [];
-	for (const manifest of registered) {
-		const entitlement = entitlements.byId.get(manifest.id);
-		if (entitlement === undefined) continue;
-		pairs.push({ manifest, entitlement });
-	}
-	return pairs;
-}
-
-/**
- * The cache of computed projections, keyed on everything a projection is a
- * function of.
- *
- * The snapshot cache above it is deployment-wide, because the registered set is.
- * A projection is not: it depends on the viewer's organization, on the authority
- * state that admitted each solution, and on the client kind asked for. So the key
- * carries all four.
- *
- * The revision is a digest of the entitled set itself (see entitlements.ts), which
- * is what makes this safe: a grant or a revoke changes the set, so it changes the
- * key, so a cached menu cannot outlive the grant that justified it. A TTL could not
- * give that — it would only bound how long a revoked viewer keeps seeing a solution.
- *
- * Note what this does NOT cache: the authority answer. Every request asks the
- * gateway. What is reused is the manifest shaping, on a key that provably moves
- * whenever authority does.
- */
-const PROJECTION_CACHE_LIMIT = 256;
-
-const globalForProjections = globalThis as typeof globalThis & {
-	__solutionProjectionCache?: Map<string, unknown>;
-};
-
-function projectionCache(): Map<string, unknown> {
-	// On globalThis for the same reason the snapshot is: Next evaluates route
-	// handlers in separate module graphs, so a module-level Map would be one cache
-	// per graph, each missing what the others computed.
-	if (!globalForProjections.__solutionProjectionCache) {
-		globalForProjections.__solutionProjectionCache = new Map();
-	}
-	return globalForProjections.__solutionProjectionCache;
-}
-
-/**
- * Memoize a projection on (organization, viewer, authority revision, client kind,
- * registry revision).
- *
- * The registry revision is in the key because the registered set is the other
- * input: a solution re-registering with a new nav title must re-render even though
- * no grant moved.
- *
- * Eviction is oldest-first at a fixed ceiling rather than by time. Every key
- * component is a content fingerprint, so an entry is never stale — only unused —
- * and the ceiling exists to bound memory across viewers, not to expire anything.
- */
-export function cachedProjection<T>(
-	entitlements: ViewerEntitlements,
-	client: string,
-	registryRevision: number,
-	compute: () => T,
-): T {
-	const key = [
-		entitlements.org,
-		entitlements.viewer,
-		entitlements.revision,
-		client,
-		String(registryRevision),
-	].join("\u0000");
-	const cache = projectionCache();
-	const hit = cache.get(key);
-	if (hit !== undefined) return hit as T;
-	const computed = compute();
-	if (cache.size >= PROJECTION_CACHE_LIMIT) {
-		const oldest = cache.keys().next();
-		if (!oldest.done) cache.delete(oldest.value);
-	}
-	cache.set(key, computed);
-	return computed;
-}
-
-/**
- * Drop every cached projection.
- *
- * Exposed for tests. A registry write does NOT need it: the registry revision is
- * part of every key, so a write that changes the registered set changes the key,
- * and a write that changes nothing (a heartbeat renewal) leaves a projection that
- * is still correct.
- */
-export function invalidateProjections(): void {
-	globalForProjections.__solutionProjectionCache = new Map();
-}
-
-/**
- * What one signed-in viewer may read: the id and the nav entry the Solutions menu
- * renders, for a solution that viewer may actually use. A manifest also carries
- * deployment topology — the origin the solution's code is served from, the backend
- * service that fronts it, and its dashboard declaration — which no browser needs
- * to render a link, so the projection drops it rather than shipping it to every
- * poll.
- *
- * The entitlement is a REQUIRED argument, not an optional narrowing. A parameter
- * that could be omitted would widen this projection back to the deployment-wide
- * set the moment a caller forgot it, and the failure would look like working code:
- * every viewer would see every registered solution, which is exactly the defect
- * this narrowing removes. Requiring it means a caller cannot project without
- * having asked the authority.
- */
-export function navProjection(
-	manifest: SolutionManifest,
-	entitlement: SolutionEntitlement,
-): SolutionNav {
-	return {
-		id: manifest.id,
-		nav: { ...manifest.nav },
-		available: entitlement.healthy,
-	};
-}
-
-/**
- * What one kind of client may read: the surfaces declared for that kind, named
- * by the solution offering them. A client asks for its own kind and gets
- * exactly what applies to it, so learning what is on offer no longer means
- * shipping a table of who offers what inside every client.
- *
- * Registration is still deployment-wide; what a viewer may USE is not. The
- * entitlement argument is that narrowing, and it is required for the reason
- * navProjection's is: an optional one would silently restore the deployment-wide
- * answer whenever a caller left it out.
- *
- * Returns null when this solution declares nothing for that client, which is
- * how the listing leaves it out rather than listing it empty.
- */
-export function surfacesProjection(
-	manifest: SolutionManifest,
-	client: string,
-	entitlement: SolutionEntitlement,
-	hostOrigin?: string,
-): SolutionClientSurfaces | null {
-	const surfaces = (manifest.surfaces ?? []).filter(
-		(surface) => surface.client === client,
-	);
-	if (surfaces.length === 0) {
-		return null;
-	}
-	// A solution served through this host has no origin of its own a client can
-	// reach: its modules are paths on its backend, which this host serves under
-	// the solution's proxy base. Without the host's own origin there is nothing
-	// to resolve them against, so the solution is left out rather than answered
-	// with an address that cannot work.
-	const servedByHost = manifest.frontend.manifestUrl.startsWith("/");
-	if (servedByHost && !hostOrigin) {
-		return null;
-	}
-	const modulePath = (module: string) =>
-		servedByHost ? `${solutionProxyBase(manifest.id)}${module}` : module;
-	return {
-		id: manifest.id,
-		title: manifest.nav.title,
-		available: entitlement.healthy,
-		// A declared module is a path on the solution's origin, so without the
-		// origin no caller can fetch one. The origin is not withheld topology
-		// here the way the manifest path is: the client fetches the module from
-		// it directly, and every signed-in document already carries it in the
-		// CSP that admits the same origin's code.
-		origin: servedByHost
-			? (hostOrigin as string)
-			: new URL(manifest.frontend.manifestUrl).origin,
-		// A shallow copy would share `applies.tagged` and `events` with the
-		// cached snapshot, which outlives this response and is read by every
-		// later caller — including other client kinds, which read the same
-		// manifest objects.
-		surfaces: surfaces.map((surface) => ({
-			...surface,
-			module: modulePath(surface.module),
-			applies:
-				typeof surface.applies === "object"
-					? { tagged: [...surface.applies.tagged] }
-					: surface.applies,
-			events: surface.events === undefined ? undefined : [...surface.events],
-		})),
-	};
 }
 
 /**

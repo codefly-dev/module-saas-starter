@@ -263,3 +263,41 @@ keeps renewing its record after the upgrade. A pre-contract row whose publisher
 was self-asserted as anything else was never authenticated; it stays as it is,
 and who owns it is an operator's decision — delete the row (or `DELETE` the
 registration) and let the credentialed publisher register it afresh.
+
+### Upgrading to per-viewer projections (issue #949)
+
+**Every Solutions menu and every client's surface list is empty immediately
+after this upgrade, for every user, admins included.** That is the consequence of
+§4's rules, not a fault: before this contract a *registered* solution was listed
+for everyone, and now a solution is listed only when the viewer's organization has
+an active installation of it **and** one of the viewer's teams (or the viewer) holds
+a grant that permits `(solution, use)` at or above that installation's scope node.
+Registration never created installations, `(solution, use)` is a permission no role
+carried before, and there are no implicit grants — so at upgrade no viewer
+satisfies both. Registration, pages and the solution proxy are unchanged: a solution
+still renders at `/s/{id}` for anyone the gateway authenticates.
+
+To restore a solution for an organization, an org admin:
+
+1. installs it with `InstallationService/InstallSolution`, passing the solution's
+   **registered id** as `solution_identifier` (see below);
+2. creates a role permitting `solution:use` (or grants a role that already carries
+   `*:*`) with `PermissionService/CreateRole`;
+3. grants that role with `PermissionService/GrantScope` to each team that should
+   see it, at the installation's authority-root scope node — or at the
+   organization root to give it to every team at once, which the scope tree's
+   ancestor rule then carries down to every solution node.
+
+The host ships no migration that writes these grants: the owner's decision is that
+a solution reaches no team until a grant is written, and a backfill that granted
+every registered solution to every organization would be exactly the implicit
+grant that decision rules out.
+
+**The solution identifier must be the registered id.** An installation's
+`solution_identifier` is free text, because an installation also governs agent
+authority and any identifier serves that purpose; the projections, though, match it
+against the registered manifest `id`, a lowercase slug. An installation under any
+other identifier (`acme.example/solution`, say) is valid for agent authority and can
+never appear in a menu. The frontend reports each such identifier once, in its log
+(`solution projections: an installation's solution_identifier … is not a
+registered-solution id shape`), so the mismatch is visible rather than silent.

@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
-import { authedFetch } from "@/lib/connect/token-store";
+import { decodeJWTPayload } from "@/lib/auth-session";
+import {
+	authedFetch,
+	getToken,
+	subscribeToken,
+} from "@/lib/connect/token-store";
 
 interface SolutionNav {
 	id: string;
@@ -27,6 +32,62 @@ const EMPTY: SolutionNav[] = [];
 let snapshot: SolutionNav[] = EMPTY;
 const listeners = new Set<Listener>();
 let timer: ReturnType<typeof setInterval> | null = null;
+let stopWatchingToken: (() => void) | null = null;
+
+// Whose list `snapshot` is. The list is per viewer and per organization (#949),
+// and it lives in this module, not in a component — so it outlives an unmount, a
+// sign-out and the next person signing in on the same tab. Without an owner, the
+// next viewer is shown the previous viewer's solutions until their own first
+// poll succeeds, and indefinitely if it never does.
+let snapshotViewer: string | null = null;
+
+/**
+ * The viewer the current token speaks for: the effective subject (the
+ * impersonated user during an impersonation, as the server narrows on) in its
+ * organization, or null when signed out.
+ *
+ * This reads the token's claims without verifying them, which is deliberate and
+ * safe HERE: the answer only decides whether to throw away a client-side copy of a
+ * list, never what anyone may see — the server narrows on the identity the gateway
+ * verified. It is the same presentational use lib/auth-session.ts's
+ * resolveSessionUser makes of the claims.
+ */
+function currentViewer(): string | null {
+	const token = getToken();
+	if (!token) return null;
+	const claims = decodeJWTPayload(token);
+	const subject =
+		typeof claims.acting === "string" && claims.acting
+			? claims.acting
+			: typeof claims.sub === "string"
+				? claims.sub
+				: "";
+	const org = typeof claims.org === "string" ? claims.org : "";
+	return `${subject}\u0000${org}`;
+}
+
+function publish(next: SolutionNav[]): void {
+	// Keep the reference stable when nothing changed so subscribers don't
+	// re-render on every poll (useSyncExternalStore compares by identity).
+	if (sameList(snapshot, next)) return;
+	snapshot = next;
+	for (const listener of listeners) {
+		listener();
+	}
+}
+
+/**
+ * Drop the list when it belongs to someone else. A routine token refresh keeps the
+ * same viewer, so it changes nothing and the menu does not flicker; a sign-out, a
+ * different person, or a switch of organization empties it at once.
+ */
+function forgetIfViewerChanged(): boolean {
+	const viewer = currentViewer();
+	if (viewer === snapshotViewer) return false;
+	snapshotViewer = viewer;
+	publish(EMPTY);
+	return true;
+}
 
 function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
 	if (a === b) return true;
@@ -46,6 +107,9 @@ function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
 }
 
 async function refresh(): Promise<void> {
+	forgetIfViewerChanged();
+	const viewer = snapshotViewer;
+	if (viewer === null) return;
 	try {
 		// The menu is this viewer's own (#949), so the listing is authenticated and
 		// answers what THIS viewer may use. authedFetch attaches the host's bearer
@@ -55,25 +119,26 @@ async function refresh(): Promise<void> {
 		const response = await authedFetch("/api/solutions/register", {
 			cache: "no-store",
 		});
+		// Answered for a viewer who is no longer here: a poll started before a
+		// sign-out or a switch must not paint its list over the next viewer's.
+		if (currentViewer() !== viewer) return;
+		if (response.status === 401) {
+			// authedFetch already tried to recover the session and could not, so
+			// this viewer is no longer signed in. Their list is not kept on screen.
+			publish(EMPTY);
+			return;
+		}
 		if (!response.ok) {
-			// Every non-OK answer keeps the last known list. 503 is an unreadable
-			// registry or an authority that could not answer; 401 is a session this
-			// poll could not refresh, which the transport's own recovery handles by
-			// redirecting. Treating any of them as "no solutions" would empty a
-			// working nav on a blip — the reason the route distinguishes them from an
-			// empty projection at all.
+			// Every other non-OK answer keeps this viewer's last known list. 503 is
+			// an unreadable registry or an authority that could not answer; 429 is
+			// the organization's read budget. Treating any of them as "no solutions"
+			// would empty a working nav on a blip — the reason the route
+			// distinguishes them from an empty projection at all.
 			return;
 		}
 		const data: { solutions?: SolutionNav[] } = await response.json();
-		const next = data.solutions ?? [];
-		// Keep the reference stable when nothing changed so subscribers don't
-		// re-render on every poll (useSyncExternalStore compares by identity).
-		if (!sameList(snapshot, next)) {
-			snapshot = next;
-			for (const listener of listeners) {
-				listener();
-			}
-		}
+		if (currentViewer() !== viewer) return;
+		publish(data.solutions ?? []);
 	} catch {
 		// Network blip — keep the last known list.
 	}
@@ -84,18 +149,31 @@ function subscribe(listener: Listener): () => void {
 	if (listeners.size === 1) {
 		void refresh();
 		timer = setInterval(refresh, 10_000);
+		// Re-check ownership the moment the token changes rather than on the next
+		// tick, so a new viewer never waits up to one poll with someone else's list.
+		stopWatchingToken = subscribeToken(() => {
+			if (forgetIfViewerChanged()) void refresh();
+		});
 	}
 	return () => {
 		listeners.delete(listener);
-		if (listeners.size === 0 && timer) {
-			clearInterval(timer);
-			timer = null;
+		if (listeners.size === 0) {
+			if (timer) {
+				clearInterval(timer);
+				timer = null;
+			}
+			stopWatchingToken?.();
+			stopWatchingToken = null;
 		}
 	};
 }
 
 function getSnapshot(): SolutionNav[] {
-	return snapshot;
+	// React reads this during render, before subscribe has run: on a remount after
+	// a sign-out or a switch, returning `snapshot` as-is would paint the previous
+	// viewer's list for that render. EMPTY is a constant, so the answer stays
+	// stable for useSyncExternalStore until refresh publishes this viewer's own.
+	return currentViewer() === snapshotViewer ? snapshot : EMPTY;
 }
 
 /**

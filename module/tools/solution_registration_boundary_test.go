@@ -34,9 +34,12 @@ import (
 // them may consult installation, entitlement, or tenant state; if one ever does,
 // that half of the boundary has moved too and the doc has to move with it.
 //
-// The projection surfaces are deliberately absent: they are covered by
+// registry.ts is here because its findSolution is what `/s/{id}` renders from.
+// The per-viewer narrowing lives in projections.ts precisely so this file can
+// stay in the scan; the projection routes are covered by
 // TestSolutionProjectionsNarrowByInstallation below, which requires the opposite.
 var registrationSurfaces = []string{
+	"services/frontend/code/src/solutions/registry.ts",
 	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx",
 	"services/auth-gateway/code/gateway_solutions.go",
 }
@@ -150,9 +153,12 @@ func TestSolutionProjectionsNarrowByInstallation(t *testing.T) {
 			t.Fatalf("read %s: %v", relative, err)
 		}
 		code := codeOnly(string(data))
-		// The entitlement read, and the narrowing that consumes it. Naming both
-		// means a file cannot pass by importing the authority answer and then
-		// projecting the unnarrowed set anyway.
+		// The entitlement read, and the narrowing that consumes it. This is a
+		// presence check and proves only that: a route that imported both and then
+		// projected the registered set anyway would still pass here. That behaviour
+		// is caught by the route tests (a deployed but uninstalled solution must be
+		// absent from each projection); this test catches the coarser regression of
+		// a projection route dropping the narrowing entirely.
 		for _, identifier := range []string{
 			"viewerEntitlements",
 			"entitledSolutions",
@@ -179,6 +185,7 @@ func TestSolutionProjectionsDoNotDeriveIdentityLocally(t *testing.T) {
 	moduleDir := findModuleDir(t)
 	surfaces := append([]string{
 		"services/frontend/code/src/solutions/entitlements.ts",
+		"services/frontend/code/src/solutions/projections.ts",
 		"services/frontend/code/src/solutions/registry.ts",
 	}, projectionSurfaces...)
 	for _, relative := range surfaces {

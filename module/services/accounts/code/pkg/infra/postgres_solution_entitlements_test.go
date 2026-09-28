@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -402,4 +403,139 @@ func TestListInstallations_RejectsAForeignCursor(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "page_token")
+}
+
+// ============================================================================
+// Health parity: the listing's one-statement health must be GetInstallation's
+// ============================================================================
+
+// listedHealth is the health the shared listing reports for one installation.
+func listedHealth(t *testing.T, orgID, installationID string) gen.InstallationHealth {
+	t.Helper()
+	for _, summary := range listInstallations(t, orgID, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, "", 100) {
+		if summary.GetInstallation().GetId() == installationID {
+			return summary.GetHealth()
+		}
+	}
+	t.Fatalf("installation %s not listed", installationID)
+	return gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED
+}
+
+// controlPlaneExec runs one statement as the control plane, for states no tenant
+// write path produces directly (an expiry that has already passed).
+func controlPlaneExec(t *testing.T, sql string, args ...any) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		_, err := tx.Exec(ctx, sql, args...)
+		return err
+	}))
+}
+
+// The listing resolves health for every row inside one statement; GetInstallation
+// resolves it for one row in several. They are two implementations of one rule,
+// so every state is checked against both, in the precedence the rule defines.
+func TestInstallationListingHealthMatchesGetInstallation(t *testing.T) {
+	cases := []struct {
+		name  string
+		want  gen.InstallationHealth
+		setup func(t *testing.T, orgID, ownerID, roleID, rootPath string, installation *gen.Installation)
+	}{
+		{
+			name: "healthy",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY,
+		},
+		{
+			name: "agent revoked, which outranks the grant it also loses",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_AGENT_REVOKED,
+			setup: func(t *testing.T, orgID, _, _, _ string, installation *gen.Installation) {
+				require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+					_, _, err := testStore.UninstallSolution(ctx, orgID, installation.GetId())
+					return err
+				}))
+			},
+		},
+		{
+			name: "agent disabled",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_AGENT_DISABLED,
+			setup: func(t *testing.T, orgID, _, _, _ string, installation *gen.Installation) {
+				require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+					_, err := testStore.DisableAgentPrincipal(ctx, installation.GetAgentPrincipalId(), "parity")
+					return err
+				}))
+			},
+		},
+		{
+			name: "no current admin among owner and co-owners",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER,
+			setup: func(t *testing.T, orgID, ownerID, _, _ string, _ *gen.Installation) {
+				controlPlaneExec(t, `UPDATE organization_members SET role = 'member' WHERE org_id = $1 AND user_id = $2`, orgID, ownerID)
+			},
+		},
+		{
+			name: "a co-owner who is still admin keeps it healthy",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY,
+			setup: func(t *testing.T, orgID, ownerID, _, _ string, installation *gen.Installation) {
+				successor := seedUser(t)
+				seedHumanPrincipal(t, successor, "Successor Admin")
+				require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(testCtx, successor, "admin"))
+				require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+					_, err := testStore.TransferInstallationOwnership(ctx, orgID, installation.GetId(), ownerID, []string{successor})
+					return err
+				}))
+				controlPlaneExec(t, `UPDATE organization_members SET role = 'member' WHERE org_id = $1 AND user_id = $2`, orgID, ownerID)
+			},
+		},
+		{
+			name: "standing grant revoked",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_STANDING_GRANT_MISSING,
+			setup: func(t *testing.T, orgID, _, roleID, rootPath string, installation *gen.Installation) {
+				require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+					return testStore.RevokeScope(ctx, orgID, installation.GetAgentPrincipalId(),
+						gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, rootPath, roleID)
+				}))
+			},
+		},
+		{
+			name: "standing grant expired",
+			want: gen.InstallationHealth_INSTALLATION_HEALTH_STANDING_GRANT_MISSING,
+			setup: func(t *testing.T, orgID, _, _, _ string, installation *gen.Installation) {
+				controlPlaneExec(t, `UPDATE scope_grants SET expires_at = now() - interval '1 hour' WHERE org_id = $1 AND subject_id = $2`,
+					orgID, installation.GetAgentPrincipalId())
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orgID, ownerID, roleID, installation, rootPath := installFixture(t, "doc", "write")
+			if tc.setup != nil {
+				tc.setup(t, orgID, ownerID, roleID, rootPath, installation)
+			}
+			point := getInstallationHealth(t, orgID, installation.GetId())
+			require.Equal(t, tc.want, point, "GetInstallation")
+			require.Equal(t, point, listedHealth(t, orgID, installation.GetId()),
+				"the listing must answer exactly what GetInstallation answers")
+		})
+	}
+}
+
+// A grant that expires narrows the projection with no write at all — nothing
+// calls RevokeScope, nothing bumps anything. That is why the entitlement answer is
+// read on every request rather than cached on a revision advanced by grant writes:
+// such a revision would not move here, and a cached menu would outlive the grant.
+func TestListSolutionEntitlements_NarrowsWhenAGrantExpiresWithoutAnyWrite(t *testing.T) {
+	orgID, ownerID, roleID := entitlementOrg(t)
+	audit := installSolution(t, orgID, ownerID, roleID, "audit")
+
+	member := seedUser(t)
+	seedHumanPrincipal(t, member, "Member")
+	seedOrgMember(t, orgID, member)
+	team := seedTeamWith(t, orgID, member)
+	grantAtNode(t, orgID, team, roleID, audit)
+	require.Equal(t, []string{"audit"}, entitledIdentifiers(t, orgID, member))
+
+	// Time passes past the grant's expiry. No application write occurs.
+	controlPlaneExec(t, `UPDATE scope_grants SET expires_at = now() - interval '1 second' WHERE org_id = $1 AND subject_id = $2`,
+		orgID, team)
+	require.Empty(t, entitledIdentifiers(t, orgID, member))
 }

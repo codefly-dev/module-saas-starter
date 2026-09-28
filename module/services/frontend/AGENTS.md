@@ -74,12 +74,39 @@ it, projects the organization and viewer from its own check, and answers from
 accounts. `module/tools/solution_registration_boundary_test.go` holds both halves:
 the projections must consult that read, and must not name the local decoders.
 
-An installed, granted solution whose installation is unhealthy stays listed with
-`available: false` — the grant exists, so hiding it would send someone looking for
-one that already does; it simply is not routed as serving. The projection cache is
-keyed on organization, viewer, a digest of the entitlement answer, and client kind,
-so a grant or a revoke moves the key and a cached menu cannot outlive the grant
-that justified it.
+**`available` is a client contract.** An installed, granted solution whose
+installation is unhealthy stays listed with `available: false` — the grant exists,
+so hiding it would send someone looking for one that already does. It is a new
+field on both projections: the host's own sidebar renders such a solution disabled,
+and **a registered client of the surfaces projection must honour it the same way**
+— a client that ignores the field will offer an unavailable solution's surfaces as
+usable. Only the listing is narrowed: `/s/{id}` and the solution proxy still render
+and route a registered solution for any authenticated caller, available or not
+(route and page exposure stays deployment-wide, SOLUTION_REGISTRATION.md §4).
+
+**Failure answers.** Neither projection answers an empty list for a failure.
+`401` — the viewer is not signed in; `403 no_organization` — signed in with no
+organization; `403 forbidden` — the gateway refused the viewer's credential;
+`429 rate_limited` — the organization spent its read budget (the gateway meters the
+entitlement read as a StandardRead per organization); `503` — the registry or the
+authority could not be read, **including** when the gateway refuses this frontend's
+own cluster-internal token. That last case is a deployment fault and is never
+relayed as `401`: the gateway names its own refusals in
+`X-Codefly-Entitlement-Refusal`, so a server credential problem cannot tell every
+user to sign in again.
+
+**What is cached, and what is not.** The entitlement answer is read from the
+authority on **every** request; it is never reused. Reusing it on a revision that
+grant writes advance would be wrong, because the answer changes with no grant write
+at all — a grant's `expires_at` passes, a member leaves a team, a role loses a
+permission, an owner of record is demoted. What is memoized is only the shaping of
+manifests into a projection, keyed on organization, viewer, a digest of the
+entitlement answer just read, client kind and registry revision, so it can never
+describe an answer other than the one this request received.
+
+The narrowing itself lives in `src/solutions/projections.ts`, apart from
+`src/solutions/registry.ts`: the registry also feeds `findSolution`, which decides
+whether `/s/{id}` renders, and it stays installation-blind.
 - Everything else a manifest carries (`frontend`, `backend`) is deployment
   topology, served instead by `GET /api/internal/solutions`
   (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal

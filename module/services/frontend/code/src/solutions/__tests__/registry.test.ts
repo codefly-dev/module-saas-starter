@@ -18,16 +18,18 @@ import type {
   ViewerEntitlements,
 } from "@/solutions/entitlements";
 import {
-  browserManifestUrl,
   cachedProjection,
   entitledSolutions,
-  findSolution,
   invalidateProjections,
-  loadSolutions,
   navProjection,
+  surfacesProjection,
+} from "@/solutions/projections";
+import {
+  browserManifestUrl,
+  findSolution,
+  loadSolutions,
   parseManifest,
   registerSolution,
-  surfacesProjection,
   unregisterSolution,
 } from "@/solutions/registry";
 
@@ -1013,5 +1015,53 @@ describe("cachedProjection", () => {
     // revision is identical; the registry revision is what must catch it.
     cachedProjection(base, "word", 2, compute);
     expect(compute).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("an entitlement that can never join a registration", () => {
+  beforeEach(() => {
+    (globalThis as Record<string, unknown>).__unjoinableSolutionIdentifiers =
+      undefined;
+  });
+
+  it("is reported once, instead of the solution silently never appearing", () => {
+    // An installation's solution_identifier is free text; a registered id is a
+    // slug. "acme.example/solution" can never match, so without a report the
+    // solution is installed, granted, and invisible with no error anywhere.
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const unjoinable = entitlements({
+        solutions: [
+          granted,
+          { id: "acme.example/solution", healthy: true, scopeNodeId: "node-x" },
+        ],
+      });
+      entitledSolutions([manifestFor("audit")], unjoinable);
+      entitledSolutions([manifestFor("audit")], unjoinable);
+      const reports = errors.mock.calls.filter((call) =>
+        String(call[0]).includes("acme.example/solution"),
+      );
+      expect(reports).toHaveLength(1);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("does not report a slug-shaped id this deployment simply does not serve", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      entitledSolutions(
+        [manifestFor("audit")],
+        entitlements({
+          solutions: [
+            granted,
+            { id: "retired", healthy: true, scopeNodeId: "node-retired" },
+          ],
+        }),
+      );
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
