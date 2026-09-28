@@ -127,13 +127,15 @@ func pendingSince(record *SolutionHostBindingRecord, now time.Time) *time.Time {
 	return &since
 }
 
-// ApplySolutionHostBinding reconciles one admitted generation.
+// applySolutionHostBinding reconciles one admitted generation. It is the pass's,
+// not a service operation: reconciling one binding without the set-wide admission
+// that preceded it would apply a generation core never approved.
 //
 // It re-runs core's admission against the LOCKED record rather than the
 // snapshot the pass judged, because another replica may have applied this exact
 // generation in between. core answers DecisionCurrent for that, which is not an
 // error and writes nothing — only a rewrite of an applied generation is.
-func (s *Service) ApplySolutionHostBinding(
+func (s *Service) applySolutionHostBinding(
 	ctx context.Context, document *solutionhost.SolutionHostBinding, coordinate string, now time.Time,
 ) error {
 	digest, err := document.Digest()

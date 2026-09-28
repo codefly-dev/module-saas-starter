@@ -265,7 +265,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			// to change.
 			continue
 		}
-		if err := r.service.ApplySolutionHostBinding(ctx, applied.Document, r.host.Coordinate, r.now()); err != nil {
+		if err := r.service.applySolutionHostBinding(ctx, applied.Document, r.host.Coordinate, r.now()); err != nil {
 			// One binding's apply failing leaves every other binding's progress
 			// intact: each apply is its own transaction, because each binding is
 			// independent desired state. The reason is recorded as this
