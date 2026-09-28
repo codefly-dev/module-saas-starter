@@ -16,6 +16,13 @@ import (
 
 var canonicalWebhookEventType = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 
+// ErrWebhookEventTypeUndeliverable reports that an endpoint was registered for,
+// or tested with, an event type it could never receive. Accepting one was the
+// silent failure this refusal replaces: the row was written, the test delivery
+// succeeded, and the real event never arrived, with no delivery row, no error
+// and no log line to say why.
+var ErrWebhookEventTypeUndeliverable = errors.New("webhooks: event type is never delivered to an endpoint")
+
 // ErrWebhookDeliveryExists reports that this endpoint already has history for
 // this event. It is the delivery-side half of the at-least-once contract: a
 // replayed event re-enters fan-out with the id it was published under, and the
@@ -127,9 +134,52 @@ func NewDomainEventWebhookDelivery(
 	}, payload, nil
 }
 
+// refuseUndeliverableWebhookEvents refuses every requested event name an
+// endpoint could never receive, naming all of them and why in one error.
+//
+// The registry is the whole answer, both halves of it: a code-owned type is
+// eligible because the composed event catalog declares it external, and a type
+// a solution or a composed module declared is eligible when its producer
+// declared it external and the operator granted its namespace external
+// delivery. A name in neither half names nothing — the four names the webhook
+// form used to offer that the catalog never had are exactly this case.
+//
+// This is a deliberate narrowing of what CreateSubscription accepts. It used to
+// take any syntactically valid name, which is how an endpoint could be
+// registered for a type that can never fire; a registration that cannot fire is
+// a configuration error, and a configuration error belongs at the call that
+// makes it rather than in a customer's empty delivery list weeks later.
+func (s *Service) refuseUndeliverableWebhookEvents(ctx context.Context, names []string) error {
+	resolver := s.AuditEventResolver()
+	var reasons []string
+	for _, name := range names {
+		eventType := EventType(strings.TrimSpace(name))
+		resolved, err := resolver.Resolve(ctx, eventType)
+		if err != nil {
+			return err
+		}
+		switch {
+		case !resolved.Registered:
+			reasons = append(reasons, fmt.Sprintf("%q is not a registered audit event type", eventType))
+		case !resolved.ExternallyDeliverable():
+			reasons = append(reasons, fmt.Sprintf(
+				"%q is registered but its visibility is %q, so it is never delivered outside the platform",
+				eventType, resolved.Definition.EffectiveVisibility()))
+		}
+	}
+	if len(reasons) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrWebhookEventTypeUndeliverable, strings.Join(reasons, "; "))
+}
+
 // CreateSubscription validates and stores a new webhook subscription. actor is
 // the verified caller the audit trail records as having configured the
 // destination.
+//
+// Every requested event type must be one this deployment would actually deliver
+// (refuseUndeliverableWebhookEvents); a registration that could never fire is
+// refused rather than stored.
 func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgID, rawURL string, events []string, description string) (*WebhookSubscription, error) {
 	w := wool.Get(ctx).In("CreateSubscription")
 
@@ -155,6 +205,9 @@ func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgI
 	}
 	if len(description) > 500 {
 		return nil, w.NewError("webhook description must not exceed 500 bytes")
+	}
+	if err := s.refuseUndeliverableWebhookEvents(ctx, events); err != nil {
+		return nil, w.Wrapf(err, "cannot subscribe to an event this deployment never delivers")
 	}
 
 	subscriptionID := NewIDString()
@@ -262,6 +315,12 @@ func (s *Service) ListDeliveries(ctx context.Context, orgID, subscriptionID stri
 	return out, err
 }
 
+// WebhookTestEventType is the synthetic type a test delivery carries when the
+// caller names none. It is not a registered audit event type and never
+// reaches an endpoint through fan-out: it exists so a customer can prove the
+// endpoint, its secret and its signature without waiting for a real event.
+const WebhookTestEventType = "webhook.test"
+
 // TestWebhook atomically creates a synthetic delivery and its generated
 // generic outbox job. It returns the pending delivery immediately; the same
 // leased worker, signing path, retry policy, and history projection used by
@@ -270,7 +329,16 @@ func (s *Service) TestWebhook(ctx context.Context, orgID, subscriptionID, eventT
 	w := wool.Get(ctx).In("TestWebhook")
 
 	if eventType == "" {
-		eventType = "webhook.test"
+		eventType = WebhookTestEventType
+	}
+	// A test delivery for a type the endpoint would never receive is worse than
+	// no test: it is the signal a customer reads as "the endpoint is wired for
+	// this event". The synthetic default is exempt because it says nothing about
+	// any registered type — it is the connectivity check.
+	if eventType != WebhookTestEventType {
+		if err := s.refuseUndeliverableWebhookEvents(ctx, []string{eventType}); err != nil {
+			return nil, w.Wrapf(err, "cannot test an event this deployment never delivers")
+		}
 	}
 	deliveryID := NewIDString()
 	envelope := webhookPayload{

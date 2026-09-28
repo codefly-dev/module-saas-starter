@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"accounts/pkg/eventcatalog"
 )
 
 // The typed audit-event registry. This Go catalog is the single source of
@@ -155,6 +157,36 @@ type AuditEventDefinition struct {
 	// served over ListAuditEventTypes so no client has to keep its own list of
 	// names in step with this one.
 	MarksUserJoined bool
+	// Visibility is how far an event of this type may travel, for a type whose
+	// producer declares it: AuditVisibilityTenant or AuditVisibilityExternal.
+	// A code-owned definition leaves it empty and is answered by the composed
+	// event catalog instead (eventcatalog.IsExternalPublished), which is where
+	// compose records the same fact for every published type. Read it through
+	// ResolvedAuditEvent.ExternallyDeliverable, never directly, so the two
+	// halves of the registry are never consulted separately.
+	Visibility string
+}
+
+// EffectiveVisibility is how far an event of this type may travel, over the
+// WHOLE registry. A declared type states it on the definition; a code-owned
+// type leaves it empty and is answered by the composed event catalog, where
+// module-compose recorded the same fact at compose time. Nothing else may read
+// only one of the two halves — a gate that did is exactly how a declared type
+// came to be subscribable and undeliverable.
+func (d AuditEventDefinition) EffectiveVisibility() string {
+	if d.Visibility != "" {
+		return d.Visibility
+	}
+	if eventcatalog.IsExternalPublished(string(d.Type)) {
+		return AuditVisibilityExternal
+	}
+	return AuditVisibilityTenant
+}
+
+// ExternallyDeliverable reports whether an event of this type may be delivered
+// to a tenant's outbound webhook endpoint.
+func (d AuditEventDefinition) ExternallyDeliverable() bool {
+	return d.EffectiveVisibility() == AuditVisibilityExternal
 }
 
 // mutation registers a privileged write (DurabilityTransactional); observation

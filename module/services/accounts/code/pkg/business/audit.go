@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"accounts/pkg/auth"
-	"accounts/pkg/eventcatalog"
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
@@ -689,8 +688,12 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 // endpoint deduplicates on, so a delivery is identified the same way it was
 // before webhooks moved onto subscriptions.
 //
-// Only a type the catalog declares external is published: eligibility to leave
-// the platform is granted by declaration. A platform-scope record never reaches
+// Only a type declared external is published: eligibility to leave the platform
+// is granted by declaration. The answer comes from the resolver the write
+// already made, which spans both halves of the registry — the composed catalog
+// for a code-owned type, the type's own row for one a solution or a composed
+// module declared — so a declared type is published exactly when its producer
+// and the operator both said it may be. A platform-scope record never reaches
 // here — the caller returns early when the entry has no organization — so an
 // event is always tenant-scoped.
 //
@@ -703,7 +706,7 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 // subscription-id order, and the platform namespace is not subscribable by a
 // module, so no ordered subscriber can exist for these types.
 func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry AuditEntry, resolved ResolvedAuditEvent) error {
-	if e.transport == nil || !eventcatalog.IsExternalPublished(string(entry.EventType)) {
+	if e.transport == nil || !resolved.ExternallyDeliverable() {
 		return nil
 	}
 	data, err := AuditEventWebhookData(entry, resolved)

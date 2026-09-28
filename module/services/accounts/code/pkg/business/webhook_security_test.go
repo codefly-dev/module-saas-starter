@@ -251,7 +251,9 @@ func TestCreateAndRotateWebhookSecretIsEncryptedAndRevealedOnce(t *testing.T) {
 		AuditActor{ID: "00000000-0000-0000-0000-0000000000a1", Type: ActorTypeUser},
 		"00000000-0000-0000-0000-000000000001",
 		"https://HOOKS.EXAMPLE.COM:443/events",
-		[]string{"user.created"},
+		// A registered, externally-visible type: CreateSubscription refuses a
+		// name this deployment would never deliver.
+		[]string{string(EventUserCreated)},
 		"production consumer",
 	)
 	if err != nil {

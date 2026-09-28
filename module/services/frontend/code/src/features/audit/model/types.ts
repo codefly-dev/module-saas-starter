@@ -49,4 +49,13 @@ export interface AuditEventTypeInfo {
 	description: string;
 	/** The registry's own answer to "does this event mean a person joined". */
 	marksUserJoined: boolean;
+	/**
+	 * Whether an outbound webhook endpoint may subscribe to this type and ever
+	 * receive it. The registry owns the answer — a platform type is eligible,
+	 * and a solution- or module-declared type only when its producer declared
+	 * it external and the operator granted its namespace external delivery — so
+	 * the subscription form offers exactly the names that can fire instead of
+	 * carrying a list of its own.
+	 */
+	webhookEligible: boolean;
 }

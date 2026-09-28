@@ -691,6 +691,10 @@
         "version": {
           "format": "int32",
           "type": "integer"
+        },
+        "webhookEligible": {
+          "description": "Whether an outbound webhook endpoint may subscribe to this type and ever\nreceive it. A type is eligible when it is declared with external\nvisibility: every platform type is, and a solution-declared or\nmodule-declared type is only when its producer declared it external AND\nthe operator marked its namespace externally deliverable. The registry\nowns the answer so a subscription form cannot offer a name that can never\nfire, which is the silent acceptance this flag exists to end.",
+          "type": "boolean"
         }
       },
       "type": "object"

@@ -1385,6 +1385,10 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 			Owner:           d.Owner,
 			Description:     d.Description,
 			MarksUserJoined: d.MarksUserJoined,
+			// What a subscription form must read instead of carrying its own
+			// list: a name this deployment would never deliver cannot be
+			// offered, and CreateSubscription refuses one anyway.
+			WebhookEligible: d.ExternallyDeliverable(),
 		})
 	}
 	return &gen.ListAuditEventTypesResponse{Types: out}, nil
