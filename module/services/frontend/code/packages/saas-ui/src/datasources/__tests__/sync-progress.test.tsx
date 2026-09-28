@@ -427,7 +427,13 @@ describe("the panel does not flash a loading indicator", () => {
 		// Asserting only after the table arrives would prove nothing — the line is
 		// gone by then whether or not it ever appeared. So hold the answer, check
 		// inside the window, and release.
-		vi.useFakeTimers({ shouldAdvanceTime: true });
+		//
+		// An exact clock, deliberately: `shouldAdvanceTime` would add the real
+		// milliseconds a loaded machine spends between render and the advance,
+		// and an assertion that 150ms has not reached the 200ms delay then fires
+		// the timer instead — intermittently, only under load. This test polls
+		// nothing, so it has no use for real time.
+		vi.useFakeTimers();
 		try {
 			let release: (value: DatasourceView[]) => void = () => {};
 			const client = fakeClient({
@@ -461,8 +467,8 @@ describe("the panel does not flash a loading indicator", () => {
 
 	it("shows the list's loading line once the wait passes the delay", async () => {
 		// The other half: a slow list must still say something, or the panel is
-		// simply blank while it waits.
-		vi.useFakeTimers({ shouldAdvanceTime: true });
+		// simply blank while it waits. Exact clock, same reason as above.
+		vi.useFakeTimers();
 		try {
 			let release: (value: DatasourceView[]) => void = () => {};
 			const client = fakeClient({

@@ -12,7 +12,14 @@ import {
 afterEach(cleanup);
 
 beforeEach(() => {
-	vi.useFakeTimers({ shouldAdvanceTime: true });
+	// Deliberately NOT `shouldAdvanceTime: true`. With it, the fake clock also
+	// advances with real time, so the milliseconds a loaded machine spends
+	// between `render()` and the first `advance()` are added to the wait — and
+	// an assertion that 180ms has not yet reached the 200ms delay fires the
+	// timer instead, intermittently, only under load. This file drives the
+	// clock itself and polls nothing (no `findBy*`, no `waitFor`), so it has no
+	// use for real time and every boundary here is exact.
+	vi.useFakeTimers();
 });
 afterEach(() => {
 	vi.useRealTimers();
