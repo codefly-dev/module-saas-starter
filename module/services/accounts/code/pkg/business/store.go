@@ -658,6 +658,22 @@ type Store interface {
 	SaveSolutionRegistration(ctx context.Context, record *SolutionRegistration) error
 	ListSolutionRegistrations(ctx context.Context, includeTombstoned bool) ([]*SolutionRegistration, int64, error)
 
+	// Declared solution presence (issue #952). solution_host_bindings is a
+	// control-plane relation holding one row per binding ID: the generation
+	// delivery is showing this host, the generation the host applied and the
+	// registry record it applied into, and why a desired generation is not the
+	// applied one.
+	//
+	//   - GetSolutionHostBindingForUpdate returns nil when the binding has never
+	//     been delivered, and row-locks the record otherwise. The lock is what
+	//     makes two replicas reconciling the same pass converge on one applied
+	//     generation instead of applying it twice.
+	//   - SaveSolutionHostBinding writes the whole record.
+	//   - ListSolutionHostBindings returns every record, ordered by binding ID.
+	GetSolutionHostBindingForUpdate(ctx context.Context, bindingID string) (*SolutionHostBindingRecord, error)
+	SaveSolutionHostBinding(ctx context.Context, record *SolutionHostBindingRecord) error
+	ListSolutionHostBindings(ctx context.Context) ([]*SolutionHostBindingRecord, error)
+
 	// Solution-declared audit event types (solution_audit_events.go). They are
 	// rows of audit_event_types owned by "solution:<id>" — the table
 	// audit_events.event_type is a foreign key into — so every method runs under

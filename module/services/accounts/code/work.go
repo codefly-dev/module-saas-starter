@@ -439,6 +439,24 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
 
+	// Declared solution presence (issue #952). Delivery renders one
+	// SolutionHostBinding per solution instance and places it in the mount below;
+	// this host reads the whole set on every pass, asks Core whether it may be
+	// applied, and reconciles what it admits into the same durable registry a
+	// self-registering runtime writes.
+	//
+	// Unset SOLUTION_HOST_BINDINGS_DIR leaves the reconciler off, and nothing on
+	// this host is declared: every solution is present because it registers
+	// itself, exactly as before. That is the deliberate default while the
+	// runtimes migrate. A mount WITHOUT a coordinate is a configuration error and
+	// refuses to boot: a host that does not know which coordinate it answers for
+	// cannot refuse a document delivered to the wrong place, and core's check is
+	// the only thing standing between this host and another host's desired state.
+	solutionHostBindingReconciler, err := configuredSolutionHostBindingReconciler(service)
+	if err != nil {
+		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
+	}
+
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
 	// the SAME one we use for JWT minting (saas-starter's cluster
@@ -1071,6 +1089,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if jobOperationsMonitor != nil {
 		jobOperationsMonitor.Start(ctx)
 	}
+	if solutionHostBindingReconciler != nil {
+		solutionHostBindingReconciler.Start(ctx)
+	}
 	if analyticsWorker != nil {
 		analyticsWorker.Start(ctx)
 	}
@@ -1117,6 +1138,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := jobOperationsMonitor.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("job metrics monitor shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if solutionHostBindingReconciler != nil {
+			sw.Info("stopping solution host binding reconciler")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := solutionHostBindingReconciler.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("solution host binding reconciler shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -1473,6 +1502,49 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
+// configuredSolutionHostBindingReconciler builds the declared-presence
+// reconciler from the deployment's configuration, or nil when no mount is
+// declared (issue #952).
+//
+// SOLUTION_HOST_BINDINGS_DIR is the directory delivery places the documents in.
+// SOLUTION_HOST_COORDINATE is the coordinate this host answers for, and it is
+// the string the operator declared on the environment the renderer read — it is
+// never derived here, because a coordinate this host invented would match
+// nothing delivery ever wrote.
+//
+// Declaring the mount without the coordinate refuses to boot rather than
+// reconciling every document it is handed. SOLUTION_HOST_BINDING_INTERVAL is
+// optional and exists for a deployment that wants a tighter convergence bound
+// than the default.
+func configuredSolutionHostBindingReconciler(
+	service *business.Service,
+) (*business.SolutionHostBindingReconciler, error) {
+	mount := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDINGS_DIR"))
+	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
+	if mount == "" {
+		if coordinate != "" {
+			// A coordinate with no mount is a half-finished configuration, and
+			// the half that is missing is the one that would have made it do
+			// anything. Saying so beats silently reconciling nothing.
+			return nil, fmt.Errorf("SOLUTION_HOST_COORDINATE is declared without SOLUTION_HOST_BINDINGS_DIR, so no delivered binding would ever be read")
+		}
+		return nil, nil
+	}
+	if coordinate == "" {
+		return nil, fmt.Errorf("SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_COORDINATE, so this host could not refuse a binding delivered to another host")
+	}
+	interval := business.SolutionHostBindingReconcileInterval
+	if raw := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDING_INTERVAL")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return nil, fmt.Errorf("SOLUTION_HOST_BINDING_INTERVAL %q is not a positive duration", raw)
+		}
+		interval = parsed
+	}
+	return business.NewSolutionHostBindingReconciler(
+		service, infra.NewSolutionHostBindingMount(mount), coordinate, interval)
+}
+
 func workspaceEnv(configuration, key string) string {
 	if value, err := codefly.For(codefly.Context()).WorkspaceValue(configuration, key); err == nil && value != "" {
 		return value

@@ -222,3 +222,149 @@ keeps renewing its record after the upgrade. A pre-contract row whose publisher
 was self-asserted as anything else was never authenticated; it stays as it is,
 and who owns it is an operator's decision — delete the row (or `DELETE` the
 registration) and let the credentialed publisher register it afresh.
+
+## 6. Declared presence: delivery says what runs, a heartbeat says how it is
+
+Everything above describes presence that a solution **announces**. A solution
+becomes present because a process is up and heartbeating, which means the host
+cannot tell "this solution was never deployed" from "it was deployed and is not
+answering" — it has the same nothing in both cases. Issue #952 adds the opposite
+record: a `SolutionHostBinding` document that delivery **declares** and the host
+reconciles.
+
+Self-registration is **not** removed here. Both paths write the same durable
+registry, and the rule that makes that safe is stated in the mixed window below.
+
+### The document, and who owns which field
+
+`SolutionHostBinding` is defined by Core (`github.com/codefly-dev/core/solutionhost`,
+schema `codefly/solution-host-binding/v1`), rendered per solution instance by
+`codefly-dev/cli`, delivered by the GitOps bundle, and reconciled here. It is
+desired state and nothing else: it carries no observation, no health and no
+credential. The split is the point.
+
+| Fact | Owner | Where it lives |
+| --- | --- | --- |
+| That a solution should be present at all | the declaration | `solution_host_bindings.applied_*` |
+| Which release runs | the declaration | `release`, recorded as `applied_release` |
+| Which route alias it answers on | the declaration | `routes[].alias` |
+| The workload identity to expect | the declaration | `workload` |
+| Whether the workload is alive | the heartbeat | the per-half lease |
+| Where it answers | the heartbeat | `backend_upstream` |
+| Which page it serves | the heartbeat | `frontend_manifest` |
+
+The document deliberately carries no upstream address and no manifest. An
+address written into a delivery document is a resolution result that was true on
+one cluster until something moved; a manifest is what the running build actually
+published. Both are observations, and observations are the runtime's to report.
+
+### The registry key is the route alias
+
+A binding ID identifies one **deployment instance** — the renderer's is
+`<workspace>.<environment>.<instance>`, dotted — and a second instance of the same
+solution inherits nothing from the first, its alias included. It is therefore not
+the registry key: the key is the binding's route alias, because the alias is what
+this host routes on (`/solutions/<alias>/*`, and the key a remote loads under).
+
+This host needs **exactly one** route alias on a present generation, and it must
+be a single lowercase path segment. Core's alias vocabulary is wider — it admits
+dots and slashes — so a binding that declares none, several, or a dotted one is
+refused with a reason naming the route rather than having one picked for it. The
+renderer commits to exactly one single-segment lowercase alias per binding, so
+this refusal is a guard, not a workflow.
+
+A tombstone declares no route, which is why a binding's row keeps the key it last
+applied: it is the only way a removal knows what to withdraw.
+
+### Prepare, then activate
+
+Every pass reads the mount, then asks Core about the **whole** desired set —
+route-alias uniqueness and "declared once per set" are properties of the set, not
+of a document. Only then is anything written, and desired state is recorded for
+every delivered binding before any generation is applied, so what delivery wants
+and the reason it was refused are visible even when nothing passed.
+
+A refused document leaves the running generation untouched. The refusal is
+attributed to its binding rather than failing the pass, because the common
+refusal is a stale render: the renderer derives a generation from the previously
+delivered document, so a render from a checkout that cannot see the prior tree
+emits generation 1 and is correctly refused as stale. If that held back the whole
+set, one bad pipeline run would freeze every solution on the host. A refusal Core
+raises that this host cannot attribute to a document withholds the **whole** set —
+failing closed on a rule it does not recognise, rather than applying a subset Core
+never approved.
+
+Two replicas converge without applying a generation twice: each apply re-decides
+under the binding row's lock, and `DecisionCurrent` — this generation is already
+applied — writes nothing. A restart resumes from the recorded applied generation
+rather than deriving it again.
+
+An unreadable mount is an **error**, never an empty desired set, and an empty
+mount removes nothing. Removal is a tombstone generation precisely so that a
+volume that failed to mount, or a delivery tree that synced empty, can never be
+reconciled as "withdraw every solution".
+
+### The mixed window
+
+Until the runtimes stop self-registering, both paths write
+`solution_registrations`, and the rule is asymmetric.
+
+A heartbeat for a **declared** record may refresh the lease, the upstream address
+and the manifest. It may not create presence, replace the release, repoint the
+route, or erase a tombstone:
+
+- Naming a service alias other than the declared one is refused
+  (`ErrSolutionRegistrationDeclaredRoute`).
+- A declared removal refuses every heartbeat, including one naming the
+  tombstone's own revision — the path an **undeclared** tombstone deliberately
+  allows (`ErrSolutionRegistrationDeclaredWithdrawn`). Honouring it would serve a
+  solution delivery declared absent for exactly one reconcile interval.
+- Deregistering a declared solution is refused
+  (`ErrSolutionRegistrationDeclared`): removal is a tombstone generation from
+  delivery, not a `DELETE`.
+
+All three reach the gateway as `FailedPrecondition` and are relayed as `409`,
+which is the answer a registrant must not retry. The gateway needs no knowledge
+of declarations to relay them.
+
+A heartbeat for an **undeclared** record behaves exactly as it did before. Every
+record in every existing deployment is undeclared, so nothing changes for a
+solution until an operator declares one.
+
+A record becomes declared when a generation **applies**, never when a document
+merely arrives. That is what stops a document which has not passed every check
+from taking a working self-registered solution offline — and it is what makes the
+migration seamless in the other direction: declaring a solution that already
+self-registered **adopts** its halves and leases rather than replacing them, so it
+keeps serving across the instant its presence becomes declared. The publisher of
+record stays `solution:<id>`, the subject its own credential proves, because
+writing the release publisher there instead would make every subsequent heartbeat
+fail the publisher check and the record would sit pending forever.
+
+### Reading the three states apart
+
+`SolutionRegistryService/ListSolutionHostBindings` (`EXPOSURE_INTERNAL`) answers
+with desired, applied and observed state separately. That is the question the
+registry snapshot alone cannot answer: a binding whose first generation was
+refused has no registration record at all, so it is invisible there, and
+"declared but never observed" and "never declared" look identical.
+
+### Configuration
+
+Both keys are in the `federation` group.
+
+| Key | Meaning |
+| --- | --- |
+| `SOLUTION_HOST_BINDINGS_DIR` | the directory delivery places rendered documents in. Empty leaves the reconciler **off**, which is the default while runtimes migrate: nothing is declared and every solution is present because it heartbeats. |
+| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. |
+| `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the mount is re-read. Empty uses 30s. |
+
+Declaring one of the first two without the other refuses to boot. A mount with no
+coordinate would leave this host unable to refuse a document delivered to another
+host, and Core's target check is the only thing standing between the two.
+
+The host reads a **directory of files** and knows nothing about how they got
+there: a projected ConfigMap volume in a deployment, a plain directory under
+`codefly run` locally. Kubernetes' atomic writer is honoured — every dot-prefixed
+path element (`..data`, `..2026_…`) is skipped, so one document is never read
+twice under two names, which Core would refuse as a binding declared twice.

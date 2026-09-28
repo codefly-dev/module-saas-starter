@@ -22,6 +22,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	SolutionRegistryService_PutSolutionRegistration_FullMethodName    = "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
 	SolutionRegistryService_DeleteSolutionRegistration_FullMethodName = "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration"
+	SolutionRegistryService_ListSolutionHostBindings_FullMethodName   = "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings"
 	SolutionRegistryService_ListSolutionRegistrations_FullMethodName  = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
 )
 
@@ -39,6 +40,12 @@ type SolutionRegistryServiceClient interface {
 	// DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
 	// a later heartbeat from the retired deployment cannot resurrect.
 	DeleteSolutionRegistration(ctx context.Context, in *DeleteSolutionRegistrationRequest, opts ...grpc.CallOption) (*SolutionRegistration, error)
+	// ListSolutionHostBindings returns the declared bindings: what delivery has
+	// shown this host, what the host applied, and why a desired generation is not
+	// the applied one (issue #952). It is the answer to "is this solution missing,
+	// or declared and unhealthy?", which neither the registry snapshot nor a health
+	// probe can give on its own.
+	ListSolutionHostBindings(ctx context.Context, in *ListSolutionHostBindingsRequest, opts ...grpc.CallOption) (*ListSolutionHostBindingsResponse, error)
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(ctx context.Context, in *ListSolutionRegistrationsRequest, opts ...grpc.CallOption) (*ListSolutionRegistrationsResponse, error)
@@ -72,6 +79,16 @@ func (c *solutionRegistryServiceClient) DeleteSolutionRegistration(ctx context.C
 	return out, nil
 }
 
+func (c *solutionRegistryServiceClient) ListSolutionHostBindings(ctx context.Context, in *ListSolutionHostBindingsRequest, opts ...grpc.CallOption) (*ListSolutionHostBindingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSolutionHostBindingsResponse)
+	err := c.cc.Invoke(ctx, SolutionRegistryService_ListSolutionHostBindings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *solutionRegistryServiceClient) ListSolutionRegistrations(ctx context.Context, in *ListSolutionRegistrationsRequest, opts ...grpc.CallOption) (*ListSolutionRegistrationsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListSolutionRegistrationsResponse)
@@ -96,6 +113,12 @@ type SolutionRegistryServiceServer interface {
 	// DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
 	// a later heartbeat from the retired deployment cannot resurrect.
 	DeleteSolutionRegistration(context.Context, *DeleteSolutionRegistrationRequest) (*SolutionRegistration, error)
+	// ListSolutionHostBindings returns the declared bindings: what delivery has
+	// shown this host, what the host applied, and why a desired generation is not
+	// the applied one (issue #952). It is the answer to "is this solution missing,
+	// or declared and unhealthy?", which neither the registry snapshot nor a health
+	// probe can give on its own.
+	ListSolutionHostBindings(context.Context, *ListSolutionHostBindingsRequest) (*ListSolutionHostBindingsResponse, error)
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *ListSolutionRegistrationsRequest) (*ListSolutionRegistrationsResponse, error)
@@ -114,6 +137,9 @@ func (UnimplementedSolutionRegistryServiceServer) PutSolutionRegistration(contex
 }
 func (UnimplementedSolutionRegistryServiceServer) DeleteSolutionRegistration(context.Context, *DeleteSolutionRegistrationRequest) (*SolutionRegistration, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSolutionRegistration not implemented")
+}
+func (UnimplementedSolutionRegistryServiceServer) ListSolutionHostBindings(context.Context, *ListSolutionHostBindingsRequest) (*ListSolutionHostBindingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSolutionHostBindings not implemented")
 }
 func (UnimplementedSolutionRegistryServiceServer) ListSolutionRegistrations(context.Context, *ListSolutionRegistrationsRequest) (*ListSolutionRegistrationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSolutionRegistrations not implemented")
@@ -176,6 +202,24 @@ func _SolutionRegistryService_DeleteSolutionRegistration_Handler(srv interface{}
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SolutionRegistryService_ListSolutionHostBindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSolutionHostBindingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SolutionRegistryServiceServer).ListSolutionHostBindings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SolutionRegistryService_ListSolutionHostBindings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SolutionRegistryServiceServer).ListSolutionHostBindings(ctx, req.(*ListSolutionHostBindingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SolutionRegistryService_ListSolutionRegistrations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListSolutionRegistrationsRequest)
 	if err := dec(in); err != nil {
@@ -208,6 +252,10 @@ var SolutionRegistryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteSolutionRegistration",
 			Handler:    _SolutionRegistryService_DeleteSolutionRegistration_Handler,
+		},
+		{
+			MethodName: "ListSolutionHostBindings",
+			Handler:    _SolutionRegistryService_ListSolutionHostBindings_Handler,
 		},
 		{
 			MethodName: "ListSolutionRegistrations",

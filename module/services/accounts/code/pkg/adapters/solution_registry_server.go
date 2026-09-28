@@ -45,6 +45,16 @@ func solutionRegistryError(err error) error {
 		return status.Error(codes.Aborted, "solution registration revision required")
 	case errors.Is(err, business.ErrSolutionRegistrationTombstoned):
 		return status.Error(codes.FailedPrecondition, "solution registration is tombstoned")
+	case errors.Is(err, business.ErrSolutionRegistrationDeclaredWithdrawn):
+		// FailedPrecondition, like the tombstone it is: no retry of this write
+		// can succeed. Unlike an operator's deregistration it cannot be revived
+		// by naming the tombstone's revision either — the declaration is what
+		// would have to change.
+		return status.Error(codes.FailedPrecondition, "solution registration was withdrawn by its declared binding")
+	case errors.Is(err, business.ErrSolutionRegistrationDeclaredRoute):
+		return status.Error(codes.FailedPrecondition, "solution registration route is declared and cannot be repointed by a heartbeat")
+	case errors.Is(err, business.ErrSolutionRegistrationDeclared):
+		return status.Error(codes.FailedPrecondition, "solution registration is declared; removal is a tombstone generation")
 	case errors.Is(err, business.ErrSolutionPublisherMismatch):
 		return status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
 	case errors.Is(err, business.ErrSolutionRegistrationHalfMissing):
@@ -170,7 +180,97 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 	if record.TombstonedAt != nil {
 		out.TombstonedAt = timestamppb.New(*record.TombstonedAt)
 	}
+	if declared := record.Declared; declared != nil {
+		out.Declared = &gen.SolutionDeclaredBinding{
+			BindingId:  declared.BindingID,
+			Generation: declared.Generation,
+			Release:    declared.Release,
+		}
+	}
 	return out
+}
+
+// ListSolutionHostBindings serves the declared-presence read surface (issue
+// #952): what delivery has shown this host, what the host applied, and why a
+// desired generation is not the applied one.
+//
+// The observed half is attached from the registry record each binding applied
+// into, so one answer distinguishes a solution that was never declared from one
+// declared and not reporting — which is the distinction an operator cannot draw
+// from the registry snapshot alone, because a binding whose first generation was
+// refused has no registry record at all.
+func (s *SolutionRegistryServer) ListSolutionHostBindings(
+	ctx context.Context, req *gen.ListSolutionHostBindingsRequest,
+) (*gen.ListSolutionHostBindingsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	records, err := service.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, solutionRegistryError(err)
+	}
+	registrations, _, err := service.ListSolutionRegistrations(ctx, true)
+	if err != nil {
+		return nil, solutionRegistryError(err)
+	}
+	bySolution := make(map[string]*business.SolutionRegistration, len(registrations))
+	for _, registration := range registrations {
+		bySolution[registration.SolutionID] = registration
+	}
+	out := &gen.ListSolutionHostBindingsResponse{
+		Bindings: make([]*gen.SolutionHostBindingState, 0, len(records)),
+	}
+	for _, record := range records {
+		out.Bindings = append(out.Bindings, solutionHostBindingStateProto(record, bySolution))
+	}
+	return out, nil
+}
+
+func solutionHostBindingStateProto(
+	record *business.SolutionHostBindingRecord,
+	bySolution map[string]*business.SolutionRegistration,
+) *gen.SolutionHostBindingState {
+	state := &gen.SolutionHostBindingState{
+		BindingId:         record.BindingID,
+		HostCoordinate:    record.HostCoordinate,
+		HostComponent:     record.HostComponent,
+		PendingGeneration: record.PendingGeneration(),
+		PendingReason:     record.PendingReason,
+		UpdatedAt:         timestamppb.New(record.UpdatedAt),
+	}
+	if record.PendingSince != nil {
+		state.PendingSince = timestamppb.New(*record.PendingSince)
+	}
+	if desired := record.Desired; desired != nil {
+		state.Desired = solutionHostBindingGenerationProto(*desired)
+	}
+	if applied := record.Applied; applied != nil {
+		state.Applied = &gen.SolutionHostBindingAppliedGeneration{
+			Generation: solutionHostBindingGenerationProto(applied.SolutionHostBindingGeneration),
+			Removed:    applied.Removed,
+			Routes:     applied.Routes,
+			SolutionId: applied.SolutionID,
+			Release:    applied.Release,
+		}
+		// The observed half. A binding whose applied generation is a tombstone
+		// still names the record it withdrew, and that record's tombstone is the
+		// answer "declared absent" rather than "never registered".
+		if registration, found := bySolution[applied.SolutionID]; found {
+			state.Registration = solutionRegistrationProto(registration)
+		}
+	}
+	return state
+}
+
+func solutionHostBindingGenerationProto(
+	generation business.SolutionHostBindingGeneration,
+) *gen.SolutionHostBindingGeneration {
+	return &gen.SolutionHostBindingGeneration{
+		Generation: generation.Generation,
+		Digest:     generation.Digest,
+		Document:   generation.Document,
+		At:         timestamppb.New(generation.At),
+	}
 }
 
 // solutionRegistryConnectHandler serves the same server over Connect, so both
@@ -189,6 +289,10 @@ func (h *solutionRegistryConnectHandler) DeleteSolutionRegistration(ctx context.
 
 func (h *solutionRegistryConnectHandler) ListSolutionRegistrations(ctx context.Context, req *connect.Request[gen.ListSolutionRegistrationsRequest]) (*connect.Response[gen.ListSolutionRegistrationsResponse], error) {
 	return unary(ctx, req, h.inner.ListSolutionRegistrations)
+}
+
+func (h *solutionRegistryConnectHandler) ListSolutionHostBindings(ctx context.Context, req *connect.Request[gen.ListSolutionHostBindingsRequest]) (*connect.Response[gen.ListSolutionHostBindingsResponse], error) {
+	return unary(ctx, req, h.inner.ListSolutionHostBindings)
 }
 
 // SolutionAuditDeclarationRejectedReason is the google.rpc.ErrorInfo reason a
