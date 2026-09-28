@@ -3,8 +3,12 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: go-grpc
-    # DEV PIN: an unreleased agent prerelease (git in the service image, for datasource reads over git). Move it to the
-    # release that ships the change before this module is tagged.
+    # DEV PIN: an unreleased agent prerelease. It already carries the
+    # runtime-packages capability this service's spec declares below (added in the
+    # agent at f2f2c0c, an ancestor of this build), which is why the pin was moved
+    # here. Move it to the release that ships that capability before this module is
+    # tagged. Do not move it forward to 0.1.48-dev.42ce38050224 or later yet: those
+    # emit docker-build-recipe/v5, and the codefly the CI gate installs reads v3.
     version: 0.1.48-dev.e87db5e08865
     publisher: codefly.dev
 service-dependencies:
@@ -50,6 +54,13 @@ endpoints:
 spec:
     connect-endpoint: true
     hot-reload: true
+    # The datasource fetch reads a repository over git's smart-HTTP transport by
+    # running git (pkg/datasource/github). The runtime stage carries only the CA
+    # bundle otherwise, so without this the binary is present, the refusal is
+    # correct, and every repository sync fails on a cell while working in dev,
+    # where the host's own git is on PATH.
+    runtime-packages:
+        - git
     protocol-output-dirs:
         - code/pkg/gen
         - generated/openapi-raw
