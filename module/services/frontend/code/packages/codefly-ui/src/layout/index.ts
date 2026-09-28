@@ -79,13 +79,6 @@ export {
 	DialogTrigger,
 } from "./dialog.js";
 export {
-	Popover,
-	PopoverContent,
-	PopoverDescription,
-	PopoverTitle,
-	PopoverTrigger,
-} from "./popover.js";
-export {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
@@ -145,6 +138,14 @@ export {
 	type PaginationRangeOptions,
 	paginationRange,
 } from "./pagination-model.js";
+export {
+	Popover,
+	PopoverContent,
+	PopoverDescription,
+	PopoverTitle,
+	PopoverTrigger,
+} from "./popover.js";
+export { Progress, type ProgressProps } from "./progress.js";
 export {
 	SegmentedControl,
 	type SegmentedControlOption,

@@ -92,6 +92,13 @@ components:
   slot through which a consumer shows what the module that ingests a source's
   files knows about them (its per-source ingestion progress, say). The host
   names no such module.
+  `renderSourceExecution={({ source, sync }) => …}` is the sibling slot for the
+  **durable execution** of a sync — the fan-out task it became, its items,
+  attempts, receipts and dead-letters. Opened from the row's **Execution**
+  action and from the progress card; offered on no row when the prop is absent,
+  since an empty panel promising an execution view is worse than not offering
+  one. The host renders the frame and hands you the sync it resolved; what runs
+  the work is a module this package may not name, so the view itself is yours.
   A source whose provider does not yet meet the host's datasource connector
   envelope is badged **Non-conformant provider** with the host's stated gap:
   it keeps syncing, but the host connects no new source of that provider. The
@@ -117,6 +124,28 @@ components:
   progress in the panel's per-source slot can watch closely at once. It returns the
   unsubscribe. The registry lives on `globalThis`, so a remote's own copy of the kit hears
   the host panel.
+- **Live sync progress.** While a sync runs the panel shows a card per source
+  above the table: a phase bar (queued → fetching → compiled → handed off), the
+  compiled change set's counts, and — when it goes quiet or fails — what is
+  wrong. Every phase, count and failure sentence is the host's own projection,
+  stamped from the durable sync and hand-off jobs; nothing is inferred from
+  elapsed time. The read tightens to a two-second poll while a sync is active,
+  slackens to thirty seconds once it settles, and is re-armed the instant
+  `onSourceSyncRequested` fires, so the bar appears on the press rather than on
+  the next interval. A card leaves the panel ten minutes after its sync
+  finished — an older sync lives in History.
+  Six states are distinguished, because collapsing any two of them misreports a
+  healthy sync: **queued**, **running**, **no progress** (a phase that has not
+  advanced for `DEFAULT_STALL_AFTER_MS`; still running, never called failed —
+  only the host may say that), **retrying** (the host failed an attempt and will
+  try again, with the reason and the wait), **done**, **no changes** (finished
+  having handed nothing off — the source had not moved, which is a success and
+  not an empty failure), and **failed**.
+- `describeSync(sync, { now, stallAfterMs })` → `SyncProgressReport` is that
+  decision as a pure function, exported so a consumer can render the same states
+  in its own shell — a line in a header, say — without re-deriving them from the
+  phase names and getting the terminal cases wrong. `<SourceSyncProgress source
+  report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
 
