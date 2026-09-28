@@ -90,6 +90,9 @@
       "name": "ResourceFollowService"
     },
     {
+      "name": "SolutionEntitlementService"
+    },
+    {
       "name": "SolutionRegistryService"
     },
     {

@@ -37,15 +37,21 @@ activating a remote.
 
 ## Three projections, deliberately separate
 
-- `GET /api/solutions/register` is **unauthenticated** and returns exactly the
-  public navigation projection — `{id, nav}` per solution and nothing else. It is
-  what the sidebar polls, and it answers `503` — **never an empty list** — when
-  this replica cannot read the registry.
+Two of them are **per viewer** (issue #949): they answer the solutions the
+caller's organization installed and the caller's teams were granted, not the
+deployment-wide registered set.
+
+- `GET /api/solutions/register` is **authenticated** and returns the navigation
+  projection — `{id, nav, available}` per entitled solution and nothing else. It is
+  what the sidebar polls (through `authedFetch`, so a lapsed access token is
+  exchanged and retried rather than emptying the menu). It answers `401` to an
+  unauthenticated caller and `503` when the registry or the authority cannot be
+  read — **never an empty list** for either.
 - `GET /api/solutions/surfaces?client=<kind>`
-  (`src/app/api/solutions/surfaces/route.ts`) is the same class of public
-  projection for a client that is **not** this host's web app: per solution, its
-  `id`, its title, its `origin`, and the declared `surfaces` whose `client`
-  matches. The kind is required and must be slug-shaped — absent is `400`,
+  (`src/app/api/solutions/surfaces/route.ts`) is the same class of projection for a
+  client that is **not** this host's web app: per entitled solution, its `id`, its
+  title, its `origin`, whether it is `available`, and the declared `surfaces` whose
+  `client` matches. The kind is required and must be slug-shaped — absent is `400`,
   malformed is `400`, never the unfiltered set and never a misleading empty
   list — and an unreadable registry is again `503`. The host does not enumerate
   client kinds: which ones exist is deployment configuration (the
@@ -55,6 +61,52 @@ activating a remote.
   origin, so withholding it would not keep the origin from anyone who can use a
   surface — it would only make the answer unusable. The manifest path and the
   backend service are still withheld.
+
+**Where the identity comes from, and why not from here.** Neither route may derive
+the organization. `src/lib/auth-session.ts` can read an `org` claim, but
+`decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
+narrowed on it would let a caller read another tenant's menu by editing one field.
+These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
+forwards `/v1/*` and `/saas.accounts.v1.*` only), so no `ext_authz` stamp reaches
+them either. `src/solutions/entitlements.ts` therefore forwards the caller's
+credential to `GET /solutions/_entitlements` on the gateway, which authenticates
+it, projects the organization and viewer from its own check, and answers from
+accounts. `module/tools/solution_registration_boundary_test.go` holds both halves:
+the projections must consult that read, and must not name the local decoders.
+
+**`available` is a client contract.** An installed, granted solution whose
+installation is unhealthy stays listed with `available: false` — the grant exists,
+so hiding it would send someone looking for one that already does. It is a new
+field on both projections: the host's own sidebar renders such a solution disabled,
+and **a registered client of the surfaces projection must honour it the same way**
+— a client that ignores the field will offer an unavailable solution's surfaces as
+usable. Only the listing is narrowed: `/s/{id}` and the solution proxy still render
+and route a registered solution for any authenticated caller, available or not
+(route and page exposure stays deployment-wide, SOLUTION_REGISTRATION.md §4).
+
+**Failure answers.** Neither projection answers an empty list for a failure.
+`401` — the viewer is not signed in; `403 no_organization` — signed in with no
+organization; `403 forbidden` — the gateway refused the viewer's credential;
+`429 rate_limited` — the organization spent its read budget (the gateway meters the
+entitlement read as a StandardRead per organization); `503` — the registry or the
+authority could not be read, **including** when the gateway refuses this frontend's
+own cluster-internal token. That last case is a deployment fault and is never
+relayed as `401`: the gateway names its own refusals in
+`X-Codefly-Entitlement-Refusal`, so a server credential problem cannot tell every
+user to sign in again.
+
+**What is cached, and what is not.** The entitlement answer is read from the
+authority on **every** request; it is never reused. Reusing it on a revision that
+grant writes advance would be wrong, because the answer changes with no grant write
+at all — a grant's `expires_at` passes, a member leaves a team, a role loses a
+permission, an owner of record is demoted. What is memoized is only the shaping of
+manifests into a projection, keyed on organization, viewer, a digest of the
+entitlement answer just read, client kind and registry revision, so it can never
+describe an answer other than the one this request received.
+
+The narrowing itself lives in `src/solutions/projections.ts`, apart from
+`src/solutions/registry.ts`: the registry also feeds `findSolution`, which decides
+whether `/s/{id}` renders, and it stays installation-blind.
 - Everything else a manifest carries (`frontend`, `backend`) is deployment
   topology, served instead by `GET /api/internal/solutions`
   (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal

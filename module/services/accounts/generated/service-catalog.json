@@ -168,6 +168,7 @@
       "procedures": [
         "/saas.accounts.v1.InstallationService/GetInstallation",
         "/saas.accounts.v1.InstallationService/InstallSolution",
+        "/saas.accounts.v1.InstallationService/ListInstallations",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"
       ]
@@ -357,6 +358,13 @@
         "/saas.accounts.v1.SSOAdminService/Disable",
         "/saas.accounts.v1.SSOAdminService/GetSSO",
         "/saas.accounts.v1.SSOAdminService/StartSetup"
+      ]
+    },
+    {
+      "name": "SolutionEntitlementService",
+      "full_name": "saas.accounts.v1.SolutionEntitlementService",
+      "procedures": [
+        "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
       ]
     },
     {
@@ -4339,6 +4347,49 @@
       },
       "policy_tier": "org_admin",
       "description": "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/ListInstallations",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "ListInstallations",
+      "input_type": "saas.accounts.v1.ListInstallationsRequest",
+      "output_type": "saas.accounts.v1.ListInstallationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List one organization's installations with their live health.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -10302,6 +10353,49 @@
       },
       "policy_tier": "org_admin",
       "description": "Mint WorkOS portal link.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements",
+      "service": "SolutionEntitlementService",
+      "full_service": "saas.accounts.v1.SolutionEntitlementService",
+      "method": "ListSolutionEntitlements",
+      "input_type": "saas.accounts.v1.ListSolutionEntitlementsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionEntitlementsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_entitlements_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List the installed solutions a subject may use in one organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

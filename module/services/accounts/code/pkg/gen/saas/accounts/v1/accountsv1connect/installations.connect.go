@@ -47,6 +47,9 @@ const (
 	// InstallationServiceGetInstallationProcedure is the fully-qualified name of the
 	// InstallationService's GetInstallation RPC.
 	InstallationServiceGetInstallationProcedure = "/saas.accounts.v1.InstallationService/GetInstallation"
+	// InstallationServiceListInstallationsProcedure is the fully-qualified name of the
+	// InstallationService's ListInstallations RPC.
+	InstallationServiceListInstallationsProcedure = "/saas.accounts.v1.InstallationService/ListInstallations"
 )
 
 // InstallationServiceClient is a client for the saas.accounts.v1.InstallationService service.
@@ -70,6 +73,15 @@ type InstallationServiceClient interface {
 	// can see when an installation has gone unhealthy (owner offboarded, agent
 	// disabled, grant expired) before the next headless task fails closed.
 	GetInstallation(context.Context, *connect.Request[v1.GetInstallationRequest]) (*connect.Response[v1.GetInstallationResponse], error)
+	// ListInstallations enumerates one organization's installations with their live
+	// health. It is internal-tier on purpose: it takes the organization as a request
+	// field, so only a caller holding the cluster-internal credential may ask, and
+	// the tenant it asks about is the one the auth-gateway projected from a verified
+	// identity — never one a browser supplied. It sits beside
+	// PermissionService.ListAccessibleScopes for that reason: the two are read
+	// together to answer what a viewer's organization installed and what that viewer
+	// was granted.
+	ListInstallations(context.Context, *connect.Request[v1.ListInstallationsRequest]) (*connect.Response[v1.ListInstallationsResponse], error)
 }
 
 // NewInstallationServiceClient constructs a client for the saas.accounts.v1.InstallationService
@@ -107,6 +119,12 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(installationServiceMethods.ByName("GetInstallation")),
 			connect.WithClientOptions(opts...),
 		),
+		listInstallations: connect.NewClient[v1.ListInstallationsRequest, v1.ListInstallationsResponse](
+			httpClient,
+			baseURL+InstallationServiceListInstallationsProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("ListInstallations")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -116,6 +134,7 @@ type installationServiceClient struct {
 	uninstallSolution             *connect.Client[v1.UninstallSolutionRequest, emptypb.Empty]
 	transferInstallationOwnership *connect.Client[v1.TransferInstallationOwnershipRequest, v1.Installation]
 	getInstallation               *connect.Client[v1.GetInstallationRequest, v1.GetInstallationResponse]
+	listInstallations             *connect.Client[v1.ListInstallationsRequest, v1.ListInstallationsResponse]
 }
 
 // InstallSolution calls saas.accounts.v1.InstallationService.InstallSolution.
@@ -137,6 +156,11 @@ func (c *installationServiceClient) TransferInstallationOwnership(ctx context.Co
 // GetInstallation calls saas.accounts.v1.InstallationService.GetInstallation.
 func (c *installationServiceClient) GetInstallation(ctx context.Context, req *connect.Request[v1.GetInstallationRequest]) (*connect.Response[v1.GetInstallationResponse], error) {
 	return c.getInstallation.CallUnary(ctx, req)
+}
+
+// ListInstallations calls saas.accounts.v1.InstallationService.ListInstallations.
+func (c *installationServiceClient) ListInstallations(ctx context.Context, req *connect.Request[v1.ListInstallationsRequest]) (*connect.Response[v1.ListInstallationsResponse], error) {
+	return c.listInstallations.CallUnary(ctx, req)
 }
 
 // InstallationServiceHandler is an implementation of the saas.accounts.v1.InstallationService
@@ -161,6 +185,15 @@ type InstallationServiceHandler interface {
 	// can see when an installation has gone unhealthy (owner offboarded, agent
 	// disabled, grant expired) before the next headless task fails closed.
 	GetInstallation(context.Context, *connect.Request[v1.GetInstallationRequest]) (*connect.Response[v1.GetInstallationResponse], error)
+	// ListInstallations enumerates one organization's installations with their live
+	// health. It is internal-tier on purpose: it takes the organization as a request
+	// field, so only a caller holding the cluster-internal credential may ask, and
+	// the tenant it asks about is the one the auth-gateway projected from a verified
+	// identity — never one a browser supplied. It sits beside
+	// PermissionService.ListAccessibleScopes for that reason: the two are read
+	// together to answer what a viewer's organization installed and what that viewer
+	// was granted.
+	ListInstallations(context.Context, *connect.Request[v1.ListInstallationsRequest]) (*connect.Response[v1.ListInstallationsResponse], error)
 }
 
 // NewInstallationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -194,6 +227,12 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 		connect.WithSchema(installationServiceMethods.ByName("GetInstallation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	installationServiceListInstallationsHandler := connect.NewUnaryHandler(
+		InstallationServiceListInstallationsProcedure,
+		svc.ListInstallations,
+		connect.WithSchema(installationServiceMethods.ByName("ListInstallations")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.InstallationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InstallationServiceInstallSolutionProcedure:
@@ -204,6 +243,8 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 			installationServiceTransferInstallationOwnershipHandler.ServeHTTP(w, r)
 		case InstallationServiceGetInstallationProcedure:
 			installationServiceGetInstallationHandler.ServeHTTP(w, r)
+		case InstallationServiceListInstallationsProcedure:
+			installationServiceListInstallationsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -227,4 +268,8 @@ func (UnimplementedInstallationServiceHandler) TransferInstallationOwnership(con
 
 func (UnimplementedInstallationServiceHandler) GetInstallation(context.Context, *connect.Request[v1.GetInstallationRequest]) (*connect.Response[v1.GetInstallationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.GetInstallation is not implemented"))
+}
+
+func (UnimplementedInstallationServiceHandler) ListInstallations(context.Context, *connect.Request[v1.ListInstallationsRequest]) (*connect.Response[v1.ListInstallationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.ListInstallations is not implemented"))
 }

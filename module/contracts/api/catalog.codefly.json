@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:dcad407d5de12c4b8fef310a382a485f4486eb71d26237ee70610372989dd439",
+      "digest": "sha256:30fb97eb0f2d5f094238aa32f0046ccd1cd433997a440f1116db49e78d378566",
       "services": [
         {
           "name": "APIKeyService",
@@ -173,6 +173,7 @@
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
             "/saas.accounts.v1.InstallationService/InstallSolution",
+            "/saas.accounts.v1.InstallationService/ListInstallations",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -362,6 +363,13 @@
             "/saas.accounts.v1.SSOAdminService/Disable",
             "/saas.accounts.v1.SSOAdminService/GetSSO",
             "/saas.accounts.v1.SSOAdminService/StartSetup"
+          ]
+        },
+        {
+          "name": "SolutionEntitlementService",
+          "fullName": "saas.accounts.v1.SolutionEntitlementService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
           ]
         },
         {
@@ -470,7 +478,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:dcad407d5de12c4b8fef310a382a485f4486eb71d26237ee70610372989dd439",
+      "digest": "sha256:30fb97eb0f2d5f094238aa32f0046ccd1cd433997a440f1116db49e78d378566",
       "services": [
         {
           "name": "APIKeyService",
@@ -633,6 +641,7 @@
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
             "/saas.accounts.v1.InstallationService/InstallSolution",
+            "/saas.accounts.v1.InstallationService/ListInstallations",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -825,6 +834,13 @@
           ]
         },
         {
+          "name": "SolutionEntitlementService",
+          "fullName": "saas.accounts.v1.SolutionEntitlementService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
+          ]
+        },
+        {
           "name": "SolutionRegistryService",
           "fullName": "saas.accounts.v1.SolutionRegistryService",
           "procedures": [
@@ -930,7 +946,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:5a866c4cf8868c46022cd46a68d2578a73618a01294e0b3f99651176b9f792fe",
+      "digest": "sha256:fbcdf2a9db8cd2e72f0765fda1e6d82a00b39979500b8fdd8b174bc1f2ecde8d",
       "services": [
         {
           "name": "AuthGatewayService",

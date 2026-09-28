@@ -19,6 +19,23 @@ const (
 	ScopeNodeKindCollection = "collection"
 )
 
+// The (resource_type, action) pair a solution-visibility question is asked in
+// (issue #949). A subject may see an installed solution when it holds an
+// accessible scope at that installation's authority-root node for this pair —
+// resolved through the same grant + share union CheckAccess resolves, so a
+// projection can never offer what an authority check would deny.
+//
+// Host-owned, exactly like the node kinds above: a solution install, its scope
+// node and its registry record are all the host's, so naming the permission that
+// governs *using* one names nothing above this module. A role that should reveal
+// a solution permits (solution, use) or carries the wildcard; a role that permits
+// only some product resource does not, which is what keeps a grant written for
+// another purpose from quietly revealing a menu entry.
+const (
+	ResourceTypeSolution = "solution"
+	ActionUseSolution    = "use"
+)
+
 // CheckAccess is the hierarchical + per-record authorization decision (#178),
 // the companion to CheckPermission. Always org-scoped — a record lives in
 // exactly one tenant — so it always runs under WithOrgTx. The store resolves the

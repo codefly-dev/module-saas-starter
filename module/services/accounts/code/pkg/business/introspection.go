@@ -139,6 +139,8 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"InstallationService/UninstallSolution":                        "Uninstall a solution and reverse its composition.",
 	"InstallationService/TransferInstallationOwnership":            "Reassign an installation's accountable owner of record.",
 	"InstallationService/GetInstallation":                          "Get one installation and its live health.",
+	"InstallationService/ListInstallations":                        "List one organization's installations with their live health.",
+	"SolutionEntitlementService/ListSolutionEntitlements":          "List the installed solutions a subject may use in one organization.",
 	"DelegationService/ListPendingDelegations":                     "List pending organization delegations.",
 	"DelegationService/RequestDelegation":                          "Request a scoped authority delegation.",
 	"DelegationService/WaitForDelegation":                          "Stream the terminal delegation decision.",
