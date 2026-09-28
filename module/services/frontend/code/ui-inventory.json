@@ -644,6 +644,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Menu"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "MenuHints"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",

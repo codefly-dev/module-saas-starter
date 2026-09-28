@@ -1,9 +1,12 @@
 import type { DataGraph } from "@codefly/saas-plugin-manifest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
 	act,
 	cleanup,
 	fireEvent,
+	render,
 	screen,
+	waitFor,
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
@@ -618,6 +621,263 @@ describe("a viewer's layout", () => {
 			screen.getByRole("button", { name: "Remove Logins over time" }),
 		);
 		expect(tileTitles()).toEqual(["Top event types", "Total logins"]);
+	});
+});
+
+describe("what a + menu says about a removed widget", () => {
+	type Buckets = Array<{ key: string; count: string }>;
+	const DAYS: Buckets = [
+		{ key: "2026-08-01", count: "3" },
+		{ key: "2026-08-02", count: "5" },
+	];
+
+	// Answers each widget's query with the rows `rows` gives for its request,
+	// or a 500 for "fail", and counts the queries by what they group by.
+	function auditTrail(
+		rows: (request: {
+			groupBy?: string;
+			eventType?: string;
+		}) => Buckets | "fail" | Promise<Buckets>,
+	) {
+		const asked: Record<string, number> = {};
+		server.use(
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					const body = (await request.json()) as {
+						groupBy?: string;
+						eventType?: string;
+					};
+					const groupBy = body.groupBy ?? "";
+					asked[groupBy] = (asked[groupBy] ?? 0) + 1;
+					const buckets = await rows(body);
+					return buckets === "fail"
+						? new HttpResponse(null, { status: 500 })
+						: HttpResponse.json({ buckets });
+				},
+			),
+		);
+		return asked;
+	}
+
+	// A layout the viewer saved with only these tiles shown: the others were
+	// removed before this page drew them, so nothing has asked about them yet.
+	function showOnly(tiles: string[], dashboard = graph.dashboards[0]) {
+		window.localStorage.setItem(
+			LAYOUT_KEY,
+			JSON.stringify({
+				version: 2,
+				sections: [{ id: "", tiles }],
+				seen: dashboard.widgets.map((widget) => widget.id),
+				seenSections: [""],
+			}),
+		);
+	}
+
+	// The page, with the query client in reach, so a test can wait until
+	// every answer is in.
+	function renderWatched() {
+		const client = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		render(
+			<QueryClientProvider client={client}>
+				<SolutionDashboards graph={graph} solutionId="example" />
+			</QueryClientProvider>,
+		);
+		return client;
+	}
+
+	const openMenu = () =>
+		fireEvent.click(
+			screen.getByRole("button", { name: "Add a widget back to Activity" }),
+		);
+
+	// An item that says nothing beside its title.
+	const expectBare = (item: HTMLElement, title: string) => {
+		expect(item.textContent).toBe(title);
+		expect(item.hasAttribute("aria-describedby")).toBe(false);
+	};
+
+	it("says No data yet. beside a removed widget whose metric returned no rows, and it can still be added", async () => {
+		auditTrail(({ groupBy }) => (groupBy === "event_type" ? [] : DAYS));
+		showOnly(["w_line", "w_stat"]);
+		renderDashboards();
+		openMenu();
+		const item = await screen.findByRole("menuitem", {
+			name: "Top event types",
+			description: "No data yet.",
+		});
+		expect(item.textContent).toBe("Top event typesNo data yet.");
+
+		// The tile it adds back draws at once, from the answer the menu got.
+		fireEvent.click(item);
+		const added = tile("Top event types");
+		expect(within(added).getByText("No data yet.")).toBeTruthy();
+		expect(added.querySelector('[data-slot="skeleton"]')).toBeNull();
+	});
+
+	it("says telemetry is incomplete beside a removed derived widget missing an input", async () => {
+		const derived: DataGraph = {
+			events: [
+				{ name: "login", type: "auth.login.v1" },
+				{ name: "logout", type: "auth.logout.v1" },
+			],
+			metrics: [
+				{
+					id: "logins",
+					kind: "source",
+					filter: { event: "login" },
+					groupBy: "time",
+					bucket: "day",
+					aggregation: "count",
+				},
+				{
+					id: "logouts",
+					kind: "source",
+					filter: { event: "logout" },
+					groupBy: "time",
+					bucket: "day",
+					aggregation: "count",
+				},
+				{
+					id: "net_logins",
+					kind: "derived",
+					operation: "difference",
+					inputs: ["logins", "logouts"],
+				},
+			],
+			dashboards: [
+				{
+					id: "activity",
+					title: "Activity",
+					layout: "grid",
+					widgets: [
+						{
+							id: "w_logins",
+							metric: "logins",
+							visualization: "line",
+							title: "Logins",
+						},
+						{
+							id: "w_net",
+							metric: "net_logins",
+							visualization: "number",
+							title: "Net logins",
+						},
+					],
+				},
+			],
+		};
+		// Logins were recorded and no logout ever was, so every day lacks one
+		// of the two inputs.
+		auditTrail(({ eventType }) => (eventType === "auth.logout.v1" ? [] : DAYS));
+		showOnly(["w_logins"], derived.dashboards[0]);
+		renderDashboards(derived);
+		openMenu();
+		const item = await screen.findByRole("menuitem", {
+			name: "Net logins",
+			description: "Telemetry incomplete.",
+		});
+
+		// The tile says the same, in its own words.
+		fireEvent.click(item);
+		expect(
+			within(tile("Net logins")).getByText(
+				"Telemetry unavailable or incomplete.",
+			),
+		).toBeTruthy();
+	});
+
+	it("says nothing beside a removed widget that has data", async () => {
+		auditTrail(({ groupBy }) =>
+			groupBy === "event_type" ? [{ key: "saas.auth.login", count: "42" }] : [],
+		);
+		showOnly(["w_stat"]);
+		const client = renderWatched();
+		openMenu();
+		// The removed widget with no rows says so: the menu has its answers.
+		await screen.findByRole("menuitem", {
+			name: "Logins over time",
+			description: "No data yet.",
+		});
+		await waitFor(() => expect(client.isFetching()).toBe(0));
+		expectBare(
+			screen.getByRole("menuitem", { name: "Top event types" }),
+			"Top event types",
+		);
+	});
+
+	it("says nothing while the answer is on its way, and draws no spinner", async () => {
+		let answer: (rows: Buckets) => void = () => {};
+		const pending = new Promise<Buckets>((resolve) => {
+			answer = resolve;
+		});
+		const asked = auditTrail(({ groupBy }) =>
+			groupBy === "event_type" ? pending : DAYS,
+		);
+		showOnly(["w_line", "w_stat"]);
+		renderDashboards();
+		openMenu();
+		await waitFor(() => expect(asked.event_type).toBe(1));
+		expectBare(
+			screen.getByRole("menuitem", { name: "Top event types" }),
+			"Top event types",
+		);
+		expect(
+			screen
+				.getByRole("menu")
+				.querySelector(
+					'[data-slot="skeleton"], [aria-busy], [role="progressbar"], [role="status"]',
+				),
+		).toBeNull();
+
+		// Once the answer is in, the item says what it is.
+		await act(async () => answer([]));
+		expect(
+			await screen.findByRole("menuitem", {
+				name: "Top event types",
+				description: "No data yet.",
+			}),
+		).toBeTruthy();
+	});
+
+	it("says nothing when a removed widget's query fails, rather than no data", async () => {
+		auditTrail(({ groupBy }) => (groupBy === "event_type" ? "fail" : []));
+		showOnly(["w_stat"]);
+		const client = renderWatched();
+		openMenu();
+		await screen.findByRole("menuitem", {
+			name: "Logins over time",
+			description: "No data yet.",
+		});
+		await waitFor(() => expect(client.isFetching()).toBe(0));
+		expect(
+			client
+				.getQueryCache()
+				.getAll()
+				.filter((query) => query.state.status === "error"),
+		).toHaveLength(1);
+		expectBare(
+			screen.getByRole("menuitem", { name: "Top event types" }),
+			"Top event types",
+		);
+	});
+
+	it("asks nothing about a removed widget until a menu opens", async () => {
+		const asked = auditTrail(({ groupBy }) =>
+			groupBy === "event_type"
+				? [{ key: "saas.auth.login", count: "42" }]
+				: DAYS,
+		);
+		showOnly(["w_line", "w_stat"]);
+		renderDashboards();
+		// Both drawn tiles have their answers; the removed one was not asked.
+		await screen.findByText("8");
+		await waitFor(() => expect(asked).toEqual({ time: 2 }));
+
+		openMenu();
+		await waitFor(() => expect(asked).toEqual({ time: 2, event_type: 1 }));
 	});
 });
 
