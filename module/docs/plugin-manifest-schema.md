@@ -96,6 +96,11 @@ has three node kinds:
 - **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
+  A dashboard may group its widgets into `sections` — each an `id`, a `title`
+  and an optional `description`, drawn in declared order — in which case every
+  widget names its `section`. A section may hold no widgets. A dashboard that
+  declares no sections draws its widgets as one untitled group, and no widget
+  may name a section.
 
 On a registered solution's page the host renders every declared dashboard in a
 **Dashboard** tab beside the solution's own **App** tab, never stacked above
@@ -108,13 +113,15 @@ already rearranged. A viewer's arrangement is a preference (ADR 0007): it never
 adds a metric the dashboard does not draw, so a metric declared only as a
 derived metric's input stays off the page.
 
-The schema owns the per-node field formats — including the two shape rules that
-cross fields: a metric carries a `bucket` exactly when it groups by `time`, and
-a `ratio`/`difference` takes exactly two inputs (`sum` takes two or more). The
+The schema owns the per-node field formats — including the shape rules that
+cross fields: a metric carries a `bucket` exactly when it groups by `time`, a
+`ratio`/`difference` takes exactly two inputs (`sum` takes two or more), and a
+widget names a `section` exactly when its dashboard declares `sections`. The
 host validator adds only what a JSON Schema cannot express: referential
 integrity — every metric filter names a declared event, every derived-metric
-input and every widget names a declared metric — and that the derived-metric
-reference graph is acyclic.
+input and every widget names a declared metric, every widget's section is one
+its dashboard declares, and section ids are unique within their dashboard — and
+that the derived-metric reference graph is acyclic.
 
 What neither layer checks is **dimensional coherence** — whether a metric's
 `groupBy` is meaningful for its data, or whether a derived metric's inputs have

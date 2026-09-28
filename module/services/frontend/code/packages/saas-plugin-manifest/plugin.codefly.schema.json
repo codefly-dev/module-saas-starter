@@ -370,6 +370,20 @@
 							"id": { "$ref": "#/$defs/logicalId" },
 							"title": { "$ref": "#/$defs/description" },
 							"layout": { "enum": ["grid", "stack"] },
+							"sections": {
+								"type": "array",
+								"minItems": 1,
+								"items": {
+									"type": "object",
+									"additionalProperties": false,
+									"required": ["id", "title"],
+									"properties": {
+										"id": { "$ref": "#/$defs/logicalId" },
+										"title": { "$ref": "#/$defs/description" },
+										"description": { "$ref": "#/$defs/description" }
+									}
+								}
+							},
 							"widgets": {
 								"type": "array",
 								"minItems": 1,
@@ -383,9 +397,21 @@
 										"visualization": {
 											"enum": ["line", "bar", "area", "number", "table"]
 										},
-										"title": { "$ref": "#/$defs/description" }
+										"title": { "$ref": "#/$defs/description" },
+										"section": { "$ref": "#/$defs/logicalId" }
 									}
 								}
+							}
+						},
+						"if": { "required": ["sections"] },
+						"then": {
+							"properties": {
+								"widgets": { "items": { "required": ["section"] } }
+							}
+						},
+						"else": {
+							"properties": {
+								"widgets": { "items": { "not": { "required": ["section"] } } }
 							}
 						}
 					}

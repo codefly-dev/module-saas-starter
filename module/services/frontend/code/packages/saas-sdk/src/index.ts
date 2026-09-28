@@ -72,6 +72,7 @@ export { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1
 export type {
 	Dashboard,
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
 	DerivedMetric,
 	EventDeclaration,

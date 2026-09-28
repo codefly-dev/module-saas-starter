@@ -139,6 +139,15 @@ export interface MetricWidget {
 	metric: string;
 	visualization: WidgetVisualization;
 	title?: string;
+	/** The dashboard section the widget is drawn in, when the dashboard declares sections. */
+	section?: string;
+}
+
+/** A titled group of a dashboard's widgets. A section may hold no widgets. */
+export interface DashboardSection {
+	id: string;
+	title: string;
+	description?: string;
 }
 
 /** A layout of widgets, each rendering one metric. */
@@ -146,6 +155,8 @@ export interface Dashboard {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	/** The sections the widgets are grouped into, drawn in this order. */
+	sections?: readonly DashboardSection[];
 	widgets: readonly MetricWidget[];
 }
 

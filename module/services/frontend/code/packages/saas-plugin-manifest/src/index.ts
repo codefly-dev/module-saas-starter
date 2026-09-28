@@ -32,6 +32,7 @@ export {
 export type {
 	Dashboard,
 	DashboardLayout,
+	DashboardSection,
 	DataGraph,
 	DerivedMetric,
 	EventDeclaration,

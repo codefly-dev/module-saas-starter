@@ -176,6 +176,21 @@ export interface MetricWidget {
 	metric: string;
 	visualization: WidgetVisualization;
 	title?: string;
+	/**
+	 * The id of the dashboard section the widget is drawn in. Required when the
+	 * dashboard declares sections, forbidden when it declares none.
+	 */
+	section?: string;
+}
+
+/**
+ * A titled group of a dashboard's widgets, e.g. an overview band above the
+ * detail. A section may hold no widgets.
+ */
+export interface DashboardSection {
+	id: string;
+	title: string;
+	description?: string;
 }
 
 /** A layout of widgets, each rendering one metric. */
@@ -183,6 +198,11 @@ export interface Dashboard {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	/**
+	 * The sections the widgets are grouped into, drawn in this order. Optional:
+	 * a dashboard without sections draws its widgets as one untitled group.
+	 */
+	sections?: readonly DashboardSection[];
 	widgets: readonly MetricWidget[];
 }
 
@@ -577,7 +597,7 @@ function validateWidget(
 	);
 	assertExactKeys(
 		value,
-		["id", "metric", "visualization", "title"],
+		["id", "metric", "visualization", "title", "section"],
 		`dashboard '${dashboardId}' widget`,
 	);
 	assertLogicalId(value.id, `dashboard '${dashboardId}' widget id`);
@@ -593,11 +613,71 @@ function validateWidget(
 		value.title,
 		`dashboard '${dashboardId}' widget '${String(value.id)}' title`,
 	);
+	if (value.section !== undefined) {
+		assertLogicalId(
+			value.section,
+			`dashboard '${dashboardId}' widget '${String(value.id)}' section`,
+		);
+	}
+}
+
+function validateSection(
+	value: unknown,
+	dashboardId: string,
+): asserts value is DashboardSection {
+	assertGraph(
+		isObject(value),
+		`dashboard '${dashboardId}' section must be an object`,
+	);
+	assertExactKeys(
+		value,
+		["id", "title", "description"],
+		`dashboard '${dashboardId}' section`,
+	);
+	assertLogicalId(value.id, `dashboard '${dashboardId}' section id`);
+	const context = `dashboard '${dashboardId}' section '${String(value.id)}'`;
+	assertGraph(
+		typeof value.title === "string" && value.title.trim().length > 0,
+		`${context} title must be a non-empty string`,
+	);
+	assertOptionalText(value.description, `${context} description`);
+}
+
+// A dashboard that declares sections places every widget in one of them; one
+// that declares none places no widget in any.
+function assertWidgetSections(
+	dashboardId: string,
+	declared: readonly DashboardSection[] | undefined,
+	widgets: readonly MetricWidget[],
+): void {
+	const sections = declared?.map((section) => section.id);
+	for (const widget of widgets) {
+		const context = `dashboard '${dashboardId}' widget '${widget.id}'`;
+		if (sections === undefined) {
+			assertGraph(
+				widget.section === undefined,
+				`${context} names section '${widget.section}', but the dashboard declares no sections`,
+			);
+		} else {
+			assertGraph(
+				widget.section !== undefined,
+				`${context} must name one of the dashboard's sections`,
+			);
+			assertGraph(
+				sections.includes(widget.section),
+				`${context} names unknown section '${widget.section}'`,
+			);
+		}
+	}
 }
 
 function validateDashboard(value: unknown): asserts value is Dashboard {
 	assertGraph(isObject(value), "dashboard must be an object");
-	assertExactKeys(value, ["id", "title", "layout", "widgets"], "dashboard");
+	assertExactKeys(
+		value,
+		["id", "title", "layout", "sections", "widgets"],
+		"dashboard",
+	);
 	assertLogicalId(value.id, "dashboard id");
 	assertGraph(
 		LAYOUT.includes(value.layout as DashboardLayout),
@@ -616,6 +696,27 @@ function validateDashboard(value: unknown): asserts value is Dashboard {
 	assertUnique(
 		(value.widgets as MetricWidget[]).map((widget) => widget.id),
 		`widget id in dashboard '${String(value.id)}'`,
+	);
+	if (value.sections !== undefined) {
+		assertGraph(
+			Array.isArray(value.sections),
+			`dashboard '${String(value.id)}' sections must be an array`,
+		);
+		assertGraph(
+			value.sections.length > 0,
+			`dashboard '${String(value.id)}' sections must declare at least one section`,
+		);
+		for (const section of value.sections)
+			validateSection(section, value.id as string);
+		assertUnique(
+			(value.sections as DashboardSection[]).map((section) => section.id),
+			`section id in dashboard '${String(value.id)}'`,
+		);
+	}
+	assertWidgetSections(
+		value.id as string,
+		value.sections as DashboardSection[] | undefined,
+		value.widgets as MetricWidget[],
 	);
 	assertOptionalText(value.title, `dashboard '${String(value.id)}' title`);
 }
@@ -650,7 +751,8 @@ function assertAcyclic(metrics: readonly Metric[]): void {
  * Validates a parsed data graph and narrows it to `DataGraph`. Beyond the
  * per-node field rules, it enforces the cross-references that make the
  * declaration a graph: every metric filter names a declared event, every
- * derived-metric input and every widget names a declared metric, and the
+ * derived-metric input and every widget names a declared metric, every widget
+ * of a dashboard that declares sections names one of them, and the
  * derived-metric reference graph is acyclic.
  */
 export function assertDataGraph(value: unknown): asserts value is DataGraph {
