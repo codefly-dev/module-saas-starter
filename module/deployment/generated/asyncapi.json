@@ -1560,6 +1560,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.solution.host_binding_applied": {
+      "address": "saas.solution.host_binding_applied",
+      "title": "saas.solution.host_binding_applied",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.solution.host_binding_applied"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.solution.registration_deleted": {
       "address": "saas.solution.registration_deleted",
       "title": "saas.solution.registration_deleted",
@@ -2955,6 +2966,13 @@
       },
       "title": "saas publishes saas.settings.updated"
     },
+    "send:saas.solution.host_binding_applied": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.solution.host_binding_applied"
+      },
+      "title": "saas publishes saas.solution.host_binding_applied"
+    },
     "send:saas.solution.registration_deleted": {
       "action": "send",
       "channel": {
@@ -4193,6 +4211,13 @@
       "saas.settings.updated": {
         "name": "saas.settings.updated",
         "title": "saas.settings.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.solution.host_binding_applied": {
+        "name": "saas.solution.host_binding_applied",
+        "title": "saas.solution.host_binding_applied",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
