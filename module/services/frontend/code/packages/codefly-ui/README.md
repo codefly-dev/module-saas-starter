@@ -177,6 +177,31 @@ and skipped so the compiled default always renders.
 `Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
 optional actions and dismissal. The caller owns data, authorization and read state.
 
+## Packing this kit by hand
+
+`files` includes `dist`, so **`npm pack` on a tree that has not been built
+produces a source-only tarball** — no `dist`, a fraction of the size, and
+nothing about it says so. One hand-packed set came out at 116 kB against the
+282 kB the registry serves, and its digests were nearly handed to a consumer as
+authoritative. **Build first, always:**
+
+```sh
+npm run prepare:frontend && npm run build --workspace @codefly-dev/ui
+npm pack --workspace @codefly-dev/ui --pack-destination <dir>
+tar -tzf <dir>/codefly-dev-ui-<v>.tgz | grep -c '^package/dist/'   # 0 means source-only
+```
+
+A `prepack` script would make that automatic, and **this kit deliberately has
+none**: `kit-sourcemaps.test.mjs` itself runs `npm pack` inside the test suite,
+so a pack lifecycle hook would rebuild `dist` while concurrent specs import the
+package. `scripts/kit-sourcemaps.test.mjs` enforces the absence of `prepack`,
+`prepare`, `prepublishOnly` and `postpack` for exactly that reason. So the
+check above is the guard — there is no hook coming to save you.
+
+Never copy an integrity out of a CI log either: `npm notice` truncates it
+(`sha512-MSi6XOd/DY0PB[...]`). Hash the artifact, or use the untruncated triple
+npm prints — `shasum`, package size, total files.
+
 ## A loading indicator never flashes
 
 A product-wide rule, and it lives here so every kit gets it by composing rather
