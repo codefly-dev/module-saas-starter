@@ -46,7 +46,8 @@ func (s *Service) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHost
 // activating: the last generation that passed every check goes on serving, and
 // what delivery wants plus the reason it was refused sit beside it.
 func (s *Service) recordSolutionHostBindingDesired(
-	ctx context.Context, document *solutionhost.SolutionHostBinding, withheldReason string, now time.Time,
+	ctx context.Context, document *solutionhost.SolutionHostBinding,
+	withheldReason string, settled bool, now time.Time,
 ) error {
 	digest, err := document.Digest()
 	if err != nil {
@@ -73,7 +74,15 @@ func (s *Service) recordSolutionHostBindingDesired(
 		record.HostCoordinate = document.Host.Coordinate
 		record.HostComponent = document.Host.Component
 		record.Desired = &desired
-		applyPendingReason(record, withheldReason, now)
+		// A withheld document's reason is recorded here. An admitted one's is
+		// NOT cleared here unless the generation is already applied (settled):
+		// the apply that follows either clears it or replaces it, and clearing
+		// it first would reset pending_since on every pass — so a refusal stuck
+		// for a day would read as one that started seconds ago, which is the
+		// opposite of what this field is for.
+		if withheldReason != "" || settled {
+			applyPendingReason(record, withheldReason, now)
+		}
 		record.UpdatedAt = now
 		return s.store.SaveSolutionHostBinding(ctx, record)
 	})
@@ -107,8 +116,10 @@ func (s *Service) recordSolutionHostBindingRefusal(
 }
 
 // applyPendingReason sets or clears a binding's blocking reason, keeping the
-// instant the current reason first appeared so an operator can tell a refusal
-// that has just started from one that has been stuck for a day.
+// instant the CURRENT reason first appeared so an operator can tell a refusal
+// that has just started from one that has been stuck for a day. Every pass
+// re-records a standing refusal, so the instant has to survive a re-record —
+// replacing it each time would make a permanently stuck binding look fresh.
 func applyPendingReason(record *SolutionHostBindingRecord, reason string, now time.Time) {
 	if reason == "" {
 		record.PendingReason = ""

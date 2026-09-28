@@ -249,10 +249,20 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	// applied, so an operator sees what delivery is showing even when none of it
 	// passed. A document that did not parse names no binding it can be recorded
 	// against; those are reported to the caller.
+	// A generation core reports as already applied is settled: recording desired
+	// state for it may clear a reason left by an earlier pass, because there is
+	// nothing outstanding. A generation about to be applied is not settled — the
+	// apply owns its reason.
+	settled := make(map[string]bool, len(admission.Accepted))
+	for _, accepted := range admission.Accepted {
+		settled[accepted.Document.Binding] = accepted.Decision == solutionhost.DecisionCurrent
+	}
 	var failures []error
 	for _, document := range parsed {
 		reason := admission.Withheld[document.Binding]
-		if err := r.service.recordSolutionHostBindingDesired(ctx, document, reason, r.now()); err != nil {
+		if err := r.service.recordSolutionHostBindingDesired(
+			ctx, document, reason, settled[document.Binding], r.now(),
+		); err != nil {
 			failures = append(failures, fmt.Errorf("record desired generation for binding %q: %w", document.Binding, err))
 		}
 	}
