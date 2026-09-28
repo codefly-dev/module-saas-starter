@@ -196,6 +196,14 @@ message AuditEventType {
   // stand in for it — a category groups events for facets, and not every
   // identity event is a person arriving.
   bool marks_user_joined = 8;
+  // Whether an outbound webhook endpoint may subscribe to this type and ever
+  // receive it. A type is eligible when it is declared with external
+  // visibility: every platform type is, and a solution-declared or
+  // module-declared type is only when its producer declared it external AND
+  // the operator marked its namespace externally deliverable. The registry
+  // owns the answer so a subscription form cannot offer a name that can never
+  // fire, which is the silent acceptance this flag exists to end.
+  bool webhook_eligible = 9;
 }
 
 message ListAuditEventTypesResponse {

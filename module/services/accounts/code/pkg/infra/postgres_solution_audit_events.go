@@ -54,13 +54,13 @@ func (s *PostgresStore) ListAuditEventNamespaceOwners(ctx context.Context, names
 
 func scanDeclaredAuditEventType(row pgx.Row) (*business.DeclaredAuditEventType, error) {
 	var (
-		name, namespace, owner string
-		schema                 []byte
+		name, namespace, owner, visibility string
+		schema                             []byte
 	)
-	if err := row.Scan(&name, &namespace, &owner, &schema); err != nil {
+	if err := row.Scan(&name, &namespace, &owner, &visibility, &schema); err != nil {
 		return nil, err
 	}
-	declared, err := business.DeclaredAuditEventTypeFromSchema(business.EventType(name), namespace, owner, schema)
+	declared, err := business.DeclaredAuditEventTypeFromSchema(business.EventType(name), namespace, owner, visibility, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *PostgresStore) GetDeclaredAuditEventType(ctx context.Context, eventType
 		return declared, err
 	}
 	declared, err := scanDeclaredAuditEventType(s.getQueryExecutor(ctx).QueryRow(ctx,
-		`SELECT name, namespace, owner, payload_schema FROM audit_event_types
+		`SELECT name, namespace, owner, visibility, payload_schema FROM audit_event_types
 		 WHERE name = $1 AND starts_with(owner, $2)`,
 		string(eventType), business.SolutionAuditOwnerPrefix))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -101,7 +101,7 @@ func (s *PostgresStore) GetDeclaredAuditEventType(ctx context.Context, eventType
 // type.
 func (s *PostgresStore) ListDeclaredAuditEventTypes(ctx context.Context) ([]business.DeclaredAuditEventType, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT name, namespace, owner, payload_schema FROM audit_event_types
+		`SELECT name, namespace, owner, visibility, payload_schema FROM audit_event_types
 		 WHERE starts_with(owner, $1) ORDER BY name`, business.SolutionAuditOwnerPrefix)
 	if err != nil {
 		return nil, err
@@ -124,8 +124,8 @@ func (s *PostgresStore) ListDeclaredAuditEventTypes(ctx context.Context) ([]busi
 // than silently transferring the type.
 func (s *PostgresStore) PutDeclaredAuditEventType(ctx context.Context, declared business.DeclaredAuditEventType) error {
 	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
-		INSERT INTO audit_event_types (name, namespace, version, category, owner, payload_schema, deprecated, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
+		INSERT INTO audit_event_types (name, namespace, version, category, owner, visibility, payload_schema, deprecated, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())
 		ON CONFLICT (name) DO UPDATE SET
 			payload_schema = EXCLUDED.payload_schema,
 			deprecated = FALSE,
@@ -133,7 +133,7 @@ func (s *PostgresStore) PutDeclaredAuditEventType(ctx context.Context, declared 
 		WHERE audit_event_types.owner = EXCLUDED.owner`,
 		string(declared.Type), declared.Namespace, business.DeclaredAuditEventVersion,
 		string(business.CategorySolution), business.SolutionAuditOwner(declared.SolutionID),
-		declared.PayloadSchemaJSON())
+		declared.Visibility, declared.PayloadSchemaJSON())
 	if err != nil {
 		return err
 	}

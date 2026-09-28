@@ -72,6 +72,19 @@ import (
 //     must still mean what they meant.
 //   - A type is never removed. A declaration that stops listing it leaves it
 //     admitted and owned, because historical rows keep referencing it.
+//   - A type declares how far its events may travel: `tenant` (the default) or
+//     `external`. Only an `external` type is ever delivered to a tenant's
+//     outbound webhook endpoint. Eligibility to leave the platform takes two
+//     keys and neither alone suffices: the producer declares which of its facts
+//     are customer-facing, and the operator marks the namespace externally
+//     deliverable (`external_namespaces` of the same MODULE_PRINCIPALS entry
+//     that binds the namespace). An `external` declaration in a namespace the
+//     operator did not mark is refused, naming both.
+//   - Visibility is fixed at admission. A re-declaration that changes it is
+//     refused: narrowing it would silently stop deliveries to endpoints already
+//     subscribed, and widening it would start sending outside the platform
+//     facts a tenant's endpoint never agreed to receive under that name. A
+//     producer that needs the other visibility declares another type.
 
 // SolutionAuditOwnerPrefix prefixes the owner of every solution-declared audit
 // event type, followed by the solution id — the same subject form the
@@ -82,6 +95,21 @@ const SolutionAuditOwnerPrefix = "solution:"
 // DeclaredAuditEventVersion is the version every solution-declared type
 // carries. A field set only ever grows, so no change requires a new version.
 const DeclaredAuditEventVersion = 1
+
+// How far an event of a declared type may travel. The two values are the
+// composed event catalog's own vocabulary for the same fact (catalog_gen.go
+// `Visibility`), narrowed to what a declaration can mean: an audit record is
+// always readable by its own tenant, so the catalog's `internal` has no
+// reading here.
+const (
+	// AuditVisibilityTenant keeps events inside the platform. It is the value
+	// a declaration that says nothing gets: eligibility to leave is granted by
+	// declaration, never by omission.
+	AuditVisibilityTenant = "tenant"
+	// AuditVisibilityExternal additionally admits delivery to a tenant's
+	// outbound webhook endpoint.
+	AuditVisibilityExternal = "external"
+)
 
 const (
 	maxDeclaredAuditEventTypes     = 64
@@ -110,6 +138,11 @@ var (
 	// ErrSolutionAuditDeclarationRejected, when a declared type's namespace is
 	// not among the namespaces the operator bound to the declaring solution.
 	ErrSolutionAuditNamespaceUnbound = errors.New("audit event namespace is not bound to the declaring solution")
+	// ErrSolutionAuditNamespaceNotExternal is returned, wrapped by
+	// ErrSolutionAuditDeclarationRejected, when a type is declared with
+	// external visibility in a namespace the operator did not mark externally
+	// deliverable. The producer's declaration is one key; this is the other.
+	ErrSolutionAuditNamespaceNotExternal = errors.New("audit event namespace is not granted external delivery")
 	// ErrAuditCatalogCollision is returned by the startup projection sync when
 	// a code-catalog type takes the name, or the namespace, of a type a
 	// solution declared. It is a release that cannot boot as built: the
@@ -141,7 +174,17 @@ type DeclaredAuditEventType struct {
 	Namespace   string
 	SolutionID  string
 	Description string
-	Fields      []PayloadField
+	// Visibility is AuditVisibilityTenant or AuditVisibilityExternal; it is
+	// never empty on a validated declaration, so a zero value reaching a gate
+	// is a type that skipped validation rather than one that opted out.
+	Visibility string
+	Fields     []PayloadField
+}
+
+// ExternallyDeliverable reports whether an event of this type may be delivered
+// to a tenant's outbound webhook endpoint.
+func (d DeclaredAuditEventType) ExternallyDeliverable() bool {
+	return d.Visibility == AuditVisibilityExternal
 }
 
 // SolutionAuditOwner is the audit_event_types owner of a solution's types.
@@ -215,6 +258,7 @@ func (d DeclaredAuditEventType) Definition() AuditEventDefinition {
 		Owner:       SolutionAuditOwner(d.SolutionID),
 		Description: d.Description,
 		Durability:  DurabilityObservational,
+		Visibility:  d.Visibility,
 		// The whole payload the type carries, the host-stamped solution
 		// included, so a declared type validates and redacts exactly as the
 		// row's stored schema says.
@@ -240,10 +284,17 @@ type storedDeclaredAuditSchema struct {
 // DeclaredAuditEventTypeFromSchema reads a declared type back from its stored
 // row. It inverts PayloadSchemaJSON exactly and refuses anything else, so a row
 // that was not written by admission never validates a payload.
-func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner string, schema []byte) (DeclaredAuditEventType, error) {
+func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner, visibility string, schema []byte) (DeclaredAuditEventType, error) {
 	solutionID, ok := SolutionIDFromAuditOwner(owner)
 	if !ok {
 		return DeclaredAuditEventType{}, fmt.Errorf("audit: event type %q is not owned by a solution", eventType)
+	}
+	// The column is the gate's input, so an unreadable value is refused rather
+	// than defaulted: defaulting one way would stop a tenant's deliveries and
+	// the other way would start sending rows outside the platform, and neither
+	// is a decision a scan may make.
+	if visibility != AuditVisibilityTenant && visibility != AuditVisibilityExternal {
+		return DeclaredAuditEventType{}, fmt.Errorf("audit: event type %q has unreadable visibility %q", eventType, visibility)
 	}
 	var stored storedDeclaredAuditSchema
 	if err := json.Unmarshal(schema, &stored); err != nil {
@@ -254,6 +305,7 @@ func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner stri
 		Namespace:   namespace,
 		SolutionID:  solutionID,
 		Description: stored.Description,
+		Visibility:  visibility,
 	}
 	for name, property := range stored.Properties {
 		if name == hostStampedAuditField {
@@ -299,6 +351,7 @@ func declarationRejected(format string, args ...any) error {
 type declaredEventJSON struct {
 	Type        string          `json:"type"`
 	Description string          `json:"description"`
+	Visibility  string          `json:"visibility"`
 	Fields      json.RawMessage `json:"fields"`
 }
 
@@ -340,7 +393,10 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 		if err != nil {
 			return nil, err
 		}
-		inputs = append(inputs, AuditEventTypeDeclaration{Type: event.Type, Description: event.Description, Fields: fields})
+		inputs = append(inputs, AuditEventTypeDeclaration{
+			Type: event.Type, Description: event.Description,
+			Visibility: event.Visibility, Fields: fields,
+		})
 	}
 	return ValidateAuditEventTypeDeclarations(solutionID, inputs)
 }
@@ -352,7 +408,11 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 type AuditEventTypeDeclaration struct {
 	Type        string
 	Description string
-	Fields      []AuditFieldDeclaration
+	// Visibility is "tenant", "external", or empty for the default (tenant).
+	// The operator's grant is checked at admission, which is the only place
+	// the declaring principal's MODULE_PRINCIPALS entry is in hand.
+	Visibility string
+	Fields     []AuditFieldDeclaration
 }
 
 // AuditFieldDeclaration is one declared payload field. Kind is a FieldKind's
@@ -394,6 +454,10 @@ func ValidateAuditEventTypeDeclarations(solutionID string, inputs []AuditEventTy
 		if len(event.Description) > maxDeclaredAuditTextLen {
 			return nil, declarationRejected("event type %q description exceeds %d characters", event.Type, maxDeclaredAuditTextLen)
 		}
+		visibility, err := validateDeclaredAuditVisibility(event.Type, event.Visibility)
+		if err != nil {
+			return nil, err
+		}
 		fields, err := validateDeclaredAuditFields(event.Type, event.Fields)
 		if err != nil {
 			return nil, err
@@ -403,6 +467,7 @@ func ValidateAuditEventTypeDeclarations(solutionID string, inputs []AuditEventTy
 			Namespace:   namespace,
 			SolutionID:  solutionID,
 			Description: strings.TrimSpace(event.Description),
+			Visibility:  visibility,
 			Fields:      fields,
 		})
 	}
@@ -411,6 +476,25 @@ func ValidateAuditEventTypeDeclarations(solutionID string, inputs []AuditEventTy
 	}
 	sort.Slice(declared, func(i, j int) bool { return declared[i].Type < declared[j].Type })
 	return declared, nil
+}
+
+// validateDeclaredAuditVisibility resolves a declaration's visibility. Empty is
+// the default and means tenant; anything the vocabulary does not name is
+// refused rather than treated as the default, so a misspelt "External" is a
+// legible refusal instead of a type that silently never reaches an endpoint —
+// which is the whole failure this declaration exists to make impossible.
+func validateDeclaredAuditVisibility(eventType, visibility string) (string, error) {
+	switch strings.TrimSpace(visibility) {
+	case "":
+		return AuditVisibilityTenant, nil
+	case AuditVisibilityTenant:
+		return AuditVisibilityTenant, nil
+	case AuditVisibilityExternal:
+		return AuditVisibilityExternal, nil
+	default:
+		return "", declarationRejected("event type %q declares visibility %q; it must be %q or %q",
+			eventType, visibility, AuditVisibilityTenant, AuditVisibilityExternal)
+	}
 }
 
 // decodeDeclaredAuditFields reads a manifest's `fields` array strictly: an
@@ -592,6 +676,21 @@ func (s *Service) admitDeclaredAuditEventTypesWritten(ctx context.Context, solut
 				ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceUnbound, namespace, solutionID)
 		}
 	}
+	// The second key. A producer declaring a type external states that the fact
+	// is customer-facing; only the operator can say the producer may send
+	// anything out of the platform at all, and it says so per namespace on the
+	// same entry that binds it. Refused here rather than dropped at delivery,
+	// so a composition that forgot the grant fails the registration that
+	// declared it instead of going quiet in production.
+	for _, d := range declared {
+		if !d.ExternallyDeliverable() || grant.allowsExternalNamespace(d.Namespace) {
+			continue
+		}
+		return nil, nil, fmt.Errorf(
+			"%w: %w: event type %q is declared with %q visibility but namespace %q is not among the external namespaces the operator granted solution %q",
+			ErrSolutionAuditDeclarationRejected, ErrSolutionAuditNamespaceNotExternal,
+			d.Type, AuditVisibilityExternal, d.Namespace, solutionID)
+	}
 	// declared is sorted by type, and '.' sorts below every character a
 	// namespace may contain, so namespaces is sorted and each appears once;
 	// taking the locks in that order is what keeps two admissions spanning the
@@ -628,6 +727,16 @@ func (s *Service) admitDeclaredAuditEventTypesWritten(ctx context.Context, solut
 			return nil, nil, err
 		}
 		if admitted != nil {
+			// Visibility is what decides whether this type's events leave the
+			// platform, and both directions of a change are silent to everyone
+			// affected: narrowing stops deliveries to endpoints already
+			// subscribed, widening starts sending facts out under a name a
+			// tenant subscribed to when it meant something else.
+			if admitted.Visibility != d.Visibility {
+				return nil, nil, declarationRejected(
+					"event type %q is admitted with %q visibility and may not become %q; declare another type instead",
+					d.Type, admitted.Visibility, d.Visibility)
+			}
 			if err := checkAdditiveAuditFieldChange(*admitted, d); err != nil {
 				return nil, nil, err
 			}

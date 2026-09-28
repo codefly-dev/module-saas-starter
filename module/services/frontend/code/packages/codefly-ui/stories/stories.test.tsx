@@ -40,7 +40,12 @@ for (const [section, stories] of Object.entries({
 			expect(
 				baseElement.textContent?.trim() ||
 					baseElement.querySelector(
-						"input[aria-label], [aria-busy], svg[role=img] path",
+						// A story has to have rendered something. Most prove it with
+						// text; these are the primitives whose whole output is
+						// non-textual, and each is admitted only in its accessible form —
+						// a bar or a spinner with no accessible name has not rendered
+						// anything a reader can use, so it should still fail here.
+						"input[aria-label], [aria-busy], svg[role=img] path, [role=progressbar][aria-label]",
 					),
 			).toBeTruthy();
 			assertSkinRules(baseElement, HOUSE_RULES);

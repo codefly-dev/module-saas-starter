@@ -70,6 +70,17 @@ func (r ResolvedAuditEvent) Redact(payload map[string]any) map[string]any {
 	return out
 }
 
+// ExternallyDeliverable reports whether an event of this type may be delivered
+// to a tenant's outbound webhook endpoint. It answers over the WHOLE registry,
+// which is the point: the code-owned half records the fact in the composed
+// event catalog, and the declared half on the type's own row, and a gate that
+// consulted only one of them is exactly how a declared type came to be
+// subscribable and undeliverable. An unregistered type is never deliverable —
+// eligibility is granted by declaration, never by omission.
+func (r ResolvedAuditEvent) ExternallyDeliverable() bool {
+	return r.Registered && r.Definition.ExternallyDeliverable()
+}
+
 // Validate checks a payload against the definition. An unregistered type is
 // an error.
 func (r ResolvedAuditEvent) Validate(t EventType, payload map[string]any) error {

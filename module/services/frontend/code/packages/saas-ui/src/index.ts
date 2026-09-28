@@ -4,13 +4,13 @@ export {
 } from "./datasources/collection-access.js";
 export { ConnectGitHubForm } from "./datasources/connect-github-form.js";
 export {
-	DatasourceAccountLinks,
-	DatasourceDirectoryPanel,
-} from "./datasources/directory.js";
-export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
+export {
+	DatasourceAccountLinks,
+	DatasourceDirectoryPanel,
+} from "./datasources/directory.js";
 export {
 	createDatasourceClient,
 	datasourceClientOverTransport,
@@ -27,30 +27,50 @@ export {
 	type ConnectGitHubValues,
 	connectGitHubSchema,
 } from "./datasources/schema.js";
+export {
+	SourceSyncProgress,
+	useSourceSync,
+} from "./datasources/sync-progress.js";
+// The sync-progress model is exported beside its component so a consumer can
+// render the same phases in its own shell — a compact line in a header, say —
+// without re-deriving them from the phase names and getting the terminal cases
+// (a done sync that handed nothing off, a failure that is still retrying)
+// subtly wrong.
+export {
+	DEFAULT_STALL_AFTER_MS,
+	type DescribeSyncOptions,
+	describeSync,
+	SYNC_STEPS,
+	type SyncProgressCount,
+	type SyncProgressReport,
+	type SyncProgressState,
+	type SyncProgressTone,
+	type SyncStepName,
+} from "./datasources/sync-progress-model.js";
+export {
+	notifySourceSyncRequested,
+	onSourceSyncRequested,
+} from "./datasources/sync-requests.js";
 export type {
 	AccessibleScopeView,
 	AccountLinkHandle,
 	AccountLinkView,
-	DatasourceDirectoryView,
-	DomainView,
-	GroupBindingView,
 	CollectionAccessView,
 	CollectionGrantSubject,
 	CollectionGrantView,
 	ConnectGitHubInput,
 	DatasourceClient,
+	DatasourceDirectoryView,
 	DatasourceProviderName,
 	DatasourceStatusName,
 	DatasourceView,
+	DomainView,
+	GroupBindingView,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
 	SourceSyncTriggerName,
 	SourceSyncView,
 } from "./datasources/types.js";
-export {
-	notifySourceSyncRequested,
-	onSourceSyncRequested,
-} from "./datasources/sync-requests.js";
 export { parsePaths } from "./datasources/util.js";
 // The whole solution surface, so the package root and
 // `@codefly-dev/saas-ui/solution` name the same set. A partial root left

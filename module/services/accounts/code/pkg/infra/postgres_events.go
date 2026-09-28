@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"accounts/pkg/business"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/events"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
@@ -478,13 +479,20 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 		}
 		return nil
 	}
+	// Resolved once per event rather than per matching endpoint: a type the
+	// compiled catalog does not publish costs one read, and every endpoint
+	// subscribed to it then shares the answer.
+	external, err := p.externallyDeliverable(ctx, tx, e.GetType())
+	if err != nil {
+		return err
+	}
 	deduplicated, endpointsGone := 0, 0
 	for _, subscription := range subscriptions {
 		if !events.Matches(subscription.TypePattern, e.GetType()) {
 			continue
 		}
 		if subscription.Delivery == events.DeliveryWebhook {
-			outcome, err := p.relayToWebhook(ctx, tx, e, subscription)
+			outcome, err := p.relayToWebhook(ctx, tx, e, subscription, external)
 			if err != nil {
 				return err
 			}
@@ -531,14 +539,47 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 	return nil
 }
 
+// externallyDeliverable reports whether events of this type may leave the
+// platform, over the whole registry rather than one half of it.
+//
+// The compiled catalog answers for every type module-compose saw: that is where
+// a code-owned audit type and a composed module's published domain events
+// record their visibility. It cannot answer for a type a solution or a composed
+// module declared at runtime, which compose never saw — the reason such a type
+// could be subscribed to and never delivered. Those are rows of
+// audit_event_types, and the column is the same fact under the same vocabulary.
+//
+// A type in neither is not deliverable: eligibility is granted by declaration,
+// never by omission. A read failure is an error, not a "no" — refusing on it
+// would silently drop a delivery that is owed, and the relay retries.
+func (p *PostgresEventTransport) externallyDeliverable(ctx context.Context, tx pgx.Tx, eventType string) (bool, error) {
+	if eventcatalog.IsExternalPublished(eventType) {
+		return true, nil
+	}
+	var external bool
+	err := tx.QueryRow(ctx,
+		`SELECT visibility = $2 FROM public.audit_event_types WHERE name = $1`,
+		eventType, business.AuditVisibilityExternal).Scan(&external)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("events: resolve visibility of %q: %w", eventType, err)
+	}
+	return external, nil
+}
+
 // relayToWebhook dispatches one event to one endpoint registration. Two gates
 // stand between a matching pattern and an outbound request. The type must be
 // declared external, because visibility is what makes a fact eligible to leave
 // the platform and a wildcard subscription can match a type registered later or
-// reclassified since. The event's tenant must be the subscription's, because a
-// pattern says nothing about ownership and the relay runs with RLS bypassed —
-// this is the only thing standing between one tenant's event and another
-// tenant's endpoint.
+// reclassified since; external is resolved by the caller over the whole
+// registry (externallyDeliverable) and passed in, so this gate is never the
+// half-registry check that let a declared type be subscribed to and never
+// delivered. The event's tenant must be the subscription's, because a pattern
+// says nothing about ownership and the relay runs with RLS bypassed — this is
+// the only thing standing between one tenant's event and another tenant's
+// endpoint.
 //
 // Past those, the work is the dispatcher's existing contract: a pending
 // webhook_deliveries row holding the exact bytes that will be signed, and the
@@ -549,8 +590,9 @@ func (p *PostgresEventTransport) relayToWebhook(
 	tx pgx.Tx,
 	e *eventsv1.EventEnvelope,
 	subscription events.Subscription,
+	external bool,
 ) (WebhookDeliveryOutcome, error) {
-	if !eventcatalog.IsExternalPublished(e.GetType()) {
+	if !external {
 		return WebhookDelivered, nil
 	}
 	if subscription.OrgID == "" || subscription.OrgID != e.GetTenantId() {

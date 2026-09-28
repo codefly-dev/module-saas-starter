@@ -123,6 +123,7 @@ export const auditEventTypesQuery = (
 			deprecated: t.deprecated,
 			description: t.description,
 			marksUserJoined: t.marksUserJoined,
+			webhookEligible: t.webhookEligible,
 		}));
 	},
 	staleTime: 5 * 60 * 1000,

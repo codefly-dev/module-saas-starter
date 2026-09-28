@@ -57,6 +57,14 @@ type ModulePrincipalGrant struct {
 	Prefix             string
 	Queues             []string
 	Namespaces         []string
+	// ExternalNamespaces is the subset of Namespaces whose declared audit event
+	// types may be delivered outside the platform, to a tenant's own outbound
+	// webhook endpoint. It is the operator's half of that decision: the producer
+	// declares which of its facts are customer-facing (`visibility: external`),
+	// and this says whether the producer may send anything out at all. Empty
+	// grants nothing, so a composition that says nothing keeps every declared
+	// type inside the platform.
+	ExternalNamespaces []string
 	Resources          []string
 	CrossTenant        bool
 	Tenant             string
@@ -88,6 +96,19 @@ func (g ModulePrincipalGrant) allowsResource(resource string) bool {
 // empty Namespaces denies every publish (fail-closed).
 func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
 	for _, n := range g.Namespaces {
+		if n == namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// allowsExternalNamespace reports whether the operator granted this principal's
+// declared audit types in the namespace the right to leave the platform. Empty
+// denies every namespace (fail-closed): a fact leaves on an explicit grant,
+// never on the absence of one.
+func (g ModulePrincipalGrant) allowsExternalNamespace(namespace string) bool {
+	for _, n := range g.ExternalNamespaces {
 		if n == namespace {
 			return true
 		}
@@ -169,7 +190,8 @@ func ModulePrincipalID(prefix string) string {
 
 // ParseModulePrincipalRegistry decodes the deployment-provided registry of
 // module service principals. The document its JSON describes is a map of module
-// prefix to {"queues": [...], "namespaces": [...], "resources": [...],
+// prefix to {"queues": [...], "namespaces": [...], "external_namespaces": [...],
+// "resources": [...],
 // "cross_tenant": bool, "tenant": "<org uuid>"}, indexed here by the principal id
 // derived from that prefix. An empty string yields an empty registry, which
 // denies every caller (fail-closed).
@@ -182,6 +204,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		OperationAudiences map[string]ModuleOperationAudience `json:"operation_audiences"`
 		Queues             []string                           `json:"queues"`
 		Namespaces         []string                           `json:"namespaces"`
+		ExternalNamespaces []string                           `json:"external_namespaces"`
 		Resources          []string                           `json:"resources"`
 		CrossTenant        bool                               `json:"cross_tenant"`
 		Tenant             string                             `json:"tenant"`
@@ -228,12 +251,26 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 				)
 			}
 		}
+		// An external namespace the entry does not also bind is a composition that
+		// cannot mean what it says: the solution can declare nothing there, so the
+		// grant would sit in the registry looking like permission to send a type
+		// that can never be admitted. Refused at parse time, where the service
+		// fails to boot naming both, rather than at the registration that trips
+		// over it months later.
+		for _, namespace := range grant.ExternalNamespaces {
+			if !slices.Contains(grant.Namespaces, namespace) {
+				return nil, fmt.Errorf(
+					"module principal %q grants external delivery for namespace %q, which is not among its bound namespaces %v",
+					prefix, namespace, grant.Namespaces)
+			}
+		}
 		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
 			ReadAudiences:      grant.ReadAudiences,
 			OperationAudiences: grant.OperationAudiences,
 			Prefix:             prefix,
 			Queues:             grant.Queues,
 			Namespaces:         grant.Namespaces,
+			ExternalNamespaces: grant.ExternalNamespaces,
 			Resources:          grant.Resources,
 			CrossTenant:        grant.CrossTenant,
 			Tenant:             tenant.String(),

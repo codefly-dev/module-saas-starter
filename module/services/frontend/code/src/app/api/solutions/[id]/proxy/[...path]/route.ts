@@ -169,7 +169,7 @@ async function handler(
 		// from an unresolvable endpoint above so an operator can tell "no gateway
 		// configured" from "gateway down".
 		console.error(
-			`solution proxy: gateway unreachable solution=${id} alias=${solution.backend.serviceAlias}`,
+			`solution proxy: gateway unreachable solution=${id} alias=${solution.backend.serviceAlias} path=${suffix} method=${request.method}`,
 			err,
 		);
 		return new Response("solution gateway unreachable", { status: 502 });
@@ -204,8 +204,15 @@ async function handler(
 		// 4xx is a client/auth condition (e.g. an expired token on a poll) and
 		// would only spam the log at error level.
 		const log = upstream.status >= 500 ? console.error : console.warn;
+		// The path is the whole diagnosis. Without it a run of these lines says
+		// only that *something* under a solution failed, and an operator holding
+		// them cannot tell one procedure from another — which is exactly how a
+		// panel that could never have worked reads the same as an expired token.
+		// It is the caller's own suffix, already percent-encoded above, so it
+		// carries no identity: a bearer travels in a header and a cursor in
+		// `last-event-id`, both deliberately kept out of the URL.
 		log(
-			`solution proxy: upstream error solution=${id} status=${upstream.status} category=${category} request_id=${upstreamRequestID ?? ""}`,
+			`solution proxy: upstream error solution=${id} path=${suffix} method=${request.method} status=${upstream.status} category=${category} request_id=${upstreamRequestID ?? ""}`,
 		);
 	}
 

@@ -17,6 +17,7 @@ import {
 	Field,
 	Input,
 	Pagination,
+	Progress,
 	SegmentedControl,
 	Table,
 	TableBody,
@@ -210,5 +211,43 @@ export const TableEmpty = {
 				<TableEmptyState colSpan={2}>No members yet</TableEmptyState>
 			</TableBody>
 		</Table>
+	),
+};
+
+/**
+ * Every tone of the bar on one canvas. The tones exist so a stalled or failed
+ * phase is distinguishable without reading its label, which is only checkable
+ * with them side by side.
+ */
+export const ProgressTones = {
+	render: () => (
+		<div className="flex flex-col gap-4">
+			{(["neutral", "success", "warning", "danger"] as const).map((tone) => (
+				<Progress
+					key={tone}
+					value={60}
+					tone={tone}
+					label={`${tone} progress`}
+					valueText={`${tone} at 60%`}
+				/>
+			))}
+		</div>
+	),
+};
+
+/** The stepped form: a phase ladder rather than a smooth fill. */
+export const ProgressSteps = {
+	render: () => (
+		<div className="flex flex-col gap-4">
+			{[0, 25, 50, 75, 100].map((value) => (
+				<Progress
+					key={value}
+					value={value}
+					steps={4}
+					label={`Phase ${value}%`}
+					valueText={`Step ${value / 25} of 4`}
+				/>
+			))}
+		</div>
 	),
 };

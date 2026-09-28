@@ -29,10 +29,17 @@ const auditEventsSchemaRef = "saas/events/v1/events.proto#EventEnvelope"
 // event.
 //
 // Outbound webhooks are subscriptions with `delivery = webhook`, and only an
-// `external`-visibility catalog type may be delivered to one. A customer can
-// subscribe an endpoint to any registered audit event type, so every registered
-// type is published here — a curated subset would silently stop delivering to
-// endpoints already subscribed to whatever it left out.
+// `external`-visibility type may be delivered to one. Every type in the
+// code-owned catalog is published here — a curated subset would silently stop
+// delivering to endpoints already subscribed to whatever it left out.
+//
+// This renders the CODE catalog only, which is all it can render: a type a
+// solution or a composed module declares is admitted at runtime, long after
+// compose read this contribution. Such a type carries its own visibility on its
+// audit_event_types row instead, and the emitter and the relay resolve
+// eligibility over both halves (business.AuditEventResolver). So "a customer can
+// subscribe to any registered type" holds for the catalog and is decided per
+// declaration for the rest.
 //
 // A platform-scope record (one emitted with no organization) is registered but
 // never published: the emitter publishes only for a tenant, so those types exist

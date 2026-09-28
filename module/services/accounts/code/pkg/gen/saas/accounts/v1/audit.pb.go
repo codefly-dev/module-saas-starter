@@ -1078,6 +1078,14 @@ type AuditEventType struct {
 	// stand in for it — a category groups events for facets, and not every
 	// identity event is a person arriving.
 	MarksUserJoined bool `protobuf:"varint,8,opt,name=marks_user_joined,json=marksUserJoined,proto3" json:"marks_user_joined,omitempty"`
+	// Whether an outbound webhook endpoint may subscribe to this type and ever
+	// receive it. A type is eligible when it is declared with external
+	// visibility: every platform type is, and a solution-declared or
+	// module-declared type is only when its producer declared it external AND
+	// the operator marked its namespace externally deliverable. The registry
+	// owns the answer so a subscription form cannot offer a name that can never
+	// fire, which is the silent acceptance this flag exists to end.
+	WebhookEligible bool `protobuf:"varint,9,opt,name=webhook_eligible,json=webhookEligible,proto3" json:"webhook_eligible,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1164,6 +1172,13 @@ func (x *AuditEventType) GetNamespace() string {
 func (x *AuditEventType) GetMarksUserJoined() bool {
 	if x != nil {
 		return x.MarksUserJoined
+	}
+	return false
+}
+
+func (x *AuditEventType) GetWebhookEligible() bool {
+	if x != nil {
+		return x.WebhookEligible
 	}
 	return false
 }
@@ -1331,7 +1346,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x19AggregateAuditLogResponse\x12@\n" +
 	"\abuckets\x18\x01 \x03(\v2&.saas.accounts.v1.AuditAggregateBucketR\abuckets\x124\n" +
 	"\x16scope_contract_version\x18\x02 \x01(\rR\x14scopeContractVersion\"\x1c\n" +
-	"\x1aListAuditEventTypesRequest\"\xfc\x01\n" +
+	"\x1aListAuditEventTypesRequest\"\xa7\x02\n" +
 	"\x0eAuditEventType\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x1a\n" +
@@ -1342,7 +1357,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"deprecated\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x1c\n" +
 	"\tnamespace\x18\a \x01(\tR\tnamespace\x12*\n" +
-	"\x11marks_user_joined\x18\b \x01(\bR\x0fmarksUserJoined\"U\n" +
+	"\x11marks_user_joined\x18\b \x01(\bR\x0fmarksUserJoined\x12)\n" +
+	"\x10webhook_eligible\x18\t \x01(\bR\x0fwebhookEligible\"U\n" +
 	"\x1bListAuditEventTypesResponse\x126\n" +
 	"\x05types\x18\x01 \x03(\v2 .saas.accounts.v1.AuditEventTypeR\x05types2\x9d\x06\n" +
 	"\fAuditService\x12\xb5\x01\n" +

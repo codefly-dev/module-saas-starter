@@ -55,7 +55,17 @@ survives a restart and reaches every replica, and is only served when it is
   stripped like a catalog one and a declared type is never dead-lettered as
   unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
   `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
-  lists its namespace.
+  lists its namespace. A declared type also carries a **visibility** — `tenant`
+  by default, or `external` — and only an `external` one is ever delivered to a
+  tenant's outbound webhook endpoint. It takes two keys: the producer declares
+  it (manifest `dashboard.events[].visibility`, or
+  `ModuleAuditEventTypeDeclaration.visibility`) and the operator grants the
+  namespace external delivery (`external_namespaces`, a subset of `namespaces`,
+  refused at boot if it is not). Visibility is fixed at admission — a
+  re-declaration that changes it is refused — because narrowing would silently
+  stop deliveries to endpoints already subscribed and widening would start
+  sending out facts under a name a tenant subscribed to when it meant something
+  else.
 - A composed **module** with no frontend half declares its own audit event
   types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
   (`pkg/business/module_audit_declarations.go`): the same validator
