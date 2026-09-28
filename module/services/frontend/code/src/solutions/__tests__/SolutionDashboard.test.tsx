@@ -233,6 +233,88 @@ describe("SolutionDashboards", () => {
 		expect(await screen.findByText("Unable to load.")).toBeTruthy();
 	});
 
+	it("writes a metric declared as a percent as a percentage, and a plain ratio as a number", async () => {
+		const rates: DataGraph = {
+			events: [
+				{ name: "passed", type: "review.passed.v1" },
+				{ name: "completed", type: "review.completed.v1" },
+			],
+			metrics: [
+				{
+					id: "passed",
+					kind: "source",
+					filter: { event: "passed" },
+					groupBy: "category",
+					aggregation: "count",
+				},
+				{
+					id: "completed",
+					kind: "source",
+					filter: { event: "completed" },
+					groupBy: "category",
+					aggregation: "count",
+				},
+				{
+					id: "pass_rate",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["passed", "completed"],
+					format: "percent",
+				},
+				{
+					id: "completed_per_pass",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["completed", "passed"],
+				},
+			],
+			dashboards: [
+				{
+					id: "activity",
+					title: "Activity",
+					layout: "grid",
+					widgets: [
+						{
+							id: "w_rate",
+							metric: "pass_rate",
+							visualization: "number",
+							title: "Pass rate",
+						},
+						{
+							id: "w_per_pass",
+							metric: "completed_per_pass",
+							visualization: "number",
+							title: "Completed per pass",
+						},
+					],
+				},
+			],
+		};
+		server.use(
+			http.post(
+				rpc("AuditService", "AggregateAuditLog"),
+				async ({ request }) => {
+					const body = (await request.json()) as { eventType?: string };
+					const count = body.eventType === "review.passed.v1" ? "4" : "10";
+					return HttpResponse.json({
+						buckets: [{ key: "lifecycle", count }],
+					});
+				},
+			),
+		);
+
+		renderDashboards(rates);
+
+		// 4 passed of 10 completed.
+		expect(await within(tile("Pass rate")).findByText("40%")).toBeTruthy();
+		expect(
+			await within(tile("Completed per pass")).findByText(
+				(2.5).toLocaleString(),
+			),
+		).toBeTruthy();
+		expect(screen.queryByText("0.4")).toBeNull();
+	});
+
 	it("reads as loading until the org context resolves, never as empty", () => {
 		authState.organizationId = undefined;
 

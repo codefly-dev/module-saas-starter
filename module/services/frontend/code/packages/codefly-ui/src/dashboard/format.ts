@@ -13,6 +13,15 @@ export function formatAxisValue(value: number): string {
 	return valueFormat.format(value);
 }
 
+// A share from 0 to 1 written as a percentage, to one decimal: 0.4 → "40%",
+// 0.7727 → "77.3%". What a widget whose metric declares `format: "percent"`
+// writes for each value, on the tile, the bars, the table and the y axis.
+const shareFormat = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
+
+export function formatShare(value: number): string {
+	return shareFormat.format(value);
+}
+
 // Series keys that are time buckets arrive as ISO timestamps from the audit RPC
 // (`YYYY-MM-DDThh:mm:ss±hh`); anything else is a plain category key. Gate on the
 // ISO shape so a non-date key ("US East", "42") is never coerced through Date.

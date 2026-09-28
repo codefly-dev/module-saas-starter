@@ -75,3 +75,42 @@ it("preserves partial telemetry and unavailable totals from the SDK view", () =>
 	expect(screen.getByText("Total unavailable")).toBeTruthy();
 	expect(screen.queryByText("0")).toBeNull();
 });
+
+it("writes a percent widget's values as percentages and a plain one as a number", () => {
+	render(
+		<Dashboard
+			data={{
+				widgets: [
+					{
+						id: "rate",
+						visualization: "number",
+						format: "percent",
+						series: { points: [{ key: "all", value: 0.4 }], total: 0.4 },
+					},
+					{
+						id: "outcomes",
+						visualization: "bar",
+						format: "percent",
+						series: {
+							points: [
+								{ key: "won", value: 0.25 },
+								{ key: "lost", value: 0.75 },
+							],
+							total: 1,
+						},
+					},
+					{
+						id: "versions",
+						visualization: "number",
+						series: { points: [{ key: "all", value: 2.25 }], total: 2.25 },
+					},
+				],
+			}}
+		/>,
+	);
+	expect(screen.getByText("40%")).toBeTruthy();
+	expect(screen.getByText("25%")).toBeTruthy();
+	expect(screen.getByText("75%")).toBeTruthy();
+	expect(screen.getByText((2.25).toLocaleString())).toBeTruthy();
+	expect(screen.queryByText("0.4")).toBeNull();
+});

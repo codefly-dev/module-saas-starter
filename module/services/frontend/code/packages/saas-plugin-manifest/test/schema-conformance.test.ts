@@ -101,6 +101,12 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"metric bucket without a time group_by": (m) => {
 		arr(rec(m.dashboard).metrics)[0].groupBy = "actor";
 	},
+	"unsupported source metric format": (m) => {
+		arr(rec(m.dashboard).metrics)[0].format = "currency";
+	},
+	"unsupported derived metric format": (m) => {
+		arr(rec(m.dashboard).metrics)[3].format = "fraction";
+	},
 	"unsupported derived metric operation": (m) => {
 		arr(rec(m.dashboard).metrics)[3].operation = "product";
 	},
@@ -200,6 +206,15 @@ describe("JSON Schema conformance", () => {
 		const widgets = arr(dashboard.widgets);
 		widgets[0].section = "activity";
 		for (const widget of widgets.slice(1)) widget.section = "overview";
+		expect(validateWithSchema(manifest)).toBe(true);
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
+	});
+
+	it("accepts metrics that name a value format in both the schema and the validator", () => {
+		const manifest = clone();
+		const metrics = arr(rec(manifest.dashboard).metrics);
+		metrics[0].format = "number";
+		metrics[3].format = "percent";
 		expect(validateWithSchema(manifest)).toBe(true);
 		expect(() => assertPluginManifest(manifest)).not.toThrow();
 	});

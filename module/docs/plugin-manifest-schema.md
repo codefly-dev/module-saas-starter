@@ -92,7 +92,10 @@ has three node kinds:
 - **`metrics`** — a `source` metric filters one event and compiles to an
   `AuditService.AggregateAuditLog` query (its `groupBy`/`bucket`/`aggregation`
   are exactly that RPC's dimensions); a `derived` metric combines other metrics
-  (`sum`, `ratio`, `difference`).
+  (`sum`, `ratio`, `difference`). Either kind may name a `format`: `number`
+  (the default) writes its value as it is, and `percent` reads it as a share
+  from 0 to 1 and writes it as a percentage (0.4 reads 40%) on every widget
+  that draws it. A ratio is not always a share, so the host never infers one.
 - **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.

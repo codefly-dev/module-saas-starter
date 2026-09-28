@@ -17,6 +17,7 @@ import {
 import {
 	AreaChart,
 	BarList,
+	formatShare,
 	LineChart,
 	SortableBoard,
 	type SortableGroupHandle,
@@ -178,6 +179,10 @@ function withoutValues({
 
 function WidgetValues({ widget }: { widget: ResolvedWidget }) {
 	const { series, visualization } = widget;
+	// A metric declared as a percent is a share from 0 to 1, written as a
+	// percentage everywhere the tile shows a value; a plain number keeps each
+	// chart's own default.
+	const formatValue = widget.format === "percent" ? formatShare : undefined;
 	const missing = withoutValues(widget);
 	if (missing) {
 		return <p className="text-sm text-muted-foreground">{missing.tile}</p>;
@@ -185,18 +190,32 @@ function WidgetValues({ widget }: { widget: ResolvedWidget }) {
 	switch (visualization) {
 		case "line":
 			return (
-				<LineChart points={series.points} className="text-primary/70" axes />
+				<LineChart
+					points={series.points}
+					className="text-primary/70"
+					axes
+					formatValue={formatValue}
+				/>
 			);
 		case "area":
 			return (
-				<AreaChart points={series.points} className="text-primary/70" axes />
+				<AreaChart
+					points={series.points}
+					className="text-primary/70"
+					axes
+					formatValue={formatValue}
+				/>
 			);
 		case "bar":
-			return <BarList points={series.points} />;
+			return <BarList points={series.points} formatValue={formatValue} />;
 		case "number":
 			// A number with no total has said so above; this only narrows it.
 			return series.total === null ? null : (
-				<StatChart total={series.total} points={series.points} />
+				<StatChart
+					total={series.total}
+					points={series.points}
+					formatValue={formatValue}
+				/>
 			);
 		case "table":
 			return (
@@ -206,7 +225,9 @@ function WidgetValues({ widget }: { widget: ResolvedWidget }) {
 							<tr key={point.key} className="border-b last:border-0">
 								<td className="py-1 text-muted-foreground">{point.key}</td>
 								<td className="py-1 text-right font-mono">
-									{point.value.toLocaleString()}
+									{formatValue
+										? formatValue(point.value)
+										: point.value.toLocaleString()}
 								</td>
 							</tr>
 						))}

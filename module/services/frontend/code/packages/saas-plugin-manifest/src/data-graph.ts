@@ -55,6 +55,13 @@ export type MetricAggregation =
 /** How a derived metric combines the metrics it references. */
 export type MetricOperation = "sum" | "ratio" | "difference";
 
+/**
+ * How a metric's value is written wherever the dashboard shows it. `number`,
+ * the default, writes it as it is. `percent` reads it as a share from 0 to 1
+ * and writes it times 100 with a percent sign, so 0.4 reads "40%".
+ */
+export type MetricValueFormat = "number" | "percent";
+
 /** How a widget renders the metric it is bound to. */
 export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
@@ -145,6 +152,8 @@ export interface SourceMetric {
 	field?: string;
 	/** Quantile in (0,1] for `aggregation: "percentile"`; forbidden otherwise. */
 	percentile?: number;
+	/** How the value is written; `number` when omitted. */
+	format?: MetricValueFormat;
 }
 
 /** A metric derived by combining metrics already declared in the same graph. */
@@ -161,6 +170,8 @@ export interface DerivedMetric {
 	 * least two.
 	 */
 	inputs: readonly string[];
+	/** How the value is written; `number` when omitted. */
+	format?: MetricValueFormat;
 }
 
 export type Metric = SourceMetric | DerivedMetric;
@@ -269,6 +280,7 @@ function isGroupDimension(value: unknown): value is MetricGroupBy {
 	);
 }
 const OPERATION: readonly MetricOperation[] = ["sum", "ratio", "difference"];
+const VALUE_FORMAT: readonly MetricValueFormat[] = ["number", "percent"];
 const VISUALIZATION: readonly WidgetVisualization[] = [
 	"line",
 	"bar",
@@ -433,6 +445,7 @@ function validateSourceMetric(value: Record<string, unknown>): void {
 			"aggregation",
 			"field",
 			"percentile",
+			"format",
 		],
 		`metric '${String(value.id)}'`,
 	);
@@ -542,7 +555,7 @@ function validateSourceMetric(value: Record<string, unknown>): void {
 function validateDerivedMetric(value: Record<string, unknown>): void {
 	assertExactKeys(
 		value,
-		["id", "kind", "title", "description", "operation", "inputs"],
+		["id", "kind", "title", "description", "operation", "inputs", "format"],
 		`metric '${String(value.id)}'`,
 	);
 	const context = `metric '${String(value.id)}'`;
@@ -585,6 +598,11 @@ function validateMetric(value: unknown): asserts value is Metric {
 	);
 	if (value.kind === "source") validateSourceMetric(value);
 	else validateDerivedMetric(value);
+	assertGraph(
+		value.format === undefined ||
+			VALUE_FORMAT.includes(value.format as MetricValueFormat),
+		`metric '${String(value.id)}' format '${String(value.format)}' is unsupported`,
+	);
 }
 
 function validateWidget(

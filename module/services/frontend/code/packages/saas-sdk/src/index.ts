@@ -84,6 +84,7 @@ export type {
 	MetricFilter,
 	MetricGroupBy,
 	MetricOperation,
+	MetricValueFormat,
 	MetricWidget,
 	SourceMetric,
 	WidgetVisualization,

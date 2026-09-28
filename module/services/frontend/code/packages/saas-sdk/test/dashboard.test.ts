@@ -104,6 +104,23 @@ describe("runDashboard", () => {
 		expect(data.byMetric.events_over_time.metricId).toBe("events_over_time");
 	});
 
+	it("carries each widget's metric format, and none for a metric without one", async () => {
+		const formatted = defineDataGraph({
+			...graph,
+			metrics: [{ ...graph.metrics[0], format: "percent" }, graph.metrics[1]],
+		});
+		const { client } = fakeAuditClient(() => [
+			{ key: "user.signed_in.v1", count: 7 },
+		]);
+
+		const data = await runDashboard(client, formatted, "activity", context);
+
+		expect(data.widgets.map((widget) => widget.format)).toEqual([
+			"percent",
+			undefined,
+		]);
+	});
+
 	it("rejects an unknown dashboard id", async () => {
 		const { client } = fakeAuditClient(() => []);
 		await expect(

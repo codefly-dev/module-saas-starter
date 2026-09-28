@@ -276,6 +276,32 @@ describe("assertDataGraph", () => {
 	});
 });
 
+describe("metric value format", () => {
+	it("accepts a percent format on a derived and a source metric", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					metric(g, 2).format = "percent";
+					metric(g, 0).format = "number";
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("accepts a metric with no format", () => {
+		expect(() => assertDataGraph(graph())).not.toThrow();
+	});
+
+	it.each([
+		["source", 0],
+		["derived", 2],
+	])("rejects an unsupported format on a %s metric", (_kind, index) => {
+		expect(() =>
+			assertDataGraph(mutated((g) => (metric(g, index).format = "currency"))),
+		).toThrow(/format 'currency' is unsupported/);
+	});
+});
+
 describe("dashboard sections", () => {
 	// The reference graph with its dashboard split into an overview band and an
 	// activity band, and a third section no widget is in yet.

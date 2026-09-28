@@ -202,6 +202,23 @@ describe("parseManifest dashboard slot", () => {
     expect(parseManifest(baseManifest({ dashboard: misplaced }))).toBeNull();
   });
 
+  it("carries a metric's value format through", () => {
+    const formatted = {
+      ...validGraph,
+      metrics: [{ ...validGraph.metrics[0], format: "percent" }],
+    };
+    const parsed = parseManifest(baseManifest({ dashboard: formatted }));
+    expect(parsed?.dashboard?.metrics[0]?.format).toBe("percent");
+  });
+
+  it("rejects the registration when a metric names an unsupported format", () => {
+    const misformatted = {
+      ...validGraph,
+      metrics: [{ ...validGraph.metrics[0], format: "currency" }],
+    };
+    expect(parseManifest(baseManifest({ dashboard: misformatted }))).toBeNull();
+  });
+
   it("rejects the whole registration when the dashboard graph is malformed", () => {
     // A widget bound to a metric the graph never declares fails referential
     // integrity; the registration is refused rather than stored without it.
