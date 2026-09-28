@@ -78,6 +78,52 @@ export function useDelayedLoading(
 	return visible;
 }
 
+export interface LoadingPhase {
+	/** Show the indicator: the wait has earned one and has not yet paid out its floor. */
+	indicator: boolean;
+	/**
+	 * Too early to say anything. Render **nothing** — not the indicator, and not
+	 * whatever you show when there is no data.
+	 */
+	quiet: boolean;
+}
+
+/**
+ * A wait in three states, for any surface whose "nothing yet" is not neutral.
+ *
+ * `useDelayedLoading` answers one question — may I show an indicator — and a
+ * caller that feeds its boolean straight into a renderer has quietly answered a
+ * different one. During the delay the hook says `false`, the renderer reads
+ * "not loading", and the next branch is usually the empty state. So "No
+ * documents yet", with its invitation to go and connect something, flashes for
+ * the first 200 ms of every load — strictly worse than the indicator the delay
+ * was meant to spare the reader, because it is not merely noise, it is wrong.
+ *
+ * A list, a table and a panel with an empty state all have this shape, which is
+ * why this is in the kit rather than in each of them:
+ *
+ * ```tsx
+ * const { indicator, quiet } = useLoadingPhase(query.isPending);
+ * if (indicator) return <Spinner label="Loading documents" />;
+ * if (quiet) return null;              // too early to say anything at all
+ * if (!documents.length) return <EmptyState … />;
+ * ```
+ *
+ * `DelayedLoading` cannot express this: a component that renders `null` while
+ * hidden gives its caller no way to tell "hidden because idle" from "hidden
+ * because it is too early to speak".
+ *
+ * Reported by a consuming kit, whose own "skeleton, then the empty state" test
+ * went red on exactly this the first time the rule was applied.
+ */
+export function useLoadingPhase(
+	active: boolean,
+	options: DelayedLoadingOptions = {},
+): LoadingPhase {
+	const indicator = useDelayedLoading(active, options);
+	return { indicator, quiet: active && !indicator };
+}
+
 export interface SpinnerProps {
 	/**
 	 * Required: what is being waited for. A spinner with no accessible name
@@ -147,6 +193,14 @@ export interface DelayedLoadingProps extends DelayedLoadingOptions {
 /**
  * Renders a loading indicator only once a wait has earned one, and then for
  * long enough to read.
+ *
+ * **Not for a `Suspense` fallback.** This holds state, and a fallback that
+ * holds state makes React re-render the boundary's *content* when that state
+ * settles — one mount and two renders of the child, which re-runs its `useMemo`
+ * and can rebuild whatever that memo constructs. A fallback should be a pure
+ * element; gate it at the boundary's parent instead. Measured by a consuming
+ * kit, whose "the facade is built once" test went red on exactly this, and
+ * whose child went back to one render with the hook removed.
  *
  * The product rule this exists to make unwritable-otherwise: **never flash a
  * loading indicator.** Nothing appears before `delayMs`; once something has
