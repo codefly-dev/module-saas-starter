@@ -564,6 +564,52 @@ func TestSolutionHostBinding_ABindingRefusedAtItsFirstGenerationIsStillVisible(t
 	}
 }
 
+// A refusal that stands across passes keeps the instant it started. Every pass
+// re-reads the same mount and re-records the same refusal, so if the instant were
+// replaced each time, a binding stuck for a day would read as one that started
+// seconds ago — which is the opposite of what the field is for. This covers the
+// apply-path refusal specifically, because that is the one a real deployment hits:
+// an alias this host cannot address is refused when the generation is applied, not
+// when it is admitted.
+func TestSolutionHostBinding_AStandingRefusalKeepsWhenItStarted(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	unaddressable := declaredBinding(t, solutionID, 1)
+	unaddressable.Routes[0].Alias = solutionID + ".internal"
+	mount := &deliveredSet{}
+	mount.put(t, unaddressable)
+	reconciler := newTestReconciler(t, mount)
+
+	if err := reconciler.RunOnce(testCtx); err == nil {
+		t.Fatal("an unaddressable route must be reported")
+	}
+	first := bindingState(t, unaddressable.Binding)
+	if first.PendingSince == nil {
+		t.Fatal("a refusal must record when it started")
+	}
+
+	if err := reconciler.RunOnce(testCtx); err == nil {
+		t.Fatal("the refusal must still stand on the next pass")
+	}
+	second := bindingState(t, unaddressable.Binding)
+	if second.PendingSince == nil || !second.PendingSince.Equal(*first.PendingSince) {
+		t.Fatalf("pending_since moved from %v to %v across passes; a standing refusal must keep when it started",
+			first.PendingSince, second.PendingSince)
+	}
+	if second.PendingReason != first.PendingReason {
+		t.Fatalf("the reason changed across passes: %q then %q", first.PendingReason, second.PendingReason)
+	}
+
+	// And a generation that does apply clears both.
+	mount.put(t, declaredBinding(t, solutionID, 2))
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("the addressable generation must apply: %v", err)
+	}
+	cleared := bindingState(t, unaddressable.Binding)
+	if cleared.PendingReason != "" || cleared.PendingSince != nil {
+		t.Fatalf("pending state survived the apply: %q since %v", cleared.PendingReason, cleared.PendingSince)
+	}
+}
+
 // A route alias handed from one binding to another completes in one pass: the
 // release is applied before the claim, so the claimant does not collide with the
 // key the previous holder still records.
