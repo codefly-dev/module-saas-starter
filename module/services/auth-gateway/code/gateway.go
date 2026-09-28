@@ -63,7 +63,7 @@ type Gateway struct {
 	// closed rather than answering an empty projection, which would retract every
 	// solution a viewer is currently using.
 	solutionEntitlements solutionEntitlementClient
-	workContext        *workContextVerifier
+	workContext          *workContextVerifier
 }
 
 // NewGateway constructs a gateway with explicit route matching.
