@@ -35,6 +35,7 @@ pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithCo
 pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).advanceCursor: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).allocateOrdinal: WithControlPlane
+pkg/business/datasource_deliveries.go: (*Service).parkUnreadablePublicSource: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).snapshotAt: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).snapshotAt: WithControlPlane
 pkg/business/datasource_github_app_push.go: (*Service).FanOutGitHubAppPush: WithControlPlane

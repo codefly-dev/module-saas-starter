@@ -3,6 +3,8 @@ package infra
 import (
 	"context"
 
+	"accounts/pkg/infra/internal/txbind"
+
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -108,4 +110,19 @@ func (writeGrantingAuthenticator) AuthorizeDatabaseWrite(context.Context, scoped
 // It returns the Factory, not a pool: the pools stay private to the primitive.
 func OpenScopedBoundaryWithWrites(ctx context.Context, readOnlyConnection, readWriteConnection string) (*scopedpostgres.Factory, func(), error) {
 	return openScopedBoundaryAs(ctx, readOnlyConnection, readWriteConnection, nil, writeGrantingAuthenticator{})
+}
+
+// BindControlPlaneTx binds tx to ctx as a control-plane transaction, exactly as
+// WithControlPlane binds its own, so a test can hand a store method a
+// transaction it opened itself.
+//
+// The binding key is internal to pkg/infra by design: only the code that opens
+// a transaction may say what authority it carries, so nothing outside can forge
+// one. Before that, a caller could inject a transaction with a plain string
+// context key; a test still doing so is not refused, it is silently ignored,
+// and the store method falls back to the request pool — where a control-plane
+// operation fails on a permission it would never have lacked. This is the
+// supported way to do it.
+func BindControlPlaneTx(ctx context.Context, tx pgx.Tx) context.Context {
+	return txbind.BindControlPlane(ctx, tx)
 }
