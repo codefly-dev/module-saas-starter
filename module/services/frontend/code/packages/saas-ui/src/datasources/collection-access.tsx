@@ -183,7 +183,7 @@ export function CollectionGrants({
 				)}
 			</div>
 			{connectedRepo ? (
-				<p className="text-sm">
+				<p className="type-body">
 					{connectedRepo} is connected and syncing into {collection.label}.
 					Nobody can read it yet — connecting grants no access, not even to
 					you. Grant the members and teams who need it now, or later from

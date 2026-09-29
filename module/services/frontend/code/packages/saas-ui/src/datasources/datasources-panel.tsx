@@ -998,7 +998,7 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
 						? "Signing secret configured"
 						: "No signing secret"}
 				</div>
-				<div className="text-xs text-muted-foreground">
+				<div className="type-caption-plain text-muted-foreground">
 					This host does not report how live updates reach this source.
 				</div>
 			</>
@@ -1013,7 +1013,9 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
 	return (
 		<>
 			<div>{label}</div>
-			{every && <div className="text-xs text-muted-foreground">{every}</div>}
+			{every && (
+				<div className="type-caption-plain text-muted-foreground">{every}</div>
+			)}
 		</>
 	);
 }
