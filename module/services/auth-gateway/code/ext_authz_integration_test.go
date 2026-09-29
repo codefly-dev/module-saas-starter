@@ -5,9 +5,11 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,18 +161,40 @@ func makeCheckRequestWithPath(path string, headers map[string]string) *authv3.Ch
 	}
 }
 
+// Check answers on the credential, never on the path: a request with no
+// credential is denied whatever it asks for, and the Gateway's public branch
+// owns the decision to forward such a request anyway, without identity. These
+// two pin that division, because a Check that started admitting paths would hand
+// every public route an unauthenticated OK with a stamped identity header set.
+//
+// Public REACHABILITY is therefore not asserted here — it is a Gateway-layer
+// property, proven end to end by TestIntegration_Gateway_LoginPath_NoToken_Allowed,
+// which logs in through the real gateway carrying no token at all.
 func TestCheck_PublicPath_AuthEndpoint(t *testing.T) {
 	resp, err := testExtAuthz.Check(testCtx,
 		makeCheckRequestWithPath("/v1/auth/authenticate", map[string]string{}))
 	require.NoError(t, err)
-	require.NotNil(t, resp.GetOkResponse(), "login must be publicly reachable")
+	requireCredentiallessDenial(t, resp, "the login path is not an exception to Check's credential rule")
 }
 
 func TestCheck_PublicPath_Health(t *testing.T) {
 	resp, err := testExtAuthz.Check(testCtx,
 		makeCheckRequestWithPath("/health", map[string]string{}))
 	require.NoError(t, err)
-	require.NotNil(t, resp.GetOkResponse())
+	requireCredentiallessDenial(t, resp, "health is not an exception to Check's credential rule")
+}
+
+// requireCredentiallessDenial asserts Check refused, with 401, and stamped no
+// identity at all — a denial that still carried identity headers would be worse
+// than an allow, because the Gateway forwards a credential-less public request
+// after the denial.
+func requireCredentiallessDenial(t *testing.T, resp *authv3.CheckResponse, why string) {
+	t.Helper()
+	require.Nil(t, resp.GetOkResponse(), why)
+	denied := resp.GetDeniedResponse()
+	require.NotNil(t, denied, why)
+	require.Equal(t, 401, int(denied.GetStatus().GetCode()), "credential-less requests are refused as unauthenticated")
+	require.Empty(t, denied.GetHeaders(), "a denial must not stamp identity headers")
 }
 
 func TestCheck_NoAuth_ProtectedRoute_Denied(t *testing.T) {
@@ -198,8 +222,12 @@ func TestCheck_JWTAuth(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, authResp.AccessToken)
+	// This is the direct gRPC Authenticate, so the refresh token is in the
+	// response. The REST surface deliberately moves it into an httpOnly cookie
+	// instead (adapters/rest_extras.go); that contract is asserted by the
+	// gateway suite, not here.
 	require.NotEmpty(t, authResp.RefreshToken)
-	require.Equal(t, int64(180), authResp.ExpiresIn)
+	requireExpiresInMatchesSignedTTL(t, authResp.AccessToken, authResp.ExpiresIn)
 	require.NotEmpty(t, authResp.User.Uuid)
 
 	// Use the JWT against the ext_authz check on a protected path.
@@ -360,3 +388,44 @@ func TestAuth_GetJWKS(t *testing.T) {
 	require.NotEmpty(t, jwks.Keys[0].Kid)
 	require.NotEmpty(t, jwks.Keys[0].X)
 }
+
+// requireExpiresInMatchesSignedTTL holds expires_in to the token actually
+// signed, rather than to a constant. expires_in is derived from the signed TTL
+// and is whole seconds, so a literal `180` fails the moment a second elapses
+// between minting and the assertion — which is a clock artefact, not a defect.
+//
+// The signed lifetime (exp - iat) is exact and carries no clock dependence at
+// all, so it is asserted exactly. expires_in is then the remaining lifetime,
+// which may only have lost the time the call itself took: it must not exceed the
+// signed lifetime, and must not have lost more than allowance. Nothing sleeps or
+// retries to make this pass.
+func requireExpiresInMatchesSignedTTL(t *testing.T, accessToken string, expiresIn int64) {
+	t.Helper()
+	const allowance = 30 * time.Second
+
+	parts := strings.Split(accessToken, ".")
+	require.Len(t, parts, 3, "access token is a three-part JWS")
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err, "access token payload is base64url")
+	var claims struct {
+		Exp int64 `json:"exp"`
+		Iat int64 `json:"iat"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &claims))
+	require.NotZero(t, claims.Exp, "access token carries exp")
+	require.NotZero(t, claims.Iat, "access token carries iat")
+
+	signedTTL := claims.Exp - claims.Iat
+	require.Equal(t, int64(accessTokenSignedTTLSeconds), signedTTL,
+		"the signed lifetime is exact and independent of any clock here")
+
+	require.LessOrEqual(t, expiresIn, signedTTL,
+		"expires_in cannot exceed the lifetime actually signed")
+	require.GreaterOrEqual(t, expiresIn, signedTTL-int64(allowance.Seconds()),
+		"expires_in should differ from the signed lifetime only by the time this call took")
+}
+
+// accessTokenSignedTTLSeconds is the access-token lifetime accounts signs. It is
+// the contract this suite pins; expires_in is measured against it above rather
+// than compared to it directly.
+const accessTokenSignedTTLSeconds = 180
