@@ -656,9 +656,11 @@ rather than merely discouraged. `tools/authz-coverage-gate.mjs` runs, in order:
   emit audit. A mutation that records nothing fails.
 - **Permission no-broadening** (`no-broadening`) — the catalog is diffed against
   `main`; any change that widens who may call a route (a relaxed exposure,
-  tenant, platform-role, or MFA requirement, or a dropped permission/scope) fails
-  unless the pull request carries the `authz-broadening-approved` label, which
-  sets `AUTHZ_ALLOW_BROADENING` for the run.
+  tenant, platform-role, or MFA requirement, a dropped permission, or an added
+  API-key scope — a route's scopes are the keys it admits, so adding one opens
+  it and dropping one narrows it) fails unless the pull request carries the
+  `authz-broadening-approved` label, which sets `AUTHZ_ALLOW_BROADENING` for the
+  run.
 
 Both coverage gates read ticketed exemptions from
 `tools/authz-coverage-allowlist.json`; every entry needs a reason and a ticket,

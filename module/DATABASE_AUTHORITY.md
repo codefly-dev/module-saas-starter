@@ -167,6 +167,72 @@ a live database. Migration `65_role_permissions_rls` closes the former
 child-table gap: `role_permissions` reads follow parent-role visibility, while
 inserts may target only a custom role owned by the current tenant.
 
+## Partitions carry their parent's row security
+
+`audit_events` is the store's one partitioned relation, split into monthly
+`audit_events_YYYY_MM` partitions. PostgreSQL applies a partitioned table's
+policies only to a query that names the parent. A query that names a partition
+is checked against the partition's own policies, and until migration
+`11_audit_partition_row_security` the partitions had none. The store's read-only
+login holds `SELECT` on every table, and a default privilege on future ones, so
+it could read every organization's audit rows straight out of a partition while
+the parent showed it none.
+
+Every partition now enables and forces row-level security and carries the
+parent's policies, with the same names, roles, commands and `USING` / `WITH
+CHECK` expressions. `audit_events_secure_partition(regclass)` copies them from
+the catalog rather than restating them. It is owned by the migration principal
+and nobody may execute it. `audit_events_ensure_partition` calls it in the same
+transaction that creates a partition, and again whenever it ensures an existing
+one. Accounts ensures only the previous month through three months ahead, while
+retention keeps about a year of partitions, so migration
+`13_audit_secure_all_partitions` adds `audit_events_secure_all_partitions()`,
+which runs the same function over every partition. `EnsureAuditPartitions` calls
+it at startup and on each retention tick as `app_control_plane`, the only
+runtime role that may execute it. A partition that has drifted, or that a later change to the
+parent's policies left behind, is brought back in step on the next tick; one
+already in step costs a catalog read and takes no lock. Rows read or written
+through the parent are unaffected: PostgreSQL checks the parent's policies for
+them, never the partition's.
+
+The partitions stay out of the scope inventory, because their dynamic names are
+classified by their parent. Two checks cover them instead. The `tenant RLS
+coverage` gate (`tools/rls-migration-gate.mjs`) holds a partition declared in a
+migration to the tenant-table rules, and it fails any function that creates
+partitions of a tenant table without enabling and forcing row-level security and
+creating policies on them. `TestPartitionsCarryTheirParentsRowSecurity`, in the
+accounts infrastructure suite, compares every live partition's row security with
+its parent's, and `TestEnsuringAuditPartitionsReSecuresPartitionsOutsideTheWindow`
+changes a parent policy and requires a partition outside the ensure window to
+carry it after the next ensure.
+
+Because the partitions *force* row-level security, their owner is held to the
+policies too: a non-superuser owner-level `pg_dump` or `COPY` of a partition,
+attached or detached, now needs a `BYPASSRLS` role to read every row, which the
+partition offload planned in
+[ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
+
+## SECURITY DEFINER functions list pg_temp last
+
+A `SECURITY DEFINER` function runs with its owner's authority. Unless its
+`search_path` names `pg_temp`, PostgreSQL searches the calling session's
+temporary schema first for relation and type names, so a `search_path` of
+`pg_catalog, public` still lets a caller that may create a temporary table stand
+one in for a relation the function reads. Every `SECURITY DEFINER` function in
+the store lists `pg_temp` last: migration `11_audit_partition_row_security` pins
+the audit partition functions and migration `12_definer_search_path_temp_last`
+the other 29, each keeping its schemas in their existing order. The baseline
+already revokes `TEMPORARY` from `PUBLIC`, so no runtime role can create a
+temporary relation; the pin keeps the functions safe if a later grant, or a
+login outside the runtime roles, can.
+
+Two checks hold the rule. The `tenant RLS coverage` gate refuses a migration
+tree in which any `SECURITY DEFINER` function's search_path does not end in
+`pg_temp` once every later `CREATE OR REPLACE` and `ALTER FUNCTION` has run, and
+`TestSecurityDefinerFunctionsListPgTempLast`, in the accounts infrastructure
+suite, reads the same fact for every one in `public` from `pg_proc.proconfig`. A
+new one needs `SET search_path TO …, pg_temp` in its definition.
+
 ## Team membership is a child of organization membership
 
 Row security decides which team's rows a transaction may reach. It says nothing

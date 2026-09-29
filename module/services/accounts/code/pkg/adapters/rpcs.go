@@ -848,10 +848,16 @@ func (s *IdentServer) ResolveIdentity(ctx context.Context, req *gen.ResolveIdent
 // ============================================================================
 
 func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRequest) (*gen.CreateAPIKeyResponse, error) {
+	if err := requireInteractiveSession(ctx); err != nil {
+		return nil, err
+	}
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
 	if err := requireScope(ctx, "api_keys:write"); err != nil {
+		return nil, err
+	}
+	if err := requireScopesWithinCaller(ctx, req.GetScopes()); err != nil {
 		return nil, err
 	}
 	actorID, err := requireAuth(ctx)

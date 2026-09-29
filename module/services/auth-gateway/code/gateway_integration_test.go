@@ -122,26 +122,78 @@ func TestIntegration_Gateway_LoginPath_NoToken_Allowed(t *testing.T) {
 
 	// Login through the gateway with no prior token. Authenticate proto
 	// path: POST /v1/auth/authenticate. The route config marks this as
-	// public so it must be allowed through.
-	status, body, _ := doRequest(t, http.MethodPost, base+"/v1/auth/authenticate",
+	// public so it must be allowed through. The body carries the required
+	// `authentication` oneof as `fixture`; the deprecated provider_id /
+	// provider_email fields it used to send are ignored by Authenticate.
+	status, body, header := doRequest(t, http.MethodPost, base+"/v1/auth/authenticate",
 		map[string]any{
-			"provider":       "google",
-			"provider_id":    "integration-user-1",
-			"provider_email": "integration-1@test.local",
+			"provider": "email",
+			"fixture":  map[string]any{"token": "dev-bob"},
 		}, "")
-	require.Equal(t, 200, status, "login must succeed: %s", body)
+	require.Equal(t, 200, status, "login must succeed")
 
-	var resp struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		User         struct {
-			Uuid string `json:"uuid"`
-		} `json:"user"`
-	}
-	require.NoError(t, json.Unmarshal(body, &resp))
+	resp := decodeLoginBody(t, body)
 	require.NotEmpty(t, resp.AccessToken, "access token returned")
-	require.NotEmpty(t, resp.RefreshToken, "refresh token returned")
 	require.NotEmpty(t, resp.User.Uuid)
+	requireRefreshTokenOnlyInCookie(t, body, header)
+}
+
+// loginResponse decodes what the REST surface actually emits. grpc-gateway
+// marshals with protojson, so the field names are lowerCamelCase — `accessToken`,
+// not `access_token`. There is deliberately no refresh-token field: see
+// requireRefreshTokenOnlyInCookie.
+type loginResponse struct {
+	AccessToken string `json:"accessToken"`
+	ExpiresIn   string `json:"expiresIn"`
+	MFARequired bool   `json:"mfaRequired"`
+	User        struct {
+		Uuid string `json:"uuid"`
+	} `json:"user"`
+}
+
+func decodeLoginBody(t *testing.T, body []byte) loginResponse {
+	t.Helper()
+	var resp loginResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.False(t, resp.MFARequired, "the fixture identity completes login without a second factor")
+	return resp
+}
+
+// requireRefreshTokenOnlyInCookie pins the REST surface's refresh-token
+// contract: accounts lifts the refresh token OUT of the JSON body and into an
+// httpOnly cookie (adapters/rest_extras.go), so that an XSS cannot read a
+// seven-day credential out of JS-reachable storage. A refresh token reappearing
+// in the body would be a silent regression of that, which is why its ABSENCE is
+// asserted rather than its presence.
+//
+// Nothing here prints the cookie or the token: the assertions are on shape and
+// attributes only.
+func requireRefreshTokenOnlyInCookie(t *testing.T, body []byte, header http.Header) {
+	t.Helper()
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &raw))
+	for _, name := range []string{"refreshToken", "refresh_token"} {
+		_, present := raw[name]
+		require.False(t, present, "the refresh token must not travel in the JSON body")
+	}
+
+	var refresh *http.Cookie
+	for _, c := range (&http.Response{Header: header}).Cookies() {
+		if c.Name == "codefly_rt" {
+			refresh = c
+			break
+		}
+	}
+	require.NotNil(t, refresh, "login sets the refresh-token cookie")
+	require.NotEmpty(t, refresh.Value, "the refresh-token cookie carries a token")
+	require.True(t, refresh.HttpOnly, "the refresh-token cookie is httpOnly, or an XSS can read it")
+	require.Equal(t, "/v1/auth", refresh.Path, "the cookie is scoped to the auth routes")
+	require.Equal(t, http.SameSiteStrictMode, refresh.SameSite, "SameSite=Strict is the CSRF defense for the refresh call")
+	// Secure follows the scheme: this suite drives plain http on loopback, which
+	// is what lets local development work, so Secure is expected to be off here
+	// and on under TLS.
+	require.False(t, refresh.Secure, "over plain http the cookie is not marked Secure")
 }
 
 // ============================================================================
@@ -153,25 +205,33 @@ func TestIntegration_Gateway_AuthenticatedRequest_Allowed(t *testing.T) {
 	defer teardown()
 
 	// Step 1: login via the public /v1/auth/authenticate path.
-	loginStatus, loginBody, _ := doRequest(t, http.MethodPost, base+"/v1/auth/authenticate",
+	loginStatus, loginBody, loginHeader := doRequest(t, http.MethodPost, base+"/v1/auth/authenticate",
 		map[string]any{
-			"provider":       "google",
-			"provider_id":    "integration-user-2",
-			"provider_email": "integration-2@test.local",
+			"provider": "email",
+			"fixture":  map[string]any{"token": "dev-admin"},
 		}, "")
-	require.Equal(t, 200, loginStatus, "login: %s", loginBody)
+	require.Equal(t, 200, loginStatus, "login")
 
-	var login struct {
-		AccessToken string `json:"access_token"`
-	}
-	require.NoError(t, json.Unmarshal(loginBody, &login))
+	login := decodeLoginBody(t, loginBody)
 	require.NotEmpty(t, login.AccessToken)
+	requireRefreshTokenOnlyInCookie(t, loginBody, loginHeader)
 
-	// Step 2: use the token on a protected endpoint through the gateway.
+	// Step 2: use the token on a protected endpoint through the gateway. A
+	// not-401-and-not-403 pair would also be satisfied by a 502 or a 404, so the
+	// success itself is asserted: 200, and a users payload the caller could only
+	// have been given once the gateway stamped its identity upstream.
 	status, body, _ := doRequest(t, http.MethodGet,
 		base+"/v1/users", nil, login.AccessToken)
-	require.NotEqual(t, 401, status, "valid token must not be rejected: %s", body)
-	require.NotEqual(t, 403, status, "valid token must not be forbidden: %s", body)
+	require.Equal(t, 200, status, "a valid token must be served, not merely un-refused")
+
+	var users struct {
+		Users []struct {
+			Uuid string `json:"uuid"`
+		} `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal(body, &users), "the protected route returns a users payload")
+	require.NotEmpty(t, users.Users, "the authenticated caller reads at least its own organization's users")
+	require.NotEmpty(t, users.Users[0].Uuid)
 }
 
 // ============================================================================
@@ -183,7 +243,7 @@ func TestIntegration_Gateway_StripsForgedIdentityHeaders(t *testing.T) {
 	defer teardown()
 
 	req, _ := http.NewRequest(http.MethodPost, base+"/v1/auth/authenticate",
-		bytes.NewReader([]byte(`{"provider":"google","provider_id":"strip-test","provider_email":"strip@test.local"}`)))
+		bytes.NewReader([]byte(`{"provider":"email","fixture":{"token":"dev-alice"}}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-Id", "attacker-spoofed-uuid")
 	req.Header.Set("X-Platform-Role", "super_admin")

@@ -40,7 +40,7 @@ const SCOPE_PRESETS = [
 		id: "read_write",
 		label: "Read & write",
 		description:
-			"Full app access. Use for backend integrations that need to mutate data.",
+			"Full app access, except creating API keys. Use for backend integrations that need to mutate data.",
 		scopes: [
 			{ resource: "*", action: "read" },
 			{ resource: "*", action: "write" },

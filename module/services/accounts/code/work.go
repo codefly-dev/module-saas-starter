@@ -699,7 +699,18 @@ func doWork(ctx context.Context) (Clean, error) {
 	// A previous internal token stays valid alongside the current one during an
 	// overlapping rotation window, so callers can be migrated without a flag day.
 	adapters.SetInternalTokenRotation(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"))
-	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
+	// The gateway credential lives in its own group, which only accounts and
+	// auth-gateway declare: internal-auth also reaches the frontend, and the
+	// holder of this credential can assert any identity to accounts. The
+	// previous value is accepted beside it only while a rotation rolls the
+	// gateway, and only until its expiry (TRUST_BOUNDARY.md).
+	gatewayCredentials, err := configuredGatewayTrust(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	adapters.SetGatewayToken(gatewayCredentials.current)
+	adapters.SetPreviousGatewayToken(gatewayCredentials.previous)
+	adapters.SetPreviousGatewayTokenExpiresAt(gatewayCredentials.previousExpiresAt)
 	// The datasource content-ticket signer is keyed from the same internal secret,
 	// domain-separated, so a change-set job's opaque content ticket verifies at
 	// redemption without a second key to provision.
@@ -1360,6 +1371,54 @@ func configuredCentralEnforcement() (bool, error) {
 	default:
 		return false, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
 	}
+}
+
+// maxGatewayRotationWindow is the furthest ahead a previous gateway credential
+// may expire. The window only has to outlast one auth-gateway rollout, and
+// until it closes the old value can assert any identity to accounts.
+const maxGatewayRotationWindow = 24 * time.Hour
+
+// gatewayTrust is the gateway credential accounts accepts, and during a
+// rotation the previous one with the instant it stops being accepted.
+type gatewayTrust struct {
+	current           string
+	previous          string
+	previousExpiresAt time.Time
+}
+
+// configuredGatewayTrust reads the gateway-trust group. A previous credential
+// must differ from the current one and carry an RFC 3339
+// CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT after now and at most
+// maxGatewayRotationWindow ahead; anything else fails the boot, so a
+// rotated-out credential cannot keep its authority because nobody cleared the
+// slot. An expiry with no previous credential bounds nothing and is ignored.
+func configuredGatewayTrust(now time.Time) (gatewayTrust, error) {
+	trust := gatewayTrust{
+		current:  workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN"),
+		previous: workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN_PREVIOUS"),
+	}
+	if trust.previous == "" {
+		return trust, nil
+	}
+	if trust.previous == trust.current {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS must differ from CODEFLY_GATEWAY_TOKEN")
+	}
+	raw := strings.TrimSpace(workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT"))
+	if raw == "" {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT is required while CODEFLY_GATEWAY_TOKEN_PREVIOUS is set")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT must be an RFC 3339 timestamp")
+	}
+	if !now.Before(expiresAt) {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT has passed; clear CODEFLY_GATEWAY_TOKEN_PREVIOUS")
+	}
+	if expiresAt.After(now.Add(maxGatewayRotationWindow)) {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT must be no more than %.0fh ahead", maxGatewayRotationWindow.Hours())
+	}
+	trust.previousExpiresAt = expiresAt
+	return trust, nil
 }
 
 func configuredSessionPolicy() (auth.SessionPolicy, error) {

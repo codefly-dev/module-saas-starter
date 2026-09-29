@@ -87,7 +87,11 @@ type ExtAuthz struct {
 	// overlapping rotation window. Outbound calls always present the current
 	// internalToken; only inbound checks honour the previous one.
 	previousInternalToken string
-	gatewayToken          string
+	// gatewayToken is what Gateway.proxyTo stamps on accounts routes, read from
+	// the gateway-trust group that only accounts and this service declare. The
+	// gateway sends only the current value: accounts, which verifies it, holds
+	// the previous one while a rotation rolls this service.
+	gatewayToken string
 	// revoker enforces access-token revocation on the gateway hot path — the
 	// path where accounts trusts the ext_authz-stamped identity headers and so
 	// never runs its own VerifyAccess revocation check. Always non-nil.
@@ -127,7 +131,7 @@ func NewExtAuthz(backendConn *grpc.ClientConn, keys accessKeys) *ExtAuthz {
 		audience:              "saas-starter",
 		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
 		previousInternalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"),
-		gatewayToken:          workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"),
+		gatewayToken:          workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN"),
 		revoker:               noopRevoker{},
 		revocationFailOpen:    revocationFailsOpen(),
 	}
@@ -357,6 +361,17 @@ func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRe
 	if !resp.Valid {
 		return deny(401, "invalid api key"), nil
 	}
+	// This hop joins the key's scopes into one header and every service splits
+	// it on the same comma, so a scope holding one would reach them as scopes
+	// the key was never given (`users:read,*:*` is read as the root `*:*`).
+	// accounts refuses such a scope when a key is minted and validated; the
+	// join does not rely on that.
+	for _, scope := range resp.Scopes {
+		if strings.Contains(scope, ",") {
+			log.Printf("api key refused: accounts returned a scope holding the x-scopes separator")
+			return deny(401, "invalid api key"), nil
+		}
+	}
 	return s.allow([]*corev3.HeaderValueOption{
 		hdr("x-user-id", resp.UserId),
 		hdr("x-org-id", resp.OrganizationId),
@@ -382,9 +397,15 @@ func (s *ExtAuthz) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespo
 	for _, key := range canonicalUpstreamAuthHeaders {
 		headers = append(headers, hdr(key, values[key]))
 	}
-	if s.gatewayToken != "" {
-		headers = append(headers, hdr("x-codefly-gateway-token", s.gatewayToken))
-	}
+	// The gateway credential is deliberately not among them. It is what makes
+	// accounts believe these headers, and this answer also goes back over the
+	// gRPC ext_authz listener to whoever asked — so carrying it here would hand
+	// any holder of an ordinary login or API key the means to tell accounts it
+	// is any user. The HTTP gateway stamps it itself, only on accounts routes
+	// (Gateway.proxyTo); an Envoy calling this check must do the same, or
+	// accounts will not trust what it forwards (envoy.go). Here it falls into
+	// the remove set below.
+	//
 	// Every untrusted trust header we did NOT just restamp must be stripped
 	// from the upstream request, so a client-spoofed value cannot survive an
 	// allow decision. This is the ext_authz check half of the header-lockstep

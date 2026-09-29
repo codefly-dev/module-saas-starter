@@ -11,7 +11,7 @@ type generatedAuthorizationMetadata struct {
 }
 
 var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadata{
-	"/saas.accounts.v1.APIKeyService/CreateAPIKey":                                   {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardWrite, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "5e075983df48b921a8e9425258bfc766ca67084c8bcb2f99e37a10bbaff8f53f"},
+	"/saas.accounts.v1.APIKeyService/CreateAPIKey":                                   {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardWrite, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "43bdf1f9a139cc858b9deb4b2d4a5b2eb5b9ad7093363d1a13719d06f7e7239f"},
 	"/saas.accounts.v1.APIKeyService/ListAPIKeys":                                    {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "c6c87c1ff7ffb6ff5f0733913bb6bead4d9d0a66c9fb8664f4c92a97ea988e95"},
 	"/saas.accounts.v1.APIKeyService/RevokeAPIKey":                                   {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardWrite, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "557d498b8e708671a8f5bce8e1665007af85265e1155fd6e695c0cd838fad4cc"},
 	"/saas.accounts.v1.APIKeyService/ValidateAPIKey":                                 {exposure: edgeExposureInternal, rateLimitClass: edgeRateLimitClassInternal, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "cb57ee7f4e96ab9548ead04103dfd3e9a96dce973c06a8bd62a9ac991eab1e16"},

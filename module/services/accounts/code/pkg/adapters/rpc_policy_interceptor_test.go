@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -65,6 +66,8 @@ func TestForwardedIdentityStampsVerifiedActorOnlyWhenGatewayTrusted(t *testing.T
 
 	actor := metadata.Pairs(
 		"x-codefly-gateway-token", "test-gateway-token",
+		"x-credential-kind", credentialKindSession,
+		"x-scopes", "",
 		"x-user-id", uuid.Must(uuid.NewV7()).String(),
 		"x-act", `{"sub":"svc:billing-worker","act":{"sub":"svc:gateway"}}`,
 	)
@@ -289,6 +292,8 @@ func TestForwardedIdentityRequiresGatewayCredential(t *testing.T) {
 	connectPolicy := &connectPolicyInterceptor{getMinter: nil}
 	headers := http.Header{
 		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+		"X-Credential-Kind":       []string{credentialKindSession},
+		"X-Scopes":                []string{""},
 		"X-User-Id":               []string{forwardedUser},
 		"X-Org-Id":                []string{forwardedOrg},
 	}
@@ -302,6 +307,8 @@ func TestForwardedIdentityRequiresGatewayCredential(t *testing.T) {
 	grpcPolicy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}
 	grpcCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"x-codefly-gateway-token", "test-gateway-token",
+		"x-credential-kind", credentialKindSession,
+		"x-scopes", "",
 		"x-user-id", forwardedUser,
 		"x-org-id", forwardedOrg,
 	))
@@ -320,6 +327,8 @@ func TestPublicOriginRequiresGatewayCredential(t *testing.T) {
 	connectPolicy := &connectPolicyInterceptor{getMinter: nil}
 	headers := http.Header{
 		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+		"X-Credential-Kind":       []string{credentialKindSession},
+		"X-Scopes":                []string{""},
 		publicOriginHeader:        []string{"http://localhost:54321"},
 	}
 	ctx, err := connectPolicy.authorize(context.Background(), "/saas.accounts.v1.AuthService/BeginOAuth", headers)
@@ -338,6 +347,8 @@ func TestPublicOriginRequiresGatewayCredential(t *testing.T) {
 	grpcPolicy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}
 	grpcCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"x-codefly-gateway-token", "test-gateway-token",
+		"x-credential-kind", credentialKindSession,
+		"x-scopes", "",
 		"x-codefly-public-origin", "http://localhost:54321",
 	))
 	grpcCtx, err = grpcPolicy.authorize(grpcCtx, "/saas.accounts.v1.AuthService/BeginOAuth")
@@ -349,4 +360,91 @@ func TestPublicOriginRequiresGatewayCredential(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, grpcHeaders.Get("x-codefly-gateway-token"))
 	require.Empty(t, grpcHeaders.Get("x-codefly-public-origin"))
+}
+
+// withGatewayRotation installs a current and a previous gateway credential
+// with the previous one's expiry, restoring the package state afterwards.
+func withGatewayRotation(t *testing.T, current, previous string, previousExpiresAt time.Time) {
+	t.Helper()
+	savedCurrent, savedPrevious, savedExpiresAt := gatewayToken, previousGatewayToken, previousGatewayTokenExpiresAt
+	t.Cleanup(func() {
+		SetGatewayToken(savedCurrent)
+		SetPreviousGatewayToken(savedPrevious)
+		SetPreviousGatewayTokenExpiresAt(savedExpiresAt)
+	})
+	SetGatewayToken(current)
+	SetPreviousGatewayToken(previous)
+	SetPreviousGatewayTokenExpiresAt(previousExpiresAt)
+}
+
+// forwardedIdentityTrusted reports whether a Connect request stamped with token
+// and a forwarded user id reaches the handler as that user.
+func forwardedIdentityTrusted(t *testing.T, token string) (bool, error) {
+	t.Helper()
+	const forwardedUser = "019f6bf7-5b1c-730d-9687-fe6d4aff31ee"
+	ctx, err := (&connectPolicyInterceptor{}).authorize(context.Background(), "/saas.accounts.v1.UserService/GetSelf", http.Header{
+		"X-Codefly-Gateway-Token": {token},
+		"X-Credential-Kind":       {credentialKindSession},
+		"X-Scopes":                {""},
+		"X-User-Id":               {forwardedUser},
+	})
+	if err != nil {
+		return false, err
+	}
+	userID, ok := wool.Get(ctx).UserID()
+	return ok && userID == forwardedUser, nil
+}
+
+// Rotating the gateway credential rolls auth-gateway onto a new value while
+// accounts already holds it as current and the old one as previous; forwarded
+// identity from a gateway pod still stamping the old value is trusted until the
+// previous slot is emptied, and never after.
+func TestPreviousGatewayTokenIsTrustedOnlyDuringRotation(t *testing.T) {
+	withGatewayRotation(t, "incoming-gateway-token", "outgoing-gateway-token", time.Now().Add(time.Hour))
+	forwarded := func(token string) (bool, error) { return forwardedIdentityTrusted(t, token) }
+
+	for _, token := range []string{"incoming-gateway-token", "outgoing-gateway-token"} {
+		trusted, err := forwarded(token)
+		require.NoError(t, err)
+		require.True(t, trusted, "%s must be trusted mid-rotation", token)
+	}
+	require.False(t, validGatewayToken("some-other-token"))
+	require.False(t, validGatewayToken(""))
+
+	SetPreviousGatewayToken("")
+	require.True(t, validGatewayToken("incoming-gateway-token"))
+	require.False(t, validGatewayToken("outgoing-gateway-token"), "a retired credential proves nothing")
+	_, err := forwarded("outgoing-gateway-token")
+	require.Error(t, err, "without trust the forwarded identity is stripped and no bearer was presented")
+}
+
+// A rotated-out gateway credential loses its authority at its expiry even when
+// nobody empties the previous slot; the current credential is unaffected.
+func TestPreviousGatewayTokenStopsMatchingAtItsExpiry(t *testing.T) {
+	expiresAt := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+	withGatewayRotation(t, "incoming-gateway-token", "outgoing-gateway-token", expiresAt)
+
+	require.True(t, validGatewayTokenAt("outgoing-gateway-token", expiresAt.Add(-time.Hour)))
+	require.True(t, validGatewayTokenAt("outgoing-gateway-token", expiresAt.Add(-time.Nanosecond)))
+	require.False(t, validGatewayTokenAt("outgoing-gateway-token", expiresAt), "the window is open strictly before its expiry")
+	require.False(t, validGatewayTokenAt("outgoing-gateway-token", expiresAt.Add(time.Hour)))
+	require.True(t, validGatewayTokenAt("incoming-gateway-token", expiresAt.Add(time.Hour)), "the current credential has no expiry")
+	require.False(t, validGatewayTokenAt("some-other-token", expiresAt.Add(-time.Hour)))
+
+	SetPreviousGatewayTokenExpiresAt(time.Time{})
+	require.False(t, validGatewayTokenAt("outgoing-gateway-token", expiresAt.Add(-time.Hour)),
+		"a previous credential installed without an expiry proves nothing")
+}
+
+// The request path reads the real clock: a previous credential whose expiry has
+// passed no longer carries forwarded identity through the interceptor.
+func TestExpiredPreviousGatewayTokenCarriesNoForwardedIdentity(t *testing.T) {
+	withGatewayRotation(t, "incoming-gateway-token", "outgoing-gateway-token", time.Now().Add(-time.Second))
+
+	trusted, err := forwardedIdentityTrusted(t, "incoming-gateway-token")
+	require.NoError(t, err)
+	require.True(t, trusted)
+	require.False(t, validGatewayToken("outgoing-gateway-token"))
+	_, err = forwardedIdentityTrusted(t, "outgoing-gateway-token")
+	require.Error(t, err, "without trust the forwarded identity is stripped and no bearer was presented")
 }

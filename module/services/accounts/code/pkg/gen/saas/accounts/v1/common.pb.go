@@ -984,6 +984,11 @@ func (x *TeamMembership) GetUserEmail() string {
 	return ""
 }
 
+// Permission is one resource:action grant: a role's RBAC grant, or one scope
+// of an API key. The pair travels joined as `resource:action`, and a key's
+// scopes as one comma-separated header, so neither half may hold `:`, `,`,
+// whitespace or a control character — `users` / `read,*:*` would read back
+// as the root `*:*`. A lone `*` is the wildcard.
 type Permission struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
@@ -1441,11 +1446,11 @@ const file_saas_accounts_v1_common_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\x0e2\x1a.saas.accounts.v1.TeamRoleR\x04role\x127\n" +
 	"\tjoined_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x1d\n" +
 	"\n" +
-	"user_email\x18\x05 \x01(\tR\tuserEmail\"R\n" +
+	"user_email\x18\x05 \x01(\tR\tuserEmail\"\x98\x01\n" +
 	"\n" +
-	"Permission\x12#\n" +
-	"\bresource\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bresource\x12\x1f\n" +
-	"\x06action\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06action\"\xd1\x01\n" +
+	"Permission\x12F\n" +
+	"\bresource\x18\x01 \x01(\tB*\xbaH'r%\x10\x012!^(\\*|[A-Za-z0-9][A-Za-z0-9._-]*)$R\bresource\x12B\n" +
+	"\x06action\x18\x02 \x01(\tB*\xbaH'r%\x10\x012!^(\\*|[A-Za-z0-9][A-Za-z0-9._-]*)$R\x06action\"\xd1\x01\n" +
 	"\x04Role\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1b\n" +
 	"\x04name\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12 \n" +

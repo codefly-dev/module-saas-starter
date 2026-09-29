@@ -220,6 +220,17 @@ function droppedRequirements(label, base, head) {
   return dropped.length ? `${label} requirement dropped: ${dropped.sort().join(", ")}` : null;
 }
 
+// A method policy's `scopes` are not requirements: they are the API-key scopes
+// the route admits, and a route that declares none refuses every key (accounts'
+// enforceAPIKeyScopePolicy). So the direction is the reverse of permissions: a
+// scope added from base to head opens the route to more keys — to every root
+// `*:*` key when the base declared none — and a dropped one narrows it.
+function admittedScopes(base, head) {
+  const baseSet = new Set(base ?? []);
+  const added = (head ?? []).filter((value) => !baseSet.has(value));
+  return added.length ? `API-key scope admitted: ${added.sort().join(", ")}` : null;
+}
+
 export function broadeningViolations(baseMethods, headMethods) {
   const head = new Map(headMethods.map((m) => [m.procedure, m]));
   const violations = [];
@@ -241,7 +252,7 @@ export function broadeningViolations(baseMethods, headMethods) {
         h.impersonation ?? IMPERSONATION_ALLOWED,
       ),
       droppedRequirements("permissions", b.permissions, h.permissions),
-      droppedRequirements("scopes", b.scopes, h.scopes),
+      admittedScopes(b.scopes, h.scopes),
     ].filter(Boolean);
 
     for (const reason of reasons) {

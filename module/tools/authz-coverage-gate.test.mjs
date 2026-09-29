@@ -144,6 +144,22 @@ test("dropping a required permission is a broadening", () => {
   assert.match(broadeningViolations(base, head).join("\n"), /permissions requirement dropped: users:write/);
 });
 
+test("admitting an API-key scope is a broadening", () => {
+  const base = [method({ policy: { scopes: [] } })];
+  const head = [method({ policy: { scopes: ["users:read"] } })];
+  assert.match(broadeningViolations(base, head).join("\n"), /API-key scope admitted: users:read/);
+  const widened = [method({ policy: { scopes: ["users:read", "users:write"] } })];
+  assert.match(broadeningViolations(head, widened).join("\n"), /API-key scope admitted: users:write/);
+});
+
+test("dropping an API-key scope narrows and is allowed", () => {
+  // A route that declares no scope refuses every API key, so withdrawing one
+  // takes the route away from keys rather than lifting a requirement.
+  const base = [method({ policy: { scopes: ["api_keys:write"] } })];
+  const head = [method({ policy: { scopes: [] } })];
+  assert.deepEqual(broadeningViolations(base, head), []);
+});
+
 test("tightening a route is not a broadening", () => {
   const base = [method({ policy: { tenant: "TENANT_REQUIREMENT_ORG_MEMBER", permissions: [] } })];
   const head = [method({ policy: { tenant: "TENANT_REQUIREMENT_ORG_ADMIN", permissions: ["users:write"] } })];

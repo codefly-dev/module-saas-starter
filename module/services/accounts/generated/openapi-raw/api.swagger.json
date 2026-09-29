@@ -9341,7 +9341,8 @@
         "action": {
           "type": "string"
         }
-      }
+      },
+      "description": "Permission is one resource:action grant: a role's RBAC grant, or one scope\nof an API key. The pair travels joined as `resource:action`, and a key's\nscopes as one comma-separated header, so neither half may hold `:`, `,`,\nwhitespace or a control character — `users` / `read,*:*` would read back\nas the root `*:*`. A lone `*` is the wildcard."
     },
     "v1PermissionInfo": {
       "type": "object",

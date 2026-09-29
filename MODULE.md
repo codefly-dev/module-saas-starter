@@ -237,7 +237,7 @@ Built-ins: **admin** (wildcard), **editor** (read+write on domain), **viewer** (
 | `orgs:read|write` | Read/manage org metadata + members |
 | `teams:read|write` | List/manage teams |
 | `roles:read|write` | List/manage roles + assignments |
-| `api_keys:read|write` | Manage API keys |
+| `api_keys:read|write` | List/revoke API keys (a key never creates one) |
 | `audit:read` | Read audit events |
 | `invitations:read|write` | List/manage invites |
 | `webhooks:read|write` | Manage webhook subs (incl. RotateSecret needs `:write` + MFA) |
@@ -245,6 +245,13 @@ Built-ins: **admin** (wildcard), **editor** (read+write on domain), **viewer** (
 | `entitlements:read` | View overrides + usage |
 
 Wildcard semantics: `users:*` matches all `users:X`; `*:read` matches read across resources.
+
+A scope grants only the RPCs whose method policy declares it: accounts checks
+the declared scopes on every RPC before any handler runs, an RPC that declares
+none refuses API keys, and a key with no scopes has no authority. Only an
+interactive session can create an API key: `CreateAPIKey` declares no scope and
+refuses every key, whatever it carries. The rules and the transports they cover
+are in [module/services/accounts/TRUST_BOUNDARY.md](module/services/accounts/TRUST_BOUNDARY.md#api-key-scopes).
 
 ## RPC catalog (selected)
 

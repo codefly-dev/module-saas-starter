@@ -40,12 +40,16 @@ const publicOriginHeader = "X-Codefly-Public-Origin"
 // admission unless the request also carried a valid gateway token, exactly as on
 // the direct transports.
 //
-// `Grpc-Metadata-<name>` headers are refused. grpc-gateway's default matcher
-// maps them to `<name>` metadata, which makes the prefix a second spelling of
-// every identity header above: a caller could add its own x-user-id beside the
-// one the gateway stamped, under the gateway token that makes it trusted.
+// Identity crosses only under its own name. grpc-gateway's default matcher also
+// forwards any Grpc-Metadata-<name> header as metadata <name>, which would let a
+// caller add a second x-user-id (or x-org-id, x-codefly-public-origin, ...)
+// beside the one the gateway stamped, on a request that genuinely carries the
+// gateway token — and the value the interceptor reads first would then be
+// whichever the transcoder happened to place first. Nothing on this REST
+// surface is meant to receive caller-chosen metadata, so every prefixed
+// spelling is declined, not only the identity names.
 func restIdentityHeaderMatcher(header string) (string, bool) {
-	if strings.HasPrefix(strings.ToLower(header), "grpc-metadata-") {
+	if hasGRPCMetadataPrefix(header) {
 		return "", false
 	}
 	if strings.EqualFold(header, "Authorization") {
@@ -57,6 +61,54 @@ func restIdentityHeaderMatcher(header string) (string, bool) {
 		}
 	}
 	return runtime.DefaultHeaderMatcher(header)
+}
+
+func hasGRPCMetadataPrefix(header string) bool {
+	prefix := runtime.MetadataHeaderPrefix
+	return len(header) >= len(prefix) && strings.EqualFold(header[:len(prefix)], prefix)
+}
+
+// forwardedIdentityAmbiguous reports whether a trusted forwarder's assertion
+// names an identity field, or the verified public origin, more than once. The
+// gateway stamps exactly one value per field; a second one reached the request
+// some other way, and reading either index would let that path choose the
+// identity. values looks a field up by its header name on either transport.
+func forwardedIdentityAmbiguous(values func(name string) []string) bool {
+	for _, header := range forwardedIdentityHeaders {
+		if len(values(header)) > 1 {
+			return true
+		}
+	}
+	return len(values(publicOriginHeader)) > 1
+}
+
+// forwardedCredentialIncomplete reports whether a trusted forwarder's
+// assertion lacks the credential kind or the scope list. The gateway stamps
+// both on every request it admits: X-Credential-Kind as `session` or
+// `api_key`, and X-Scopes as the key's scope list — empty for a session and for
+// a key created without scopes. An assertion without either lost part of itself
+// on the way (a caller's `Connection: X-Scopes` once did exactly that at the
+// gateway): with no kind, accounts cannot tell a key from a session and so
+// cannot hold the key to its scopes; with no scope list, it cannot bound the key
+// at all. A kind the gateway never stamps is refused for the same reason.
+// forwardedIdentityAmbiguous has already refused a second value of either.
+// values looks a field up by its header name on any transport.
+func forwardedCredentialIncomplete(values func(name string) []string) bool {
+	kinds := values("X-Credential-Kind")
+	if len(kinds) != 1 || (kinds[0] != credentialKindSession && kinds[0] != credentialKindAPIKey) {
+		return true
+	}
+	return len(values("X-Scopes")) != 1
+}
+
+// errForwardedCredentialIncomplete is returned by the forwarded-identity
+// projections when forwardedCredentialIncomplete holds.
+var errForwardedCredentialIncomplete = errors.New("forwarded identity carries no credential kind or no scopes header")
+
+// singleValidGatewayToken is the trust test both transports share: exactly one
+// gateway credential, and it matches. Two are not one trusted assertion.
+func singleValidGatewayToken(values []string) bool {
+	return len(values) == 1 && validGatewayToken(values[0])
 }
 
 type connectPolicyInterceptor struct {
@@ -82,6 +134,9 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err := enforceImpersonationPolicy(ctx, req.Spec().Procedure); err != nil {
 			return nil, translateGRPCError(err)
 		}
+		if err := enforceAPIKeyScopePolicy(ctx, req.Spec().Procedure); err != nil {
+			return nil, translateGRPCError(err)
+		}
 		if err := enforceCentralPolicy(ctx, req.Spec().Procedure); err != nil {
 			return nil, translateGRPCError(err)
 		}
@@ -103,6 +158,9 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 		if err := enforceImpersonationPolicy(ctx, conn.Spec().Procedure); err != nil {
 			return translateGRPCError(err)
 		}
+		if err := enforceAPIKeyScopePolicy(ctx, conn.Spec().Procedure); err != nil {
+			return translateGRPCError(err)
+		}
 		if err := enforceCentralPolicy(ctx, conn.Spec().Procedure); err != nil {
 			return translateGRPCError(err)
 		}
@@ -112,7 +170,10 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 }
 
 func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure string, headers http.Header) (context.Context, error) {
-	trustedForwarded := validGatewayToken(headers.Get("X-Codefly-Gateway-Token"))
+	trustedForwarded := singleValidGatewayToken(headers.Values("X-Codefly-Gateway-Token"))
+	if trustedForwarded && forwardedIdentityAmbiguous(headers.Values) {
+		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("forwarded identity is ambiguous"))
+	}
 	forwardedPublicOrigin := headers.Get(publicOriginHeader)
 	if !trustedForwarded {
 		for _, header := range forwardedIdentityHeaders {
@@ -180,6 +241,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 }
 
 func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) (context.Context, error) {
+	if forwardedCredentialIncomplete(headers.Values) {
+		return ctx, errForwardedCredentialIncomplete
+	}
 	identity, err := auth.ParseRequestIdentity(
 		headers.Get("X-User-Id"),
 		headers.Get("X-Acting-As-User-Id"),

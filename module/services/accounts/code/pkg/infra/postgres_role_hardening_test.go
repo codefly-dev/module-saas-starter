@@ -575,8 +575,10 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
 		// relispartition excludes the audit_events monthly partition children:
-		// they are dynamically named and inherit access through the partitioned
-		// parent, so they carry no independent authority to classify.
+		// they are dynamically named and classified by their parent. They do not
+		// inherit its row-level security — a partition queried by name is checked
+		// against its own policies — so TestPartitionsCarryTheirParentsRowSecurity
+		// holds each one to the parent's.
 		rows, err := tx.Query(ctx, `
 			SELECT c.relname
 			FROM pg_class c

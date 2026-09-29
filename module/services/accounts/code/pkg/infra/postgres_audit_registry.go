@@ -107,8 +107,11 @@ func (s *PostgresStore) ListAuditEventTypes(ctx context.Context) ([]business.Aud
 
 // EnsureAuditPartitions provisions the current month plus the next `months`
 // (and the previous month, to absorb clock skew / late writes) via the
-// SECURITY DEFINER maintenance function. Called at startup and on each
-// retention tick.
+// SECURITY DEFINER maintenance function, then brings every partition's
+// row-level security back in step with the parent's. Retention keeps far more
+// months than this window provisions, and a partition queried by name is
+// checked against its own policies, so a policy change on audit_events must
+// reach the older partitions too. Called at startup and on each retention tick.
 func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) error {
 	q := s.getQueryExecutor(ctx)
 	base := time.Now().UTC()
@@ -118,6 +121,9 @@ func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) e
 		if _, err := q.Exec(ctx, `SELECT audit_events_ensure_partition($1::date)`, first); err != nil {
 			return fmt.Errorf("ensure audit partition %s: %w", first.Format("2006-01"), err)
 		}
+	}
+	if _, err := q.Exec(ctx, `SELECT audit_events_secure_all_partitions()`); err != nil {
+		return fmt.Errorf("secure audit partitions: %w", err)
 	}
 	return nil
 }

@@ -5,7 +5,7 @@
 
 ### KEY-1 · Create a scoped API key
 **As a** developer, **I want** to create an API key limited to specific capabilities, **so that** a script only does what it needs.
-- Acceptance: key carries scopes (`resource:action`, wildcards); shown once; hashed at rest.
+- Acceptance: key carries scopes (`resource:action`, wildcards); shown once; hashed at rest. Created only from an interactive session: an API key cannot create one, since it could copy itself without an expiry.
 - ❓ Who can create keys (any member, or admin)? ❓ Scope ceiling = creator's own rights?
 
 ### KEY-2 · Key inherits ≤ creator's access
@@ -30,8 +30,8 @@
 
 ### KEY-6 · Scope enforcement everywhere
 **As a** platform team, **I want** key scopes enforced on all endpoints, **so that** there are no unchecked backdoors.
-- Acceptance: `requireScope` on every relevant RPC (today: a starter subset — a known gap).
-- ❓ Commit to full-surface scope enforcement? Priority order?
+- Acceptance: every RPC holds a key to the scopes its method policy declares, and an RPC declaring none refuses keys. Today: enforced centrally in accounts' interceptors, on every transport.
+- ❓ Which of the RPCs that declare no scope should declare one, so keys can reach them?
 
 ### KEY-7 · Per-key rate limits
 **As a** platform team, **I want** each key rate-limited, **so that** one integration can't exhaust the API.
