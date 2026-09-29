@@ -286,12 +286,38 @@ function DatasourcesPanelView({
 		refetchInterval: 5000,
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
+	// What was just connected, so the read grant can be offered where the person
+	// already is and knows what they connected — rather than as a separate later
+	// journey through Manage read grants, which is the whole of what made the
+	// flow unreasonable. Held as what the form said rather than as a node id,
+	// because a connect that MINTED a collection has no id until the boundary
+	// listing comes back with it.
+	const [justConnected, setJustConnected] = useState<{
+		repo: string;
+		nodeId?: string | undefined;
+		label: string;
+	} | null>(null);
 	const listedCollections = collections.isError ? undefined : collections.data;
 	const selectedCollection = collections.isError
 		? undefined
 		: collections.data?.find(
 				(collection) => collection.nodeId === editingCollection,
 			);
+	// The collection the connect landed in, resolved out of the boundary listing
+	// the connect invalidated. Matched by node id when an existing collection was
+	// picked, and by label when one was minted — the label is what the host
+	// resolved the new node from, and it is unique within the organization.
+	//
+	// "Manage read grants" wins when both are open: the person asked for that one
+	// after the connect, so the offer has been superseded.
+	const connectedCollection =
+		justConnected && !selectedCollection && !collections.isError
+			? collections.data?.find((collection) =>
+					justConnected.nodeId
+						? collection.nodeId === justConnected.nodeId
+						: collection.label === justConnected.label,
+				)
+			: undefined;
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -323,6 +349,11 @@ function DatasourcesPanelView({
 				onSuccess: () => {
 					setConnectedRepos((prev) => new Set(prev).add(values.repo));
 					setShowConnect(false);
+					setJustConnected({
+						repo: values.repo,
+						nodeId: values.boundaryNodeId || undefined,
+						label: values.targetCollection,
+					});
 				},
 			},
 		);
@@ -531,6 +562,15 @@ function DatasourcesPanelView({
 						client={client}
 						orgId={orgId}
 						collection={selectedCollection}
+					/>
+				)}
+				{connectedCollection && (
+					<CollectionGrants
+						client={client}
+						orgId={orgId}
+						collection={connectedCollection}
+						connectedRepo={justConnected?.repo}
+						onDismiss={() => setJustConnected(null)}
 					/>
 				)}
 				{activitySource && (
@@ -931,6 +971,73 @@ function LastSyncCell({ source }: { source: DatasourceView }) {
 }
 
 /**
+ * How a change at the source reaches this deployment, and — when nothing pushes
+ * — how stale the source may therefore be.
+ *
+ * This column used to render `webhookConfigured`, which reports one thing: that
+ * a signing secret is stored against this source. A source connected through
+ * the GitHub App holds no secret of its own, because its pushes arrive at the
+ * App's single webhook URL, so every source on the recommended connect path
+ * read "Not configured" whether or not an operator had registered that
+ * webhook — and a reader had no way to tell the two deployments apart. The
+ * converse was just as wrong: a stored secret delivers nothing where the
+ * per-source receiver was never mounted, which is the default.
+ *
+ * `liveDelivery` composes both facts server-side. It is absent from an older
+ * host, where the honest answer is that nothing here knows: the cell then falls
+ * back to what the old flag actually means, and says which of the two it is
+ * reporting rather than presenting a guess as an answer.
+ */
+function LiveDeliveryCell({ source }: { source: DatasourceView }) {
+	const every = formatReconcileInterval(source.reconcileIntervalSeconds);
+	if (source.liveDelivery === undefined) {
+		return (
+			<>
+				<div>
+					{source.webhookConfigured
+						? "Signing secret configured"
+						: "No signing secret"}
+				</div>
+				<div className="type-caption-plain text-muted-foreground">
+					This host does not report how live updates reach this source.
+				</div>
+			</>
+		);
+	}
+	const label =
+		source.liveDelivery === "source_webhook"
+			? "On push, through this source's webhook"
+			: source.liveDelivery === "app_webhook"
+				? "On push, through the GitHub App"
+				: "No live updates";
+	return (
+		<>
+			<div>{label}</div>
+			{every && (
+				<div className="type-caption-plain text-muted-foreground">{every}</div>
+			)}
+		</>
+	);
+}
+
+/**
+ * The reconcile schedule in words. Undefined when the host does not report it;
+ * an interval of 0 means the periodic reconcile is off for this source, which
+ * — with no live delivery — leaves "Sync now" as the only thing that ever
+ * refreshes it, and is worth saying rather than leaving blank.
+ */
+function formatReconcileInterval(seconds: number | undefined): string {
+	if (seconds === undefined) return "";
+	if (seconds <= 0) return "No periodic reconcile; refreshed by Sync now only";
+	if (seconds % 3600 === 0) {
+		const hours = seconds / 3600;
+		return `Otherwise reconciled every ${hours} ${hours === 1 ? "hour" : "hours"}`;
+	}
+	const minutes = Math.max(1, Math.round(seconds / 60));
+	return `Otherwise reconciled every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
+/**
  * How each status that is not `active` presents. Active is deliberately absent:
  * it is the state of nearly every row, so badging it too would bury the states
  * that need a reader under a column of noise — and it and `unknown` would then
@@ -1053,7 +1160,7 @@ function SourcesTable({
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
-						<TableHead className={headerClass}>Webhook</TableHead>
+						<TableHead className={headerClass}>Live updates</TableHead>
 						<TableHead className={headerClass}>Last sync dispatch</TableHead>
 						{showActions && (
 							<TableHead className={cn(headerClass, "text-right")}>
@@ -1099,10 +1206,8 @@ function SourcesTable({
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
 							</TableCell>
-							<TableCell className={cellClass}>
-								{source.webhookConfigured
-									? "Signing secret configured"
-									: "Not configured"}
+							<TableCell className={cn(cellClass, wrapClass)}>
+								<LiveDeliveryCell source={source} />
 							</TableCell>
 							<TableCell
 								className={cn(cellClass, wrapClass, "text-muted-foreground")}

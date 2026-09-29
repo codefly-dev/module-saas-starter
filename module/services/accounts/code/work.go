@@ -943,7 +943,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	// connection, documents owns ingest. The switch is a declared key of the
 	// github-app configuration group, so a deployment turns it on from its own
 	// configuration rather than from an environment variable nothing declares.
-	if strings.EqualFold(strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
+	//
+	// Whether it is mounted is also told to the service, from here rather than
+	// from where the rest of the datasource configuration is read, so the fact a
+	// client is shown ("this source has live delivery") cannot drift from whether
+	// an endpoint exists to deliver it. A per-source signing secret verifies
+	// nothing when nothing is listening.
+	perSourceWebhookMounted := strings.EqualFold(
+		strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true")
+	service.SetDatasourceWebhookReceiverMounted(perSourceWebhookMounted)
+	if perSourceWebhookMounted {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
 			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},
@@ -971,6 +980,15 @@ func doWork(ctx context.Context) (Clean, error) {
 		// does not exist. Revocation then stays invisible for the life of a
 		// cached token with nothing anywhere to say why.
 		w.Warn("GitHub App registered without a webhook secret; installation lifecycle events cannot be verified and will not be received")
+	}
+	// Say the whole state once, at boot, whichever way it came out. "Is the
+	// webhook configured on this environment?" was previously answerable only by
+	// reading configuration on the box: a deployment with neither endpoint
+	// mounted logged nothing at all, and every source on it looked the same as a
+	// source on a deployment with both. A source is still kept current by the
+	// periodic reconcile, so this is a statement of latency, not of breakage.
+	if !service.GitHubAppWebhookConfigured() && !perSourceWebhookMounted {
+		w.Info("no GitHub push endpoint is configured on this deployment; datasource content is refreshed by the periodic reconcile and by Sync now only")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and

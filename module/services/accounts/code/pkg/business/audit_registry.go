@@ -750,13 +750,22 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id")),
 	observation(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
 		str("head"), str("delivery_id")),
-	observation(EventDatasourceSourceAccessLost, CategorySystem,
-		"A GitHub App installation stopped granting a source access to its repository; the source was degraded until access returns.",
-		str("repo"), str("installation_id"), enum("reason", DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended)),
-	observation(EventDatasourceSourceAccessRestored, CategorySystem,
-		"A GitHub App installation granted a source access to its repository again and the source was returned to active.",
+	// v2 adds the third cause, public_repository_unreadable: a source connected
+	// to a public repository that GitHub has stopped serving unauthenticated.
+	// It has no installation, so installation_id is empty on those records —
+	// which is also how a consumer tells the two families apart without reading
+	// the reason.
+	revised(observation(EventDatasourceSourceAccessLost, CategorySystem,
+		"A datasource source lost access to its repository — a GitHub App installation stopped granting it, or a public repository stopped being readable without a credential; the source was degraded until access returns.",
+		str("repo"), str("installation_id"), enum("reason",
+			DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended,
+			DatasourceAccessLostPublicRepositoryUnreadable)), 2),
+	revised(observation(EventDatasourceSourceAccessRestored, CategorySystem,
+		"A datasource source could read its repository again and was returned to active.",
 		str("repo"), str("installation_id"),
-		enum("restored_from", DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended)),
+		enum("restored_from",
+			DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended,
+			DatasourceAccessLostPublicRepositoryUnreadable)), 2),
 	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
 	observation(EventDatasourceFilesFetched, CategorySystem, "A module fetched a batch of a datasource's files at one version over FetchDatasourceFiles.",

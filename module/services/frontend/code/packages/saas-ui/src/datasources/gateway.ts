@@ -5,6 +5,7 @@ import {
 	type Datasource,
 	type DatasourceAccountLink,
 	DatasourceDomainStatus,
+	DatasourceLiveDelivery,
 	DatasourceProvider,
 	type DatasourceVerifiedDomain,
 	DatasourceStatus,
@@ -24,6 +25,7 @@ import type {
 	AccessibleScopeView,
 	AccountLinkView,
 	DatasourceClient,
+	DatasourceLiveDeliveryName,
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
@@ -458,6 +460,14 @@ function toDomainView(domain: DatasourceVerifiedDomain): DomainView {
 	};
 }
 
+const liveDeliveryNames: Partial<
+	Record<DatasourceLiveDelivery, DatasourceLiveDeliveryName>
+> = {
+	[DatasourceLiveDelivery.NONE]: "none",
+	[DatasourceLiveDelivery.SOURCE_WEBHOOK]: "source_webhook",
+	[DatasourceLiveDelivery.APP_WEBHOOK]: "app_webhook",
+};
+
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
 	[DatasourceStatus.ACTIVE]: "active",
 	[DatasourceStatus.PAUSED]: "paused",
@@ -477,6 +487,14 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		boundaryNodeId: source.boundaryNodeId,
 		boundaryLabel: source.boundaryLabel || undefined,
 		webhookConfigured: source.webhookConfigured,
+		// UNSPECIFIED is what an older host sends (the field decodes to its proto
+		// default), and it is left undefined rather than mapped to "none": "we
+		// could not tell" and "nothing pushes" are different claims and only one
+		// of them may be guessed.
+		liveDelivery: liveDeliveryNames[source.liveDelivery],
+		reconcileIntervalSeconds: source.reconcileInterval
+			? Number(source.reconcileInterval.seconds)
+			: undefined,
 		status: statusNames[source.status] ?? "unknown",
 		statusReason: source.statusReason || undefined,
 		// Keyed on the gap, which is never empty for a non-conformant source: an

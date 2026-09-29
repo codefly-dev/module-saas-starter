@@ -27,6 +27,16 @@ export type PrincipalDirectory = ReadonlyMap<string, string>;
 export interface AuditLogFilters {
 	orgId?: string;
 	eventType?: string;
+	/**
+	 * The set form of eventType: a record matches when its type is any one of
+	 * them. Both apply when both are sent.
+	 *
+	 * It is what lets a summary over a *family* of types be opened. "New users"
+	 * counts every type the registry marks as recording a person joining — a set
+	 * the registry owns and may extend — and a scalar eventType cannot name a
+	 * set, so that tile was a figure with no way to check it.
+	 */
+	eventTypes?: string[];
 	category?: string;
 	namespace?: string;
 	actorId?: string;

@@ -148,7 +148,7 @@ func TestModuleAuditDeclarations_DeclareEmitExport(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(emit(map[string]any{"conversation_id": "c", "grantee_kind": "org"})))
 	require.Equal(t, codes.InvalidArgument, status.Code(emit(map[string]any{"conversation_id": "c", "withheld_turns": 1.5})))
 
-	body, _, _, err := svc.ExportAuditLog(testCtx, org, "json", "", eventType)
+	body, _, _, err := svc.ExportAuditLog(testCtx, org, "json", "", eventType, nil)
 	require.NoError(t, err)
 	var rows []map[string]any
 	require.NoError(t, json.Unmarshal(body, &rows))

@@ -3,6 +3,7 @@ syntax = "proto3";
 package saas.accounts.v1;
 
 import "buf/validate/validate.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/jobs/v1/jobs.proto";
 import "saas/policy/v1/options.proto";
@@ -44,6 +45,33 @@ enum DatasourceStatus {
   // content is retained and stays readable — degrading stops future pulls, it
   // never withdraws history.
   DATASOURCE_STATUS_DEGRADED = 3;
+}
+
+// DatasourceLiveDelivery is how a change at the source reaches this deployment
+// without waiting for the periodic reconcile. It is what makes "is this source
+// current?" answerable: with no live delivery, a source is current only as of
+// its last sync, and reconcile_interval bounds how stale it may be.
+//
+// It is a property of the source AND of the deployment, which is why one
+// boolean could never carry it. A source connected through the GitHub App holds
+// no push secret of its own — its pushes arrive at the App's single webhook URL
+// — so the per-source webhook_configured flag is false for it whether the
+// deployment registered that App webhook or not. Reading that flag alone,
+// every App-backed source looks exactly like a source with no live delivery at
+// all, which is the most common connect path.
+enum DatasourceLiveDelivery {
+  DATASOURCE_LIVE_DELIVERY_UNSPECIFIED = 0;
+  // Nothing pushes to this source. It is refreshed by the periodic reconcile
+  // and by "Sync now", and by nothing else.
+  DATASOURCE_LIVE_DELIVERY_NONE = 1;
+  // The source's own repository webhook, verified with the signing secret
+  // stored against it. This is what webhook_configured has always reported.
+  DATASOURCE_LIVE_DELIVERY_SOURCE_WEBHOOK = 2;
+  // The deployment's GitHub App webhook: one registered endpoint carrying the
+  // pushes of every App-backed source, fanned out per source on receipt. Set
+  // only when this deployment has actually registered that webhook, so it is
+  // also the answer to "has anyone wired live delivery here at all".
+  DATASOURCE_LIVE_DELIVERY_APP_WEBHOOK = 3;
 }
 
 // GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
@@ -211,6 +239,16 @@ message Datasource {
   // so a client that must also read an older host, which sends neither field,
   // can key its flag on this and treat an empty gap as nothing to flag.
   string conformance_gap = 20;
+  // How a change at the source reaches this deployment without waiting for the
+  // reconcile below. Strictly more informative than webhook_configured, which
+  // it does not replace: that field still reports exactly what it always did,
+  // whether a signing secret is stored for this source.
+  DatasourceLiveDelivery live_delivery = 21;
+  // How often this source is reconciled from scratch when nothing pushes — the
+  // bound on how stale it may be. Zero means the periodic reconcile is off for
+  // it, which together with live_delivery NONE means it only ever changes when
+  // somebody presses "Sync now".
+  google.protobuf.Duration reconcile_interval = 22;
 }
 
 message AddGitHubSourceRequest {
@@ -416,6 +454,14 @@ message DatasourceProviderDescriptor {
   // non-conformant provider, and for one that translates provider permissions
   // while this deployment does not enforce them at read.
   bool accepts_new_sources = 14;
+  // Whether THIS deployment has configured the provider-level push endpoint
+  // this connector receives on. supports_webhook says the connector can take
+  // pushes at all; this says an operator has wired them here. The pair is what
+  // distinguishes "this provider has no push path" from "it has one and nobody
+  // turned it on", which otherwise look identical from every client: both leave
+  // every source of it with no live delivery. Always false for a connector
+  // whose supports_webhook is false.
+  bool live_delivery_configured = 15;
 }
 
 message GetDatasourceCatalogRequest {}

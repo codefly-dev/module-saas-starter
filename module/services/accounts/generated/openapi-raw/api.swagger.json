@@ -537,6 +537,17 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "eventTypes",
+            "description": "event_types is the set form of event_type: a record matches when its type is\nany one of them. Both may be sent; a record must then satisfy each, which\nfor a single-element set is the same answer as either alone.\n\nIt exists because a summary over a *family* of event types had no filter to\nopen. \"New users\" counts every type the registry marks as recording a\nperson joining — a set the registry owns and may extend — and a scalar\nevent_type cannot name a set, so the figure could be shown and never\nchecked. Picking one member instead would have shown a different number\nfrom the one clicked.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
@@ -665,6 +676,17 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "eventTypes",
+            "description": "The set form of event_type, matching QueryAuditLogRequest.event_types. A\ntile that summarises a family of event types reads its figure through this\nand drives its own click through the same value, so the number shown and\nthe list it opens cannot disagree.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
@@ -7400,6 +7422,13 @@
         },
         "eventType": {
           "type": "string"
+        },
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The set form of event_type, matching QueryAuditLogRequest.event_types, so a\ndownload carries the same filter as the list it was taken from."
         }
       }
     },

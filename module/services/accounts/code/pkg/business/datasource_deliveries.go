@@ -210,6 +210,16 @@ func DatasourceDeliveryOrderingKey(sourceID string) *jobsv1.JobOrderingKey {
 	}
 }
 
+// DatasourceSyncOrderingKey is the same guarantee for the sync-request queue the
+// pull providers run on: one in-flight pull per source, whether the schedule or
+// a person asked for it.
+func DatasourceSyncOrderingKey(sourceID string) *jobsv1.JobOrderingKey {
+	return &jobsv1.JobOrderingKey{
+		Namespace:  datasourceSyncOrderingNamespace,
+		Components: []string{sourceID},
+	}
+}
+
 // NewDatasourceDeliveryJobHandler adapts the change-set compiler and the
 // reconcile job to the leased worker. A source deleted between enqueue and lease
 // is a no-op success; a malformed payload is terminal; a GitHub or store failure
@@ -239,6 +249,12 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		}
 		defer func() {
 			if resultErr != nil {
+				// Before classifying: a source holding no credential whose read
+				// GitHub answers "not found" has lost the only access it ever had.
+				// This is the one access loss no other path watches for, and the
+				// classifier alone would call it a retryable 404 "inaccessible to
+				// this PAT" — for a source that has no PAT.
+				resultErr = s.parkUnreadablePublicSource(ctx, source, resultErr)
 				resultErr = datasourceProcessingError(resultErr)
 				trigger := "reconcile"
 				if envelope.GetTopic() == datasourcePushTopic {
@@ -289,6 +305,70 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery topic", false)
 		}
 	}
+}
+
+// parkUnreadablePublicSource is the sync-time half of the public-repository
+// check, the half connect time cannot perform: a repository that was public when
+// it was connected and is not any more.
+//
+// Connecting refuses a repository GitHub will not serve unauthenticated
+// (resolveGitHubConnectCredential → resolvePublicGitHubRepository), so a
+// credential-less source is proof that the repository was public at connect.
+// Nothing re-asked afterwards. When it later turns private — or is renamed, or
+// deleted, all of which GitHub answers with the same 404 to a request carrying
+// no credential — every fetch fails, and the generic classifier called that
+// "GitHub repository, branch, or content was not found or is inaccessible to
+// this PAT (404) … this job may retry": wrong about the remedy, wrong about the
+// credential the source holds, and retried up to datasourceDeliveryMaxAttempts
+// times before dead-lettering with the source still reading active and nothing
+// on the source itself to say why it stopped.
+//
+// So the answer is turned into what it is: terminal, named, and recorded on the
+// source. The 404 is the same proof connect time uses — GitHub serves an
+// unauthenticated read only of a public repository — so no second probe is made
+// and no extra request is spent to reach the same answer.
+//
+// Narrow on purpose. It applies only to a GitHub source whose stored credential
+// kind is the credential-less one: a PAT source's 404 may be a scope the token
+// lost and can regain, and an App source's access is the installation
+// reconciler's to decide. Recovery is the ordinary one — a later snapshot
+// clearing the degrade (snapshotAt) — which a repository made public again, or
+// reconnected with a PAT or through the App, all reach.
+func (s *Service) parkUnreadablePublicSource(ctx context.Context, source *DatasourceSource, cause error) error {
+	if source == nil || source.Provider != DatasourceProviderGitHub ||
+		source.GitHubCredentialKind != githubCredentialKindPublic ||
+		!errors.Is(cause, github.ErrNotFound) {
+		return cause
+	}
+	w := wool.Get(ctx).In("parkUnreadablePublicSource")
+	terminal := jobs.NewProcessingError("datasource.public_repository_unreadable",
+		DatasourceReasonPublicRepositoryUnreadable+" This sync job will not retry.", false)
+	// Already parked for this: the job still stops, but the row is not rewritten
+	// and no second access_lost is recorded. A source is parked out of the
+	// reconcile sweep, so repeats arrive from "Sync now", which ignores status.
+	if source.Status == DatasourceStatusDegraded && source.StatusReason == DatasourceReasonPublicRepositoryUnreadable {
+		return terminal
+	}
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, PublicRepositoryUnreadableDegradeReason())
+	}); err != nil {
+		// The park is what makes this visible; without it the tenant would see a
+		// source that simply stopped. Report the original failure so the job
+		// retries and the park is attempted again, rather than going terminal
+		// having recorded nothing.
+		w.Warn("park unreadable public source failed", wool.Field("source", source.ID), wool.ErrField(err))
+		return cause
+	}
+	s.emit(ctx, source.ID, "system", EventDatasourceSourceAccessLost, "datasource", source.ID, source.OrgID,
+		map[string]any{
+			"repo": source.Repo,
+			// No installation is involved; the field is declared on the event and
+			// is sent empty rather than omitted, so every record of this type
+			// carries the same shape.
+			"installation_id": "",
+			"reason":          DatasourceAccessLostPublicRepositoryUnreadable,
+		})
+	return terminal
 }
 
 // CompileGitHubDelivery turns one raw push delivery into a change set, through
@@ -554,8 +634,22 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, conn
 		}); err != nil {
 			return "", w.Wrapf(err, "clear degraded source")
 		}
-		s.emit(ctx, source.ID, "system", EventDatasourceSourceRecovered, "datasource", source.ID, source.OrgID,
-			map[string]any{"head": commit, "delivery_id": deliveryID})
+		// Which recovery this is, told by what the source was parked for. A source
+		// parked because GitHub stopped serving it unauthenticated recovered an
+		// access, not an ingest: recording it as the generic recovery would leave
+		// its access_lost with no matching access_restored, which is the pairing
+		// the installation path already keeps.
+		if source.StatusReason == DatasourceReasonPublicRepositoryUnreadable {
+			s.emit(ctx, source.ID, "system", EventDatasourceSourceAccessRestored, "datasource", source.ID, source.OrgID,
+				map[string]any{
+					"repo":            source.Repo,
+					"installation_id": "",
+					"restored_from":   DatasourceAccessLostPublicRepositoryUnreadable,
+				})
+		} else {
+			s.emit(ctx, source.ID, "system", EventDatasourceSourceRecovered, "datasource", source.ID, source.OrgID,
+				map[string]any{"head": commit, "delivery_id": deliveryID})
+		}
 	}
 	if forcePush {
 		s.emit(ctx, source.ID, "system", EventDatasourceForcePushReconciled, "datasource", source.ID, source.OrgID,
@@ -760,10 +854,19 @@ func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, 
 	return ordinal, err
 }
 
-// RunDatasourceReconcile is the periodic sweep: it enqueues a reconcile job for
-// every active GitHub source whose schedule has elapsed and reschedules it. The
-// job itself resolves the head and snapshots only if it moved, so the sweep does
-// no GitHub work and cannot be slowed by one unreachable repo.
+// RunDatasourceReconcile is the periodic sweep: it enqueues reconcile work for
+// every active source whose schedule has elapsed and reschedules it. A GitHub
+// source gets a conditional reconcile on the delivery queue — the job resolves
+// the head and snapshots only if it moved — and a pull source (api, crawler,
+// upload) gets the same sync request "Sync now" produces. Either way the sweep
+// itself does no provider work, so it cannot be slowed by one unreachable
+// source.
+//
+// The sweep runs in every replica and holds no lease. That is safe because each
+// source's job is keyed by the schedule it is due on (scheduledReconcileKey), so
+// two replicas selecting the same row before either bumps it enqueue one job
+// between them rather than two. The bump that follows moves the schedule, so the
+// next sweep computes a different key.
 func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 	w := wool.Get(ctx).In("RunDatasourceReconcile")
 	if s.datasourceJobs == nil {
@@ -779,8 +882,9 @@ func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 	}
 	enqueued := 0
 	for _, source := range due {
-		if err := s.enqueueReconcile(ctx, source, reconcileModeConditional); err != nil {
-			w.Warn("enqueue reconcile failed", wool.Field("source", source.ID), wool.ErrField(err))
+		if err := s.enqueueScheduledReconcile(ctx, source); err != nil {
+			w.Warn("enqueue reconcile failed", wool.Field("source", source.ID),
+				wool.Field("provider", source.Provider), wool.ErrField(err))
 			continue
 		}
 		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -793,7 +897,39 @@ func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 	return enqueued, nil
 }
 
-func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource, mode string) error {
+// enqueueScheduledReconcile dispatches one due source onto the path its provider
+// actually syncs on. GitHub is compiled by the change-set worker off the delivery
+// queue; every other provider is a full pull performed by the sync worker, which
+// is the only engine those connectors have (RunDatasourceSync).
+func (s *Service) enqueueScheduledReconcile(ctx context.Context, source *DatasourceSource) error {
+	if source.Provider == DatasourceProviderGitHub {
+		return s.enqueueReconcile(ctx, source, reconcileModeConditional, scheduledReconcileKey(source))
+	}
+	return s.enqueueScheduledPullSync(ctx, source)
+}
+
+// scheduledReconcileKey is the durable identity of one scheduled pass over one
+// source: the source, paired with the schedule instant that selected it.
+//
+// Both halves matter. The source alone would make every future pass an
+// idempotent replay of the first and the source would reconcile exactly once,
+// ever; a fresh key per attempt (which is what this path used before) lets two
+// replicas sweeping the same due row before either bumps it enqueue the same
+// work twice. For GitHub that was survivable — the per-source FIFO key serialises
+// the pair and the second finds the head unmoved — but a pull provider has no
+// cursor at all, so a duplicate is a second full re-send of the whole source.
+//
+// A source with no schedule cannot be selected by the due query, so the nil case
+// is unreachable there; it falls back to a fresh key rather than collapsing every
+// such source onto one shared key.
+func scheduledReconcileKey(source *DatasourceSource) string {
+	if source.NextReconcileAt == nil {
+		return NewIDString()
+	}
+	return "datasource.scheduled:" + source.ID + ":" + source.NextReconcileAt.UTC().Format(time.RFC3339Nano)
+}
+
+func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource, mode, idempotencyKey string) error {
 	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
@@ -802,7 +938,7 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			Topic:          DatasourceReconcileTopic,
 			Source:         DatasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
-			IdempotencyKey: NewIDString(),
+			IdempotencyKey: idempotencyKey,
 			SchemaVersion:  datasourceReconcileSchemaVersion,
 			Payload:        datasourceRequestBody(),
 			ContentType:    datasourceRequestContentType,
@@ -813,6 +949,47 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 				attrBoundaryID:    source.BoundaryNodeID,
 				attrReconcileMode: mode,
 			},
+		},
+	})
+	return err
+}
+
+// enqueueFirstPullSync is a pull source's sync at connect. It is the scheduled
+// pass's job with a fresh idempotency key rather than a schedule-derived one:
+// connecting is an explicit act, and a source reconnected after being deleted
+// must not be dropped as a replay of the first one's schedule.
+func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSource) error {
+	return s.enqueuePullSync(ctx, source, datasourceSyncRequestSource, NewIDString())
+}
+
+// enqueueScheduledPullSync is the periodic reconcile for a provider the host
+// pulls rather than receives: it enqueues exactly the sync request "Sync now"
+// enqueues, so one engine performs the pull and a scheduled sync cannot drift
+// from a manual one. Only its Source differs, so an operator reading a job can
+// tell the schedule's pass from a person's.
+func (s *Service) enqueueScheduledPullSync(ctx context.Context, source *DatasourceSource) error {
+	return s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
+}
+
+// enqueuePullSync enqueues one pull-provider sync request, the job the leased
+// sync worker performs through RunDatasourceSync. It is exactly the job
+// SyncDatasourceSource enqueues for these providers; only provenance and
+// idempotency key vary by caller.
+func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource, provenance, idempotencyKey string) error {
+	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+		Job: &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: source.OrgID}},
+			Queue:          DatasourceSyncRequestQueue,
+			Topic:          datasourceSyncRequestTopic,
+			Source:         provenance,
+			Ordering:       DatasourceSyncOrderingKey(source.ID),
+			IdempotencyKey: idempotencyKey,
+			SchemaVersion:  datasourceSyncRequestSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
+			MaxAttempts:    datasourceSyncRequestMaxAttempts,
+			Attributes:     map[string]string{attrSourceID: source.ID},
 		},
 	})
 	return err

@@ -77,7 +77,7 @@ components:
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
-  (repo · status · paths · branch · boundary · webhook · last sync) with per-row **Sync**/**Delete** and
+  (repo · status · paths · branch · boundary · live updates · last sync) with per-row **Sync**/**Delete** and
   a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
@@ -92,6 +92,16 @@ components:
   slot through which a consumer shows what the module that ingests a source's
   files knows about them (its per-source ingestion progress, say). The host
   names no such module.
+  The **live updates** cell reads `liveDelivery`, the host's composed answer to
+  "how does a change at the source reach this deployment": through the source's
+  own repository webhook, through the deployment's single GitHub App webhook, or
+  not at all — in which case it names the reconcile interval that bounds how
+  stale the source may be. It is NOT `webhookConfigured`, which reports only
+  whether a signing secret is stored against the source: an App-backed source
+  holds none, so reading that flag showed every source on the recommended
+  connect path as having no live delivery whether or not the App webhook was
+  registered. An older host sends no `liveDelivery`; the cell then says so rather
+  than presenting a guess as an answer.
   `renderSourceExecution={({ source, sync }) => …}` is the sibling slot for the
   **durable execution** of a sync — the fan-out task it became, its items,
   attempts, receipts and dead-letters. Opened from the row's **Execution**
@@ -216,9 +226,22 @@ platform administrator rather than through a grant (see accounts `AUTHZ.md`,
 
 The host's `/admin/datasources` picker lists existing collections, their active
 read grants (including inherited grants), and the creator's current read access.
-Administrators can choose a member or team and grant a role containing only
-that resource, or revoke a displayed grant. Revoking an inherited grant removes
-that role at its ancestor and all descendants; the confirmation names this impact.
+Administrators can choose **any number of** members and teams and grant a role
+containing only that resource in one press, or revoke a displayed grant. The
+grants are applied one at a time on purpose — the host mints the read role on
+its first use and concurrent grants would race to create one name, which is
+unique per organization — and the outcome is reported per subject, since a run
+that granted six of eight is neither a success nor a failure; the ones that did
+not land stay selected, so the retry is the same press. Revoking an inherited
+grant removes that role at its ancestor and all descendants; the confirmation
+names this impact.
+
+**`CollectionGrants` is also offered at connect time.** `DatasourcesPanel`
+opens it on the collection a connect just landed in, passing `connectedRepo` so
+it names what was connected and that nobody can read it yet, and `onDismiss` so
+it can be put away — the grant belongs where the person already is and knows who
+needs it, not in a separate later journey. "Manage read grants" wins when both
+are open, since that was asked for afterwards.
 Accounts checks admin authority and emits its transactional grant/revoke audit and
 lifecycle events. The host audit page resolves actor names, and grant rows display
 the granting actor. The host adapter supplies `listCollections`,

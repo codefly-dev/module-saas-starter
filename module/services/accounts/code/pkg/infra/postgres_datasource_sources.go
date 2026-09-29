@@ -441,14 +441,20 @@ func (s *PostgresStore) SetDatasourceSourceGitHubInstallation(ctx context.Contex
 	return err
 }
 
-// ListDatasourceSourcesDueForReconcile returns active GitHub sources whose
-// reconcile is due, oldest schedule first. Runs under the caller's WithControlPlane.
+// ListDatasourceSourcesDueForReconcile returns active sources of every provider
+// whose reconcile is due, oldest schedule first. Runs under the caller's
+// WithControlPlane.
+//
+// It used to filter provider = 'github', which — together with a pull provider
+// never being given a next_reconcile_at at connect — meant an api, crawler or
+// object-storage source was outside the safety net twice over. The caller routes
+// each row to the path its provider syncs on, so selecting them all here is what
+// makes the sweep the whole schedule rather than GitHub's.
 func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
 		`SELECT `+datasourceSourceColumns+`
 		   FROM datasource_sources
 		  WHERE status = 'active'
-		    AND provider = 'github'
 		    AND next_reconcile_at IS NOT NULL
 		    AND next_reconcile_at <= $1
 		  ORDER BY next_reconcile_at

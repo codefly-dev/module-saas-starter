@@ -30,6 +30,7 @@ export function useAuditLog(
 			svc.queryAuditLog({
 				orgId: params.orgId ?? "",
 				eventType: params.eventType ?? "",
+				eventTypes: params.eventTypes ?? [],
 				category: params.category ?? "",
 				namespace: params.namespace ?? "",
 				actorId: params.actorId ?? "",
@@ -177,6 +178,8 @@ export interface AuditAggregateParams {
 	payloadContains?: Record<string, string>;
 	orgId?: string;
 	eventType?: string;
+	/** The set form of eventType, matching AuditLogFilters.eventTypes. */
+	eventTypes?: string[];
 	category?: string;
 	namespace?: string;
 	// groupBy is the sole dimension; groupBys supersedes it for multi-dim
@@ -212,6 +215,7 @@ export function toAggregateRequest(
 	return {
 		orgId: params.orgId ?? "",
 		eventType: params.eventType ?? "",
+		eventTypes: params.eventTypes ?? [],
 		category: params.category ?? "",
 		namespace: params.namespace ?? "",
 		resource: params.resource ?? "",

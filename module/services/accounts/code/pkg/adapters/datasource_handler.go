@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"accounts/pkg/business"
@@ -45,7 +46,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
+	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
 }
 
 func (h *datasourceConnectHandler) AddSource(
@@ -111,7 +112,7 @@ func (h *datasourceConnectHandler) AddSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
+	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
 }
 
 func (h *datasourceConnectHandler) GetDatasourceCatalog(
@@ -143,7 +144,7 @@ func (h *datasourceConnectHandler) ListSources(
 	}
 	out := make([]*gen.Datasource, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, datasourceSourceToProto(source, h.svc.DatasourceConnectors()))
+		out = append(out, datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source)))
 	}
 	return connect.NewResponse(&gen.ListSourcesResponse{Datasources: out}), nil
 }
@@ -167,7 +168,7 @@ func (h *datasourceConnectHandler) GetSource(
 		}
 		return nil, translateGRPCError(err)
 	}
-	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors())}), nil
+	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
 }
 
 func (h *datasourceConnectHandler) SyncSource(
@@ -325,11 +326,15 @@ func (h *datasourceConnectHandler) MigrateGitHubSourceToApp(
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.MigrateGitHubSourceToAppResponse{
-		Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors()),
+		Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source)),
 	}), nil
 }
 
-func datasourceSourceToProto(source *business.DatasourceSource, registry *connector.Registry) *gen.Datasource {
+// datasourceSourceToProto projects one stored source. live is passed in rather
+// than derived here because it is not a property of the row: it composes the
+// source's own webhook secret and installation binding with what this deployment
+// has actually mounted, which only the service knows.
+func datasourceSourceToProto(source *business.DatasourceSource, registry *connector.Registry, live business.DatasourceLiveDelivery) *gen.Datasource {
 	conformant, gap := business.DatasourceConformance(registry, source.Provider)
 	out := &gen.Datasource{
 		Conformant:         conformant,
@@ -342,10 +347,16 @@ func datasourceSourceToProto(source *business.DatasourceSource, registry *connec
 		Status:             datasourceStatusToProto(source.Status),
 		StatusReason:       source.StatusReason,
 		WebhookConfigured:  source.WebhookConfigured(),
+		LiveDelivery:       datasourceLiveDeliveryToProto(live),
 		CreatedAt:          timestamppb.New(source.CreatedAt),
 		UpdatedAt:          timestamppb.New(source.UpdatedAt),
 		LastIngestedCommit: source.LastIngestedCommit,
 	}
+	// Zero means "no periodic reconcile for this source", which is a real state
+	// (an operator may set the interval to zero) and is exactly what the wire
+	// contract says a zero duration means, so it is sent as such rather than
+	// omitted.
+	out.ReconcileInterval = durationpb.New(source.ReconcileInterval)
 	if source.Provider == business.DatasourceProviderGitHub {
 		out.Github = &gen.GitHubDatasourceConfig{
 			Repo:           source.Repo,
@@ -393,6 +404,20 @@ func datasourceSourceToProto(source *business.DatasourceSource, registry *connec
 		out.LastIngestedAt = timestamppb.New(*source.LastIngestedAt)
 	}
 	return out
+}
+
+// datasourceLiveDeliveryToProto maps the business answer onto the wire enum. An
+// unknown value maps to NONE rather than UNSPECIFIED: "we could not tell" and
+// "nothing pushes" are different claims, and only the safe one may be guessed.
+func datasourceLiveDeliveryToProto(live business.DatasourceLiveDelivery) gen.DatasourceLiveDelivery {
+	switch live {
+	case business.DatasourceLiveDeliverySourceWebhook:
+		return gen.DatasourceLiveDelivery_DATASOURCE_LIVE_DELIVERY_SOURCE_WEBHOOK
+	case business.DatasourceLiveDeliveryAppWebhook:
+		return gen.DatasourceLiveDelivery_DATASOURCE_LIVE_DELIVERY_APP_WEBHOOK
+	default:
+		return gen.DatasourceLiveDelivery_DATASOURCE_LIVE_DELIVERY_NONE
+	}
 }
 
 func datasourceProviderToProto(provider string) gen.DatasourceProvider {
@@ -478,6 +503,9 @@ func datasourceCatalog(entries []business.DatasourceCatalogEntry) *gen.GetDataso
 			Conformant:        d.Conformant,
 			ConformanceGap:    d.Gap,
 			AcceptsNewSources: e.AcceptsNewSources,
+			// Whether an operator has wired this connector's push endpoint HERE,
+			// beside SupportsWebhook's "the connector could take one at all".
+			LiveDeliveryConfigured: e.LiveDeliveryConfigured,
 		}
 		for _, m := range d.CredentialModes {
 			entry.CredentialModes = append(entry.CredentialModes, datasourceCredentialModeEnum[m])
