@@ -310,20 +310,42 @@ only once it has actually assumed the role.
 `postgres_delegation_view_isolation_test.go` holds this on the provisioned
 store, through the scoped reader's own connection and the request login's own
 connection, for all three views: nothing with no tenant bound, each tenant's own
-rows under its own scope with two tenants seeded, and the joined principal
-fields and the aggregate counts filtered with the rest. It also clears the
-setting and requires the crossing to return, so the isolation is attributed to
-the migration rather than assumed.
+rows under its own scope with two tenants seeded, and the projections checked
+against the tenant they belong to — the actor **and** grantor names compared to
+that tenant's own fixtures and to the absence of the other's, and the aggregate
+totalled per tenant. Each tenant is seeded with principal identifiers of its
+own, because the shared seed helpers use one fixed identifier for every org,
+which would make both tenants' names identical and reduce the check to "not
+empty" — which a crossing satisfies too. It then clears the setting on each view
+in turn and requires the crossing to return on both capabilities, so the
+isolation is attributed to the migration rather than assumed.
 
-Two limits stay on the record. The crossing was **profile-dependent**: it arose
-because the view owner is a superuser, and where the migration principal is not
-one, forced row-level security binds the owner too and it does not arise. It was
-measured only on a local store — **no hosted or managed profile was inspected**,
-and "correct on the currently provisioned profile" was never evidence that it
-was correct. And the judgement still does not refuse a view: a **new**
-non-`security_invoker` view added later would cross tenants the same way and
-pass startup, so the property belongs with whoever adds a view, not with this
-policy.
+**What decides the crossing is the owner's authority, not superuser alone.**
+A view executing as its owner escapes a `FORCE`'d policy if the owner is a
+superuser, *or* holds `BYPASSRLS`, *or* is named by a permissive policy on the
+base table. So "the owner is not a superuser" is not a statement that the
+crossing cannot arise, and the store-backed test does not make one: it qualifies
+each view's owner explicitly and, where that owner can skip row security, runs
+the red half; where it cannot, it exercises nothing and asserts nothing about
+that profile's safety.
+
+The profile-independent proof is
+`qualification/scopedpools/delegation_view_owner_test.go`, on the disposable
+native PostgreSQL where an owner's authority can be set explicitly. It runs four
+owners — a superuser, a **non-superuser holding `BYPASSRLS`**, a **non-superuser
+named by a permissive policy**, and an ordinary owner — across a join, a
+filtered and an aggregate view shape, through both a read-only login and one
+whose session role is `app_tenant`. The first three cross tenants with the
+setting cleared and the fourth does not, which is what makes the first three
+findings rather than an artefact of the fixture; with the setting on, none of
+them cross.
+
+Two limits stay on the record. The crossing was measured on a local store and on
+CI's fixture — **no hosted or managed profile was inspected**, and "correct on
+the currently provisioned profile" was never evidence that it was correct. And
+the judgement still does not refuse a view: a **new** non-`security_invoker`
+view added later would cross tenants the same way and pass startup, so the
+property belongs with whoever adds a view, not with this policy.
 
 The unjudged classes are the request login's: `USAGE` on a type, domain,
 language, foreign-data wrapper or foreign server, `CREATE` on a tablespace, and

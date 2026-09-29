@@ -18,8 +18,7 @@ import (
 // delegation audit views read delegation_grants — which forces row-level
 // security, and whose tenant policy carries no TO clause and so applies to
 // every role — but under owner execution that policy is evaluated against the
-// owner, and forced row-level security does not apply to a superuser. So
-// wherever the migration principal that created them is a superuser, every
+// owner, and an owner that can skip row-level security skips it. So every
 // session selecting one read EVERY tenant's rows whatever scope it bound.
 //
 // That is not confined to the read-only capability: all three are granted to
@@ -28,14 +27,21 @@ import (
 // 14_delegation_views_security_invoker.up.sql makes them execute as the
 // selecting session instead.
 //
-// These run against the actually-provisioned store, so the views are owned by
-// the real migration principal and read through the real migrated schema, and
-// both probes authenticate as a real served capability: the scoped reader's own
-// read-only connection and the request login. No synthetic role stands in for
-// either.
+// These run against the actually-provisioned store, so the views are the real
+// ones, owned by the real migration principal and read through the real
+// migrated schema, and both probes authenticate as a real served capability:
+// the scoped reader's own read-only connection and the request login. No
+// synthetic role stands in for either.
+//
+// What this file does NOT do is decide the general question. Whether the
+// crossing arises depends on the owner's authority, and this store has exactly
+// one owner profile. The profile-independent proof — including the
+// non-superuser owner that a superuser check would wrongly call safe — is in
+// qualification/scopedpools/delegation_view_owner_test.go, on a disposable
+// native PostgreSQL where the owner's authority is established explicitly.
 
-// delegationViews are the three audit views 14 sets security_invoker on, with
-// the org column each exposes.
+// delegationViews are the three audit views 14 sets security_invoker on. Every
+// one exposes org_id.
 var delegationViews = []string{
 	"delegation_grants_recent",
 	"delegation_pattern_usage",
@@ -83,7 +89,7 @@ func bindScope(t *testing.T, conn *pgx.Conn, orgID string) {
 }
 
 // orgsVisible returns the distinct org_ids a probe reads from a view, and the
-// row count. Every one of the three exposes org_id.
+// row count.
 func orgsVisible(t *testing.T, conn *pgx.Conn, view string) ([]string, int) {
 	t.Helper()
 	rows, err := conn.Query(testCtx, fmt.Sprintf(`SELECT org_id::text FROM public.%s`, view)) //nolint:gosec // view is from delegationViews, not input
@@ -99,6 +105,15 @@ func orgsVisible(t *testing.T, conn *pgx.Conn, view string) ([]string, int) {
 		}
 	}
 	return distinct, len(all)
+}
+
+// delegationTenant is one seeded tenant and the principal names only it has, so
+// a projection can be checked against the tenant it belongs to rather than
+// merely against being non-empty.
+type delegationTenant struct {
+	orgID       string
+	actorName   string
+	grantorName string
 }
 
 // seedDelegationGrant inserts one grant in org, as a tenant-scoped identity so
@@ -126,15 +141,21 @@ func seedDelegationGrant(t *testing.T, orgID, actorID, grantorID, kind string) {
 // seedDelegationTenant builds one tenant with rows in all three views: a
 // pattern grant (delegation_pattern_usage selects kind = 'pattern') and a
 // one-shot, both created now so they fall inside the 7-day and 90-day windows.
-func seedDelegationTenant(t *testing.T) string {
+//
+// The principal identifiers carry label, so the denormalized names the views
+// project are unique to this tenant. The shared seedActorPrincipal helpers use
+// one fixed identifier for every org, which would make both tenants' names
+// identical and reduce a projection check to "not empty" — which is exactly
+// what a leak would also satisfy.
+func seedDelegationTenant(t *testing.T, label string) delegationTenant {
 	t.Helper()
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
-	actor := seedActorPrincipal(t, orgID)
-	grantor := seedGrantorPrincipal(t, orgID)
-	seedDelegationGrant(t, orgID, actor, grantor, "pattern")
-	seedDelegationGrant(t, orgID, actor, grantor, "one_shot")
-	return orgID
+	actor := seedAgentPrincipal(t, orgID, "ci.test/view-actor-"+label+":0.1.0")
+	grantor := seedAgentPrincipal(t, orgID, "ci.test/view-grantor-"+label+":0.1.0")
+	seedDelegationGrant(t, orgID, actor.ID, grantor.ID, "pattern")
+	seedDelegationGrant(t, orgID, actor.ID, grantor.ID, "one_shot")
+	return delegationTenant{orgID: orgID, actorName: actor.DisplayName, grantorName: grantor.DisplayName}
 }
 
 // The shipped ledger is what sets the option. Everything below reads as a
@@ -162,9 +183,9 @@ func TestShippedMigrationLeavesTheDelegationViewsAsInvoker(t *testing.T) {
 // nothing else to see, and every positive read is required to be non-empty so
 // no case can pass by returning nothing.
 func TestDelegationViewsIsolateTenantsOnEveryCapability(t *testing.T) {
-	orgA := seedDelegationTenant(t)
-	orgB := seedDelegationTenant(t)
-	require.NotEqual(t, orgA, orgB)
+	tenantA := seedDelegationTenant(t, "iso-a")
+	tenantB := seedDelegationTenant(t, "iso-b")
+	require.NotEqual(t, tenantA.orgID, tenantB.orgID)
 
 	for _, probe := range delegationProbes(t) {
 		for _, view := range delegationViews {
@@ -173,9 +194,11 @@ func TestDelegationViewsIsolateTenantsOnEveryCapability(t *testing.T) {
 				orgs, rows := orgsVisible(t, probe.conn, view)
 				require.Emptyf(t, orgs, "%s read %d rows from %s with no tenant bound", probe.name, rows, view)
 
-				for _, bound := range []struct{ label, org, other string }{
-					{"tenant A", orgA, orgB},
-					{"tenant B", orgB, orgA},
+				for _, bound := range []struct {
+					label, org, other string
+				}{
+					{"tenant A", tenantA.orgID, tenantB.orgID},
+					{"tenant B", tenantB.orgID, tenantA.orgID},
 				} {
 					bindScope(t, probe.conn, bound.org)
 					orgs, rows := orgsVisible(t, probe.conn, view)
@@ -189,113 +212,167 @@ func TestDelegationViewsIsolateTenantsOnEveryCapability(t *testing.T) {
 	}
 }
 
-// The columns the views add over their base table are filtered too: a joined
-// principal field and an aggregate count are what these views exist for, and a
-// crossing that leaked only through them would be just as wide.
+// The columns the views add over their base table are filtered too. These are
+// checked against the names that belong to the bound tenant and against the
+// absence of the other tenant's names — not merely against being non-empty,
+// which a crossing would satisfy just as well.
 func TestDelegationViewProjectionsCarryOnlyTheBoundTenant(t *testing.T) {
-	orgA := seedDelegationTenant(t)
-	orgB := seedDelegationTenant(t)
+	tenantA := seedDelegationTenant(t, "proj-a")
+	tenantB := seedDelegationTenant(t, "proj-b")
+	require.NotEqual(t, tenantA.actorName, tenantB.actorName, "the fixture must give each tenant its own names")
+	require.NotEqual(t, tenantA.grantorName, tenantB.grantorName)
 
 	for _, probe := range delegationProbes(t) {
 		t.Run(probe.name, func(t *testing.T) {
-			bindScope(t, probe.conn, orgA)
 			defer bindScope(t, probe.conn, "")
 
-			// The denormalized principal names, which come from the join.
-			rows, err := probe.conn.Query(testCtx, `
-				SELECT actor_display_name, grantor_display_name
-				FROM public.delegation_grants_recent`)
-			require.NoError(t, err)
-			names, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) ([2]*string, error) {
-				var pair [2]*string
-				return pair, row.Scan(&pair[0], &pair[1])
-			})
-			require.NoError(t, err)
-			require.NotEmpty(t, names, "the joined projection must be non-empty under tenant A")
-			for _, pair := range names {
-				require.NotNil(t, pair[0], "the actor join resolved to nothing; the principals policy refused it")
-				require.NotEmpty(t, *pair[0])
+			for _, bound := range []struct {
+				label string
+				own   delegationTenant
+				other delegationTenant
+			}{
+				{"tenant A", tenantA, tenantB},
+				{"tenant B", tenantB, tenantA},
+			} {
+				bindScope(t, probe.conn, bound.own.orgID)
+
+				// The denormalized principal names, which come from the join.
+				// Both sides are compared: a leak that carried the other
+				// tenant's grantor while the actor looked right would pass a
+				// non-empty check.
+				rows, err := probe.conn.Query(testCtx, `
+					SELECT coalesce(actor_display_name, ''), coalesce(grantor_display_name, '')
+					FROM public.delegation_grants_recent`)
+				require.NoError(t, err)
+				names, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) ([2]string, error) {
+					var pair [2]string
+					return pair, row.Scan(&pair[0], &pair[1])
+				})
+				require.NoError(t, err)
+				require.Lenf(t, names, 2, "%s seeded two grants, both inside the 7-day window", bound.label)
+				for _, pair := range names {
+					require.Equalf(t, bound.own.actorName, pair[0], "%s: actor name under %s", probe.name, bound.label)
+					require.Equalf(t, bound.own.grantorName, pair[1], "%s: grantor name under %s", probe.name, bound.label)
+					require.NotEqual(t, bound.other.actorName, pair[0], "the other tenant's actor name must not appear")
+					require.NotEqual(t, bound.other.grantorName, pair[1], "the other tenant's grantor name must not appear")
+				}
+
+				// The burn-rate projection carries both names too, and its own
+				// WHERE selects pattern grants.
+				var patternActor, patternGrantor string
+				var patternUses int
+				require.NoError(t, probe.conn.QueryRow(testCtx, `
+					SELECT coalesce(actor_display_name, ''), coalesce(grantor_display_name, ''), use_count
+					FROM public.delegation_pattern_usage`).Scan(&patternActor, &patternGrantor, &patternUses))
+				require.Equal(t, bound.own.actorName, patternActor)
+				require.Equal(t, bound.own.grantorName, patternGrantor)
+				require.Equal(t, 3, patternUses)
+				var patternRows int
+				require.NoError(t, probe.conn.QueryRow(testCtx, `
+					SELECT count(*) FROM public.delegation_pattern_usage`).Scan(&patternRows))
+				require.Equalf(t, 1, patternRows, "%s seeded exactly one pattern grant", bound.label)
+
+				// The aggregate must total this tenant's grants alone.
+				var aggregated int
+				require.NoError(t, probe.conn.QueryRow(testCtx, `
+					SELECT coalesce(sum(count), 0) FROM public.delegation_stats_daily`).Scan(&aggregated))
+				require.Equalf(t, 2, aggregated, "%s: the aggregate must total %s's grants alone", probe.name, bound.label)
 			}
-
-			// The burn-rate projection, whose own WHERE selects pattern grants.
-			var patternRows, patternUses int
-			require.NoError(t, probe.conn.QueryRow(testCtx, `
-				SELECT count(*), coalesce(sum(use_count), 0)
-				FROM public.delegation_pattern_usage`).Scan(&patternRows, &patternUses))
-			require.Equal(t, 1, patternRows, "tenant A seeded exactly one pattern grant")
-			require.Equal(t, 3, patternUses)
-
-			// The aggregate. Tenant A seeded two grants; the count column must
-			// total those and not also carry tenant B's.
-			var aggregated int
-			require.NoError(t, probe.conn.QueryRow(testCtx, `
-				SELECT coalesce(sum(count), 0) FROM public.delegation_stats_daily`).Scan(&aggregated))
-			require.Equal(t, 2, aggregated, "the aggregate must total tenant A's grants alone")
-
-			bindScope(t, probe.conn, orgB)
-			var forB int
-			require.NoError(t, probe.conn.QueryRow(testCtx, `
-				SELECT coalesce(sum(count), 0) FROM public.delegation_stats_daily`).Scan(&forB))
-			require.Equal(t, 2, forB, "tenant B totals its own two grants")
 		})
 	}
 }
 
+// ownerAuthority is what decides whether a view executing as its owner can skip
+// row-level security.
+type ownerAuthority struct {
+	Role      string
+	Superuser bool
+	BypassRLS bool
+}
+
+// canSkipRowSecurity reports whether this owner escapes a FORCE'd policy.
+// Superuser is not the only way: BYPASSRLS on an ordinary role does the same,
+// which is why "the owner is not a superuser" is not a statement that the
+// crossing cannot arise.
+func (o ownerAuthority) canSkipRowSecurity() bool { return o.Superuser || o.BypassRLS }
+
+// delegationViewOwner reads the authority of one view's owner.
+func delegationViewOwner(t *testing.T, view string) ownerAuthority {
+	t.Helper()
+	var owner ownerAuthority
+	require.NoError(t, testPool.QueryRow(testCtx, `
+		SELECT role.rolname::text, role.rolsuper, role.rolbypassrls
+		FROM pg_catalog.pg_class relation
+		JOIN pg_catalog.pg_roles role ON role.oid = relation.relowner
+		WHERE relation.oid = to_regclass('public.' || $1)`, view).Scan(
+		&owner.Role, &owner.Superuser, &owner.BypassRLS))
+	return owner
+}
+
 // The isolation above is a property of migration 14 and of nothing else. This
-// removes only that migration's setting — the down migration's one effect — and
-// requires the crossing to come back, then restores it and requires isolation
-// again. Without this the assertions above could pass on a store where the
-// views never leaked, and the migration would be proving nothing.
+// removes only that migration's setting — the down migration's one effect —
+// from each of the three views in turn and requires the crossing to come back
+// on every capability, then restores it and requires isolation again. Without
+// this the assertions above could pass on a store where the views never leaked.
 //
-// The crossing is profile-dependent: it arises because the view owner is a
-// superuser, for whom forced row-level security does not apply. Where the owner
-// is not a superuser the base table's policy binds it too and clearing the
-// setting changes nothing — so this asserts the leak only on the profile that
-// has one, and asserts its absence on the profile that does not, rather than
-// assuming either.
+// It runs the red half only where the owner's authority makes a crossing
+// possible, and it qualifies that authority explicitly per view rather than
+// assuming it: superuser OR BYPASSRLS, because either skips a FORCE'd policy.
+// Where the owner holds neither, this store cannot demonstrate the red half —
+// and this test then says so and asserts NOTHING about that profile's safety.
+// A non-superuser owner is not thereby safe: it can hold BYPASSRLS, or the base
+// table can carry a policy permissive to it, and
+// qualification/scopedpools/delegation_view_owner_test.go establishes both
+// cases on a fixture where the owner's authority is set explicitly.
 func TestDelegationViewIsolationComesFromTheInvokerSetting(t *testing.T) {
-	orgA := seedDelegationTenant(t)
-	seedDelegationTenant(t)
+	tenantA := seedDelegationTenant(t, "attr-a")
+	seedDelegationTenant(t, "attr-b")
 
 	owner := connectAs(t, storeSecret(t, "owner-connection"))
-	setInvoker := func(on bool) {
-		for _, view := range delegationViews {
-			_, err := owner.Exec(testCtx, fmt.Sprintf(`ALTER VIEW public.%s SET (security_invoker = %t)`, view, on)) //nolint:gosec // view is from delegationViews
-			require.NoError(t, err)
-		}
+	setInvoker := func(view string, on bool) {
+		_, err := owner.Exec(testCtx, fmt.Sprintf(`ALTER VIEW public.%s SET (security_invoker = %t)`, view, on)) //nolint:gosec // view is from delegationViews
+		require.NoError(t, err)
 	}
-	t.Cleanup(func() { setInvoker(true) })
+	t.Cleanup(func() {
+		for _, view := range delegationViews {
+			setInvoker(view, true)
+		}
+	})
 
-	var ownerIsSuperuser bool
-	require.NoError(t, owner.QueryRow(testCtx, `
-		SELECT role.rolsuper
-		FROM pg_catalog.pg_class view
-		JOIN pg_catalog.pg_roles role ON role.oid = view.relowner
-		WHERE view.oid = 'public.delegation_grants_recent'::regclass`).Scan(&ownerIsSuperuser))
-	t.Logf("the delegation views are owned by a superuser: %t", ownerIsSuperuser)
+	for _, view := range delegationViews {
+		authority := delegationViewOwner(t, view)
+		t.Logf("public.%s is owned by %q (superuser=%t, bypassrls=%t): a crossing is possible here = %t",
+			view, authority.Role, authority.Superuser, authority.BypassRLS, authority.canSkipRowSecurity())
 
-	for _, probe := range delegationProbes(t) {
-		t.Run(probe.name, func(t *testing.T) {
-			setInvoker(true)
-			bindScope(t, probe.conn, orgA)
-			_, bounded := orgsVisible(t, probe.conn, "delegation_grants_recent")
-			require.NotZero(t, bounded, "tenant A must read its own rows with the setting on")
-			bindScope(t, probe.conn, "")
-			orgs, rows := orgsVisible(t, probe.conn, "delegation_grants_recent")
-			require.Emptyf(t, orgs, "with security_invoker set, an unbound session read %d rows", rows)
+		for _, probe := range delegationProbes(t) {
+			t.Run(view+"/"+probe.name, func(t *testing.T) {
+				setInvoker(view, true)
+				bindScope(t, probe.conn, tenantA.orgID)
+				_, bounded := orgsVisible(t, probe.conn, view)
+				require.NotZero(t, bounded, "tenant A must read its own rows with the setting on")
+				bindScope(t, probe.conn, "")
+				orgs, rows := orgsVisible(t, probe.conn, view)
+				require.Emptyf(t, orgs, "with security_invoker set, an unbound session read %d rows from %s", rows, view)
 
-			setInvoker(false)
-			orgs, rows = orgsVisible(t, probe.conn, "delegation_grants_recent")
-			if ownerIsSuperuser {
-				require.NotZerof(t, rows, "without security_invoker the superuser-owned view must leak; if it does not, this test is not proving what closes the crossing")
-				require.Greater(t, len(orgs), 1, "the leak crosses tenants: an unbound session reads more than one org")
-			} else {
-				require.Empty(t, orgs, "on a non-superuser owner the base table's forced policy binds the owner too, so no crossing arises either way")
-			}
+				if !authority.canSkipRowSecurity() {
+					// Nothing is asserted about the cleared state here. On this
+					// profile the owner cannot skip the base table's policy, so
+					// clearing the setting would demonstrate neither a crossing
+					// nor its absence for any other profile — and an owner that
+					// is merely not a superuser is not safe.
+					t.Skipf("owner %q holds neither SUPERUSER nor BYPASSRLS, so this store cannot exhibit the crossing; "+
+						"the profile-independent red/green is in qualification/scopedpools", authority.Role)
+				}
 
-			setInvoker(true)
-			orgs, _ = orgsVisible(t, probe.conn, "delegation_grants_recent")
-			require.Empty(t, orgs, "restoring the setting restores the isolation")
-		})
+				setInvoker(view, false)
+				orgs, rows = orgsVisible(t, probe.conn, view)
+				require.NotZerof(t, rows, "without security_invoker, %s owned by %q must leak to %s; if it does not, this test is not proving what closes the crossing", view, authority.Role, probe.name)
+				require.Greaterf(t, len(orgs), 1, "the leak crosses tenants: %s read one org only from %s", probe.name, view)
+
+				setInvoker(view, true)
+				orgs, _ = orgsVisible(t, probe.conn, view)
+				require.Empty(t, orgs, "restoring the setting restores the isolation")
+			})
+		}
 	}
 }
