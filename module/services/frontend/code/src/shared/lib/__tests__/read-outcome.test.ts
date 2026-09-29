@@ -1,6 +1,11 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { describe, expect, it } from "vitest";
-import { readOutcome, readOutcomeMessage } from "../read-outcome";
+import {
+	mayKeepRetainedRows,
+	readOutcome,
+	readOutcomeMessage,
+	staleReadNotice,
+} from "../read-outcome";
 
 describe("readOutcome", () => {
 	it("treats a read that succeeded as genuinely empty", () => {
@@ -57,5 +62,30 @@ describe("readOutcomeMessage", () => {
 		);
 		expect(message).toContain("unknown");
 		expect(message).not.toContain("No members in this organization.");
+	});
+});
+
+// TanStack keeps the last successful answer when a refetch rejects, so "are
+// there rows" and "did the last read succeed" are separate questions and a
+// surface that only asks the first never reaches its denial branch.
+describe("what survives a failed refresh", () => {
+	it("drops rows the reader may no longer be allowed to see", () => {
+		expect(mayKeepRetainedRows("forbidden")).toBe(false);
+	});
+
+	it("keeps rows through a transient failure, which says nothing about authority", () => {
+		// Blanking a good table because one request did not come back is worse
+		// than the staleness it would be hiding.
+		expect(mayKeepRetainedRows("failed")).toBe(true);
+		expect(mayKeepRetainedRows("empty")).toBe(true);
+	});
+
+	it("says retained rows may be out of date, and only then", () => {
+		expect(staleReadNotice("failed", "this team's roles")).toContain(
+			"may be out of date",
+		);
+		// Nothing to caveat: the rows are gone, or they are current.
+		expect(staleReadNotice("forbidden", "this team's roles")).toBeNull();
+		expect(staleReadNotice("empty", "this team's roles")).toBeNull();
 	});
 });

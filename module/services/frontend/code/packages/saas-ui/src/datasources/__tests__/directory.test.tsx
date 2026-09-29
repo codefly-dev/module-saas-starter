@@ -15,7 +15,11 @@ import {
 	DatasourceDirectoryPanel,
 } from "../directory.js";
 import { createDatasourceClient } from "../gateway.js";
-import type { DatasourceClient, DatasourceDirectoryView } from "../types.js";
+import type {
+	AccountLinkView,
+	DatasourceClient,
+	DatasourceDirectoryView,
+} from "../types.js";
 
 afterEach(() => {
 	cleanup();
@@ -43,6 +47,38 @@ function baseClient(overrides: Partial<DatasourceClient>): DatasourceClient {
 }
 
 describe("DatasourceAccountLinks", () => {
+	// `links.data` is undefined until the answer lands, so an empty branch reached
+	// before that states "No account is linked" about a read still in flight — and
+	// keeps stating it for as long as the read takes. A slow link therefore told
+	// the reader the opposite of the truth.
+	it("does not claim no account is linked while the read is still outstanding", async () => {
+		let release: (value: AccountLinkView[]) => void = () => {};
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(
+				() =>
+					new Promise<AccountLinkView[]>((resolve) => {
+						release = resolve;
+					}),
+			),
+		});
+		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
+
+		await waitFor(() => expect(client.listMyAccountLinks).toHaveBeenCalled());
+		expect(screen.queryByText(/No .* account is linked/)).toBeNull();
+
+		release([
+			{
+				id: "l1",
+				userId: "u1",
+				connector: "github",
+				providerAccountId: "1001",
+				providerAccountLogin: "jane",
+			},
+		]);
+		expect(await screen.findByText("jane")).toBeTruthy();
+		expect(screen.queryByText(/No .* account is linked/)).toBeNull();
+	});
+
 	it("lists the person's link and starts a sign-in to link one", async () => {
 		const assign = vi.fn();
 		vi.stubGlobal("location", { ...window.location, assign });

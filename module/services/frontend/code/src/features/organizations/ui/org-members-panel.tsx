@@ -16,7 +16,12 @@ import { RoleGate } from "@/components/auth/role-gate";
 import { UserPicker } from "@/components/user-picker";
 import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
 import { useAuth } from "@/lib/auth";
-import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
+import {
+	mayKeepRetainedRows,
+	readOutcome,
+	readOutcomeMessage,
+	staleReadNotice,
+} from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Button,
@@ -70,13 +75,24 @@ export function OrgMembersPanel({
 		isError,
 		error,
 	} = useQuery(orgQueries.members(orgId));
-	const members: OrgMembership[] = (raw?.members ?? []).map((m) => ({
-		orgId: m.orgId,
-		userId: m.userId,
-		userEmail: m.userEmail,
-		role: toOrgRole(m.role as unknown as number),
-		joinedAt: m.joinedAt ? timestampDate(m.joinedAt).toISOString() : undefined,
-	}));
+	const outcome = readOutcome(isError, error);
+	// A refused roster takes precedence over rows already on screen. TanStack keeps
+	// the last successful answer when a refetch rejects, and `emptyMessage` is only
+	// consulted when the table has no rows — so without this, a denial after a
+	// successful read leaves the roster rendered and the message unreachable.
+	const withheld = !mayKeepRetainedRows(outcome);
+	const stale = staleReadNotice(outcome, "this organization's members");
+	const members: OrgMembership[] = (withheld ? [] : (raw?.members ?? [])).map(
+		(m) => ({
+			orgId: m.orgId,
+			userId: m.userId,
+			userEmail: m.userEmail,
+			role: toOrgRole(m.role as unknown as number),
+			joinedAt: m.joinedAt
+				? timestampDate(m.joinedAt).toISOString()
+				: undefined,
+		}),
+	);
 
 	const addMutation = useMutation({
 		mutationFn: () =>
@@ -217,6 +233,11 @@ export function OrgMembersPanel({
 				</Link>
 			)}
 
+			{stale && (
+				<p role="status" className="text-sm text-muted-foreground">
+					{stale}
+				</p>
+			)}
 			{/* An unread `isError` rendered a failed or denied roster read as "No
 			    members in this organization." — the one sentence an administrator
 			    would act on, about a tenant whose roster was never read. */}
@@ -224,7 +245,7 @@ export function OrgMembersPanel({
 				table={table}
 				isLoading={isLoading}
 				emptyMessage={readOutcomeMessage(
-					readOutcome(isError, error),
+					outcome,
 					"this organization's members",
 					"No members in this organization.",
 				)}

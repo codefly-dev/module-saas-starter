@@ -50,7 +50,14 @@ export function DataTable<T>({
 		...(delayMs === undefined ? {} : { delayMs }),
 		...(minVisibleMs === undefined ? {} : { minVisibleMs }),
 	});
-	if (quiet) return null;
+	// The quiet window keeps the frame and its headers, and shows neither the
+	// skeleton nor the empty row. Returning null here instead would satisfy both
+	// rules and still be wrong: a query key that changes under a mounted table —
+	// switching organization — puts `isLoading` back to true with the previous
+	// rows on screen, so the table would collapse to nothing for 200ms and then
+	// come back. The header is neither an indicator nor an answer about the data,
+	// so holding it costs the reader nothing and keeps the layout still.
+	if (quiet) return <DataTableSkeleton table={table} rows={0} />;
 	if (indicator) return <DataTableSkeleton table={table} />;
 
 	return (
@@ -162,22 +169,53 @@ export function DataTable<T>({
  * this directly shows the skeleton with no delay, which is right for an example
  * and wrong for a product surface — those pass `isLoading` to `DataTable`.
  */
-export function DataTableSkeleton<T>({ table }: { table: TanStackTable<T> }) {
+export function DataTableSkeleton<T>({
+	table,
+	rows = 5,
+}: {
+	table: TanStackTable<T>;
+	/**
+	 * Placeholder rows. `0` is the frame alone — the header and border with no
+	 * body — which is what `DataTable` holds during the window before a wait has
+	 * earned an indicator. It carries no `aria-busy` and no accessible name,
+	 * because nothing is being announced yet.
+	 */
+	rows?: number;
+}) {
 	"use no memo";
+	const announced = rows > 0;
 	return (
-		<div className="rounded-md border" aria-busy aria-label="Loading table">
+		<div
+			className="rounded-md border"
+			{...(announced
+				? { "aria-busy": true, "aria-label": "Loading table" }
+				: {})}
+		>
 			<Table>
 				<TableHeader>
-					<TableRow>
-						{table.getAllColumns().map((col) => (
-							<TableHead key={col.id}>
-								<Skeleton className="h-4 w-24" />
-							</TableHead>
-						))}
-					</TableRow>
+					{table.getHeaderGroups().map((headerGroup) => (
+						<TableRow key={headerGroup.id}>
+							{headerGroup.headers.map((header) => (
+								<TableHead key={header.id}>
+									{/* Real column names in the frame-only form: a table's identity
+									    is known before its rows are, and a header of blank boxes
+									    holds the layout without saying what is coming. Bars only
+									    once this is an announced indicator. */}
+									{announced ? (
+										<Skeleton className="h-4 w-24" />
+									) : header.isPlaceholder ? null : (
+										flexRender(
+											header.column.columnDef.header,
+											header.getContext(),
+										)
+									)}
+								</TableHead>
+							))}
+						</TableRow>
+					))}
 				</TableHeader>
 				<TableBody>
-					{Array.from({ length: 5 }).map((_, i) => (
+					{Array.from({ length: rows }).map((_, i) => (
 						<TableRow key={i}>
 							{table.getAllColumns().map((col) => (
 								<TableCell key={col.id}>

@@ -120,6 +120,15 @@ flight. Tables get all of this from `DataTable` — pass `isLoading`.
 `packages/codefly-ui/README.md` § "A loading indicator never flashes" has the
 detail.
 
+A third trap, found by review of the round that added the first two: the rules
+govern a *finished* read, and a query is not finished when `isPending` is false.
+A disabled query (`enabled: !!orgId`) sits at `isPending` with `fetchStatus`
+`"idle"`, so `isLoading` is false and a surface falls straight through to its
+empty branch about a read that was never issued — gate on
+`isPending && fetchStatus !== "idle"`. And `isFetching` is its own state: after a
+write, the cached answer is behind the database until the refresh lands, which is
+how a successful add sat beside a count of zero.
+
 **An empty state says which of two things it means** — "there is nothing here"
 versus "you are not allowed to see what is here". A region that reads `data` and
 `isLoading` but never `isError` renders a refused or failed read as an empty one,
@@ -128,3 +137,12 @@ administrator will act on: "nobody holds this role" shown to someone whose read
 was denied. `src/shared/lib/read-outcome.ts` classifies a finished read as
 `empty` / `forbidden` / `failed` and supplies the wording; a surface with an
 empty state passes `isError` and `error` through it.
+
+Testing `rows.length === 0` before `isError` is not enough, because TanStack
+keeps the last successful answer when a refetch rejects: a success followed by a
+refusal leaves the previous rows rendered and the denial unreachable. The two
+failures part company here, which is what `mayKeepRetainedRows` and
+`staleReadNotice` are for — a **refusal** is about this reader's authority over
+those very rows, so they go; a **transient failure** is not, so they stay with a
+note that they may be out of date. Blanking a good table because one request did
+not come back is worse than the staleness.

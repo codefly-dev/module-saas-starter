@@ -65,7 +65,7 @@ export function TeamMembersPanel({
 		member: TeamMembership;
 		role?: TeamRole;
 	} | null>(null);
-	const { data, isPending, isError, error, refetch } = useQuery(
+	const { data, isPending, isError, error, isFetching, refetch } = useQuery(
 		teamQueries.members(teamId),
 	);
 	// Nothing at all for the first 200ms, then an indicator that stays long enough
@@ -73,6 +73,10 @@ export function TeamMembersPanel({
 	// below it sits the roster, whose own empty row would otherwise say "No
 	// members in this team yet." about a team still being read.
 	const { indicator, quiet } = useLoadingPhase(isPending);
+	// A refresh of a roster already on screen, as distinct from the first read.
+	const { indicator: refreshingIndicator } = useLoadingPhase(
+		isFetching && !isPending && !isError,
+	);
 	const members = data?.members ?? [];
 	const visible = members.filter((member) =>
 		(member.userEmail || "").toLowerCase().includes(search.toLowerCase()),
@@ -123,6 +127,16 @@ export function TeamMembersPanel({
 			<div>
 				<h2 className="text-xl font-semibold">
 					Members {!isPending && !isError && `(${members.length})`}
+					{/* The count is the cached roster's, and after a write that roster is
+				    behind the database until the refresh lands — which is how a
+				    successful add sat beside "(0)" (#964). Saying so beats hiding the
+				    number: blanking it on every background refetch is its own flicker,
+				    and a read that never returns would blank it for good. Gated by the
+				    same 200/300 rule as every other indicator, so a refresh that lands
+				    quickly says nothing at all. */}
+					{refreshingIndicator && (
+						<Spinner label="Refreshing members" size="sm" className="ml-2" />
+					)}
 				</h2>
 				<p className="text-sm text-muted-foreground">
 					Team roles apply to {teamName}; they do not change organization roles.

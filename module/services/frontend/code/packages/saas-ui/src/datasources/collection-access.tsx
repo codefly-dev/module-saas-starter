@@ -1,7 +1,8 @@
 "use client";
 
+import { Spinner, useLoadingPhase } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { useAccessibleScopes } from "./queries.js";
 import type {
 	CollectionAccessView,
@@ -21,6 +22,13 @@ export function CollectionReadBoundary({
 	children: ReactNode;
 }) {
 	const scopes = useAccessibleScopes(client, orgId);
+	// This gate decides whether a collection is shown at all, so its wait needs
+	// the same 200/300 rule as any other: a cached answer resolves well inside
+	// the delay, and "Checking collection permissions…" appearing and vanishing
+	// inside it is the flicker the rule exists to remove.
+	const { indicator, quiet } = useLoadingPhase(
+		scopes.isPending && scopes.fetchStatus !== "idle",
+	);
 	if (!client.listAccessibleScopes || scopes.isError)
 		return (
 			<p role="alert">
@@ -28,8 +36,10 @@ export function CollectionReadBoundary({
 				service is available.
 			</p>
 		);
-	if (scopes.isPending)
-		return <p role="status">Checking collection permissions…</p>;
+	if (quiet) return null;
+	if (indicator)
+		return <Spinner label="Checking collection permissions" size="sm" />;
+	if (scopes.isPending) return null;
 	if (
 		!scopes.data?.some(
 			(scope) => scope.nodeId === nodeId && scope.actions.includes("read"),

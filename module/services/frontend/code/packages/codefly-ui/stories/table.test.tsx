@@ -73,6 +73,14 @@ it("shows nothing at all — not even the empty message — before the delay", a
 		// the empty row and tell the reader "No workspaces found." about a table
 		// that is still loading — not noise, a wrong answer.
 		expect(emptyRow()).toBeNull();
+		// The frame stays. Returning null here would satisfy both rules and still
+		// collapse a table whose query key changed under it — an organization
+		// switch puts isLoading back to true with rows on screen — so the header
+		// is held, carrying neither an indicator nor an answer about the data.
+		expect(
+			screen.getByRole("columnheader", { name: "Workspace" }),
+		).toBeTruthy();
+		expect(screen.queryByLabelText("Loading table")).toBeNull();
 
 		await advance(LOADING_DELAY_MS - 1);
 		expect(skeleton()).toBeNull();

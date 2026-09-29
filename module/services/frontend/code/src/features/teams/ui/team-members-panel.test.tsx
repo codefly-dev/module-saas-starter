@@ -113,6 +113,25 @@ describe("adding a member reports the write, not the read that follows it", () =
 		}
 	});
 
+	// Settling the button is only half of it: the heading still reads the CACHED
+	// roster, which after a write is behind the database until the refresh lands.
+	// That is the "(0)" half of #964, and it must not sit there mute.
+	it("says the roster is being refreshed rather than letting a stale count stand mute", async () => {
+		const release = await addAMemberWithTheRosterHeld();
+		try {
+			await waitFor(() =>
+				expect(screen.queryByRole("button", { name: "Adding…" })).toBeNull(),
+			);
+			// Gated by the same 200/300 rule as every other indicator, so a refresh
+			// that lands quickly says nothing at all.
+			expect(
+				await screen.findByRole("status", { name: "Refreshing members" }),
+			).toBeTruthy();
+		} finally {
+			release();
+		}
+	});
+
 	it("still lands the new member once that re-read returns", async () => {
 		const release = await addAMemberWithTheRosterHeld();
 		release();

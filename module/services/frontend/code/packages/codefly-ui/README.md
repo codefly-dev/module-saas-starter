@@ -265,9 +265,14 @@ is also what gives you the third state the empty branch needs. Found three times
 in one panel in this repo, with the primitive already imported.
 
 **`DataTable` already owns this.** Every table in the product renders through it,
-so the rule is kept in one place: pass `isLoading` and it shows nothing for the
-first 200 ms, then a skeleton that stays long enough to read, and it never falls
-through to `emptyMessage` while the read is outstanding. `DataTableSkeleton` is
+so the rule is kept in one place: pass `isLoading` and it holds the frame and its
+column headers for the first 200 ms, then shows a skeleton that stays long enough
+to read, and it never falls through to `emptyMessage` while the read is
+outstanding. The frame is held rather than returning `null`, because a query key
+that changes under a mounted table — switching organization — puts `isLoading`
+back to true with rows on screen, and `null` would collapse the table to nothing
+and bring it back. A header is neither an indicator nor an answer about the data,
+so holding it breaks neither rule. `DataTableSkeleton` is
 that skeleton's appearance on its own, with no timing — for an example or a test
 that exists to *show* it. A product surface passes `isLoading` to `DataTable`
 and does not reach for the skeleton directly.

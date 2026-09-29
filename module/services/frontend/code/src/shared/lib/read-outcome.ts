@@ -54,3 +54,36 @@ export function readOutcomeMessage(
 			return empty;
 	}
 }
+
+/**
+ * Whether rows already on screen may survive a read that ended in `outcome`.
+ *
+ * TanStack Query keeps the last successful data when a refetch rejects, so a
+ * surface that tests `rows.length === 0` before it tests `isError` never reaches
+ * its denial branch: the refused read leaves the previous answer rendered, and
+ * the reader is given no sign that it is no longer authorized.
+ *
+ * The two failures part company here. A refusal is about the reader's authority
+ * over the rows themselves, so the rows go — on a permissions console, grants
+ * left on screen after the read was refused are the same wrong answer as
+ * "nobody holds this role", arrived at from the other direction. A transient
+ * failure says nothing about authority, and blanking a good table because one
+ * request did not come back is worse than the stale data: those rows stay, with
+ * `staleReadNotice` saying they may be out of date.
+ */
+export function mayKeepRetainedRows(outcome: ReadOutcome): boolean {
+	return outcome !== "forbidden";
+}
+
+/**
+ * What to say above rows that survived a failed refresh, or null when there is
+ * nothing to add — the read succeeded, or it was refused and the rows are gone.
+ */
+export function staleReadNotice(
+	outcome: ReadOutcome,
+	subject: string,
+): string | null {
+	return outcome === "failed"
+		? `Couldn't refresh ${subject}, so this may be out of date.`
+		: null;
+}
