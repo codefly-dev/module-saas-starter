@@ -185,13 +185,16 @@ func TestCheck_NoAuth_ProtectedRoute_Denied(t *testing.T) {
 // ============================================================================
 
 func TestCheck_JWTAuth(t *testing.T) {
-	// Authenticate to get a JWT
+	// Authenticate to get a JWT. provider_id / provider_email are deprecated
+	// and Authenticate ignores them (authentication.proto), so the identity
+	// comes from the seeded fixture token the required `authentication` oneof
+	// carries. Each test here logs in as a different fixture identity so a
+	// logout or refresh-reuse assertion cannot revoke another test's session.
 	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
-		Provider:      "google",
-		ProviderId:    "google_jwt_test",
-		ProviderEmail: "jwt-test@example.com",
-		EmailVerified: true,
-		Profile:       map[string]string{"name": "JWT Tester"},
+		Provider: "email",
+		Authentication: &apigen.AuthenticateRequest_Fixture{
+			Fixture: &apigen.FixtureAuthentication{Token: "dev-alice"},
+		},
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, authResp.AccessToken)
@@ -242,9 +245,10 @@ func TestCheck_InvalidJWT(t *testing.T) {
 
 func TestAuth_RefreshToken(t *testing.T) {
 	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
-		Provider:      "google",
-		ProviderId:    "google_refresh_test",
-		ProviderEmail: "refresh@example.com",
+		Provider: "email",
+		Authentication: &apigen.AuthenticateRequest_Fixture{
+			Fixture: &apigen.FixtureAuthentication{Token: "dev-carol"},
+		},
 	})
 	require.NoError(t, err)
 
@@ -267,9 +271,10 @@ func TestAuth_RefreshToken(t *testing.T) {
 
 func TestAuth_Logout(t *testing.T) {
 	authResp, err := testAuthClient.Authenticate(testCtx, &apigen.AuthenticateRequest{
-		Provider:      "google",
-		ProviderId:    "google_logout_test",
-		ProviderEmail: "logout@example.com",
+		Provider: "email",
+		Authentication: &apigen.AuthenticateRequest_Fixture{
+			Fixture: &apigen.FixtureAuthentication{Token: "dev-dana"},
+		},
 	})
 	require.NoError(t, err)
 

@@ -122,12 +122,13 @@ func TestIntegration_Gateway_LoginPath_NoToken_Allowed(t *testing.T) {
 
 	// Login through the gateway with no prior token. Authenticate proto
 	// path: POST /v1/auth/authenticate. The route config marks this as
-	// public so it must be allowed through.
+	// public so it must be allowed through. The body carries the required
+	// `authentication` oneof as `fixture`; the deprecated provider_id /
+	// provider_email fields it used to send are ignored by Authenticate.
 	status, body, _ := doRequest(t, http.MethodPost, base+"/v1/auth/authenticate",
 		map[string]any{
-			"provider":       "google",
-			"provider_id":    "integration-user-1",
-			"provider_email": "integration-1@test.local",
+			"provider": "email",
+			"fixture":  map[string]any{"token": "dev-bob"},
 		}, "")
 	require.Equal(t, 200, status, "login must succeed: %s", body)
 
@@ -155,9 +156,8 @@ func TestIntegration_Gateway_AuthenticatedRequest_Allowed(t *testing.T) {
 	// Step 1: login via the public /v1/auth/authenticate path.
 	loginStatus, loginBody, _ := doRequest(t, http.MethodPost, base+"/v1/auth/authenticate",
 		map[string]any{
-			"provider":       "google",
-			"provider_id":    "integration-user-2",
-			"provider_email": "integration-2@test.local",
+			"provider": "email",
+			"fixture":  map[string]any{"token": "dev-admin"},
 		}, "")
 	require.Equal(t, 200, loginStatus, "login: %s", loginBody)
 
@@ -183,7 +183,7 @@ func TestIntegration_Gateway_StripsForgedIdentityHeaders(t *testing.T) {
 	defer teardown()
 
 	req, _ := http.NewRequest(http.MethodPost, base+"/v1/auth/authenticate",
-		bytes.NewReader([]byte(`{"provider":"google","provider_id":"strip-test","provider_email":"strip@test.local"}`)))
+		bytes.NewReader([]byte(`{"provider":"email","fixture":{"token":"dev-alice"}}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-Id", "attacker-spoofed-uuid")
 	req.Header.Set("X-Platform-Role", "super_admin")
