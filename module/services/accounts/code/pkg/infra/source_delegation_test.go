@@ -15,8 +15,8 @@ import (
 	"accounts/pkg/datasource/github"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -239,7 +239,7 @@ func (w *delegationWorld) confirm(authority business.SourceOperationContextAutho
 func execControlPlane(t *testing.T, query string, args ...any) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, query, args...)
 		return err
 	}))

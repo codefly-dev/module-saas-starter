@@ -8,18 +8,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
 	pgauth "accounts/pkg/auth/pg"
+	"accounts/pkg/infra/storetx"
 )
 
 // setSsoProvisioning writes an org's JIT provisioning policy.
 func setSsoProvisioning(t *testing.T, orgID uuid.UUID, mode, defaultRole string, domains []string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			UPDATE organizations
 			   SET sso_provision_mode        = $2,
@@ -86,7 +86,7 @@ func TestResolver_Registration_RecordedOncePerIdentityInTheJoiningOrg(t *testing
 	// Remove the member locally; the IdP still asserts them, so the next login
 	// re-provisions the membership and emits a second sso_jit_provisioned.
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM organization_members WHERE org_id = $1 AND user_id = $2`,
 			orgID, first.UserID)
 		return err
@@ -208,7 +208,7 @@ func TestResolver_SsoJit_ReprovisionsIdentityRemovedFromOrg(t *testing.T) {
 
 	// Locally remove the member while the identity stays valid at the IdP.
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM organization_members WHERE org_id = $1 AND user_id = $2`,
 			orgID, first.UserID)
 		return err

@@ -2,8 +2,10 @@
 
 Status: runtime-role baseline, ownership separation, complete relation
 inventory, exact request/control-plane/worker grants, and removal of the
-application-settable RLS bypass are implemented. Physical credential isolation
-remains open under `P2-DB-002` and `P2-DB-006`.
+application-settable RLS bypass are implemented. Request and cross-tenant work
+authenticate as separate logins (`P2-DB-002`), pinned by separately credentialed
+request/control-plane tests (`P2-DB-006`); the separation needs a Postgres agent
+that provisions the store's declared `runtime-logins`.
 
 The Starter owns database roles, grants, RLS policy shape, and worker authority.
 Installed products add tables through additive migration sources and must opt
@@ -37,18 +39,304 @@ adapter and transaction-local `app.current_org_id` / `app.current_user_id` setti
 Its current request adapter issues Readers only; authentication alone does not
 grant a Writer.
 
-When `POSTGRES_TOKEN_FILE` is configured, `WithAccessTokenProvider` rereads that
-bounded projected file for every new physical connection. The intentionally
-separate legacy/control-plane pool adapts the same provider into its existing pgx
-hook and retains explicit `app_tenant` / `app_control_plane` role selection. An
-unset file preserves local URL credentials. Token projection and its atomic
-replacement remain deployment responsibilities.
+External-identity deployments with separate logins configure
+`POSTGRES_TOKEN_FILES`: a JSON object mapping each exact database login name
+to its absolute projected token-file path. The provider selects by the physical
+connection's username, including the reader, request writer, control plane and
+workers. Every connection rereads its selected file (bounded to 64 KiB), so
+tokens rotate independently without restarting accounts. An absent login,
+invalid map, missing/empty/oversized file or cancelled read fails the connection;
+none falls back to a URL credential.
+
+`POSTGRES_TOKEN_FILE` remains the legacy single-file mode for deployments whose
+logins intentionally share a credential. Setting both modes is refused. Leaving
+both unset preserves local URL credentials. The `local-identity-proxy`
+transport refuses both: its private sockets own authentication instead.
+Token projection and atomic file replacement remain deployment responsibilities.
+The map contains paths, never tokens; identity-specific sidecars or secret
+projections must actually provision each login's matching credential.
+
+## Request and control-plane logins
+
+The served process holds three connection capabilities, each a distinct login;
+the migration principal is none of them and stays private to the store's
+bootstrap Job.
+
+| Capability | Login reaches | Used by |
+|---|---|---|
+| `read-only-connection` | its own `SELECT` grants, read-only by default, as the Postgres agent provisions it; judged by [the read-only capability](#the-read-only-capability) | the scoped reader |
+| `read-write-connection` | `app_tenant` only | request traffic: `WithOrgTx`, `WithUserTx`, `As(identity)`, un-wrapped Store calls |
+| `control-plane-connection` | `app_control_plane` and the three worker roles | `WithControlPlane`, registration, identity resolution, and the billing, webhook-projection and job worker pools |
+
+The store manifest declares this split: `runtime-read-write-roles` lists
+`app_tenant` alone, and `runtime-logins` declares the `control-plane` login with
+the cross-tenant roles. The request login starts as `app_tenant` — the first
+runtime-read-write role is the login's session default — so the request pool
+selects no role, and there is no wider role for a request connection to return
+to: `SET ROLE` to any cross-tenant role is refused by PostgreSQL, and `SET ROLE
+NONE` leaves the bare login, holding none of the privileges judged below. A
+request connection runs `RESET ROLE`, `RESET ALL` and `DISCARD TEMP` as it
+returns to the pool — back to that session default role, with
+`app.current_org_id` and `app.current_user_id` cleared and any temporary table
+dropped — and is discarded unless it comes back as
+`app_tenant` with neither set, so a borrower cannot hand the bare login, or its
+own request scope, to the next one. Every request transaction (`WithOrgTx`,
+`WithUserTx`, `As(identity)`, the source-read snapshot) binds both settings
+transaction-locally, the half it does not carry as the empty string, so a
+session-level binding is never visible inside one: an org transaction cannot
+read a previous user's `sessions` or `mfa_devices`.
+
+Every new request connection, the first one at startup included, is judged
+before the pool hands it out. It is refused if its login can reach any role
+other than `app_tenant` — through any chain of memberships, whatever their
+`INHERIT` or `SET` option, or wherever `pg_has_role` reports `USAGE` or `MEMBER`
+— or reaches a superuser, `BYPASSRLS`, `CREATEROLE`, `CREATEDB` or
+`REPLICATION` role, or the owner of a relation, schema, function or database
+(owning the database also makes a role an implicit member of
+`pg_database_owner`, which owns `public` on PostgreSQL 15 and later). It is
+refused if the login holds any table, column, sequence or function privilege
+that `app_tenant` does not, or is named by a default-privilege entry: such a
+privilege survives `SET ROLE NONE`, and on a table without row-level security,
+`platform_admins` among them, nothing filters it. System-catalog relations,
+columns and functions that carry an ACL are judged the same way, so a direct
+`GRANT EXECUTE ON FUNCTION pg_read_file(text)` or `GRANT SELECT ON pg_authid`
+to the login is refused as well. It is refused likewise if the
+login holds `CREATE` or `TEMPORARY` on the database, or `CREATE` or `USAGE` on
+any non-system schema, that `app_tenant` does not: with `CREATE` the bare login
+can place a table without row-level security where a request session's
+search_path resolves an unqualified table name, and with `TEMPORARY` it can do
+the same through `pg_temp`, which is searched first. It is refused, too, if
+the login holds a parameter privilege — `SET` or `ALTER SYSTEM`, granted with
+`GRANT … ON PARAMETER` — that `app_tenant` does not: `SET` on a superuser-only
+parameter such as `session_replication_role` switches off every trigger, and
+`ALTER SYSTEM` on one such as `archive_command` has the server run a command of
+the login's choosing. It is refused, finally, if the session does not start as
+`app_tenant` — a session default role that can
+no longer be applied only warns. Judging each connection rather than only boot
+catches a membership or grant made after startup. The infrastructure suite
+judges the request login by the same queries.
+Startup also refuses a control-plane capability that authenticates as the
+request login or the reader, or whose login cannot assume `app_control_plane`,
+so a misprovisioned control plane fails at boot rather than on the first
+registration or login.
+
+Every new connection on the control-plane pool and on the billing,
+webhook-projection and job worker pools — which authenticate as the same
+login — is judged by the same queries against the roles the store declares for
+that login, `app_control_plane` and the three worker roles, before the pool
+hands it out and before a worker pool selects its role. It is refused if the
+login reaches any other role, if the login or any role it reaches is a
+superuser, `BYPASSRLS`, `CREATEROLE`, `CREATEDB` or `REPLICATION` role or owns
+a relation, schema or database, if the login itself owns a function (a declared
+role may: the migrations make `app_control_plane` and `app_job_worker` the
+owners of the `SECURITY DEFINER` operations they guard), or if the login
+holds a table, column, sequence, function, database, schema or parameter
+privilege that none of its declared roles holds, or is named by a
+default-privilege entry.
+Those connections return to the pool through the same reset as a request
+connection, and are discarded unless they come back as the role they started
+as with neither request setting set; a worker pool selects its role again on
+the next checkout.
+
+Both judgements cover these privilege classes: table, column, sequence,
+function, database, schema and parameter privileges, and default-privilege
+entries. The remaining classes are not judged, because none reaches a tenant
+row on its own:
+
+- `USAGE` on a type or domain lets the login name it in a definition or a cast;
+  it reads and writes no row.
+- `USAGE` on a language lets the login write functions in it, but only where it
+  can create objects — a schema it holds `CREATE` on, or `pg_temp` through
+  `TEMPORARY`, both judged. PostgreSQL refuses `USAGE` on an untrusted language
+  to anyone but a superuser, so such a function can do nothing its caller or
+  the login could not already do in SQL.
+- `USAGE` on a foreign-data wrapper or a foreign server lets the login create a
+  server or a user mapping. A foreign table still needs `CREATE` on a schema,
+  and PostgreSQL's own wrapper requires a non-superuser's mapping to carry the
+  remote role's password, so it reaches no more than a login the holder could
+  open directly.
+- `CREATE` on a tablespace chooses where a table the login creates is stored;
+  creating one still needs `CREATE` on a schema.
+- Large-object privileges read or write large objects, and nothing in the
+  Starter's schema stores data in one.
+
+A helper that joins a transaction already open on its context rather than
+opening its own — `As(identity).Within` — joins only a transaction carrying
+exactly its authority: `System()` a control-plane one, and a tenant or user
+identity a request transaction bound for exactly its own org and user. Any
+other pairing is refused: a tenant identity inside a control-plane transaction
+would run as `app_control_plane` with no request setting bound, and one inside a
+request transaction bound for another org or user would read that org's or
+user's rows through any lookup by id. Store methods called inside
+`WithControlPlane` still run on its transaction.
+
+Only `pkg/infra` can say what a transaction is. The binding that records a
+transaction's pool and request scope is written by
+`pkg/infra/internal/txbind`, which the Go toolchain lets no package outside
+`pkg/infra` import; `pkg/business` and `pkg/auth/pg` read the transaction back
+through `pkg/infra/storetx`, which exports nothing but `Tx`. Code running
+inside a `WithControlPlane` closure therefore cannot relabel its transaction as
+a request one. The internal rule admits every package under `pkg/infra`, so
+`TestOnlyInfraCanBindAStoreTransaction` also pins the binder's non-test
+importers to `pkg/infra` and `storetx` and refuses an exported `pkg/infra`
+function that takes a `pgx.Tx` and returns a context — a binder handed on.
+Code holding the raw transaction could still rebind it in SQL, under a binding
+that claims the old scope; `TestNoTenantRebindingOutsideInfra` fails on a
+string literal containing `set_config(`, `SET ROLE`, `RESET ROLE` or
+`app.current_` in any non-test file outside `pkg/infra`. Both are checks on
+the source, not capabilities.
+
+The store pins published Postgres agent 0.0.140, which provisions its declared
+`runtime-logins` and projects `control-plane-connection`. The DB-backed accounts
+suites consume that real capability; they no longer synthesize a missing one.
+The remaining `internal/testdb.CreateLogin` helper creates deliberately
+misprovisioned logins only for adversarial authority tests.
+
+`NewPostgresStoreFromURL` remains a single-credential store for operator tools
+and disposable test databases. It needs a credential holding both roles — the
+migration principal does — selects `app_tenant` on checkout, and is never the
+served process.
 
 Accounts still validates its explicit verified-TLS/private-proxy transport policy
 before construction, including distinct reader/writer proxy sockets. Shared
 transport-policy parsing is a separate primitive extension; adopting the shared
 pool constructor does not change connection-policy acceptance or grant new
 control-plane authority.
+
+## The read-only capability
+
+The scoped reader is the one served pool whose login holds no application role.
+The Postgres agent provisions it with `SELECT` grants of its own rather than
+membership in `app_tenant`, so the comparison the request and control-plane
+logins are judged by — a privilege the login holds that no role the store
+declares for it holds — says nothing here: with no declared role, every
+privilege the reader holds would read as excess. The reader is judged against
+what a read-only capability legitimately holds instead.
+
+On the provisioned baseline that is `CONNECT` on the database, `USAGE` on schema
+`public`, `SELECT` on the application relations, and a default privilege
+granting it `SELECT` on tables created later. Everything else it appears to hold
+is granted to `PUBLIC`, so every role in the cluster holds it, `app_tenant`
+included: `EXECUTE` on the ordinary functions, `SELECT` on the readable system
+catalog, and `UPDATE` on `pg_catalog.pg_settings`, which is how any session
+issues `SET`. None of that is authority the reader has over another role, and
+refusing it would refuse a correctly provisioned reader at startup.
+
+A reader capability is refused if it:
+
+- reaches **any role other than itself** — through any chain of memberships,
+  whatever their `INHERIT` or `SET` option — or starts as a role other than the
+  bare login;
+- reaches a `SUPERUSER`, `BYPASSRLS`, `CREATEROLE`, `CREATEDB` or `REPLICATION`
+  role. A `BYPASSRLS` reader reads every tenant's rows whatever scope is bound,
+  which is the defect this judgement exists for;
+- owns a relation, schema, function or database. An owner's own tables do not
+  apply row-level security to it unless the table forces it, and the owner may
+  drop `FORCE`;
+- holds `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` or `TRIGGER` on
+  an application relation, **by any path, `PUBLIC` included**. A read-only login
+  holds none on the baseline, so a write granted to `PUBLIC` reaches the reader
+  as surely as one granted to it directly;
+- holds any privilege on a sequence, by any path. `USAGE` and `UPDATE` advance a
+  sequence and `SELECT` reads it; the reader needs none of the three;
+- can execute a `SECURITY DEFINER` function, by any path. Such a function runs
+  as its owner, so executing one lends the reader that owner's authority — 22 of
+  this store's 30 are owned by `app_control_plane`, whose policies span every
+  tenant. The baseline revokes `PUBLIC`'s `EXECUTE` on all of them and grants
+  the reader none. An ordinary function is not judged: it runs as the caller and
+  carries no authority the caller does not already have, which is why the ~600
+  that `PUBLIC` may execute are not excess;
+- has been granted `EXECUTE` on **any** function, ordinary or not, application
+  schema or catalog, **to the login itself**. Only a grant *to the login* is
+  judged for an ordinary function: `PUBLIC`'s `EXECUTE` on one is not. That is
+  not a claim that every such function is harmless — a C-language or extension
+  function may do more than its arguments suggest — but that it is held by every
+  role in the cluster rather than by this login, so it is the store baseline's
+  `PUBLIC` grants to answer for, not this capability's;
+- has been granted any relation or column privilege to the login itself other
+  than `SELECT` on an application object. On the system catalog even `SELECT` is
+  excess: a grant of `SELECT` on `pg_authid` reads every role's password hash,
+  and the catalog a reader legitimately reads it reads through `PUBLIC`;
+- holds `CREATE` or `TEMPORARY` on the database, or `CREATE` on an application
+  schema, by any path. Either lets the login create a relation, without
+  row-level security, that an unqualified name in another session's
+  `search_path` resolves to — `pg_temp` is searched first. The baseline revokes
+  both from `PUBLIC`. `CONNECT` is not judged: without it the connection being
+  judged could not have opened. `USAGE` on a schema is not judged: without
+  `USAGE` on `public` the reader's own `SELECT` grants are unusable;
+- holds any parameter privilege, by any path. `SET` on
+  `session_replication_role` switches off every trigger and `ALTER SYSTEM` on
+  `archive_command` has the server run a command;
+- holds a default privilege other than `SELECT` on tables, or owns a default ACL
+  of its own. A read-only login creates nothing.
+
+### Views are not judged, and one class of them crosses tenants today
+
+A view that is not `security_invoker` executes as **its owner**, so a reader
+selecting one reads with the owner's privileges rather than its own — the same
+authority-crossing shape as a `SECURITY DEFINER` function. The judgement does
+not refuse them, because three exist on the provisioned baseline and refusing
+them would refuse a correctly provisioned reader at startup.
+
+Measured on a local provisioned store, with **no tenant scope bound** on a
+reader connection: `source_delegations` returns 0 rows, as its forced row-level
+security requires, while `delegation_grants_recent` returns 114,
+`delegation_stats_daily` 108 and `delegation_pattern_usage` 36. All three are
+owned by the migration principal, which on that profile is a superuser, and a
+superuser bypasses row-level security whether or not the table forces it.
+
+This is pre-existing and outside the reader capability's judgement: the reader
+holds exactly the `SELECT` grant the agent provisions, and the crossing comes
+from the views' definition and ownership. On a managed profile whose migration
+principal is not a superuser, forced row-level security applies to the view
+owner as well and the crossing does not arise — so this is profile-dependent and
+has been verified only on a local store. Closing it belongs with the views:
+`security_invoker = true`, an owner that is not a superuser, or no reader grant
+on them.
+
+The unjudged classes are the request login's: `USAGE` on a type, domain,
+language, foreign-data wrapper or foreign server, `CREATE` on a tablespace, and
+large-object privileges. None reads or writes a tenant row on its own. A
+privilege granted to `PUBLIC` on an ordinary object is likewise not excess,
+because every role in the cluster holds it rather than this login; a deployment
+that grants `PUBLIC` a write or a definer function is caught by the by-any-path
+rules above, and one that grants `PUBLIC` something else has widened every role
+at once, which is the store baseline's to answer for and not this pool's.
+
+### Where the judgement runs, and what it does not cover
+
+`service-postgres` owns the scoped reader and writer pools and exposes no hook
+for an application policy, so the judgement is layered:
+
+- **Every new scoped connection and every checkout** run the library's own
+  restricted-session policy, which accounts configures with the four
+  cross-tenant roles as denied roles. It refuses a privileged attribute,
+  database ownership, or membership in `app_control_plane`,
+  `app_billing_worker`, `app_webhook_worker` or `app_job_worker`, and fails
+  closed on a denied role it cannot find. This covers a reused pooled session,
+  so a credential widened after startup is refused at the next borrow.
+- **Startup** runs the full policy above, on a connection of the reader's own
+  capability — the same credential, transport profile and rotation hook as the
+  scoped reader, not a disposable substitute.
+
+So ownership of a relation, schema or function, and excess or `SECURITY
+DEFINER` grants, are judged at startup but **not yet on every connection and
+checkout** as the request and control-plane pools' equivalents are. Closing that
+needs a generic per-capability validation seam in `service-postgres`, which is
+the primitive's to add; accounts must not take caller-owned pools to get one,
+because that moves the pools' whole lifecycle — profile parsing, distinct-login
+validation, the token provider, the startup pings and the closer — into this
+module.
+
+Neither layer is a fence against a `GRANT` that commits while a borrower
+already holds the connection. A role or grant change still needs the operator
+drain policy: stop the workload, change the grant, then let it reconnect.
+
+The request and control-plane logins are judged on every new connection because
+accounts owns those pools. The reader's judgement is ordered **before** the
+scoped boundary opens, so a misprovisioned capability is reported by the
+judgement that names the role, attribute or grant rather than by the scoped
+pools' generic refusal.
 
 ## Roles
 
@@ -71,7 +359,8 @@ authority. Its only job-platform capability is the narrowly checked global
 outbox enqueue operation described below.
 The Codefly-managed runtime session is separately tested as non-superuser,
 non-`BYPASSRLS`, unable to create roles/databases, and not the owner of any
-application relation. Every application relation has the same owner as the
+application relation, and the request login is tested to reach `app_tenant` and
+nothing else. Every application relation has the same owner as the
 migration ledger, and application roles likewise own no relations.
 
 ## Fail-closed migration rule
@@ -507,9 +796,9 @@ access-token session id as refresh replay.
 ## Control-plane boundary
 
 Migrations `67_control_plane_role` and `68_remove_policy_guc_bypass` replace
-the former custom-setting capability with `app_control_plane`. The authored
-deployment topology lists that role under Postgres
-`runtime-read-write-roles`, and `WithControlPlane` uses
+the former custom-setting capability with `app_control_plane`. The store
+manifest grants that role to the `control-plane` runtime login only, and
+`WithControlPlane` runs on that login's pool with
 `SET LOCAL ROLE app_control_plane`. Active policy expressions are tested to
 contain no `app.bypass` reference; setting an arbitrary custom GUC can no
 longer grant row visibility.
@@ -520,12 +809,10 @@ worker role, and has no job relation, lifecycle, or replay access. Its exact
 relation and function matrix and the managed session's non-owner/non-superuser
 attributes are executable infrastructure tests.
 
-The remaining boundary is physical credential separation. Today one
-Codefly-managed read-write principal is a member of all application roles so
-the accounts monolith can run request, pre-auth, and scheduled control-plane
-paths. Codefly Postgres should expose role-specific connection secrets—and the
-Starter should split the corresponding pools/processes—so a request-only
-credential has no `SET ROLE` path to privileged roles. Track that PaaS work
-under `P2-DB-002`; do not compensate with a public endpoint, superuser
-credential, or application-settable policy flag.
-
+The request credential has no `SET ROLE` path to it: only the `control-plane`
+login holds the membership (see [Request and control-plane
+logins](#request-and-control-plane-logins)). Provisioning that second login is
+the Postgres agent's `runtime-logins` capability; a deployment that cannot yet
+provision it must not compensate with a public endpoint, superuser credential,
+shared credential or application-settable policy flag — accounts refuses to
+start instead.

@@ -214,7 +214,7 @@ SDK must handle `total: null` when adopting this contract.
 
 ## Independent validation
 
-Run `go test -race ./internal/auditmetricstest` from accounts/code for pure
+Run `go test -race ./pkg/infra/auditmetricstest` from accounts/code for pure
 resource authorization tests. Set `AUDIT_METRICS_TEST_DSN` to an **independent,
 disposable PostgreSQL database** to execute the real SQL filtering, retry dedupe,
 samples, empty/zero and ratio tests. The tests use rolled-back fixtures and a non-owner role with the shipped audit

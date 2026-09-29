@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/infra"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,29 +22,23 @@ func TestDatasourceSyncOperationIsBoundToOrganizationSourceAndRequestJob(t *test
 	orgID, sourceID, otherSourceID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	requestID := enqueueDatasourceOperationJob(t, store, business.DatasourceDeliveryQueue,
 		business.DatasourceReconcileTopic, business.DatasourceReconcileSource, orgID, sourceID, "")
-	claimedRequest := claimExecutionJobs(t, store, business.DatasourceDeliveryQueue, "reconcile-worker", 1).GetJobs()
-	require.Len(t, claimedRequest, 1)
-	require.Equal(t, requestID, claimedRequest[0].GetId())
+	startDatasourceOperationJob(t, pool, requestID)
 
 	deliveryID := enqueueDatasourceOperationJob(t, store, business.DatasourceIngestQueue,
 		business.DatasourceSnapshotTopic, business.DatasourceSyncSource, orgID, sourceID, requestID)
 	wrongSourceID := enqueueDatasourceOperationJob(t, store, business.DatasourceIngestQueue,
 		business.DatasourceSnapshotTopic, business.DatasourceSyncSource, orgID, otherSourceID, requestID)
-	deliveries := claimExecutionJobs(t, store, business.DatasourceIngestQueue, "content-worker", 2).GetJobs()
-	require.Len(t, deliveries, 2)
-	for _, delivery := range deliveries {
+	for _, delivery := range []string{deliveryID, wrongSourceID} {
 		execution := &jobsv1.JobExecutionReference{
 			Owner: "other", Kind: "task", Id: "wrong-source",
 		}
-		if delivery.GetId() == deliveryID {
+		if delivery == deliveryID {
 			execution = &jobsv1.JobExecutionReference{
 				Owner: "content", Kind: "task", Id: "task-42",
 			}
-		} else {
-			require.Equal(t, wrongSourceID, delivery.GetId())
 		}
 		require.NoError(t, store.Complete(testCtx, &jobsv1.CompleteJobRequest{
-			Lease: executionLease(delivery), Execution: execution,
+			Lease: startDatasourceOperationJob(t, pool, delivery), Execution: execution,
 		}))
 	}
 
@@ -58,6 +53,27 @@ func TestDatasourceSyncOperationIsBoundToOrganizationSourceAndRequestJob(t *test
 	require.ErrorIs(t, err, business.ErrDatasourceSyncNotFound)
 	_, err = store.GetDatasourceSyncOperation(testCtx, uuid.NewString(), sourceID, requestID)
 	require.ErrorIs(t, err, business.ErrDatasourceSyncNotFound)
+}
+
+// This read-model fixture starts only the job it owns. Claiming the shared
+// production queue can select a previous test's pending job, including one
+// retained by Codefly across runs. Queue claiming has its own isolated tests.
+func startDatasourceOperationJob(t *testing.T, pool *pgxpool.Pool, id string) *jobsv1.JobLeaseReference {
+	t.Helper()
+	lease := &jobsv1.JobLeaseReference{JobId: id, WorkerId: "sync-operation-test", LeaseToken: uuid.NewString()}
+	result, err := pool.Exec(testCtx, `
+		UPDATE job_messages SET state = 'processing', attempt_count = 1,
+		    lease_owner = $2, lease_token = $3::uuid,
+		    lease_expires_at = NOW() + INTERVAL '1 minute',
+		    heartbeat_at = NOW(), last_attempt_at = NOW()
+		WHERE id = $1::uuid AND state = 'pending'`, id, lease.WorkerId, lease.LeaseToken)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.RowsAffected())
+	_, err = pool.Exec(testCtx, `
+		INSERT INTO job_attempts (job_id, attempt_number, worker_id, lease_token)
+		VALUES ($1::uuid, 1, $2, $3::uuid)`, id, lease.WorkerId, lease.LeaseToken)
+	require.NoError(t, err)
+	return lease
 }
 
 func enqueueDatasourceOperationJob(

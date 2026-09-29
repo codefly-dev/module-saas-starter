@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +41,7 @@ func bindInstallation(t *testing.T, orgID, sourceID, installationID string) {
 func setSourceState(t *testing.T, sourceID, status, reason string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE datasource_sources SET status=$2, status_reason=NULLIF($3,'') WHERE id=$1`,
 			sourceID, status, reason)
 		return err
@@ -51,7 +51,7 @@ func setSourceState(t *testing.T, sourceID, status, reason string) {
 func setSourceProvider(t *testing.T, sourceID, provider string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE datasource_sources SET provider=$2 WHERE id=$1`, sourceID, provider)
 		return err
 	}))
@@ -94,7 +94,7 @@ func parkForInstallation(t *testing.T, sourceID, reason string) {
 func pauseSource(t *testing.T, sourceID string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE datasource_sources SET status = 'paused' WHERE id = $1`, sourceID)
 		return err
 	}))
@@ -191,7 +191,7 @@ func TestPostgresListDatasourceSourcesByGitHubInstallationPages(t *testing.T) {
 func setSourceRepo(t *testing.T, sourceID, repo string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE datasource_sources SET repo=$2 WHERE id=$1`, sourceID, repo)
 		return err
 	}))

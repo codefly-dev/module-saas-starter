@@ -16,7 +16,19 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// sourceReadSnapshotKey carries the snapshot WithSourceReadSnapshot opened. It
+// is deliberately not a store-transaction binding: bare Store calls and
+// Scoped.Within inside the snapshot callback do not join it. Only WithOrgTx,
+// readAs and the source-read methods below opt into it, each after checking its
+// scope against the verified database identity the snapshot was opened for.
 type sourceReadSnapshotKey struct{}
+
+// sourceReadSnapshot is the read-only transaction and the org it bound; it
+// binds no user.
+type sourceReadSnapshot struct {
+	tx    pgx.Tx
+	orgID string
+}
 
 // WithSourceReadSnapshot keeps authority, grant intersection and source paging
 // on one database snapshot. Only this read-only path installs the private key.
@@ -33,10 +45,10 @@ func (s *PostgresStore) WithSourceReadSnapshot(ctx context.Context, org string, 
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // committed transactions cannot roll back
-	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", org); err != nil {
+	if err := bindRequestScope(ctx, tx, org, ""); err != nil {
 		return err
 	}
-	ctx = context.WithValue(ctx, sourceReadSnapshotKey{}, tx)
+	ctx = context.WithValue(ctx, sourceReadSnapshotKey{}, sourceReadSnapshot{tx: tx, orgID: org})
 	if err := run(ctx); err != nil {
 		return err
 	}
@@ -44,11 +56,11 @@ func (s *PostgresStore) WithSourceReadSnapshot(ctx context.Context, org string, 
 }
 
 func sourceReadExecutor(ctx context.Context) (pgx.Tx, error) {
-	tx, ok := ctx.Value(sourceReadSnapshotKey{}).(pgx.Tx)
+	snapshot, ok := ctx.Value(sourceReadSnapshotKey{}).(sourceReadSnapshot)
 	if !ok {
 		return nil, fmt.Errorf("source read snapshot required")
 	}
-	return tx, nil
+	return snapshot.tx, nil
 }
 
 func (s *PostgresStore) SourceReadRevision(ctx context.Context, org string, subjects []string) (string, time.Time, error) {

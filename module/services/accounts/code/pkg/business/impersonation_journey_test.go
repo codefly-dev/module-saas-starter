@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // Every case here needs a justification that clears the request's length floor;
@@ -368,7 +368,7 @@ func TestImpersonationPersistsAMarkedCredentiallessSession(t *testing.T) {
 	// indistinguishable from the absence the whole change is about.
 	var hashIsNull bool
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, window.ID).Scan(&hashIsNull)
 	}))
@@ -480,7 +480,7 @@ func TestImpersonationSessionCannotBeExchangedForALongerLivedToken(t *testing.T)
 	require.Len(t, windows, 1, "the refused exchange must leave the window as it was")
 	var stillCredentialless bool
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, windows[0].ID).Scan(&stillCredentialless)
 	}))

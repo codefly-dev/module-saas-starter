@@ -17,7 +17,7 @@ def main():
     args = parser.parse_args()
     postgres = args.postgres_bin.resolve()
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("PG") and k not in {"POSTGRES_TOKEN_FILE", "ACCOUNTS_DATABASE_TRANSPORT"}}
+           if not k.startswith("PG") and k not in {"POSTGRES_TOKEN_FILE", "POSTGRES_TOKEN_FILES", "ACCOUNTS_DATABASE_TRANSPORT"}}
     with tempfile.TemporaryDirectory(prefix="scoped-pools-") as temporary:
         fixture = Path(temporary)
         data = fixture / "data"

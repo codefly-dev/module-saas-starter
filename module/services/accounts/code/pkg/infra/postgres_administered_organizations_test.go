@@ -8,8 +8,8 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -97,7 +97,7 @@ func TestControlPlaneScopeSurvivesWithoutRLSBypass(t *testing.T) {
 	seedOrgAdministrator(t, orgID, administrator)
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var scopedUser string
 		var spansTenants bool
 		require.NoError(t, tx.QueryRow(ctx, infra.IdentityScopeProbe, infra.ControlPlaneDatabaseRole).
@@ -116,7 +116,7 @@ func TestControlPlaneScopeSurvivesWithoutRLSBypass(t *testing.T) {
 
 func TestAdministeredOrganizationsFunctionHasPinnedAuthority(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var owner string
 		var securityDefiner, tenantCanExecute, publicCanExecute bool
 		err := tx.QueryRow(ctx, `
@@ -149,7 +149,7 @@ func TestAdministeredOrganizationsFunctionHasPinnedAuthority(t *testing.T) {
 func setInfraUserStatus(t *testing.T, userID, status string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE users SET status = $2 WHERE uuid = $1`, userID, status)
 		return err
 	}))

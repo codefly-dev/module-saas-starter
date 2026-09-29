@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // The rule itself, away from the database: current is how many eligible
@@ -102,7 +102,7 @@ func (s *sequencedStore) CountOrgAdministrators(ctx context.Context, orgID strin
 func setUserStatus(t *testing.T, userID string, status string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE users SET status = $2 WHERE uuid = $1`, userID, status)
 		return err
 	}))
@@ -428,14 +428,14 @@ func TestWholeOrganizationDeletionIsNotBlocked(t *testing.T) {
 	require.Len(t, orgRosterRoles(t, testCtx, org), 1)
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, org)
 		return err
 	}), "a sole-administrator organization must still be deletable as a whole")
 
 	var remaining int
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT count(*) FROM organization_members WHERE org_id = $1`, org).Scan(&remaining)
 	}))

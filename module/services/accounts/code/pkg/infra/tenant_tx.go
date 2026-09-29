@@ -2,6 +2,7 @@ package infra
 
 import (
 	"accounts/pkg/auth"
+	"accounts/pkg/infra/internal/txbind"
 	"context"
 	"runtime"
 	"sync"
@@ -11,7 +12,29 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const controlPlaneDatabaseRole = "app_control_plane"
+const (
+	// tenantDatabaseRole is the only role a request connection may hold.
+	tenantDatabaseRole = "app_tenant"
+	// controlPlaneDatabaseRole is the audited cross-tenant role WithControlPlane
+	// assumes, on the control-plane pool only.
+	controlPlaneDatabaseRole = "app_control_plane"
+)
+
+// bindRequestScopeSQL binds both halves of a request scope for the current
+// transaction only. Every request transaction binds both, the empty string for
+// the half it does not carry, so a session-level binding left on the connection
+// is never visible inside it: an org transaction cannot read a previous user's
+// sessions or mfa_devices, nor a user transaction a previous tenant's rows. The
+// policies compare the settings as text and the SECURITY DEFINER operations
+// map an empty setting to NULL through NULLIF, so an empty binding matches
+// nothing, as an unset one does.
+const bindRequestScopeSQL = "SELECT set_config('app.current_org_id', $1, true), set_config('app.current_user_id', $2, true)"
+
+// bindRequestScope binds orgID and userID, either possibly empty, for tx.
+func bindRequestScope(ctx context.Context, tx pgx.Tx, orgID, userID string) error {
+	_, err := tx.Exec(ctx, bindRequestScopeSQL, orgID, userID)
+	return err
+}
 
 // controlPlaneCounters tracks, per call site, the cumulative number of
 // WithControlPlane invocations during the api process's lifetime. The
@@ -26,7 +49,9 @@ const controlPlaneDatabaseRole = "app_control_plane"
 // a security finding.
 //
 // Phase 4 of RLS_PLAN.md called for "bypass-role audit": this is
-// the runtime half (the static-grep half lives in CI). Combined,
+// the runtime half. The static half is TestControlPlaneCallSites, which
+// fails when a call site appears or disappears until its committed list
+// (testdata/control_plane_call_sites.txt) is updated in review. Combined,
 // they're how operators answer "show me every line that bypasses
 // RLS today, and how often each fires."
 var controlPlaneCounters sync.Map // map[string]*int64
@@ -132,10 +157,9 @@ func itoa(n int) string {
 // reuse.
 //
 // Control plane: code paths that legitimately span tenants — the audit
-// exporter's poll loop, migration runner, platform-admin queries —
-// must NOT use WithOrgTx. They run against the pool directly using
-// a Postgres role that has BYPASSRLS (configured at deploy time;
-// see RLS_PLAN.md).
+// exporter's poll loop, platform-admin queries, pre-auth lookups — must NOT use
+// WithOrgTx. They use WithControlPlane, which runs on a separate pool whose
+// login is the only one that can assume app_control_plane (see RLS_PLAN.md).
 //
 // IMPORTANT — DO NOT NEST: WithOrgTx (and WithControlPlane) call
 // pool.Begin(ctx) unconditionally; they don't check whether `ctx`
@@ -166,12 +190,14 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 	}
 	// Read-only source projection callbacks must not open a second snapshot
 	// when existing authority helpers enter their tenant transaction.
-	if tx, ok := ctx.Value(sourceReadSnapshotKey{}).(pgx.Tx); ok {
+	if snapshot, ok := ctx.Value(sourceReadSnapshotKey{}).(sourceReadSnapshot); ok {
 		_, owner, _ := auth.VerifiedDatabaseIdentity(ctx)
 		if err := auth.RequireVerifiedDatabaseScope(ctx, orgID, owner); err != nil {
 			return err
 		}
-		return fn(context.WithValue(ctx, "tx", tx)) //nolint:staticcheck // existing store transaction key
+		// The snapshot bound the org it was opened for — the verified tenant
+		// orgID was just checked to name — and cleared the user half.
+		return fn(txbind.BindRequest(ctx, snapshot.tx, snapshot.orgID, ""))
 	}
 	atomic.AddInt64(&orgTxCount, 1)
 	tx, err := s.pool.Begin(ctx)
@@ -180,23 +206,24 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
-	// The connection is already running as app_tenant via the
-	// pool's BeforeAcquire hook (see NewPostgresStoreFromURL).
-	// We just need to set app.current_org_id for the policy.
+	// The connection is already running as app_tenant: the request login
+	// starts there and can reach nothing wider (a tooling store selects it on
+	// checkout). We just need to set app.current_org_id for the policy, and
+	// clear app.current_user_id so no user binding reaches this transaction.
 	//
-	// SET LOCAL is parameterized via pgx; the value is properly
+	// set_config is parameterized via pgx; the value is properly
 	// quoted and not a SQL-injection vector even if orgID came from
 	// user input (which it shouldn't — orgID is always validated as
 	// a UUID at the handler layer first).
-	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", orgID); err != nil {
+	if err := bindRequestScope(ctx, tx, orgID, ""); err != nil {
 		return err
 	}
 
-	// Same context key as RunInTransaction so every existing Store
-	// method's getQueryExecutor() picks up the tx without any
-	// individual refactor. Switching to a typed key would be cleaner
-	// Go style but would orphan ~60 method signatures.
-	txCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // intentional shared-key with RunInTransaction
+	// Every Store method's getQueryExecutor() picks the tx up from the
+	// context, which also records that it is a request transaction bound for
+	// orgID alone, so a helper joining it knows it runs as app_tenant for that
+	// org and no user.
+	txCtx := txbind.BindRequest(ctx, tx, orgID, "")
 	if err := fn(txCtx); err != nil {
 		return err
 	}
@@ -226,8 +253,7 @@ var _ pgx.Tx = (pgx.Tx)(nil)
 // User-scoped tables aren't tenant-scoped (no org_id), but the same
 // fail-closed property applies: an un-wrapped Store call against a
 // user-RLS-protected table returns zero rows by default because the
-// pool's BeforeAcquire hook left the connection as `app_tenant`
-// with no `app.current_user_id` set. Cross-user readers (platform
+// connection runs as `app_tenant` with no `app.current_user_id` set. Cross-user readers (platform
 // admin / refresh-token-hash lookup during login) use WithControlPlane.
 func (s *PostgresStore) WithUserTx(ctx context.Context, userID string, fn func(ctx context.Context) error) error {
 	if userID == "" {
@@ -238,10 +264,11 @@ func (s *PostgresStore) WithUserTx(ctx context.Context, userID string, fn func(c
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
-	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_user_id', $1, true)", userID); err != nil {
+	// Clear app.current_org_id so no tenant binding reaches this transaction.
+	if err := bindRequestScope(ctx, tx, "", userID); err != nil {
 		return err
 	}
-	txCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // shared key with RunInTransaction
+	txCtx := txbind.BindRequest(ctx, tx, "", userID)
 	if err := fn(txCtx); err != nil {
 		return err
 	}
@@ -257,11 +284,12 @@ const errEmptyUserID errString = "WithUserTx: userID is required"
 //     (billing reconciliation, scheduled cleanup jobs).
 //   - Platform-admin endpoints that present a cross-org view.
 //
-// Mechanism: the pool's BeforeAcquire hook stamps every checked-out
-// connection with `SET ROLE app_tenant`. The managed session principal has
-// explicit SET membership in app_control_plane, so this transaction can use
-// `SET LOCAL ROLE app_control_plane`. On commit/rollback the local role unwinds
-// and the connection resumes as app_tenant for any subsequent caller.
+// Mechanism: the transaction runs on the control-plane pool, whose login is
+// distinct from the request login and holds explicit SET membership in
+// app_control_plane, and assumes it with `SET LOCAL ROLE app_control_plane`.
+// The request login cannot reach that role at all, so nothing on a request
+// connection can widen itself into this one. On commit/rollback the local role
+// unwinds before the connection returns to the control-plane pool.
 //
 // Treat it like sudo — every call site should be deliberate, with a
 // comment explaining why it can't use WithOrgTx. Invariant: a
@@ -277,7 +305,7 @@ func (s *PostgresStore) WithControlPlane(ctx context.Context, fn func(ctx contex
 }
 
 func (s *PostgresStore) withControlPlaneTx(ctx context.Context, options pgx.TxOptions, fn func(ctx context.Context) error) error {
-	tx, err := s.pool.BeginTx(ctx, options)
+	tx, err := s.controlPlane.BeginTx(ctx, options)
 	if err != nil {
 		return err
 	}
@@ -287,7 +315,10 @@ func (s *PostgresStore) withControlPlaneTx(ctx context.Context, options pgx.TxOp
 		return err
 	}
 
-	txCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // intentional shared-key
+	// Store methods called inside fn run on this transaction through
+	// getQueryExecutor; the binding records it as a control-plane one, so
+	// Scoped.Within refuses to run a tenant or user identity inside it.
+	txCtx := txbind.BindControlPlane(ctx, tx)
 	if err := fn(txCtx); err != nil {
 		return err
 	}

@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 var dashboardSpec = []byte(`{"version":1,"metrics":[]}`)
@@ -64,7 +64,7 @@ func TestDashboards_SharedBoardSurvivesOwnerDeletion(t *testing.T) {
 	// also provision a default org whose owner FK is RESTRICT.)
 	author := business.NewIDString()
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO users (uuid, primary_email, status) VALUES ($1, $2, 'active')`,
 			author, "author@rls-test.com")
@@ -80,7 +80,7 @@ func TestDashboards_SharedBoardSurvivesOwnerDeletion(t *testing.T) {
 	// The in-app DeleteUser is a soft-delete that never fires the FK, and
 	// app_tenant cannot delete users, so run it under the control-plane role.
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM users WHERE uuid = $1`, author)
 		return err
 	}))

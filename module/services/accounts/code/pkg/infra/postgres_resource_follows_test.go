@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // resource_follows is RLS-protected by user_id, so every direct Store call is
@@ -41,7 +41,7 @@ func liveFollowCount(t *testing.T, userID, resourceID string) int {
 	t.Helper()
 	var count int
 	require.NoError(t, testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT COUNT(*) FROM resource_follows
 			WHERE user_id = $1 AND resource_id = $2 AND revoked_at IS NULL`,

@@ -9,6 +9,7 @@ import (
 	"accounts/pkg/events"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/infra/internal/txbind"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -72,8 +73,9 @@ func (r *PostgresWebhookRelay) Deliver(
 	if err != nil {
 		return WebhookDelivered, fmt.Errorf("webhooks: open delivery savepoint: %w", err)
 	}
-	//nolint:staticcheck // the string key is the shared ctx-tx contract WithOrgTx defines
-	spCtx := context.WithValue(ctx, "tx", sp)
+	// The relay's batch transaction is the event transport's, which work.go opens
+	// on the job worker pool, so its savepoint is a worker transaction.
+	spCtx := txbind.BindWorker(ctx, sp)
 	if err := r.deliverOn(spCtx, sp, delivery, request); err != nil {
 		if rbErr := sp.Rollback(ctx); rbErr != nil {
 			return WebhookDelivered, fmt.Errorf("webhooks: roll back delivery: %w", rbErr)

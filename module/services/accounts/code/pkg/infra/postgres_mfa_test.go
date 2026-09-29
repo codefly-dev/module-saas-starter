@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 type migrationCipher struct{}
@@ -209,7 +209,7 @@ func TestMigrateLegacyMFASecrets(t *testing.T) {
 	// The migration scans globally by design; isolate it from rows created by
 	// other integration cases in this package.
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM mfa_devices`)
 		return err
 	}))

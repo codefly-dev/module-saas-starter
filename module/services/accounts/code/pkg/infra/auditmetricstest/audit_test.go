@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/internal/txbind"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -99,7 +100,7 @@ func TestPostgresIsolationDedupeAndUnknownTelemetry(t *testing.T) {
  ('org-a','collection','source-a','saas.document.ingested','reader','2026-01-02','{"run_id":"run-b","logical_job_id":"job-f","documents":90}');`)
 	require.NoError(t, err)
 	// Production store explicitly reuses this transaction.
-	ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	ctx = txbind.BindRequest(ctx, tx, "", "")
 	store := &infra.PostgresStore{}
 	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := from.Add(48 * time.Hour)
@@ -312,7 +313,7 @@ func (s *transactionStore) WithOrgTx(ctx context.Context, org string, fn func(co
 	if err != nil {
 		return err
 	}
-	return fn(context.WithValue(ctx, "tx", s.tx)) //nolint:staticcheck // production transaction key
+	return fn(txbind.BindRequest(ctx, s.tx, org, ""))
 }
 func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
 	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
@@ -348,7 +349,7 @@ func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Exact membership and scope listing must agree for every authorization path.
-	queryCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	queryCtx := txbind.BindRequest(ctx, tx, "", "")
 	raw := &infra.PostgresStore{}
 	parity := func(expected []string) {
 		t.Helper()
@@ -512,7 +513,7 @@ func TestCanReadScopeNodeMatchesIDSpellingsAndRefusesGarbage(t *testing.T) {
 	require.NoError(t, err)
 
 	raw := &infra.PostgresStore{}
-	queryCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	queryCtx := txbind.BindRequest(ctx, tx, "", "")
 	check := func(nodeID string) (bool, error) {
 		return raw.CanReadScopeNode(queryCtx, "org-a", "reader",
 			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", nodeID)
@@ -579,7 +580,7 @@ func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tx.Exec(ctx, "GRANT USAGE ON SCHEMA "+ident+" TO "+ident+"; GRANT SELECT ON audit_events TO "+ident+"; SET LOCAL ROLE "+ident)
 	require.NoError(t, err)
-	ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	ctx = txbind.BindRequest(ctx, tx, "", "")
 	store := &infra.PostgresStore{}
 	for _, org := range []string{"org-a", "org-b", ""} {
 		_, err = tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", org)

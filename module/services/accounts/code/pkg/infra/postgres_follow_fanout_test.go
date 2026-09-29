@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // The fan-out reads followers across users, which no single follower's
@@ -90,7 +90,7 @@ func TestNotificationResourceReferenceIsWholeOrAbsent(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := testStore.WithUserTx(testCtx, userID, func(ctx context.Context) error {
-				tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+				tx := storetx.Tx(ctx)
 				_, e := tx.Exec(ctx, `
 					INSERT INTO notifications (id, user_id, org_id, title, body, type, resource_type, resource_id)
 					VALUES (gen_random_uuid(), $1, $2, 'x', 'y', 'info', $3, $4)`,

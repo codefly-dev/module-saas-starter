@@ -11,8 +11,8 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/email"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func seedInvitation(t *testing.T) (orgID, invitationID string) {
 	orgID = seedOrg(t, userID)
 	invitationID = business.NewIDString()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO invitations (
 				id, org_id, inviter_id, inviter_display_name, email, role,

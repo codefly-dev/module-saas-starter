@@ -11,8 +11,8 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +64,7 @@ func scopeNodePath(t *testing.T, orgID, nodeID string) string {
 	t.Helper()
 	var path string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT scope_path::text FROM scope_nodes WHERE id = $1 AND org_id = $2`,
 			nodeID, orgID).Scan(&path)
@@ -289,7 +289,7 @@ func TestResolveInstallationAuthorityFailsClosedWhenNoOwnerIsAdminThenTransferRe
 	// Demote the owner of record out of org-admin: no owner or co-owner remains
 	// admin, so the next mint must fail closed and health flips.
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`UPDATE organization_members SET role = 'member' WHERE org_id = $1 AND user_id = $2`, orgID, ownerID)
 		return err

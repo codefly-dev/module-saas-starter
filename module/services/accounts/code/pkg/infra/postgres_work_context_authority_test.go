@@ -9,8 +9,8 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,7 +146,7 @@ func TestWorkContextAuthorityRejectsCallerSelectedTenantAndRevokedActor(t *testi
 		"request artifact must not override the verified service-postgres tenant")
 
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		tx := storetx.Tx(ctx)
 		_, updateErr := tx.Exec(ctx, `
 			UPDATE principals
 			   SET revoked_at = CURRENT_TIMESTAMP,
@@ -194,7 +194,7 @@ func TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor(t *testing.T) {
 	// real row in the owner's org, but it is not a delegated-execution actor.
 	serviceID := business.NewIDString()
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		tx := storetx.Tx(ctx)
 		_, insertErr := tx.Exec(ctx, `
 			INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
 			VALUES ($1, 'service', 'test service principal', $2, NULL, CURRENT_TIMESTAMP)`,
@@ -445,7 +445,7 @@ func TestDeprecatedUserSubjectAliasPersistsCanonicalPrincipal(t *testing.T) {
 	}))
 
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		tx := storetx.Tx(ctx)
 		var subjectKind string
 		if err := tx.QueryRow(ctx, `
 			SELECT subject_kind
@@ -505,7 +505,7 @@ func TestOrganizationDeletionDoesNotResurrectAuthorizationRevisions(t *testing.T
 	}))
 
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, orgID); err != nil {
 			return err
 		}

@@ -10,8 +10,8 @@ package business_test
 //   1. Org A's tx sees only A's row(s).
 //   2. From inside A's tx, a query for B's id returns zero rows
 //      (RLS hides them, even when the SQL filters by B's org_id).
-//   3. An un-wrapped Store call returns ZERO rows (fail-closed via
-//      BeforeAcquire SET ROLE app_tenant).
+//   3. An un-wrapped Store call returns ZERO rows (fail-closed: a
+//      request connection starts as app_tenant with no org set).
 //
 // Same shape as rls_webhooks_test.go / rls_api_keys_test.go —
 // changes here probably need to land alongside changes there.

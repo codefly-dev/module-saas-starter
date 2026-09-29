@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // Solution-declared audit event types are rows of audit_event_types whose owner
@@ -78,7 +79,7 @@ func scanDeclaredAuditEventType(row pgx.Row) (*business.DeclaredAuditEventType, 
 // opens a control-plane transaction of its own rather than reading as whatever
 // role the pool logs in as.
 func (s *PostgresStore) GetDeclaredAuditEventType(ctx context.Context, eventType business.EventType) (*business.DeclaredAuditEventType, error) {
-	if _, inTx := ctx.Value("tx").(pgx.Tx); !inTx {
+	if storetx.Tx(ctx) == nil {
 		var declared *business.DeclaredAuditEventType
 		err := s.withControlPlaneTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {
 			var err error
