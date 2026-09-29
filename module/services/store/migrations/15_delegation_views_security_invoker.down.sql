@@ -5,7 +5,7 @@
 -- on the provisioned local profile — forced row-level security does not apply
 -- to it, so every session granted the view, `app_tenant` included, reads EVERY
 -- tenant's delegation rows again whatever scope it bound. That is the crossing
--- 14_delegation_views_security_invoker.up.sql exists to close, and running this
+-- 15_delegation_views_security_invoker.up.sql exists to close, and running this
 -- reopens it.
 --
 -- Apply it only to return a database to a ledger that predates that migration.

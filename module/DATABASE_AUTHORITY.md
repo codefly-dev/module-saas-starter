@@ -294,7 +294,7 @@ reader's grant would therefore have closed nothing: it is named here because the
 earlier reading of this section offered it as one of three sufficient closures,
 and it is not one.
 
-`14_delegation_views_security_invoker.up.sql` closes it where it lives, by
+`15_delegation_views_security_invoker.up.sql` closes it where it lives, by
 setting `security_invoker = true` on the three views so each executes as the
 session selecting it and `delegation_grants`' and `principals`' own policies
 apply to that session. Nothing else changes: no grant is added or removed, no

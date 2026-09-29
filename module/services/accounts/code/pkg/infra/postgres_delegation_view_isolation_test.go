@@ -24,7 +24,7 @@ import (
 // That is not confined to the read-only capability: all three are granted to
 // app_tenant, the only role the request login reaches, so the crossing sat on
 // ordinary request traffic — the boundary the split login exists to draw.
-// 14_delegation_views_security_invoker.up.sql makes them execute as the
+// 15_delegation_views_security_invoker.up.sql makes them execute as the
 // selecting session instead.
 //
 // These run against the actually-provisioned store, so the views are the real
@@ -160,7 +160,7 @@ func seedDelegationTenant(t *testing.T, label string) delegationTenant {
 
 // The shipped ledger is what sets the option. Everything below reads as a
 // property of the running database; this is the line that ties that property to
-// 14_delegation_views_security_invoker.up.sql rather than to anything a test
+// 15_delegation_views_security_invoker.up.sql rather than to anything a test
 // did. A store booted from the migrations in this tree must already carry it.
 func TestShippedMigrationLeavesTheDelegationViewsAsInvoker(t *testing.T) {
 	for _, view := range delegationViews {

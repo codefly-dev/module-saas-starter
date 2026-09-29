@@ -20,7 +20,7 @@ import (
 // authority-crossing shape as a SECURITY DEFINER function — but views exist on
 // the provisioned baseline and refusing them would refuse a correct deployment,
 // so they are not judged here. The three that crossed tenants are closed where
-// they live, by 14_delegation_views_security_invoker.up.sql; a new
+// they live, by 15_delegation_views_security_invoker.up.sql; a new
 // non-security_invoker view added later would cross the same way and pass this
 // judgement, so that property belongs with whoever adds a view.
 // DATABASE_AUTHORITY.md records the crossing, its scope and what remains open.
