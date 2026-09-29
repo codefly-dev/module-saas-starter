@@ -396,6 +396,56 @@ describe("DatasourcesPanel", () => {
 		});
 	});
 
+	// The grant belongs where the person is, not in a separate later journey:
+	// they have just connected a repository and know exactly who needs to read
+	// it. Connecting grants nobody anything — not even the person who connected
+	// it — so without this the collection stays unreadable until somebody
+	// remembers to go back to Manage read grants.
+	it("offers the read grant on the collection a connect just landed in", async () => {
+		const client = fakeClient({
+			listCollections: vi.fn(async () => [
+				{
+					nodeId: "node-docs",
+					label: "docs",
+					scopePath: "org.docs",
+					grants: [],
+				},
+			]),
+			listGrantSubjects: vi.fn(async () => [
+				{ id: "team", kind: "team" as const, label: "Example Team" },
+			]),
+			grantCollectionRead: vi.fn(async () => {}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+		fireEvent.change(screen.getByLabelText("Repository"), {
+			target: { value: "acme/handbook" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.change(screen.getByLabelText("Access token"), {
+			target: { value: "ghp_token" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: /^validate and connect$/i }),
+		);
+
+		expect(
+			await screen.findByText(/acme\/handbook is connected and syncing/),
+		).toBeTruthy();
+		// And it is an offer, not a gate: it can be put away.
+		fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+		await waitFor(() =>
+			expect(
+				screen.queryByText(/acme\/handbook is connected and syncing/),
+			).toBeNull(),
+		);
+	});
+
 	it("surfaces a connect failure in the form and keeps the dialog open", async () => {
 		const client = fakeClient({
 			addGitHubSource: vi.fn(async () => {

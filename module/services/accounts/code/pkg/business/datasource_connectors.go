@@ -20,13 +20,27 @@ import (
 // existing sources keep running and new ones are refused until each passes the
 // suite (the owner's settled question 7).
 
-// Why each legacy provider is not on the envelope yet. Every one of them
-// re-sends everything as an addition on every sync, with no cursor, and never
-// reports a deletion, so content removed at the source is found again forever.
+// Why each legacy provider is not on the envelope yet, per connector. What
+// remains for each, clause by clause, and what it already honours, is in
+// ../datasource/connector/CONFORMANCE.md; a test holds that document to this
+// registry, so a gap cannot be edited here and left unexplained there.
+//
+// These sentences are the tenant-facing half: the wire carries each on every
+// source of its provider (Datasource.conformance_gap) and a client shows it to
+// explain why the provider takes no new sources. They name what is missing, not
+// what the connector happens to do — an inaccurate one tells a tenant their
+// content is being lost when it is not.
 const (
 	gapAPIDatasource     = "one untyped response with no item identity, no cursor and no deletions; to be rebuilt as a records connector or retired"
 	gapCrawlerDatasource = "no cursor and no deletions (a page leaving the sitemap is never removed), and one fetch per page"
-	gapUploadDatasource  = "no cursor and no deletions (a removed object is never removed), and one fetch per object"
+	// Object storage DOES report deletions: runUploadSync closes a sync that saw
+	// the whole folder with the complete listing of what it delivered, which the
+	// store tombstones the rest against. This sentence used to say the opposite
+	// — "a removed object is never removed" — which told every tenant of an
+	// object-storage source that their deletions were being ignored, when the
+	// mirror listing is exactly the mechanism that applies them. What remains is
+	// the cursor: with no version to diff from, every sync re-sends every object.
+	gapUploadDatasource = "no cursor, so every sync re-sends every object, and one fetch per object; deletions ARE applied, through the complete listing that closes a whole-folder sync"
 )
 
 // newDatasourceConnectorRegistry builds the host's registry. A registration
