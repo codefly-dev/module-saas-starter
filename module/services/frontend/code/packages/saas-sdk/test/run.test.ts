@@ -704,3 +704,158 @@ describe("derived additive totals", () => {
 		});
 	}
 });
+
+// The audit RPC returns no bucket for a day with no events. Plotted as it came
+// back, a day with none vanished and the line ran straight over it.
+describe("a time series with days that have no events", () => {
+	const day = (date: string) => `${date}T00:00:00+00`;
+	const perDay = (
+		aggregation: SourceMetric["aggregation"],
+		bucket: SourceMetric["bucket"] = "day",
+	): SourceMetric => ({
+		id: "per_day",
+		kind: "source",
+		filter: { event: "signed_in" },
+		groupBy: "time",
+		bucket,
+		aggregation,
+		...(aggregation === "count" ? {} : { field: "payload:amount" }),
+		...(aggregation === "percentile" ? { percentile: 0.5 } : {}),
+	});
+
+	it("puts a 0 at each day between the first and the last with none", async () => {
+		const { client } = fakeAuditClient(() => [
+			{ key: day("2026-09-02"), count: 1 },
+			{ key: day("2026-09-05"), count: 1 },
+			{ key: day("2026-09-06"), count: 2 },
+		]);
+
+		const series = await runMetric(client, perDay("count"), (n) => n, context);
+
+		expect(series.points).toEqual([
+			{ key: day("2026-09-02"), value: 1 },
+			{ key: day("2026-09-03"), value: 0 },
+			{ key: day("2026-09-04"), value: 0 },
+			{ key: day("2026-09-05"), value: 1 },
+			{ key: day("2026-09-06"), value: 2 },
+		]);
+		expect(series.total).toBe(4);
+		expect(series.coverage).toBe("complete");
+	});
+
+	it.each(["count_distinct", "sum"] as const)(
+		"fills a %s, which is 0 over no events",
+		async (aggregation) => {
+			const { client } = fakeAuditClient(() => [
+				{ key: day("2026-09-02"), count: 3, metrics: { value: 2 } },
+				{ key: day("2026-09-04"), count: 1, metrics: { value: 1 } },
+			]);
+
+			const series = await runMetric(
+				client,
+				perDay(aggregation),
+				(n) => n,
+				context,
+			);
+
+			expect(series.points.map((point) => point.value)).toEqual([2, 0, 1]);
+		},
+	);
+
+	it.each(["avg", "min", "max", "percentile"] as const)(
+		"leaves out a day with no events for a %s, which has no value then",
+		async (aggregation) => {
+			const { client } = fakeAuditClient(() => [
+				{ key: day("2026-09-02"), count: 3, metrics: { value: 2 } },
+				{ key: day("2026-09-04"), count: 1, metrics: { value: 1 } },
+			]);
+
+			const series = await runMetric(
+				client,
+				perDay(aggregation),
+				(n) => n,
+				context,
+			);
+
+			expect(series.points.map((point) => point.key)).toEqual([
+				day("2026-09-02"),
+				day("2026-09-04"),
+			]);
+		},
+	);
+
+	it("does not put a 0 where the RPC returned a day whose value is unknown", async () => {
+		const { client } = fakeAuditClient(() => [
+			{ key: day("2026-09-02"), count: 3, metrics: { value: 2 } },
+			// Events that day, none with the field: the RPC omits the value.
+			{ key: day("2026-09-03"), count: 2, samples: { value: BigInt(0) } },
+			{ key: day("2026-09-05"), count: 1, metrics: { value: 1 } },
+		]);
+
+		const series = await runMetric(client, perDay("sum"), (n) => n, context);
+
+		expect(series.points).toEqual([
+			{ key: day("2026-09-02"), value: 2 },
+			{ key: day("2026-09-04"), value: 0 },
+			{ key: day("2026-09-05"), value: 1 },
+		]);
+		expect(series.coverage).toBe("partial");
+	});
+
+	it("steps a week and a month bucket by a week and a month", async () => {
+		const weeks = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-08-31"), count: 1 },
+				{ key: day("2026-09-14"), count: 1 },
+			]).client,
+			perDay("count", "week"),
+			(n) => n,
+			context,
+		);
+		const months = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-01-01"), count: 1 },
+				{ key: day("2026-04-01"), count: 1 },
+			]).client,
+			perDay("count", "month"),
+			(n) => n,
+			context,
+		);
+
+		expect(weeks.points.map((point) => point.key)).toEqual([
+			day("2026-08-31"),
+			day("2026-09-07"),
+			day("2026-09-14"),
+		]);
+		expect(months.points.map((point) => [point.key, point.value])).toEqual([
+			[day("2026-01-01"), 1],
+			[day("2026-02-01"), 0],
+			[day("2026-03-01"), 0],
+			[day("2026-04-01"), 1],
+		]);
+	});
+
+	it("leaves the points as they are when a key is off the bucket's step or not a date", async () => {
+		const offStep = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-08-31"), count: 1 },
+				{ key: day("2026-09-10"), count: 1 },
+			]).client,
+			perDay("count", "week"),
+			(n) => n,
+			context,
+		);
+		const notADate = await runMetric(
+			fakeAuditClient(() => [
+				{ key: day("2026-09-02"), count: 1 },
+				{ key: "2026-02-30", count: 1 },
+			]).client,
+			perDay("count"),
+			(n) => n,
+			context,
+		);
+
+		expect(offStep.points).toHaveLength(2);
+		expect(notADate.points).toHaveLength(2);
+	});
+});
