@@ -367,7 +367,7 @@ without it, a missed webhook is permanent and nothing ever notices.
   registered against each in `datasource_connectors.go`, detailed per clause in
   [pkg/datasource/connector/CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md)).
   `datasourceReconcileInterval` is the one function that answers it, and
-  migration `11_datasource_pull_reconcile_schedule` backfilled the rows written
+  migration `14_datasource_pull_reconcile_schedule` backfilled the rows written
   before there was a schedule to write.
 - **The sweep holds no lease and runs in every replica.** What makes that safe is
   the job's idempotency key, which is the source paired with the schedule instant
