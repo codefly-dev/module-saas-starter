@@ -104,7 +104,9 @@ service APIKeyService {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_ORG_ADMIN
       permissions: "api_keys:write"
-      scopes: "api_keys:write"
+      // No `scopes`, so no API key is admitted: only an interactive session
+      // creates API keys. A key that could would mint a copy of itself
+      // without an expiry.
       resource_bindings: {
         request_field: "organization_id"
         target: RESOURCE_TARGET_ORGANIZATION

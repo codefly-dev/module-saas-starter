@@ -161,7 +161,7 @@ they're per-RPC gates on the caller's claims + role.
 | `requireOrgAdmin(ctx, actor, orgID)` | Caller is admin/owner of `orgID`. |
 | `requirePlatformAdmin(ctx, actor)` | Caller has the platform `super_admin` role. |
 | `requireMFA(ctx, actor)` | Caller's JWT carries `mfa: true`. Used for sensitive ops (rotate webhook secret, override entitlement, GDPR delete). |
-| `requireScope(ctx, "res:action")` | API-key caller has the required scope (or wildcard). JWT callers pass through — RBAC handles them. |
+| `requireScope(ctx, "res:action")` | API-key caller has the required scope (or wildcard); a key with no scopes is refused. JWT callers pass through — RBAC handles them. The interceptors already hold every key to the scopes its RPC declares, and refuse keys on an RPC declaring none. |
 | `rateLimitInterceptor` | Per-key request budget. |
 
 **What this catches:** non-members hitting a tenant's RPCs, bare JWTs

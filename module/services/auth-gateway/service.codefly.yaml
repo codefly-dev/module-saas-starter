@@ -2,7 +2,9 @@ name: auth-gateway
 version: 0.0.0
 description: |
     Single ingress + auth brain. Hosts two listeners:
-      - gRPC ext_authz for Envoy
+      - gRPC ext_authz Check. Its answer carries identity but never the
+        gateway credential, so an Envoy in front of accounts must stamp
+        that credential itself.
       - private HTTP API gateway behind the frontend entry
 agent:
     kind: codefly:service
@@ -23,6 +25,7 @@ service-dependencies:
         - name: grpc
 workspace-configuration-dependencies:
     - gateway
+    - gateway-trust
     - internal-auth
     - observability
     - security

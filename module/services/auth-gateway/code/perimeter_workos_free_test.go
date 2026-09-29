@@ -38,7 +38,8 @@ func serviceConfigPath(t *testing.T) string {
 
 // allowedPerimeterConfigDeps is the frozen set of workspace configuration
 // groups the perimeter may depend on: internal-auth carries the Ed25519 trust
-// anchor + internal tokens, and gateway/observability/security carry no
+// anchor + internal tokens, gateway-trust the credential accounts trusts
+// forwarded identity by, and gateway/observability/security carry no
 // external-IdP material. `identity` — the group accounts reads WorkOS/authkit
 // values from — is deliberately absent, as is any future provider group under
 // any name. Asserting deps are a SUBSET of this set (not merely != "identity")
@@ -46,6 +47,7 @@ func serviceConfigPath(t *testing.T) string {
 // a legitimate new dependency forces a human to add it here and eyeball it.
 var allowedPerimeterConfigDeps = map[string]bool{
 	"gateway":       true,
+	"gateway-trust": true,
 	"internal-auth": true,
 	"observability": true,
 	"security":      true,
@@ -227,8 +229,8 @@ func TestPerimeter_NoExternalIdPImports(t *testing.T) {
 // expectation from the same variable the code emits from makes the check
 // circular, so adding a provider header (e.g. x-workos-sub) to that variable
 // would silently satisfy the test. Because allow() emits every canonical
-// header (empty values included) plus the gateway token, the emitted key set
-// is fully deterministic and can be pinned exactly. Any drift — a new header,
+// header (empty values included) and never the gateway credential, the emitted
+// key set is fully deterministic and can be pinned exactly. Any drift — a new header,
 // a rename, a provider leak — forces a human to edit this list and eyeball the
 // change, which is the whole point of ask #3 in issue #313.
 var wantEmittedHeaders = []string{
@@ -236,7 +238,7 @@ var wantEmittedHeaders = []string{
 	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email",
 	"x-user-name", "x-session-id", "x-acting-as-user-id", "x-act", "x-scopes",
 	"x-credential-kind", "x-mfa-satisfied", "x-authentication-methods", "x-auth-time",
-	"x-assurance-level", "x-mfa-verified-at", "x-client-id", "x-codefly-gateway-token",
+	"x-assurance-level", "x-mfa-verified-at", "x-client-id",
 }
 
 // TestPerimeter_SuccessPathEmitsCanonicalHeadersOnly asserts the ext_authz

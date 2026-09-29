@@ -23,7 +23,9 @@ public access.
 - `tenant` is the minimum relationship required after identity validation.
   Resource bindings then prove that request identifiers refer to that tenant.
 - `permissions` use canonical `resource:action` values. `scopes` are the API-key
-  ceilings accepted for the same method. Unknown vocabulary fails generation.
+  ceilings accepted for the same method: accounts admits a key whose scopes
+  cover one of them, and a method that declares none refuses API keys
+  altogether. Unknown vocabulary fails generation.
 - Each `resource_binding` names a protobuf field path, target kind, and one of
   the finite lookup operations. Arbitrary SQL, expressions, and handler names
   are forbidden in descriptors.

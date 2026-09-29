@@ -13,6 +13,15 @@ package main
 //   - Path parameters ({param}) become safe_regex matchers ([^/]+).
 //   - Connect RPC paths are always exact-match POST routes.
 //   - Unmatched paths get Envoy's default 404.
+//
+// The generated config does not make accounts trust the identity Envoy
+// forwards. Accounts believes forwarded identity headers only beside the
+// gateway credential (X-Codefly-Gateway-Token), and the ext_authz Check answer
+// never carries it, because the gRPC listener answers any caller that can
+// reach it. An Envoy in front of accounts must stamp the credential on accounts
+// routes itself; without it, JWT requests still work (accounts verifies the
+// bearer) and API-key requests fail closed. GenerateEnvoyConfig has no caller
+// outside its tests.
 
 import (
 	"fmt"

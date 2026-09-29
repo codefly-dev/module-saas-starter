@@ -185,7 +185,7 @@ func webhookCallerContext(userID string) context.Context {
 
 // webhookAPIKeyCallerContext models the same caller arriving on an API key the
 // gateway validated. scopes is what that key carries — deliberately allowed to
-// be empty, which is a key CreateAPIKey accepts today.
+// be empty, which is a key CreateAPIKey accepts and which has no authority.
 func webhookAPIKeyCallerContext(userID string, scopes ...string) context.Context {
 	ctx := stampVerifiedIdentity(context.Background(), userID, webhookOrgID, auth.Assurance{
 		AuthenticationMethods: []string{auth.AuthenticationMethodOAuth, auth.AuthenticationMethodOTP},
@@ -312,33 +312,37 @@ func TestWebhookMutationsDistinguishTwoAdminsInOneOrganization(t *testing.T) {
 // TestWebhookMutationCarriesTheCredentialKind proves an API-key request is not
 // filed as an interactive session, and that neither is filed as system work.
 //
-// The scopeless case is the regression: attribution used to read the credential
-// kind off the scope set, and a key created with no scopes — which
-// CreateAPIKey permits, the proto declares no min_items — carries none, so a
-// machine credential was recorded as a human session. Those keys also satisfy
-// requireScope vacuously, which makes them the least constrained callers in the
-// system and the ones whose attribution matters most.
+// Attribution used to read the credential kind off the scope set, and a key
+// created with no scopes — which CreateAPIKey permits, the proto declares no
+// min_items — carries none, so a machine credential was recorded as a human
+// session. Such a key also used to satisfy requireScope vacuously; it now has
+// no authority, so it is refused before anything is changed or recorded.
 func TestWebhookMutationCarriesTheCredentialKind(t *testing.T) {
-	for name, scopes := range map[string][]string{
-		"a scoped key":    {"webhooks:write"},
-		"a scopeless key": nil,
-	} {
-		t.Run(name, func(t *testing.T) {
-			handler, store, emitter := installWebhookAttributionService(t)
-			sub := seedSubscription(t, store)
+	t.Run("a scoped key", func(t *testing.T) {
+		handler, store, emitter := installWebhookAttributionService(t)
+		sub := seedSubscription(t, store)
 
-			ctx := webhookAPIKeyCallerContext(webhookAdminAID, scopes...)
-			_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
-			require.NoError(t, err)
+		ctx := webhookAPIKeyCallerContext(webhookAdminAID, "webhooks:write")
+		_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
+		require.NoError(t, err)
 
-			entry := emitter.only(t)
-			require.Equal(t, webhookAdminAID, entry.ActorID)
-			require.Equal(t, business.ActorTypeAPIKey, entry.ActorType,
-				"a key that carries no scopes is still a machine credential")
-			require.NotEqual(t, business.ActorTypeUser, entry.ActorType)
-			require.NotEqual(t, business.ActorTypeSystem, entry.ActorType)
-		})
-	}
+		entry := emitter.only(t)
+		require.Equal(t, webhookAdminAID, entry.ActorID)
+		require.Equal(t, business.ActorTypeAPIKey, entry.ActorType)
+		require.NotEqual(t, business.ActorTypeUser, entry.ActorType)
+		require.NotEqual(t, business.ActorTypeSystem, entry.ActorType)
+	})
+
+	t.Run("a scopeless key", func(t *testing.T) {
+		handler, store, emitter := installWebhookAttributionService(t)
+		sub := seedSubscription(t, store)
+
+		ctx := webhookAPIKeyCallerContext(webhookAdminAID)
+		_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+		require.Empty(t, emitter.entries, "a refused key leaves no record")
+		require.Len(t, store.subscriptions, 1, "and changes nothing")
+	})
 }
 
 // TestWebhookMutationRefusesACallerOfUnknownCredentialKind — when the perimeter

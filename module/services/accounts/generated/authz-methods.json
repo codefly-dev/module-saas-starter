@@ -19,9 +19,7 @@
         "permissions": [
           "api_keys:write"
         ],
-        "scopes": [
-          "api_keys:write"
-        ],
+        "scopes": [],
         "resource_bindings": [
           {
             "request_field": "organization_id",
@@ -51,7 +49,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/api_keys.proto",
-      "policy_sha256": "5e075983df48b921a8e9425258bfc766ca67084c8bcb2f99e37a10bbaff8f53f",
+      "policy_sha256": "43bdf1f9a139cc858b9deb4b2d4a5b2eb5b9ad7093363d1a13719d06f7e7239f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

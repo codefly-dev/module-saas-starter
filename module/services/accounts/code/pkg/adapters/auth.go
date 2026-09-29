@@ -484,6 +484,13 @@ var (
 	// token can be rolled out and retired without a flag-day cutover.
 	rotationInternalTokens []string
 	gatewayToken           string
+	// previousGatewayToken is accepted alongside gatewayToken while a rotation
+	// rolls the gateway onto a new credential, so forwarded identity is not
+	// refused for the pods still stamping the old one. It is accepted only
+	// before previousGatewayTokenExpiresAt. The zero time never accepts it, so a
+	// previous credential installed without an expiry proves nothing.
+	previousGatewayToken          string
+	previousGatewayTokenExpiresAt time.Time
 )
 
 // SetInternalToken installs the primary shared secret. Called once from
@@ -509,6 +516,22 @@ func SetInternalTokenRotation(tokens ...string) {
 // never grants access to internal-only RPCs; it only proves the provenance of
 // X-User-Id/X-Org-Id/etc. on tenant-facing transports.
 func SetGatewayToken(token string) { gatewayToken = token }
+
+// SetPreviousGatewayToken installs the outgoing gateway credential for the
+// length of a rotation. The order is: accounts takes the new value as current
+// and the old one here, with the instant it expires; auth-gateway rolls onto
+// the new value; this slot is then emptied. The old credential stops proving
+// anything when the slot is emptied or its expiry passes, whichever comes
+// first. Empty clears it.
+func SetPreviousGatewayToken(token string) { previousGatewayToken = token }
+
+// SetPreviousGatewayTokenExpiresAt installs the instant the previous gateway
+// credential stops being accepted, so a rotated-out credential loses its
+// authority by itself even when nobody empties the slot. The zero time closes
+// the slot. Startup (configuredGatewayTrust in work.go) bounds the value.
+func SetPreviousGatewayTokenExpiresAt(expiresAt time.Time) {
+	previousGatewayTokenExpiresAt = expiresAt
+}
 
 // requireInternalCredential gates the EXPOSURE_INTERNAL authority oracles
 // (CheckPermission, CheckAccess, Decide, ResolveIdentity, ValidateAPIKey,
@@ -679,30 +702,94 @@ func parseScopedRoles(raw string) map[string][]string {
 }
 
 // requireScope enforces that an API-key caller has the required scope.
-// JWT-authenticated callers (interactive sessions) bypass — their
-// authorization comes from RBAC, not scope strings.
+// Interactive sessions bypass — their authorization comes from RBAC, not
+// scope strings — unless they carry a scope list, which only ever narrows.
+// An API key is held to its scopes even when it carries none: a key created
+// without scopes has no authority, never its owner's.
 //
 // Scope syntax: `resource:action`, e.g. `users:write`, `orgs:read`,
 // `webhooks:write`, `*:*` (root). Wildcard `*` matches anything in
 // either segment: `users:*` matches `users:read` and `users:write`,
 // `*:read` matches read-only access across resources.
 //
-// Used by handlers that should be reachable both from interactive
-// users (already gated by RBAC) and from API keys (need scope match).
-// Returns codes.PermissionDenied with reason "missing_scope" so
-// callers can branch.
+// The interceptors already refuse an API key an RPC's declared scopes do not
+// admit (enforceAPIKeyScopePolicy); a handler calling this states the same
+// ceiling where the work happens. Returns codes.PermissionDenied with reason
+// "missing_scope" so callers can branch.
 func requireScope(ctx context.Context, required string) error {
-	scopes := scopesFromContext(ctx)
-	if len(scopes) == 0 {
-		// No X-Scopes header → JWT auth path. RBAC has already gated.
+	if !scopeBound(ctx) {
 		return nil
 	}
-	for _, s := range scopes {
-		if scopeMatches(s, required) {
-			return nil
-		}
+	if grantsScope(scopesFromContext(ctx), required) {
+		return nil
 	}
 	return status.Errorf(codes.PermissionDenied, "missing_scope: %s", required)
+}
+
+// scopeBound reports whether the caller's authority is its scope list: every
+// API key, and a session that presented one.
+func scopeBound(ctx context.Context) bool {
+	return credentialKindFromContext(ctx) == credentialKindAPIKey || len(scopesFromContext(ctx)) > 0
+}
+
+// grantsScope reports whether any granted scope covers required.
+func grantsScope(granted []string, required string) bool {
+	for _, s := range granted {
+		if scopeMatches(s, required) {
+			return true
+		}
+	}
+	return false
+}
+
+// requireInteractiveSession admits only a caller the perimeter reported as an
+// interactive session. CreateAPIKey calls it first: an API key must never mint
+// another, because accounts cannot see the calling key's expiry and a key that
+// could mint would copy itself with none. CreateAPIKey declares no API-key scope,
+// so enforceAPIKeyScopePolicy already refuses every key before the handler; this
+// holds the rule where the credential is minted too. A caller whose credential
+// kind the perimeter did not report is refused as well: minting is not decided
+// on a guess.
+func requireInteractiveSession(ctx context.Context) error {
+	switch credentialKindFromContext(ctx) {
+	case credentialKindSession:
+		return nil
+	case credentialKindAPIKey:
+		return status.Error(codes.PermissionDenied, "an API key cannot create API keys: sign in and create the key from an interactive session")
+	default:
+		return status.Error(codes.PermissionDenied, "only an interactive session can create API keys, and the auth perimeter reported no credential kind")
+	}
+}
+
+// requireScopesWithinCaller refuses to mint a credential broader than the
+// scope-bound caller minting it: each requested scope must be covered by one of
+// the caller's own, wildcards included, so `users:*` may mint `users:read` but
+// `users:read` may not mint `users:*`. API keys never reach it on CreateAPIKey
+// (requireInteractiveSession), so the caller it bounds there is a session that
+// presented a scope list. A session's ceiling is otherwise RBAC, which the
+// handler checks separately.
+//
+// Every requested scope must first be one scope (business.CheckScopeShape),
+// whoever the caller: the ceiling compares the joined `resource:action`, so
+// users / read,*:* would pass under users:* and be re-read downstream as the
+// root *:*.
+func requireScopesWithinCaller(ctx context.Context, requested []*gen.Permission) error {
+	for _, permission := range requested {
+		if err := business.CheckScopeShape(permission); err != nil {
+			return err
+		}
+	}
+	if !scopeBound(ctx) {
+		return nil
+	}
+	granted := scopesFromContext(ctx)
+	for _, permission := range requested {
+		scope := permission.GetResource() + ":" + permission.GetAction()
+		if !grantsScope(granted, scope) {
+			return status.Errorf(codes.PermissionDenied, "cannot grant scope %s: it exceeds the calling credential's scopes", scope)
+		}
+	}
+	return nil
 }
 
 // scopeMatches reports whether `granted` (a scope string from the

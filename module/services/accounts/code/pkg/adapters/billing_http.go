@@ -170,17 +170,33 @@ func handlePortal(svc *business.Service, w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
 }
 
+// errAPIKeyNotAccepted is returned by authenticateHTTPRequest for an API key.
+// The key authenticated; the route does not accept it, so it answers 403.
+var errAPIKeyNotAccepted = errors.New("this route does not accept API keys")
+
 // authenticateHTTPRequest establishes the exact same private identity
 // used by Connect/gRPC before any authorization cache or database operation.
 // The returned IDs are read back from that private context, never copied from
 // untrusted transport headers. Every non-protobuf route that serves a signed-in
 // person shares it, so none of them can drift into trusting a raw header.
+//
+// None of these routes is an RPC, so none declares the scopes an API key would
+// need, and each refuses a key exactly as an RPC declaring no scope does
+// (enforceAPIKeyScopePolicy). A route opened to keys must first declare its
+// scope here.
 func authenticateHTTPRequest(svc *business.Service, r *http.Request) (context.Context, string, string, error) {
 	if svc == nil || r == nil {
 		return nil, "", "", errors.New("authentication is unavailable")
 	}
 	ctx := r.Context()
-	if validGatewayToken(r.Header.Get("X-Codefly-Gateway-Token")) && r.Header.Get("X-User-Id") != "" {
+	// The same trust test as the Connect and gRPC interceptors: exactly one
+	// gateway credential, and a trusted assertion that names an identity field
+	// twice is refused rather than read by index.
+	trustedForwarded := singleValidGatewayToken(r.Header.Values("X-Codefly-Gateway-Token"))
+	if trustedForwarded && forwardedIdentityAmbiguous(r.Header.Values) {
+		return ctx, "", "", errors.New("forwarded identity is ambiguous")
+	}
+	if trustedForwarded && r.Header.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, r.Header)
 		if err != nil {
 			return ctx, "", "", err
@@ -210,6 +226,9 @@ func authenticateHTTPRequest(svc *business.Service, r *http.Request) (context.Co
 		}
 		ctx = stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
 	}
+	if credentialKindFromContext(ctx) == credentialKindAPIKey {
+		return ctx, "", "", errAPIKeyNotAccepted
+	}
 	tenantID, userID, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok {
 		return ctx, "", "", auth.ErrVerifiedDatabaseIdentityRequired
@@ -225,6 +244,10 @@ func writeBillingAuthnError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, auth.ErrRevocationUnavailable) {
 		wool.Get(r.Context()).In("billingHTTP").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
 		writeJSONError(w, http.StatusServiceUnavailable, "authorization temporarily unavailable")
+		return
+	}
+	if errors.Is(err, errAPIKeyNotAccepted) {
+		writeJSONError(w, http.StatusForbidden, errAPIKeyNotAccepted.Error())
 		return
 	}
 	writeJSONError(w, http.StatusUnauthorized, "authentication required")

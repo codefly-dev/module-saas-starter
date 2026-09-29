@@ -488,9 +488,7 @@
         "permissions": [
           "api_keys:write"
         ],
-        "scopes": [
-          "api_keys:write"
-        ],
+        "scopes": [],
         "resource_bindings": [
           {
             "request_field": "organization_id",
@@ -13010,7 +13008,7 @@
       "permission": "api_keys:write",
       "resource": "api_keys",
       "action": "write",
-      "description": "Mint and revoke API keys.",
+      "description": "Mint and revoke API keys. As an API-key scope it only revokes: minting takes an interactive session.",
       "built_in_roles": [
         "admin (via *:*)"
       ],

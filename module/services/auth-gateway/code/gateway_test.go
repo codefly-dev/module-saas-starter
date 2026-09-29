@@ -326,6 +326,77 @@ func TestGateway_StripsCallerIdentityAndTrustCredentials(t *testing.T) {
 	}
 }
 
+// accounts serves REST through grpc-gateway, whose default header matcher turns
+// an inbound Grpc-Metadata-<name> header into gRPC metadata <name>. So
+// Grpc-Metadata-X-User-Id names x-user-id to accounts beside the value this
+// gateway stamps, on the same request that carries the gateway credential —
+// and stripping by exact name never sees that spelling. Every Grpc-Metadata-*
+// header is dropped, whatever its case, on every kind of catalog route.
+func TestGateway_StripsGRPCMetadataPrefixedHeaders(t *testing.T) {
+	gw, apiFake, _, priv := newGatewayHarness(t)
+	token := signValidToken(t, priv)
+
+	for _, tc := range []struct {
+		name, method, path, bearer string
+	}{
+		{name: "public route without a bearer", method: http.MethodPost, path: "/v1/auth/authenticate"},
+		{name: "public route with a bearer", method: http.MethodPost, path: "/v1/auth/authenticate", bearer: token},
+		{name: "protected route", method: http.MethodGet, path: "/v1/users", bearer: token},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			apiFake.lastHeaders = nil
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+			if tc.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.bearer)
+			}
+			setGRPCMetadataSpellings(req, "attacker-value")
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.NotNil(t, apiFake.lastHeaders, "the request must still be forwarded")
+			requireNoGRPCMetadataHeaders(t, apiFake.lastHeaders)
+			require.Equal(t, "test-gateway-token", apiFake.lastHeaders.Get("X-Codefly-Gateway-Token"),
+				"accounts routes still carry the gateway credential")
+		})
+	}
+}
+
+// TestStripAllIdentityHeaders_DropsEveryGRPCMetadataSpelling pins the shared
+// strip that the catalog, solution and module proxy paths all run, including
+// header keys that bypassed canonicalisation.
+func TestStripAllIdentityHeaders_DropsEveryGRPCMetadataSpelling(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+	setGRPCMetadataSpellings(req, "attacker-value")
+	req.Header.Set("Accept", "application/json")
+
+	stripAllIdentityHeaders(req)
+
+	requireNoGRPCMetadataHeaders(t, req.Header)
+	require.Equal(t, "application/json", req.Header.Get("Accept"), "unrelated headers survive")
+}
+
+// setGRPCMetadataSpellings sets the Grpc-Metadata- spelling of every identity
+// and trust header the gateway strips by exact name, plus non-canonical keys
+// (header names are case-insensitive on the wire) and one prefixed name that is
+// not an identity header today.
+func setGRPCMetadataSpellings(req *http.Request, value string) {
+	for _, key := range untrustedAuthHeaders {
+		req.Header.Set("Grpc-Metadata-"+key, value)
+	}
+	req.Header["grpc-metadata-x-user-id"] = []string{value}
+	req.Header["GRPC-METADATA-X-ORG-ID"] = []string{value}
+	req.Header.Set("Grpc-Metadata-X-Tenant-Hint", value)
+}
+
+func requireNoGRPCMetadataHeaders(t *testing.T, headers http.Header) {
+	t.Helper()
+	for key := range headers {
+		require.Falsef(t, strings.HasPrefix(strings.ToLower(key), "grpc-metadata-"),
+			"caller-supplied %q must not reach an upstream", key)
+	}
+}
+
 func TestGateway_TrustsPublicOriginOnlyFromAuthenticatedFrontend(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
 
