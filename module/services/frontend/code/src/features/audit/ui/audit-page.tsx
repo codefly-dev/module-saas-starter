@@ -179,20 +179,6 @@ export function AuditPage() {
 		setNamespaceFilter("all");
 		setEventTypeSet(null);
 	};
-	// The registry decides which names mean "a person joined", so the tile's
-	// filter is that whole set. Selecting it again clears it: a tile that can
-	// only be switched on strands the reader on a filter with no obvious way
-	// back, since no dropdown shows a set.
-	const toggleNewUsersOnly = () => {
-		if (showsNewUsersOnly) {
-			resetFilters();
-			return;
-		}
-		setEventTypeFilter("all");
-		setCategoryFilter("all");
-		setNamespaceFilter("all");
-		setEventTypeSet(newUserTypes);
-	};
 	const showsSecurityOnly =
 		categoryFilter === SECURITY_CATEGORY &&
 		eventTypeFilter === "all" &&
@@ -245,7 +231,24 @@ export function AuditPage() {
 			// tile stays presentational rather than offering a click that would
 			// filter to nothing.
 			newUserTypes.length > 0
-				? { onSelect: toggleNewUsersOnly, selected: showsNewUsersOnly }
+				? {
+						// The handler is built here rather than in the component body
+						// because it closes over newUserTypes, which this memo already
+						// depends on: one declared outside would be a dependency of its
+						// own and would rebuild the whole row every render. Selecting
+						// again clears the filter — a tile that can only be switched on
+						// strands the reader on a narrowing with no obvious way back,
+						// since no dropdown shows a set.
+						onSelect: () => {
+							setEventTypeSet((current) =>
+								current === null ? newUserTypes : null,
+							);
+							setEventTypeFilter("all");
+							setCategoryFilter("all");
+							setNamespaceFilter("all");
+						},
+						selected: showsNewUsersOnly,
+					}
 				: {},
 		);
 		// Say so when the registry no longer knows the names this tile counts:
@@ -298,6 +301,7 @@ export function AuditPage() {
 		actorsBefore.data,
 		showsNoFilter,
 		showsSecurityOnly,
+		showsNewUsersOnly,
 	]);
 	const tilesLoading = totalNow.isLoading || actorsNow.isLoading;
 	const tilesError = totalNow.error ?? actorsNow.error;
