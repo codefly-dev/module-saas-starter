@@ -441,6 +441,7 @@ reverse, fails the `release-contract` job.
 | `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
 | `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, the exported API contract, and the published module-authority client against the real host | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check`, `go test ./...` in `qualification/module-authority` |
 | `module-package` | the package contract, protobuf compatibility, generator determinism, published conformance suites, and byte-identical archive builds | `go test ./...` **in `module/tools` only**, `go run ./cmd/module-package …`, `buf breaking`, `npm run test:published-plugin-contract` |
+| `scoped-pools` | the authority of the pools the store's logins reach: the scoped reader, the scoped writer and the request pool, judged against a native PostgreSQL the suite provisions and widens one grant at a time | `python3 scripts/qualify-scoped-pools.py --postgres-bin "$(pg_config --bindir)"`, which runs `go test -race ./qualification/scopedpools` and fails unless every declared test in that package ran and passed |
 
 Two of those `go test ./...` invocations are worth reading carefully. This
 repository holds **six independent Go modules** — root, `module/tools`, and one

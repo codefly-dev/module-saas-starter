@@ -270,29 +270,60 @@ A reader capability is refused if it:
 - holds a default privilege other than `SELECT` on tables, or owns a default ACL
   of its own. A read-only login creates nothing.
 
-### Views are not judged, and one class of them crosses tenants today
+### Views are not judged, and one class of them crossed tenants
 
-A view that is not `security_invoker` executes as **its owner**, so a reader
-selecting one reads with the owner's privileges rather than its own — the same
-authority-crossing shape as a `SECURITY DEFINER` function. The judgement does
-not refuse them, because three exist on the provisioned baseline and refusing
-them would refuse a correctly provisioned reader at startup.
+A view that is not `security_invoker` executes as **its owner**, so the session
+selecting it reads with the owner's privileges rather than its own — the same
+authority-crossing shape as a `SECURITY DEFINER` function. The reader judgement
+does not refuse such a view, because three existed on the provisioned baseline
+and refusing them would refuse a correctly provisioned reader at startup.
 
-Measured on a local provisioned store, with **no tenant scope bound** on a
-reader connection: `source_delegations` returns 0 rows, as its forced row-level
-security requires, while `delegation_grants_recent` returns 114,
-`delegation_stats_daily` 108 and `delegation_pattern_usage` 36. All three are
-owned by the migration principal, which on that profile is a superuser, and a
-superuser bypasses row-level security whether or not the table forces it.
+Measured on a local provisioned store, with **no tenant scope bound**:
+`source_delegations` returned 0 rows, as its forced row-level security requires,
+while `delegation_grants_recent` returned 114, `delegation_stats_daily` 108 and
+`delegation_pattern_usage` 36. All three are owned by the migration principal,
+which on that profile is a superuser, and a superuser bypasses row-level
+security whether or not the table forces it.
 
-This is pre-existing and outside the reader capability's judgement: the reader
-holds exactly the `SELECT` grant the agent provisions, and the crossing comes
-from the views' definition and ownership. On a managed profile whose migration
-principal is not a superuser, forced row-level security applies to the view
-owner as well and the crossing does not arise — so this is profile-dependent and
-has been verified only on a local store. Closing it belongs with the views:
-`security_invoker = true`, an owner that is not a superuser, or no reader grant
-on them.
+**The crossing was not the reader's.** All three views are granted `SELECT` —
+and `INSERT`, `DELETE`, `UPDATE` — to `app_tenant`, which is the only role the
+request login reaches. So an ordinary request connection read them under owner
+execution exactly as the reader did, and the boundary this login split draws was
+crossed on request traffic, not only on a read-only capability. Removing the
+reader's grant would therefore have closed nothing: it is named here because the
+earlier reading of this section offered it as one of three sufficient closures,
+and it is not one.
+
+`14_delegation_views_security_invoker.up.sql` closes it where it lives, by
+setting `security_invoker = true` on the three views so each executes as the
+session selecting it and `delegation_grants`' and `principals`' own policies
+apply to that session. Nothing else changes: no grant is added or removed, no
+owner is swapped, and no base-table policy is touched. Invoker execution needs
+the selecting role to hold the privileges the view reads through, which the
+roles that legitimately read these already do — `app_tenant` holds `SELECT` on
+`delegation_grants`, `principals` and `organization_members` (reached by
+`principals_access`'s `EXISTS`), and the read-only capability is provisioned
+with `SELECT` on the application relations. `app_control_plane` keeps its
+cross-tenant reach through `app_control_plane_explicit_rows`, which it satisfies
+only once it has actually assumed the role.
+
+`postgres_delegation_view_isolation_test.go` holds this on the provisioned
+store, through the scoped reader's own connection and the request login's own
+connection, for all three views: nothing with no tenant bound, each tenant's own
+rows under its own scope with two tenants seeded, and the joined principal
+fields and the aggregate counts filtered with the rest. It also clears the
+setting and requires the crossing to return, so the isolation is attributed to
+the migration rather than assumed.
+
+Two limits stay on the record. The crossing was **profile-dependent**: it arose
+because the view owner is a superuser, and where the migration principal is not
+one, forced row-level security binds the owner too and it does not arise. It was
+measured only on a local store — **no hosted or managed profile was inspected**,
+and "correct on the currently provisioned profile" was never evidence that it
+was correct. And the judgement still does not refuse a view: a **new**
+non-`security_invoker` view added later would cross tenants the same way and
+pass startup, so the property belongs with whoever adds a view, not with this
+policy.
 
 The unjudged classes are the request login's: `USAGE` on a type, domain,
 language, foreign-data wrapper or foreign server, `CREATE` on a tablespace, and

@@ -17,10 +17,13 @@ import (
 // privilege the reader holds would read as excess, PUBLIC's included.
 //
 // A view that is not security_invoker executes as its owner, so it is the same
-// authority-crossing shape as a SECURITY DEFINER function — but three such views
-// exist on the provisioned baseline and refusing them would refuse a correct
-// deployment, so they are not judged. DATABASE_AUTHORITY.md records what that
-// leaves open and where it has to be closed.
+// authority-crossing shape as a SECURITY DEFINER function — but views exist on
+// the provisioned baseline and refusing them would refuse a correct deployment,
+// so they are not judged here. The three that crossed tenants are closed where
+// they live, by 14_delegation_views_security_invoker.up.sql; a new
+// non-security_invoker view added later would cross the same way and pass this
+// judgement, so that property belongs with whoever adds a view.
+// DATABASE_AUTHORITY.md records the crossing, its scope and what remains open.
 //
 // A reader is judged against what a read-only login legitimately holds instead.
 // On the provisioned baseline that is: CONNECT on the database, USAGE on
@@ -215,8 +218,10 @@ type authorityBatcher interface {
 // inspectReaderAuthority reads the reader login's authority in one round trip:
 // the roles it reaches with their attributes and ownership (loginRolesQuery),
 // and the privileges a read-only login must not hold
-// (readOnlyLoginPrivilegesQuery). Both run per checkout, so they share a batch
-// rather than paying two round trips on the path of every borrowed connection.
+// (readOnlyLoginPrivilegesQuery). They share a batch rather than paying two
+// round trips, so that the judgement costs one round trip wherever it runs —
+// today at startup, and on every connection and checkout once the primitive
+// exposes the seam requireReaderLoginAuthority's comment describes.
 func inspectReaderAuthority(ctx context.Context, conn authorityBatcher) (loginAuthority, error) {
 	batch := &pgx.Batch{}
 	batch.Queue(loginRolesQuery)
@@ -280,11 +285,22 @@ func summarizeExcess(excess []string) string {
 // attribute or ownership that skips row-level security, or holds a privilege a
 // read-only login must not.
 //
-// It runs on every new physical connection and again on every checkout, so a
-// membership or grant made after startup cannot be served from a connection
-// opened before it. It is not a fence against a GRANT that commits while a
-// borrower already holds the connection; a role or grant change still needs the
-// operator drain policy DATABASE_AUTHORITY.md describes.
+// It runs ONCE, at startup, from verifyReaderLogin — on a connection of the
+// reader's own capability, but not on the pooled connections that go on to
+// serve. service-postgres owns the scoped reader and writer pools and the
+// version pinned here exposes no hook for an application policy, so a
+// membership or grant made after startup is not caught on those pools: what
+// runs there per connection and per checkout is the library's own
+// restricted-session policy, which covers privileged attributes, database
+// ownership and the denied cross-tenant roles, and nothing else. Ownership of a
+// relation, schema or function and excess or SECURITY DEFINER grants are
+// therefore judged at boot only. DATABASE_AUTHORITY.md records the layering and
+// the seam that closes it; move this judgement onto that seam when the
+// primitive publishes it, and correct this comment and that section together.
+//
+// Neither layer is a fence against a GRANT that commits while a borrower
+// already holds the connection; a role or grant change still needs the operator
+// drain policy DATABASE_AUTHORITY.md describes.
 func requireReaderLoginAuthority(ctx context.Context, conn authorityBatcher) error {
 	authority, err := inspectReaderAuthority(ctx, conn)
 	if err != nil {
