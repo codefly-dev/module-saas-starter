@@ -73,6 +73,12 @@ func (s *Service) DatasourceConnectors() *connector.Registry { return s.datasour
 type DatasourceCatalogEntry struct {
 	Descriptor        connector.Descriptor
 	AcceptsNewSources bool
+	// LiveDeliveryConfigured is whether THIS deployment has wired the
+	// provider-level push endpoint this connector receives on. The descriptor's
+	// SupportsWebhook is a property of the connector and is the same everywhere;
+	// this is a property of the deployment, and without it a client cannot tell
+	// "this provider has no push path" from "nobody turned it on here".
+	LiveDeliveryConfigured bool
 }
 
 // DatasourceCatalog is the host's whole connector registry, ordered by key:
@@ -84,7 +90,11 @@ func (s *Service) DatasourceCatalog() []DatasourceCatalogEntry {
 	}
 	var out []DatasourceCatalogEntry
 	for _, d := range s.datasourceConnectors.Descriptors() {
-		out = append(out, DatasourceCatalogEntry{Descriptor: d, AcceptsNewSources: s.datasourceConnectors.AdmitNewSource(d.Key) == nil})
+		out = append(out, DatasourceCatalogEntry{
+			Descriptor:             d,
+			AcceptsNewSources:      s.datasourceConnectors.AdmitNewSource(d.Key) == nil,
+			LiveDeliveryConfigured: s.DatasourceLiveDeliveryConfigured(d.Key),
+		})
 	}
 	return out
 }

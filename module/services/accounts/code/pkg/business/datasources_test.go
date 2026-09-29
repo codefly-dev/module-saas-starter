@@ -471,7 +471,9 @@ func (f *datasourceFakeStore) ListDatasourceSourcesDueForReconcile(_ context.Con
 	defer f.mu.Unlock()
 	var out []*business.DatasourceSource
 	for _, s := range f.sources {
-		if s.Status != business.DatasourceStatusActive || s.Provider != business.DatasourceProviderGitHub {
+		// Every provider, matching the real query: the sweep is the whole
+		// schedule, and the caller routes each row to its provider's engine.
+		if s.Status != business.DatasourceStatusActive {
 			continue
 		}
 		if s.NextReconcileAt == nil || s.NextReconcileAt.After(now) {
@@ -549,6 +551,10 @@ type fakeGitHub struct {
 	// openErr fails opening the repository mirror; fetchErr fails every Fetch.
 	openErr  error
 	fetchErr error
+	// resolveErr fails resolving the branch head — what GitHub answering 404 to
+	// an unauthenticated read of a repository that is no longer public looks
+	// like from here.
+	resolveErr error
 
 	mu         sync.Mutex
 	fetched    []string
@@ -569,6 +575,9 @@ func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
 	return f.defaultBranch, nil
 }
 func (f *fakeGitHub) ResolveCommit(context.Context, string, string) (string, error) {
+	if f.resolveErr != nil {
+		return "", f.resolveErr
+	}
 	return f.commit, nil
 }
 
@@ -1288,6 +1297,35 @@ func newUploadSource(t *testing.T, svc *business.Service) *business.DatasourceSo
 	return source
 }
 
+// takeConnectSync asserts that connecting source enqueued exactly one sync
+// request — the first sync every provider now gets, so a connected source is not
+// empty until somebody presses "Sync now" — and drops it from the recording.
+//
+// It is the pull-provider companion of forgetConnectSync, which does the same
+// for the forced reconcile a GitHub connect enqueues. It is a helper rather than
+// a line in each test because what those tests measure is the jobs one sync
+// produces: leaving the connect-time request in the recording would fold two
+// different facts into one count, to be re-derived at every assertion.
+func takeConnectSync(t *testing.T, p *recordingProducer, source *business.DatasourceSource) {
+	t.Helper()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var kept []*jobsv1.NewJob
+	found := 0
+	for _, job := range p.jobs {
+		if job.GetQueue() == business.DatasourceSyncRequestQueue &&
+			job.GetAttributes()["datasource.source_id"] == source.ID {
+			found++
+			continue
+		}
+		kept = append(kept, job)
+	}
+	if found != 1 {
+		t.Fatalf("connecting a source must enqueue exactly one sync request, got %d", found)
+	}
+	p.jobs = kept
+}
+
 func TestRunDatasourceSync_CrawlerStreamsPerPage(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
@@ -1297,6 +1335,7 @@ func TestRunDatasourceSync_CrawlerStreamsPerPage(t *testing.T) {
 	}}
 	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
 	source := newCrawlerSource(t, svc)
+	takeConnectSync(t, producer, source)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err != nil {
@@ -1338,6 +1377,7 @@ func TestRunDatasourceSync_CrawlerSurfacesOversizedPage(t *testing.T) {
 	}
 	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
 	source := newCrawlerSource(t, svc)
+	takeConnectSync(t, producer, source)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err == nil {
@@ -1362,6 +1402,7 @@ func TestRunDatasourceSync_CrawlerWholesaleFailureIsNotEmptySuccess(t *testing.T
 	}
 	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
 	source := newCrawlerSource(t, svc)
+	takeConnectSync(t, producer, source)
 
 	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
 		t.Fatal("a crawl that reached no page must fail, not report an empty success")
@@ -1387,6 +1428,7 @@ func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 		return fake
 	})
 	source := newUploadSource(t, svc)
+	takeConnectSync(t, producer, source)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err != nil {
@@ -1428,6 +1470,7 @@ func TestRunDatasourceSync_UploadPropagatesFetchFailure(t *testing.T) {
 	}
 	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
 	source := newUploadSource(t, svc)
+	takeConnectSync(t, producer, source)
 
 	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
 		t.Fatal("a 403 on every object must fail the sync, not read as an empty bucket")
@@ -1452,6 +1495,7 @@ func TestRunDatasourceSync_UploadSkipsVanishedAndSurfacesOversized(t *testing.T)
 	}
 	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
 	source := newUploadSource(t, svc)
+	takeConnectSync(t, producer, source)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err == nil {
@@ -1477,6 +1521,7 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	takeConnectSync(t, producer, source)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err != nil {

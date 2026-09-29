@@ -284,9 +284,18 @@ func (e *DurableAuditEmitter) Close() {}
 // plus an optional JSONB payload-containment predicate. All fields are
 // optional; the zero value matches every row visible under RLS.
 type AuditQuery struct {
-	OrgID           string
-	ActorID         string
-	EventType       string
+	OrgID     string
+	ActorID   string
+	EventType string
+	// EventTypes is the set form of EventType: a record matches when its type is
+	// any one of them. Set alongside EventType both apply, so a one-element set
+	// and the scalar answer alike.
+	//
+	// A summary over a family of event types had nothing to filter on before
+	// this. An empty slice is no predicate at all — it is "the caller named no
+	// set", not "match nothing" — because the only producer of an empty set is a
+	// caller that did not send the field.
+	EventTypes      []string
 	Category        string
 	Namespace       string
 	Resource        string

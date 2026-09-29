@@ -216,7 +216,18 @@ type QueryAuditLogRequest struct {
 	// client_id narrows the search to calls made through one registered client.
 	// It is the companion to reading the client off each record: without it
 	// "what did this client do" can only be answered by paging the whole trail.
-	ClientId      string `protobuf:"bytes,14,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientId string `protobuf:"bytes,14,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// event_types is the set form of event_type: a record matches when its type is
+	// any one of them. Both may be sent; a record must then satisfy each, which
+	// for a single-element set is the same answer as either alone.
+	//
+	// It exists because a summary over a *family* of event types had no filter to
+	// open. "New users" counts every type the registry marks as recording a
+	// person joining — a set the registry owns and may extend — and a scalar
+	// event_type cannot name a set, so the figure could be shown and never
+	// checked. Picking one member instead would have shown a different number
+	// from the one clicked.
+	EventTypes    []string `protobuf:"bytes,15,rep,name=event_types,json=eventTypes,proto3" json:"event_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -350,6 +361,13 @@ func (x *QueryAuditLogRequest) GetClientId() string {
 	return ""
 }
 
+func (x *QueryAuditLogRequest) GetEventTypes() []string {
+	if x != nil {
+		return x.EventTypes
+	}
+	return nil
+}
+
 type QueryAuditLogResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*AuditEvent          `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
@@ -416,8 +434,11 @@ type ExportAuditLogRequest struct {
 	Format  string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"` // "csv" or "json"
 	ActorId string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	// Deprecated: Marked as deprecated in saas/accounts/v1/audit.proto.
-	Action        string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"` // use event_type
-	EventType     string `protobuf:"bytes,5,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Action    string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"` // use event_type
+	EventType string `protobuf:"bytes,5,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	// The set form of event_type, matching QueryAuditLogRequest.event_types, so a
+	// download carries the same filter as the list it was taken from.
+	EventTypes    []string `protobuf:"bytes,6,rep,name=event_types,json=eventTypes,proto3" json:"event_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -486,6 +507,13 @@ func (x *ExportAuditLogRequest) GetEventType() string {
 		return x.EventType
 	}
 	return ""
+}
+
+func (x *ExportAuditLogRequest) GetEventTypes() []string {
+	if x != nil {
+		return x.EventTypes
+	}
+	return nil
 }
 
 type ExportAuditLogResponse struct {
@@ -731,7 +759,12 @@ type AggregateAuditLogRequest struct {
 	CollectionId string `protobuf:"bytes,16,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
 	// client_id narrows the aggregation to calls made through one registered
 	// client, matching QueryAuditLogRequest.client_id.
-	ClientId      string `protobuf:"bytes,17,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientId string `protobuf:"bytes,17,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// The set form of event_type, matching QueryAuditLogRequest.event_types. A
+	// tile that summarises a family of event types reads its figure through this
+	// and drives its own click through the same value, so the number shown and
+	// the list it opens cannot disagree.
+	EventTypes    []string `protobuf:"bytes,18,rep,name=event_types,json=eventTypes,proto3" json:"event_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -883,6 +916,13 @@ func (x *AggregateAuditLogRequest) GetClientId() string {
 		return x.ClientId
 	}
 	return ""
+}
+
+func (x *AggregateAuditLogRequest) GetEventTypes() []string {
+	if x != nil {
+		return x.EventTypes
+	}
+	return nil
 }
 
 type AuditAggregateBucket struct {
@@ -1257,7 +1297,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\tclient_id\x18\x0f \x01(\tR\bclientId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe6\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x98\x05\n" +
 	"\x14QueryAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1a\n" +
@@ -1276,7 +1316,9 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\bcategory\x18\v \x01(\tR\bcategory\x12f\n" +
 	"\x10payload_contains\x18\f \x03(\v2;.saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntryR\x0fpayloadContains\x12\x1c\n" +
 	"\tnamespace\x18\r \x01(\tR\tnamespace\x12\x1b\n" +
-	"\tclient_id\x18\x0e \x01(\tR\bclientId\x1aB\n" +
+	"\tclient_id\x18\x0e \x01(\tR\bclientId\x120\n" +
+	"\vevent_types\x18\x0f \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\xff\x01R\n" +
+	"eventTypes\x1aB\n" +
 	"\x14PayloadContainsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x96\x01\n" +
@@ -1284,14 +1326,16 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x06events\x18\x01 \x03(\v2\x1c.saas.accounts.v1.AuditEventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"\x9c\x01\n" +
+	"totalCount\"\xce\x01\n" +
 	"\x15ExportAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x16\n" +
 	"\x06format\x18\x02 \x01(\tR\x06format\x12\x19\n" +
 	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12\x1a\n" +
 	"\x06action\x18\x04 \x01(\tB\x02\x18\x01R\x06action\x12\x1d\n" +
 	"\n" +
-	"event_type\x18\x05 \x01(\tR\teventType\"k\n" +
+	"event_type\x18\x05 \x01(\tR\teventType\x120\n" +
+	"\vevent_types\x18\x06 \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\xff\x01R\n" +
+	"eventTypes\"k\n" +
 	"\x16ExportAuditLogResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x1a\n" +
@@ -1306,7 +1350,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x12AuditDerivedMetric\x12\x14\n" +
 	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x1c\n" +
 	"\tnumerator\x18\x02 \x01(\tR\tnumerator\x12 \n" +
-	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xf9\x05\n" +
+	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xab\x06\n" +
 	"\x18AggregateAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1d\n" +
@@ -1327,7 +1371,9 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"resourceId\x12j\n" +
 	"\x10payload_contains\x18\x0f \x03(\v2?.saas.accounts.v1.AggregateAuditLogRequest.PayloadContainsEntryR\x0fpayloadContains\x12#\n" +
 	"\rcollection_id\x18\x10 \x01(\tR\fcollectionId\x12\x1b\n" +
-	"\tclient_id\x18\x11 \x01(\tR\bclientId\x1aB\n" +
+	"\tclient_id\x18\x11 \x01(\tR\bclientId\x120\n" +
+	"\vevent_types\x18\x12 \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\xff\x01R\n" +
+	"eventTypes\x1aB\n" +
 	"\x14PayloadContainsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe8\x02\n" +

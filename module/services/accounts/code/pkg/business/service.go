@@ -73,24 +73,26 @@ type Service struct {
 	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
 	datasourceLinkers         map[string]DatasourceAccountLinker
 	datasourceTXTResolver     TXTResolver
-	datasourceBudgets         DatasourceBudgetStore   // meters provider credentials; nil leaves connectors unmetered
-	githubBaseURL             string                  // api.github.com override for the datasource connector
-	githubAppID               string                  // deployment's GitHub App registration; empty leaves sources on their own PAT
-	githubAppKeyPEM           string                  // the App's RSA signing key, deployment custody — never copied onto a source
-	githubAppWebhookSecret    string                  // signs the App's own lifecycle deliveries; App-wide, never per source
-	githubAppSlug             string                  // the App's URL slug, used to build its install link; empty disables App onboarding
-	githubAppClientID         string                  // the App's OAuth client, which identifies the person returning from an install
-	githubAppClientSecret     string                  // its secret; without the pair, an installation cannot be attributed to a caller
-	datasourceTicketSigner    *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
-	newGitHubClient           func(token string) GitHubContentClient
-	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
-	newCrawlerClient          func(cfg CrawlerDatasourceConfig) CrawlerContentClient
-	newUploadClient           func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
-	newOAuth2Refresh          OAuth2RefreshFunc       // refreshes an OAuth 2.0 API source's access token
-	moduleProducer            jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
-	moduleJobStore            jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
-	modulePrincipals          ModulePrincipalRegistry // per-principal capability grants for the module-facing surface
-	eventTransport            events.Transport        // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
+	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
+	githubBaseURL             string                // api.github.com override for the datasource connector
+	githubAppID               string                // deployment's GitHub App registration; empty leaves sources on their own PAT
+	githubAppKeyPEM           string                // the App's RSA signing key, deployment custody — never copied onto a source
+	githubAppWebhookSecret    string                // signs the App's own lifecycle deliveries; App-wide, never per source
+	githubAppSlug             string                // the App's URL slug, used to build its install link; empty disables App onboarding
+	githubAppClientID         string                // the App's OAuth client, which identifies the person returning from an install
+	githubAppClientSecret     string                // its secret; without the pair, an installation cannot be attributed to a caller
+	//nolint:lll // the mount this mirrors is a single deployment switch; splitting the note loses the pairing
+	datasourceWebhookMounted bool                    // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
+	datasourceTicketSigner   *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
+	newGitHubClient          func(token string) GitHubContentClient
+	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
+	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient
+	newUploadClient          func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
+	newOAuth2Refresh         OAuth2RefreshFunc       // refreshes an OAuth 2.0 API source's access token
+	moduleProducer           jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
+	moduleJobStore           jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
+	modulePrincipals         ModulePrincipalRegistry // per-principal capability grants for the module-facing surface
+	eventTransport           events.Transport        // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):

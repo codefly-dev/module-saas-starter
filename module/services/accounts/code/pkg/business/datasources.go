@@ -68,6 +68,23 @@ func SnapshotTooLargeDegradeReason(size, limit int) DatasourceDegradeReason {
 	}
 }
 
+// DatasourceReasonPublicRepositoryUnreadable explains a source connected as a
+// public repository that GitHub has stopped serving without a credential —
+// overwhelmingly because the repository was made private, but a rename or a
+// deletion reads the same way and takes the same remedy.
+//
+// It is a constant rather than a constructor because it carries nothing
+// measured: the whole fact is "the unauthenticated read that connected this
+// source no longer succeeds", and GitHub deliberately answers private, renamed
+// and missing identically, so naming which of them happened would be a guess
+// stated as fact.
+const DatasourceReasonPublicRepositoryUnreadable = "GitHub no longer serves this repository without a credential — it may have been made private, renamed or deleted. Reconnect it through the GitHub App or with a repository-scoped fine-grained PAT."
+
+// PublicRepositoryUnreadableDegradeReason is that sentence as a stored reason.
+func PublicRepositoryUnreadableDegradeReason() DatasourceDegradeReason {
+	return DatasourceDegradeReason{text: DatasourceReasonPublicRepositoryUnreadable}
+}
+
 // API credential kinds mirror saas.accounts.v1.ApiCredentialKind; they select
 // how the stored credential is presented on the generic connector's requests.
 // OAuth2 is resolved in this layer (refresh + rotation) and handed to the
@@ -84,6 +101,33 @@ const (
 // snapshot-reconciled as a safety net for lost webhooks and for local
 // development without a public tunnel (issue #487 §6).
 const defaultDatasourceReconcileInterval = 30 * time.Minute
+
+// defaultDatasourcePullReconcileInterval is the same safety net for the pull
+// providers — the generic API, the crawler and object storage — which have no
+// webhook receiver at all (AddSource refuses a webhook secret for each of them).
+// Their only other path to a new version of the source is a person pressing
+// "Sync now", so without a schedule a collection drifts from its source from the
+// moment it is connected and nothing ever notices.
+//
+// It is deliberately far longer than the GitHub interval, because a pull sync is
+// far more expensive: each of these providers re-sends its whole content as
+// additions on every sync, with no cursor and no deletions — the registered
+// conformance gap in datasource_connectors.go. Reconciling one every 30 minutes
+// would re-send an entire bucket or site 48 times a day for a change that may
+// never come. A day is the cadence at which "nothing notices" stops being true
+// while the re-send stays affordable; narrowing it is a question for the cursor
+// work that closes the gap, not for the safety net.
+const defaultDatasourcePullReconcileInterval = 24 * time.Hour
+
+// datasourceReconcileInterval is the schedule a newly connected source of
+// provider is given. Every provider gets one: a source with no schedule is one
+// that syncs once at connect and then only when a person asks.
+func datasourceReconcileInterval(provider string) time.Duration {
+	if provider == DatasourceProviderGitHub {
+		return defaultDatasourceReconcileInterval
+	}
+	return defaultDatasourcePullReconcileInterval
+}
 
 // oauth2ExpiryLeeway refreshes a stored access token slightly before it expires
 // so a token that lapses mid-fetch does not fail the sync.
@@ -128,6 +172,23 @@ const (
 	datasourceSyncRequestSource        = "github.sync.request"
 	datasourceSyncRequestSchemaVersion = 1
 	datasourceSyncRequestMaxAttempts   = 12
+
+	// DatasourceScheduledSyncSource marks a sync request the periodic reconcile
+	// sweep produced, as distinct from datasourceSyncRequestSource, which marks
+	// one a person asked for. Both carry the same topic and are performed
+	// identically; only their provenance differs, which is what lets an operator
+	// reading the queue tell "the schedule ran" from "someone pressed Sync now".
+	DatasourceScheduledSyncSource = "datasource.scheduled.sync"
+
+	// datasourceSyncOrderingNamespace scopes the per-source FIFO ordering key on
+	// the sync-request queue, the way datasourceDeliveryOrderingNamespace does on
+	// the delivery queue. A pull sync re-sends the whole source, so two of them
+	// running at once for one source is duplicated ingest work for no gain — and
+	// that became reachable the moment the sweep started enqueueing them beside a
+	// person's "Sync now". It is a distinct namespace from the delivery queue's:
+	// the two queues carry unrelated work for the same source and must not
+	// serialise against each other.
+	datasourceSyncOrderingNamespace = "datasource.sync"
 
 	// A file larger than the generic inbox's ~1 MiB payload cap is skipped by a
 	// full sync; the documents ingest step re-fetches such refs by SHA through
@@ -592,13 +653,13 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		FileExtensions:    extensions,
 		Branch:            strings.TrimSpace(input.Branch),
 		Status:            DatasourceStatusActive,
-		ReconcileInterval: defaultDatasourceReconcileInterval,
+		ReconcileInterval: datasourceReconcileInterval(DatasourceProviderGitHub),
 		// Written with the row rather than after it: a source that is App-backed
 		// from birth must be resolvable by installation the moment it exists, or
 		// an App-level delivery cannot reach it. Empty for a PAT source.
 		GitHubInstallationID: credential.InstallationID,
 	}
-	nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
+	nextReconcile := time.Now().UTC().Add(source.ReconcileInterval)
 	source.NextReconcileAt = &nextReconcile
 
 	if err := s.sealGitHubConnectCredential(ctx, source, credential); err != nil {
@@ -635,7 +696,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	s.startFirstGitHubSync(ctx, source)
+	s.startFirstSync(ctx, source)
 	return source, nil
 }
 
@@ -742,6 +803,14 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		Provider: input.Provider,
 		Status:   DatasourceStatusActive,
 	}
+	// Every provider is scheduled, not just GitHub. A pull provider used to be
+	// inserted with next_reconcile_at NULL, which put it outside the reconcile
+	// sweep for good: it synced once at connect and then never again unless a
+	// person pressed "Sync now". The GitHub branch below overwrites both fields
+	// with its own (shorter) interval.
+	source.ReconcileInterval = datasourceReconcileInterval(input.Provider)
+	nextReconcile := time.Now().UTC().Add(source.ReconcileInterval)
+	source.NextReconcileAt = &nextReconcile
 
 	credential := strings.TrimSpace(input.Credential)
 	// How a GitHub source authenticates, for the audit record; empty for the
@@ -780,9 +849,6 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			return nil, w.Wrap(err)
 		}
 		source.Branch = strings.TrimSpace(input.Branch)
-		source.ReconcileInterval = defaultDatasourceReconcileInterval
-		nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
-		source.NextReconcileAt = &nextReconcile
 	case DatasourceProviderAPI:
 		if credential == "" {
 			return nil, w.NewError("credential is required")
@@ -873,9 +939,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	if source.Provider == DatasourceProviderGitHub {
-		s.startFirstGitHubSync(ctx, source)
-	}
+	s.startFirstSync(ctx, source)
 	return source, nil
 }
 
@@ -1280,6 +1344,10 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			Queue:     DatasourceSyncRequestQueue,
 			Topic:     datasourceSyncRequestTopic,
 			Source:    datasourceSyncRequestSource,
+			// The same per-source FIFO key the scheduled pass carries, so a person
+			// pressing "Sync now" while the schedule's pull is in flight queues
+			// behind it rather than re-sending the whole source alongside it.
+			Ordering: DatasourceSyncOrderingKey(source.ID),
 			// A fresh key per request: a sync is an explicit "reconcile now" action,
 			// so it must never be dropped as an idempotent replay of an earlier,
 			// already-terminal request.
