@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 
+	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -78,4 +79,33 @@ func RequireReaderLoginAuthority(ctx context.Context, conn interface {
 func OpenScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string) (func(), error) {
 	_, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, nil)
 	return closeDatabase, err
+}
+
+// writeGrantingAuthenticator is the production authenticator with exactly one
+// decision substituted: it permits a database write. Production refuses
+// AuthorizeDatabaseWrite outright, so Factory.Writer returns before it reaches
+// the pool and the writer capability's connection policy is never exercised by
+// a checkout — which is precisely the boundary a startup-only validation would
+// also pass. This type is declared in a _test file, so it is never compiled
+// into the binary and the production refusal is untouched.
+//
+// Everything else is the production path: the same openScopedBoundaryAs, the
+// same transport validation, the same scope settings, operation timeout,
+// restricted-session policy and connection policies.
+type writeGrantingAuthenticator struct{ postgresAuthenticator }
+
+func (writeGrantingAuthenticator) AuthorizeDatabaseWrite(context.Context, scopedpostgres.Principal) error {
+	return nil
+}
+
+// OpenScopedBoundaryWithWrites opens the production boundary with the writer
+// capability reachable, and returns the Factory so the suite can borrow the
+// library-owned writer pool repeatedly on ONE retained boundary. That is what
+// makes a checkout judgement distinguishable from a connect-only one: the
+// boundary stays open across a widening, so a refusal afterwards cannot have
+// come from a fresh startup validation.
+//
+// It returns the Factory, not a pool: the pools stay private to the primitive.
+func OpenScopedBoundaryWithWrites(ctx context.Context, readOnlyConnection, readWriteConnection string) (*scopedpostgres.Factory, func(), error) {
+	return openScopedBoundaryAs(ctx, readOnlyConnection, readWriteConnection, nil, writeGrantingAuthenticator{})
 }

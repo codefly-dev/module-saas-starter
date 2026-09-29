@@ -129,6 +129,23 @@ func (f policyFixture) exec(t *testing.T, ctx context.Context, statement string)
 	require.NoError(t, err, statement)
 }
 
+// readerBackends returns the live backend PIDs serving the reader capability,
+// identified by the application_name its DSN sets. pool_max_conns=1 bounds the
+// pool to one connection but does not by itself prove that a later borrow
+// reused an earlier one, so the suite reads the backend's identity and
+// liveness from the server rather than inferring reuse from the cap.
+func (f policyFixture) readerBackends(t *testing.T, ctx context.Context) []int {
+	t.Helper()
+	rows, err := f.admin.Query(ctx, `
+		SELECT pid FROM pg_catalog.pg_stat_activity
+		WHERE application_name = 'connection_policy_cp_reader' AND datname = current_database()
+		ORDER BY pid`)
+	require.NoError(t, err)
+	pids, err := pgx.CollectRows(rows, pgx.RowTo[int])
+	require.NoError(t, err)
+	return pids
+}
+
 // readerWidenings are authority a read-only login must not hold, one per class
 // the library's restricted-session policy does NOT judge. Each is applied to a
 // login whose pooled backend has already served, so what refuses the next
@@ -184,12 +201,24 @@ func TestReaderPolicyRefusesAWidenedBackendAtTheNextCheckout(t *testing.T) {
 		return nil
 	}
 
-	// Valid-profile acceptance, and the backend is now in the pool.
+	// Valid-profile acceptance.
 	require.NoError(t, read(), "the valid profile must serve")
-	require.NoError(t, read(), "and serve again on the reused backend")
 
 	for _, widening := range readerWidenings {
 		t.Run(widening.name, func(t *testing.T) {
+			// Establish, per case, that a borrow really is reusing the backend
+			// an earlier borrow left in the pool. pool_max_conns=1 bounds the
+			// pool but does not prove reuse, so the identity comes from the
+			// server's own view and is re-established here rather than carried
+			// between cases.
+			require.NoError(t, read(), "a clean read before the widening")
+			live := fixture.readerBackends(t, ctx)
+			require.Len(t, live, 1, "the reader pool is capped at one connection")
+			retained := live[0]
+			require.NoError(t, read(), "and again")
+			require.Equal(t, []int{retained}, fixture.readerBackends(t, ctx),
+				"the second read reused the same live backend; otherwise this proves connect, not checkout")
+
 			fixture.exec(t, ctx, widening.widen)
 			restored := false
 			t.Cleanup(func() {
@@ -207,8 +236,23 @@ func TestReaderPolicyRefusesAWidenedBackendAtTheNextCheckout(t *testing.T) {
 			require.ErrorContains(t, err, "reaches beyond a read-only capability")
 			require.ErrorContains(t, err, widening.want)
 
-			// Recovery: undo it and the same pool serves again, which also
-			// shows the refusal was the authority and not a poisoned pool.
+			// A refused checkout destroys that connection rather than returning
+			// it, so the backend that served before the widening goes away.
+			// Asserted as eventual, not immediate: the refusal makes pgx
+			// discard the connection, and the server drops its pg_stat_activity
+			// row when the socket closes, which is not the same instant.
+			require.Eventually(t, func() bool {
+				for _, pid := range fixture.readerBackends(t, ctx) {
+					if pid == retained {
+						return false
+					}
+				}
+				return true
+			}, 10*time.Second, 50*time.Millisecond,
+				"the refused backend must be discarded rather than returned to the pool")
+
+			// Recovery: undo it and the pool serves again, which also shows the
+			// refusal was the authority and not a poisoned pool.
 			fixture.exec(t, ctx, widening.restore)
 			restored = true
 			require.NoError(t, read(), "the reader serves again once the widening is undone")
@@ -220,9 +264,15 @@ func TestReaderPolicyRefusesAWidenedBackendAtTheNextCheckout(t *testing.T) {
 }
 
 // The judgement is on the checkout path, so it costs something on every
-// transaction. This records what, rather than leaving it unmeasured: the
-// coordinator asked for checkout cost, and a policy whose cost nobody measured
-// is a policy nobody can size a pool against.
+// transaction. This records the order of magnitude rather than leaving it
+// unmeasured.
+//
+// What it measures is WHOLE-READ latency on this fixture — a two-row table, a
+// pool of one, one machine — not the policy's isolated overhead, since nothing
+// here subtracts the read, the round trips or the transaction. It is not
+// production sizing evidence either. Its job is to catch a judgement that has
+// become pathological, which is the regression that would turn a cost into a
+// pool-sizing problem.
 func TestReaderPolicyCheckoutCost(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()

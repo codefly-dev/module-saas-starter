@@ -713,6 +713,23 @@ func requireControlPlaneLoginAuthority(ctx context.Context, conn *pgx.Conn) erro
 // openScopedBoundary validates this module's transport policy, then delegates
 // request-pool ownership, startup checks and credential rotation to service-postgres.
 func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string, provider scopedpostgres.AccessTokenProvider) (*scopedpostgres.Factory, func(), error) {
+	return openScopedBoundaryAs(ctx, readOnlyConnection, readWriteConnection, provider, postgresAuthenticator{})
+}
+
+// openScopedBoundaryAs is openScopedBoundary with the authenticator as a
+// parameter. It exists so the suite can borrow the library-owned WRITER pool,
+// which production never borrows: this module's authenticator refuses
+// AuthorizeDatabaseWrite outright, so Factory.Writer returns before it reaches
+// the pool and the writer capability's connection policy is never exercised by
+// a checkout. A test authenticator that permits writes is the only way to
+// reach that path, and it reaches it through THIS function — the same transport
+// validation, the same options, the same restricted-session and connection
+// policies — so what the suite exercises is the production assembly with one
+// substituted decision, not a re-derivation of it.
+//
+// Production has exactly one caller, openScopedBoundary above, which passes the
+// refusing authenticator. Nothing here relaxes that refusal.
+func openScopedBoundaryAs(ctx context.Context, readOnlyConnection, readWriteConnection string, provider scopedpostgres.AccessTokenProvider, authenticator scopedpostgres.Authenticator) (*scopedpostgres.Factory, func(), error) {
 	if ctx == nil {
 		return nil, nil, errors.New("scoped Postgres context is required")
 	}
@@ -763,7 +780,7 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 	if provider != nil {
 		options = append(options, scopedpostgres.WithAccessTokenProvider(provider))
 	}
-	return scopedpostgres.Open(ctx, readOnlyConnection, readWriteConnection, postgresAuthenticator{}, options...)
+	return scopedpostgres.Open(ctx, readOnlyConnection, readWriteConnection, authenticator, options...)
 }
 
 // readerConnectionPolicy is the scoped reader's per-connection and per-checkout

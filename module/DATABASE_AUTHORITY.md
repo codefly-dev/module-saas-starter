@@ -401,10 +401,18 @@ provider, the startup pings or the closer into this module.
 **What this is still not.** The judgement is point-in-time on each boundary, so
 it is not a fence against a `GRANT` that commits while a borrower already holds
 the connection. A role or grant change still needs the operator drain policy:
-stop the workload, change the grant, then let it reconnect. And it costs what it
-queries, on every checkout — measured at roughly 2.5 ms per scoped read on the
-qualification fixture (`TestReaderPolicyCheckoutCost`), which is the number to
-size a pool against.
+stop the workload, change the grant, then let it reconnect.
+
+It also costs what it queries, on every checkout. `TestReaderPolicyCheckoutCost`
+records roughly 2 ms per scoped read on the qualification fixture. Read that for
+what it is: a **local end-to-end observation** — one developer machine, a
+two-row table, a pool of one, whole-read latency with the policy in the path. It
+is neither the policy's isolated overhead (nothing here subtracts the read, the
+round trips or the transaction) nor evidence for sizing a production pool
+against real schemas, concurrency and network. It is there so a regression that
+made the judgement pathological would show up, and so the order of magnitude is
+on the record rather than guessed. Sizing a deployment needs its own
+measurement.
 
 The request and control-plane logins are judged on every new connection because
 accounts owns those pools. The reader's judgement is ordered **before** the
