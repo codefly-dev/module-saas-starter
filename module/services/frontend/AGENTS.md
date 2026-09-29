@@ -101,3 +101,30 @@ refuses to republish a version whose contents moved, and that refusal fails the
 release. The package's `exports` map may not name a subpath into the generated
 tree: a consumer imports the SDK's own surface, never a stub path
 (`publish-frontend-kit.test.mjs` enforces it). See the `cut-a-release` skill.
+
+## Two rules every admin surface owes its reader
+
+Both are product rules the owner has raised repeatedly, and both are kept by a
+shared implementation rather than by each surface remembering them.
+
+**A loading indicator never flashes** — nothing for the first 200 ms, then at
+least 300 ms once anything has appeared. The primitive is the kit's
+(`useLoadingPhase`, `DelayedLoading`, `Spinner`, re-exported from
+`@/shared/ui`); never add another spinner beside it. Two traps, both found in
+this tree with the primitive already in scope: gating a branch on the wait
+unmounts the indicator together with the floor that lives inside it, so pass the
+wait in or lift the decision out with `useLoadingPhase`; and a surface with an
+empty state needs the hook's third state, because falling through the pre-delay
+window lands on the empty branch and says "nothing here" about a read still in
+flight. Tables get all of this from `DataTable` — pass `isLoading`.
+`packages/codefly-ui/README.md` § "A loading indicator never flashes" has the
+detail.
+
+**An empty state says which of two things it means** — "there is nothing here"
+versus "you are not allowed to see what is here". A region that reads `data` and
+`isLoading` but never `isError` renders a refused or failed read as an empty one,
+and on a permissions console that is not a blank state, it is a wrong answer an
+administrator will act on: "nobody holds this role" shown to someone whose read
+was denied. `src/shared/lib/read-outcome.ts` classifies a finished read as
+`empty` / `forbidden` / `failed` and supplies the wording; a surface with an
+empty state passes `isError` and `error` through it.

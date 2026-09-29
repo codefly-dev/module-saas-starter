@@ -494,6 +494,55 @@ describe("the panel does not flash a loading indicator", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it("keeps a line it has shown up long enough to read", async () => {
+		// The half the delay alone does not give you. This panel used to mount
+		// `<DelayedLoading active>` inside a branch gated on `list.isLoading`, so
+		// the answer landing just past the delay unmounted the line with its own
+		// floor still in state — the indicator appeared for a few milliseconds,
+		// which is the blink the floor exists to prevent, moved later rather than
+		// removed. Exact clock, same reason as above.
+		vi.useFakeTimers();
+		try {
+			let release: (value: DatasourceView[]) => void = () => {};
+			const client = fakeClient({
+				listSources: vi.fn(
+					() =>
+						new Promise<DatasourceView[]>((resolve) => {
+							release = resolve;
+						}),
+				),
+			});
+			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(200);
+			});
+			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+
+			// The answer arrives 10ms after the line went up.
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(10);
+			});
+			await act(async () => {
+				release([source]);
+			});
+			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+
+			// 290ms of the 300ms floor remain from when the line appeared.
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(289);
+			});
+			expect(screen.getByText("Loading data sources…")).toBeTruthy();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1);
+			});
+			expect(screen.queryByText("Loading data sources…")).toBeNull();
+			expect(screen.getByText("example-org/example-repo")).toBeTruthy();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe("the panel's execution extension point", () => {

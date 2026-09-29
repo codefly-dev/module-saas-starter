@@ -3,6 +3,10 @@
 import { flexRender, type Table as TanStackTable } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "../layout/button.js";
+import {
+	type DelayedLoadingOptions,
+	useLoadingPhase,
+} from "../layout/delayed-loading.js";
 import { Skeleton } from "../layout/skeleton.js";
 import {
 	Table,
@@ -13,7 +17,7 @@ import {
 	TableRow,
 } from "../layout/table.js";
 
-interface DataTableProps<T> {
+interface DataTableProps<T> extends DelayedLoadingOptions {
 	table: TanStackTable<T>;
 	isLoading?: boolean;
 	emptyMessage?: string;
@@ -25,37 +29,29 @@ export function DataTable<T>({
 	isLoading,
 	emptyMessage = "No results.",
 	onRowClick,
+	// Inherited from `DelayedLoadingOptions`, and overridden for the same reason
+	// the primitive allows it: an example or a test that exists to *show* the
+	// skeleton needs it on screen at a known moment. The product never passes
+	// these — the defaults are the rule.
+	delayMs,
+	minVisibleMs,
 }: DataTableProps<T>) {
 	"use no memo";
 	// TanStack keeps the instance stable while its row model changes.
-	if (isLoading) {
-		return (
-			<div className="rounded-md border" aria-busy aria-label="Loading table">
-				<Table>
-					<TableHeader>
-						<TableRow>
-							{table.getAllColumns().map((col) => (
-								<TableHead key={col.id}>
-									<Skeleton className="h-4 w-24" />
-								</TableHead>
-							))}
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{Array.from({ length: 5 }).map((_, i) => (
-							<TableRow key={i}>
-								{table.getAllColumns().map((col) => (
-									<TableCell key={col.id}>
-										<Skeleton className="h-4 w-full" />
-									</TableCell>
-								))}
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
-			</div>
-		);
-	}
+	//
+	// Every table in the product renders through here, so this is where the
+	// never-flash rule is kept rather than in each caller. `indicator` is the
+	// skeleton's own two rules — nothing before 200ms, and once up it stays long
+	// enough to read. `quiet` is the window before that, and it has to render
+	// NOTHING: falling through it would reach the empty row and flash "No results."
+	// over a table that is merely still loading, which is worse than the skeleton
+	// the delay was there to spare the reader.
+	const { indicator, quiet } = useLoadingPhase(!!isLoading, {
+		...(delayMs === undefined ? {} : { delayMs }),
+		...(minVisibleMs === undefined ? {} : { minVisibleMs }),
+	});
+	if (quiet) return null;
+	if (indicator) return <DataTableSkeleton table={table} />;
 
 	return (
 		<div>
@@ -153,6 +149,45 @@ export function DataTable<T>({
 					</div>
 				</div>
 			)}
+		</div>
+	);
+}
+
+/**
+ * The table's loading appearance, on its own.
+ *
+ * Separate from `DataTable` so the appearance and the *timing* of it are
+ * independently visible: an example or a test that exists to show the skeleton
+ * renders this, while `DataTable` owns when a wait has earned one. Rendering
+ * this directly shows the skeleton with no delay, which is right for an example
+ * and wrong for a product surface — those pass `isLoading` to `DataTable`.
+ */
+export function DataTableSkeleton<T>({ table }: { table: TanStackTable<T> }) {
+	"use no memo";
+	return (
+		<div className="rounded-md border" aria-busy aria-label="Loading table">
+			<Table>
+				<TableHeader>
+					<TableRow>
+						{table.getAllColumns().map((col) => (
+							<TableHead key={col.id}>
+								<Skeleton className="h-4 w-24" />
+							</TableHead>
+						))}
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{Array.from({ length: 5 }).map((_, i) => (
+						<TableRow key={i}>
+							{table.getAllColumns().map((col) => (
+								<TableCell key={col.id}>
+									<Skeleton className="h-4 w-full" />
+								</TableCell>
+							))}
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
 		</div>
 	);
 }

@@ -16,6 +16,7 @@ import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -26,6 +27,7 @@ import {
 	PageHeader,
 	Panel,
 	Section,
+	Spinner,
 	Stack,
 	Table,
 	TableBody,
@@ -33,6 +35,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import type { Permission, Role } from "../model/types";
 import { useRevokeRole, useUpdateRole } from "../service/mutations";
@@ -63,9 +66,17 @@ function RoleDetail({
 }) {
 	const { data: roles = [], isLoading } = useRoles(orgId);
 	const role = (roles as Role[]).find((candidate) => candidate.id === roleId);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
 
-	if (isLoading) {
-		return <PageBody>Loading…</PageBody>;
+	// `quiet` renders nothing rather than falling through: the next branch is
+	// "Role not found", which would flash over every load of a role that exists.
+	if (quiet) return null;
+	if (indicator) {
+		return (
+			<PageBody>
+				<Spinner label="Loading role" />
+			</PageBody>
+		);
 	}
 	if (!role) {
 		return (
@@ -252,11 +263,13 @@ function RoleHolders({
 	orgId: string;
 	canWrite: boolean;
 }) {
-	const { data: assignments = [], isLoading } = useRoleAssignments(
-		orgId,
-		undefined,
-		SubjectKind.UNSPECIFIED,
-	);
+	const {
+		data: assignments = [],
+		isLoading,
+		isError,
+		error,
+	} = useRoleAssignments(orgId, undefined, SubjectKind.UNSPECIFIED);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
 	const { data: teams } = useQuery(teamQueries.list(orgId));
 	const revokeRole = useRevokeRole();
 
@@ -273,11 +286,21 @@ function RoleHolders({
 			description="Every principal and team this role is assigned to in this organization."
 		>
 			<Panel>
-				{isLoading ? (
-					<span className="text-sm text-muted-foreground">Loading…</span>
+				{quiet ? null : indicator ? (
+					<Spinner label="Loading who holds this role" size="sm" />
 				) : holders.length === 0 ? (
-					<span className="text-sm text-muted-foreground">
-						Nobody holds this role.
+					// "Nobody holds this role" is a conclusion an administrator acts on,
+					// so it is only ever said about a read that succeeded. A denied or
+					// failed read says so instead of borrowing that sentence.
+					<span
+						className="text-sm text-muted-foreground"
+						{...(isError ? { role: "alert" as const } : {})}
+					>
+						{readOutcomeMessage(
+							readOutcome(isError, error),
+							"who holds this role",
+							"Nobody holds this role.",
+						)}
 					</span>
 				) : (
 					<Table>

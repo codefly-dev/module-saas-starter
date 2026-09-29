@@ -16,6 +16,7 @@ import { RoleGate } from "@/components/auth/role-gate";
 import { UserPicker } from "@/components/user-picker";
 import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
 import { useAuth } from "@/lib/auth";
+import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Button,
@@ -63,7 +64,12 @@ export function OrgMembersPanel({
 	const [newUserId, setNewUserId] = useState("");
 	const [newRole, setNewRole] = useState<"member" | "admin">("member");
 
-	const { data: raw, isLoading } = useQuery(orgQueries.members(orgId));
+	const {
+		data: raw,
+		isLoading,
+		isError,
+		error,
+	} = useQuery(orgQueries.members(orgId));
 	const members: OrgMembership[] = (raw?.members ?? []).map((m) => ({
 		orgId: m.orgId,
 		userId: m.userId,
@@ -211,10 +217,17 @@ export function OrgMembersPanel({
 				</Link>
 			)}
 
+			{/* An unread `isError` rendered a failed or denied roster read as "No
+			    members in this organization." — the one sentence an administrator
+			    would act on, about a tenant whose roster was never read. */}
 			<DataTable
 				table={table}
 				isLoading={isLoading}
-				emptyMessage="No members in this organization."
+				emptyMessage={readOutcomeMessage(
+					readOutcome(isError, error),
+					"this organization's members",
+					"No members in this organization.",
+				)}
 			/>
 		</div>
 	);

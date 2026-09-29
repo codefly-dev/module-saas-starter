@@ -10,6 +10,7 @@ import {
 } from "@/features/roles/service/mutations";
 import { useRoleAssignments, useRoles } from "@/features/roles/service/queries";
 import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
+import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Button,
@@ -20,7 +21,9 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Spinner,
 	Stack,
+	useLoadingPhase,
 } from "@/shared/ui";
 
 // The roles a team carries reach every member of it, which is why they belong
@@ -36,11 +39,13 @@ export function TeamRoles({
 }) {
 	const [picked, setPicked] = useState("");
 	const { data: roles = [] } = useRoles(orgId);
-	const { data: assignments = [], isLoading } = useRoleAssignments(
-		orgId,
-		teamId,
-		SubjectKind.TEAM,
-	);
+	const {
+		data: assignments = [],
+		isLoading,
+		isError,
+		error,
+	} = useRoleAssignments(orgId, teamId, SubjectKind.TEAM);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
 	const assignRole = useAssignRole();
 	const revokeRole = useRevokeRole();
 
@@ -107,11 +112,21 @@ export function TeamRoles({
 			}
 		>
 			<Panel>
-				{isLoading ? (
-					<span className="text-sm text-muted-foreground">Loading…</span>
+				{quiet ? null : indicator ? (
+					<Spinner label="Loading the roles this team carries" size="sm" />
 				) : assignments.length === 0 ? (
-					<span className="text-sm text-muted-foreground">
-						This team carries no roles.
+					// Which of the two: no roles, or no permission to see them. An
+					// unread `isError` here rendered a denied read as "carries no roles",
+					// which on a permissions console is a wrong answer, not a blank one.
+					<span
+						className="text-sm text-muted-foreground"
+						{...(isError ? { role: "alert" as const } : {})}
+					>
+						{readOutcomeMessage(
+							readOutcome(isError, error),
+							"the roles this team carries",
+							"This team carries no roles.",
+						)}
 					</span>
 				) : (
 					<Stack direction="row" gap={2} className="flex-wrap">

@@ -1,6 +1,15 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import { describe, expect, it } from "vitest";
-import { addMemberErrorMessage } from "./team-members-panel";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderInApp, rpc } from "@/test/container";
+import { server } from "@/test/setup";
+import { addMemberErrorMessage, TeamMembersPanel } from "./team-members-panel";
+
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({ organizationId: "org-example", user: { id: "u-admin" } }),
+}));
+afterEach(cleanup);
 
 describe("addMemberErrorMessage", () => {
 	it("shows the server's own words when the target is ineligible", () => {
@@ -29,5 +38,87 @@ describe("addMemberErrorMessage", () => {
 		expect(addMemberErrorMessage(new Error("network down"))).toBe(
 			"Failed to add member",
 		);
+	});
+});
+
+describe("adding a member reports the write, not the read that follows it", () => {
+	// The roster read is held open after the write lands. Awaiting the
+	// invalidation inside `onSuccess` kept the mutation `isPending` for exactly
+	// this long, which is how "Adding…" and a stale count outlived a membership
+	// that had already been written (#964).
+	async function addAMemberWithTheRosterHeld() {
+		let releaseRoster: () => void = () => {};
+		let rosterCalls = 0;
+		server.use(
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({
+					members: [{ userId: "u-new", userEmail: "newbie@example.com" }],
+				}),
+			),
+			http.post(rpc("TeamService", "AddMember"), () => HttpResponse.json({})),
+			http.post(rpc("TeamService", "ListMembers"), async () => {
+				rosterCalls += 1;
+				if (rosterCalls > 1) {
+					await new Promise<void>((resolve) => {
+						releaseRoster = resolve;
+					});
+				}
+				return HttpResponse.json({
+					members:
+						rosterCalls > 1
+							? [
+									{
+										teamId: "team-example",
+										userId: "u-new",
+										userEmail: "newbie@example.com",
+										role: 1,
+									},
+								]
+							: [],
+				});
+			}),
+		);
+		renderInApp(
+			<TeamMembersPanel
+				orgId="org-example"
+				teamId="team-example"
+				teamName="Example team"
+				canManage
+				currentUserId="u-admin"
+			/>,
+		);
+		fireEvent.change(
+			await screen.findByPlaceholderText("Search members by email…"),
+			{ target: { value: "newbie" } },
+		);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "newbie@example.com" }),
+		);
+		fireEvent.click(await screen.findByRole("button", { name: "Add member" }));
+		await waitFor(() => expect(rosterCalls).toBeGreaterThan(1));
+		return () => releaseRoster();
+	}
+
+	it("settles the button while the roster is still being re-read", async () => {
+		const release = await addAMemberWithTheRosterHeld();
+		try {
+			// The write has landed and the refresh is still in flight. The button
+			// must be back to offering the next add, not reporting the read.
+			await waitFor(() =>
+				expect(screen.queryByRole("button", { name: "Adding…" })).toBeNull(),
+			);
+			expect(screen.getByRole("button", { name: "Add member" })).toBeTruthy();
+		} finally {
+			release();
+		}
+	});
+
+	it("still lands the new member once that re-read returns", async () => {
+		const release = await addAMemberWithTheRosterHeld();
+		release();
+		expect(
+			await screen.findByRole("heading", { name: /Members \(1\)/ }),
+		).toBeTruthy();
+		expect(screen.getByText("newbie@example.com")).toBeTruthy();
 	});
 });
