@@ -139,6 +139,11 @@ export type SortableBoardProps = {
 	renderOverlay?: (id: string) => ReactNode;
 	/** A tile's name in what a screen reader announces during a drag. Defaults to its id. */
 	itemLabel?: (id: string) => string;
+	/**
+	 * Classes for one tile's list item, which is its group's grid item: for
+	 * instance `row-span-2` for a tile about twice as tall as the others.
+	 */
+	itemClassName?: (id: string) => string | undefined;
 	/** Classes for the board, which lay the groups out (for example `space-y-6`). */
 	className?: string;
 };
@@ -389,11 +394,13 @@ function SortableTile({
 	id,
 	group,
 	sorting,
+	className,
 	children,
 }: {
 	id: string;
 	group: string;
 	sorting: boolean;
+	className?: string;
 	children: ReactNode;
 }) {
 	// The board animates order changes itself (see GlidingBoard), so dnd-kit's
@@ -432,6 +439,7 @@ function SortableTile({
 			className={cn(
 				"cursor-grab touch-manipulation",
 				isDragging && "opacity-40",
+				className,
 			)}
 			// A CSS transition outranks the glide animation, so one is set only
 			// while a drag is sliding tiles around.
@@ -557,6 +565,7 @@ export function SortableBoard({
 	renderItem,
 	renderOverlay = renderItem,
 	itemLabel = (id) => id,
+	itemClassName,
 	className,
 }: SortableBoardProps) {
 	// A stable id keeps the ids dnd-kit writes into the page the same on the
@@ -735,6 +744,7 @@ export function SortableBoard({
 									id={id}
 									group={group.id}
 									sorting={dragged?.kind === "tile"}
+									className={itemClassName?.(id)}
 								>
 									{renderItem(id)}
 								</SortableTile>

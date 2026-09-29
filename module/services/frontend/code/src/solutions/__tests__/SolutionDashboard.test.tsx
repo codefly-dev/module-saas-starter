@@ -315,6 +315,15 @@ describe("SolutionDashboards", () => {
 		expect(screen.queryByText("0.4")).toBeNull();
 	});
 
+	it("makes a chart or a bar list two rows tall, so two numbers stack beside it", () => {
+		renderDashboards();
+
+		// A tile is its list item, the grid item the span applies to.
+		expect(tile("Logins over time").classList).toContain("row-span-2");
+		expect(tile("Top event types").classList).toContain("row-span-2");
+		expect(tile("Total logins").classList).not.toContain("row-span-2");
+	});
+
 	it("reads as loading until the org context resolves, never as empty", () => {
 		authState.organizationId = undefined;
 

@@ -110,6 +110,20 @@ describe("SortableGrid", () => {
 		expect(order()).toEqual(["a", "b", "c", "d"]);
 	});
 
+	it("puts a tile's own classes on its list item, the grid item", () => {
+		render(
+			<SortableGrid
+				ids={["a", "b"]}
+				onSwap={vi.fn()}
+				itemClassName={(id) => (id === "a" ? "row-span-2" : undefined)}
+				renderItem={(id) => <span>Tile {id}</span>}
+			/>,
+		);
+		expect(tile("a").classList).toContain("row-span-2");
+		expect(tile("a").classList).toContain("cursor-grab");
+		expect(tile("b").classList).not.toContain("row-span-2");
+	});
+
 	it("swaps a tile dropped on another, and moves no other tile meanwhile", () => {
 		const { onSwap } = renderGrid();
 		// a to d is diagonal on the grid: b and c sit between them in the order.

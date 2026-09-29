@@ -4,6 +4,7 @@ import type {
 	Dashboard,
 	DataGraph,
 	MetricWidget,
+	WidgetVisualization,
 } from "@codefly/saas-plugin-manifest";
 import {
 	createSaasClient,
@@ -104,6 +105,17 @@ import {
 // the client, the bearer token, and the org scope; the solution supplies only
 // the DataGraph — it can never widen a query past the viewer's own org.
 const sdk = createSaasClient(apiTransport);
+
+// The tiles about twice as tall as a number: a chart with axes, a bar list or a
+// table. In a grid, each spans two rows, so two numbers stack beside it rather
+// than one number leaving the rest of the row empty; the grid sizes the rows,
+// and every card fills its cell.
+const TALL: ReadonlySet<WidgetVisualization> = new Set([
+	"line",
+	"area",
+	"bar",
+	"table",
+]);
 
 // Dashboard id of the throwaway single-widget graph each card resolves. The card
 // resolves its own widget in isolation, so this id is never surfaced.
@@ -309,7 +321,7 @@ function WidgetCard({
 	);
 
 	return (
-		<Card>
+		<Card className="h-full">
 			<CardHeader className="flex flex-row items-center gap-1 pb-2">
 				{grip}
 				<CardTitle className="min-w-0 flex-1 text-base">
@@ -1176,6 +1188,12 @@ function SolutionDashboard({
 						save(moveSection(layout, sectionId, index))
 					}
 					itemLabel={titleOf}
+					itemClassName={(tileId) => {
+						const widget = widgets.get(tileId);
+						return widget && TALL.has(widget.visualization)
+							? "row-span-2"
+							: undefined;
+					}}
 					renderItem={renderTile}
 					renderOverlay={renderDragged}
 				/>
