@@ -285,22 +285,19 @@ func summarizeExcess(excess []string) string {
 // attribute or ownership that skips row-level security, or holds a privilege a
 // read-only login must not.
 //
-// It runs ONCE, at startup, from verifyReaderLogin — on a connection of the
-// reader's own capability, but not on the pooled connections that go on to
-// serve. service-postgres owns the scoped reader and writer pools and the
-// version pinned here exposes no hook for an application policy, so a
-// membership or grant made after startup is not caught on those pools: what
-// runs there per connection and per checkout is the library's own
-// restricted-session policy, which covers privileged attributes, database
-// ownership and the denied cross-tenant roles, and nothing else. Ownership of a
-// relation, schema or function and excess or SECURITY DEFINER grants are
-// therefore judged at boot only. DATABASE_AUTHORITY.md records the layering and
-// the seam that closes it; move this judgement onto that seam when the
-// primitive publishes it, and correct this comment and that section together.
+// It runs on every new scoped reader connection and again on every checkout,
+// installed through service-postgres's connection-policy seam by
+// readerConnectionPolicy, and once more at startup from verifyReaderLogin
+// before the scoped boundary opens. So a membership or grant added after
+// startup is refused at the next borrow rather than served for the life of the
+// process, and the classes the library's restricted-session policy does not
+// cover — ownership of a relation, schema or function, excess grants, SECURITY
+// DEFINER grants, sequence and parameter privileges, default ACLs — are judged
+// on the same two boundaries as the privileged attributes it does cover.
 //
-// Neither layer is a fence against a GRANT that commits while a borrower
-// already holds the connection; a role or grant change still needs the operator
-// drain policy DATABASE_AUTHORITY.md describes.
+// It is still not a fence against a GRANT that commits while a borrower already
+// holds the connection: the judgement is point-in-time, so a role or grant
+// change needs the operator drain policy DATABASE_AUTHORITY.md describes.
 func requireReaderLoginAuthority(ctx context.Context, conn authorityBatcher) error {
 	authority, err := inspectReaderAuthority(ctx, conn)
 	if err != nil {

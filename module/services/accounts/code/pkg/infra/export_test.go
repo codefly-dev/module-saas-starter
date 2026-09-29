@@ -69,3 +69,13 @@ func RequireReaderLoginAuthority(ctx context.Context, conn interface {
 }) error {
 	return requireReaderLoginAuthority(ctx, conn)
 }
+
+// OpenScopedBoundary exposes the scoped-pool constructor so the suite can
+// exercise the reader and writer capability policies the boundary installs,
+// independently of the request pool NewPostgresStoreWithCapabilities opens
+// beside it. Open pings both scoped pools, so a capability whose login is
+// widened is refused here rather than on first use.
+func OpenScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string) (func(), error) {
+	_, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, nil)
+	return closeDatabase, err
+}

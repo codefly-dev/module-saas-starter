@@ -254,14 +254,13 @@ func verifyControlPlaneLogin(ctx context.Context, pool *pgxpool.Pool) error {
 // This is a startup judgement on a connection of the reader's own capability,
 // not on a disposable substitute: it authenticates with the same credential,
 // through the same transport profile and rotation hook, as the scoped reader.
-// It is not yet the per-connection judgement the request and control-plane
-// pools get. service-postgres owns the scoped pools and exposes no hook for an
-// application policy, so the classes the library's own restricted-session
-// policy covers — privileged attributes, database ownership and the
-// cross-tenant roles — are judged on every scoped connection and checkout,
-// while ownership of a relation, schema or function and excess or SECURITY
-// DEFINER grants are judged here at startup. DATABASE_AUTHORITY.md records the
-// difference and the seam that would close it.
+//
+// The same judgement now also runs on every scoped reader connection and every
+// checkout, through the primitive's connection-policy seam
+// (readerConnectionPolicy). This startup call is not redundant: it is ordered
+// BEFORE the scoped boundary opens, so a misprovisioned reader is reported by
+// the judgement that names the offending role, attribute or grant rather than
+// by a pool refusing to hand out its first connection.
 func verifyReaderLogin(ctx context.Context, readerConfig *pgxpool.Config) error {
 	config := readerConfig.Copy()
 	config.MaxConns = 1
@@ -746,11 +745,44 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 		// app_tenant is deliberately not denied: the scoped writer authenticates
 		// as the request login, which starts as app_tenant.
 		scopedpostgres.WithRestrictedSession(controlPlaneLoginRoles...),
+		// And this module's own judgement runs on the same two boundaries, so
+		// the classes the restricted-session policy does not cover — ownership
+		// of a relation, schema or function, excess grants, SECURITY DEFINER
+		// grants, sequence and parameter privileges, default ACLs — are judged
+		// per connection and per checkout rather than once at startup. Each
+		// capability gets the policy its login is actually held to: the reader
+		// declares no application role and is judged against what a read-only
+		// login may hold, while the scoped writer authenticates as the request
+		// login and is judged exactly as the request pool's own connections
+		// are. Both run after the library's checks and before the connection
+		// serves; a refusal destroys it and fails the acquisition with this
+		// error. The pools stay the primitive's: nothing here caches a
+		// connection, holds one open, or takes ownership of their lifecycle.
+		scopedpostgres.WithConnectionPolicies(readerConnectionPolicy, writerConnectionPolicy),
 	}
 	if provider != nil {
 		options = append(options, scopedpostgres.WithAccessTokenProvider(provider))
 	}
 	return scopedpostgres.Open(ctx, readOnlyConnection, readWriteConnection, postgresAuthenticator{}, options...)
+}
+
+// readerConnectionPolicy is the scoped reader's per-connection and per-checkout
+// judgement. requireReaderLoginAuthority takes the batching interface so the
+// suite can judge a login through a pool as well; a *pgx.Conn satisfies it, and
+// this adapter is what makes that a scopedpostgres.ConnectionPolicy.
+func readerConnectionPolicy(ctx context.Context, conn *pgx.Conn) error {
+	return requireReaderLoginAuthority(ctx, conn)
+}
+
+// writerConnectionPolicy judges the scoped writer. That pool authenticates as
+// the request login, so it is held to the request login's boundary — the same
+// judgement requestPool's own AfterConnect applies. Before the primitive
+// exposed this seam the scoped writer was a physically separate pool that no
+// application policy ever saw: accounts calls only Reader(), so it carried no
+// live traffic, but an unjudged connection on the request credential is a
+// surface whether or not anything currently borrows it.
+func writerConnectionPolicy(ctx context.Context, conn *pgx.Conn) error {
+	return requireRequestLoginAuthority(ctx, conn)
 }
 
 // configureConnection parses a Codefly connection secret into a pool config and

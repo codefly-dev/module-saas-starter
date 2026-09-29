@@ -356,34 +356,55 @@ that grants `PUBLIC` a write or a definer function is caught by the by-any-path
 rules above, and one that grants `PUBLIC` something else has widened every role
 at once, which is the store baseline's to answer for and not this pool's.
 
-### Where the judgement runs, and what it does not cover
+### Where the judgement runs
 
-`service-postgres` owns the scoped reader and writer pools and exposes no hook
-for an application policy, so the judgement is layered:
+`service-postgres` owns the scoped reader and writer pools and exposes a
+per-capability validation seam, so accounts' own policy runs on the same two
+boundaries as the library's:
 
-- **Every new scoped connection and every checkout** run the library's own
-  restricted-session policy, which accounts configures with the four
-  cross-tenant roles as denied roles. It refuses a privileged attribute,
-  database ownership, or membership in `app_control_plane`,
-  `app_billing_worker`, `app_webhook_worker` or `app_job_worker`, and fails
-  closed on a denied role it cannot find. This covers a reused pooled session,
-  so a credential widened after startup is refused at the next borrow.
-- **Startup** runs the full policy above, on a connection of the reader's own
-  capability — the same credential, transport profile and rotation hook as the
-  scoped reader, not a disposable substitute.
+- **Every new scoped connection and every checkout** run, in order, the
+  library's restricted-session policy — which accounts configures with the four
+  cross-tenant roles as denied roles, refusing a privileged attribute, database
+  ownership or membership in `app_control_plane`, `app_billing_worker`,
+  `app_webhook_worker` or `app_job_worker`, and failing closed on a denied role
+  it cannot find — and then this module's own policy for that capability,
+  installed through `WithConnectionPolicies`. The reader declares no
+  application role and is judged against what a read-only login may legitimately
+  hold; the scoped writer authenticates as the request login and is judged
+  against the request login's boundary, exactly as the request pool's own
+  connections are. A refusal destroys that connection before it serves and
+  fails the acquisition with the policy's error.
+- **Startup** runs the reader policy once more, before the scoped boundary
+  opens, on a connection of the reader's own capability. That ordering is the
+  only reason it is not redundant: a misprovisioned reader is reported by the
+  judgement that names the offending role, attribute or grant rather than by a
+  pool refusing to hand out its first connection.
 
-So ownership of a relation, schema or function, and excess or `SECURITY
-DEFINER` grants, are judged at startup but **not yet on every connection and
-checkout** as the request and control-plane pools' equivalents are. Closing that
-needs a generic per-capability validation seam in `service-postgres`, which is
-the primitive's to add; accounts must not take caller-owned pools to get one,
-because that moves the pools' whole lifecycle — profile parsing, distinct-login
-validation, the token provider, the startup pings and the closer — into this
-module.
+So ownership of a relation, schema or function, excess grants, `SECURITY
+DEFINER` grants, sequence and parameter privileges and default ACLs are now
+judged per connection and per checkout, alongside the privileged attributes the
+restricted-session policy covers. A membership or grant added after startup is
+refused at the next borrow rather than served for the life of the process.
 
-Neither layer is a fence against a `GRANT` that commits while a borrower
-already holds the connection. A role or grant change still needs the operator
-drain policy: stop the workload, change the grant, then let it reconnect.
+The scoped writer matters here even though nothing borrows it. Accounts calls
+only `Reader()`, and its authenticator refuses `AuthorizeDatabaseWrite`
+outright, so the writer carries no live traffic — but it is a physically
+separate pool authenticating with the request credential, and before this seam
+no application policy ever saw it. An unjudged connection on that credential is
+a surface whether or not anything currently borrows it.
+
+The pools stay the primitive's. Accounts supplies two policy functions and
+nothing else: it does not take caller-owned pools, cache a connection, hold one
+open, or otherwise move profile parsing, distinct-login validation, the token
+provider, the startup pings or the closer into this module.
+
+**What this is still not.** The judgement is point-in-time on each boundary, so
+it is not a fence against a `GRANT` that commits while a borrower already holds
+the connection. A role or grant change still needs the operator drain policy:
+stop the workload, change the grant, then let it reconnect. And it costs what it
+queries, on every checkout — measured at roughly 2.5 ms per scoped read on the
+qualification fixture (`TestReaderPolicyCheckoutCost`), which is the number to
+size a pool against.
 
 The request and control-plane logins are judged on every new connection because
 accounts owns those pools. The reader's judgement is ordered **before** the
