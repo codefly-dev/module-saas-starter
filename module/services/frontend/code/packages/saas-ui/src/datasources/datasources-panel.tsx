@@ -5,7 +5,6 @@ import {
 	Banner,
 	Button,
 	Card,
-	DelayedLoading,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -13,12 +12,14 @@ import {
 	DropdownMenuTrigger,
 	Input,
 	Label,
+	Spinner,
 	Table,
 	TableBody,
 	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 
 import { ConnectError } from "@connectrpc/connect";
@@ -273,6 +274,9 @@ function DatasourcesPanelView({
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
+	const { indicator: listIndicator, quiet: listQuiet } = useLoadingPhase(
+		list.isLoading,
+	);
 	const scopes = useAccessibleScopes(client, orgId);
 	const collections = useQuery({
 		queryKey: ["collection-access", orgId],
@@ -599,13 +603,17 @@ function DatasourcesPanelView({
 					/>
 				)}
 
-				{list.isLoading ? (
-					// Nothing for a fast list, and no blink for a slow one. A cached answer
-					// arrives well inside the delay, so the common case renders the table
-					// with no intervening state at all.
-					<DelayedLoading active label="Loading data sources">
-						<PanelMessage>Loading data sources…</PanelMessage>
-					</DelayedLoading>
+				{/* The hook holds the timing and this branch only reads it. Wrapping the
+				    line in `<DelayedLoading active>` inside a branch gated on
+				    `list.isLoading` — which is what stood here — unmounts the indicator
+				    the instant the answer lands, and the minimum-visible floor lives in
+				    state inside that component: a response at 210ms showed the line for
+				    10ms, the exact blink the floor exists to prevent. Reading the hook
+				    here keeps that state above the branch. `quiet` renders nothing at
+				    all: falling through it would flash "No data sources connected."
+				    over a list that is still loading. */}
+				{listQuiet ? null : listIndicator ? (
+					<PanelMessage>Loading data sources…</PanelMessage>
 				) : list.isError ? (
 					<PanelMessage tone="error">
 						Couldn&apos;t load data sources. Retry shortly or check the service
@@ -1365,6 +1373,8 @@ function SourceExecution({
 	onClose: () => void;
 }) {
 	const { sync, pending } = useSourceSync(client, orgId, source);
+	const { indicator: executionIndicator, quiet: executionQuiet } =
+		useLoadingPhase(pending);
 	return (
 		<section aria-label={`Execution of ${source.repo}`}>
 			<Card
@@ -1379,12 +1389,11 @@ function SourceExecution({
 				    on it, so its view waits for that read rather than mounting against
 				    an absent key and remounting when one arrives. A cached read
 				    resolves well inside the delay, so opening the view normally shows
-				    no indicator at all. */}
-				{pending ? (
-					<DelayedLoading
-						active
-						label={`Loading the execution of ${source.repo}`}
-					/>
+				    no indicator at all — and the timing lives in the hook above this
+				    branch, so an answer landing just past the delay still leaves the
+				    indicator up long enough to read. */}
+				{executionQuiet ? null : executionIndicator ? (
+					<Spinner label={`Loading the execution of ${source.repo}`} />
 				) : (
 					<SourceExecutionBody>
 						{render({ source, ...(sync ? { sync } : {}) })}
@@ -1411,6 +1420,9 @@ function SourceHistory({
 		queryFn: () => client.listActivity!(orgId, source.id),
 		refetchInterval: 15000,
 	});
+	const { indicator: historyIndicator, quiet: historyQuiet } = useLoadingPhase(
+		history.isPending,
+	);
 	const names: Record<string, string> = {
 		"saas.datasource.source.synced": "Sync requested",
 		"saas.datasource.source.added": "Source connected",
@@ -1434,10 +1446,11 @@ function SourceHistory({
 					Sync requests, dispatched files, and ingestion results. History
 					refreshes automatically.
 				</p>
-				{history.isPending ? (
-					<DelayedLoading active label="Loading sync history">
-						<p>Loading history…</p>
-					</DelayedLoading>
+				{/* Same shape as the source list: the timing lives in the hook above the
+				    branch, and the pre-delay window renders nothing rather than "No
+				    recorded activity yet." over a history that is still loading. */}
+				{historyQuiet ? null : historyIndicator ? (
+					<p>Loading history…</p>
 				) : history.error ? (
 					<p role="alert">Could not load history: {messageOf(history.error)}</p>
 				) : !history.data?.length ? (

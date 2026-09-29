@@ -14,7 +14,12 @@ export function renderInApp(ui: React.ReactElement) {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
 	});
-	return render(
-		<QueryClientProvider client={client}>{ui}</QueryClientProvider>,
-	);
+	// The client comes back alongside the render result so a test can drive a
+	// SECOND read of the same query — the success-then-refused sequence, which is
+	// the one that proves a denial is not hidden behind rows already on screen.
+	// A cold denied read cannot show that, because there is nothing retained.
+	return {
+		...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>),
+		client,
+	};
 }

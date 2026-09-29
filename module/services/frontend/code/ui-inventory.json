@@ -876,7 +876,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -4137,33 +4137,6 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the sso-admin workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
-      "source": "src/features/teams/ui/team-detail-page.tsx",
-      "imports": [
-        "@tanstack/react-query",
-        "lucide-react",
-        "next/link",
-        "react",
-        "sonner",
-        "@/components/org-selector",
-        "@/features/roles/service/mutations",
-        "@/features/roles/service/queries",
-        "@/gen/saas/accounts/v1/common_pb",
-        "@/gen/saas/accounts/v1/frontend_catalog",
-        "@/lib/auth",
-        "@/lib/permissions",
-        "@/shared/lib/utils",
-        "@/shared/ui",
-        "../service/mutations",
-        "../service/queries"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the teams workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

@@ -5,6 +5,12 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
+	mayKeepRetainedRows,
+	readOutcome,
+	readOutcomeMessage,
+	staleReadNotice,
+} from "@/shared/lib/read-outcome";
+import {
 	Badge,
 	Button,
 	Dialog,
@@ -19,6 +25,8 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Spinner,
+	useLoadingPhase,
 } from "@/shared/ui";
 import { useAssignRole, useRevokeRole } from "../service/mutations";
 import { useRoleAssignments, useRoles } from "../service/queries";
@@ -47,11 +55,28 @@ export function ManageMemberRolesDialog({
 	const [open, setOpen] = useState(false);
 	const [picked, setPicked] = useState<string>("");
 
-	const { data: roles = [] } = useRoles(orgId);
-	const { data: assignments = [], isLoading } = useRoleAssignments(
-		orgId,
-		userId,
-	);
+	const {
+		data: roles = [],
+		isError: rolesFailed,
+		error: rolesError,
+	} = useRoles(orgId);
+	const {
+		data: assignments = [],
+		isLoading,
+		isError,
+		error,
+	} = useRoleAssignments(orgId, userId);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
+	const outcome = readOutcome(isError, error);
+	// A refused read of this member's grants withholds the badges rather than
+	// letting a retained answer stand in for one this reader may no longer see.
+	const withheld = !mayKeepRetainedRows(outcome);
+	const stale = staleReadNotice(outcome, "this member's roles");
+	// The picker offers what the role list actually returned. A failed or refused
+	// list is not an organization with no roles in it, and "No roles available"
+	// beside a working Create-a-role link would send the reader to make a
+	// duplicate of one they simply could not read.
+	const rolesOutcome = readOutcome(rolesFailed, rolesError);
 
 	const assignRole = useAssignRole();
 	const revokeRole = useRevokeRole();
@@ -59,7 +84,9 @@ export function ManageMemberRolesDialog({
 	// Roles already granted to this user — disable in the picker so
 	// users can't double-assign (the backend's ON CONFLICT DO NOTHING
 	// would silently swallow it; better to surface in the UI).
-	const grantedIds = new Set(assignments.map((a) => a.roleId));
+	const grantedIds = new Set(
+		(withheld ? [] : assignments).map((a) => a.roleId),
+	);
 	const availableRoles = roles.filter((r) => !grantedIds.has(r.id));
 
 	const roleNameById = new Map(roles.map((r) => [r.id, r.name] as const));
@@ -107,32 +134,46 @@ export function ManageMemberRolesDialog({
 				<div className="space-y-4 py-2">
 					<div className="space-y-2">
 						<div className="text-sm font-medium">Current assignments</div>
-						{isLoading ? (
-							<div className="text-sm text-muted-foreground">Loading…</div>
-						) : assignments.length === 0 ? (
-							<div className="text-sm text-muted-foreground">
-								No custom roles assigned.
+						{quiet ? null : indicator ? (
+							<Spinner label="Loading this member's roles" size="sm" />
+						) : withheld || assignments.length === 0 ? (
+							<div
+								className="text-sm text-muted-foreground"
+								{...(isError ? { role: "alert" as const } : {})}
+							>
+								{readOutcomeMessage(
+									outcome,
+									"this member's roles",
+									"No custom roles assigned.",
+								)}
 							</div>
 						) : (
-							<div className="flex flex-wrap gap-1">
-								{assignments.map((a) => (
-									<Badge
-										key={a.id}
-										variant="secondary"
-										className="font-mono text-xs gap-1"
-									>
-										{roleNameById.get(a.roleId) ?? "Role unavailable"}
-										<button
-											type="button"
-											onClick={() => handleRevoke(a.roleId)}
-											disabled={revokeRole.isPending}
-											className="ml-1 hover:text-destructive disabled:opacity-50"
-											aria-label="Revoke"
+							<div className="space-y-2">
+								{stale && (
+									<div role="status" className="text-sm text-muted-foreground">
+										{stale}
+									</div>
+								)}
+								<div className="flex flex-wrap gap-1">
+									{assignments.map((a) => (
+										<Badge
+											key={a.id}
+											variant="secondary"
+											className="font-mono text-xs gap-1"
 										>
-											<X className="h-3 w-3" />
-										</button>
-									</Badge>
-								))}
+											{roleNameById.get(a.roleId) ?? "Role unavailable"}
+											<button
+												type="button"
+												onClick={() => handleRevoke(a.roleId)}
+												disabled={revokeRole.isPending}
+												className="ml-1 hover:text-destructive disabled:opacity-50"
+												aria-label="Revoke"
+											>
+												<X className="h-3 w-3" />
+											</button>
+										</Badge>
+									))}
+								</div>
 							</div>
 						)}
 					</div>
@@ -151,7 +192,13 @@ export function ManageMemberRolesDialog({
 								<SelectContent>
 									{availableRoles.length === 0 ? (
 										<div className="px-2 py-2 text-sm text-muted-foreground">
-											<div>No roles available.</div>
+											<div>
+												{readOutcomeMessage(
+													rolesOutcome,
+													"this organization's roles",
+													"No roles available.",
+												)}
+											</div>
 											<Link
 												href="/admin/roles"
 												className="text-primary hover:underline"

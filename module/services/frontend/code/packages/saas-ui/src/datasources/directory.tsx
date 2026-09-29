@@ -1,6 +1,13 @@
 "use client";
 
-import { Badge, Button, Input, Label } from "@codefly-dev/ui/layout";
+import {
+	Badge,
+	Button,
+	Input,
+	Label,
+	Spinner,
+	useLoadingPhase,
+} from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { DatasourceClient, DomainView } from "./types.js";
@@ -73,6 +80,14 @@ export function DatasourceAccountLinks({
 		enabled: !!orgId && !!client.listMyAccountLinks,
 		retry: false,
 	});
+	// `links.data` is undefined until the answer lands, so the empty branch below
+	// would otherwise state "No account is linked" about a read still in flight —
+	// and go on stating it for as long as the read takes. `quiet` is the window
+	// before an indicator is earned, and it must say nothing rather than fall
+	// through to that claim.
+	const { indicator: linksIndicator, quiet: linksQuiet } = useLoadingPhase(
+		links.isPending && links.fetchStatus !== "idle",
+	);
 	const completed = useQuery({
 		queryKey: ["datasource-account-link-return", orgId, linkReturn?.state],
 		queryFn: async () => {
@@ -132,6 +147,8 @@ export function DatasourceAccountLinks({
 				<p role="alert" className="type-body">
 					Couldn’t load your linked accounts.
 				</p>
+			) : linksQuiet ? null : linksIndicator ? (
+				<Spinner label="Loading your linked accounts" size="sm" />
 			) : mine.length === 0 ? (
 				<p className="type-body">No {providerName} account is linked.</p>
 			) : (
@@ -198,6 +215,10 @@ export function DatasourceDirectoryPanel({
 		enabled: !!orgId && !!client.getDirectory,
 		retry: false,
 	});
+	// `fetchStatus !== "idle"` because a disabled query also sits at isPending,
+	// and a wait that is not happening must not earn an indicator.
+	const { indicator: directoryIndicator, quiet: directoryQuiet } =
+		useLoadingPhase(directory.isPending && directory.fetchStatus !== "idle");
 	const refresh = () =>
 		cache.invalidateQueries({ queryKey: directoryKey(orgId) });
 	const bind = useMutation({
@@ -239,12 +260,10 @@ export function DatasourceDirectoryPanel({
 				Couldn’t load the datasource directory.
 			</p>
 		);
-	if (directory.isPending)
-		return (
-			<p role="status" className="type-body">
-				Loading the datasource directory…
-			</p>
-		);
+	if (directoryQuiet) return null;
+	if (directoryIndicator)
+		return <Spinner label="Loading the datasource directory" size="sm" />;
+	if (directory.isPending) return null;
 	const data = directory.data;
 	const teamName = (id: string) =>
 		data.teams.find((t) => t.id === id)?.name ?? id;

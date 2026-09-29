@@ -369,4 +369,51 @@ describe("PermissionsPage — the scope a question carries", () => {
 		expect(screen.queryByText("Through")).toBeNull();
 		expect(screen.queryByText(/despite these assignments/)).toBeNull();
 	});
+
+	// "No role" is the page's answer to the question it exists to answer. A
+	// refused role list defaults to [] exactly as an ungranted permission does,
+	// so without the distinction every row states that nothing grants it — a
+	// confident wrong answer on the surface used to audit grants.
+	it("does not say a permission has no role when the role list was refused", async () => {
+		serveVocabulary();
+		server.use(
+			http.post(rpc("PermissionService", "ListRoles"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "nope" },
+					{ status: 403 },
+				),
+			),
+		);
+
+		renderInApp(<PermissionsPage />);
+
+		expect(await screen.findByText("users:read")).toBeTruthy();
+		expect(screen.queryByText("No role")).toBeNull();
+		expect(screen.getAllByText("Not visible to you").length).toBeGreaterThan(0);
+	});
+
+	it("reports a vocabulary read that failed instead of rendering a blank page", async () => {
+		server.use(
+			http.post(rpc("IntrospectionService", "GetServiceInfo"), () =>
+				HttpResponse.json(
+					{ code: "unavailable", message: "down" },
+					{ status: 503 },
+				),
+			),
+			http.post(rpc("PermissionService", "ListRoles"), () =>
+				HttpResponse.json({ roles: [] }),
+			),
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({ members: [] }),
+			),
+		);
+
+		renderInApp(<PermissionsPage />);
+
+		expect(
+			await screen.findByText(
+				/Couldn't load the permissions this service declares/,
+			),
+		).toBeTruthy();
+	});
 });

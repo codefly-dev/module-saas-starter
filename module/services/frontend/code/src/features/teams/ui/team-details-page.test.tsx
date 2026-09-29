@@ -232,11 +232,33 @@ describe("team details", () => {
 			),
 		);
 		renderInApp(<TeamDetailsPage teamId={team.id} />);
+		// An unreachable roster says the read did not complete, and says so about
+		// the roster rather than leaving the reader to infer an empty team.
 		await waitFor(() =>
 			expect(screen.getByRole("alert").textContent).toContain(
-				"Couldn't load team members",
+				"Couldn't load this team's members, so whether there are any is unknown",
 			),
 		);
 		expect(screen.queryByRole("button", { name: "Edit team" })).toBeNull();
+	});
+	it("says a refused roster is refused, not that the team is empty", async () => {
+		auth.orgRole = "owner";
+		server.use(
+			http.post(rpc("TeamService", "ListMembers"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "not a member of this team" },
+					{ status: 403 },
+				),
+			),
+		);
+		renderInApp(<TeamDetailsPage teamId={team.id} />);
+		// The distinction the empty state has to carry: a denied read and an empty
+		// team are different facts, and only one of them is about the team.
+		await waitFor(() =>
+			expect(screen.getByRole("alert").textContent).toContain(
+				"You don't have permission to see this team's members",
+			),
+		);
+		expect(screen.queryByText("No members in this team yet.")).toBeNull();
 	});
 });

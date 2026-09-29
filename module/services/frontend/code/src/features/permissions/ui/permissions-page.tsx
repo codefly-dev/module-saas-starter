@@ -8,6 +8,7 @@ import { useEffectivePermissions } from "@/features/permissions/service/effectiv
 import { useExplainPermission } from "@/features/permissions/service/explain";
 import { useRoles } from "@/features/roles/service/queries";
 import { useAuth } from "@/lib/auth";
+import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import {
 	Badge,
 	Input,
@@ -20,6 +21,7 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Spinner,
 	Stack,
 	Table,
 	TableBody,
@@ -27,6 +29,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import {
 	type GrantSource,
@@ -45,8 +48,26 @@ export function PermissionsPage() {
 }
 
 function PermissionsBrowser({ orgId }: { orgId: string }) {
-	const { data: info, isLoading } = useQuery(permissionQueries.serviceInfo());
-	const { data: roles = [] } = useRoles(orgId);
+	const {
+		data: info,
+		isLoading,
+		isError: infoFailed,
+		error: infoError,
+	} = useQuery(permissionQueries.serviceInfo());
+	const {
+		data: roles = [],
+		isError: rolesFailed,
+		error: rolesError,
+	} = useRoles(orgId);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
+	// Which roles grant a permission is the whole answer this page exists to give.
+	// A refused or failed role list defaults to [] exactly as an ungranted
+	// permission does, so without this every row would read "No role" — a
+	// confident, wrong answer on the surface an administrator uses to audit
+	// grants. The vocabulary read is separate: lose it and there are no rows to
+	// put an answer in, which is why it is reported instead of left blank.
+	const rolesOutcome = readOutcome(rolesFailed, rolesError);
+	const infoOutcome = readOutcome(infoFailed, infoError);
 
 	const declared = info?.capabilities?.permissions ?? [];
 	const descriptions = new Map(
@@ -67,9 +88,19 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 
 			<CheckAGrant orgId={orgId} />
 
-			{isLoading ? (
+			{quiet ? null : indicator ? (
 				<Panel>
-					<span className="text-sm text-muted-foreground">Loading…</span>
+					<Spinner label="Loading the declared permissions" size="sm" />
+				</Panel>
+			) : infoFailed ? (
+				<Panel>
+					<span role="alert" className="text-sm text-muted-foreground">
+						{readOutcomeMessage(
+							infoOutcome,
+							"the permissions this service declares",
+							"",
+						)}
+					</span>
 				</Panel>
 			) : (
 				groups.map((group) => (
@@ -97,8 +128,17 @@ function PermissionsBrowser({ orgId }: { orgId: string }) {
 												</TableCell>
 												<TableCell>
 													{granting.length === 0 ? (
-														<span className="text-sm text-muted-foreground">
-															No role
+														<span
+															className="text-sm text-muted-foreground"
+															{...(rolesFailed
+																? { role: "alert" as const }
+																: {})}
+														>
+															{rolesOutcome === "forbidden"
+																? "Not visible to you"
+																: rolesOutcome === "failed"
+																	? "Unknown"
+																	: "No role"}
 														</span>
 													) : (
 														<Stack
@@ -152,7 +192,11 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 	// question is asked trimmed — and the draft is compared trimmed too, or
 	// trailing whitespace alone would read as an unasked question forever.
 	const pending = scopeDraft.trim() !== scope;
-	const { data: members } = useQuery(orgQueries.members(orgId));
+	const {
+		data: members,
+		isError: membersFailed,
+		error: membersError,
+	} = useQuery(orgQueries.members(orgId));
 	const { data: info } = useQuery(permissionQueries.serviceInfo());
 	const { permissions } = useEffectivePermissions(orgId, subjectId);
 
@@ -177,6 +221,19 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 		>
 			<Panel>
 				<Stack gap={4}>
+					{/* An empty subject picker reads as "this organization has no members",
+						    which would send an administrator to the roster to look for people who
+						    are there. The picker stays mounted so the rest of the question can
+						    still be asked. */}
+					{membersFailed && (
+						<span role="alert" className="text-sm text-muted-foreground">
+							{readOutcomeMessage(
+								readOutcome(true, membersError),
+								"this organization's members",
+								"",
+							)}
+						</span>
+					)}
 					<Stack direction="row" gap={4} className="flex-wrap">
 						<Select
 							value={subjectId}
