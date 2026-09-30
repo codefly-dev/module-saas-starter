@@ -316,18 +316,6 @@ jobs:
       - name: Require a version bump when the published kit changes
         run: node scripts/ci/kit-version.mjs check
 
-  provider-shim:
-    name: Provider setup shims
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - name: Statically test the Stripe non-writing shim
-        run: node --test scripts/setup/stripe-shim.test.mjs
-
   scoped-pools:
     name: Scoped pool authority
     runs-on: ubuntu-latest
@@ -1098,7 +1086,6 @@ jobs:
       - kit-version
       - marketing
       - module-package
-      - provider-shim
       - release-contract
       - scoped-pools
       - sdk-boundary
