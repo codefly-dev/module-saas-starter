@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra"
 	"accounts/pkg/relationcatalog"
 )
 
@@ -157,7 +158,7 @@ func TestEnsuringAuditPartitionsReSecuresPartitionsOutsideTheWindow(t *testing.T
 
 		_, err = tx.Exec(ctx, `SET LOCAL ROLE app_control_plane`)
 		require.NoError(t, err)
-		require.NoError(t, testStore.EnsureAuditPartitions(context.WithValue(ctx, "tx", tx), 3)) //nolint:staticcheck // shared transaction context key
+		require.NoError(t, testStore.EnsureAuditPartitions(infra.BindControlPlaneTx(ctx, tx), 3))
 		_, err = tx.Exec(ctx, `RESET ROLE`)
 		require.NoError(t, err)
 

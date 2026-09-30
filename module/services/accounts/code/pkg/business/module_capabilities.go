@@ -31,6 +31,7 @@ import (
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
@@ -1353,7 +1354,10 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 // driver; a nil handle (no active tx) makes the transport open its own, which
 // is only the test/simple-caller path, never a tenant publish.
 func moduleTx(ctx context.Context) events.TxHandle {
-	return ctx.Value("tx") //nolint:staticcheck // shared transaction context key with the Store layer
+	if tx := storetx.Tx(ctx); tx != nil {
+		return tx
+	}
+	return nil
 }
 
 // mapPublishError narrows the transport's sentinel publish errors to gRPC codes:

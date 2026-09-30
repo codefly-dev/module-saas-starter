@@ -242,14 +242,23 @@ func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan
 		return nil, w.Wrapf(err, "LISTEN %s", channel)
 	}
 
-	// delegation_grants is RLS-protected; this dedicated connection needs the
-	// org context for the snapshot + re-read queries below. Session-level (no tx
-	// spans the WaitForNotification loop). The goroutine RESETs it before Release
-	// so it can't leak to the next pool acquirer — the pool's AfterRelease resets
-	// ROLE, not app.* GUCs.
-	if _, err := conn.Exec(ctx, "SELECT set_config('app.current_org_id', $1, false)", orgID); err != nil {
-		conn.Release()
-		return nil, w.Wrapf(err, "set org context for subscribe")
+	// delegation_grants is RLS-protected, so the snapshot and re-read queries
+	// below need the org binding. No transaction spans the WaitForNotification
+	// loop, so each read runs in a short transaction of its own that binds the
+	// org transaction-locally: the binding never outlives the read, and nothing
+	// is left on the connection for the next borrower. LISTEN is session-level
+	// and keeps delivering between those transactions.
+	readGrant := func(ctx context.Context) (*business.DelegationGrant, error) {
+		var grant *business.DelegationGrant
+		err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+			if err := bindRequestScope(ctx, tx, orgID, ""); err != nil {
+				return err
+			}
+			var err error
+			grant, err = scanDelegationGrant(ctx, tx.QueryRow(ctx, delegationSelectByID, id, orgID))
+			return err
+		})
+		return grant, err
 	}
 
 	out := make(chan business.DelegationDecisionEvent, 4)
@@ -261,15 +270,12 @@ func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan
 		// already be torn down).
 		defer func() {
 			_, _ = conn.Exec(context.Background(), fmt.Sprintf("UNLISTEN %s", pgIdentifierQuote(channel)))
-			// Clear the org GUC before the conn returns to the pool (LIFO: this
-			// defer is registered after conn.Release, so it runs first).
-			_, _ = conn.Exec(context.Background(), "SELECT set_config('app.current_org_id', '', false)")
 		}()
 
 		// 1. Snapshot read — catches the case where the
 		//    decision happened BEFORE LISTEN started. If
 		//    already-terminal, emit one event and exit.
-		grant, err := scanDelegationGrant(ctx, conn.QueryRow(ctx, delegationSelectByID, id, orgID))
+		grant, err := readGrant(ctx)
 		if err != nil {
 			// Treat as "not found"; the channel closes silently.
 			// Caller saw an empty channel and can re-poll if
@@ -296,7 +302,7 @@ func (s *PostgresStore) Subscribe(ctx context.Context, id, orgID string) (<-chan
 			// re-reading avoids any decoding edge cases and
 			// catches the (rare) case of multiple rapid status
 			// changes — we always emit the latest.
-			latest, err := scanDelegationGrant(ctx, conn.QueryRow(ctx, delegationSelectByID, id, orgID))
+			latest, err := readGrant(ctx)
 			if err != nil {
 				continue
 			}

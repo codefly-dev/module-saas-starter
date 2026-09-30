@@ -19,6 +19,12 @@ type workerPoolConfig struct {
 // newWorkerPoolFromURL is the single role-assumption boundary for privileged
 // background workers. The supplied role is a compile-time constant at every
 // call site and is still identifier-quoted before it reaches SQL.
+//
+// Every worker pool authenticates as the control-plane login, so every new
+// connection is judged as a control-plane one is (requireControlPlaneLoginAuthority)
+// before PrepareConn selects the worker role, and a released connection is reset
+// to the role it started as (returnsToSessionRole) — PrepareConn then selects the
+// worker role again on its next checkout.
 func newWorkerPoolFromURL(
 	ctx context.Context,
 	connectionURL string,
@@ -45,10 +51,8 @@ func newWorkerPoolFromURL(
 		}
 		return true, nil
 	}
-	config.AfterRelease = func(conn *pgx.Conn) bool {
-		_, err := conn.Exec(context.Background(), "RESET ROLE")
-		return err == nil
-	}
+	config.AfterConnect = requireControlPlaneLoginAuthority
+	config.AfterRelease = returnsToSessionRole
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

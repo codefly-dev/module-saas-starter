@@ -61,6 +61,7 @@ export const REQUIRED_GATES = [
   "module-package",
   "provider-shim",
   CONTRACT_JOB,
+  "scoped-pools",
   "sdk-boundary",
 ];
 
@@ -407,6 +408,7 @@ export const REQUIRED_CONTEXTS = [
   "Provider setup shims",
   "Release gate contract",
   "Release gates",
+  "Scoped pool authority",
 ];
 
 const MERGE_GROUP_BASE = "github.event.merge_group.base_sha";

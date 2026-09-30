@@ -14,7 +14,6 @@ import (
 
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -26,12 +25,14 @@ import (
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 )
 
-// testStore is the RLS-aware *PostgresStore (BeforeAcquire SET ROLE
-// app_tenant on every connection). NewSessionStore is constructed
-// against this so the per-method WithUserTx / WithControlPlane wraps
-// exercise the production RLS path.
+// testStore is the production *PostgresStore: its request connections log
+// in as a login whose session default is app_tenant and that can reach
+// nothing wider. NewSessionStore is constructed against this so the
+// per-method WithUserTx / WithControlPlane wraps exercise the production
+// RLS path.
 //
 // testPool is a raw *pgxpool.Pool for places we need direct DB
 // access (e.g. seedUser inserting a users row, which is in the
@@ -80,15 +81,11 @@ func runSessionStoreTests(m *testing.M) int {
 		return 1
 	}
 
-	conn, err := codefly.For(ctx).Service("store").Secret("postgres", "read-write-connection")
+	// The production constructor: the request pool and the control-plane pool
+	// authenticate as distinct logins, exactly as in the served process.
+	store, err := infra.NewPostgresStore(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "get connection string: %v\n", err)
-		return 1
-	}
-
-	store, err := infra.NewPostgresStoreFromURL(ctx, conn)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "NewPostgresStoreFromURL: %v\n", err)
+		fmt.Fprintf(os.Stderr, "NewPostgresStore: %v\n", err)
 		return 1
 	}
 	defer store.Close()
@@ -119,7 +116,7 @@ func seedUser(t *testing.T) uuid.UUID {
 	id := business.NewID()
 	// users is RLS-protected; seed under WithControlPlane (elevates the tx).
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO users (uuid, primary_email, status)
 			VALUES ($1, $2, 'active')`,
@@ -133,7 +130,7 @@ func seedOrganizationMembership(t *testing.T, userID uuid.UUID, role string, joi
 	t.Helper()
 	orgID := business.NewID()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO organizations (id, name, slug, owner_id)
 			VALUES ($1, $2, $3, $4)`,
@@ -154,7 +151,7 @@ func seedOrganizationMembership(t *testing.T, userID uuid.UUID, role string, joi
 func scanControlPlane(t *testing.T, dst any, query string, args ...any) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, query, args...).Scan(dst)
 	}))
 }
@@ -410,7 +407,7 @@ func TestSessionStore_RotateRefreshResolvesCurrentAuthorization(t *testing.T) {
 	original.PlatformRole = "super_admin"
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO platform_admins (user_id, platform_role, granted_by)
 			VALUES ($1, 'support', $1)`, userID); err != nil {
@@ -456,7 +453,7 @@ func TestSessionStore_RotateRefreshRejectsInactiveUserAndRevokesEverySession(t *
 	require.NoError(t, store.Insert(ctx, original))
 	require.NoError(t, store.Insert(ctx, bystander))
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE uuid = $1`, userID)
 		return err
 	}))
@@ -733,7 +730,7 @@ func TestAuthorizationInvalidation_OrganizationRoleChangeIsScopedAndAtomic(t *te
 	}
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			UPDATE organization_members
 			SET role = 'admin'
@@ -760,7 +757,7 @@ func TestAuthorizationInvalidation_OrganizationRoleChangeIsScopedAndAtomic(t *te
 		require.NoError(t, store.Insert(ctx, rec))
 	}
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			DELETE FROM organization_members
 			WHERE org_id = $1 AND user_id = $2`, changedOrgID, userID)
@@ -784,7 +781,7 @@ func TestAuthorizationInvalidation_OrganizationMembershipAdditionAllowsExplicitE
 	existingOrgID := seedOrganizationMembership(t, userID, "member", time.Now())
 	newOrgID := business.NewID()
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO organizations (id, name, slug, owner_id)
 			VALUES ($1, 'New Refresh Organization', $2, $3)`,
@@ -802,7 +799,7 @@ func TestAuthorizationInvalidation_OrganizationMembershipAdditionAllowsExplicitE
 	}
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO organization_members (org_id, user_id, role)
 			VALUES ($1, $2, 'member')`, newOrgID, userID)
@@ -844,7 +841,7 @@ func TestAuthorizationInvalidation_PlatformRoleChangeRevokesAllUserSessions(t *t
 	}
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO platform_admins (user_id, platform_role, granted_by)
 			VALUES ($1, 'support', $1)`, userID)
@@ -864,7 +861,7 @@ func TestAuthorizationInvalidation_PlatformRoleChangeRevokesAllUserSessions(t *t
 	updatedRoleSession := newRecord(userID)
 	require.NoError(t, store.Insert(ctx, updatedRoleSession))
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			UPDATE platform_admins
 			SET platform_role = 'billing'
@@ -879,7 +876,7 @@ func TestAuthorizationInvalidation_PlatformRoleChangeRevokesAllUserSessions(t *t
 	removedRoleSession := newRecord(userID)
 	require.NoError(t, store.Insert(ctx, removedRoleSession))
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM platform_admins WHERE user_id = $1`, userID)
 		return err
 	}))
@@ -898,7 +895,7 @@ func TestAuthorizationInvalidation_MFAEnrollmentIgnoresUnverifiedDeviceThenRevok
 	deviceID := business.NewID()
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO mfa_devices (id, user_id, device_type, name, secret_encrypted)
 			VALUES ($1, $2, 'totp', 'Pending device', 'encrypted-test-secret')`, deviceID, userID)
@@ -909,7 +906,7 @@ func TestAuthorizationInvalidation_MFAEnrollmentIgnoresUnverifiedDeviceThenRevok
 	require.Nil(t, stillActive.RevokedAt)
 
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE mfa_devices SET verified_at = NOW() WHERE id = $1`, deviceID)
 		return err
 	}))
@@ -921,7 +918,7 @@ func TestAuthorizationInvalidation_MFAEnrollmentIgnoresUnverifiedDeviceThenRevok
 	postEnrollment := newRecord(userID)
 	require.NoError(t, store.Insert(ctx, postEnrollment))
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM mfa_devices WHERE id = $1`, deviceID)
 		return err
 	}))
@@ -940,7 +937,7 @@ func TestAuthorizationInvalidation_RollsBackWithAuthorizationMutation(t *testing
 	injected := errors.New("rollback authorization mutation")
 
 	err := testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO platform_admins (user_id, platform_role, granted_by)
 			VALUES ($1, 'support', $1)`, userID); err != nil {
@@ -961,7 +958,7 @@ func TestAuthorizationInvalidation_RollsBackWithAuthorizationMutation(t *testing
 func TestAuthorizationInvalidationFunctionHasPinnedAuthority(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		var owner string
 		var securityDefiner, tenantCanExecute bool
 		err := tx.QueryRow(ctx, `
@@ -1092,7 +1089,7 @@ func TestRLS_Sessions_CrossUserBlocked(t *testing.T) {
 	// Cross-user probe via raw tx: from A's WithUserTx, ask for
 	// any sessions whose user_id matches B. RLS hides B's row.
 	require.NoError(t, testStore.WithUserTx(ctx, userA.String(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck
+		tx := storetx.Tx(ctx)
 		var count int
 		require.NoError(t, tx.QueryRow(ctx,
 			`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, userB,
@@ -1102,8 +1099,9 @@ func TestRLS_Sessions_CrossUserBlocked(t *testing.T) {
 		return nil
 	}))
 
-	// Un-wrapped: zero rows. The pool's BeforeAcquire SET ROLE
-	// app_tenant + no app.current_user_id GUC = fail-closed.
+	// Un-wrapped: zero rows. A request connection starts as app_tenant,
+	// and with no app.current_user_id set the policies admit nothing
+	// (fail-closed).
 	var noWrapCount int
 	require.NoError(t, testPool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, userA,
@@ -1168,7 +1166,7 @@ func TestSessionStore_ImpersonationAndRefreshCredentialAreMutuallyExclusive(t *t
 	insert := func(t *testing.T, hash any, actingAs any) error {
 		t.Helper()
 		return testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			tx := storetx.Tx(ctx)
 			now := time.Now()
 			_, err := tx.Exec(ctx, `
 				INSERT INTO sessions (

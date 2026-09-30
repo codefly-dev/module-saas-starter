@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/auth/headerjwt"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // headerJWTIssuer is a minimal signing authority: one RSA key published at
@@ -120,7 +120,7 @@ func TestAuthenticate_HeaderJWT_NewUser(t *testing.T) {
 	// users row is RLS-protected, so read it through the control-plane role.
 	var displayName string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT COALESCE(profile->>'display_name', '') FROM users WHERE uuid = $1::uuid`,
 			resp.User.Uuid,

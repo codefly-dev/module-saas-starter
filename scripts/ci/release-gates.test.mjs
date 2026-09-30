@@ -1527,7 +1527,7 @@ test("authorization gate always runs isolated audit SQL regressions", () => {
   assert.ok(Object.hasOwn(ci.on, "pull_request"));
   assert.ok(Object.hasOwn(ci.on, "merge_group"));
   assert.ok(job.services["audit-postgres"]);
-  const step = job.steps.find((step) => step.run?.includes("./internal/auditmetricstest"));
+  const step = job.steps.find((step) => step.run?.includes("./pkg/infra/auditmetricstest"));
   assert.ok(step, "database regression step must exist");
   assert.equal(step.if, undefined, "database regression step must not be conditional");
   assert.equal(step.env.AUDIT_METRICS_REQUIRE_DB, "1");

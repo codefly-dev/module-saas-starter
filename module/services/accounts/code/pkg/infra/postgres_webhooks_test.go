@@ -17,7 +17,6 @@ import (
 	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -30,6 +29,7 @@ import (
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	webhooksv1 "accounts/pkg/gen/saas/webhooks/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
 
 	"google.golang.org/protobuf/proto"
@@ -185,7 +185,7 @@ func TestBillingWorkerPoolReconcilesAcrossTenantRLS(t *testing.T) {
 	}))
 	var planID string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			UPDATE plans SET stripe_price_id = $1
 			WHERE name = 'pro'
@@ -228,7 +228,7 @@ func seedUser(t *testing.T) string {
 	// users is RLS-protected (WITH CHECK: self or System); a fixture bootstrap
 	// has no caller identity yet, so seed under the audited System bypass.
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO users (uuid, primary_email, status) VALUES ($1, $2, 'active')`, id, email)
 		return err
@@ -246,7 +246,7 @@ func seedOrg(t *testing.T, ownerID string) string {
 	id := business.NewIDString()
 	slug := fmt.Sprintf("org-%s", id)
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, 'Test Org', $2, $3)`,
 			id, slug, ownerID)

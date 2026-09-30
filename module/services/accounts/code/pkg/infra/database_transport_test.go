@@ -11,7 +11,7 @@ func clearDatabaseEnvironment(t *testing.T) {
 	t.Helper()
 	for _, entry := range os.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
-		if ok && (strings.HasPrefix(key, "PG") || key == "POSTGRES_TOKEN_FILE") {
+		if ok && (strings.HasPrefix(key, "PG") || key == databaseTokenFileEnv || key == databaseTokenFilesEnv) {
 			if err := os.Unsetenv(key); err != nil {
 				t.Fatal(err)
 			}
@@ -62,6 +62,12 @@ func TestAccountsExplicitProxyTransport(t *testing.T) {
 		t.Setenv("POSTGRES_TOKEN_FILE", "/private/credential")
 		if _, err := parseDatabaseTransport(good, "local-identity-proxy", false); err == nil {
 			t.Fatal("shared token file accepted")
+		}
+	})
+	t.Run("per-login token files", func(t *testing.T) {
+		t.Setenv(databaseTokenFilesEnv, `{"fixture":"/private/credential"}`)
+		if _, err := parseDatabaseTransport(good, "local-identity-proxy", false); err == nil {
+			t.Fatal("token files accepted on the identity-proxy transport")
 		}
 	})
 }

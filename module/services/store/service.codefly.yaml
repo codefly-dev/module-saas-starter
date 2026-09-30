@@ -3,9 +3,8 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: postgres
-    # DEV PIN: an unreleased agent prerelease (the postgres agent change this round needs). Move it to the
-    # release that ships the change before this module is tagged.
-    version: 0.0.139-dev.9b0c2212c6be
+    # v0.0.140 publishes runtime-logins and the control-plane capability.
+    version: 0.0.140
     publisher: codefly.dev
 endpoints:
     - name: tcp
@@ -14,12 +13,19 @@ spec:
     database-name: users
     debug: false
     persist: true
+    # The request login (read-write-connection) reaches app_tenant and nothing
+    # else, so no statement on a request connection can select a wider role.
     runtime-read-write-roles:
         - app_tenant
-        - app_control_plane
-        - app_billing_worker
-        - app_webhook_worker
-        - app_job_worker
+    # Cross-tenant work authenticates as its own login (control-plane-connection),
+    # which accounts uses only for WithControlPlane and the worker pools.
+    runtime-logins:
+        - name: control-plane
+          read-write-roles:
+            - app_control_plane
+            - app_billing_worker
+            - app_webhook_worker
+            - app_job_worker
     silent: true
     watch: true
     without-ssl: false

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // ============================================================================
@@ -154,7 +154,7 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 	// predicate ever widens.
 	t.Cleanup(func() {
 		require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			tx := storetx.Tx(ctx)
 			tag, err := tx.Exec(ctx,
 				`DELETE FROM public.gdpr_requests WHERE id = ANY($1::uuid[])`,
 				[]string{lapsed.ID, live.ID})

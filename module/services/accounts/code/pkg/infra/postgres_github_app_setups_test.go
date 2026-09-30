@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,7 +98,7 @@ func setupRowExists(t *testing.T, orgID, stateHash string) bool {
 	t.Helper()
 	var exists bool
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT EXISTS (SELECT 1 FROM github_app_setups WHERE state_hash = $1)`,
 			stateHash).Scan(&exists)
@@ -258,7 +258,7 @@ func TestPostgresGitHubAppInstallationOutlivesTheVerifyingUser(t *testing.T) {
 	require.True(t, claimInstallation(t, org, installation, verifier))
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM users WHERE uuid = $1`, verifier)
 		return err
 	}))

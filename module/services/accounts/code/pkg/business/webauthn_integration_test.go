@@ -12,8 +12,8 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,7 +219,7 @@ func TestWebAuthnRegistrationAndLoginCeremoniesExpire(t *testing.T) {
 
 func expireWebAuthnCeremonies(userID, ceremonyType string) error {
 	return testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			UPDATE webauthn_ceremonies
 			SET expires_at = $3

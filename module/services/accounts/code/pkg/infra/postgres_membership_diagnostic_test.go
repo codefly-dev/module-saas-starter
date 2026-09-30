@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +32,7 @@ func membershipFindings(t *testing.T, orgID string) []string {
 	t.Helper()
 	var found []string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		rows, err := tx.Query(ctx, `
 			SELECT finding FROM membership_integrity_findings
 			WHERE org_id = $1 ORDER BY finding`, orgID)
@@ -111,7 +111,7 @@ func membershipFindingDetail(t *testing.T, orgID, key string) string {
 	t.Helper()
 	var value string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT (detail -> $2)::text FROM membership_integrity_findings WHERE org_id = $1`,
 			orgID, key).Scan(&value)
@@ -165,7 +165,7 @@ func TestMembershipDiagnosticCountsEachOrganizationOnce(t *testing.T) {
 	outstanding := runMembershipDiagnostic(t)
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var rows, organizations int
 		if err := tx.QueryRow(ctx,
 			`SELECT count(*), count(DISTINCT org_id) FROM membership_integrity_findings`,
@@ -212,7 +212,7 @@ func TestMembershipDiagnosticIsNotReachableByRequestTraffic(t *testing.T) {
 	runMembershipDiagnostic(t)
 
 	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var count int
 		return tx.QueryRow(ctx,
 			`SELECT count(*) FROM membership_integrity_findings`).Scan(&count)
@@ -220,7 +220,7 @@ func TestMembershipDiagnosticIsNotReachableByRequestTraffic(t *testing.T) {
 	require.Error(t, err, "app_tenant holds no grant on the findings table")
 
 	err = testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, execErr := tx.Exec(ctx,
 			`SELECT public.record_membership_integrity_findings()`)
 		return execErr
@@ -234,7 +234,7 @@ func TestMembershipDiagnosticIsNotReachableByRequestTraffic(t *testing.T) {
 func setUserStatus(t *testing.T, userID, status string) {
 	t.Helper()
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`UPDATE users SET status = $2::user_status WHERE uuid = $1`, userID, status)
 		return err

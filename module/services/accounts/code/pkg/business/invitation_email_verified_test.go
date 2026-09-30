@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // AcceptInvitation authorizes on the caller's email matching the invitation.
@@ -55,7 +55,7 @@ func TestAcceptInvitationRequiresVerifiedCallerEmail(t *testing.T) {
 
 	// Once the caller's email is verified, the same acceptance succeeds.
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE users SET email_verified = true WHERE uuid = $1`, inviteeID)
 		return err
 	}))

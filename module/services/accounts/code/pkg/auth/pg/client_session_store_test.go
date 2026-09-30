@@ -11,9 +11,9 @@ import (
 	"accounts/pkg/auth"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +35,7 @@ func countSessions(t *testing.T, userID uuid.UUID, clientID string) int {
 	t.Helper()
 	var count int
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT count(*) FROM sessions
 			WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NULL`,
@@ -77,7 +77,7 @@ func TestAuthorizeClientSessionJoinsTheCallersTransaction(t *testing.T) {
 
 func countSessionsInTx(t *testing.T, ctx context.Context, userID uuid.UUID, clientID string) int {
 	t.Helper()
-	tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+	tx := storetx.Tx(ctx)
 	var count int
 	require.NoError(t, tx.QueryRow(ctx, `
 		SELECT count(*) FROM sessions WHERE user_id = $1 AND client_id = $2`,
@@ -108,7 +108,7 @@ func TestClientSessionsAreBoundedAndDoNotEvictDevices(t *testing.T) {
 
 	var hostAlive bool
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT revoked_at IS NULL FROM sessions WHERE id = $1`, host.ID).Scan(&hostAlive)
 	}))

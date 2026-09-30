@@ -21,6 +21,7 @@ and whether a newer release exists, and to move every service to it:
 codefly agent list          # PINNED vs LATEST-RESOLVABLE, how far behind
 codefly agent versions <agent>
 codefly update workspace    # moves each service.codefly.yaml to the newest compatible agent
+codefly update service saas-starter/store --agent-version 0.0.140 # pin just one service to a published release
 ```
 
 **Latest is not always safe.** Agent releases can carry breaking changes to

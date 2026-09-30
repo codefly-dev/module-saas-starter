@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +21,7 @@ func TestListPublicPlansUsesAuthoritativeCatalog(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, publicPlanKeys(plans), "pro")
 
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // test uses the scoped control-plane transaction
+		tx := storetx.Tx(ctx)
 		_, err = tx.Exec(ctx, `
 			UPDATE plans
 			SET description = 'Configured plan',

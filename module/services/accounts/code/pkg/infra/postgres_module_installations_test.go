@@ -4,6 +4,7 @@ package infra_test
 
 import (
 	"accounts/pkg/adapters"
+	"accounts/pkg/infra/storetx"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -26,7 +27,6 @@ import (
 
 	"accounts/pkg/business"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -81,7 +81,7 @@ func TestModuleInstallationPostgresRepeatConcurrentAndLostResponse(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, observed, repeat)
 	require.NoError(t, testStore.WithOrgTx(testCtx, p.OrgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck
+		tx := storetx.Tx(ctx)
 		var n int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM principals WHERE org_id=$1 AND agent_identifier=$2`, p.OrgID, p.AgentIdentifier).Scan(&n); err != nil {
 			return err
@@ -123,7 +123,7 @@ func TestModuleInstallationPostgresRollbackAndConflicts(t *testing.T) {
 	require.Error(t, err)
 	p.InstallerPrincipalID = business.ModulePrincipalID("example-installer")
 	require.NoError(t, testStore.WithOrgTx(testCtx, p.OrgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx)
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `INSERT INTO role_permissions(role_id,resource,action) VALUES($1,'documents','write')`, p.RoleID)
 		return err
 	})) //nolint:staticcheck
@@ -280,7 +280,7 @@ func TestModuleInstallationPostgresRejectsGrantDriftAndIneligibleOwner(t *testin
 		created, err := boundedReconcile(p, true)
 		require.NoError(t, err)
 		require.NoError(t, testStore.WithOrgTx(testCtx, p.OrgID, func(ctx context.Context) error {
-			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck
+			tx := storetx.Tx(ctx)
 			_, err := tx.Exec(ctx, `INSERT INTO scope_grants(id,org_id,subject_id,subject_kind,scope_path,role_id,granted_by) SELECT gen_random_uuid(),$1,$2,'principal',n.scope_path,$3,$4 FROM scope_nodes n WHERE n.org_id=$1 AND n.id <> $5 LIMIT 1`, p.OrgID, created.PrincipalID, p.RoleID, p.GrantedBy, created.ScopeNodeID)
 			return err
 		}))
@@ -290,7 +290,7 @@ func TestModuleInstallationPostgresRejectsGrantDriftAndIneligibleOwner(t *testin
 	t.Run("suspended owner", func(t *testing.T) {
 		p := boundedInstallationFixture(t)
 		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-			tx := ctx.Value("tx").(pgx.Tx)
+			tx := storetx.Tx(ctx)
 			_, err := tx.Exec(ctx, `UPDATE users SET status='suspended' WHERE uuid=$1`, p.OwnerPrincipalID)
 			return err
 		})) //nolint:staticcheck

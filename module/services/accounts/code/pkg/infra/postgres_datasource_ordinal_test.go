@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func seedDatasourceSource(t *testing.T, orgID string) string {
 	nodeID := business.NewIDString()
 	scopePath := strings.ReplaceAll(nodeID, "-", "_")
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO scope_nodes (id, org_id, scope_path, kind, label)
 			VALUES ($1, $2, $3::ltree, 'collection', 'docs')`,

@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/business"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -45,7 +46,7 @@ func publishJournalEntry(t *testing.T, transport *infra.PostgresEventTransport, 
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
 	require.NoError(t, testStore.WithOrgTx(testCtx, tenantID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		return transport.Publish(ctx, tx, &eventsv1.EventEnvelope{
 			Id:              id,
 			Type:            eventType,
@@ -207,7 +208,7 @@ func TestTenantJournalReReadWindowRecoversALateCommit(t *testing.T) {
 
 	go func() {
 		slowDone <- testStore.WithOrgTx(context.Background(), tenant, func(ctx context.Context) error {
-			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithOrgTx
+			tx := storetx.Tx(ctx)
 			if err := publishEnvelope(transport, ctx, tx, slowID, tenant, "entry-slow"); err != nil {
 				return err
 			}

@@ -6,6 +6,8 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/internal/txbind"
+	"accounts/pkg/infra/storetx"
 
 	"time"
 
@@ -92,13 +94,14 @@ func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organiz
 
 	// If a tx is already on context (caller wrapped us in WithOrgTx
 	// or WithControlPlane), reuse it.
-	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx {
+	if storetx.Tx(ctx) != nil {
 		return exec(ctx)
 	}
 	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{
 		IsoLevel: pgx.Serializable,
 	}, func(tx pgx.Tx) error {
-		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // matches existing postgres.go pattern
+		// A fresh request connection carries no request scope.
+		ctx = txbind.BindRequest(ctx, tx, "", "")
 		return exec(ctx)
 	})
 }
@@ -354,7 +357,7 @@ func (s *PostgresStore) ListAdministeredOrganizations(ctx context.Context, userI
 // Lock order when a path takes more than one: LockOrgAdministration ->
 // LockOrgMembership -> LockEntitlementQuota.
 func (s *PostgresStore) LockOrgAdministration(ctx context.Context, orgID string) error {
-	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+	if storetx.Tx(ctx) == nil {
 		return errors.New("org administration lock requires a tenant transaction")
 	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx,
@@ -374,7 +377,7 @@ func (s *PostgresStore) LockOrgAdministration(ctx context.Context, orgID string)
 // insert and an organization removal can interleave and leave a durable team
 // row behind a departed member.
 func (s *PostgresStore) LockOrgMembership(ctx context.Context, orgID string, userID string) error {
-	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+	if storetx.Tx(ctx) == nil {
 		return errors.New("org membership lock requires a tenant transaction")
 	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx,
@@ -441,7 +444,7 @@ func (s *PostgresStore) GetOrgMembership(ctx context.Context, orgID string, user
 			FROM organization_members
 			WHERE org_id = $1 AND user_id = $2`, orgID, userID)
 	}
-	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx { //nolint:staticcheck // legacy transaction bridge
+	if storetx.Tx(ctx) != nil {
 		return membership, legacyRead(ctx)
 	}
 	err := s.WithOrgTx(ctx, orgID, legacyRead)
