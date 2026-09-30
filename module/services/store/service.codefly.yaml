@@ -3,8 +3,10 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: postgres
-    # v0.0.140 publishes runtime-logins and the control-plane capability.
-    version: 0.0.140
+    # v0.0.140 publishes runtime-logins and the control-plane capability; 0.0.141
+    # also declares each runtime login's password as a required secret, without
+    # which a deployment render fails on the missing control-plane key.
+    version: 0.0.141
     publisher: codefly.dev
 endpoints:
     - name: tcp
