@@ -98,8 +98,8 @@
 		"vitest": "^3.0.0"
 	},
 	"overrides": {
-		"brace-expansion@>=4.0.0 <5.0.9": "5.0.9",
-		"fast-uri@>=3.0.0 <3.1.7": "3.1.7",
+		"brace-expansion@>=4.0.0 <5.0.12": "5.0.12",
+		"fast-uri@>=3.0.0 <3.1.8": "3.1.8",
 		"js-yaml": "$js-yaml",
 		"nanoid@>=3.0.0 <3.3.18": "3.3.18",
 		"postcss": "8.5.26",
