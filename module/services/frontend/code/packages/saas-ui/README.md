@@ -177,19 +177,17 @@ components:
   collections, readable scopes) follow the same rule: the source list is
   re-read every five seconds only while one of its syncs is active and once
   more when the last one settles; otherwise all three are re-read once a
-  minute, never in a background tab, and on focus.
-- **Token refresh before a write.** With a `gateway` binding, a request whose
-  access token says (its `exp` claim) it has expired or is about to is sent
-  with a token from `refreshAccessToken` instead, so a page left idle does not
-  open with a refused write and a retry. The refresh-and-retry on an
-  `Unauthenticated` answer stays as the backstop.
+  minute, never in a background tab, and on focus. The one exception is a
+  mounted `CollectionReadBoundary`, which shares the readable-scopes read and
+  keeps it on its five-second revocation poll, background tabs included.
   Six states are distinguished, because collapsing any two of them misreports a
   healthy sync: **queued**, **running**, **no progress** (a phase that has not
   advanced for `DEFAULT_STALL_AFTER_MS`; still running, never called failed —
   only the host may say that), **retrying** (the host failed an attempt and will
   try again, with the reason and the wait), **done**, **no changes** (finished
-  having handed nothing off — the source had not moved, which is a success and
-  not an empty failure), and **failed**.
+  having handed nothing off, or having handed off a snapshot of files with
+  nothing added, modified or deleted — the source had not moved, which is a
+  success and not an empty failure), and **failed**.
 - `describeSync(sync, { now, stallAfterMs })` → `SyncProgressReport` is that
   decision as a pure function, exported so a consumer can render the same states
   in its own shell — a line in a header, say — without re-deriving them from the
@@ -197,6 +195,11 @@ components:
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+- **Token refresh before a write.** With a `gateway` binding, a request whose
+  access token says (its `exp` claim) it has expired or is about to is sent
+  with a token from `refreshAccessToken` instead, so a page left idle does not
+  open with a refused write and a retry. The refresh-and-retry on an
+  `Unauthenticated` answer stays as the backstop.
 
 ### Connecting through the GitHub App
 

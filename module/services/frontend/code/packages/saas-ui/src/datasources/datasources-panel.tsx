@@ -314,6 +314,10 @@ function DatasourcesPanelView({
 	// Bumped on every Manage read grants press, including a second press for the
 	// collection already open, so each one brings the editor into view again.
 	const [grantsFocusRequest, setGrantsFocusRequest] = useState(0);
+	// The last press the editor has acted on. Only a newer press is passed down,
+	// so an editor remounted without a press (a failed collections poll, then a
+	// good one) does not scroll the page or take focus again.
+	const [handledGrantsFocus, setHandledGrantsFocus] = useState(0);
 	// What was just connected, so the read grant can be offered where the person
 	// already is and knows what they connected — rather than as a separate later
 	// journey through Manage read grants, which is the whole of what made the
@@ -595,7 +599,12 @@ function DatasourcesPanelView({
 						client={client}
 						orgId={orgId}
 						collection={selectedCollection}
-						focusRequest={grantsFocusRequest}
+						focusRequest={
+							grantsFocusRequest > handledGrantsFocus
+								? grantsFocusRequest
+								: undefined
+						}
+						onFocusRequestHandled={setHandledGrantsFocus}
 					/>
 				)}
 				{connectedCollection && (

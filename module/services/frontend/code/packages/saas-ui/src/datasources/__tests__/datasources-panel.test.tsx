@@ -1802,6 +1802,72 @@ describe("Manage read grants", () => {
 		}
 	});
 
+	// The editor is unmounted while the collections read is failing and mounted
+	// again when it recovers. That remount is nobody's press, so it must not
+	// scroll the page or pull focus off whatever the person moved on to.
+	it("does not scroll or take focus again when the editor remounts without a press", async () => {
+		const scrolled = vi.fn();
+		const original = HTMLElement.prototype.scrollIntoView;
+		HTMLElement.prototype.scrollIntoView = scrolled;
+		try {
+			let failNext = false;
+			const client = fakeClient({
+				listCollections: vi.fn(async () => {
+					if (failNext) {
+						failNext = false;
+						throw new Error("collections unavailable");
+					}
+					return [collectionA, collectionB];
+				}),
+				listGrantSubjects: vi.fn(async () => []),
+				grantCollectionRead: vi.fn(async () => {}),
+				revokeCollectionRead: vi.fn(async () => {}),
+			});
+			const queryClient = new QueryClient({
+				defaultOptions: { queries: { retry: false } },
+			});
+			render(
+				<QueryClientProvider client={queryClient}>
+					<DatasourcesPanel client={client} orgId="org-1" />
+				</QueryClientProvider>,
+			);
+			await openGrants("Collection A");
+			const heading = screen.getByRole("heading", {
+				name: "Who can read Collection A",
+			});
+			await waitFor(() => expect(document.activeElement).toBe(heading));
+			expect(scrolled).toHaveBeenCalledTimes(1);
+			heading.blur();
+
+			failNext = true;
+			await act(() =>
+				queryClient.invalidateQueries({
+					queryKey: ["collection-access", "org-1"],
+				}),
+			);
+			await waitFor(() =>
+				expect(
+					screen.queryByRole("region", {
+						name: "Read grants for Collection A",
+					}),
+				).toBeNull(),
+			);
+			await act(() =>
+				queryClient.invalidateQueries({
+					queryKey: ["collection-access", "org-1"],
+				}),
+			);
+			const remounted = await screen.findByRole("heading", {
+				name: "Who can read Collection A",
+			});
+			expect(remounted).not.toBe(heading);
+			expect(scrolled).toHaveBeenCalledTimes(1);
+			expect(document.activeElement).not.toBe(remounted);
+		} finally {
+			HTMLElement.prototype.scrollIntoView = original;
+		}
+	});
+
 	// A subject picked under one collection used to stay picked when the editor
 	// was opened for another: React reused the one editor instance, so a single
 	// press then granted that subject read access to the wrong collection.

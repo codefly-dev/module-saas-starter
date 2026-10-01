@@ -83,6 +83,7 @@ export function CollectionGrants({
 	connectedRepo,
 	onDismiss,
 	focusRequest,
+	onFocusRequestHandled,
 }: {
 	client: DatasourceClient;
 	orgId: string;
@@ -101,8 +102,16 @@ export function CollectionGrants({
 	 * focus to its heading: the editor renders away from the button that opened
 	 * it, so without this the press looked like it did nothing and a keyboard or
 	 * screen-reader user was left on a button with no sign anything opened.
+	 *
+	 * A request is honoured once: the editor reports it through
+	 * `onFocusRequestHandled`, and the caller stops passing it. Without that, an
+	 * editor unmounted and remounted with nobody asking — the collections read
+	 * failing once on a background poll, then recovering — would find the same
+	 * request on mount and scroll the page and take focus out from under
+	 * whatever the person was doing.
 	 */
 	focusRequest?: number | undefined;
+	onFocusRequestHandled?: ((request: number) => void) | undefined;
 }) {
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	useEffect(() => {
@@ -111,7 +120,8 @@ export function CollectionGrants({
 		if (!heading) return;
 		heading.scrollIntoView?.({ block: "start", behavior: "smooth" });
 		heading.focus({ preventScroll: true });
-	}, [focusRequest]);
+		onFocusRequestHandled?.(focusRequest);
+	}, [focusRequest, onFocusRequestHandled]);
 	// A set, not a single value: granting one subject at a time is the whole of
 	// what made this flow unreasonable — an administrator who has just connected
 	// a repository for a team of eight repeated the same four steps eight times.
