@@ -387,10 +387,9 @@ describe("the panel's live sync progress", () => {
 
 	it("follows a sync to its end while the page is not focused", async () => {
 		// The bug this guards: the card's poll ran only while the document had
-		// focus, while the sources list (and a consumer's row reader beneath it)
-		// kept polling in the background. A sync watched from a page without focus
-		// therefore froze on its in-flight phase — "Queued · Step 1 of 4" beside a
-		// row that already said it had finished — until a reload re-read it.
+		// focus, so a sync watched from a page without focus froze on its
+		// in-flight phase — "Queued · Step 1 of 4" beside a row that already said
+		// it had finished — until a reload re-read it.
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		focusManager.setFocused(false);
 		try {
@@ -413,6 +412,49 @@ describe("the panel's live sync progress", () => {
 			});
 
 			expect(screen.getByText("Up to date")).toBeTruthy();
+		} finally {
+			focusManager.setFocused(undefined);
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not poll a settled sync while the page is not focused, and re-reads it on focus", async () => {
+		// Background polling exists only to keep an in-flight sync moving. A
+		// settled card in an idle tab must stay silent, or every source's card
+		// polls on its settled cadence for as long as the tab stays open.
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			const getSourceSync = vi.fn(async () =>
+				sync({ phase: "done", finishedAt: new Date().toISOString() }),
+			);
+			renderWithClient(
+				<DatasourcesPanel
+					client={fakeClient({ getSourceSync })}
+					orgId="org-1"
+				/>,
+			);
+			await waitFor(() => expect(getSourceSync).toHaveBeenCalled());
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1_000);
+			});
+
+			focusManager.setFocused(false);
+			// Let one already-scheduled settled tick land; after it, nothing more.
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(31_000);
+			});
+			const settledReads = getSourceSync.mock.calls.length;
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(180_000);
+			});
+			expect(getSourceSync.mock.calls.length).toBe(settledReads);
+
+			await act(async () => {
+				focusManager.setFocused(true);
+			});
+			await waitFor(() =>
+				expect(getSourceSync.mock.calls.length).toBeGreaterThan(settledReads),
+			);
 		} finally {
 			focusManager.setFocused(undefined);
 			vi.useRealTimers();

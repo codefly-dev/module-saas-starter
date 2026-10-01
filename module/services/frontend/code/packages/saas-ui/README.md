@@ -170,7 +170,9 @@ components:
   elapsed time. The read tightens to a two-second poll while a sync is active,
   slackens to thirty seconds once it settles, and is re-armed the instant
   `onSourceSyncRequested` fires, so the bar appears on the press rather than on
-  the next interval. A card leaves the panel ten minutes after its sync
+  the next interval. An active sync keeps being read in a background tab, so
+  its card never freezes on a phase it has left; a settled one is not read
+  there at all, and is re-read on focus. A card leaves the panel ten minutes after its sync
   finished — an older sync lives in History. The panel's own lists (sources,
   collections, readable scopes) follow the same rule: the source list is
   re-read every five seconds only while one of its syncs is active and once

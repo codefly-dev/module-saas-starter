@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Button, Card, Progress } from "@codefly-dev/ui/layout";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
 	describeSync,
@@ -123,15 +123,18 @@ export function useSourceSync(
 		// The cadence follows the answer, so nothing has to be kept in step with
 		// it. A source with no sync at all polls slowly — it would otherwise poll
 		// every two seconds forever, since "no sync yet" never becomes active.
-		refetchInterval: ({ state }) =>
-			state.data && describeSync(state.data).active
-				? ACTIVE_POLL_MS
-				: SETTLED_POLL_MS,
-		// Polled whether or not the page has focus, like the sources list this
-		// card sits above. Without it React Query skips every interval tick while
-		// the document is not focused, so the card froze on the phase it last read
-		// ("Queued · Step 1 of 4") while the list, and any row reader beneath it,
-		// kept advancing to the finished sync — and only a reload re-read it.
+		//
+		// A sync in flight is followed in a background tab too: without that React
+		// Query skips every tick while the page is hidden, and the card froze on
+		// the phase it last read ("Queued · Step 1 of 4") until a reload. A settled
+		// (or absent) sync is not polled in the background at all — one card per
+		// source, each on a 30 s poll in every idle tab, is the load the panel's
+		// own idle cadence exists to avoid. Coming back to the tab re-reads it on
+		// focus, and the answer restarts the settled cadence.
+		refetchInterval: ({ state }) => {
+			if (state.data && describeSync(state.data).active) return ACTIVE_POLL_MS;
+			return focusManager.isFocused() ? SETTLED_POLL_MS : false;
+		},
 		refetchIntervalInBackground: true,
 	});
 
