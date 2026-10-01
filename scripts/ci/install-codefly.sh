@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.168}"
+version="${CODEFLY_VERSION:-0.1.171}"
 case "${version}" in
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
@@ -43,6 +43,15 @@ case "${version}" in
     # (cli#827), and workspace endpoint references resolve per consumer and
     # order the run (cli#828).
     checksum=d8c6180afdd4ca9b393d0bf5d5a7974c20fa1047023f31c1f03100465889cc02
+    ;;
+  0.1.171)
+    # Raises the host's build-recipe support from docker-build-recipe/v3 to v4,
+    # which is what lets this tree run a released go-grpc or nextjs agent at all:
+    # every agent from go-grpc 0.1.48-dev.42ce38050224 and nextjs 0.0.162 onward
+    # advertises v3, v4 and v5, and 0.1.168 verified the plan against v3 alone.
+    # Core supports artifact-execution/v1, runtime-init-dependency-mappings/v1,
+    # codefly.dev/docker-build-recipe/v4 and configuration-value-template/v1.
+    checksum=0bdb109784b9835bea984a94ddb9a809c8c29f0e260c59f821a637cbff464ffe
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2
