@@ -62,35 +62,105 @@ func TestBuildDiscoveredOIDCStackDiscoversMissingEndpoints(t *testing.T) {
 	require.Equal(t, 1, hits, "provider metadata must be discovered exactly once")
 }
 
-func TestConfiguredEmailSenderDefaultsToLog(t *testing.T) {
-	t.Setenv("EMAIL_PROVIDER", "")
-	sender, err := configuredEmailSender(t.Context())
-	require.NoError(t, err)
-	require.IsType(t, &email.LogSender{}, sender)
+// setEmailConfiguration sets one key of the `email` workspace group the way the
+// Codefly runtime delivers it; secret selects the group's secret namespace.
+func setEmailConfiguration(t *testing.T, key, value string, secret bool) {
+	t.Helper()
+	namespace := "CODEFLY__WORKSPACE_CONFIGURATION__EMAIL__"
+	if secret {
+		namespace = "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__EMAIL__"
+	}
+	t.Setenv(namespace+key, value)
 }
 
-func TestConfiguredEmailSenderFailsClosed(t *testing.T) {
-	t.Setenv("EMAIL_PROVIDER", "log")
-	t.Setenv("RESEND_API_KEY", "re_accidental")
-	_, err := configuredEmailSender(t.Context())
+func clearEmailConfiguration(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"EMAIL_PROVIDER", "EMAIL_FROM", "RESEND_API_BASE", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET"} {
+		setEmailConfiguration(t, key, "", false)
+		setEmailConfiguration(t, key, "", true)
+		// A raw process variable is not an authority; keep one set so a
+		// regression to os.Getenv shows up as a wrong selection.
+		t.Setenv(key, "")
+	}
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__EMAIL_FROM", "")
+}
+
+func TestConfiguredEmailDefaultsToLogOnlyLocally(t *testing.T) {
+	clearEmailConfiguration(t)
+	config, err := configuredEmail(t.Context(), true)
+	require.NoError(t, err)
+	require.IsType(t, &email.LogSender{}, config.sender)
+	require.Equal(t, "no-reply@localhost", config.from)
+
+	_, err = configuredEmail(t.Context(), false)
+	require.ErrorContains(t, err, "EMAIL_PROVIDER is required outside the local environment")
+
+	setEmailConfiguration(t, "EMAIL_PROVIDER", "log", false)
+	_, err = configuredEmail(t.Context(), false)
+	require.ErrorContains(t, err, "refused outside the local environment")
+}
+
+func TestConfiguredEmailIgnoresRawProcessVariables(t *testing.T) {
+	clearEmailConfiguration(t)
+	// The variables a deployment that bypassed the workspace group would have
+	// set. They select nothing: outside local, the group is still unset.
+	t.Setenv("EMAIL_PROVIDER", "resend")
+	t.Setenv("RESEND_API_KEY", "re_raw")
+	t.Setenv("RESEND_WEBHOOK_SECRET", "whsec_raw")
+	_, err := configuredEmail(t.Context(), false)
+	require.ErrorContains(t, err, "EMAIL_PROVIDER is required outside the local environment")
+}
+
+func TestConfiguredEmailDisabledSelectsNoSender(t *testing.T) {
+	clearEmailConfiguration(t)
+	setEmailConfiguration(t, "EMAIL_PROVIDER", "disabled", false)
+	config, err := configuredEmail(t.Context(), false)
+	require.NoError(t, err)
+	require.Nil(t, config.sender)
+
+	setEmailConfiguration(t, "RESEND_API_KEY", "re_accidental", true)
+	_, err = configuredEmail(t.Context(), false)
+	require.ErrorContains(t, err, "credentials are present while EMAIL_PROVIDER is disabled")
+}
+
+func TestConfiguredEmailFailsClosed(t *testing.T) {
+	clearEmailConfiguration(t)
+	setEmailConfiguration(t, "EMAIL_PROVIDER", "log", false)
+	setEmailConfiguration(t, "RESEND_API_KEY", "re_accidental", true)
+	_, err := configuredEmail(t.Context(), true)
 	require.ErrorContains(t, err, "credentials are present")
 
-	t.Setenv("EMAIL_PROVIDER", "resend")
-	t.Setenv("RESEND_API_KEY", "")
-	t.Setenv("RESEND_WEBHOOK_SECRET", "")
-	_, err = configuredEmailSender(t.Context())
+	setEmailConfiguration(t, "EMAIL_PROVIDER", "resend", false)
+	setEmailConfiguration(t, "RESEND_API_KEY", "", true)
+	_, err = configuredEmail(t.Context(), true)
 	require.ErrorContains(t, err, "RESEND_API_KEY")
 
-	t.Setenv("RESEND_API_KEY", "re_test")
-	t.Setenv("RESEND_WEBHOOK_SECRET", "whsec_test")
-	t.Setenv("RESEND_API_BASE", "http://localhost:9999")
-	sender, err := configuredEmailSender(t.Context())
+	setEmailConfiguration(t, "RESEND_API_KEY", "re_test", true)
+	setEmailConfiguration(t, "RESEND_WEBHOOK_SECRET", "whsec_test", true)
+	setEmailConfiguration(t, "RESEND_API_BASE", "http://localhost:9999", false)
+	config, err := configuredEmail(t.Context(), true)
 	require.NoError(t, err)
-	require.IsType(t, &email.ResendSender{}, sender)
+	require.IsType(t, &email.ResendSender{}, config.sender)
 
-	t.Setenv("EMAIL_PROVIDER", "typo")
-	_, err = configuredEmailSender(t.Context())
-	require.ErrorContains(t, err, "EMAIL_PROVIDER must be one of")
+	// A deployed Resend sender must name its sender address: the localhost
+	// default is one a provider rejects, which ends every job undelivered.
+	_, err = configuredEmail(t.Context(), false)
+	require.ErrorContains(t, err, "EMAIL_FROM is required")
+	setEmailConfiguration(t, "EMAIL_FROM", "Example <no-reply@example.com>", false)
+	config, err = configuredEmail(t.Context(), false)
+	require.NoError(t, err)
+	require.Equal(t, "Example <no-reply@example.com>", config.from)
+
+	setEmailConfiguration(t, "EMAIL_PROVIDER", "typo", false)
+	_, err = configuredEmail(t.Context(), true)
+	require.ErrorContains(t, err, "EMAIL_PROVIDER must be one of: disabled, log, resend")
+}
+
+func TestConfiguredEmailRefusesSenderInApplicationGroup(t *testing.T) {
+	clearEmailConfiguration(t)
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__EMAIL_FROM", "no-reply@example.com")
+	_, err := configuredEmail(t.Context(), true)
+	require.ErrorContains(t, err, "it belongs to the email group")
 }
 
 func TestConfiguredAbuseVerifierFailsClosed(t *testing.T) {

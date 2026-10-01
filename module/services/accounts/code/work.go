@@ -746,46 +746,51 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Email production and transport are split by the generic outbox. Request
 	// paths render templates and enqueue exact messages in their product
-	// transaction; this worker is the only owner of the provider adapter.
-	fromAddr := applicationEnv("EMAIL_FROM")
-	if fromAddr == "" {
-		fromAddr = "no-reply@localhost"
+	// transaction; this worker is the only owner of the provider adapter. With
+	// EMAIL_PROVIDER=disabled there is no outbox and no worker: every request path
+	// already treats a nil outbox as "this deployment sends no email", and
+	// invitations are then handed to the inviting administrator as a link.
+	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
+	if err != nil {
+		return nil, err
 	}
 	appBase, err := configuredApplicationBaseURL()
 	if err != nil {
 		return nil, err
 	}
-	templateStore := infra.NewPostgresTemplateStore(store)
-	requestEmailOutbox, err := email.NewOutbox(store, templateStore, fromAddr)
-	if err != nil {
-		return nil, err
-	}
-	service.SetEmailOutbox(requestEmailOutbox, appBase)
-	workerEmailOutbox, err := email.NewOutbox(jobStore, templateStore, fromAddr)
-	if err != nil {
-		return nil, err
-	}
-	emailSender, err := configuredEmailSender(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if resend, ok := emailSender.(*email.ResendSender); ok {
-		resendWebhook, err := resend.DeliveryWebhook(jobStore)
+	var workerEmailOutbox *email.Outbox
+	var emailWorker *jobs.Worker
+	if emailConfig.sender == nil {
+		w.Warn("EMAIL DELIVERY DISABLED — EMAIL_PROVIDER=disabled: invitations, magic links and notifications send no email; an invitation's accept link is returned to the administrator who issues it")
+	} else {
+		templateStore := infra.NewPostgresTemplateStore(store)
+		requestEmailOutbox, err := email.NewOutbox(store, templateStore, emailConfig.from)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute(email.ResendWebhookPath, resendWebhook)
-	}
-	emailJobHandler, err := email.NewJobHandler(emailSender)
-	if err != nil {
-		return nil, err
-	}
-	emailWorker, err := jobs.NewWorker(jobs.WorkerConfig{
-		Store: jobStore, Queue: email.DeliveryQueue,
-		Handler: emailJobHandler, RetryDelay: email.DeliveryRetryDelay,
-	})
-	if err != nil {
-		return nil, err
+		service.SetEmailOutbox(requestEmailOutbox, appBase)
+		workerEmailOutbox, err = email.NewOutbox(jobStore, templateStore, emailConfig.from)
+		if err != nil {
+			return nil, err
+		}
+		if resend, ok := emailConfig.sender.(*email.ResendSender); ok {
+			resendWebhook, err := resend.DeliveryWebhook(jobStore)
+			if err != nil {
+				return nil, err
+			}
+			adapters.RegisterHTTPRoute(email.ResendWebhookPath, resendWebhook)
+		}
+		emailJobHandler, err := email.NewJobHandler(emailConfig.sender)
+		if err != nil {
+			return nil, err
+		}
+		emailWorker, err = jobs.NewWorker(jobs.WorkerConfig{
+			Store: jobStore, Queue: email.DeliveryQueue,
+			Handler: emailJobHandler, RetryDelay: email.DeliveryRetryDelay,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Selecting the free plan is a first-party operation and must remain
@@ -1106,7 +1111,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if auditExportWorker != nil {
 		auditExportWorker.Start(ctx)
 	}
-	emailWorker.Start(ctx)
+	if emailWorker != nil {
+		emailWorker.Start(ctx)
+	}
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
 	privacyWorker.Start(ctx)
@@ -1149,14 +1156,16 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 			cancel()
 		}
-		sw.Info("stopping email delivery worker")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := emailWorker.Shutdown(shutdownCtx); err != nil {
-			sw.Warn("email delivery worker shutdown timed out", wool.ErrField(err))
+		if emailWorker != nil {
+			sw.Info("stopping email delivery worker")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := emailWorker.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("email delivery worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
 		}
-		cancel()
 		sw.Info("stopping outbound webhook worker")
-		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		if err := webhookWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
 		}
@@ -1909,24 +1918,78 @@ func identityEnvList(key string) []string {
 	return out
 }
 
-// configuredEmailSender makes provider selection explicit. Production never
-// silently downgrades to a log sink because one Resend value is missing. Each
-// factory validates its own secrets and fails closed; adding a provider is one
-// Register call rather than a new switch case.
-func configuredEmailSender(ctx context.Context) (email.Sender, error) {
+// emailConfiguration is what the email group resolves to: the sender address
+// and the provider, or a nil sender when the deployment sends no email.
+type emailConfiguration struct {
+	from   string
+	sender email.Sender
+}
+
+// emailEnv is Codefly-only, like identityEnv: the provider, the sender address
+// and the provider's secrets all come from the `email` workspace configuration
+// group. A raw process variable is not a second authority — reading
+// EMAIL_PROVIDER from the process environment is what let a deployed cell that
+// configured the group fall back to the log sink without a word.
+func emailEnv(key string) string {
+	value, _ := codefly.For(codefly.Context()).WorkspaceValue("email", key)
+	return strings.TrimSpace(value)
+}
+
+// configuredEmail makes provider selection explicit and refuses every
+// configuration that would silently not deliver. Outside the local environment
+// an unset provider and the log sink are both refused: the log sink reports
+// success, prints each message — accept tokens included — to the service log,
+// and leaves invitations "queued" forever. A deployment that really sends no
+// email says so with EMAIL_PROVIDER=disabled. Each factory validates its own
+// secrets and fails closed; adding a provider is one Register call.
+func configuredEmail(ctx context.Context, isLocal bool) (emailConfiguration, error) {
+	if applicationEnv("EMAIL_FROM") != "" {
+		return emailConfiguration{}, fmt.Errorf("email: EMAIL_FROM is set in the application configuration group; it belongs to the email group")
+	}
+	provider := strings.ToLower(emailEnv("EMAIL_PROVIDER"))
+	switch {
+	case provider == "" && isLocal:
+		provider = "log"
+	case provider == "":
+		return emailConfiguration{}, fmt.Errorf("email: EMAIL_PROVIDER is required outside the local environment (resend, or disabled to run without email)")
+	case provider == "log" && !isLocal:
+		return emailConfiguration{}, fmt.Errorf("email: EMAIL_PROVIDER=log only prints messages and is refused outside the local environment (use resend, or disabled to run without email)")
+	}
+	from := emailEnv("EMAIL_FROM")
+	if from == "" {
+		if provider == "resend" && !isLocal {
+			return emailConfiguration{}, fmt.Errorf("email: EMAIL_FROM is required when EMAIL_PROVIDER=resend outside the local environment")
+		}
+		from = "no-reply@localhost"
+	}
+
 	registry := email.NewRegistry()
+	registry.Register("disabled", disabledEmailFactory)
 	registry.Register("log", logEmailFactory)
 	registry.Register("resend", resendEmailFactory)
-
-	name := strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))
-	if name == "" {
-		name = "log"
+	sender, err := registry.Select(ctx, provider)
+	if err != nil {
+		return emailConfiguration{}, err
 	}
-	return registry.Select(ctx, name)
+	return emailConfiguration{from: from, sender: sender}, nil
+}
+
+func resendCredentialsPresent() bool {
+	return emailEnv("RESEND_API_KEY") != "" || emailEnv("RESEND_WEBHOOK_SECRET") != ""
+}
+
+// disabledEmailFactory selects no sender. It is a registered provider rather
+// than an absence so that "this deployment sends no email" is a decision
+// someone wrote down, not a default nobody noticed.
+func disabledEmailFactory(context.Context) (email.Sender, error) {
+	if resendCredentialsPresent() {
+		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is disabled")
+	}
+	return nil, nil
 }
 
 func logEmailFactory(ctx context.Context) (email.Sender, error) {
-	if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
+	if resendCredentialsPresent() {
 		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
 	}
 	w := wool.Get(ctx).In("pickEmailSender")
@@ -1936,14 +1999,14 @@ func logEmailFactory(ctx context.Context) (email.Sender, error) {
 }
 
 func resendEmailFactory(_ context.Context) (email.Sender, error) {
-	key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
-	webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
+	key := emailEnv("RESEND_API_KEY")
+	webhookSecret := emailEnv("RESEND_WEBHOOK_SECRET")
 	if key == "" || webhookSecret == "" {
 		return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
 	}
 	return email.NewResendSender(email.ResendConfig{
 		APIKey:        key,
-		BaseURL:       strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		BaseURL:       emailEnv("RESEND_API_BASE"),
 		WebhookSecret: webhookSecret,
 	})
 }
