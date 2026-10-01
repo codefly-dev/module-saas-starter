@@ -198,6 +198,22 @@ func TestAddGitHubSource_PublicModeRefusalsNameWhatWasNotFound(t *testing.T) {
 		require.NotContains(t, message, "No access token was supplied")
 		require.NotContains(t, message, "not public")
 	})
+	// With the App configured, its installation lookup answers a missing
+	// repository with a 404 first; that refusal must not call it "not public"
+	// either.
+	t.Run("missing repository, App configured", func(t *testing.T) {
+		h := newAppHarness(t, &fakeGitHubApp{lookupStatus: 404})
+		h.svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient {
+			return &fakeGitHub{publicErr: github.ErrNotFound}
+		})
+		input := publicInput()
+		input.Repo = "nonexistent-owner/no-such-repo"
+		_, err := h.svc.AddGitHubSource(context.Background(), "actor-1", input)
+		require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+		message := status.Convert(err).Message()
+		require.Contains(t, message, "Repository nonexistent-owner/no-such-repo was not found")
+		require.NotContains(t, message, "not public")
+	})
 	t.Run("missing branch of a public repository", func(t *testing.T) {
 		h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", public: true, resolveErr: github.ErrNotFound})
 		input := publicInput()
@@ -656,6 +672,10 @@ func TestAddGitHubSource_RefusesADuplicateSource(t *testing.T) {
 		"other paths":        func(in *business.AddGitHubSourceInput) { in.Paths = []string{"docs"} },
 		"another collection": func(in *business.AddGitHubSourceInput) { in.CollectionLabel = "archive" },
 		"another repository": func(in *business.AddGitHubSourceInput) { in.Repo = "acme/other" },
+		// Same repository, branch, paths and collection, but a different
+		// extension filter reads different files, and nothing can widen the
+		// existing source's filter afterwards.
+		"other file extensions": func(in *business.AddGitHubSourceInput) { in.FileExtensions = []string{".py"} },
 	}
 	for name, change := range distinct {
 		input := first

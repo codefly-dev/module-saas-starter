@@ -420,6 +420,13 @@ const TOKEN_REFRESH_MARGIN_MS = 30_000;
 export function createDatasourceClient(
 	binding: GatewayBinding,
 ): DatasourceClient {
+	// The last token an early refresh could not replace with one that reads as
+	// valid: the refresh failed, returned nothing, or returned a token that by
+	// this browser's clock is still about to expire (a clock running ahead of
+	// the issuer, or a host handing back its still-valid current token). It is
+	// sent as it is from then on and judged by the server, so a skewed clock
+	// costs one refresh, not one per request.
+	let unrefreshable: string | undefined;
 	const auth: Interceptor = (next) => async (req) => {
 		let token = binding.getAccessToken();
 		// A token the credential itself says has lapsed is refreshed before the
@@ -431,6 +438,7 @@ export function createDatasourceClient(
 		// so the server still gets to answer and the recovery below still runs.
 		if (
 			token &&
+			token !== unrefreshable &&
 			binding.refreshAccessToken &&
 			accessTokenExpiresWithin(token, TOKEN_REFRESH_MARGIN_MS)
 		) {
@@ -438,6 +446,9 @@ export function createDatasourceClient(
 				token = (await binding.refreshAccessToken()) ?? token;
 			} catch {
 				// Judged by the server instead.
+			}
+			if (accessTokenExpiresWithin(token, TOKEN_REFRESH_MARGIN_MS)) {
+				unrefreshable = token;
 			}
 		}
 		if (token) {

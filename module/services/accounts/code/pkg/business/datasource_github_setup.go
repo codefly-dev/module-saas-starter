@@ -425,8 +425,13 @@ func (s *Service) resolveGitHubAppConnect(ctx context.Context, orgID, repo, bran
 	if err != nil {
 		var apiErr *githubconnector.APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
-			return githubConnectCredential{}, &githubAppDeclined{reason: status.Error(codes.FailedPrecondition,
-				"No access token was supplied, the deployment's GitHub App is not installed on that repository, and the repository is not public. Install the App on it from this organization, or supply a repository-scoped fine-grained PAT.")}
+			// GitHub answers the App's lookup of a missing repository and of one
+			// the App is not installed on with the same 404, and the public read
+			// that runs next cannot tell a missing repository from a private one
+			// either, so the refusal names all of them rather than calling a
+			// typo'd owner/name "not public".
+			return githubConnectCredential{}, &githubAppDeclined{reason: status.Errorf(codes.FailedPrecondition,
+				"Repository %s was not found, or it is private and the deployment's GitHub App is not installed on it. Check the owner and repository name; for a private repository, install the App on it from this organization, or supply a repository-scoped fine-grained PAT.", repo)}
 		}
 		return githubConnectCredential{}, githubInstallationTokenError(err)
 	}

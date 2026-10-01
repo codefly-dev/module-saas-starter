@@ -258,8 +258,11 @@ export function describeSync(
 		// snapshot, which the host counts against that same commit: a known split
 		// of 0 / 0 / 0. Nothing changed, so it is said as that — "Handed off a full
 		// snapshot · Added 0" beside a row reading "No changes" contradicts it.
-		const { added, modified, deleted, splitKnown } = view.changes;
-		if (splitKnown && added + modified + deleted === 0) {
+		// Only when the snapshot holds files: a first sync whose paths matched
+		// nothing is also 0 / 0 / 0, and calling that "up to date" would hide
+		// the filter that matched nothing behind a sync that never happened.
+		const { files, added, modified, deleted, splitKnown } = view.changes;
+		if (splitKnown && files > 0 && added + modified + deleted === 0) {
 			return {
 				...base,
 				state: "unchanged",

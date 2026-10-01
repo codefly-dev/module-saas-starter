@@ -529,6 +529,39 @@ describe("createDatasourceClient", () => {
 		}
 	});
 
+	// A browser clock running ahead of the issuer reads every token, the fresh
+	// one included, as expired. Refreshing before each request then doubled
+	// every call; the token a refresh could not improve is sent as it is.
+	it("refreshes early once, not on every request, when the clock reads every token as expired", async () => {
+		const { calls } = stubFetchSequence([
+			reply(oneSource),
+			reply(oneSource),
+			reply(oneSource),
+		]);
+		const skewed = (sub: string) =>
+			claimsToken({ sub, exp: Math.floor(Date.now() / 1000) - 600 });
+		let current = skewed("first");
+		const refreshAccessToken = vi.fn(async () => {
+			current = skewed("refreshed");
+			return current;
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => current,
+			refreshAccessToken,
+		});
+
+		await client.listSources("org-1");
+		await client.listSources("org-1");
+		await client.listSources("org-1");
+
+		expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+		expect(calls).toHaveLength(3);
+		for (const call of calls) {
+			expect(call.authorization).toBe(`Bearer ${current}`);
+		}
+	});
+
 	it("still sends the request when the early refresh fails", async () => {
 		const { calls } = stubFetchSequence([reply(oneSource)]);
 		const expired = claimsToken({ sub: "user-1", exp: 1 });

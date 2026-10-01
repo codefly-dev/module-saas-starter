@@ -5,10 +5,13 @@ package business_test
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -212,4 +215,95 @@ func TestDatasourceSource_GitHubConnectLockSerializesConnects(t *testing.T) {
 	close(release)
 	require.NoError(t, <-firstDone)
 	require.NoError(t, <-secondLocked)
+}
+
+// TestAddGitHubSource_ConcurrentDuplicateConnectsLeaveOneSource proves the
+// duplicate refusal (issue #978) against Postgres rather than the fake store,
+// whose lock is a no-op: several connects of the same repository, branch and
+// collection racing each other end with exactly one source, and every other
+// connect is refused with AlreadyExists. It depends on the lock being taken
+// before the existing-source read and on that read seeing the winner's commit,
+// so it fails if either moves (for example a stricter isolation level whose
+// snapshot predates the lock).
+func TestAddGitHubSource_ConcurrentDuplicateConnectsLeaveOneSource(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	_, org := mustUserAndOrg(t, ctx, "dave-ds@rls-test.com", "dave-ds-rls", "Acme DS D")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	producer := &recordingProducer{}
+	svc.SetDatasourceConnector(&countingCipher{}, producer, "")
+	connectProducers.Store(svc, producer)
+	svc.SetAuditEmitter(&recordingAudit{})
+	gh := &fakeGitHub{defaultBranch: "main", commit: "abc", public: true}
+	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return gh })
+
+	// Connect into an existing collection by its node id. Connecting by label
+	// would also take the collection-label lock, which serializes the racers
+	// on its own and would hide a missing repository lock.
+	seed, err := svc.AddGitHubSource(ctx, "actor-1", business.AddGitHubSourceInput{
+		OrgID: org, Repo: "acme/seed", CollectionLabel: "handbook",
+	})
+	require.NoError(t, err)
+
+	const racers = 8
+	// Open one pooled connection per racer first. A cold pool hands the first
+	// racer its idle connection while the rest wait tens of milliseconds for
+	// new ones, by which time the first has committed, so the race this test
+	// exists for would never be run.
+	var warm sync.WaitGroup
+	warm.Add(racers)
+	warmErrs := make(chan error, racers)
+	for range racers {
+		go func() {
+			warmErrs <- testStore.WithOrgTx(ctx, org, func(context.Context) error {
+				warm.Done()
+				warm.Wait()
+				return nil
+			})
+		}()
+	}
+	for range racers {
+		require.NoError(t, <-warmErrs)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, racers)
+	for i := range racers {
+		repo := "acme/docs"
+		if i%2 == 1 {
+			repo = "Acme/Docs" // GitHub names are case-insensitive
+		}
+		go func() {
+			<-start
+			_, err := svc.AddGitHubSource(ctx, "actor-1", business.AddGitHubSourceInput{
+				OrgID: org, Repo: repo, BoundaryNodeID: seed.BoundaryNodeID,
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+
+	var succeeded, refused int
+	for range racers {
+		err := <-errs
+		switch status.Code(err) {
+		case codes.OK:
+			succeeded++
+		case codes.AlreadyExists:
+			refused++
+		default:
+			t.Fatalf("unexpected connect error: %v", err)
+		}
+	}
+	require.Equal(t, 1, succeeded)
+	require.Equal(t, racers-1, refused)
+
+	var sources []*business.DatasourceSource
+	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		sources, err = testStore.ListDatasourceSources(ctx, org)
+		return err
+	}))
+	require.Len(t, sources, 2, "the seed and exactly one acme/docs")
 }

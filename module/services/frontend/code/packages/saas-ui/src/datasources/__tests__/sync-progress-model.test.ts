@@ -191,6 +191,30 @@ describe("describeSync", () => {
 		expect(report.detail).toContain("had not changed");
 	});
 
+	it("does not call a first sync that matched no files up to date", () => {
+		// The host counts a first snapshot as all additions, so a path filter that
+		// matches nothing hands off 0 files as a known 0 / 0 / 0 too.
+		const report = describeSync(
+			sync({
+				phase: "done",
+				finishedAt: ago(1_000),
+				changes: {
+					files: 0,
+					added: 0,
+					modified: 0,
+					deleted: 0,
+					splitKnown: true,
+					snapshot: true,
+					commit: "deadbee",
+				},
+			}),
+			{ now: NOW },
+		);
+
+		expect(report.state).toBe("done");
+		expect(report.headline).not.toBe("Up to date");
+	});
+
 	it("reports a failed sync with the host's own sentence, and fills the bar", () => {
 		const report = describeSync(
 			sync({

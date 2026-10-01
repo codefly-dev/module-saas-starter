@@ -477,8 +477,6 @@ func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context
 	return sources, rows.Err()
 }
 
-// ListDatasourceSources returns the org's Sources, newest first. Runs under the
-// caller's WithOrgTx.
 // LockDatasourceGitHubSourceConnect takes a transaction-scoped advisory lock on
 // one (organization, repository) pair. GitHub repository names are
 // case-insensitive, so the key is lower-cased like the duplicate check compares.
@@ -495,6 +493,8 @@ func (s *PostgresStore) LockDatasourceGitHubSourceConnect(ctx context.Context, o
 	return nil
 }
 
+// ListDatasourceSources returns the org's Sources, newest first. Runs under the
+// caller's WithOrgTx.
 func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
 		`SELECT `+datasourceSourceColumns+datasourceBoundaryLabelColumn+`

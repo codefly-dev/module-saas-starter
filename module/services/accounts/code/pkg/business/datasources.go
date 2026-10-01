@@ -1010,7 +1010,10 @@ func duplicateSourceRefusal(err error) error {
 }
 
 // sameGitHubSourceTarget reports whether two GitHub sources read the same
-// files into the same boundary.
+// files into the same boundary: the same repository, branch, path set and
+// file-extension filter. Sources that differ only in their extension filter
+// read different files, and no source edit can widen a filter afterwards, so
+// they are not duplicates.
 func sameGitHubSourceTarget(a, b *DatasourceSource) bool {
 	if a.Provider != DatasourceProviderGitHub || b.Provider != DatasourceProviderGitHub {
 		return false
@@ -1018,13 +1021,14 @@ func sameGitHubSourceTarget(a, b *DatasourceSource) bool {
 	if !strings.EqualFold(a.Repo, b.Repo) || a.Branch != b.Branch || a.BoundaryNodeID != b.BoundaryNodeID {
 		return false
 	}
-	return slices.Equal(sortedPaths(a.Paths), sortedPaths(b.Paths))
+	return slices.Equal(sortedSet(normalizePaths(a.Paths)), sortedSet(normalizePaths(b.Paths))) &&
+		slices.Equal(sortedSet(a.FileExtensions), sortedSet(b.FileExtensions))
 }
 
-func sortedPaths(paths []string) []string {
-	out := slices.Clone(normalizePaths(paths))
+func sortedSet(values []string) []string {
+	out := slices.Clone(values)
 	slices.Sort(out)
-	return out
+	return slices.Compact(out)
 }
 
 func describeSourcePaths(paths []string) string {
