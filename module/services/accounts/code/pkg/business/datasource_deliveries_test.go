@@ -666,7 +666,7 @@ func TestRunDatasourceReconcile_SchedulesDueSourcesOnly(t *testing.T) {
 	svc, _ := newDatasourceService(store, producer, &fakeGitHub{})
 
 	due := githubSource(t, svc, "main", nil, "")
-	disabled := githubSource(t, svc, "main", nil, "")
+	disabled := githubSource(t, svc, "release", nil, "")
 	setNextReconcile(t, store, due.ID, time.Now().Add(-time.Minute))
 	setNextReconcile(t, store, disabled.ID, time.Time{}) // nil = reconcile disabled
 

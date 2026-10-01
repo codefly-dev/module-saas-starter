@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // datasourceSourceColumns is the shared projection; COALESCE keeps the optional
@@ -476,6 +479,22 @@ func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context
 
 // ListDatasourceSources returns the org's Sources, newest first. Runs under the
 // caller's WithOrgTx.
+// LockDatasourceGitHubSourceConnect takes a transaction-scoped advisory lock on
+// one (organization, repository) pair. GitHub repository names are
+// case-insensitive, so the key is lower-cased like the duplicate check compares.
+func (s *PostgresStore) LockDatasourceGitHubSourceConnect(ctx context.Context, orgID, repo string) error {
+	if storetx.Tx(ctx) == nil {
+		return errors.New("datasource connect lock requires a tenant transaction")
+	}
+	if _, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"datasource-github-connect:"+orgID+":"+strings.ToLower(repo),
+	); err != nil {
+		return wool.Get(ctx).In("LockDatasourceGitHubSourceConnect").Wrapf(err, "failed to lock datasource connect")
+	}
+	return nil
+}
+
 func (s *PostgresStore) ListDatasourceSources(ctx context.Context, orgID string) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
 		`SELECT `+datasourceSourceColumns+datasourceBoundaryLabelColumn+`

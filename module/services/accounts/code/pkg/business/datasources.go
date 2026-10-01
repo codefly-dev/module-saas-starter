@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -680,6 +681,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
+		if err := s.refuseDuplicateGitHubSourceTx(ctx, source); err != nil {
+			return err
+		}
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
@@ -694,6 +698,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		// accept it, in the same transaction as the source itself.
 		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
+		if refusal := duplicateSourceRefusal(err); refusal != nil {
+			return nil, refusal
+		}
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
 	s.startFirstSync(ctx, source)
@@ -921,6 +928,11 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
+		if source.Provider == DatasourceProviderGitHub {
+			if err := s.refuseDuplicateGitHubSourceTx(ctx, source); err != nil {
+				return err
+			}
+		}
 		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
 			return err
 		}
@@ -937,10 +949,89 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		}
 		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
+		if refusal := duplicateSourceRefusal(err); refusal != nil {
+			return nil, refusal
+		}
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
 	s.startFirstSync(ctx, source)
 	return source, nil
+}
+
+// refuseDuplicateGitHubSourceTx refuses a GitHub source that would read exactly
+// what an existing one of the organization already reads into the same
+// collection: the same repository (GitHub names are case-insensitive), branch
+// and set of paths, bound to the same boundary node. Such a pair syncs the same
+// files twice into one collection and lists as two rows nothing tells apart
+// (issue #978).
+//
+// Runs inside the source-insert transaction, after the boundary is resolved,
+// and first takes LockDatasourceGitHubSourceConnect for the repository, so two
+// concurrent connects of the same source serialize and the second one sees the
+// first one's row.
+func (s *Service) refuseDuplicateGitHubSourceTx(ctx context.Context, source *DatasourceSource) error {
+	if err := s.store.LockDatasourceGitHubSourceConnect(ctx, source.OrgID, source.Repo); err != nil {
+		return err
+	}
+	existing, err := s.store.ListDatasourceSources(ctx, source.OrgID)
+	if err != nil {
+		return err
+	}
+	for _, other := range existing {
+		if !sameGitHubSourceTarget(other, source) {
+			continue
+		}
+		branch := other.Branch
+		if branch == "" {
+			branch = "the default branch"
+		} else {
+			branch = "branch " + strconv.Quote(branch)
+		}
+		collection := other.BoundaryLabel
+		if collection == "" {
+			collection = other.BoundaryNodeID
+		}
+		return status.Errorf(codes.AlreadyExists,
+			"%s (%s%s) is already connected to collection %q. Sync or edit the existing source instead of connecting it again.",
+			other.Repo, branch, describeSourcePaths(other.Paths), collection)
+	}
+	return nil
+}
+
+// duplicateSourceRefusal returns refuseDuplicateGitHubSourceTx's refusal as it
+// was raised, when err carries it, so the caller sees the message itself rather
+// than one prefixed by the transaction's wrapping.
+func duplicateSourceRefusal(err error) error {
+	var refusal interface{ GRPCStatus() *status.Status }
+	if errors.As(err, &refusal) && refusal.GRPCStatus().Code() == codes.AlreadyExists {
+		return refusal.GRPCStatus().Err()
+	}
+	return nil
+}
+
+// sameGitHubSourceTarget reports whether two GitHub sources read the same
+// files into the same boundary.
+func sameGitHubSourceTarget(a, b *DatasourceSource) bool {
+	if a.Provider != DatasourceProviderGitHub || b.Provider != DatasourceProviderGitHub {
+		return false
+	}
+	if !strings.EqualFold(a.Repo, b.Repo) || a.Branch != b.Branch || a.BoundaryNodeID != b.BoundaryNodeID {
+		return false
+	}
+	return slices.Equal(sortedPaths(a.Paths), sortedPaths(b.Paths))
+}
+
+func sortedPaths(paths []string) []string {
+	out := slices.Clone(normalizePaths(paths))
+	slices.Sort(out)
+	return out
+}
+
+func describeSourcePaths(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	return ", paths " + strings.Join(paths, ", ")
 }
 
 // fillBoundaryLabel reads the boundary's name back through the same labelled

@@ -1106,6 +1106,39 @@ describe("GitHub App onboarding", () => {
 		expect(screen.getByLabelText("Repository")).toBeTruthy();
 	});
 
+	// Issue #978: the host refuses a second source reading the same repository,
+	// branch and paths into the same collection. The refusal names the existing
+	// source and the form stays open so the tenant can change the target.
+	it("surfaces the host's refusal of a duplicate source", async () => {
+		const refusal =
+			'acme/handbook (the default branch) is already connected to collection "docs". Sync or edit the existing source instead of connecting it again.';
+		const client = fakeClient({
+			addGitHubSource: vi.fn(async () => {
+				throw new ConnectError(refusal, Code.AlreadyExists);
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+		fireEvent.change(screen.getByLabelText("Authentication"), {
+			target: { value: "public" },
+		});
+		fireEvent.change(screen.getByLabelText("Repository"), {
+			target: { value: "acme/handbook" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: /^connect public repository$/i }),
+		);
+
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toBe(refusal);
+		expect(screen.getByLabelText("Repository")).toBeTruthy();
+	});
+
 	it("sends the browser to the install URL the host minted", async () => {
 		const assign = vi.fn();
 		vi.spyOn(window.location, "assign").mockImplementation(assign);

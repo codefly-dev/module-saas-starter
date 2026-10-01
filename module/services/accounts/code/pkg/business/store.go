@@ -105,6 +105,12 @@ type Store interface {
 	ReadableCollectionGrants(context.Context, string, []string, []string) (map[string][]*gen.ReadableCollectionGrant, error)
 	LatestSourceSyncRequests(context.Context, string, []string) (map[string]SourceSyncRequest, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
+	// LockDatasourceGitHubSourceConnect serializes connects of one GitHub
+	// repository within one organization (a transaction-scoped advisory lock),
+	// so the duplicate check a connect runs before its insert cannot be raced
+	// by a concurrent connect of the same source. MUST run inside the caller's
+	// WithOrgTx; the lock is held until that transaction ends.
+	LockDatasourceGitHubSourceConnect(ctx context.Context, orgID, repo string) error
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	// DeleteDatasourceSource removes the Source and returns what it removed,
 	// or nil when no row matched. One statement answers both questions, so the

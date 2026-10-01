@@ -618,3 +618,50 @@ func TestDelivery_PublicSourceRecoveryRecordsAccessRestored(t *testing.T) {
 		"an access recovery recorded as an ingest recovery leaves its access_lost unmatched")
 	requireDeclaredPayloads(t, h.audit)
 }
+
+// Issue #978: connecting a repository that the organization already reads, on
+// the same branch and paths, into the same collection, is refused with a
+// message naming the existing source, instead of creating a second row nothing
+// tells apart. Anything that changes what is read or where it lands connects.
+func TestAddGitHubSource_RefusesADuplicateSource(t *testing.T) {
+	h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", commit: "abc", public: true})
+	ctx := context.Background()
+
+	first := publicInput()
+	first.Paths = []string{"docs", "guides/"}
+	_, err := h.svc.AddGitHubSource(ctx, "actor-1", first)
+	require.NoError(t, err)
+
+	duplicate := publicInput()
+	duplicate.Repo = "Acme/Handbook"
+	duplicate.Paths = []string{"guides", "docs"}
+	_, err = h.svc.AddGitHubSource(ctx, "actor-1", duplicate)
+	require.Equal(t, codes.AlreadyExists, status.Code(err), "err = %v", err)
+	message := status.Convert(err).Message()
+	require.Equal(t,
+		`acme/handbook (the default branch, paths docs, guides) is already connected to collection "handbook". Sync or edit the existing source instead of connecting it again.`,
+		message)
+	require.Equal(t, 1, h.sourceCount())
+
+	// The provider-agnostic connect runs the same check.
+	_, err = h.svc.AddSource(ctx, "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/handbook",
+		Paths: []string{"docs", "guides"}, CollectionLabel: "handbook",
+	})
+	require.Equal(t, codes.AlreadyExists, status.Code(err), "err = %v", err)
+	require.Equal(t, 1, h.sourceCount())
+
+	distinct := map[string]func(*business.AddGitHubSourceInput){
+		"another branch":     func(in *business.AddGitHubSourceInput) { in.Branch = "release" },
+		"other paths":        func(in *business.AddGitHubSourceInput) { in.Paths = []string{"docs"} },
+		"another collection": func(in *business.AddGitHubSourceInput) { in.CollectionLabel = "archive" },
+		"another repository": func(in *business.AddGitHubSourceInput) { in.Repo = "acme/other" },
+	}
+	for name, change := range distinct {
+		input := first
+		change(&input)
+		_, err := h.svc.AddGitHubSource(ctx, "actor-1", input)
+		require.NoError(t, err, name)
+	}
+	require.Equal(t, 1+len(distinct), h.sourceCount())
+}

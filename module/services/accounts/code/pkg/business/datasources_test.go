@@ -137,6 +137,10 @@ func (f *datasourceFakeStore) InsertDatasourceSource(_ context.Context, source *
 	return nil
 }
 
+func (f *datasourceFakeStore) LockDatasourceGitHubSourceConnect(context.Context, string, string) error {
+	return nil
+}
+
 func (f *datasourceFakeStore) ListDatasourceSources(_ context.Context, orgID string) ([]*business.DatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -167,4 +168,48 @@ func TestGetOrCreateCollectionNode_ReusesByLabelPerOrg(t *testing.T) {
 
 	b1 := create(orgB, "guides")
 	require.NotEqual(t, a1, b1, "the same label in another org must be a distinct, tenant-isolated node")
+}
+
+// TestDatasourceSource_GitHubConnectLockSerializesConnects proves the lock the
+// duplicate-source check takes (issue #978) is a real transaction-scoped lock:
+// a second connect of the same repository waits for the first transaction to
+// end, and the lock is refused outside a tenant transaction.
+func TestDatasourceSource_GitHubConnectLockSerializesConnects(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	_, org := mustUserAndOrg(t, ctx, "carol-ds@rls-test.com", "carol-ds-rls", "Acme DS C")
+
+	require.Error(t, testStore.LockDatasourceGitHubSourceConnect(ctx, org, "acme/docs"))
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+			if err := testStore.LockDatasourceGitHubSourceConnect(ctx, org, "acme/docs"); err != nil {
+				close(held)
+				return err
+			}
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	secondLocked := make(chan error, 1)
+	go func() {
+		secondLocked <- testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+			// Case-insensitive, like the duplicate check.
+			return testStore.LockDatasourceGitHubSourceConnect(ctx, org, "Acme/Docs")
+		})
+	}()
+	select {
+	case err := <-secondLocked:
+		t.Fatalf("second connect took the lock while the first held it (err=%v)", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-firstDone)
+	require.NoError(t, <-secondLocked)
 }

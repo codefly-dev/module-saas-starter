@@ -161,7 +161,9 @@ func TestGitHubExplicitRefDoesNotRequireDefaultBranchLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.AddSource(context.Background(), "actor", business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/docs", Branch: "release", CollectionLabel: "docs", Credential: "token"})
+	// Another collection: the same repository and branch into "docs" again is
+	// a duplicate source (issue #978).
+	_, err = svc.AddSource(context.Background(), "actor", business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/docs", Branch: "release", CollectionLabel: "guides", Credential: "token"})
 	if err != nil {
 		t.Fatal(err)
 	}
