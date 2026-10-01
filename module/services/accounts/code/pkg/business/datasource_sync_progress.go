@@ -279,18 +279,22 @@ func handoffChanges(handoff DatasourceSyncHandoff) *DatasourceSyncChanges {
 // the reasons a client acts on. An unknown code is Other, never a guess.
 func DatasourceSyncFailureReasonForCode(code string) DatasourceSyncFailureReason {
 	switch code {
-	case "datasource.github_rate_limited", "datasource.github_unauthenticated_rate_limited":
+	// The host's own operation budget (datasourceBudgetFailure) is a rate limit
+	// too: the job waits for the window to reset (issue #985).
+	case "datasource.github_rate_limited", "datasource.github_unauthenticated_rate_limited", "datasource.budget_exhausted":
 		return DatasourceSyncFailureRateLimited
-	case "datasource.credential_unreadable", "datasource.github_unauthorized", "datasource.validation_failed":
+	case "datasource.credential_unreadable", "datasource.github_unauthorized", "datasource.validation_failed",
+		githubAppCredentialRejectedCode:
 		return DatasourceSyncFailureCredential
-	case "datasource.github_access_or_rate_limit", "datasource.github_app_access_denied", "datasource.github_app_scope_denied":
+	case "datasource.github_access_or_rate_limit", "datasource.github_app_access_denied", "datasource.github_app_scope_denied",
+		githubRepositoryUnreadableCode:
 		return DatasourceSyncFailureAccessDenied
-	case "datasource.github_not_found":
+	case "datasource.github_not_found", "datasource.public_repository_unreadable":
 		return DatasourceSyncFailureNotFound
 	case "datasource.repository_too_large", "datasource.too_many_files":
 		return DatasourceSyncFailureTooLarge
 	case "datasource.git_unavailable", "datasource.credential_service_unavailable", "datasource.credential_store_unavailable",
-		"datasource.github_app_token_unavailable", "datasource.github_app_unconfigured":
+		"datasource.github_app_token_unavailable", "datasource.github_app_unconfigured", githubAppStateUnavailableCode:
 		return DatasourceSyncFailureHostUnavailable
 	}
 	return DatasourceSyncFailureOther

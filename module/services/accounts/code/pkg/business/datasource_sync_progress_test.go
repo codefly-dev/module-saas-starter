@@ -291,7 +291,13 @@ func TestDatasourceSyncFailureReasonForCode(t *testing.T) {
 		"datasource.repository_too_large":                business.DatasourceSyncFailureTooLarge,
 		"datasource.too_many_files":                      business.DatasourceSyncFailureTooLarge,
 		"datasource.git_unavailable":                     business.DatasourceSyncFailureHostUnavailable,
-		"jobs.handler_failed":                            business.DatasourceSyncFailureOther,
+		// Issue #985: every failure code a sync records maps to a reason.
+		"datasource.budget_exhausted":               business.DatasourceSyncFailureRateLimited,
+		"datasource.github_app_credential_rejected": business.DatasourceSyncFailureCredential,
+		"datasource.github_repository_unreadable":   business.DatasourceSyncFailureAccessDenied,
+		"datasource.public_repository_unreadable":   business.DatasourceSyncFailureNotFound,
+		"datasource.github_app_state_unavailable":   business.DatasourceSyncFailureHostUnavailable,
+		"jobs.handler_failed":                       business.DatasourceSyncFailureOther,
 	} {
 		if got := business.DatasourceSyncFailureReasonForCode(code); got != want {
 			t.Errorf("%s = %v, want %v", code, got, want)

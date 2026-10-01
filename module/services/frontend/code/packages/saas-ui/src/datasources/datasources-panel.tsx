@@ -719,6 +719,8 @@ function DatasourcesPanelView({
 					</div>
 				) : (
 					<SourcesTable
+						client={client}
+						orgId={orgId}
 						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onExecution={renderSourceExecution ? setExecutionSource : undefined}
@@ -994,12 +996,36 @@ function messageOf(error: unknown): string {
  * would sit above live provenance telling the reader a healthy source has
  * never synced.
  */
-function LastSyncCell({ source }: { source: DatasourceView }) {
+function LastSyncCell({
+	client,
+	orgId,
+	source,
+}: {
+	client: DatasourceClient;
+	orgId: string;
+	source: DatasourceView;
+}) {
 	const ingest = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
+	// Neither clock moves until a github source's first change set is enqueued,
+	// so on its own this cell read "Never" for the whole of a first sync. The
+	// host's sync projection (the same read, and cache entry, the progress card
+	// uses) says a sync was dispatched and whether it is still running.
+	const { sync, report } = useSourceSync(client, orgId, source);
+	const dispatchedAt = sync?.queuedAt;
+	const inFlight = report?.active
+		? dispatchedAt
+			? `Syncing · dispatched ${formatSyncedAt(dispatchedAt)}`
+			: "Syncing…"
+		: undefined;
 	return (
 		<>
-			{(source.lastSyncedAt || !ingest) && (
-				<div>{formatSyncedAt(source.lastSyncedAt)}</div>
+			{inFlight && <div>{inFlight}</div>}
+			{(source.lastSyncedAt || (!ingest && !inFlight)) && (
+				<div>
+					{formatSyncedAt(
+						source.lastSyncedAt ?? (ingest ? undefined : dispatchedAt),
+					)}
+				</div>
 			)}
 			{ingest && <div className="text-xs">{ingest}</div>}
 		</>
@@ -1143,6 +1169,8 @@ const cellClass = "px-3 py-2 align-middle";
 const wrapClass = "min-w-32 whitespace-normal";
 
 function SourcesTable({
+	client,
+	orgId,
 	canManage,
 	sources,
 	boundaries,
@@ -1158,6 +1186,8 @@ function SourcesTable({
 	onMigrateToApp,
 	renderSourceDetail,
 }: {
+	client: DatasourceClient;
+	orgId: string;
 	canManage: boolean;
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
@@ -1248,7 +1278,7 @@ function SourcesTable({
 							<TableCell
 								className={cn(cellClass, wrapClass, "text-muted-foreground")}
 							>
-								<LastSyncCell source={source} />
+								<LastSyncCell client={client} orgId={orgId} source={source} />
 							</TableCell>
 							{showActions && (
 								<TableCell className={cn(cellClass, "text-right")}>

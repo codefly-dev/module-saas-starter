@@ -1898,3 +1898,77 @@ describe("DatasourcesPanel sync history", () => {
 		expect(history.textContent).not.toContain(userId);
 	});
 });
+
+// Issue #985: a github source's clocks do not move until its first change set
+// is enqueued, so the column read "Never" through the whole first sync.
+describe("DatasourcesPanel last sync dispatch", () => {
+	const queuedAt = "2026-01-01T10:00:00.000Z";
+
+	function rowOf(repo: string) {
+		const cell = screen.getByText(repo, { selector: "td" });
+		return cell.closest("tr") as HTMLElement;
+	}
+
+	it("says a sync is running instead of Never during a first sync", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			getSourceSync: vi.fn(async () => ({
+				jobId: "job-1",
+				phase: "fetching" as const,
+				trigger: "manual" as const,
+				queuedAt,
+				fetchingAt: new Date().toISOString(),
+				attempt: 1,
+				maxAttempts: 5,
+			})),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await screen.findByText("codefly-dev/module-saas-starter", {
+			selector: "td",
+		});
+
+		const row = rowOf("codefly-dev/module-saas-starter");
+		await within(row).findByText(/^Syncing · dispatched /);
+		expect(within(row).queryByText("Never")).toBeNull();
+	});
+
+	it("shows when a finished sync was dispatched, even before any ingest", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			getSourceSync: vi.fn(async () => ({
+				jobId: "job-1",
+				phase: "done" as const,
+				trigger: "manual" as const,
+				queuedAt,
+				finishedAt: new Date().toISOString(),
+				attempt: 1,
+				maxAttempts: 5,
+			})),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await screen.findByText("codefly-dev/module-saas-starter", {
+			selector: "td",
+		});
+
+		const row = rowOf("codefly-dev/module-saas-starter");
+		await within(row).findByText(new Date(queuedAt).toLocaleString());
+		expect(within(row).queryByText("Never")).toBeNull();
+		expect(within(row).queryByText(/Syncing/)).toBeNull();
+	});
+
+	it("still says Never for a source with no sync at all", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			getSourceSync: vi.fn(async () => undefined),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await screen.findByText("codefly-dev/module-saas-starter", {
+			selector: "td",
+		});
+
+		await waitFor(() => expect(client.getSourceSync).toHaveBeenCalled());
+		expect(
+			within(rowOf("codefly-dev/module-saas-starter")).getByText("Never"),
+		).toBeTruthy();
+	});
+});
