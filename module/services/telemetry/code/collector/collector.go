@@ -61,8 +61,8 @@ func New(config Config) (*Collector, error) {
 	exporter := strings.ToLower(strings.TrimSpace(config.Exporter))
 	// Fail closed on an empty exporter instead of defaulting to "debug".
 	// An empty value never meant "the operator chose debug" — every committed
-	// observability.env sets this key explicitly, and scripts/setup/otel.sh
-	// always writes it — it meant the configuration never reached the process.
+	// observability.env sets this key explicitly, and so does
+	// configurations/local-dogfood/observability.env.example — it meant the configuration never reached the process.
 	// Defaulting it to debug turned that into SILENT trace loss: the collector
 	// logged "received OTLP signal" and dropped every span while its own
 	// ConfigMap said otlphttp. Refusing to start surfaces the same fault in one
@@ -71,7 +71,7 @@ func New(config Config) (*Collector, error) {
 		return nil, errors.New(
 			"telemetry: OBSERVABILITY_EXPORTER is required and must be debug or otlphttp; " +
 				"the observability workspace configuration did not reach this process " +
-				"(on the local-dogfood profile, run scripts/setup/otel.sh --debug)")
+				"(on the local-dogfood profile, copy configurations/local-dogfood/observability.env.example to observability.env)")
 	}
 	switch exporter {
 	case "debug":

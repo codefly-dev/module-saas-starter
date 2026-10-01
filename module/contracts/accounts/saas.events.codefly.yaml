@@ -395,6 +395,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.invitation.link_issued
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.invitation.resent
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -475,6 +479,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.org.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.org.generic_settings_updated
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -483,11 +491,19 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.org.member_left
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.org.member_removed
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
   - type: saas.org.settings_updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.org.updated
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

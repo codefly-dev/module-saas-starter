@@ -50,3 +50,17 @@ export function useResendInvitation() {
 		onSuccess: () => qc.invalidateQueries({ queryKey: ["invitations"] }),
 	});
 }
+
+/**
+ * Rotates a pending invitation's token and returns its accept link, without
+ * email. Every earlier link for the invitation, an emailed one included, stops
+ * working.
+ */
+export function useIssueInvitationLink() {
+	const svc = useInvitationService();
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: (id: string) => svc.issueInvitationLink({ id }),
+		onSuccess: () => qc.invalidateQueries({ queryKey: ["invitations"] }),
+	});
+}

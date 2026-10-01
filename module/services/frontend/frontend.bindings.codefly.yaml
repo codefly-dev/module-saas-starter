@@ -144,6 +144,18 @@ navigation:
       - plugin_registry
       - sidebar
     order: 200
+  - id: admin-platform-organizations
+    plugin: platform-admin
+    label: Organizations
+    path: /admin/platform/organizations
+    icon: Building2
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 205
   - id: admin-feature-flags
     plugin: platform-admin
     label: Feature Flags

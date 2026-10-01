@@ -34,54 +34,46 @@ production/background fallback; a local port never belongs in product config.
 
 WorkOS is the identity adapter. The production-grade dogfood stack also
 includes Stripe, Resend, PostHog, Sentry, the in-graph OpenTelemetry gateway,
-and Cloudflare Turnstile. All of these are optional on this profile except
-`otel.sh`, which is required — see the note after the block:
+and Cloudflare Turnstile. Each one is a Codefly configuration group on this
+profile: copy the committed `configurations/local-dogfood/<group>.env.example`
+(and `<group>.secret.env.example`, where there is one) to the Git-ignored
+`<group>.env` / `<group>.secret.env`, and fill in the values. Every group is
+optional except `observability` and `email` — see the notes below. Stripe setup belongs to
+the [`codefly-dev/provider-stripe`](https://github.com/codefly-dev/provider-stripe)
+plugin, which validates the account, observes the webhook and projects the
+`billing` group.
 
-```bash
-scripts/setup/workos.sh --env-file /secure/path/workos.env
-scripts/setup/stripe.sh \
-  --api-key-file /secure/path/stripe.env \
-  --webhook-secret-file /secure/path/stripe-webhook.env
-scripts/setup/resend.sh \
-  --api-key-file /secure/path/resend.env \
-  --webhook-secret-file /secure/path/resend-webhook.env \
-  --from 'Example <onboarding@example.com>'
-scripts/setup/posthog.sh \
-  --project-key-file /secure/path/posthog-project.env \
-  --personal-key-file /secure/path/posthog-personal.env \
-  --project-id 12345 \
-  --host https://eu.i.posthog.com \
-  --api-host https://eu.posthog.com
-scripts/setup/sentry.sh \
-  --token-file /secure/path/sentry.env \
-  --org example \
-  --project saas-starter
-scripts/setup/otel.sh --debug
-scripts/setup/turnstile.sh --fixture pass
-```
+| Group | Provider |
+| --- | --- |
+| `identity` | WorkOS |
+| `billing` | Stripe (through `codefly-dev/provider-stripe`) |
+| `email` | Resend |
+| `product-analytics` | PostHog |
+| `error-tracking` | Sentry |
+| `observability` | the in-graph OpenTelemetry gateway |
+| `abuse-protection` | Cloudflare Turnstile |
 
-Every script is independent, secret-safe, idempotent, and finishes with the
-Codefly doctor. Provider-side creation is opt-in where supported. See
-[`scripts/setup/README.md`](./scripts/setup/README.md) for exact requirements,
-safe provisioning flags, and per-provider acceptance checks.
+Validate the result with `codefly doctor workspace --env local-dogfood`.
 
-`otel.sh` is the one script this profile cannot skip. The `telemetry` service
-declares `observability` as a workspace-configuration-dependency, and on
-`local-dogfood` that group exists only once `otel.sh` writes it: the real
-`observability.env` / `observability.secret.env` are Git-ignored, and
-`setup_install_pair` refuses to write a tracked file, so there is no committed
-default to fall back on. Codefly skips a declared group whose files are absent
-rather than failing, and the collector refuses to start without an explicit
-`OBSERVABILITY_EXPORTER` — it will not silently downgrade itself to `debug` and
-drop every span. Run `scripts/setup/otel.sh --debug` to keep telemetry local.
+`observability` is the one group this profile cannot skip. The `telemetry`
+service declares it as a workspace-configuration-dependency, and on
+`local-dogfood` the real `observability.env` / `observability.secret.env` are
+Git-ignored, so there is no committed default to fall back on. Codefly skips a
+declared group whose files are absent rather than failing, and the collector
+refuses to start without an explicit `OBSERVABILITY_EXPORTER` — it will not
+silently downgrade itself to `debug` and drop every span. Copy
+`observability.env.example` as it is to keep telemetry local.
+
+`email` is required because this profile is not the `local` environment, and
+accounts refuses to start there without an explicit `EMAIL_PROVIDER`: `resend`
+with its secrets, or `disabled` to run without email — invitations then hand the
+inviting administrator a link to share instead of sending one.
 
 The product callback address always comes from
 `codefly endpoint frontend --type http`. WorkOS and the browser can use its
 loopback URL directly. Stripe CLI can forward to it. Resend and remotely
-registered Stripe webhooks need a public HTTPS tunnel or deployed ingress;
-pass only that external origin with `--webhook-origin`. The scripts reject
-remote provisioning against localhost, while Codefly continues to own every
-internal host and port.
+registered Stripe webhooks need a public HTTPS tunnel or deployed ingress,
+while Codefly continues to own every internal host and port.
 
 ### WorkOS
 
@@ -95,29 +87,7 @@ Append `/auth/callback` and register that exact URI in the WorkOS staging
 application. WorkOS staging accepts localhost callback URIs. Do not copy this
 port into the starter configuration: Codefly owns endpoint allocation.
 
-The recommended path is the safe setup script. It accepts either the `.env`
-block copied from the WorkOS application page:
-
-```bash
-scripts/setup/workos.sh --env-file /secure/path/workos.env
-```
-
-or a public Client ID plus an API-key file:
-
-```bash
-scripts/setup/workos.sh \
-  --client-id client_01EXAMPLE \
-  --api-key-file /secure/path/workos
-```
-
-It resolves the callback from Codefly, validates the WorkOS API key,
-application JWKS, and exact registered callback, refuses to write files that
-are not Git-ignored, installs both resolved files with mode `0600`, runs
-`codefly doctor`, and never accepts the API key as a command-line argument.
-See [`scripts/setup/README.md`](./scripts/setup/README.md) for the shared
-external-provider setup contract.
-
-For manual setup, create the operator-owned Codefly configuration files:
+Create the operator-owned Codefly configuration files:
 
 ```bash
 cp configurations/local-dogfood/identity.env.example \

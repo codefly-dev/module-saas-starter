@@ -1076,6 +1076,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.invitation.link_issued": {
+      "address": "saas.invitation.link_issued",
+      "title": "saas.invitation.link_issued",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.invitation.link_issued"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.invitation.resent": {
       "address": "saas.invitation.resent",
       "title": "saas.invitation.resent",
@@ -1296,6 +1307,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.org.deleted": {
+      "address": "saas.org.deleted",
+      "title": "saas.org.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.org.generic_settings_updated": {
       "address": "saas.org.generic_settings_updated",
       "title": "saas.org.generic_settings_updated",
@@ -1318,6 +1340,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.org.member_left": {
+      "address": "saas.org.member_left",
+      "title": "saas.org.member_left",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.member_left"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.org.member_removed": {
       "address": "saas.org.member_removed",
       "title": "saas.org.member_removed",
@@ -1335,6 +1368,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.org.settings_updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.org.updated": {
+      "address": "saas.org.updated",
+      "title": "saas.org.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.updated"
         }
       },
       "x-visibility": "external",
@@ -2647,6 +2691,13 @@
       },
       "title": "saas publishes saas.invitation.created"
     },
+    "send:saas.invitation.link_issued": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.invitation.link_issued"
+      },
+      "title": "saas publishes saas.invitation.link_issued"
+    },
     "send:saas.invitation.resent": {
       "action": "send",
       "channel": {
@@ -2787,6 +2838,13 @@
       },
       "title": "saas publishes saas.org.created"
     },
+    "send:saas.org.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.deleted"
+      },
+      "title": "saas publishes saas.org.deleted"
+    },
     "send:saas.org.generic_settings_updated": {
       "action": "send",
       "channel": {
@@ -2801,6 +2859,13 @@
       },
       "title": "saas publishes saas.org.member_added"
     },
+    "send:saas.org.member_left": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.member_left"
+      },
+      "title": "saas publishes saas.org.member_left"
+    },
     "send:saas.org.member_removed": {
       "action": "send",
       "channel": {
@@ -2814,6 +2879,13 @@
         "$ref": "#/channels/saas.org.settings_updated"
       },
       "title": "saas publishes saas.org.settings_updated"
+    },
+    "send:saas.org.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.updated"
+      },
+      "title": "saas publishes saas.org.updated"
     },
     "send:saas.platform.role_granted": {
       "action": "send",
@@ -3889,6 +3961,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.invitation.link_issued": {
+        "name": "saas.invitation.link_issued",
+        "title": "saas.invitation.link_issued",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.invitation.resent": {
         "name": "saas.invitation.resent",
         "title": "saas.invitation.resent",
@@ -4029,6 +4108,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.org.deleted": {
+        "name": "saas.org.deleted",
+        "title": "saas.org.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.org.generic_settings_updated": {
         "name": "saas.org.generic_settings_updated",
         "title": "saas.org.generic_settings_updated",
@@ -4043,6 +4129,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.org.member_left": {
+        "name": "saas.org.member_left",
+        "title": "saas.org.member_left",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.org.member_removed": {
         "name": "saas.org.member_removed",
         "title": "saas.org.member_removed",
@@ -4053,6 +4146,13 @@
       "saas.org.settings_updated": {
         "name": "saas.org.settings_updated",
         "title": "saas.org.settings_updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.org.updated": {
+        "name": "saas.org.updated",
+        "title": "saas.org.updated",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

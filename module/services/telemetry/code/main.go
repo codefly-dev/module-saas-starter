@@ -71,7 +71,7 @@ func workspaceExporterConfig(ctx context.Context) (collector.Config, bool) {
 // cross-validates these three values (debug rejects an endpoint; otlphttp
 // requires one), so mixing sources produces configurations no operator wrote.
 // Resolving key by key meant a developer who exported OBSERVABILITY_EXPORTER
-// and OTEL_EXPORTER_OTLP_ENDPOINT to drive scripts/setup/otel.sh could no
+// and OTEL_EXPORTER_OTLP_ENDPOINT in their shell could no
 // longer start the collector: the committed local group supplied
 // OBSERVABILITY_EXPORTER=debug while its empty endpoint fell through to the
 // shell's, and debug+endpoint is refused. The same split let an ambient

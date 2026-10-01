@@ -15,7 +15,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
   [docs/PLAN.md](./docs/PLAN.md). Superseded plans sit under `docs/historical/`.
 - Composing this module into a downstream workspace: [Composing this module into a workspace](#composing-this-module-into-a-workspace)
 - Runnable local product with real identity: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
-- External-provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
+- External-provider configuration groups: [LOCAL_DOGFOODING.md § Configure providers through Codefly](./LOCAL_DOGFOODING.md#configure-providers-through-codefly)
 - Runtime capability owners and provider boundaries: [Runtime capability ownership](#runtime-capability-ownership)
 - SigNoz dashboard/alert provisioning qualification: [module/SIGNOZ_PROVISIONING.md](./module/SIGNOZ_PROVISIONING.md)
 - accounts service introspection (after `codefly run`): `GET /v1/.well-known/service-info`
@@ -277,7 +277,7 @@ The full machine-readable list is derived from protobuf descriptors and `saas.po
 
 ### OrganizationService
 
-`CreateOrganization`, `GetOrganization`, `ListMembers`, `AddMember`, `RemoveMember` — all org-scoped, RLS-wrapped.
+`CreateOrganization`, `GetOrganization`, `UpdateOrganization`, `ListMembers`, `AddMember`, `RemoveMember`, `LeaveOrganization`, `DeleteOrganization` — all org-scoped, RLS-wrapped. Creation follows `ORGANIZATION_CREATION`; leaving and deleting (archive) are described in [AUTHZ.md](./AUTHZ.md#leaving-deleting-and-creating-organizations-973). The platform view is `PlatformAdminService/ListAllOrganizations` and `GetOrganizationRoster`.
 
 ### AuthService organization exchange
 
@@ -339,15 +339,16 @@ Every page lives under `frontend/code/src/app/admin/`:
 |---|---|
 | `/admin/roles` | `ListRoles`, `CreateRole`, `DeleteRole` |
 | `/admin/teams` | `ListTeams`, `CreateTeam`, `AddTeamMember`, `RemoveTeamMember`, `ListTeamMembers` |
-| `/admin/organizations` | `GetOrganization`, `ListMembers`, `AddMember`, `RemoveMember`, **`AssignRole`/`RevokeRole`/`ListRoleAssignments` via the per-member "Manage roles" dialog** |
+| `/admin/organizations` | `GetOrganization`, `UpdateOrganization`, `ListMembers`, `AddMember` (also the inline role change), `RemoveMember`, `LeaveOrganization`, `DeleteOrganization`, **`AssignRole`/`RevokeRole`/`ListRoleAssignments` via the per-member "Manage roles" dialog** |
 | `/admin/organizations/settings` | `GetOrgSettings`, `UpdateOrgSettings` |
-| `/admin/invitations` | `CreateInvitation`, `ListInvitations`, `RevokeInvitation` |
+| `/admin/invitations` | `CreateInvitation`, `ListInvitations`, `RevokeInvitation`, `IssueInvitationLink` (copy an accept link) |
 | `/admin/api-keys` | `CreateAPIKey`, `ListAPIKeys`, `RevokeAPIKey` |
 | `/admin/webhooks` | full webhook CRUD + `RotateSecret`, `TestWebhook` |
 | `/admin/audit-log` | `QueryAuditLog` |
 | `/admin/sso` | `GetOrgSSO`, `StartSSOSetup`, `DisableSSO` |
 | `/admin/billing` | `OpenBillingPortal`, `ListInvoices` |
 | `/admin/platform/admins` | platform role grant/revoke |
+| `/admin/platform/organizations` | `ListAllOrganizations`, `GetOrganizationRoster`, `CreateOrganization` (with `owner_user_id`), `UpdateOrganization`, `AddMember`, `RemoveMember`, `DeleteOrganization` |
 
 Client-side gating uses `<RoleGate>` (`src/components/auth/role-gate.tsx`) — display-only; backend remains authoritative.
 

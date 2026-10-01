@@ -8,7 +8,7 @@ import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_empty, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { User } from "./common_pb";
+import type { Organization, OrgMembership, User } from "./common_pb";
 import { file_saas_accounts_v1_common } from "./common_pb";
 import type { GetEventOperationsRequestSchema, GetEventOperationsResponseSchema, ListEventSubscriptionsRequestSchema, ListEventSubscriptionsResponseSchema } from "../../events/v1/operations_pb";
 import { file_saas_events_v1_operations } from "../../events/v1/operations_pb";
@@ -21,7 +21,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/platform_admin.proto.
  */
 export const file_saas_accounts_v1_platform_admin: GenFile = /*@__PURE__*/
-  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL3BsYXRmb3JtX2FkbWluLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIlUKElNlYXJjaFVzZXJzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJImoKE1NlYXJjaFVzZXJzUmVzcG9uc2USJQoFdXNlcnMYASADKAsyFi5zYWFzLmFjY291bnRzLnYxLlVzZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIj8KElN1c3BlbmRVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkiMQoUVW5zdXNwZW5kVXNlclJlcXVlc3QSGQoHdXNlcl9pZBgBIAEoCUIIukgFcgOwAQEiTwoWSW1wZXJzb25hdGVVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIaCgZyZWFzb24YAiABKAlCCrpIB3IFEAoY9AMiQwoXSW1wZXJzb25hdGVVc2VyUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiGgoYU3RvcEltcGVyc29uYXRpb25SZXF1ZXN0ImsKGVN0b3BJbXBlcnNvbmF0aW9uUmVzcG9uc2USGAoQZHVyYXRpb25fc2Vjb25kcxgBIAEoAxIcChRhY2Nlc3NfdG9rZW5fcmV2b2tlZBgCIAEoCBIWCg5hbHJlYWR5X2Nsb3NlZBgDIAEoCCJeChlMaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSHAoJcGFnZV9zaXplGAIgASgFQgm6SAYaBBhkIAASEgoKcGFnZV90b2tlbhgDIAEoCSKZAwoLU2Vzc2lvbkluZm8SCgoCaWQYASABKAkSDwoHdXNlcl9pZBgCIAEoCRISCgppcF9hZGRyZXNzGAMgASgJEkIKC2RldmljZV9pbmZvGAQgAygLMi0uc2Fhcy5hY2NvdW50cy52MS5TZXNzaW9uSW5mby5EZXZpY2VJbmZvRW50cnkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9hY3RpdmVfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2lkbGVfZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGQoRYWN0aW5nX2FzX3VzZXJfaWQYCSABKAkaMQoPRGV2aWNlSW5mb0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiZgoaTGlzdEFjdGl2ZVNlc3Npb25zUmVzcG9uc2USLwoIc2Vzc2lvbnMYASADKAsyHS5zYWFzLmFjY291bnRzLnYxLlNlc3Npb25JbmZvEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJDChRSZXZva2VTZXNzaW9uUmVxdWVzdBIbCgpzZXNzaW9uX2lkGAEgASgJQge6SARyAhABEg4KBnJlYXNvbhgCIAEoCSI1ChlHZXRPcmdFbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiaAoaR2V0T3JnRW50aXRsZW1lbnRzUmVzcG9uc2USEQoJcGxhbl9uYW1lGAEgASgJEjcKDGVudGl0bGVtZW50cxgCIAMoCzIhLnNhYXMuYWNjb3VudHMudjEuRW50aXRsZW1lbnRJbmZvIlUKD0VudGl0bGVtZW50SW5mbxIPCgdmZWF0dXJlGAEgASgJEg0KBWxpbWl0GAIgASgDEgwKBHVzZWQYAyABKAMSFAoMaGFzX292ZXJyaWRlGAQgASgIInUKGk92ZXJyaWRlRW50aXRsZW1lbnRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGAoHZmVhdHVyZRgCIAEoCUIHukgEcgIQARITCgtsaW1pdF92YWx1ZRgDIAEoAxIOCgZyZWFzb24YBCABKAkiKQobT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlEgoKAmlkGAEgASgJInIKGEdyYW50UGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARI7Cg1wbGF0Zm9ybV9yb2xlGAIgASgJQiS6SCFyH1ILc3VwZXJfYWRtaW5SB3N1cHBvcnRSB2JpbGxpbmciNgoZUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABASIbChlMaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0IoABChJQbGF0Zm9ybUFkbWluRW50cnkSDwoHdXNlcl9pZBgBIAEoCRIVCg1wbGF0Zm9ybV9yb2xlGAIgASgJEhIKCmdyYW50ZWRfYnkYAyABKAkSLgoKZ3JhbnRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiUgoaTGlzdFBsYXRmb3JtQWRtaW5zUmVzcG9uc2USNAoGYWRtaW5zGAEgAygLMiQuc2Fhcy5hY2NvdW50cy52MS5QbGF0Zm9ybUFkbWluRW50cnkiGQoXTGlzdEZlYXR1cmVGbGFnc1JlcXVlc3QidwoQRmVhdHVyZUZsYWdFbnRyeRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg8KB2VuYWJsZWQYAyABKAgSFwoPcm9sbG91dF9wZXJjZW50GAQgASgFEhYKDnRhcmdldF9vcmdfaWRzGAUgAygJIk0KGExpc3RGZWF0dXJlRmxhZ3NSZXNwb25zZRIxCgVmbGFncxgBIAMoCzIiLnNhYXMuYWNjb3VudHMudjEuRmVhdHVyZUZsYWdFbnRyeSKMAQoYVXBzZXJ0RmVhdHVyZUZsYWdSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAiABKAkSDwoHZW5hYmxlZBgDIAEoCBIXCg9yb2xsb3V0X3BlcmNlbnQYBCABKAUSFgoOdGFyZ2V0X29yZ19pZHMYBSADKAk6AhgBIi0KGVVwc2VydEZlYXR1cmVGbGFnUmVzcG9uc2USDAoEbmFtZRgBIAEoCToCGAEylRwKFFBsYXRmb3JtQWRtaW5TZXJ2aWNlEo4BCgtTZWFyY2hVc2VycxIkLnNhYXMuYWNjb3VudHMudjEuU2VhcmNoVXNlcnNSZXF1ZXN0GiUuc2Fhcy5hY2NvdW50cy52MS5TZWFyY2hVc2Vyc1Jlc3BvbnNlIjLC8xgUCAIQATABOgIQAUABSAVQA1gDYAOC0+STAhQSEi92MS9wbGF0Zm9ybS91c2VycxKrAQoLU3VzcGVuZFVzZXISJC5zYWFzLmFjY291bnRzLnYxLlN1c3BlbmRVc2VyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJewvMYKwgCEAEwAToXChNzYWFzLnVzZXIuc3VzcGVuZGVkEAJAAUgFUANYA2AFeAKC0+STAik6ASoiJC92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06c3VzcGVuZBKzAQoNVW5zdXNwZW5kVXNlchImLnNhYXMuYWNjb3VudHMudjEuVW5zdXNwZW5kVXNlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiYsLzGC0IAhABMAE6GQoVc2Fhcy51c2VyLnVuc3VzcGVuZGVkEAJAAUgFUANYA2AFeAKC0+STAis6ASoiJi92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06dW5zdXNwZW5kEtYBCg9JbXBlcnNvbmF0ZVVzZXISKC5zYWFzLmFjY291bnRzLnYxLkltcGVyc29uYXRlVXNlclJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkltcGVyc29uYXRlVXNlclJlc3BvbnNlIm7C8xg3CAIQATAEOiMKH3NhYXMucGxhdGZvcm0udXNlcl9pbXBlcnNvbmF0ZWQQAkABSAVQA1gEYAN4AoLT5JMCLToBKiIoL3YxL3BsYXRmb3JtL3VzZXJzL3t1c2VyX2lkfTppbXBlcnNvbmF0ZRLYAQoRU3RvcEltcGVyc29uYXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlN0b3BJbXBlcnNvbmF0aW9uUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuU3RvcEltcGVyc29uYXRpb25SZXNwb25zZSJqwvMYPAgCEAEwAToqCiZzYWFzLnBsYXRmb3JtLnVzZXJfaW1wZXJzb25hdGlvbl9lbmRlZBACQAFIBVADWANgAYLT5JMCJDoBKiIfL3YxL3BsYXRmb3JtL2ltcGVyc29uYXRpb246c3RvcBKmAQoSTGlzdEFjdGl2ZVNlc3Npb25zEisuc2Fhcy5hY2NvdW50cy52MS5MaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QWN0aXZlU2Vzc2lvbnNSZXNwb25zZSI1wvMYFAgCEAEwAToCEAFAAUgFUANYA2ADgtPkkwIXEhUvdjEvcGxhdGZvcm0vc2Vzc2lvbnMSqQEKDVJldm9rZVNlc3Npb24SJi5zYWFzLmFjY291bnRzLnYxLlJldm9rZVNlc3Npb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IljC8xgqCAIQATABOhgKFHNhYXMuc2Vzc2lvbi5yZXZva2VkEAJAAUgFUANYA2ADgtPkkwIkKiIvdjEvcGxhdGZvcm0vc2Vzc2lvbnMve3Nlc3Npb25faWR9Es8BChJHZXRPcmdFbnRpdGxlbWVudHMSKy5zYWFzLmFjY291bnRzLnYxLkdldE9yZ0VudGl0bGVtZW50c1JlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLkdldE9yZ0VudGl0bGVtZW50c1Jlc3BvbnNlIl7C8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCMhIwL3YxL3BsYXRmb3JtL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZW50aXRsZW1lbnRzEuQBChNPdmVycmlkZUVudGl0bGVtZW50Eiwuc2Fhcy5hY2NvdW50cy52MS5PdmVycmlkZUVudGl0bGVtZW50UmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlInDC8xgxCAIQATABOh0KGXNhYXMuZW50aXRsZW1lbnQub3ZlcnJpZGUQAkABSAVQA1gDYAJ4AoLT5JMCNToBKiIwL3YxL3BsYXRmb3JtL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZW50aXRsZW1lbnRzEq0BChFHcmFudFBsYXRmb3JtUm9sZRIqLnNhYXMuYWNjb3VudHMudjEuR3JhbnRQbGF0Zm9ybVJvbGVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IlTC8xgyCAIQATAEOh4KGnNhYXMucGxhdGZvcm0ucm9sZV9ncmFudGVkEAJAAUgFUANYA2AFeAKC0+STAhg6ASoiEy92MS9wbGF0Zm9ybS9hZG1pbnMStgEKElJldm9rZVBsYXRmb3JtUm9sZRIrLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJbwvMYMggCEAEwBDoeChpzYWFzLnBsYXRmb3JtLnJvbGVfcmV2b2tlZBACQAFIBVADWANgBXgCgtPkkwIfKh0vdjEvcGxhdGZvcm0vYWRtaW5zL3t1c2VyX2lkfRKkAQoSTGlzdFBsYXRmb3JtQWRtaW5zEisuc2Fhcy5hY2NvdW50cy52MS5MaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5MaXN0UGxhdGZvcm1BZG1pbnNSZXNwb25zZSIzwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIVEhMvdjEvcGxhdGZvcm0vYWRtaW5zEqUBChBMaXN0RmVhdHVyZUZsYWdzEikuc2Fhcy5hY2NvdW50cy52MS5MaXN0RmVhdHVyZUZsYWdzUmVxdWVzdBoqLnNhYXMuYWNjb3VudHMudjEuTGlzdEZlYXR1cmVGbGFnc1Jlc3BvbnNlIjrC8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAhwSGi92MS9wbGF0Zm9ybS9mZWF0dXJlLWZsYWdzEtIBChFVcHNlcnRGZWF0dXJlRmxhZxIqLnNhYXMuYWNjb3VudHMudjEuVXBzZXJ0RmVhdHVyZUZsYWdSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5VcHNlcnRGZWF0dXJlRmxhZ1Jlc3BvbnNlImSIAgHC8xgxCAIQATABOh0KGXNhYXMuZmVhdHVyZV9mbGFnLnVwZGF0ZWQQAkABSAVQA1gDYAV4AoLT5JMCJjoBKhohL3YxL3BsYXRmb3JtL2ZlYXR1cmUtZmxhZ3Mve25hbWV9Ep8BChBHZXRKb2JPcGVyYXRpb25zEiUuc2Fhcy5qb2JzLnYxLkdldEpvYk9wZXJhdGlvbnNSZXF1ZXN0GiYuc2Fhcy5qb2JzLnYxLkdldEpvYk9wZXJhdGlvbnNSZXNwb25zZSI8wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIeEhwvdjEvcGxhdGZvcm0vam9icy9vcGVyYXRpb25zEnwKCExpc3RKb2JzEh0uc2Fhcy5qb2JzLnYxLkxpc3RKb2JzUmVxdWVzdBoeLnNhYXMuam9icy52MS5MaXN0Sm9ic1Jlc3BvbnNlIjHC8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAhMSES92MS9wbGF0Zm9ybS9qb2JzEn8KBkdldEpvYhIbLnNhYXMuam9icy52MS5HZXRKb2JSZXF1ZXN0Ghwuc2Fhcy5qb2JzLnYxLkdldEpvYlJlc3BvbnNlIjrC8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAhwSGi92MS9wbGF0Zm9ybS9qb2JzL3tqb2JfaWR9EqwBCglSZXBsYXlKb2ISHi5zYWFzLmpvYnMudjEuUmVwbGF5Sm9iUmVxdWVzdBofLnNhYXMuam9icy52MS5SZXBsYXlKb2JSZXNwb25zZSJewvMYJwgCEAEwAzoVChFzYWFzLmpvYi5yZXBsYXllZBACQANIBVADWANgBYLT5JMCLToBKiIoL3YxL3BsYXRmb3JtL2pvYnMve3NvdXJjZV9qb2JfaWR9OnJlcGxheRKrAQoSR2V0RXZlbnRPcGVyYXRpb25zEikuc2Fhcy5ldmVudHMudjEuR2V0RXZlbnRPcGVyYXRpb25zUmVxdWVzdBoqLnNhYXMuZXZlbnRzLnYxLkdldEV2ZW50T3BlcmF0aW9uc1Jlc3BvbnNlIj7C8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAiASHi92MS9wbGF0Zm9ybS9ldmVudHMvb3BlcmF0aW9ucxK6AQoWTGlzdEV2ZW50U3Vic2NyaXB0aW9ucxItLnNhYXMuZXZlbnRzLnYxLkxpc3RFdmVudFN1YnNjcmlwdGlvbnNSZXF1ZXN0Gi4uc2Fhcy5ldmVudHMudjEuTGlzdEV2ZW50U3Vic2NyaXB0aW9uc1Jlc3BvbnNlIkHC8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAiMSIS92MS9wbGF0Zm9ybS9ldmVudHMvc3Vic2NyaXB0aW9uc2IGcHJvdG8z", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_common, file_saas_events_v1_operations, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
+  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL3BsYXRmb3JtX2FkbWluLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIlUKElNlYXJjaFVzZXJzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJImoKE1NlYXJjaFVzZXJzUmVzcG9uc2USJQoFdXNlcnMYASADKAsyFi5zYWFzLmFjY291bnRzLnYxLlVzZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIngKG0xpc3RBbGxPcmdhbml6YXRpb25zUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJEhgKEGluY2x1ZGVfYXJjaGl2ZWQYBCABKAgiYgoUUGxhdGZvcm1Pcmdhbml6YXRpb24SNAoMb3JnYW5pemF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24SFAoMbWVtYmVyX2NvdW50GAIgASgFInYKHExpc3RBbGxPcmdhbml6YXRpb25zUmVzcG9uc2USPQoNb3JnYW5pemF0aW9ucxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuUGxhdGZvcm1Pcmdhbml6YXRpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIjgKHEdldE9yZ2FuaXphdGlvblJvc3RlclJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASJRCh1HZXRPcmdhbml6YXRpb25Sb3N0ZXJSZXNwb25zZRIwCgdtZW1iZXJzGAEgAygLMh8uc2Fhcy5hY2NvdW50cy52MS5PcmdNZW1iZXJzaGlwIj8KElN1c3BlbmRVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkiMQoUVW5zdXNwZW5kVXNlclJlcXVlc3QSGQoHdXNlcl9pZBgBIAEoCUIIukgFcgOwAQEiTwoWSW1wZXJzb25hdGVVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIaCgZyZWFzb24YAiABKAlCCrpIB3IFEAoY9AMiQwoXSW1wZXJzb25hdGVVc2VyUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiGgoYU3RvcEltcGVyc29uYXRpb25SZXF1ZXN0ImsKGVN0b3BJbXBlcnNvbmF0aW9uUmVzcG9uc2USGAoQZHVyYXRpb25fc2Vjb25kcxgBIAEoAxIcChRhY2Nlc3NfdG9rZW5fcmV2b2tlZBgCIAEoCBIWCg5hbHJlYWR5X2Nsb3NlZBgDIAEoCCJeChlMaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSHAoJcGFnZV9zaXplGAIgASgFQgm6SAYaBBhkIAASEgoKcGFnZV90b2tlbhgDIAEoCSKZAwoLU2Vzc2lvbkluZm8SCgoCaWQYASABKAkSDwoHdXNlcl9pZBgCIAEoCRISCgppcF9hZGRyZXNzGAMgASgJEkIKC2RldmljZV9pbmZvGAQgAygLMi0uc2Fhcy5hY2NvdW50cy52MS5TZXNzaW9uSW5mby5EZXZpY2VJbmZvRW50cnkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9hY3RpdmVfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2lkbGVfZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGQoRYWN0aW5nX2FzX3VzZXJfaWQYCSABKAkaMQoPRGV2aWNlSW5mb0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiZgoaTGlzdEFjdGl2ZVNlc3Npb25zUmVzcG9uc2USLwoIc2Vzc2lvbnMYASADKAsyHS5zYWFzLmFjY291bnRzLnYxLlNlc3Npb25JbmZvEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJDChRSZXZva2VTZXNzaW9uUmVxdWVzdBIbCgpzZXNzaW9uX2lkGAEgASgJQge6SARyAhABEg4KBnJlYXNvbhgCIAEoCSI1ChlHZXRPcmdFbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiaAoaR2V0T3JnRW50aXRsZW1lbnRzUmVzcG9uc2USEQoJcGxhbl9uYW1lGAEgASgJEjcKDGVudGl0bGVtZW50cxgCIAMoCzIhLnNhYXMuYWNjb3VudHMudjEuRW50aXRsZW1lbnRJbmZvIlUKD0VudGl0bGVtZW50SW5mbxIPCgdmZWF0dXJlGAEgASgJEg0KBWxpbWl0GAIgASgDEgwKBHVzZWQYAyABKAMSFAoMaGFzX292ZXJyaWRlGAQgASgIInUKGk92ZXJyaWRlRW50aXRsZW1lbnRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGAoHZmVhdHVyZRgCIAEoCUIHukgEcgIQARITCgtsaW1pdF92YWx1ZRgDIAEoAxIOCgZyZWFzb24YBCABKAkiKQobT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlEgoKAmlkGAEgASgJInIKGEdyYW50UGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARI7Cg1wbGF0Zm9ybV9yb2xlGAIgASgJQiS6SCFyH1ILc3VwZXJfYWRtaW5SB3N1cHBvcnRSB2JpbGxpbmciNgoZUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABASIbChlMaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0IoABChJQbGF0Zm9ybUFkbWluRW50cnkSDwoHdXNlcl9pZBgBIAEoCRIVCg1wbGF0Zm9ybV9yb2xlGAIgASgJEhIKCmdyYW50ZWRfYnkYAyABKAkSLgoKZ3JhbnRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiUgoaTGlzdFBsYXRmb3JtQWRtaW5zUmVzcG9uc2USNAoGYWRtaW5zGAEgAygLMiQuc2Fhcy5hY2NvdW50cy52MS5QbGF0Zm9ybUFkbWluRW50cnkiGQoXTGlzdEZlYXR1cmVGbGFnc1JlcXVlc3QidwoQRmVhdHVyZUZsYWdFbnRyeRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg8KB2VuYWJsZWQYAyABKAgSFwoPcm9sbG91dF9wZXJjZW50GAQgASgFEhYKDnRhcmdldF9vcmdfaWRzGAUgAygJIk0KGExpc3RGZWF0dXJlRmxhZ3NSZXNwb25zZRIxCgVmbGFncxgBIAMoCzIiLnNhYXMuYWNjb3VudHMudjEuRmVhdHVyZUZsYWdFbnRyeSKMAQoYVXBzZXJ0RmVhdHVyZUZsYWdSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAiABKAkSDwoHZW5hYmxlZBgDIAEoCBIXCg9yb2xsb3V0X3BlcmNlbnQYBCABKAUSFgoOdGFyZ2V0X29yZ19pZHMYBSADKAk6AhgBIi0KGVVwc2VydEZlYXR1cmVGbGFnUmVzcG9uc2USDAoEbmFtZRgBIAEoCToCGAEyvB4KFFBsYXRmb3JtQWRtaW5TZXJ2aWNlEo4BCgtTZWFyY2hVc2VycxIkLnNhYXMuYWNjb3VudHMudjEuU2VhcmNoVXNlcnNSZXF1ZXN0GiUuc2Fhcy5hY2NvdW50cy52MS5TZWFyY2hVc2Vyc1Jlc3BvbnNlIjLC8xgUCAIQATABOgIQAUABSAVQA1gDYAOC0+STAhQSEi92MS9wbGF0Zm9ybS91c2VycxKrAQoLU3VzcGVuZFVzZXISJC5zYWFzLmFjY291bnRzLnYxLlN1c3BlbmRVc2VyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJewvMYKwgCEAEwAToXChNzYWFzLnVzZXIuc3VzcGVuZGVkEAJAAUgFUANYA2AFeAKC0+STAik6ASoiJC92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06c3VzcGVuZBKzAQoNVW5zdXNwZW5kVXNlchImLnNhYXMuYWNjb3VudHMudjEuVW5zdXNwZW5kVXNlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiYsLzGC0IAhABMAE6GQoVc2Fhcy51c2VyLnVuc3VzcGVuZGVkEAJAAUgFUANYA2AFeAKC0+STAis6ASoiJi92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06dW5zdXNwZW5kEtYBCg9JbXBlcnNvbmF0ZVVzZXISKC5zYWFzLmFjY291bnRzLnYxLkltcGVyc29uYXRlVXNlclJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkltcGVyc29uYXRlVXNlclJlc3BvbnNlIm7C8xg3CAIQATAEOiMKH3NhYXMucGxhdGZvcm0udXNlcl9pbXBlcnNvbmF0ZWQQAkABSAVQA1gEYAN4AoLT5JMCLToBKiIoL3YxL3BsYXRmb3JtL3VzZXJzL3t1c2VyX2lkfTppbXBlcnNvbmF0ZRLYAQoRU3RvcEltcGVyc29uYXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlN0b3BJbXBlcnNvbmF0aW9uUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuU3RvcEltcGVyc29uYXRpb25SZXNwb25zZSJqwvMYPAgCEAEwAToqCiZzYWFzLnBsYXRmb3JtLnVzZXJfaW1wZXJzb25hdGlvbl9lbmRlZBACQAFIBVADWANgAYLT5JMCJDoBKiIfL3YxL3BsYXRmb3JtL2ltcGVyc29uYXRpb246c3RvcBKmAQoSTGlzdEFjdGl2ZVNlc3Npb25zEisuc2Fhcy5hY2NvdW50cy52MS5MaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QWN0aXZlU2Vzc2lvbnNSZXNwb25zZSI1wvMYFAgCEAEwAToCEAFAAUgFUANYA2ADgtPkkwIXEhUvdjEvcGxhdGZvcm0vc2Vzc2lvbnMSqQEKDVJldm9rZVNlc3Npb24SJi5zYWFzLmFjY291bnRzLnYxLlJldm9rZVNlc3Npb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IljC8xgqCAIQATABOhgKFHNhYXMuc2Vzc2lvbi5yZXZva2VkEAJAAUgFUANYA2ADgtPkkwIkKiIvdjEvcGxhdGZvcm0vc2Vzc2lvbnMve3Nlc3Npb25faWR9Es8BChJHZXRPcmdFbnRpdGxlbWVudHMSKy5zYWFzLmFjY291bnRzLnYxLkdldE9yZ0VudGl0bGVtZW50c1JlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLkdldE9yZ0VudGl0bGVtZW50c1Jlc3BvbnNlIl7C8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCMhIwL3YxL3BsYXRmb3JtL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZW50aXRsZW1lbnRzEuQBChNPdmVycmlkZUVudGl0bGVtZW50Eiwuc2Fhcy5hY2NvdW50cy52MS5PdmVycmlkZUVudGl0bGVtZW50UmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlInDC8xgxCAIQATABOh0KGXNhYXMuZW50aXRsZW1lbnQub3ZlcnJpZGUQAkABSAVQA1gDYAJ4AoLT5JMCNToBKiIwL3YxL3BsYXRmb3JtL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZW50aXRsZW1lbnRzEq0BChFHcmFudFBsYXRmb3JtUm9sZRIqLnNhYXMuYWNjb3VudHMudjEuR3JhbnRQbGF0Zm9ybVJvbGVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IlTC8xgyCAIQATAEOh4KGnNhYXMucGxhdGZvcm0ucm9sZV9ncmFudGVkEAJAAUgFUANYA2AFeAKC0+STAhg6ASoiEy92MS9wbGF0Zm9ybS9hZG1pbnMStgEKElJldm9rZVBsYXRmb3JtUm9sZRIrLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJbwvMYMggCEAEwBDoeChpzYWFzLnBsYXRmb3JtLnJvbGVfcmV2b2tlZBACQAFIBVADWANgBXgCgtPkkwIfKh0vdjEvcGxhdGZvcm0vYWRtaW5zL3t1c2VyX2lkfRKkAQoSTGlzdFBsYXRmb3JtQWRtaW5zEisuc2Fhcy5hY2NvdW50cy52MS5MaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5MaXN0UGxhdGZvcm1BZG1pbnNSZXNwb25zZSIzwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIVEhMvdjEvcGxhdGZvcm0vYWRtaW5zEo8BChRMaXN0QWxsT3JnYW5pemF0aW9ucxItLnNhYXMuYWNjb3VudHMudjEuTGlzdEFsbE9yZ2FuaXphdGlvbnNSZXF1ZXN0Gi4uc2Fhcy5hY2NvdW50cy52MS5MaXN0QWxsT3JnYW5pemF0aW9uc1Jlc3BvbnNlIhjC8xgUCAIQATABOgIQAUABSAVQA1gDYAMSkgEKFUdldE9yZ2FuaXphdGlvblJvc3RlchIuLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uUm9zdGVyUmVxdWVzdBovLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uUm9zdGVyUmVzcG9uc2UiGMLzGBQIAhABMAE6AhABQAFIBVADWANgAxKlAQoQTGlzdEZlYXR1cmVGbGFncxIpLnNhYXMuYWNjb3VudHMudjEuTGlzdEZlYXR1cmVGbGFnc1JlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLkxpc3RGZWF0dXJlRmxhZ3NSZXNwb25zZSI6wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIcEhovdjEvcGxhdGZvcm0vZmVhdHVyZS1mbGFncxLSAQoRVXBzZXJ0RmVhdHVyZUZsYWcSKi5zYWFzLmFjY291bnRzLnYxLlVwc2VydEZlYXR1cmVGbGFnUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuVXBzZXJ0RmVhdHVyZUZsYWdSZXNwb25zZSJkiAIBwvMYMQgCEAEwATodChlzYWFzLmZlYXR1cmVfZmxhZy51cGRhdGVkEAJAAUgFUANYA2AFeAKC0+STAiY6ASoaIS92MS9wbGF0Zm9ybS9mZWF0dXJlLWZsYWdzL3tuYW1lfRKfAQoQR2V0Sm9iT3BlcmF0aW9ucxIlLnNhYXMuam9icy52MS5HZXRKb2JPcGVyYXRpb25zUmVxdWVzdBomLnNhYXMuam9icy52MS5HZXRKb2JPcGVyYXRpb25zUmVzcG9uc2UiPMLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCHhIcL3YxL3BsYXRmb3JtL2pvYnMvb3BlcmF0aW9ucxJ8CghMaXN0Sm9icxIdLnNhYXMuam9icy52MS5MaXN0Sm9ic1JlcXVlc3QaHi5zYWFzLmpvYnMudjEuTGlzdEpvYnNSZXNwb25zZSIxwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwITEhEvdjEvcGxhdGZvcm0vam9icxJ/CgZHZXRKb2ISGy5zYWFzLmpvYnMudjEuR2V0Sm9iUmVxdWVzdBocLnNhYXMuam9icy52MS5HZXRKb2JSZXNwb25zZSI6wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIcEhovdjEvcGxhdGZvcm0vam9icy97am9iX2lkfRKsAQoJUmVwbGF5Sm9iEh4uc2Fhcy5qb2JzLnYxLlJlcGxheUpvYlJlcXVlc3QaHy5zYWFzLmpvYnMudjEuUmVwbGF5Sm9iUmVzcG9uc2UiXsLzGCcIAhABMAM6FQoRc2Fhcy5qb2IucmVwbGF5ZWQQAkADSAVQA1gDYAWC0+STAi06ASoiKC92MS9wbGF0Zm9ybS9qb2JzL3tzb3VyY2Vfam9iX2lkfTpyZXBsYXkSqwEKEkdldEV2ZW50T3BlcmF0aW9ucxIpLnNhYXMuZXZlbnRzLnYxLkdldEV2ZW50T3BlcmF0aW9uc1JlcXVlc3QaKi5zYWFzLmV2ZW50cy52MS5HZXRFdmVudE9wZXJhdGlvbnNSZXNwb25zZSI+wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIgEh4vdjEvcGxhdGZvcm0vZXZlbnRzL29wZXJhdGlvbnMSugEKFkxpc3RFdmVudFN1YnNjcmlwdGlvbnMSLS5zYWFzLmV2ZW50cy52MS5MaXN0RXZlbnRTdWJzY3JpcHRpb25zUmVxdWVzdBouLnNhYXMuZXZlbnRzLnYxLkxpc3RFdmVudFN1YnNjcmlwdGlvbnNSZXNwb25zZSJBwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIjEiEvdjEvcGxhdGZvcm0vZXZlbnRzL3N1YnNjcmlwdGlvbnNiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_common, file_saas_events_v1_operations, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.SearchUsersRequest
@@ -78,6 +78,118 @@ export const SearchUsersResponseSchema: GenMessage<SearchUsersResponse> = /*@__P
   messageDesc(file_saas_accounts_v1_platform_admin, 1);
 
 /**
+ * @generated from message saas.accounts.v1.ListAllOrganizationsRequest
+ */
+export type ListAllOrganizationsRequest = Message<"saas.accounts.v1.ListAllOrganizationsRequest"> & {
+  /**
+   * Matches a name or slug, case-insensitively. Empty lists every organization.
+   *
+   * @generated from field: string query = 1;
+   */
+  query: string;
+
+  /**
+   * @generated from field: int32 page_size = 2;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+
+  /**
+   * @generated from field: bool include_archived = 4;
+   */
+  includeArchived: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAllOrganizationsRequest.
+ * Use `create(ListAllOrganizationsRequestSchema)` to create a new message.
+ */
+export const ListAllOrganizationsRequestSchema: GenMessage<ListAllOrganizationsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 2);
+
+/**
+ * @generated from message saas.accounts.v1.PlatformOrganization
+ */
+export type PlatformOrganization = Message<"saas.accounts.v1.PlatformOrganization"> & {
+  /**
+   * @generated from field: saas.accounts.v1.Organization organization = 1;
+   */
+  organization?: Organization;
+
+  /**
+   * @generated from field: int32 member_count = 2;
+   */
+  memberCount: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.PlatformOrganization.
+ * Use `create(PlatformOrganizationSchema)` to create a new message.
+ */
+export const PlatformOrganizationSchema: GenMessage<PlatformOrganization> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 3);
+
+/**
+ * @generated from message saas.accounts.v1.ListAllOrganizationsResponse
+ */
+export type ListAllOrganizationsResponse = Message<"saas.accounts.v1.ListAllOrganizationsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.PlatformOrganization organizations = 1;
+   */
+  organizations: PlatformOrganization[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAllOrganizationsResponse.
+ * Use `create(ListAllOrganizationsResponseSchema)` to create a new message.
+ */
+export const ListAllOrganizationsResponseSchema: GenMessage<ListAllOrganizationsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 4);
+
+/**
+ * @generated from message saas.accounts.v1.GetOrganizationRosterRequest
+ */
+export type GetOrganizationRosterRequest = Message<"saas.accounts.v1.GetOrganizationRosterRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetOrganizationRosterRequest.
+ * Use `create(GetOrganizationRosterRequestSchema)` to create a new message.
+ */
+export const GetOrganizationRosterRequestSchema: GenMessage<GetOrganizationRosterRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 5);
+
+/**
+ * @generated from message saas.accounts.v1.GetOrganizationRosterResponse
+ */
+export type GetOrganizationRosterResponse = Message<"saas.accounts.v1.GetOrganizationRosterResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.OrgMembership members = 1;
+   */
+  members: OrgMembership[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetOrganizationRosterResponse.
+ * Use `create(GetOrganizationRosterResponseSchema)` to create a new message.
+ */
+export const GetOrganizationRosterResponseSchema: GenMessage<GetOrganizationRosterResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 6);
+
+/**
  * @generated from message saas.accounts.v1.SuspendUserRequest
  */
 export type SuspendUserRequest = Message<"saas.accounts.v1.SuspendUserRequest"> & {
@@ -97,7 +209,7 @@ export type SuspendUserRequest = Message<"saas.accounts.v1.SuspendUserRequest"> 
  * Use `create(SuspendUserRequestSchema)` to create a new message.
  */
 export const SuspendUserRequestSchema: GenMessage<SuspendUserRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 2);
+  messageDesc(file_saas_accounts_v1_platform_admin, 7);
 
 /**
  * @generated from message saas.accounts.v1.UnsuspendUserRequest
@@ -114,7 +226,7 @@ export type UnsuspendUserRequest = Message<"saas.accounts.v1.UnsuspendUserReques
  * Use `create(UnsuspendUserRequestSchema)` to create a new message.
  */
 export const UnsuspendUserRequestSchema: GenMessage<UnsuspendUserRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 3);
+  messageDesc(file_saas_accounts_v1_platform_admin, 8);
 
 /**
  * @generated from message saas.accounts.v1.ImpersonateUserRequest
@@ -143,7 +255,7 @@ export type ImpersonateUserRequest = Message<"saas.accounts.v1.ImpersonateUserRe
  * Use `create(ImpersonateUserRequestSchema)` to create a new message.
  */
 export const ImpersonateUserRequestSchema: GenMessage<ImpersonateUserRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 4);
+  messageDesc(file_saas_accounts_v1_platform_admin, 9);
 
 /**
  * @generated from message saas.accounts.v1.ImpersonateUserResponse
@@ -165,7 +277,7 @@ export type ImpersonateUserResponse = Message<"saas.accounts.v1.ImpersonateUserR
  * Use `create(ImpersonateUserResponseSchema)` to create a new message.
  */
 export const ImpersonateUserResponseSchema: GenMessage<ImpersonateUserResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 5);
+  messageDesc(file_saas_accounts_v1_platform_admin, 10);
 
 /**
  * StopImpersonation ends the caller's own impersonation session. It carries no
@@ -182,7 +294,7 @@ export type StopImpersonationRequest = Message<"saas.accounts.v1.StopImpersonati
  * Use `create(StopImpersonationRequestSchema)` to create a new message.
  */
 export const StopImpersonationRequestSchema: GenMessage<StopImpersonationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 6);
+  messageDesc(file_saas_accounts_v1_platform_admin, 11);
 
 /**
  * @generated from message saas.accounts.v1.StopImpersonationResponse
@@ -221,7 +333,7 @@ export type StopImpersonationResponse = Message<"saas.accounts.v1.StopImpersonat
  * Use `create(StopImpersonationResponseSchema)` to create a new message.
  */
 export const StopImpersonationResponseSchema: GenMessage<StopImpersonationResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 7);
+  messageDesc(file_saas_accounts_v1_platform_admin, 12);
 
 /**
  * @generated from message saas.accounts.v1.ListActiveSessionsRequest
@@ -248,7 +360,7 @@ export type ListActiveSessionsRequest = Message<"saas.accounts.v1.ListActiveSess
  * Use `create(ListActiveSessionsRequestSchema)` to create a new message.
  */
 export const ListActiveSessionsRequestSchema: GenMessage<ListActiveSessionsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 8);
+  messageDesc(file_saas_accounts_v1_platform_admin, 13);
 
 /**
  * @generated from message saas.accounts.v1.SessionInfo
@@ -312,7 +424,7 @@ export type SessionInfo = Message<"saas.accounts.v1.SessionInfo"> & {
  * Use `create(SessionInfoSchema)` to create a new message.
  */
 export const SessionInfoSchema: GenMessage<SessionInfo> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 9);
+  messageDesc(file_saas_accounts_v1_platform_admin, 14);
 
 /**
  * @generated from message saas.accounts.v1.ListActiveSessionsResponse
@@ -334,7 +446,7 @@ export type ListActiveSessionsResponse = Message<"saas.accounts.v1.ListActiveSes
  * Use `create(ListActiveSessionsResponseSchema)` to create a new message.
  */
 export const ListActiveSessionsResponseSchema: GenMessage<ListActiveSessionsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 10);
+  messageDesc(file_saas_accounts_v1_platform_admin, 15);
 
 /**
  * @generated from message saas.accounts.v1.RevokeSessionRequest
@@ -358,7 +470,7 @@ export type RevokeSessionRequest = Message<"saas.accounts.v1.RevokeSessionReques
  * Use `create(RevokeSessionRequestSchema)` to create a new message.
  */
 export const RevokeSessionRequestSchema: GenMessage<RevokeSessionRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 11);
+  messageDesc(file_saas_accounts_v1_platform_admin, 16);
 
 /**
  * @generated from message saas.accounts.v1.GetOrgEntitlementsRequest
@@ -375,7 +487,7 @@ export type GetOrgEntitlementsRequest = Message<"saas.accounts.v1.GetOrgEntitlem
  * Use `create(GetOrgEntitlementsRequestSchema)` to create a new message.
  */
 export const GetOrgEntitlementsRequestSchema: GenMessage<GetOrgEntitlementsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 12);
+  messageDesc(file_saas_accounts_v1_platform_admin, 17);
 
 /**
  * @generated from message saas.accounts.v1.GetOrgEntitlementsResponse
@@ -397,7 +509,7 @@ export type GetOrgEntitlementsResponse = Message<"saas.accounts.v1.GetOrgEntitle
  * Use `create(GetOrgEntitlementsResponseSchema)` to create a new message.
  */
 export const GetOrgEntitlementsResponseSchema: GenMessage<GetOrgEntitlementsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 13);
+  messageDesc(file_saas_accounts_v1_platform_admin, 18);
 
 /**
  * @generated from message saas.accounts.v1.EntitlementInfo
@@ -431,7 +543,7 @@ export type EntitlementInfo = Message<"saas.accounts.v1.EntitlementInfo"> & {
  * Use `create(EntitlementInfoSchema)` to create a new message.
  */
 export const EntitlementInfoSchema: GenMessage<EntitlementInfo> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 14);
+  messageDesc(file_saas_accounts_v1_platform_admin, 19);
 
 /**
  * @generated from message saas.accounts.v1.OverrideEntitlementRequest
@@ -463,7 +575,7 @@ export type OverrideEntitlementRequest = Message<"saas.accounts.v1.OverrideEntit
  * Use `create(OverrideEntitlementRequestSchema)` to create a new message.
  */
 export const OverrideEntitlementRequestSchema: GenMessage<OverrideEntitlementRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 15);
+  messageDesc(file_saas_accounts_v1_platform_admin, 20);
 
 /**
  * @generated from message saas.accounts.v1.OverrideEntitlementResponse
@@ -480,7 +592,7 @@ export type OverrideEntitlementResponse = Message<"saas.accounts.v1.OverrideEnti
  * Use `create(OverrideEntitlementResponseSchema)` to create a new message.
  */
 export const OverrideEntitlementResponseSchema: GenMessage<OverrideEntitlementResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 16);
+  messageDesc(file_saas_accounts_v1_platform_admin, 21);
 
 /**
  * @generated from message saas.accounts.v1.GrantPlatformRoleRequest
@@ -502,7 +614,7 @@ export type GrantPlatformRoleRequest = Message<"saas.accounts.v1.GrantPlatformRo
  * Use `create(GrantPlatformRoleRequestSchema)` to create a new message.
  */
 export const GrantPlatformRoleRequestSchema: GenMessage<GrantPlatformRoleRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 17);
+  messageDesc(file_saas_accounts_v1_platform_admin, 22);
 
 /**
  * @generated from message saas.accounts.v1.RevokePlatformRoleRequest
@@ -519,7 +631,7 @@ export type RevokePlatformRoleRequest = Message<"saas.accounts.v1.RevokePlatform
  * Use `create(RevokePlatformRoleRequestSchema)` to create a new message.
  */
 export const RevokePlatformRoleRequestSchema: GenMessage<RevokePlatformRoleRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 18);
+  messageDesc(file_saas_accounts_v1_platform_admin, 23);
 
 /**
  * @generated from message saas.accounts.v1.ListPlatformAdminsRequest
@@ -532,7 +644,7 @@ export type ListPlatformAdminsRequest = Message<"saas.accounts.v1.ListPlatformAd
  * Use `create(ListPlatformAdminsRequestSchema)` to create a new message.
  */
 export const ListPlatformAdminsRequestSchema: GenMessage<ListPlatformAdminsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 19);
+  messageDesc(file_saas_accounts_v1_platform_admin, 24);
 
 /**
  * @generated from message saas.accounts.v1.PlatformAdminEntry
@@ -564,7 +676,7 @@ export type PlatformAdminEntry = Message<"saas.accounts.v1.PlatformAdminEntry"> 
  * Use `create(PlatformAdminEntrySchema)` to create a new message.
  */
 export const PlatformAdminEntrySchema: GenMessage<PlatformAdminEntry> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 20);
+  messageDesc(file_saas_accounts_v1_platform_admin, 25);
 
 /**
  * @generated from message saas.accounts.v1.ListPlatformAdminsResponse
@@ -581,7 +693,7 @@ export type ListPlatformAdminsResponse = Message<"saas.accounts.v1.ListPlatformA
  * Use `create(ListPlatformAdminsResponseSchema)` to create a new message.
  */
 export const ListPlatformAdminsResponseSchema: GenMessage<ListPlatformAdminsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 21);
+  messageDesc(file_saas_accounts_v1_platform_admin, 26);
 
 /**
  * @generated from message saas.accounts.v1.ListFeatureFlagsRequest
@@ -594,7 +706,7 @@ export type ListFeatureFlagsRequest = Message<"saas.accounts.v1.ListFeatureFlags
  * Use `create(ListFeatureFlagsRequestSchema)` to create a new message.
  */
 export const ListFeatureFlagsRequestSchema: GenMessage<ListFeatureFlagsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 22);
+  messageDesc(file_saas_accounts_v1_platform_admin, 27);
 
 /**
  * @generated from message saas.accounts.v1.FeatureFlagEntry
@@ -631,7 +743,7 @@ export type FeatureFlagEntry = Message<"saas.accounts.v1.FeatureFlagEntry"> & {
  * Use `create(FeatureFlagEntrySchema)` to create a new message.
  */
 export const FeatureFlagEntrySchema: GenMessage<FeatureFlagEntry> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 23);
+  messageDesc(file_saas_accounts_v1_platform_admin, 28);
 
 /**
  * @generated from message saas.accounts.v1.ListFeatureFlagsResponse
@@ -648,7 +760,7 @@ export type ListFeatureFlagsResponse = Message<"saas.accounts.v1.ListFeatureFlag
  * Use `create(ListFeatureFlagsResponseSchema)` to create a new message.
  */
 export const ListFeatureFlagsResponseSchema: GenMessage<ListFeatureFlagsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 24);
+  messageDesc(file_saas_accounts_v1_platform_admin, 29);
 
 /**
  * Deprecated: the database-backed flag inventory is read-only while consumers
@@ -690,7 +802,7 @@ export type UpsertFeatureFlagRequest = Message<"saas.accounts.v1.UpsertFeatureFl
  * @deprecated
  */
 export const UpsertFeatureFlagRequestSchema: GenMessage<UpsertFeatureFlagRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 25);
+  messageDesc(file_saas_accounts_v1_platform_admin, 30);
 
 /**
  * Deprecated: UpsertFeatureFlag always fails closed and returns no response.
@@ -711,7 +823,7 @@ export type UpsertFeatureFlagResponse = Message<"saas.accounts.v1.UpsertFeatureF
  * @deprecated
  */
 export const UpsertFeatureFlagResponseSchema: GenMessage<UpsertFeatureFlagResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_platform_admin, 26);
+  messageDesc(file_saas_accounts_v1_platform_admin, 31);
 
 /**
  * PlatformAdminService — cross-tenant operations for platform operators.
@@ -832,6 +944,28 @@ export const PlatformAdminService: GenService<{
     methodKind: "unary";
     input: typeof ListPlatformAdminsRequestSchema;
     output: typeof ListPlatformAdminsResponseSchema;
+  },
+  /**
+   * ListAllOrganizations lists every organization on the platform, whether or
+   * not the caller belongs to it.
+   *
+   * @generated from rpc saas.accounts.v1.PlatformAdminService.ListAllOrganizations
+   */
+  listAllOrganizations: {
+    methodKind: "unary";
+    input: typeof ListAllOrganizationsRequestSchema;
+    output: typeof ListAllOrganizationsResponseSchema;
+  },
+  /**
+   * GetOrganizationRoster lists any organization's members for the platform
+   * view, which needs no membership of its own.
+   *
+   * @generated from rpc saas.accounts.v1.PlatformAdminService.GetOrganizationRoster
+   */
+  getOrganizationRoster: {
+    methodKind: "unary";
+    input: typeof GetOrganizationRosterRequestSchema;
+    output: typeof GetOrganizationRosterResponseSchema;
   },
   /**
    * Legacy feature-flag migration inventory (platform-only, read-only)

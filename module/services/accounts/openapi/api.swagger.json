@@ -1063,6 +1063,10 @@
     },
     "v1CreateInvitationResponse": {
       "properties": {
+        "acceptUrl": {
+          "description": "The invitation's accept link, returned once to the administrator who\ncreated it so it can be shared without email. It is never stored in\nplaintext and never returned by any read.",
+          "type": "string"
+        },
         "invitation": {
           "$ref": "#/definitions/v1Invitation"
         }
@@ -1072,6 +1076,10 @@
     "v1CreateOrganizationRequest": {
       "properties": {
         "name": {
+          "type": "string"
+        },
+        "ownerUserId": {
+          "description": "The user who owns the new organization. Only a platform administrator may\nname someone else; empty means the caller.",
           "type": "string"
         },
         "slug": {
@@ -2778,6 +2786,10 @@
     },
     "v1ListOrganizationsResponse": {
       "properties": {
+        "canCreate": {
+          "description": "Whether the caller may create an organization under the deployment's\ncreation policy. The UI offers \"Create organization\" only when true.",
+          "type": "boolean"
+        },
         "organizations": {
           "items": {
             "$ref": "#/definitions/v1Organization",
@@ -3334,6 +3346,11 @@
     },
     "v1Organization": {
       "properties": {
+        "archivedAt": {
+          "description": "Set when the organization was deleted. An archived organization is never\nlisted to its former members and admits no request; only the platform\nview shows it.",
+          "format": "date-time",
+          "type": "string"
+        },
         "createdAt": {
           "format": "date-time",
           "type": "string"

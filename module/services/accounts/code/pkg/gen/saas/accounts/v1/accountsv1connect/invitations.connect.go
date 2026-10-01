@@ -53,6 +53,9 @@ const (
 	// InvitationServiceResendInvitationProcedure is the fully-qualified name of the InvitationService's
 	// ResendInvitation RPC.
 	InvitationServiceResendInvitationProcedure = "/saas.accounts.v1.InvitationService/ResendInvitation"
+	// InvitationServiceIssueInvitationLinkProcedure is the fully-qualified name of the
+	// InvitationService's IssueInvitationLink RPC.
+	InvitationServiceIssueInvitationLinkProcedure = "/saas.accounts.v1.InvitationService/IssueInvitationLink"
 	// InvitationServiceRevokeInvitationProcedure is the fully-qualified name of the InvitationService's
 	// RevokeInvitation RPC.
 	InvitationServiceRevokeInvitationProcedure = "/saas.accounts.v1.InvitationService/RevokeInvitation"
@@ -66,6 +69,9 @@ type InvitationServiceClient interface {
 	AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
 	ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error)
+	// IssueInvitationLink rotates a pending invitation's token and returns its
+	// accept link to the administrator, without sending email.
+	IssueInvitationLink(context.Context, *connect.Request[v1.IssueInvitationLinkRequest]) (*connect.Response[v1.IssueInvitationLinkResponse], error)
 	RevokeInvitation(context.Context, *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
@@ -116,6 +122,12 @@ func NewInvitationServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(invitationServiceMethods.ByName("ResendInvitation")),
 			connect.WithClientOptions(opts...),
 		),
+		issueInvitationLink: connect.NewClient[v1.IssueInvitationLinkRequest, v1.IssueInvitationLinkResponse](
+			httpClient,
+			baseURL+InvitationServiceIssueInvitationLinkProcedure,
+			connect.WithSchema(invitationServiceMethods.ByName("IssueInvitationLink")),
+			connect.WithClientOptions(opts...),
+		),
 		revokeInvitation: connect.NewClient[v1.RevokeInvitationRequest, emptypb.Empty](
 			httpClient,
 			baseURL+InvitationServiceRevokeInvitationProcedure,
@@ -133,6 +145,7 @@ type invitationServiceClient struct {
 	acceptInvitation      *connect.Client[v1.AcceptInvitationRequest, v1.AcceptInvitationResponse]
 	listInvitations       *connect.Client[v1.ListInvitationsRequest, v1.ListInvitationsResponse]
 	resendInvitation      *connect.Client[v1.ResendInvitationRequest, v1.Invitation]
+	issueInvitationLink   *connect.Client[v1.IssueInvitationLinkRequest, v1.IssueInvitationLinkResponse]
 	revokeInvitation      *connect.Client[v1.RevokeInvitationRequest, emptypb.Empty]
 }
 
@@ -166,6 +179,11 @@ func (c *invitationServiceClient) ResendInvitation(ctx context.Context, req *con
 	return c.resendInvitation.CallUnary(ctx, req)
 }
 
+// IssueInvitationLink calls saas.accounts.v1.InvitationService.IssueInvitationLink.
+func (c *invitationServiceClient) IssueInvitationLink(ctx context.Context, req *connect.Request[v1.IssueInvitationLinkRequest]) (*connect.Response[v1.IssueInvitationLinkResponse], error) {
+	return c.issueInvitationLink.CallUnary(ctx, req)
+}
+
 // RevokeInvitation calls saas.accounts.v1.InvitationService.RevokeInvitation.
 func (c *invitationServiceClient) RevokeInvitation(ctx context.Context, req *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.revokeInvitation.CallUnary(ctx, req)
@@ -179,6 +197,9 @@ type InvitationServiceHandler interface {
 	AcceptInvitation(context.Context, *connect.Request[v1.AcceptInvitationRequest]) (*connect.Response[v1.AcceptInvitationResponse], error)
 	ListInvitations(context.Context, *connect.Request[v1.ListInvitationsRequest]) (*connect.Response[v1.ListInvitationsResponse], error)
 	ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error)
+	// IssueInvitationLink rotates a pending invitation's token and returns its
+	// accept link to the administrator, without sending email.
+	IssueInvitationLink(context.Context, *connect.Request[v1.IssueInvitationLinkRequest]) (*connect.Response[v1.IssueInvitationLinkResponse], error)
 	RevokeInvitation(context.Context, *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
@@ -225,6 +246,12 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 		connect.WithSchema(invitationServiceMethods.ByName("ResendInvitation")),
 		connect.WithHandlerOptions(opts...),
 	)
+	invitationServiceIssueInvitationLinkHandler := connect.NewUnaryHandler(
+		InvitationServiceIssueInvitationLinkProcedure,
+		svc.IssueInvitationLink,
+		connect.WithSchema(invitationServiceMethods.ByName("IssueInvitationLink")),
+		connect.WithHandlerOptions(opts...),
+	)
 	invitationServiceRevokeInvitationHandler := connect.NewUnaryHandler(
 		InvitationServiceRevokeInvitationProcedure,
 		svc.RevokeInvitation,
@@ -245,6 +272,8 @@ func NewInvitationServiceHandler(svc InvitationServiceHandler, opts ...connect.H
 			invitationServiceListInvitationsHandler.ServeHTTP(w, r)
 		case InvitationServiceResendInvitationProcedure:
 			invitationServiceResendInvitationHandler.ServeHTTP(w, r)
+		case InvitationServiceIssueInvitationLinkProcedure:
+			invitationServiceIssueInvitationLinkHandler.ServeHTTP(w, r)
 		case InvitationServiceRevokeInvitationProcedure:
 			invitationServiceRevokeInvitationHandler.ServeHTTP(w, r)
 		default:
@@ -278,6 +307,10 @@ func (UnimplementedInvitationServiceHandler) ListInvitations(context.Context, *c
 
 func (UnimplementedInvitationServiceHandler) ResendInvitation(context.Context, *connect.Request[v1.ResendInvitationRequest]) (*connect.Response[v1.Invitation], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.ResendInvitation is not implemented"))
+}
+
+func (UnimplementedInvitationServiceHandler) IssueInvitationLink(context.Context, *connect.Request[v1.IssueInvitationLinkRequest]) (*connect.Response[v1.IssueInvitationLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InvitationService.IssueInvitationLink is not implemented"))
 }
 
 func (UnimplementedInvitationServiceHandler) RevokeInvitation(context.Context, *connect.Request[v1.RevokeInvitationRequest]) (*connect.Response[emptypb.Empty], error) {

@@ -328,7 +328,8 @@ func (s *OrgServer) CreateOrganization(ctx context.Context, req *gen.CreateOrgan
 	if err != nil {
 		return nil, err
 	}
-	return service.CreateOrganization(ctx, userID, req)
+	response, err := service.CreateOrganization(ctx, userID, req)
+	return response, organizationLifecycleStatusError(err)
 }
 
 func (s *OrgServer) GetOrganization(ctx context.Context, req *gen.GetOrganizationRequest) (*gen.Organization, error) {

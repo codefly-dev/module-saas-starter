@@ -25,6 +25,8 @@ import {
 } from "../model/settings-schema";
 import { orgMutations } from "../service/mutations";
 import { orgQueries } from "../service/queries";
+import { OrganizationLifecycleCard } from "./organization-lifecycle-card";
+import { OrganizationProfileForm } from "./organization-profile-form";
 
 function useOrgSettings(orgId: string) {
 	return useQuery({
@@ -64,11 +66,52 @@ export function OrgSettingsPage() {
 				<OrgSelector />
 			</div>
 			{organizationId ? (
-				<OrgSettingsForm key={organizationId} orgId={organizationId} />
+				<>
+					<OrganizationIdentity
+						key={`identity-${organizationId}`}
+						orgId={organizationId}
+					/>
+					<OrgSettingsForm key={organizationId} orgId={organizationId} />
+				</>
 			) : (
 				<p>Select an organization to edit its settings.</p>
 			)}
 		</div>
+	);
+}
+
+/**
+ * The current organization's name and slug, and the danger zone: leaving it,
+ * and — for its owner or a platform super administrator — deleting it.
+ */
+function OrganizationIdentity({ orgId }: { orgId: string }) {
+	const { orgRole, platformRole } = useAuth();
+	const { data: organization, isError } = useQuery(orgQueries.detail(orgId));
+	if (isError) {
+		return (
+			<p role="alert" className="text-sm text-destructive">
+				Couldn&apos;t load this organization.
+			</p>
+		);
+	}
+	if (!organization) return null;
+	const identity = {
+		id: organization.id,
+		name: organization.name,
+		slug: organization.slug,
+	};
+	const isAdministrator = orgRole === "owner" || orgRole === "admin";
+	return (
+		<>
+			{(isAdministrator || platformRole === "super_admin") && (
+				<OrganizationProfileForm organization={identity} />
+			)}
+			<OrganizationLifecycleCard
+				organization={identity}
+				canLeave
+				canDelete={orgRole === "owner" || platformRole === "super_admin"}
+			/>
+		</>
 	);
 }
 

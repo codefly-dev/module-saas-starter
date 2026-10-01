@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:01a55ce0628e0098f16b6e5ea8f73aa81f349173030ba7a9408774526428fcb9",
+      "digest": "sha256:91c5b2d9cc104f254ad5de886ebd1204323051d63e007c8992c64f97124f1086",
       "services": [
         {
           "name": "APIKeyService",
@@ -192,6 +192,7 @@
             "/saas.accounts.v1.InvitationService/CreateInvitation",
             "/saas.accounts.v1.InvitationService/InspectInvitation",
             "/saas.accounts.v1.InvitationService/InspectInvitationById",
+            "/saas.accounts.v1.InvitationService/IssueInvitationLink",
             "/saas.accounts.v1.InvitationService/ListInvitations",
             "/saas.accounts.v1.InvitationService/ResendInvitation",
             "/saas.accounts.v1.InvitationService/RevokeInvitation"
@@ -273,13 +274,16 @@
           "procedures": [
             "/saas.accounts.v1.OrganizationService/AddMember",
             "/saas.accounts.v1.OrganizationService/CreateOrganization",
+            "/saas.accounts.v1.OrganizationService/DeleteOrganization",
             "/saas.accounts.v1.OrganizationService/GetOrgSettings",
             "/saas.accounts.v1.OrganizationService/GetOrganization",
             "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+            "/saas.accounts.v1.OrganizationService/LeaveOrganization",
             "/saas.accounts.v1.OrganizationService/ListMembers",
             "/saas.accounts.v1.OrganizationService/ListOrganizations",
             "/saas.accounts.v1.OrganizationService/RemoveMember",
             "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+            "/saas.accounts.v1.OrganizationService/UpdateOrganization",
             "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings"
           ]
         },
@@ -316,9 +320,11 @@
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+            "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
             "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
             "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+            "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
             "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",

@@ -71,6 +71,8 @@ export const handlers = [
 	http.post(rpc("OrganizationService", "ListOrganizations"), () =>
 		HttpResponse.json({
 			organizations: [mockOrganization(), mockOrganization()],
+			// The default creation policy is open.
+			canCreate: true,
 		}),
 	),
 	http.post(rpc("OrganizationService", "GetOrganization"), () =>
@@ -86,6 +88,15 @@ export const handlers = [
 		HttpResponse.json({}),
 	),
 	http.post(rpc("OrganizationService", "RemoveMember"), () =>
+		HttpResponse.json({}),
+	),
+	http.post(rpc("OrganizationService", "UpdateOrganization"), () =>
+		HttpResponse.json(mockOrganization()),
+	),
+	http.post(rpc("OrganizationService", "LeaveOrganization"), () =>
+		HttpResponse.json({}),
+	),
+	http.post(rpc("OrganizationService", "DeleteOrganization"), () =>
 		HttpResponse.json({}),
 	),
 
@@ -156,7 +167,13 @@ export const handlers = [
 	http.post(rpc("InvitationService", "CreateInvitation"), () =>
 		HttpResponse.json({
 			invitation: mockInvitation(),
-			inviteToken: "inv_test_...",
+			acceptUrl: "http://localhost:3000/invitations/accept?token=inv_test",
+		}),
+	),
+	http.post(rpc("InvitationService", "IssueInvitationLink"), () =>
+		HttpResponse.json({
+			invitation: mockInvitation(),
+			acceptUrl: "http://localhost:3000/invitations/accept?token=inv_rotated",
 		}),
 	),
 	http.post(rpc("InvitationService", "AcceptInvitation"), () =>
@@ -202,5 +219,17 @@ export const handlers = [
 	),
 	http.post(rpc("PlatformAdminService", "ListFeatureFlags"), () =>
 		HttpResponse.json({ flags: [mockFeatureFlag()] }),
+	),
+	http.post(rpc("PlatformAdminService", "ListAllOrganizations"), () =>
+		HttpResponse.json({
+			organizations: [
+				{ organization: mockOrganization(), memberCount: 3 },
+				{ organization: mockOrganization(), memberCount: 1 },
+			],
+			nextPageToken: "",
+		}),
+	),
+	http.post(rpc("PlatformAdminService", "GetOrganizationRoster"), () =>
+		HttpResponse.json({ members: [] }),
 	),
 ];

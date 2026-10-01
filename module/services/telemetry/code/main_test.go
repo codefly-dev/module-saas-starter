@@ -60,8 +60,8 @@ func TestResolveExporterConfigPrefersWorkspaceValue(t *testing.T) {
 // test for per-key resolution. The workspace group selects debug and says
 // nothing about an endpoint or headers; the process environment carries both.
 // Resolving key by key produced debug+endpoint — a combination collector.New
-// refuses — so a developer who had exported these to drive
-// scripts/setup/otel.sh could no longer start the collector at all. It also
+// refuses — so a developer who had exported these in their shell could no
+// longer start the collector at all. It also
 // stopped an ambient OTEL_EXPORTER_OTLP_HEADERS credential from being attached
 // to an endpoint it was never issued for.
 func TestResolveExporterConfigTakesWholeTupleFromOneAuthority(t *testing.T) {

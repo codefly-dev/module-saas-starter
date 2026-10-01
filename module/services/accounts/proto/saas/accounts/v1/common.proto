@@ -69,6 +69,10 @@ message Organization {
   }];
   string owner_id = 4 [(buf.validate.field).string.uuid = true];
   google.protobuf.Timestamp created_at = 5;
+  // Set when the organization was deleted. An archived organization is never
+  // listed to its former members and admits no request; only the platform
+  // view shows it.
+  google.protobuf.Timestamp archived_at = 6;
 }
 
 message OrgMembership {
