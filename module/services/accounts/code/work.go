@@ -750,6 +750,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	// EMAIL_PROVIDER=disabled there is no outbox and no worker: every request path
 	// already treats a nil outbox as "this deployment sends no email", and
 	// invitations are then handed to the inviting administrator as a link.
+	orgCreationPolicy, err := business.ParseOrganizationCreationPolicy(applicationEnv("ORGANIZATION_CREATION"))
+	if err != nil {
+		return nil, fmt.Errorf("application: %w", err)
+	}
+	service.SetOrganizationCreationPolicy(orgCreationPolicy)
+
 	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
 	if err != nil {
 		return nil, err
@@ -761,6 +767,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	var workerEmailOutbox *email.Outbox
 	var emailWorker *jobs.Worker
 	if emailConfig.sender == nil {
+		// No outbox, but links handed to an administrator still need the
+		// canonical origin.
+		service.SetEmailOutbox(nil, appBase)
 		w.Warn("EMAIL DELIVERY DISABLED — EMAIL_PROVIDER=disabled: invitations, magic links and notifications send no email; an invitation's accept link is returned to the administrator who issues it")
 	} else {
 		templateStore := infra.NewPostgresTemplateStore(store)

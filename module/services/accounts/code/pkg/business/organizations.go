@@ -265,7 +265,11 @@ func (s *Service) ListOrganizations(ctx context.Context, userID string) (*gen.Li
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list organizations")
 	}
-	return &gen.ListOrganizationsResponse{Organizations: orgs}, nil
+	canCreate, err := s.mayCreateOrganization(ctx, userID)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot resolve organization creation policy")
+	}
+	return &gen.ListOrganizationsResponse{Organizations: orgs, CanCreate: canCreate}, nil
 }
 
 // AddOrgMember adds a member to an organization, or updates the role of one
@@ -394,25 +398,7 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// either commits before the dependent delete or waits behind this
 	// transaction, and can neither be missed by it nor land after it.
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		if err := s.requireOrgAdminContinuity(ctx, req.OrgId, req.UserId, ""); err != nil {
-			return err
-		}
-		if err := s.store.LockOrgMembership(ctx, req.OrgId, req.UserId); err != nil {
-			return w.Wrapf(err, "cannot lock org membership")
-		}
-		// Dependent access before the parent row: migration 127 made team_members
-		// a child of organization_members with ON DELETE CASCADE, so deleting the
-		// membership first would leave this statement nothing to find and its
-		// reported count permanently zero. Removing explicitly keeps that count
-		// truthful; the cascade stays as the backstop for any writer that does
-		// not come through here.
-		if _, err := s.store.RemoveOrgTeamMemberships(ctx, req.OrgId, req.UserId); err != nil {
-			return w.Wrapf(err, "cannot remove dependent team memberships")
-		}
-		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
-			return err
-		}
-		if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: req.OrgId, PrincipalID: req.UserId}, SourceDelegationMemberRemoved); err != nil {
+		if err := s.removeOrgMembershipTx(ctx, actorID, req.OrgId, req.UserId); err != nil {
 			return err
 		}
 		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
@@ -428,6 +414,34 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	_ = s.invalidateMembership(ctx, req.OrgId, req.UserId)
 
 	return nil
+}
+
+// removeOrgMembershipTx is one membership's removal, shared by an
+// administrator removing a member and a member leaving: the continuity guard,
+// the dependent team memberships, the membership row and the source
+// delegations it carried, in the caller's organization transaction. Each caller
+// records its own audit event.
+func (s *Service) removeOrgMembershipTx(ctx context.Context, actorID, orgID, userID string) error {
+	w := wool.Get(ctx).In("removeOrgMembershipTx")
+	if err := s.requireOrgAdminContinuity(ctx, orgID, userID, ""); err != nil {
+		return err
+	}
+	if err := s.store.LockOrgMembership(ctx, orgID, userID); err != nil {
+		return w.Wrapf(err, "cannot lock org membership")
+	}
+	// Dependent access before the parent row: migration 127 made team_members
+	// a child of organization_members with ON DELETE CASCADE, so deleting the
+	// membership first would leave this statement nothing to find and its
+	// reported count permanently zero. Removing explicitly keeps that count
+	// truthful; the cascade stays as the backstop for any writer that does
+	// not come through here.
+	if _, err := s.store.RemoveOrgTeamMemberships(ctx, orgID, userID); err != nil {
+		return w.Wrapf(err, "cannot remove dependent team memberships")
+	}
+	if err := s.store.RemoveOrgMember(ctx, orgID, userID); err != nil {
+		return err
+	}
+	return s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID, PrincipalID: userID}, SourceDelegationMemberRemoved)
 }
 
 // ListOrgMembers lists all members of an organization.

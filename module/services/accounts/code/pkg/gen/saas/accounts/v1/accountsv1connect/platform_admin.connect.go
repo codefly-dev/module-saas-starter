@@ -73,6 +73,12 @@ const (
 	// PlatformAdminServiceListPlatformAdminsProcedure is the fully-qualified name of the
 	// PlatformAdminService's ListPlatformAdmins RPC.
 	PlatformAdminServiceListPlatformAdminsProcedure = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
+	// PlatformAdminServiceListAllOrganizationsProcedure is the fully-qualified name of the
+	// PlatformAdminService's ListAllOrganizations RPC.
+	PlatformAdminServiceListAllOrganizationsProcedure = "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations"
+	// PlatformAdminServiceGetOrganizationRosterProcedure is the fully-qualified name of the
+	// PlatformAdminService's GetOrganizationRoster RPC.
+	PlatformAdminServiceGetOrganizationRosterProcedure = "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster"
 	// PlatformAdminServiceListFeatureFlagsProcedure is the fully-qualified name of the
 	// PlatformAdminService's ListFeatureFlags RPC.
 	PlatformAdminServiceListFeatureFlagsProcedure = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
@@ -125,6 +131,12 @@ type PlatformAdminServiceClient interface {
 	GrantPlatformRole(context.Context, *connect.Request[v1.GrantPlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	RevokePlatformRole(context.Context, *connect.Request[v1.RevokePlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	ListPlatformAdmins(context.Context, *connect.Request[v1.ListPlatformAdminsRequest]) (*connect.Response[v1.ListPlatformAdminsResponse], error)
+	// ListAllOrganizations lists every organization on the platform, whether or
+	// not the caller belongs to it.
+	ListAllOrganizations(context.Context, *connect.Request[v1.ListAllOrganizationsRequest]) (*connect.Response[v1.ListAllOrganizationsResponse], error)
+	// GetOrganizationRoster lists any organization's members for the platform
+	// view, which needs no membership of its own.
+	GetOrganizationRoster(context.Context, *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error)
 	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error)
 	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
@@ -228,6 +240,18 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(platformAdminServiceMethods.ByName("ListPlatformAdmins")),
 			connect.WithClientOptions(opts...),
 		),
+		listAllOrganizations: connect.NewClient[v1.ListAllOrganizationsRequest, v1.ListAllOrganizationsResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceListAllOrganizationsProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("ListAllOrganizations")),
+			connect.WithClientOptions(opts...),
+		),
+		getOrganizationRoster: connect.NewClient[v1.GetOrganizationRosterRequest, v1.GetOrganizationRosterResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceGetOrganizationRosterProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("GetOrganizationRoster")),
+			connect.WithClientOptions(opts...),
+		),
 		listFeatureFlags: connect.NewClient[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse](
 			httpClient,
 			baseURL+PlatformAdminServiceListFeatureFlagsProcedure,
@@ -293,6 +317,8 @@ type platformAdminServiceClient struct {
 	grantPlatformRole      *connect.Client[v1.GrantPlatformRoleRequest, emptypb.Empty]
 	revokePlatformRole     *connect.Client[v1.RevokePlatformRoleRequest, emptypb.Empty]
 	listPlatformAdmins     *connect.Client[v1.ListPlatformAdminsRequest, v1.ListPlatformAdminsResponse]
+	listAllOrganizations   *connect.Client[v1.ListAllOrganizationsRequest, v1.ListAllOrganizationsResponse]
+	getOrganizationRoster  *connect.Client[v1.GetOrganizationRosterRequest, v1.GetOrganizationRosterResponse]
 	listFeatureFlags       *connect.Client[v1.ListFeatureFlagsRequest, v1.ListFeatureFlagsResponse]
 	upsertFeatureFlag      *connect.Client[v1.UpsertFeatureFlagRequest, v1.UpsertFeatureFlagResponse]
 	getJobOperations       *connect.Client[v11.GetJobOperationsRequest, v11.GetJobOperationsResponse]
@@ -361,6 +387,16 @@ func (c *platformAdminServiceClient) RevokePlatformRole(ctx context.Context, req
 // ListPlatformAdmins calls saas.accounts.v1.PlatformAdminService.ListPlatformAdmins.
 func (c *platformAdminServiceClient) ListPlatformAdmins(ctx context.Context, req *connect.Request[v1.ListPlatformAdminsRequest]) (*connect.Response[v1.ListPlatformAdminsResponse], error) {
 	return c.listPlatformAdmins.CallUnary(ctx, req)
+}
+
+// ListAllOrganizations calls saas.accounts.v1.PlatformAdminService.ListAllOrganizations.
+func (c *platformAdminServiceClient) ListAllOrganizations(ctx context.Context, req *connect.Request[v1.ListAllOrganizationsRequest]) (*connect.Response[v1.ListAllOrganizationsResponse], error) {
+	return c.listAllOrganizations.CallUnary(ctx, req)
+}
+
+// GetOrganizationRoster calls saas.accounts.v1.PlatformAdminService.GetOrganizationRoster.
+func (c *platformAdminServiceClient) GetOrganizationRoster(ctx context.Context, req *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error) {
+	return c.getOrganizationRoster.CallUnary(ctx, req)
 }
 
 // ListFeatureFlags calls saas.accounts.v1.PlatformAdminService.ListFeatureFlags.
@@ -432,6 +468,12 @@ type PlatformAdminServiceHandler interface {
 	GrantPlatformRole(context.Context, *connect.Request[v1.GrantPlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	RevokePlatformRole(context.Context, *connect.Request[v1.RevokePlatformRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	ListPlatformAdmins(context.Context, *connect.Request[v1.ListPlatformAdminsRequest]) (*connect.Response[v1.ListPlatformAdminsResponse], error)
+	// ListAllOrganizations lists every organization on the platform, whether or
+	// not the caller belongs to it.
+	ListAllOrganizations(context.Context, *connect.Request[v1.ListAllOrganizationsRequest]) (*connect.Response[v1.ListAllOrganizationsResponse], error)
+	// GetOrganizationRoster lists any organization's members for the platform
+	// view, which needs no membership of its own.
+	GetOrganizationRoster(context.Context, *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error)
 	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error)
 	// Deprecated: retained for v1 wire compatibility. The legacy inventory is
@@ -531,6 +573,18 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		connect.WithSchema(platformAdminServiceMethods.ByName("ListPlatformAdmins")),
 		connect.WithHandlerOptions(opts...),
 	)
+	platformAdminServiceListAllOrganizationsHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceListAllOrganizationsProcedure,
+		svc.ListAllOrganizations,
+		connect.WithSchema(platformAdminServiceMethods.ByName("ListAllOrganizations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	platformAdminServiceGetOrganizationRosterHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceGetOrganizationRosterProcedure,
+		svc.GetOrganizationRoster,
+		connect.WithSchema(platformAdminServiceMethods.ByName("GetOrganizationRoster")),
+		connect.WithHandlerOptions(opts...),
+	)
 	platformAdminServiceListFeatureFlagsHandler := connect.NewUnaryHandler(
 		PlatformAdminServiceListFeatureFlagsProcedure,
 		svc.ListFeatureFlags,
@@ -605,6 +659,10 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceRevokePlatformRoleHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListPlatformAdminsProcedure:
 			platformAdminServiceListPlatformAdminsHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceListAllOrganizationsProcedure:
+			platformAdminServiceListAllOrganizationsHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceGetOrganizationRosterProcedure:
+			platformAdminServiceGetOrganizationRosterHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListFeatureFlagsProcedure:
 			platformAdminServiceListFeatureFlagsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceUpsertFeatureFlagProcedure:
@@ -676,6 +734,14 @@ func (UnimplementedPlatformAdminServiceHandler) RevokePlatformRole(context.Conte
 
 func (UnimplementedPlatformAdminServiceHandler) ListPlatformAdmins(context.Context, *connect.Request[v1.ListPlatformAdminsRequest]) (*connect.Response[v1.ListPlatformAdminsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ListPlatformAdmins is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) ListAllOrganizations(context.Context, *connect.Request[v1.ListAllOrganizationsRequest]) (*connect.Response[v1.ListAllOrganizationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ListAllOrganizations is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) GetOrganizationRoster(context.Context, *connect.Request[v1.GetOrganizationRosterRequest]) (*connect.Response[v1.GetOrganizationRosterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.GetOrganizationRoster is not implemented"))
 }
 
 func (UnimplementedPlatformAdminServiceHandler) ListFeatureFlags(context.Context, *connect.Request[v1.ListFeatureFlagsRequest]) (*connect.Response[v1.ListFeatureFlagsResponse], error) {

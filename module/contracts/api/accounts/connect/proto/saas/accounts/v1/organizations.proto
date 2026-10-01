@@ -79,6 +79,12 @@ message CreateOrganizationRequest {
     max_len: 63
     pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
   }];
+  // The user who owns the new organization. Only a platform administrator may
+  // name someone else; empty means the caller.
+  string owner_user_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 message CreateOrganizationResponse {
@@ -93,6 +99,31 @@ message ListOrganizationsRequest {}
 
 message ListOrganizationsResponse {
   repeated Organization organizations = 1;
+  // Whether the caller may create an organization under the deployment's
+  // creation policy. The UI offers "Create organization" only when true.
+  bool can_create = 2;
+}
+
+message UpdateOrganizationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  string slug = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+  }];
+}
+
+message LeaveOrganizationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message DeleteOrganizationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // The organization's current slug, typed by the person deleting it. A
+  // mismatch is refused, so a stale or mistaken id cannot delete the wrong
+  // organization.
+  string confirm_slug = 2 [(buf.validate.field).string.min_len = 1];
 }
 
 message AddOrgMemberRequest {
@@ -213,6 +244,83 @@ service OrganizationService {
       impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/organizations/{org_id}/members/{user_id}"};
+  }
+
+  // UpdateOrganization renames an organization or changes its slug.
+  rpc UpdateOrganization(UpdateOrganizationRequest) returns (Organization) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.org.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+  }
+
+  // LeaveOrganization removes the caller's own membership. The subject is
+  // always the caller; the last administrator of an organization others still
+  // belong to is refused.
+  rpc LeaveOrganization(LeaveOrganizationRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.org.member_left"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+  }
+
+  // DeleteOrganization archives an organization: it disappears from every
+  // member's list, admits no further request, and its credentials, grants and
+  // pending invitations are revoked. Its history is kept. Only an owner or a
+  // platform super administrator may delete.
+  rpc DeleteOrganization(DeleteOrganizationRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
+      audit: {
+        events: "saas.org.deleted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
   }
 
   rpc ListMembers(ListOrgMembersRequest) returns (ListOrgMembersResponse) {

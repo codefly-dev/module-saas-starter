@@ -38,7 +38,7 @@ and Cloudflare Turnstile. Each one is a Codefly configuration group on this
 profile: copy the committed `configurations/local-dogfood/<group>.env.example`
 (and `<group>.secret.env.example`, where there is one) to the Git-ignored
 `<group>.env` / `<group>.secret.env`, and fill in the values. Every group is
-optional except `observability` — see the note below. Stripe setup belongs to
+optional except `observability` and `email` — see the notes below. Stripe setup belongs to
 the [`codefly-dev/provider-stripe`](https://github.com/codefly-dev/provider-stripe)
 plugin, which validates the account, observes the webhook and projects the
 `billing` group.
@@ -63,6 +63,11 @@ declared group whose files are absent rather than failing, and the collector
 refuses to start without an explicit `OBSERVABILITY_EXPORTER` — it will not
 silently downgrade itself to `debug` and drop every span. Copy
 `observability.env.example` as it is to keep telemetry local.
+
+`email` is required because this profile is not the `local` environment, and
+accounts refuses to start there without an explicit `EMAIL_PROVIDER`: `resend`
+with its secrets, or `disabled` to run without email — invitations then hand the
+inviting administrator a link to share instead of sending one.
 
 The product callback address always comes from
 `codefly endpoint frontend --type http`. WorkOS and the browser can use its

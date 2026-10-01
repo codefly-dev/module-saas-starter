@@ -319,6 +319,25 @@ type Store interface {
 	GetOrganizationBySlug(ctx context.Context, slug string) (*gen.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
 	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
+	// UpdateOrganization renames a live organization or changes its slug; a
+	// slug another organization holds is ErrTypeConflict.
+	UpdateOrganization(ctx context.Context, id, name, slug string) (*gen.Organization, error)
+	// ArchiveOrganization marks a live organization archived and releases its
+	// slug. Migration 16's trigger then refuses any membership into it.
+	ArchiveOrganization(ctx context.Context, orgID, actorID string) error
+	// RemoveAllOrgMembers deletes every membership of an organization.
+	RemoveAllOrgMembers(ctx context.Context, orgID string) (int64, error)
+	// RevokeOrgAPIKeys revokes every live API key of an organization.
+	RevokeOrgAPIKeys(ctx context.Context, orgID string) (int64, error)
+	// RevokeOrgPendingInvitations revokes every pending invitation.
+	RevokeOrgPendingInvitations(ctx context.Context, orgID string) (int64, error)
+	// ActiveInstallationIDs lists an organization's unrevoked installations.
+	ActiveInstallationIDs(ctx context.Context, orgID string) ([]string, error)
+	// CountOrgMembers counts an organization's memberships.
+	CountOrgMembers(ctx context.Context, orgID string) (int, error)
+	// ListAllOrganizations is the platform view of every organization; it
+	// must run under the control plane.
+	ListAllOrganizations(ctx context.Context, query string, includeArchived bool, limit, offset int) ([]*gen.PlatformOrganization, error)
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
 	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error

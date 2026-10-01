@@ -32,19 +32,20 @@ type ownedResourceResolver func(ctx context.Context, store OwnedResourceStore, i
 // method's resource binding; this map only selects the kind-specific lookup.
 // A method absent here has no resolver and stays unsupported.
 var ownedResourceResolvers = map[string]ownedResourceResolver{
-	"/saas.accounts.v1.DashboardService/DeleteDashboard":   resolveDashboardOrg,
-	"/saas.accounts.v1.DashboardService/GetDashboard":      resolveDashboardOrg,
-	"/saas.accounts.v1.DashboardService/ShareDashboard":    resolveDashboardOrg,
-	"/saas.accounts.v1.DashboardService/UpdateDashboard":   resolveDashboardOrg,
-	"/saas.accounts.v1.InvitationService/ResendInvitation": resolveInvitationOrg,
-	"/saas.accounts.v1.InvitationService/RevokeInvitation": resolveInvitationOrg,
-	"/saas.accounts.v1.WebhookService/DeleteSubscription":  resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/RotateSecret":        resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/TestWebhook":         resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/ListDeliveries":      resolveSubscriptionOrg,
-	"/saas.accounts.v1.WebhookService/GetDelivery":         resolveDeliveryOrg,
-	"/saas.accounts.v1.WebhookService/ReplayDelivery":      resolveDeliveryOrg,
-	"/saas.accounts.v1.PrincipalService/RevokePrincipal":   resolvePrincipalOrg,
+	"/saas.accounts.v1.DashboardService/DeleteDashboard":      resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/GetDashboard":         resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/ShareDashboard":       resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/UpdateDashboard":      resolveDashboardOrg,
+	"/saas.accounts.v1.InvitationService/ResendInvitation":    resolveInvitationOrg,
+	"/saas.accounts.v1.InvitationService/IssueInvitationLink": resolveInvitationOrg,
+	"/saas.accounts.v1.InvitationService/RevokeInvitation":    resolveInvitationOrg,
+	"/saas.accounts.v1.WebhookService/DeleteSubscription":     resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/RotateSecret":           resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/TestWebhook":            resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/ListDeliveries":         resolveSubscriptionOrg,
+	"/saas.accounts.v1.WebhookService/GetDelivery":            resolveDeliveryOrg,
+	"/saas.accounts.v1.WebhookService/ReplayDelivery":         resolveDeliveryOrg,
+	"/saas.accounts.v1.PrincipalService/RevokePrincipal":      resolvePrincipalOrg,
 }
 
 func resolveDashboardOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {

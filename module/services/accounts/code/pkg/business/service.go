@@ -32,6 +32,7 @@ type Service struct {
 	billing                   BillingClient    // optional: Stripe client for checkout/portal
 	billingURLs               BillingRedirects // server-owned Stripe return destinations
 	appBaseURL                string           // public URL of the frontend, used in email bodies
+	orgCreationPolicy         OrganizationCreationPolicy
 	audit                     AuditEmitter
 	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
 	entitlements              EntitlementChecker
@@ -672,8 +673,30 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // and the WITH CHECK on organization_members would reject the insert.
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.
-func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
-	return s.CreateFixtureOrganization(ctx, ownerID, req, "")
+//
+// The deployment's creation policy decides whether actorID may create one at
+// all, and only a platform super administrator may name another user as the
+// owner (req.OwnerUserId); the new organization is otherwise the caller's.
+func (s *Service) CreateOrganization(ctx context.Context, actorID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
+	ownerID := actorID
+	if req.OwnerUserId != "" && req.OwnerUserId != actorID {
+		superAdmin, err := s.isPlatformRole(ctx, actorID, "super_admin")
+		if err != nil {
+			return nil, err
+		}
+		if !superAdmin {
+			return nil, ErrOrganizationOwnerRefused
+		}
+		ownerID = req.OwnerUserId
+	}
+	allowed, err := s.mayCreateOrganization(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, ErrOrganizationCreationRefused
+	}
+	return s.createOrganization(ctx, actorID, ownerID, req, "")
 }
 
 // CreateFixtureOrganization is CreateOrganization with a caller-chosen id, for
@@ -687,6 +710,12 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 // a tenant id that reaches the database malformed is not recoverable by anything
 // downstream.
 func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
+	return s.createOrganization(ctx, ownerID, ownerID, req, id)
+}
+
+// createOrganization inserts the organization and its owner's membership and
+// records actorID as the one who created it.
+func (s *Service) createOrganization(ctx context.Context, actorID, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
 	slug := req.Slug
 	if slug == "" {
 		slug = Slugify(req.Name)
@@ -721,7 +750,7 @@ func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string,
 		if err := s.store.CreateOrganization(ctx, org); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
+		return s.emitTx(ctx, actorID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	}); err != nil {
 		return nil, err
 	}

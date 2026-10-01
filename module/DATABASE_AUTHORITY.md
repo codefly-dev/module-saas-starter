@@ -794,6 +794,21 @@ silently disable the rule instead of tightening it. Control-plane transactions
 set no tenant organization and hold `BYPASSRLS`, so they evaluate the same
 predicate directly.
 
+## Archived organizations
+
+Migration `16_organization_archive` adds `organizations.archived_at` and
+`archived_by`. `DeleteOrganization` sets them in the same organization
+transaction that removes every `organization_members` row, so an archived
+organization has no members: membership is what every request-path
+authorization reads, which is why no query needed to learn the column. The
+migration's guarantee is the emptiness itself — a `BEFORE INSERT OR UPDATE OF
+org_id` trigger on `organization_members`, `refuse_archived_organization_membership`
+(`SECURITY DEFINER`, owned by `app_control_plane`, `search_path` ending in
+`pg_temp`), refuses a membership into an archived organization from any writer:
+an administrator, an accepted invitation, SSO just-in-time provisioning, or a
+fixture. Archiving also rewrites the slug to `<prefix>-deleted-<id tail>` so the
+name is free again; the original is in the `saas.org.deleted` audit payload.
+
 ## Identity deactivation and administered organizations
 
 Migration `137_identity_administered_organizations` adds

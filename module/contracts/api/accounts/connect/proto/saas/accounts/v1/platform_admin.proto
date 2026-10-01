@@ -30,6 +30,35 @@ message SearchUsersResponse {
   int32 total_count = 3;
 }
 
+message ListAllOrganizationsRequest {
+  // Matches a name or slug, case-insensitively. Empty lists every organization.
+  string query = 1;
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gt: 0
+    lte: 100
+  }];
+  string page_token = 3;
+  bool include_archived = 4;
+}
+
+message PlatformOrganization {
+  Organization organization = 1;
+  int32 member_count = 2;
+}
+
+message ListAllOrganizationsResponse {
+  repeated PlatformOrganization organizations = 1;
+  string next_page_token = 2;
+}
+
+message GetOrganizationRosterRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetOrganizationRosterResponse {
+  repeated OrgMembership members = 1;
+}
+
 message SuspendUserRequest {
   string user_id = 1 [(buf.validate.field).string.uuid = true];
   string reason = 2;
@@ -446,6 +475,38 @@ service PlatformAdminService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
     };
     option (google.api.http) = {get: "/v1/platform/admins"};
+  }
+
+  // ListAllOrganizations lists every organization on the platform, whether or
+  // not the caller belongs to it.
+  rpc ListAllOrganizations(ListAllOrganizationsRequest) returns (ListAllOrganizationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
+  }
+
+  // GetOrganizationRoster lists any organization's members for the platform
+  // view, which needs no membership of its own.
+  rpc GetOrganizationRoster(GetOrganizationRosterRequest) returns (GetOrganizationRosterResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPPORT
+    };
   }
 
   // Legacy feature-flag migration inventory (platform-only, read-only)

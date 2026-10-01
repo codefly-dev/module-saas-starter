@@ -332,6 +332,7 @@ const (
 	EventInvitationAccepted          EventType = "saas.invitation.accepted"
 	EventInvitationRevoked           EventType = "saas.invitation.revoked"
 	EventInvitationResent            EventType = "saas.invitation.resent"
+	EventInvitationLinkIssued        EventType = "saas.invitation.link_issued"
 	EventDelegationRequested         EventType = "saas.delegation.requested"
 	EventDelegationApproved          EventType = "saas.delegation.approved"
 	EventDelegationDenied            EventType = "saas.delegation.denied"
@@ -392,6 +393,9 @@ const (
 	EventOrgCreated                EventType = "saas.org.created"
 	EventOrgMemberAdded            EventType = "saas.org.member_added"
 	EventOrgMemberRemoved          EventType = "saas.org.member_removed"
+	EventOrgMemberLeft             EventType = "saas.org.member_left"
+	EventOrgUpdated                EventType = "saas.org.updated"
+	EventOrgDeleted                EventType = "saas.org.deleted"
 	EventOrgSettingsUpdated        EventType = "saas.org.settings_updated"
 	EventOrgGenericSettingsUpdated EventType = "saas.org.generic_settings_updated"
 	EventTeamCreated               EventType = "saas.team.created"
@@ -583,6 +587,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventInvitationAccepted, CategoryAccess, "An organization invitation was accepted."),
 	mutation(EventInvitationRevoked, CategoryAccess, "An organization invitation was revoked."),
 	mutation(EventInvitationResent, CategoryAccess, "An organization invitation was resent."),
+	mutation(EventInvitationLinkIssued, CategoryAccess, "An organization invitation's accept link was issued to an administrator instead of emailed."),
 	mutation(EventDelegationRequested, CategoryAccess, "A delegation grant was requested."),
 	mutation(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
 	mutation(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
@@ -656,6 +661,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
 	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
+	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
+	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
+	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
 	mutation(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),
 	mutation(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated."),
 	mutation(EventTeamCreated, CategoryOrganization, "A team was created.", str("name")),

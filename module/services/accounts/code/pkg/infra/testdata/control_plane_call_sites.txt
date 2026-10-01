@@ -14,6 +14,7 @@ pkg/adapters/auth.go: requireSubjectInOrg: WithControlPlane
 pkg/adapters/auth.go: requireTeamAdmin: WithControlPlane
 pkg/adapters/auth.go: requireTeamAdmin: WithControlPlane
 pkg/adapters/auth.go: requireTeamMember: WithControlPlane
+pkg/adapters/organization_lifecycle_rpcs.go: (*InvitationServer).IssueInvitationLink: WithControlPlane
 pkg/adapters/rpcs.go: (*InvitationServer).ResendInvitation: WithControlPlane
 pkg/adapters/rpcs.go: (*InvitationServer).RevokeInvitation: WithControlPlane
 pkg/adapters/rpcs.go: (*UserServer).DeleteUser: System()
@@ -76,6 +77,8 @@ pkg/business/module_registration.go: (*Service).RecordModuleWorkContextMint: Wit
 pkg/business/module_registration.go: (*Service).SolutionMintRegistration: WithControlPlane
 pkg/business/module_registration.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
+pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane
+pkg/business/organization_lifecycle.go: (*Service).ListAllOrganizations: WithControlPlane
 pkg/business/organizations.go: (*Service).ConvergeFixtureOrgMember: As(System())
 pkg/business/organizations.go: (*Service).ListOrganizations: WithControlPlane
 pkg/business/permissions.go: (*Service).DeleteRole: WithControlPlane
@@ -108,11 +111,11 @@ pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/service.go: (*Service).AssignRole: WithControlPlane
 pkg/business/service.go: (*Service).CheckPermission: WithControlPlane
-pkg/business/service.go: (*Service).CreateFixtureOrganization: WithControlPlane
 pkg/business/service.go: (*Service).CreateRole: WithControlPlane
 pkg/business/service.go: (*Service).RegisterUser: WithControlPlane
 pkg/business/service.go: (*Service).RegisterUser: WithControlPlane
 pkg/business/service.go: (*Service).VerifyEventWiring: WithControlPlane
+pkg/business/service.go: (*Service).createOrganization: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_registry.go: (*Service).DeleteSolutionRegistration: WithControlPlane

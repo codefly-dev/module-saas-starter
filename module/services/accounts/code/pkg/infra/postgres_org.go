@@ -112,11 +112,12 @@ func (s *PostgresStore) GetOrganization(ctx context.Context, id string) (*gen.Or
 
 	var org gen.Organization
 	var createdAt time.Time
+	var archivedAt *time.Time
 
 	err := executor.QueryRow(ctx, `
-		SELECT id, name, slug, owner_id, created_at
+		SELECT id, name, slug, owner_id, created_at, archived_at
 		FROM organizations WHERE id = $1`, id,
-	).Scan(&org.Id, &org.Name, &org.Slug, &org.OwnerId, &createdAt)
+	).Scan(&org.Id, &org.Name, &org.Slug, &org.OwnerId, &createdAt, &archivedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -125,6 +126,9 @@ func (s *PostgresStore) GetOrganization(ctx context.Context, id string) (*gen.Or
 	}
 
 	org.CreatedAt = timestamppb.New(createdAt)
+	if archivedAt != nil {
+		org.ArchivedAt = timestamppb.New(*archivedAt)
+	}
 	return &org, nil
 }
 
