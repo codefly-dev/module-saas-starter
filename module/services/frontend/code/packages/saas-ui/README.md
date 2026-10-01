@@ -171,7 +171,16 @@ components:
   slackens to thirty seconds once it settles, and is re-armed the instant
   `onSourceSyncRequested` fires, so the bar appears on the press rather than on
   the next interval. A card leaves the panel ten minutes after its sync
-  finished — an older sync lives in History.
+  finished — an older sync lives in History. The panel's own lists (sources,
+  collections, readable scopes) follow the same rule: the source list is
+  re-read every five seconds only while one of its syncs is active and once
+  more when the last one settles; otherwise all three are re-read once a
+  minute, never in a background tab, and on focus.
+- **Token refresh before a write.** With a `gateway` binding, a request whose
+  access token says (its `exp` claim) it has expired or is about to is sent
+  with a token from `refreshAccessToken` instead, so a page left idle does not
+  open with a refused write and a retry. The refresh-and-retry on an
+  `Unauthenticated` answer stays as the backstop.
   Six states are distinguished, because collapsing any two of them misreports a
   healthy sync: **queued**, **running**, **no progress** (a phase that has not
   advanced for `DEFAULT_STALL_AFTER_MS`; still running, never called failed —

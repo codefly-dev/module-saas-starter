@@ -488,6 +488,62 @@ describe("createDatasourceClient", () => {
 		expect(calls[1].authorization).toBe("Bearer fresh-token");
 	});
 
+	// A page left idle wakes with a token its own claims say has lapsed, and the
+	// first thing it sends is often a write (AddGitHubSource). Sending it only
+	// to be refused cost a 401 and a retry every time.
+	it("refreshes a token that says it has expired before sending, not after a 401", async () => {
+		const { calls } = stubFetchSequence([reply(oneSource)]);
+		const refreshAccessToken = vi.fn(async () => "fresh-token");
+		const expired = claimsToken({
+			sub: "user-1",
+			exp: Math.floor(Date.now() / 1000) - 60,
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => expired,
+			refreshAccessToken,
+		});
+
+		await expect(client.listSources("org-1")).resolves.toHaveLength(1);
+		expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].authorization).toBe("Bearer fresh-token");
+	});
+
+	it("sends a token that is still valid, and an opaque one, without refreshing", async () => {
+		const valid = claimsToken({
+			sub: "user-1",
+			exp: Math.floor(Date.now() / 1000) + 600,
+		});
+		for (const token of [valid, "opaque-token"]) {
+			const { calls } = stubFetchSequence([reply(oneSource)]);
+			const refreshAccessToken = vi.fn(async () => "fresh-token");
+			const client = createDatasourceClient({
+				apiBase: "/api/solutions/guides/proxy",
+				getAccessToken: () => token,
+				refreshAccessToken,
+			});
+			await client.listSources("org-1");
+			expect(refreshAccessToken).not.toHaveBeenCalled();
+			expect(calls[0].authorization).toBe(`Bearer ${token}`);
+		}
+	});
+
+	it("still sends the request when the early refresh fails", async () => {
+		const { calls } = stubFetchSequence([reply(oneSource)]);
+		const expired = claimsToken({ sub: "user-1", exp: 1 });
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/guides/proxy",
+			getAccessToken: () => expired,
+			refreshAccessToken: vi.fn(async () => {
+				throw new Error("session store unavailable");
+			}),
+		});
+
+		await expect(client.listSources("org-1")).resolves.toHaveLength(1);
+		expect(calls[0].authorization).toBe(`Bearer ${expired}`);
+	});
+
 	it("recovers an initial 401 when no token was installed yet", async () => {
 		const { calls } = stubFetchSequence([unauthorized(), reply(oneSource)]);
 		const client = createDatasourceClient({

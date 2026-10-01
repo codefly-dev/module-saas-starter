@@ -28,8 +28,15 @@ import {
 	QueryClient,
 	QueryClientProvider,
 	useQuery,
+	useQueryClient,
 } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import {
 	COLLECTION_ACCESS_PATH,
 	NoReadableCollection,
@@ -42,6 +49,8 @@ import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
+	IDLE_LIST_POLL_MS,
+	sourcesKey,
 	useAccessibleScopes,
 	useAddGitHubSource,
 	useDeleteSource,
@@ -49,7 +58,11 @@ import {
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
-import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
+import {
+	SourceSyncProgress,
+	useAnySourceSyncActive,
+	useSourceSync,
+} from "./sync-progress.js";
 import type {
 	AccessibleScopeView,
 	DatasourceClient,
@@ -273,7 +286,19 @@ function DatasourcesPanelView({
 	const [syncNotice, setSyncNotice] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 
-	const list = useListSources(client, orgId);
+	const syncActive = useAnySourceSyncActive(orgId);
+	const list = useListSources(client, orgId, syncActive);
+	// The list slows down the moment the last sync settles, so re-read it once
+	// then: otherwise the row's last-sync column would wait out the idle poll.
+	const queryClient = useQueryClient();
+	const wasSyncActive = useRef(syncActive);
+	useEffect(() => {
+		if (wasSyncActive.current && !syncActive)
+			void queryClient.invalidateQueries({
+				queryKey: sourcesKey(orgId),
+			});
+		wasSyncActive.current = syncActive;
+	}, [syncActive, orgId, queryClient]);
 	const { indicator: listIndicator, quiet: listQuiet } = useLoadingPhase(
 		list.isLoading,
 	);
@@ -283,7 +308,7 @@ function DatasourcesPanelView({
 		queryFn: () => client.listCollections!(orgId),
 		enabled: !!client.listCollections,
 		retry: false,
-		refetchInterval: 5000,
+		refetchInterval: IDLE_LIST_POLL_MS,
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
 	// Bumped on every Manage read grants press, including a second press for the

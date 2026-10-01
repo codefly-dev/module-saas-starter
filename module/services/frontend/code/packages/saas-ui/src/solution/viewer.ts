@@ -91,6 +91,24 @@ export function viewerAdministersOrganization(
 }
 
 /**
+ * Whether the access token says it expires within `marginMs` of `now` (its
+ * `exp` claim), or has already expired. A token whose claims cannot be read, or
+ * that carries no numeric `exp`, says nothing, and that is reported as false:
+ * only the server can judge such a credential, so the caller should send it.
+ *
+ * Read without verification: it only decides whether to refresh BEFORE sending
+ * a request that would otherwise be refused, never whether a request is allowed.
+ */
+export function accessTokenExpiresWithin(
+	token: string | null | undefined,
+	marginMs: number,
+	now: number = Date.now(),
+): boolean {
+	const exp = unverifiedClaims(token)?.exp;
+	return typeof exp === "number" && exp * 1000 - now <= marginMs;
+}
+
+/**
  * The host's current access token, observed. The getter stays stable while the
  * token store changes underneath it, so a change that neither replaces the
  * getter nor rerenders the host still has to reach the remote.

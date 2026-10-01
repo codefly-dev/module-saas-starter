@@ -11,6 +11,9 @@ import type {
 	CollectionGrantSubject,
 } from "./types.js";
 
+/** How soon the gate notices a read grant revoked elsewhere (see the README). */
+const REVOCATION_POLL = { interval: 5_000, inBackground: true };
+
 export function CollectionReadBoundary({
 	client,
 	orgId,
@@ -22,7 +25,10 @@ export function CollectionReadBoundary({
 	nodeId: string;
 	children: ReactNode;
 }) {
-	const scopes = useAccessibleScopes(client, orgId);
+	// Polled at the documented revocation cadence, in background tabs too: this
+	// gate is what takes private content off screen when a grant is revoked
+	// elsewhere, so it does not take the panel's idle back-off.
+	const scopes = useAccessibleScopes(client, orgId, REVOCATION_POLL);
 	// This gate decides whether a collection is shown at all, so its wait needs
 	// the same 200/300 rule as any other: a cached answer resolves well inside
 	// the delay, and "Checking collection permissions…" appearing and vanishing

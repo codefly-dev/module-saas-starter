@@ -724,3 +724,92 @@ describe("the panel's execution extension point", () => {
 		expect(screen.queryByText("member execution")).toBeNull();
 	});
 });
+
+describe("the panel's polling cadence", () => {
+	// The configured interval each list query is polled at, as TanStack holds it
+	// on the query's observer — what the browser will actually be asked to do.
+	function cadence(queryClient: QueryClient, queryKey: readonly unknown[]) {
+		const query = queryClient.getQueryCache().find({ queryKey, exact: true });
+		const observer = query?.observers[0];
+		const interval = observer?.options.refetchInterval;
+		return {
+			interval:
+				typeof interval === "function" && query ? interval(query) : interval,
+			inBackground: observer?.options.refetchIntervalInBackground ?? false,
+		};
+	}
+
+	function renderPanel(client: DatasourceClient) {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		render(
+			<QueryClientProvider client={queryClient}>
+				<DatasourcesPanel client={client} orgId="org-1" />
+			</QueryClientProvider>,
+		);
+		return queryClient;
+	}
+
+	// Observed in a consumer: ~100 ListSources / ListMyAccessibleScopes /
+	// ListCollections calls in a few idle minutes, from fixed 5 s polls that also
+	// kept running in background tabs.
+	it("polls slowly and never in a background tab when nothing is syncing", async () => {
+		const client = fakeClient({
+			getSourceSync: vi.fn(async () =>
+				sync({ phase: "done", finishedAt: ago(3_600_000) }),
+			),
+			listAccessibleScopes: vi.fn(async () => []),
+			listCollections: vi.fn(async () => []),
+		});
+		const queryClient = renderPanel(client);
+		await screen.findByText("example-org/example-repo");
+		await waitFor(() => expect(client.getSourceSync).toHaveBeenCalled());
+
+		for (const key of [
+			["datasources", "org-1"],
+			["datasource-boundaries", "org-1"],
+			["collection-access", "org-1"],
+		]) {
+			expect(cadence(queryClient, key), String(key)).toEqual({
+				interval: 60_000,
+				inBackground: false,
+			});
+		}
+	});
+
+	it("polls the source list fast while a sync runs, and re-reads it once it settles", async () => {
+		let current = sync({
+			phase: "fetching",
+			fetchingAt: new Date().toISOString(),
+		});
+		const client = fakeClient({ getSourceSync: vi.fn(async () => current) });
+		const queryClient = renderPanel(client);
+		expect(await screen.findByRole("progressbar")).toBeTruthy();
+		await waitFor(() =>
+			expect(cadence(queryClient, ["datasources", "org-1"]).interval).toBe(
+				5_000,
+			),
+		);
+
+		const listedBefore = (client.listSources as ReturnType<typeof vi.fn>).mock
+			.calls.length;
+		current = sync({ phase: "done", finishedAt: new Date().toISOString() });
+		await act(async () => {
+			await queryClient.invalidateQueries({
+				queryKey: ["source-sync", "org-1"],
+			});
+		});
+		await waitFor(() =>
+			expect(cadence(queryClient, ["datasources", "org-1"]).interval).toBe(
+				60_000,
+			),
+		);
+		// The last-sync column must not wait out the idle poll.
+		await waitFor(() =>
+			expect(
+				(client.listSources as ReturnType<typeof vi.fn>).mock.calls.length,
+			).toBeGreaterThan(listedBefore),
+		);
+	});
+});

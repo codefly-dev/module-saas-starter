@@ -2,7 +2,7 @@
 
 import { Badge, Button, Card, Progress } from "@codefly-dev/ui/layout";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
 	describeSync,
 	SYNC_STEPS,
@@ -33,6 +33,32 @@ const CLOCK_TICK_MS = 15_000;
 
 const syncKey = (orgId: string, sourceId: string) =>
 	["source-sync", orgId, sourceId] as const;
+
+/**
+ * Whether any source of the organization that is being watched right now has a
+ * sync in flight, read from the syncs `useSourceSync` already polls — so the
+ * panel can poll its lists fast only while there is progress to show, without
+ * asking the host anything more.
+ *
+ * Only watched syncs count: a source removed from the list leaves its last
+ * answer in the cache until it is collected, and a sync nobody watches any more
+ * must not keep the page polling fast.
+ */
+export function useAnySourceSyncActive(orgId: string): boolean {
+	const cache = useQueryClient().getQueryCache();
+	const subscribe = useCallback(
+		(onChange: () => void) => cache.subscribe(onChange),
+		[cache],
+	);
+	const read = () =>
+		cache.findAll({ queryKey: ["source-sync", orgId] }).some((query) => {
+			const sync = query.state.data as SourceSyncView | null | undefined;
+			return (
+				!!sync && query.getObserversCount() > 0 && describeSync(sync).active
+			);
+		});
+	return useSyncExternalStore(subscribe, read, () => false);
+}
 
 /**
  * Now, as state that advances on a tick.

@@ -35,6 +35,7 @@ import type {
 	SourceSyncView,
 } from "./types.js";
 import { notifySourceSyncRequested } from "./sync-requests.js";
+import { accessTokenExpiresWithin } from "../solution/viewer.js";
 
 /**
  * A solution remote's whole backend seam: the same-origin gateway base and the
@@ -403,6 +404,13 @@ export function toSourceSyncView(
 }
 
 /**
+ * How close to its stated expiry a token is refreshed before a request is sent.
+ * Covers the request's own flight time and modest clock skew between the
+ * browser and the issuer.
+ */
+const TOKEN_REFRESH_MARGIN_MS = 30_000;
+
+/**
  * Builds a `DatasourceClient` from a gateway binding: a scoped transport that
  * stamps the host's bearer token on every request and, on an Unauthenticated
  * response, exchanges for a fresh token and retries the call once — the same
@@ -413,7 +421,25 @@ export function createDatasourceClient(
 	binding: GatewayBinding,
 ): DatasourceClient {
 	const auth: Interceptor = (next) => async (req) => {
-		const token = binding.getAccessToken();
+		let token = binding.getAccessToken();
+		// A token the credential itself says has lapsed is refreshed before the
+		// request, not after the server refuses it. A page left idle (polling now
+		// backs off while nothing syncs) wakes with an expired token, and the
+		// first thing it sends is often a write such as AddGitHubSource: sending
+		// it doomed only to retry it costs a 401 in every log and a round trip.
+		// A refresh that fails or yields nothing leaves the old token in place,
+		// so the server still gets to answer and the recovery below still runs.
+		if (
+			token &&
+			binding.refreshAccessToken &&
+			accessTokenExpiresWithin(token, TOKEN_REFRESH_MARGIN_MS)
+		) {
+			try {
+				token = (await binding.refreshAccessToken()) ?? token;
+			} catch {
+				// Judged by the server instead.
+			}
+		}
 		if (token) {
 			req.header.set("Authorization", `Bearer ${token}`);
 		}
