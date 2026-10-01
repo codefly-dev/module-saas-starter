@@ -5,7 +5,7 @@ agent:
     name: nextjs
     # DEV PIN: an unreleased agent prerelease (the builder fix the content kit needs). Move it to the
     # release that ships the change before this module is tagged.
-    version: 0.0.159-dev.1ed5001fd8b4
+    version: 0.0.162
     publisher: codefly.dev
 service-dependencies:
     - name: auth-gateway
