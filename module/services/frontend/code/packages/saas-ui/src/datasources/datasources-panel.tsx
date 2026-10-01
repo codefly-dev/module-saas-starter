@@ -1561,6 +1561,22 @@ function SourceHistory({
 		queryFn: () => client.listActivity!(orgId, source.id),
 		refetchInterval: 15000,
 	});
+	// The audit log records who acted by id alone. The organization's members,
+	// when this client can list them, name those ids; the same query (and cache
+	// entry) the collection-access view uses. A viewer who may not list members
+	// still sees the history, with ids shortened rather than printed whole.
+	const listGrantSubjects = client.listGrantSubjects?.bind(client);
+	const subjects = useQuery({
+		queryKey: ["collection-grant-subjects", orgId],
+		queryFn: async () => (await listGrantSubjects?.(orgId)) ?? [],
+		enabled: !!listGrantSubjects,
+		retry: false,
+	});
+	const actorLabels = new Map(
+		(subjects.data ?? [])
+			.filter((subject) => subject.kind === "principal")
+			.map((subject) => [subject.id, subject.label] as const),
+	);
 	const { indicator: historyIndicator, quiet: historyQuiet } = useLoadingPhase(
 		history.isPending,
 	);
@@ -1611,11 +1627,13 @@ function SourceHistory({
 								</div>
 								<p className="text-xs text-muted-foreground">
 									Actor:{" "}
-									{e.actor === source.id ? "Source sync worker" : e.actor}
+									<span title={e.actor || undefined}>
+										{activityActorLabel(e.actor, source.id, actorLabels)}
+									</span>
 								</p>
 								<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
 									{Object.entries(e.fields)
-										.filter(([k]) => k !== "solution")
+										.filter(([k, v]) => k !== "solution" && hasActivityValue(v))
 										.map(([k, v]) => (
 											<div key={k}>
 												<dt className="inline text-muted-foreground">
@@ -1632,6 +1650,31 @@ function SourceHistory({
 			</Card>
 		</section>
 	);
+}
+
+/**
+ * Who an activity entry names. The source's own id is its sync worker; a
+ * member the organization lists is named; anything else is shown by the
+ * leading group of its id (the full id is on the element's title), since a
+ * whole UUID tells a reader nothing a short one does not.
+ */
+function activityActorLabel(
+	actor: string,
+	sourceId: string,
+	labels: ReadonlyMap<string, string>,
+): string {
+	if (!actor) return "System";
+	if (actor === sourceId) return "Source sync worker";
+	return labels.get(actor) ?? `unlisted (${shortBoundaryId(actor)})`;
+}
+
+/** A payload field worth a line: not absent, not an empty string, list or object. */
+function hasActivityValue(value: unknown): boolean {
+	if (value === null || value === undefined) return false;
+	if (typeof value === "string") return value.trim() !== "";
+	if (Array.isArray(value)) return value.length > 0;
+	if (typeof value === "object") return Object.keys(value).length > 0;
+	return true;
 }
 
 function ReconnectSource({

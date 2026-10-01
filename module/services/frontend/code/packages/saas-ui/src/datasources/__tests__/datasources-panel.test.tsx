@@ -7,6 +7,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1823,5 +1824,77 @@ describe("Manage read grants", () => {
 		expect((grantB as HTMLButtonElement).disabled).toBe(true);
 		fireEvent.click(grantB);
 		expect(client.grantCollectionRead).not.toHaveBeenCalled();
+	});
+});
+
+// Issue #982: the history named actors by raw id and printed empty payload
+// fields as a bare label ("base:").
+describe("DatasourcesPanel sync history", () => {
+	const userId = "9f1c2d3e-0000-4000-8000-000000000001";
+	const strangerId = "7a7b7c7d-0000-4000-8000-000000000002";
+	const activity = [
+		{
+			id: "e1",
+			type: "saas.datasource.source.added",
+			actor: userId,
+			at: "2026-01-01T10:00:00Z",
+			fields: { repo: "codefly-dev/module-saas-starter", provider: "github" },
+		},
+		{
+			id: "e2",
+			type: "saas.datasource.source.synced",
+			actor: strangerId,
+			at: "2026-01-01T10:01:00Z",
+			fields: {},
+		},
+		{
+			id: "e3",
+			type: "saas.datasource.change_set_compiled",
+			actor: "ds-1",
+			at: "2026-01-01T10:02:00Z",
+			fields: { base: "", head: "abc1234", files: 3, removed: [] },
+		},
+	];
+
+	async function openHistory(client: DatasourceClient) {
+		renderWithClient(
+			<DatasourcesPanel client={client} orgId="org-1" canManage={false} />,
+		);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "History of codefly-dev/module-saas-starter",
+			}),
+		);
+		return screen.findByRole("region", { name: "Sync history" });
+	}
+
+	it("names actors the organization lists and hides empty fields", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listActivity: vi.fn(async () => activity),
+			listGrantSubjects: vi.fn(async () => [
+				{ id: userId, kind: "principal" as const, label: "Jane Doe" },
+			]),
+		});
+		const history = await openHistory(client);
+
+		await within(history).findByText("Jane Doe");
+		expect(within(history).getByText("Source sync worker")).toBeTruthy();
+		expect(within(history).getByText("unlisted (7a7b7c7d)")).toBeTruthy();
+		expect(history.textContent).not.toContain(userId);
+		expect(history.textContent).toContain("head:");
+		expect(history.textContent).not.toContain("base:");
+		expect(history.textContent).not.toContain("removed:");
+	});
+
+	it("shortens actor ids when members cannot be listed", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listActivity: vi.fn(async () => activity),
+		});
+		const history = await openHistory(client);
+
+		await within(history).findByText("unlisted (9f1c2d3e)");
+		expect(history.textContent).not.toContain(userId);
 	});
 });
