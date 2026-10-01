@@ -377,8 +377,11 @@ func (s *Service) resolveGitHubConnectCredential(ctx context.Context, orgID, rep
 		return githubConnectCredential{Kind: githubCredentialKindPAT, Plaintext: token}, nil
 	}
 
-	appRefusal := status.Error(codes.FailedPrecondition,
-		"No access token was supplied and that repository is not public. Supply a repository-scoped fine-grained PAT, or ask an operator to register the GitHub App.")
+	// GitHub answers an unauthenticated read of a missing repository and of a
+	// private one with the same 404, so this names both rather than calling a
+	// typo'd owner/name "not public".
+	appRefusal := status.Errorf(codes.FailedPrecondition,
+		"Repository %s was not found, or it is private. Check the owner and repository name; a private repository needs a repository-scoped fine-grained PAT, or an operator to register the GitHub App.", repo)
 	if s.GitHubAppConfigured() && s.githubConnector != nil {
 		credential, err := s.resolveGitHubAppConnect(ctx, orgID, repo, branch)
 		var declined *githubAppDeclined
@@ -484,8 +487,33 @@ func (s *Service) resolvePublicGitHubRepository(ctx context.Context, repo, branc
 	case !public:
 		return false, nil
 	}
-	if err := validateGitHubAccess(ctx, client, repo, branch); err != nil {
+	if err := validatePublicGitHubBranch(ctx, client, repo, branch); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// validatePublicGitHubBranch is validateGitHubAccess for an unauthenticated
+// client reading a repository GitHub just said is public. A 404 here cannot be
+// a token or permission problem — there is no token — so it is reported as what
+// it is: the branch (or, with none named, the repository) was not found.
+func validatePublicGitHubBranch(ctx context.Context, client GitHubContentClient, repo, branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		defaultBranch, err := client.DefaultBranch(ctx, repo)
+		if errors.Is(err, github.ErrNotFound) {
+			return status.Errorf(codes.FailedPrecondition, "Repository %s was not found, or it is private. Check the owner and repository name.", repo)
+		}
+		if err != nil {
+			return githubValidationError(err)
+		}
+		branch = defaultBranch
+	}
+	if _, err := client.ResolveCommit(ctx, repo, branch); err != nil {
+		if errors.Is(err, github.ErrNotFound) {
+			return status.Errorf(codes.FailedPrecondition, "Branch %q was not found in %s. Check the branch name, or leave it empty to use the repository's default branch.", branch, repo)
+		}
+		return githubValidationError(err)
+	}
+	return nil
 }

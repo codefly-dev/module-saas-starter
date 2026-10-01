@@ -182,6 +182,36 @@ func TestAddGitHubSource_PrivateRepositoryStillNeedsACredential(t *testing.T) {
 	}
 }
 
+// Issue #979: a public-mode connect carries no token, so its refusals must not
+// talk about one. A missing repository is "not found" (GitHub cannot tell it
+// from a private one unauthenticated), and a missing branch of a public
+// repository is named as exactly that.
+func TestAddGitHubSource_PublicModeRefusalsNameWhatWasNotFound(t *testing.T) {
+	t.Run("missing repository", func(t *testing.T) {
+		h := newPublicHarness(t, &fakeGitHub{publicErr: github.ErrNotFound})
+		input := publicInput()
+		input.Repo = "nonexistent-owner/no-such-repo"
+		_, err := h.svc.AddGitHubSource(context.Background(), "actor-1", input)
+		require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+		message := status.Convert(err).Message()
+		require.Contains(t, message, "Repository nonexistent-owner/no-such-repo was not found")
+		require.NotContains(t, message, "No access token was supplied")
+		require.NotContains(t, message, "not public")
+	})
+	t.Run("missing branch of a public repository", func(t *testing.T) {
+		h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", public: true, resolveErr: github.ErrNotFound})
+		input := publicInput()
+		input.Branch = "branch-that-does-not-exist"
+		_, err := h.svc.AddGitHubSource(context.Background(), "actor-1", input)
+		require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+		message := status.Convert(err).Message()
+		require.Contains(t, message, `Branch "branch-that-does-not-exist" was not found in acme/handbook`)
+		require.NotContains(t, message, "token")
+		require.NotContains(t, message, "permission")
+		require.Zero(t, h.sourceCount())
+	})
+}
+
 func TestAddGitHubSource_UnauthenticatedRateLimitIsActionable(t *testing.T) {
 	h := newPublicHarness(t, &fakeGitHub{publicErr: github.ErrUnauthenticatedRateLimited})
 
