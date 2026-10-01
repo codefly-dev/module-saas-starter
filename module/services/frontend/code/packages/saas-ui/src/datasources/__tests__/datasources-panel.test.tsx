@@ -1698,3 +1698,60 @@ describe("DatasourcesPanel for a viewer who manages nothing", () => {
 		expect(link.getAttribute("href")).toBe("/admin/datasources");
 	});
 });
+
+describe("Manage read grants", () => {
+	const collectionA = {
+		nodeId: "node-a",
+		label: "Collection A",
+		scopePath: "org.a",
+		grants: [],
+	};
+	const collectionB = {
+		nodeId: "node-b",
+		label: "Collection B",
+		scopePath: "org.b",
+		grants: [],
+	};
+	function grantsClient() {
+		return fakeClient({
+			listCollections: vi.fn(async () => [collectionA, collectionB]),
+			listGrantSubjects: vi.fn(async () => [
+				{ id: "team", kind: "team" as const, label: "Example Team" },
+			]),
+			grantCollectionRead: vi.fn(async () => {}),
+			revokeCollectionRead: vi.fn(async () => {}),
+		});
+	}
+	async function openGrants(label: string) {
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: `Manage read grants for ${label}`,
+			}),
+		);
+		return screen.findByRole("region", { name: `Read grants for ${label}` });
+	}
+
+	// A subject picked under one collection used to stay picked when the editor
+	// was opened for another: React reused the one editor instance, so a single
+	// press then granted that subject read access to the wrong collection.
+	it("starts each collection's editor with nothing selected", async () => {
+		const client = grantsClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await openGrants("Collection A");
+		const picker = (await screen.findByLabelText(
+			"Grant read access to",
+		)) as HTMLSelectElement;
+		for (const option of Array.from(picker.options)) option.selected = true;
+		fireEvent.change(picker);
+		const grantA = screen.getByRole("button", { name: "Grant read access" });
+		expect((grantA as HTMLButtonElement).disabled).toBe(false);
+
+		await openGrants("Collection B");
+		await screen.findByLabelText("Grant read access to");
+		const grantB = screen.getByRole("button", { name: "Grant read access" });
+		expect((grantB as HTMLButtonElement).disabled).toBe(true);
+		fireEvent.click(grantB);
+		expect(client.grantCollectionRead).not.toHaveBeenCalled();
+	});
+});

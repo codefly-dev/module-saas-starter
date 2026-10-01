@@ -557,8 +557,13 @@ function DatasourcesPanelView({
 						already in place.
 					</Banner>
 				)}
+				{/* Keyed per collection: the editor holds the picked subjects and the
+				    last outcome in state, and without a key React reuses the instance
+				    for the next collection, so a subject picked under one collection
+				    sat pre-selected under the next and one press granted it there. */}
 				{selectedCollection && (
 					<CollectionGrants
+						key={selectedCollection.nodeId}
 						client={client}
 						orgId={orgId}
 						collection={selectedCollection}
@@ -566,6 +571,7 @@ function DatasourcesPanelView({
 				)}
 				{connectedCollection && (
 					<CollectionGrants
+						key={connectedCollection.nodeId}
 						client={client}
 						orgId={orgId}
 						collection={connectedCollection}
