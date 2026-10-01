@@ -488,7 +488,7 @@ func (s *Service) resolvePublicGitHubRepository(ctx context.Context, repo, branc
 	case errors.Is(err, github.ErrNotFound):
 		return false, nil
 	case err != nil:
-		return false, githubValidationError(err)
+		return false, publicGitHubValidationError(err, repo)
 	case !public:
 		return false, nil
 	}
@@ -510,7 +510,7 @@ func validatePublicGitHubBranch(ctx context.Context, client GitHubContentClient,
 			return status.Errorf(codes.FailedPrecondition, "Repository %s was not found, or it is private. Check the owner and repository name.", repo)
 		}
 		if err != nil {
-			return githubValidationError(err)
+			return publicGitHubValidationError(err, repo)
 		}
 		branch = defaultBranch
 	}
@@ -518,7 +518,21 @@ func validatePublicGitHubBranch(ctx context.Context, client GitHubContentClient,
 		if errors.Is(err, github.ErrNotFound) {
 			return status.Errorf(codes.FailedPrecondition, "Branch %q was not found in %s. Check the branch name, or leave it empty to use the repository's default branch.", branch, repo)
 		}
-		return githubValidationError(err)
+		return publicGitHubValidationError(err, repo)
 	}
 	return nil
+}
+
+// publicGitHubValidationError is githubValidationError for a read that carried
+// no credential. A 401 or 403 there cannot be a token or permission problem —
+// there is no token, and a public repository has no permissions to check — so
+// it is not reported as one: GitHub refused to serve the repository
+// unauthenticated (a disabled or blocked repository answers 403). Everything
+// else, rate limits included, reads as it does for a credentialed client.
+func publicGitHubValidationError(err error, repo string) error {
+	if errors.Is(err, github.ErrUnauthorized) || errors.Is(err, github.ErrForbidden) {
+		return status.Errorf(codes.FailedPrecondition,
+			"GitHub refused to serve %s without a credential. The repository may be disabled or blocked on GitHub; check that it opens in a browser while signed out, or connect it with a repository-scoped fine-grained PAT or through the GitHub App.", repo)
+	}
+	return githubValidationError(err)
 }

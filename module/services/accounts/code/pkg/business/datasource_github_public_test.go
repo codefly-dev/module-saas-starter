@@ -226,6 +226,25 @@ func TestAddGitHubSource_PublicModeRefusalsNameWhatWasNotFound(t *testing.T) {
 		require.NotContains(t, message, "permission")
 		require.Zero(t, h.sourceCount())
 	})
+	// A 403 to a read that carried no credential (a disabled or blocked
+	// repository) is not a token or permission problem either, wherever in the
+	// public read it comes back.
+	forbidden := map[string]*fakeGitHub{
+		"visibility read": {publicErr: github.ErrForbidden},
+		"branch read":     {defaultBranch: "main", public: true, resolveErr: github.ErrForbidden},
+	}
+	for name, gh := range forbidden {
+		t.Run("forbidden "+name, func(t *testing.T) {
+			h := newPublicHarness(t, gh)
+			_, err := h.svc.AddGitHubSource(context.Background(), "actor-1", publicInput())
+			require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
+			message := status.Convert(err).Message()
+			require.Contains(t, message, "GitHub refused to serve acme/handbook without a credential")
+			require.NotContains(t, message, "SSO")
+			require.NotContains(t, message, "repository permissions")
+			require.Zero(t, h.sourceCount())
+		})
+	}
 }
 
 func TestAddGitHubSource_UnauthenticatedRateLimitIsActionable(t *testing.T) {
