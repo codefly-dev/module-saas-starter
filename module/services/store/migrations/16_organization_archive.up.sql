@@ -17,8 +17,18 @@ ALTER TABLE public.organizations
     ADD COLUMN archived_at timestamp with time zone,
     ADD COLUMN archived_by uuid;
 
+-- SECURITY INVOKER, deliberately: the check reads `organizations` as the role
+-- writing the membership. Only two roles may write one — `app_tenant`, whose
+-- write is admitted only into the organization its transaction is scoped to
+-- (`organization_members_tenant`), which `organizations_self` lets it read; and
+-- `app_control_plane`, which reads every organization. Either sees the row it
+-- needs. A definer owned by the migrator would not: `organizations` forces row
+-- security, so under a control-plane transaction the owner would read no row
+-- and the guard would pass an archived organization. It also keeps ownership
+-- with the migrator, as migration 13 does — a managed migrator may not hand a
+-- function to `app_control_plane`, which holds no CREATE on `public`.
 CREATE FUNCTION public.refuse_archived_organization_membership() RETURNS trigger
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql SECURITY INVOKER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 BEGIN
@@ -36,7 +46,6 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.refuse_archived_organization_membership() FROM PUBLIC;
-ALTER FUNCTION public.refuse_archived_organization_membership() OWNER TO app_control_plane;
 
 CREATE TRIGGER organization_members_refuse_archived_organization
     BEFORE INSERT OR UPDATE OF org_id ON public.organization_members
