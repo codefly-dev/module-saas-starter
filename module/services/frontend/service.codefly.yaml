@@ -3,9 +3,9 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    # DEV PIN: an unreleased agent prerelease (the builder fix the content kit needs). Move it to the
-    # release that ships the change before this module is tagged.
-    version: 0.0.159-dev.1ed5001fd8b4
+    # A released agent. 0.0.162 is the release that ships the builder fix the content
+    # kit needs, replacing the prerelease this pin used to carry.
+    version: 0.0.162
     publisher: codefly.dev
 service-dependencies:
     - name: auth-gateway
