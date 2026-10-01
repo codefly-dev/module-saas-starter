@@ -1,6 +1,6 @@
 {
 	"name": "@codefly-dev/ui",
-	"version": "0.11.3",
+	"version": "0.12.0",
 	"description": "The shared, versioned Codefly SaaS frontend kit: the plugin host and the tokens-as-data skin mechanism, standalone so the host and Module-Federation remotes import and dedupe one copy.",
 	"repository": {
 		"type": "git",
@@ -67,6 +67,11 @@
 			"types": "./dist/content/index.d.ts",
 			"import": "./dist/content/index.js",
 			"default": "./dist/content/index.js"
+		},
+		"./lifecycle": {
+			"types": "./dist/lifecycle/index.d.ts",
+			"import": "./dist/lifecycle/index.js",
+			"default": "./dist/lifecycle/index.js"
 		}
 	},
 	"scripts": {

@@ -5,9 +5,10 @@ import * as SaasUi from "@codefly-dev/saas-ui";
 import * as SaasUiSolution from "@codefly-dev/saas-ui/solution";
 import * as CodeflyUi from "@codefly-dev/ui";
 import * as CodeflyChat from "@codefly-dev/ui/chat";
+import * as CodeflyContent from "@codefly-dev/ui/content";
 import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
 import * as CodeflyLayout from "@codefly-dev/ui/layout";
-import * as CodeflyContent from "@codefly-dev/ui/content";
+import * as CodeflyLifecycle from "@codefly-dev/ui/lifecycle";
 import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
 import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
 import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
@@ -98,6 +99,11 @@ export const CODEFLY_KIT_SHARED = {
 	"@codefly-dev/ui/content": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyContent,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/lifecycle": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyLifecycle,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly-dev/ui/plugin-host": {

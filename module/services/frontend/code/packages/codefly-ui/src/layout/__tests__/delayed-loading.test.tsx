@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useLayoutEffect } from "react";
 import {
 	DelayedLoading,
 	LOADING_DELAY_MS,
@@ -52,6 +53,33 @@ function Harness({
 		/>
 	);
 }
+
+function CommitWindow({
+	active,
+	advanceMs,
+}: {
+	active: boolean;
+	advanceMs: number;
+}) {
+	useLayoutEffect(() => {
+		if (advanceMs) vi.advanceTimersByTime(advanceMs);
+	}, [active, advanceMs]);
+	return <Harness active={active} />;
+}
+
+it("does not publish a pending show after inactive props commit", () => {
+	const { rerender } = render(<CommitWindow active advanceMs={0} />);
+	rerender(<CommitWindow active={false} advanceMs={LOADING_DELAY_MS} />);
+	expect(indicator()).toBeNull();
+});
+
+it("does not publish a pending hide after active props commit", async () => {
+	const { rerender } = render(<CommitWindow active advanceMs={0} />);
+	await advance(LOADING_DELAY_MS);
+	rerender(<CommitWindow active={false} advanceMs={0} />);
+	rerender(<CommitWindow active advanceMs={LOADING_MIN_VISIBLE_MS} />);
+	expect(indicator()).not.toBeNull();
+});
 
 describe("DelayedLoading never flashes", () => {
 	it("shows nothing at all for a wait shorter than the delay", async () => {

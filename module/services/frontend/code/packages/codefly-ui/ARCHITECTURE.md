@@ -11,6 +11,7 @@ Each tier may only compose the tier below it — never a sibling, never upward.
 
 ```
 skin        tokens (colors·spacing·type) as DATA        ← single source of truth
+lifecycle   isolated mounts · captured tasks (no transport or host context)
 layout      Card · Section · Tabs · Text · Input · Avatar · Button   (atoms)
 charts      Svg · Scale · Axis · Gridline                            (chart atoms)
 content     Markdown · JsonView · CodeBlock · TextBlock → Content     (text atoms)
