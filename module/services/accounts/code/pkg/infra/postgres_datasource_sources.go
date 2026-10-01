@@ -126,19 +126,32 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 		}
 		config = encoded
 	}
+	// github_target_key carries the source's identity for the unique index
+	// migration 16 adds, so a second GitHub source reading the same files into
+	// the same collection is refused here even by a path that skipped the
+	// service's own duplicate check (issue #978). NULL for other providers.
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, boundary_node_id,
 			credential_secret_ref, webhook_secret_ref, status, config,
-			reconcile_interval, next_reconcile_at, github_installation_id)
+			reconcile_interval, next_reconcile_at, github_installation_id,
+			github_target_key)
 		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11,
-			make_interval(secs => $12), $13, NULLIF($14, ''))`,
+			make_interval(secs => $12), $13, NULLIF($14, ''), NULLIF($15, ''))`,
 		source.ID, source.OrgID, source.Provider, source.Repo, paths, source.Branch,
 		source.BoundaryNodeID, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
 		source.ReconcileInterval.Seconds(), source.NextReconcileAt, source.GitHubInstallationID,
+		business.GitHubSourceTargetKey(source),
 	)
+	if uniqueViolation(err, datasourceSourceGitHubTargetIndex) {
+		return business.ErrDatasourceSourceDuplicate
+	}
 	return err
 }
+
+// datasourceSourceGitHubTargetIndex is migration 16's unique index on
+// (org_id, github_target_key).
+const datasourceSourceGitHubTargetIndex = "datasource_sources_github_target_key"
 
 // AdvanceDatasourceCursor records the head commit fully enqueued as a change set
 // and reschedules the periodic reconcile. next_reconcile_at is pushed out by the

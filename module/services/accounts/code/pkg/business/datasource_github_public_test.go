@@ -674,7 +674,7 @@ func TestAddGitHubSource_RefusesADuplicateSource(t *testing.T) {
 	require.Equal(t, codes.AlreadyExists, status.Code(err), "err = %v", err)
 	message := status.Convert(err).Message()
 	require.Equal(t,
-		`acme/handbook (the default branch, paths docs, guides) is already connected to collection "handbook". Sync or edit the existing source instead of connecting it again.`,
+		`acme/handbook (the default branch, paths docs, guides) is already connected to collection "handbook". Sync the existing source instead of connecting it again.`,
 		message)
 	require.Equal(t, 1, h.sourceCount())
 

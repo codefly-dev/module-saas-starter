@@ -221,10 +221,10 @@ func TestDatasourceSource_GitHubConnectLockSerializesConnects(t *testing.T) {
 // duplicate refusal (issue #978) against Postgres rather than the fake store,
 // whose lock is a no-op: several connects of the same repository, branch and
 // collection racing each other end with exactly one source, and every other
-// connect is refused with AlreadyExists. It depends on the lock being taken
-// before the existing-source read and on that read seeing the winner's commit,
-// so it fails if either moves (for example a stricter isolation level whose
-// snapshot predates the lock).
+// connect is refused with AlreadyExists. Two things hold it: the lock taken
+// before the existing-source read (with that read seeing the winner's commit),
+// and the table's unique index on the source's target key, which refuses the
+// loser's insert even when the check misses it. It fails only if both go.
 func TestAddGitHubSource_ConcurrentDuplicateConnectsLeaveOneSource(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -306,4 +306,53 @@ func TestAddGitHubSource_ConcurrentDuplicateConnectsLeaveOneSource(t *testing.T)
 		return err
 	}))
 	require.Len(t, sources, 2, "the seed and exactly one acme/docs")
+}
+
+// TestDatasourceSource_StoreRefusesASecondSourceWithTheSameTarget proves the
+// table itself refuses a duplicate GitHub source (issue #978), not only the
+// service's check: a second row with the same repository (in another case),
+// branch, path set, extension set and collection, inserted straight through
+// the store with no lock and no check, fails with ErrDatasourceSourceDuplicate.
+// A change to any one of them inserts.
+func TestDatasourceSource_StoreRefusesASecondSourceWithTheSameTarget(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	_, org := mustUserAndOrg(t, ctx, "erin-ds@rls-test.com", "erin-ds-rls", "Acme DS E")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	producer := &recordingProducer{}
+	svc.SetDatasourceConnector(&countingCipher{}, producer, "")
+	connectProducers.Store(svc, producer)
+	svc.SetAuditEmitter(&recordingAudit{})
+	gh := &fakeGitHub{defaultBranch: "main", commit: "abc", public: true}
+	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return gh })
+
+	first, err := svc.AddGitHubSource(ctx, "actor-1", business.AddGitHubSourceInput{
+		OrgID: org, Repo: "acme/docs", Paths: []string{"guides", "docs"},
+		FileExtensions: []string{".md"}, CollectionLabel: "handbook",
+	})
+	require.NoError(t, err)
+
+	insert := func(change func(*business.DatasourceSource)) error {
+		row := *first
+		row.ID = business.NewIDString()
+		row.Repo = "Acme/Docs"
+		row.Paths = []string{"docs/", "guides"}
+		change(&row)
+		return testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+			return testStore.InsertDatasourceSource(ctx, &row)
+		})
+	}
+
+	require.ErrorIs(t, insert(func(*business.DatasourceSource) {}), business.ErrDatasourceSourceDuplicate)
+
+	for name, change := range map[string]func(*business.DatasourceSource){
+		"another branch":     func(s *business.DatasourceSource) { s.Branch = "release" },
+		"other paths":        func(s *business.DatasourceSource) { s.Paths = []string{"docs"} },
+		"other extensions":   func(s *business.DatasourceSource) { s.FileExtensions = []string{".py"} },
+		"another repository": func(s *business.DatasourceSource) { s.Repo = "acme/other" },
+	} {
+		require.NoError(t, insert(change), name)
+	}
 }

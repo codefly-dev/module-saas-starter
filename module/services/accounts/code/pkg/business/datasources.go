@@ -259,6 +259,10 @@ var ErrDatasourceSourceNotFound = errors.New("datasource: source not found")
 
 var ErrDatasourceSyncNotFound = errors.New("datasource: sync not found")
 
+// ErrDatasourceSourceDuplicate reports that the store refused a source whose
+// GitHubSourceTargetKey an existing source of the organization already holds.
+var ErrDatasourceSourceDuplicate = errors.New("datasource: a source reading the same files into the same collection already exists")
+
 type DatasourceSyncDelivery struct {
 	JobID     string
 	State     jobsv1.JobState
@@ -960,15 +964,16 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 
 // refuseDuplicateGitHubSourceTx refuses a GitHub source that would read exactly
 // what an existing one of the organization already reads into the same
-// collection: the same repository (GitHub names are case-insensitive), branch
-// and set of paths, bound to the same boundary node. Such a pair syncs the same
-// files twice into one collection and lists as two rows nothing tells apart
-// (issue #978).
+// collection: the same GitHubSourceTargetKey. Such a pair syncs the same files
+// twice into one collection and lists as two rows nothing tells apart (issue
+// #978).
 //
 // Runs inside the source-insert transaction, after the boundary is resolved,
 // and first takes LockDatasourceGitHubSourceConnect for the repository, so two
 // concurrent connects of the same source serialize and the second one sees the
-// first one's row.
+// first one's row and is refused with a message naming it. The store's unique
+// index on the key refuses the insert regardless, for a path that skipped this
+// check; it cannot name the existing row, which is why this check stays.
 func (s *Service) refuseDuplicateGitHubSourceTx(ctx context.Context, source *DatasourceSource) error {
 	if err := s.store.LockDatasourceGitHubSourceConnect(ctx, source.OrgID, source.Repo); err != nil {
 		return err
@@ -992,7 +997,7 @@ func (s *Service) refuseDuplicateGitHubSourceTx(ctx context.Context, source *Dat
 			collection = other.BoundaryNodeID
 		}
 		return status.Errorf(codes.AlreadyExists,
-			"%s (%s%s) is already connected to collection %q. Sync or edit the existing source instead of connecting it again.",
+			"%s (%s%s) is already connected to collection %q. Sync the existing source instead of connecting it again.",
 			other.Repo, branch, describeSourcePaths(other.Paths), collection)
 	}
 	return nil
@@ -1001,7 +1006,15 @@ func (s *Service) refuseDuplicateGitHubSourceTx(ctx context.Context, source *Dat
 // duplicateSourceRefusal returns refuseDuplicateGitHubSourceTx's refusal as it
 // was raised, when err carries it, so the caller sees the message itself rather
 // than one prefixed by the transaction's wrapping.
+//
+// The store's unique index on GitHubSourceTargetKey is the backstop for an
+// insert the check did not see (ErrDatasourceSourceDuplicate); it carries no
+// existing row to name, so its refusal is the generic one.
 func duplicateSourceRefusal(err error) error {
+	if errors.Is(err, ErrDatasourceSourceDuplicate) {
+		return status.Error(codes.AlreadyExists,
+			"That repository is already connected to this collection with the same branch, paths and file types. Sync the existing source instead of connecting it again.")
+	}
 	var refusal interface{ GRPCStatus() *status.Status }
 	if errors.As(err, &refusal) && refusal.GRPCStatus().Code() == codes.AlreadyExists {
 		return refusal.GRPCStatus().Err()
@@ -1010,23 +1023,43 @@ func duplicateSourceRefusal(err error) error {
 }
 
 // sameGitHubSourceTarget reports whether two GitHub sources read the same
-// files into the same boundary: the same repository, branch, path set and
-// file-extension filter. Sources that differ only in their extension filter
-// read different files, and no source edit can widen a filter afterwards, so
-// they are not duplicates.
+// files into the same boundary (see GitHubSourceTargetKey).
 func sameGitHubSourceTarget(a, b *DatasourceSource) bool {
-	if a.Provider != DatasourceProviderGitHub || b.Provider != DatasourceProviderGitHub {
-		return false
-	}
-	if !strings.EqualFold(a.Repo, b.Repo) || a.Branch != b.Branch || a.BoundaryNodeID != b.BoundaryNodeID {
-		return false
-	}
-	return slices.Equal(sortedSet(normalizePaths(a.Paths)), sortedSet(normalizePaths(b.Paths))) &&
-		slices.Equal(sortedSet(a.FileExtensions), sortedSet(b.FileExtensions))
+	key := GitHubSourceTargetKey(a)
+	return key != "" && key == GitHubSourceTargetKey(b)
 }
 
+// GitHubSourceTargetKey is what makes two GitHub sources the same source: the
+// repository (GitHub names are case-insensitive), the branch as given (empty
+// follows the default branch, so it is not the same as naming that branch), the
+// set of paths, the set of file extensions, and the boundary node the files
+// land in. A source that differs in any of them reads different files, or puts
+// them somewhere else, and is not a duplicate (issue #978).
+//
+// It is the duplicate check's comparison and the value the store's unique index
+// holds, so the two cannot disagree. Empty for any other provider.
+func GitHubSourceTargetKey(source *DatasourceSource) string {
+	if source == nil || source.Provider != DatasourceProviderGitHub {
+		return ""
+	}
+	key, err := json.Marshal([]any{
+		strings.ToLower(source.Repo),
+		source.Branch,
+		sortedSet(normalizePaths(source.Paths)),
+		sortedSet(source.FileExtensions),
+		source.BoundaryNodeID,
+	})
+	if err != nil {
+		// A slice of strings always encodes.
+		panic(err)
+	}
+	return string(key)
+}
+
+// sortedSet is values sorted and de-duplicated, never nil, so an absent set and
+// an empty one compare (and encode) the same.
 func sortedSet(values []string) []string {
-	out := slices.Clone(values)
+	out := append([]string{}, values...)
 	slices.Sort(out)
 	return slices.Compact(out)
 }
