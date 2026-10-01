@@ -2,7 +2,7 @@
 
 import { Spinner, useLoadingPhase } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { useAccessibleScopes } from "./queries.js";
 import type {
 	CollectionAccessView,
@@ -76,6 +76,7 @@ export function CollectionGrants({
 	collection,
 	connectedRepo,
 	onDismiss,
+	focusRequest,
 }: {
 	client: DatasourceClient;
 	orgId: string;
@@ -88,7 +89,23 @@ export function CollectionGrants({
 	connectedRepo?: string | undefined;
 	/** Present only in the connect flow, where the section can be put away. */
 	onDismiss?: (() => void) | undefined;
+	/**
+	 * Set when a person asked for this editor (Manage read grants), and changed
+	 * on every further ask. Each value scrolls the section into view and moves
+	 * focus to its heading: the editor renders away from the button that opened
+	 * it, so without this the press looked like it did nothing and a keyboard or
+	 * screen-reader user was left on a button with no sign anything opened.
+	 */
+	focusRequest?: number | undefined;
 }) {
+	const headingRef = useRef<HTMLHeadingElement>(null);
+	useEffect(() => {
+		if (focusRequest === undefined) return;
+		const heading = headingRef.current;
+		if (!heading) return;
+		heading.scrollIntoView?.({ block: "start", behavior: "smooth" });
+		heading.focus({ preventScroll: true });
+	}, [focusRequest]);
 	// A set, not a single value: granting one subject at a time is the whole of
 	// what made this flow unreasonable — an administrator who has just connected
 	// a repository for a team of eight repeated the same four steps eight times.
@@ -175,7 +192,9 @@ export function CollectionGrants({
 			className="space-y-3 rounded border p-4"
 		>
 			<div className="flex items-start justify-between gap-3">
-				<h3 className="font-medium">Who can read {collection.label}</h3>
+				<h3 ref={headingRef} tabIndex={-1} className="font-medium">
+					Who can read {collection.label}
+				</h3>
 				{onDismiss && (
 					<button type="button" onClick={onDismiss}>
 						Not now

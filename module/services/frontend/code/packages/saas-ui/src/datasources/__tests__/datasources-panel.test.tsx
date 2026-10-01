@@ -1731,6 +1731,43 @@ describe("Manage read grants", () => {
 		return screen.findByRole("region", { name: `Read grants for ${label}` });
 	}
 
+	// The editor renders near the top of the Sources section, far above the
+	// Collection access table the button lives in, so the press looked like it
+	// did nothing. Every press brings the editor into view and moves focus to it.
+	it("scrolls the editor into view and focuses it on every press", async () => {
+		const scrolled = vi.fn();
+		const original = HTMLElement.prototype.scrollIntoView;
+		HTMLElement.prototype.scrollIntoView = scrolled;
+		try {
+			renderWithClient(
+				<DatasourcesPanel client={grantsClient()} orgId="org-1" />,
+			);
+			await openGrants("Collection A");
+			const headingA = screen.getByRole("heading", {
+				name: "Who can read Collection A",
+			});
+			await waitFor(() => expect(document.activeElement).toBe(headingA));
+			expect(scrolled).toHaveBeenCalledTimes(1);
+
+			// Focus moves on, so a second press for the same collection must
+			// bring it back rather than be a no-op.
+			(document.activeElement as HTMLElement).blur();
+			await openGrants("Collection A");
+			await waitFor(() => expect(document.activeElement).toBe(headingA));
+			expect(scrolled).toHaveBeenCalledTimes(2);
+
+			await openGrants("Collection B");
+			await waitFor(() =>
+				expect(document.activeElement).toBe(
+					screen.getByRole("heading", { name: "Who can read Collection B" }),
+				),
+			);
+			expect(scrolled).toHaveBeenCalledTimes(3);
+		} finally {
+			HTMLElement.prototype.scrollIntoView = original;
+		}
+	});
+
 	// A subject picked under one collection used to stay picked when the editor
 	// was opened for another: React reused the one editor instance, so a single
 	// press then granted that subject read access to the wrong collection.

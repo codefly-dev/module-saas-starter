@@ -286,6 +286,9 @@ function DatasourcesPanelView({
 		refetchInterval: 5000,
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
+	// Bumped on every Manage read grants press, including a second press for the
+	// collection already open, so each one brings the editor into view again.
+	const [grantsFocusRequest, setGrantsFocusRequest] = useState(0);
 	// What was just connected, so the read grant can be offered where the person
 	// already is and knows what they connected — rather than as a separate later
 	// journey through Manage read grants, which is the whole of what made the
@@ -567,6 +570,7 @@ function DatasourcesPanelView({
 						client={client}
 						orgId={orgId}
 						collection={selectedCollection}
+						focusRequest={grantsFocusRequest}
 					/>
 				)}
 				{connectedCollection && (
@@ -781,9 +785,10 @@ function DatasourcesPanelView({
 															type="button"
 															variant="ghost"
 															size="sm"
-															onClick={() =>
-																setEditingCollection(collection.nodeId)
-															}
+															onClick={() => {
+																setEditingCollection(collection.nodeId);
+																setGrantsFocusRequest((n) => n + 1);
+															}}
 														>
 															Manage read grants
 															<span className="sr-only">
