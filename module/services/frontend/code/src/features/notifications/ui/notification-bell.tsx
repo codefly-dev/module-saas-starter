@@ -89,21 +89,29 @@ export function NotificationBell() {
 
 	useNotificationSSE(handleSSECount);
 
-	const polledCount = (data as { count?: number } | undefined)?.count ?? 0;
-	const unreadCount = sseCount ?? polledCount;
-	const prevCountRef = useRef(unreadCount);
+	const polledCount = (data as { count?: number } | undefined)?.count;
+	// Null until either source has answered: "not read yet" is not "zero".
+	const knownCount = sseCount ?? polledCount ?? null;
+	const unreadCount = knownCount ?? 0;
+	// The first count this bell learns is its baseline, not news. Starting the
+	// baseline at the loading placeholder of 0 announced every notification that
+	// was already unread as new, on every page load, for as long as it stayed
+	// unread. Only a rise above a count already known toasts.
+	const prevCountRef = useRef<number | null>(null);
 
 	useEffect(() => {
-		if (unreadCount > prevCountRef.current && prevCountRef.current >= 0) {
-			const diff = unreadCount - prevCountRef.current;
+		if (knownCount === null) return;
+		const previous = prevCountRef.current;
+		if (previous !== null && knownCount > previous) {
+			const diff = knownCount - previous;
 			toast.info(
 				diff === 1
 					? "You have a new notification"
 					: `You have ${diff} new notifications`,
 			);
 		}
-		prevCountRef.current = unreadCount;
-	}, [unreadCount]);
+		prevCountRef.current = knownCount;
+	}, [knownCount]);
 
 	return (
 		<div className="relative">
