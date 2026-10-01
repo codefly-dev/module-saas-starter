@@ -264,3 +264,48 @@ func acceptToken(t *testing.T, acceptURL string) string {
 	require.NotEmpty(t, token)
 	return token
 }
+
+// registerWithPersonalOrg registers a user and returns their id and the personal
+// organization registration created for them.
+func registerWithPersonalOrg(t *testing.T, ctx context.Context, email, providerID string) (string, string) {
+	t.Helper()
+	resp, err := testService.RegisterUser(ctx, &gen.RegisterUserRequest{
+		PrimaryEmail: email,
+		Identity:     &gen.UserIdentity{Provider: "email", ProviderId: providerID, ProviderEmail: email},
+	})
+	require.NoError(t, err)
+	listed, err := testService.ListOrganizations(ctx, resp.User.Uuid)
+	require.NoError(t, err)
+	require.Len(t, listed.Organizations, 1)
+	require.Equal(t, "Personal", listed.Organizations[0].Name)
+	return resp.User.Uuid, listed.Organizations[0].Id
+}
+
+func TestOnboardingDoesNotTrapAMemberInTheirPersonalOrganization(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	userID, personalID := registerWithPersonalOrg(t, ctx, "joiner@lifecycle.test", "lc-joiner")
+
+	progress, err := testService.GetProgress(ctx, userID, personalID)
+	require.NoError(t, err)
+	require.False(t, progress.RequiredComplete, "a fresh user who may create still has their organization to set up")
+
+	owner, orgID := mustUserAndOrg(t, ctx, "host@lifecycle.test", "lc-host", "Host Org")
+	require.NoError(t, testService.AddOrgMember(ctx, owner, &gen.AddOrgMemberRequest{
+		OrgId: orgID, UserId: userID, Role: gen.OrgRole_ORG_ROLE_MEMBER,
+	}))
+	progress, err = testService.GetProgress(ctx, userID, personalID)
+	require.NoError(t, err)
+	require.True(t, progress.RequiredComplete, "belonging to a real organization is the setup")
+}
+
+func TestOnboardingIsNotRequiredWhenCreationIsClosed(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	withCreationPolicy(t, business.OrganizationCreationPlatformAdmin)
+	userID, personalID := registerWithPersonalOrg(t, ctx, "waiting@lifecycle.test", "lc-waiting")
+
+	progress, err := testService.GetProgress(ctx, userID, personalID)
+	require.NoError(t, err)
+	require.True(t, progress.RequiredComplete, "a step the user is not allowed to perform cannot be required of them")
+}
