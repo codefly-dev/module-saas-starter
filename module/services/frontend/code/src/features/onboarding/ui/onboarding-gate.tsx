@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { createBrowserOnboardingReminderStore } from "../application/browser-reminder-store";
 import { browserStorage } from "../application/browser-storage";
 import { useOnboardingController } from "../react/use-onboarding-controller";
-import { OnboardingWizardView } from "./onboarding-wizard";
+import { OnboardingEntry } from "./onboarding-entry";
 
 // One store for the module: `useSyncExternalStore` compares the subscribe
 // function by identity, so building it per render would resubscribe forever.
@@ -35,7 +35,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 	if (isAuthenticated && !organizationId) {
 		return (
 			<main className="flex min-h-screen items-center justify-center bg-background">
-				<OnboardingWizardView controller={controller} model={model} />
+				<OnboardingEntry controller={controller} model={model} />
 			</main>
 		);
 	}
@@ -49,7 +49,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 	) {
 		return (
 			<main className="flex min-h-screen items-center justify-center bg-background">
-				<OnboardingWizardView controller={controller} model={model} />
+				<OnboardingEntry controller={controller} model={model} />
 			</main>
 		);
 	}

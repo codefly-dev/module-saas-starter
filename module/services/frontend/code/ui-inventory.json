@@ -2069,6 +2069,18 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/platform/organizations/page.tsx",
+      "imports": [
+        "@/features/platform/ui/platform-organizations-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/platform/page.tsx",
       "imports": [
         "lucide-react",
@@ -3512,6 +3524,20 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/invitations/ui/invitation-link-dialog.tsx",
+      "imports": [
+        "lucide-react",
+        "sonner",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the invitations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/invitations/ui/invitations-page.tsx",
       "imports": [
         "@/components/org-selector",
@@ -3764,6 +3790,27 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/onboarding/ui/onboarding-entry.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/features/organizations/model/leave-flow",
+        "@/features/organizations/service/queries",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../application/controller",
+        "./onboarding-wizard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the onboarding workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/onboarding/ui/onboarding-gate.tsx",
       "imports": [
         "next/link",
@@ -3799,6 +3846,38 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/organizations/ui/delete-organization-dialog.tsx",
+      "imports": [
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../model/errors",
+        "../service/lifecycle"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/leave-organization-dialog.tsx",
+      "imports": [
+        "next/link",
+        "sonner",
+        "@/shared/ui",
+        "../model/errors",
+        "../service/lifecycle"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/organizations/ui/org-form.tsx",
       "imports": [
         "@hookform/resolvers/zod",
@@ -3825,8 +3904,11 @@
         "react",
         "sonner",
         "@/components/auth/role-gate",
+        "@/components/user-picker",
+        "@/features/invitations/ui/invitation-form",
         "@/features/roles/ui/manage-member-roles-dialog",
-        "@/shared/lib/utils",
+        "@/lib/auth",
+        "@/shared/lib/read-outcome",
         "@/shared/ui",
         "@/shared/ui/data-table",
         "../model/transforms",
@@ -3853,6 +3935,84 @@
         "../model/settings-schema",
         "../service/mutations",
         "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/org-switcher.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "next/link",
+        "react",
+        "sonner",
+        "@/components/ui/dropdown-menu",
+        "@/components/ui/sidebar",
+        "@/lib/auth",
+        "../model/errors",
+        "../service/mutations",
+        "../service/queries",
+        "./leave-organization-dialog",
+        "./org-form"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/organization-detail.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/types",
+        "../service/queries",
+        "./org-members-panel",
+        "./organization-lifecycle-card",
+        "./organization-profile-form"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/organization-lifecycle-card.tsx",
+      "imports": [
+        "react",
+        "@/shared/ui",
+        "./delete-organization-dialog",
+        "./leave-organization-dialog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/organization-profile-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react",
+        "react-hook-form",
+        "sonner",
+        "@/shared/ui",
+        "../model/errors",
+        "../model/schemas",
+        "../service/lifecycle"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -3961,6 +4121,25 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/platform/ui/create-organization-dialog.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "react",
+        "sonner",
+        "@/components/user-picker",
+        "@/features/organizations/model/errors",
+        "@/features/organizations/model/transforms",
+        "@/features/organizations/service/mutations",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/platform/ui/entitlements-page.tsx",
       "imports": [
         "@tanstack/react-table",
@@ -3992,6 +4171,29 @@
         "@/shared/ui/data-table",
         "../model/types",
         "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform/ui/platform-organizations-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/features/organizations/ui/organization-detail",
+        "@/lib/auth",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../service/queries",
+        "./create-organization-dialog"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",

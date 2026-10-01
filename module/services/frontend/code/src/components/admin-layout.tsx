@@ -41,6 +41,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { NotificationBanner } from "@/features/notifications/ui/notification-banner";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
+import { OrgSwitcher } from "@/features/organizations/ui/org-switcher";
 import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
 import { sessionDisplayLabel } from "@/lib/auth-session";
@@ -187,6 +188,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								</div>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
+						{isAuthenticated && (
+							<SidebarMenuItem>
+								<OrgSwitcher />
+							</SidebarMenuItem>
+						)}
 					</SidebarMenu>
 				</SidebarHeader>
 
