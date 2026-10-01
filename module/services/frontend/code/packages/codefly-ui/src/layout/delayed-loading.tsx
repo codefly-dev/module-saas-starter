@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "./cn.js";
 
 /**
@@ -53,7 +53,9 @@ export function useDelayedLoading(
 	// became visible rather than from the moment the wait started.
 	const shownAt = useRef(0);
 
-	useEffect(() => {
+	// Retire the old timer at commit: passive cleanup leaves a window in which
+	// a completed wait can show an indicator, or a restarted wait can hide it.
+	useLayoutEffect(() => {
 		if (active) {
 			// Already up: keep it up. A wait that restarts while the indicator is
 			// showing must not restart the delay, or a series of quick refetches

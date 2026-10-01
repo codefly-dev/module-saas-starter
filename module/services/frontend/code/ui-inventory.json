@@ -876,7 +876,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -1153,6 +1153,18 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/viewport-overlay.tsx",
+      "imports": [
+        "react"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared inert viewport decoration; callers own placement meaning and validity.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Dedicated owner explorer story; geometry and inertness have unit and packed-consumer coverage."
     },
     {
       "source": "packages/codefly-ui/src/table/data-table.tsx",

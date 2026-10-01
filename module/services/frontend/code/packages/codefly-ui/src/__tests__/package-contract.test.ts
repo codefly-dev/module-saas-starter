@@ -72,6 +72,7 @@ describe("@codefly-dev/ui public subpaths", () => {
 		"./chat",
 		"./layout",
 		"./content",
+		"./lifecycle",
 	]) {
 		it(`exports ${subpath} to a typed dist entry`, () => {
 			const entry = exportsMap[subpath];
@@ -105,7 +106,7 @@ describe("@codefly-dev/ui dependency contract", () => {
 // optional peers lets a solution install `@codefly-dev/ui` for those subpaths alone
 // without npm auto-resolving the host-internal (unpublished) plugin packages —
 // while the host, which imports `.`/`./plugin-host`/`./skin`, still provides
-// them. `react` stays a required peer: every subpath needs it deduped.
+// them. `react` stays a required peer for component consumers; lifecycle imports none.
 describe("@codefly-dev/ui peer-free solution surface", () => {
 	for (const optional of [
 		"@codefly/saas-plugin-react",
@@ -129,7 +130,13 @@ describe("@codefly-dev/ui peer-free solution surface", () => {
 // checks above cannot see. Guard the source directly.
 describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 	const srcDir = codeflyUiSrcDir();
-	for (const subpath of ["layout", "dashboard", "chat", "content"]) {
+	for (const subpath of [
+		"layout",
+		"dashboard",
+		"chat",
+		"content",
+		"lifecycle",
+	]) {
 		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {
 			for (const file of sourceFiles(join(srcDir, subpath))) {
 				const source = readFileSync(file, "utf8");

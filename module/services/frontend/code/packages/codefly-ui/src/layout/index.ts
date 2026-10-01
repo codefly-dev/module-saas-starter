@@ -243,3 +243,10 @@ export {
 	TooltipTrigger,
 } from "./tooltip.js";
 export { useIsMobile } from "./use-mobile.js";
+export {
+	ViewportOverlay,
+	type ViewportOverlayAttributes,
+	type ViewportOverlayItem,
+	type ViewportOverlayProps,
+	type ViewportRegion,
+} from "./viewport-overlay.js";

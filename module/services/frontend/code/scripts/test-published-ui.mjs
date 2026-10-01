@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,16 +74,25 @@ try {
 		join(temporary, "consumer.tsx"),
 		`
 import { renderToStaticMarkup } from "react-dom/server";
-import { CardRoot, CardContent, TabsRoot, TabsList, TabsTrigger, TabsContent, PageHeader, Button, SidebarProvider } from "@codefly-dev/ui/layout";
+import { CardRoot, CardContent, TabsRoot, TabsList, TabsTrigger, TabsContent, PageHeader, Button, SidebarProvider, ViewportOverlay } from "@codefly-dev/ui/layout";
 import { MetricCard, MetricLineChart } from "@codefly-dev/ui/dashboard";
 import { DataTable } from "@codefly-dev/ui/table";
 import { Content } from "@codefly-dev/ui/content";
+import { createTaskTracker, mountIsolated } from "@codefly-dev/ui/lifecycle";
 import { ConnectGitHubForm, type DatasourceClient } from "@codefly-dev/saas-ui";
 const client: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},syncSource:async()=>"example-job",deleteSource:async()=>{}};
 const html=renderToStaticMarkup(<SidebarProvider><PageHeader title="Example workspace" /><CardRoot><CardContent><Button>Save</Button></CardContent></CardRoot><TabsRoot defaultValue="one"><TabsList><TabsTrigger value="one">Overview</TabsTrigger></TabsList><TabsContent value="one">Workspace content</TabsContent></TabsRoot><MetricCard metric={{label:"Requests",value:3}} /><MetricLineChart title="Requests" series={[]} /><Content value={"**Rendered** answer"} /></SidebarProvider>);
 if (!html.includes("Workspace content") || !html.includes("Save") || !html.includes("<strong>Rendered</strong>")) throw new Error("Packed UI did not render");
 if (typeof DataTable !== "function" || typeof ConnectGitHubForm !== "function") throw new Error("Missing public component export");
 
+const tasks = createTaskTracker<{ value: string }, { output: string }>();
+const task = tasks.begin({ value: "captured" });
+tasks.invalidate();
+tasks.settle(task, { output: "retained" });
+const entry = tasks.entries({ limit: 1 })[0];
+if (tasks.isCurrent(task) || entry?.state !== "settled" || entry.outcome.output !== "retained" || typeof mountIsolated !== "function") throw new Error("Packed lifecycle did not retain its captured result");
+const overlay = renderToStaticMarkup(<ViewportOverlay items={[{id:"mark",regions:[{kind:"rect",x:1,y:2,width:3,height:4},{kind:"polygon",points:[[5,6],[7,8],[9,10]]}],stroke:"color-mix(in srgb, red 50%, blue)",fill:"transparent",attributes:{"data-mark":"packed"}}]} />);
+if (!overlay.includes('data-mark="packed"') || !overlay.includes('points="5,6 7,8 9,10"') || !overlay.includes('stroke="color-mix(in srgb, red 50%, blue)"')) throw new Error("Packed overlay lost geometry or styling");
 console.log("Packed UI declarations and generic consumer rendering passed");
 `,
 	);

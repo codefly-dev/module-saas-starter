@@ -60,6 +60,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 | `@codefly-dev/ui/plugin-host/runtime` | Client runtime adapters (`PluginRuntimeProvider`) |
 | `@codefly-dev/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
+| `@codefly-dev/ui/lifecycle`      | Isolated asynchronous mounts and captured task ownership (no React imports) |
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
@@ -314,3 +315,30 @@ makes the alternative impossible to write rather than a matter of review:
 What no type or test can see is an `escape` a caller keeps disabled forever, or
 an `onOpenChange` that refuses every close. Those stay the caller's to get
 right.
+
+## Asynchronous ownership
+
+`@codefly-dev/ui/lifecycle` has no React, host, or transport imports.
+`mountIsolated(host, mount, { onReady, onError })` gives each asynchronous mount
+its own full-size child element and an `AbortSignal` as the second callback argument. Call `retire()` when replacing or unmounting it:
+the signal aborts before the child detaches and the handle is disposed. A late handle is disposed without becoming
+ready. Setup must release partial resources if it rejects before returning a
+`{ dispose() }` handle. `onError(error, retired)` reports setup, consumer callback,
+and cleanup failures; a retired invocation must not replace the active UI.
+
+`createTaskTracker<Context, Outcome>()` tracks session-local work without running
+it. Before the first await, call `begin(capturedContext)` with an immutable
+snapshot owned by the caller. Use that task's `context` throughout execution,
+then `settle(task, outcome)`. `invalidate()` retires presentation ownership;
+it neither cancels the work nor removes its outcome. `isCurrent(task)` gates
+adoption into the current view. A result from an older task remains available
+through `entries({ offset, limit })`, including successful output whose preview
+failed. Outcomes are opaque: the caller supplies its own real success/failure
+contract. The caller releases outcome resources and calls `forget(task)`;
+pending work cannot be forgotten. This is temporary UI state, not persistence.
+
+`ViewportOverlay` from `@codefly-dev/ui/layout` paints supplied rectangular and
+polygonal regions inside a positioned parent. Each item supplies its geometry,
+stroke, fill, and optional stroke width, dashed stroke, and data attributes.
+The overlay is inert decoration: callers own placement validity, meaning,
+selection, and timing. CSS color expressions are passed whole to both shapes.
