@@ -127,6 +127,12 @@ export function useSourceSync(
 			state.data && describeSync(state.data).active
 				? ACTIVE_POLL_MS
 				: SETTLED_POLL_MS,
+		// Polled whether or not the page has focus, like the sources list this
+		// card sits above. Without it React Query skips every interval tick while
+		// the document is not focused, so the card froze on the phase it last read
+		// ("Queued · Step 1 of 4") while the list, and any row reader beneath it,
+		// kept advancing to the finished sync — and only a reload re-read it.
+		refetchIntervalInBackground: true,
 	});
 
 	// Invalidating on the announcement, rather than waiting for the interval to

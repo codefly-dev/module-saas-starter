@@ -165,6 +165,32 @@ describe("describeSync", () => {
 		expect(report.detail).toContain("had not changed");
 	});
 
+	it("reports a no-change re-sync's snapshot as up to date, not as a full snapshot", () => {
+		// A forced re-sync of the commit already ingested hands off a snapshot the
+		// host counts as 0 / 0 / 0 against that commit. It changed nothing.
+		const report = describeSync(
+			sync({
+				phase: "done",
+				finishedAt: ago(1_000),
+				changes: {
+					files: 41,
+					added: 0,
+					modified: 0,
+					deleted: 0,
+					splitKnown: true,
+					snapshot: true,
+					commit: "deadbee",
+				},
+			}),
+			{ now: NOW },
+		);
+
+		expect(report.state).toBe("unchanged");
+		expect(report.headline).toBe("Up to date");
+		expect(report.headline).not.toContain("snapshot");
+		expect(report.detail).toContain("had not changed");
+	});
+
 	it("reports a failed sync with the host's own sentence, and fills the bar", () => {
 		const report = describeSync(
 			sync({

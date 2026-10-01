@@ -1,4 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+	focusManager,
+	QueryClient,
+	QueryClientProvider,
+} from "@tanstack/react-query";
 import {
 	act,
 	cleanup,
@@ -377,6 +381,40 @@ describe("the panel's live sync progress", () => {
 
 			expect(screen.getByText("No progress")).toBeTruthy();
 		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("follows a sync to its end while the page is not focused", async () => {
+		// The bug this guards: the card's poll ran only while the document had
+		// focus, while the sources list (and a consumer's row reader beneath it)
+		// kept polling in the background. A sync watched from a page without focus
+		// therefore froze on its in-flight phase — "Queued · Step 1 of 4" beside a
+		// row that already said it had finished — until a reload re-read it.
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		focusManager.setFocused(false);
+		try {
+			let phase: SourceSyncView["phase"] = "queued";
+			const client = fakeClient({
+				getSourceSync: vi.fn(async () =>
+					phase === "queued"
+						? sync({ phase: "queued", queuedAt: new Date().toISOString() })
+						: sync({ phase: "done", finishedAt: new Date().toISOString() }),
+				),
+			});
+			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+			expect(
+				await screen.findByText("Accepted, waiting for a worker"),
+			).toBeTruthy();
+
+			phase = "done";
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_000);
+			});
+
+			expect(screen.getByText("Up to date")).toBeTruthy();
+		} finally {
+			focusManager.setFocused(undefined);
 			vi.useRealTimers();
 		}
 	});

@@ -254,6 +254,22 @@ export function describeSync(
 				detail: "The source had not changed, so nothing was handed off.",
 			};
 		}
+		// A forced re-sync of a commit already ingested still hands off a full
+		// snapshot, which the host counts against that same commit: a known split
+		// of 0 / 0 / 0. Nothing changed, so it is said as that — "Handed off a full
+		// snapshot · Added 0" beside a row reading "No changes" contradicts it.
+		const { added, modified, deleted, splitKnown } = view.changes;
+		if (splitKnown && added + modified + deleted === 0) {
+			return {
+				...base,
+				state: "unchanged",
+				tone: "success",
+				active: false,
+				percent: 100,
+				headline: "Up to date",
+				detail: "The source had not changed since its last sync.",
+			};
+		}
 		return {
 			...base,
 			state: "done",
