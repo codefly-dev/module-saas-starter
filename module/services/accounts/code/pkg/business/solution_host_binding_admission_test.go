@@ -461,4 +461,3 @@ func bindingsOf(decisions []SolutionHostBindingDecision) []string {
 	}
 	return names
 }
-
