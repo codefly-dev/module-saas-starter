@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../datasources/util.js";
 
 /** The units a relative time is said in, largest first, in seconds. */
@@ -16,24 +16,35 @@ const UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
 
 /**
  * How long ago `at` was, from `now`, in words: "12 seconds ago", "3 hours ago",
- * "yesterday", counting whole units elapsed. Pure, so a consumer can say it in its own shell. A moment in the
- * future (a clock ahead of this one) reads as "now" rather than "in 2 seconds".
+ * "yesterday", counting whole units elapsed: 59.999 seconds is still "59
+ * seconds ago". Pure, so a consumer can say it in its own shell. A moment in
+ * the future (a clock ahead of this one) reads as "now" rather than "in 2
+ * seconds".
  */
 export function relativeTime(at: Date, now: Date, locale?: string): string {
-	const seconds = Math.round((at.getTime() - now.getTime()) / 1000);
 	const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-	if (seconds >= 0) return format.format(0, "second");
+	const elapsed = Math.floor((now.getTime() - at.getTime()) / 1000);
+	if (elapsed <= 0) return format.format(0, "second");
 	for (const [unit, size] of UNITS) {
-		// Whole units elapsed: 90 seconds is "1 minute ago" until two have passed.
-		if (-seconds >= size || unit === "second") return format.format(Math.trunc(seconds / size), unit);
+		if (elapsed >= size) return format.format(-Math.floor(elapsed / size), unit);
 	}
-	return format.format(seconds, "second");
+	return format.format(0, "second");
 }
 
-/** How often the words must be re-said to stay true. */
-function tick(at: Date, now: Date): number {
-	const elapsed = now.getTime() - at.getTime();
+/** How long until the words must be re-said to stay true. */
+function cadence(at: number, now: number): number {
+	const elapsed = now - at;
 	return elapsed < 60_000 ? 1_000 : elapsed < 3_600_000 ? 30_000 : 300_000;
+}
+
+/** The system clock, one function for every render so it is never a new
+ *  dependency. */
+const systemNow = () => new Date();
+
+/** What the server renders and the browser's first render repeats: the time in
+ *  UTC, which depends on neither environment's clock, timezone nor locale. */
+function stableTime(at: Date): string {
+	return `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
 export interface LastLoginProps {
@@ -55,31 +66,52 @@ export interface LastLoginProps {
  * assistive technology (`<time dateTime title>`). A solution hands it the value
  * it read — from the audit log, say — and owns nothing of how it is said.
  *
+ * The first render, on the server and again in the browser while it hydrates,
+ * says the time in UTC, which no clock or timezone can change between the two;
+ * once mounted it reads the browser's clock and says it relatively, in the
+ * viewer's own timezone. Its re-saying is scheduled from the time itself, so a
+ * parent that re-renders often cannot hold it still.
+ *
  * It is the kit's rather than each solution's because every page that shows a
  * sign-in time otherwise writes its own "x ago" with its own thresholds; the
  * host already has two that disagree.
  */
-export function LastLogin({ at, subject, label = "Last login", now = () => new Date(), className }: LastLoginProps) {
+export function LastLogin({ at, subject, label = "Last login", now = systemNow, className }: LastLoginProps) {
 	const when = at === null ? null : at instanceof Date ? at : new Date(at);
 	const atMs = when === null ? Number.NaN : when.getTime();
 	const valid = !Number.isNaN(atMs);
-	const [current, setCurrent] = useState(now);
+	// The clock is read through a ref, so a caller handing a new function on
+	// every render does not restart the schedule below.
+	const clock = useRef(now);
+	clock.current = now;
+	// null until mounted: the first render is the hydration render.
+	const [current, setCurrent] = useState<Date | null>(null);
 	useEffect(() => {
 		if (Number.isNaN(atMs)) return;
-		const timer = setInterval(() => setCurrent(now()), tick(new Date(atMs), current));
-		return () => clearInterval(timer);
-	}, [atMs, current, now]);
+		let timer: ReturnType<typeof setTimeout>;
+		const say = () => {
+			const read = clock.current();
+			setCurrent(read);
+			timer = setTimeout(say, cadence(atMs, read.getTime()));
+		};
+		say();
+		return () => clearTimeout(timer);
+	}, [atMs]);
 
 	return (
 		<div data-slot="last-login" className={cn("space-y-1", className)}>
 			<div className="type-metric-label text-muted-foreground">{label}</div>
 			{valid ? (
 				<>
-					<time dateTime={when!.toISOString()} title={when!.toLocaleString()} className="type-metric-value-lg tabular-nums">
-						{relativeTime(when!, current)}
+					<time
+						dateTime={when!.toISOString()}
+						title={current ? when!.toLocaleString() : stableTime(when!)}
+						className="type-metric-value-lg tabular-nums"
+					>
+						{current ? relativeTime(when!, current) : stableTime(when!)}
 					</time>
 					<p className="type-caption-plain text-muted-foreground">
-						{when!.toLocaleString()}
+						{current ? when!.toLocaleString() : stableTime(when!)}
 						{subject ? <> · {subject}</> : null}
 					</p>
 				</>

@@ -54,12 +54,13 @@ export default async function SolutionPage({
 	// visit, and a dashboard with nothing to show yet ("No data yet") sat on top
 	// of the thing the person came for. The solution's panel stays mounted
 	// while the dashboard is open, so switching back keeps its state (an open
-	// chat, a half-typed question). A solution without a dashboard renders as
-	// before, with no tab bar for a single tab.
+	// chat, a half-typed question). A solution that declares no dashboard
+	// (no graph, or a graph of events and metrics with no dashboard in it)
+	// renders as before, with no tab bar for a single tab.
 	return (
 		<div className="flex flex-col gap-4 p-6">
 			<h1 data-slot="page-title" className="type-page-title">{solution.nav.title}</h1>
-			{solution.dashboard ? (
+			{solution.dashboard?.dashboards?.length ? (
 				<Tabs defaultValue="app" className="w-full">
 					<TabsList>
 						<TabsTrigger value="app">App</TabsTrigger>

@@ -35,7 +35,7 @@ describe("the solution page", () => {
 	// The declared dashboard was stacked above the solution, so a dashboard with
 	// nothing to show yet sat on top of what the person came for.
 	it("puts a declared dashboard in its own tab beside the solution, not above it", async () => {
-		findSolution.mockResolvedValue(solution({ events: [], metrics: [], dashboards: [] }));
+		findSolution.mockResolvedValue(solution({ events: [], metrics: [], dashboards: [{ id: "overview", title: "Overview", layout: "grid", widgets: [] }] }));
 		await renderPage();
 		expect(screen.getByRole("tab", { name: "App" })).toBeTruthy();
 		expect(screen.getByRole("tab", { name: "Dashboard" })).toBeTruthy();
@@ -46,6 +46,15 @@ describe("the solution page", () => {
 		expect(await screen.findByTestId("dashboard")).toBeTruthy();
 		// The solution stays mounted behind the dashboard, so its state survives.
 		expect(screen.getByTestId("remote")).toBeTruthy();
+	});
+
+	// A graph may declare events and metrics and no dashboard: a Dashboard tab
+	// would hide the solution behind an empty panel.
+	it("shows no tab bar for a graph that declares no dashboard", async () => {
+		findSolution.mockResolvedValue(solution({ events: [], metrics: [], dashboards: [] }));
+		await renderPage();
+		expect(screen.getByTestId("remote")).toBeTruthy();
+		expect(screen.queryByRole("tablist")).toBeNull();
 	});
 
 	it("shows a solution without a dashboard as before, with no tab bar", async () => {
