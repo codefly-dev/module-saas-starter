@@ -995,10 +995,18 @@ function parseDeclaredSources(
 		) {
 			return null;
 		}
+		// Blank is refused rather than trimmed away, here and for the label and
+		// the paths below. A ref of " " satisfies the connect RPC's bounds (its
+		// branch has a maximum and no minimum), so it would be accepted at
+		// registration, submitted by the card, accepted by the host, and fail
+		// at GitHub against a branch of that name — the late failure this
+		// validation exists to prevent. A declaration that means "the default
+		// branch" omits the field; one that holds only spaces is a mistake, and
+		// a mistake in configuration is reported, not silently repaired.
 		if (
 			candidate.ref !== undefined &&
 			(typeof candidate.ref !== "string" ||
-				candidate.ref === "" ||
+				candidate.ref.trim() === "" ||
 				candidate.ref.length > 255)
 		) {
 			return null;
@@ -1006,7 +1014,7 @@ function parseDeclaredSources(
 		if (
 			candidate.label !== undefined &&
 			(typeof candidate.label !== "string" ||
-				candidate.label === "" ||
+				candidate.label.trim() === "" ||
 				candidate.label.length > 255)
 		) {
 			return null;
@@ -1018,7 +1026,9 @@ function parseDeclaredSources(
 				candidate.paths.length > 64 ||
 				candidate.paths.some(
 					(path) =>
-						typeof path !== "string" || path === "" || path.length > 512,
+						typeof path !== "string" ||
+						path.trim() === "" ||
+						path.length > 512,
 				)
 			) {
 				return null;

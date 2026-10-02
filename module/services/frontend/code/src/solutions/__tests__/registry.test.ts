@@ -392,6 +392,15 @@ describe("parseManifest declared sources", () => {
       source({ ref: "" }),
       source({ ref: "x".repeat(256) }),
       source({ label: 7 }),
+      // Blank, not merely empty. A ref of " " clears the connect RPC's bounds
+      // (its branch has a maximum and no minimum), so accepting it here would
+      // move the failure to GitHub, against a branch of that name — which is
+      // the failure this validation exists to prevent. Same for a label that
+      // would silently fall back to the repository, and a path prefix that
+      // matches nothing.
+      source({ ref: " " }),
+      source({ label: "   " }),
+      source({ paths: ["proposals/", "  "] }),
     ];
     for (const entry of broken) {
       expect(
