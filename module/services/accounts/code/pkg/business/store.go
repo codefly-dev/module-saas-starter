@@ -707,6 +707,19 @@ type Store interface {
 	CloseSolutionTarget(ctx context.Context, targetID string, generation uint64, now time.Time) error
 	ListSolutionTargets(ctx context.Context) ([]*SolutionTarget, error)
 
+	// The generation history (migration 19), append-only: the control plane holds
+	// SELECT and INSERT and nothing else, because a decision is a fact about the
+	// past.
+	//
+	//   - RecordSolutionGenerationDecision appends one. It is idempotent on
+	//     (binding, generation, digest, decision), so a pass that re-reads an
+	//     unchanged document does not append a row per pass — a thirty-second
+	//     poll would otherwise reproduce the registration-event incident in a
+	//     different table.
+	//   - ListSolutionGenerationHistory returns the newest decisions first.
+	RecordSolutionGenerationDecision(ctx context.Context, decision *SolutionGenerationDecision) error
+	ListSolutionGenerationHistory(ctx context.Context, bindingID string, limit int) ([]*SolutionGenerationDecision, error)
+
 	GetSolutionHostBindingForUpdate(ctx context.Context, bindingID string) (*SolutionHostBindingRecord, error)
 	SaveSolutionHostBinding(ctx context.Context, record *SolutionHostBindingRecord) error
 	ListSolutionHostBindings(ctx context.Context) ([]*SolutionHostBindingRecord, error)

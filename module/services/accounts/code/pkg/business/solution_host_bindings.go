@@ -195,13 +195,24 @@ type SolutionHostBindingReconciler struct {
 // another host, and a host that did not know its own coordinate would reconcile
 // whatever it was handed.
 func NewSolutionHostBindingReconciler(
-	service *Service, source SolutionHostBindingSource, coordinate string, interval time.Duration,
+	service *Service, source SolutionHostBindingSource, coordinate string,
+	domains []string, interval time.Duration,
 ) (*SolutionHostBindingReconciler, error) {
 	if service == nil || source == nil {
 		return nil, errors.New("solution host binding reconciler requires a service and a source")
 	}
 	if coordinate == "" {
 		return nil, errors.New("solution host binding reconciler requires this host's coordinate")
+	}
+	// Core requires the accepted ownership domains whenever a coordinate is set,
+	// and refuses a document from an unstated one. The reason is that the applied
+	// record cannot bound a binding's FIRST generation — there is nothing to
+	// compare against yet — so without this, any delivery could claim any unseen
+	// binding ID under a domain of its choosing and own it from then on. It is the
+	// host's to declare because core cannot know which delivery is entitled to a
+	// name it has never seen.
+	if len(domains) == 0 {
+		return nil, errors.New("solution host binding reconciler requires the ownership domains this host accepts delivery from")
 	}
 	if interval <= 0 {
 		interval = SolutionHostBindingReconcileInterval
@@ -211,6 +222,7 @@ func NewSolutionHostBindingReconciler(
 		source:  source,
 		host: solutionhost.Host{
 			Coordinate: coordinate,
+			Domains:    domains,
 			Reserved:   []string{SolutionHostReservedRouteNamespace},
 		},
 		interval: interval,
@@ -275,7 +287,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			// to change.
 			continue
 		}
-		if err := r.service.applySolutionHostBinding(ctx, applied.Document, r.host.Coordinate, r.now()); err != nil {
+		if err := r.service.applySolutionHostBinding(ctx, applied.Document, r.host.Coordinate, r.host.Domains, r.now()); err != nil {
 			// One binding's apply failing leaves every other binding's progress
 			// intact: each apply is its own transaction, because each binding is
 			// independent desired state. The reason is recorded as this

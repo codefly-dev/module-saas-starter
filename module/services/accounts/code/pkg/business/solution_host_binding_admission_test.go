@@ -26,9 +26,19 @@ func TestSolutionHostBindingFixturesReachTheirRequiredOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fixture host: %v", err)
 	}
-	fixtures := solutionhost.Fixtures()
+	// Core ships presence, authority and signed-carrier fixtures. This host's
+	// admission path is the presence reconciler, so it is driven with the presence
+	// set; the authority and carrier documents are verified before admission and
+	// belong to the delivery endpoint's own conformance run.
+	all := solutionhost.Fixtures()
+	var fixtures []solutionhost.Fixture
+	for _, fixture := range all {
+		if fixture.Type == solutionhost.DocumentTypePresence {
+			fixtures = append(fixtures, fixture)
+		}
+	}
 	if len(fixtures) == 0 {
-		t.Fatal("core shipped no fixtures, so nothing was actually checked")
+		t.Fatalf("core shipped no presence fixtures among %d, so nothing was actually checked", len(all))
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
@@ -127,7 +137,7 @@ func TestSolutionHostBindingStaleDocumentDoesNotBlockASibling(t *testing.T) {
 // admitting the deterministic winner keeps one serving. The host no longer owns
 // this policy, so the test pins core's.
 func TestSolutionHostBindingTwoClaimantsOfOneAliasYieldOneDeterministicWinner(t *testing.T) {
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate}
+	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate, Domains: []string{solutionhost.FixtureDomain}}
 	first := mustFixtureDocument(t, "valid")
 	first.Binding = "crm-eu-west-1-aa"
 	second := mustFixtureDocument(t, "valid")
@@ -156,7 +166,7 @@ func TestSolutionHostBindingTwoClaimantsOfOneAliasYieldOneDeterministicWinner(t 
 // A collision must not take an unrelated binding down with it: the loser is
 // refused, the winner and every unrelated binding still apply.
 func TestSolutionHostBindingCollisionWithholdsOnlyTheLosingClaimant(t *testing.T) {
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate}
+	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate, Domains: []string{solutionhost.FixtureDomain}}
 	first := mustFixtureDocument(t, "valid")
 	first.Binding = "crm-eu-west-1-aa"
 	second := mustFixtureDocument(t, "valid")
@@ -186,7 +196,7 @@ func TestSolutionHostBindingCollisionWithholdsOnlyTheLosingClaimant(t *testing.T
 // still applies — core resolves it rather than freezing the binding, and it
 // reports which two documents collided.
 func TestSolutionHostBindingDeclaredTwiceRefusesTheSecondOccurrence(t *testing.T) {
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate}
+	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate, Domains: []string{solutionhost.FixtureDomain}}
 	first := mustFixtureDocument(t, "valid")
 	second := mustFixtureDocument(t, "valid")
 
@@ -210,7 +220,7 @@ func TestSolutionHostBindingDeclaredTwiceRefusesTheSecondOccurrence(t *testing.T
 func TestSolutionHostBindingForAnotherCoordinateIsWithheld(t *testing.T) {
 	// Derived from the fixtures' own coordinate rather than written out, so this
 	// test names no deployment of its own.
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate + "-elsewhere"}
+	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate + "-elsewhere", Domains: []string{solutionhost.FixtureDomain}}
 	document := mustFixtureDocument(t, "valid")
 
 	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{document})
@@ -262,6 +272,7 @@ func TestSolutionHostBindingAliasHandedOverInOneSetAdmitsBoth(t *testing.T) {
 	}
 	host := solutionhost.Host{
 		Coordinate: solutionhost.FixtureCoordinate,
+		Domains:    []string{solutionhost.FixtureDomain},
 		Applied:    []solutionhost.Applied{applied},
 	}
 	releasing := mustFixtureDocument(t, "tombstone")
@@ -289,6 +300,7 @@ func TestSolutionHostBindingClaimingAHeldAliasWithholdsOnlyTheClaimant(t *testin
 	}
 	host := solutionhost.Host{
 		Coordinate: solutionhost.FixtureCoordinate,
+		Domains:    []string{solutionhost.FixtureDomain},
 		Applied:    []solutionhost.Applied{applied},
 	}
 	claiming := mustFixtureDocument(t, "valid")
@@ -443,7 +455,7 @@ func TestSolutionHostBindingPendingGeneration(t *testing.T) {
 
 func mustFixtureDocument(t *testing.T, name string) *solutionhost.SolutionHostBinding {
 	t.Helper()
-	data, err := solutionhost.FixtureDocument(name)
+	data, err := solutionhost.FixtureDocument(solutionhost.DocumentTypePresence, name)
 	if err != nil {
 		t.Fatalf("fixture %q: %v", name, err)
 	}

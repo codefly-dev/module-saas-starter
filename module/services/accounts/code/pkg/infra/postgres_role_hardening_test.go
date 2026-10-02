@@ -52,6 +52,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"solution_registrations":        {}, // platform relation; request traffic has no direct access
 	"solution_host_bindings":        {}, // platform relation; only the reconcile pass writes it
 	"solution_targets":              {}, // platform relation; the identity an installation names
+	"solution_generation_history":   {}, // platform relation; append-only decision trail
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"job_attempts":                  {},
 	"job_messages":                  {},
@@ -373,6 +374,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// and updates both; organization deletion uses the FK cascade.
 			if relation == "approval_requests" || relation == "source_read_revisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// solution_generation_history is APPEND-ONLY: read and insert, never
+			// update or delete. A decision is a fact about the past, and a trail
+			// whose rows can be edited is not a trail.
+			if relation == "solution_generation_history" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 			// solution_targets is never row-deleted either: a CLOSED target is the
 			// evidence that an installation's consent ended, and deleting it
