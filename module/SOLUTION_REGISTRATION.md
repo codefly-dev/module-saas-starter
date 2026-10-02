@@ -538,6 +538,68 @@ there: a projected ConfigMap volume in a deployment, a plain directory under
 path element (`..data`, `..2026_…`) is skipped, so one document is never read
 twice under two names, which Core would refuse as a binding declared twice.
 
+## 7b. The host's own control paths, and which part a consumer may hardcode
+
+Three repositories independently invented the string `/platform/_credential`
+from a design note, and nothing failed at build time. This section exists so the
+next one reads a contract instead of guessing, and so the hardcoding question has
+a stated answer rather than a convention nobody wrote down.
+
+### The rule: a path is a contract, an origin is a resolution result
+
+"Never hardcode what the system resolves" governs **resolution results** —
+addresses, ports, credentials, injected environment: things that are true on one
+cluster until something moves. A URL **path** on a published API is not one of
+those. It is a contract, like an RPC method name or `/v1/users`, and making it
+discoverable would only move the hardcode to the discovery URL.
+
+So a consumer:
+
+- **resolves the origin.** The gateway address comes from whatever already hands
+  the workload its environment — Codefly service discovery for a composed
+  module, the injected configuration for an independently deployed runtime. A
+  runtime that can already call the host has it.
+- **may hardcode the path**, because it is published here and pinned by test.
+  What it must not do is *invent* one.
+
+This is the existing precedent, not a new rule: `POST /solutions/_register` and
+`GET /solutions/_entitlements` are gateway code constants published in this
+document, and every registrant hardcodes those paths today.
+
+### `/platform/*` is the host's own control namespace, and it is reserved
+
+| Path | Status | What it is |
+| --- | --- | --- |
+| `POST /platform/_credential` | **Settled, NOT YET LIVE** | the module/solution credential mint. On the **gateway**, which forwards `Authorization` verbatim; accounts performs the `TokenReview` on the pod's own token. |
+| `POST /platform/_delivery/presence` | **Settled, NOT YET LIVE** | a signed presence document, `{document, bundle}` |
+| `POST /platform/_delivery/authority` | **Settled, NOT YET LIVE** | a signed authority document, same carrier |
+
+**NOT YET LIVE means these paths do not exist on any deployment.** A consumer
+calling one today gets a 404 — on every deployment, not just one, which is the
+one mercy in the situation. Keep an override until this table says live, and do
+not treat a 404 as "my path is wrong".
+
+`/platform/` is **reserved for the host** and no delivered binding may claim it.
+Route aliases live under `/solutions/<alias>/` and composed module routes under
+`/v1/<as>/`, so nothing can shadow it today; it is reserved explicitly so that
+stays true. An unknown `/platform/*` path must answer **404**, never fall through
+to another handler — the same trap the adversarial review names for the
+`/solutions/_…` segments, where deleting a dispatch case lets a request reach
+generic solution routing and answer `502`.
+
+### Why the mint is brokered by the gateway rather than called on accounts
+
+A solution runtime is an independently deployed workload, not a composed module
+on the internal tier, so letting it reach accounts directly means widening
+accounts' internal listener to arbitrary workloads — worse than one more
+brokered route on an edge every solution already reaches.
+
+Brokering stays safe because the carrier check is a `TokenReview` of the **pod's
+own** token: the gateway forwards `Authorization` verbatim, never substitutes its
+own identity, and is a transport hop rather than an audience. A pod token for
+audience `accounts` only ever authenticates that pod. The gateway→accounts
+brokering pattern is the same one `GET /solutions/_entitlements` already uses.
+
 ## 8. Local runs: one attestation path, not a local mode
 
 Binding a credential to an approved execution means reading what the workload
