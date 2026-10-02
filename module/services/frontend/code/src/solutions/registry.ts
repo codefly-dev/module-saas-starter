@@ -101,18 +101,33 @@ export interface SolutionSurface {
 	events?: string[];
 }
 
-/** The public navigation projection (see navProjection). */
-export type SolutionNav = Pick<SolutionManifest, "id" | "nav">;
+/** The per-viewer navigation projection (see navProjection in projections.ts). */
+export type SolutionNav = Pick<SolutionManifest, "id" | "nav"> & {
+	/**
+	 * False when the solution is installed and granted but its installation is
+	 * not healthy right now — an offboarded owner of record, a revoked or disabled
+	 * agent, a standing grant that lapsed.
+	 *
+	 * Such a solution stays IN the projection. The organization did install it and
+	 * the viewer was granted it, so dropping it would send someone looking for a
+	 * grant that already exists; what must not happen is routing it as though it
+	 * were serving. A consumer renders it disabled and says why it cannot be
+	 * opened.
+	 */
+	available: boolean;
+};
 
 /** The internal detail projection (see detailProjection). */
 export type SolutionDetail = Omit<SolutionManifest, "dashboard" | "surfaces">;
 
-/** The per-client surface projection (see surfacesProjection). */
+/** The per-client surface projection (see surfacesProjection in projections.ts). */
 export interface SolutionClientSurfaces {
 	id: string;
 	title: string;
 	/** Origin a surface's `module` path is resolved against. */
 	origin: string;
+	/** See SolutionNav.available — the same distinction, for a non-host client. */
+	available: boolean;
 	surfaces: SolutionSurface[];
 }
 
@@ -129,6 +144,15 @@ const SAFE_SLUG = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
  * correctly-spelled kind that nobody serves.
  */
 export function isClientKind(value: string): boolean {
+	return SAFE_SLUG.test(value);
+}
+
+/**
+ * Whether a value is shaped like a registered solution id — the rule parseManifest
+ * admits an id by, and the gateway's own. A value that fails it can never name a
+ * registration, however it was spelled elsewhere.
+ */
+export function isSolutionId(value: string): boolean {
 	return SAFE_SLUG.test(value);
 }
 
@@ -694,6 +718,25 @@ export async function loadSolutions(): Promise<
 	return current === null ? "unavailable" : current.solutions;
 }
 
+/**
+ * The registered set together with the revision it carries — what a caller that
+ * caches a projection needs, since the registered set is one of the inputs that
+ * projection is a function of.
+ *
+ * It is a separate reader rather than a widened `loadSolutions` so the callers
+ * that only need the list keep the narrower return, and so the revision is
+ * obtained from the SAME snapshot the manifests came from. Reading the list and
+ * then asking for a revision separately could pair manifests with a revision from
+ * a later refetch, and the cache key would then claim a set it did not describe.
+ */
+export async function loadSolutionsWithRevision(): Promise<
+	{ revision: number; solutions: SolutionManifest[] } | SolutionRegistryFailure
+> {
+	const current = await snapshot();
+	if (current === null) return "unavailable";
+	return { revision: current.revision, solutions: current.solutions };
+}
+
 /** One solution by id, or why it could not be resolved. */
 export async function findSolution(
 	id: string,
@@ -701,79 +744,6 @@ export async function findSolution(
 	const current = await snapshot();
 	if (current === null) return "unavailable";
 	return current.byId.get(id) ?? null;
-}
-
-/**
- * What every signed-in browser may read: the id and the nav entry the Solutions
- * menu renders. A manifest also carries deployment topology — the origin the
- * solution's code is served from, the backend service that fronts it, and its
- * dashboard declaration — which no browser needs to render a link, so the
- * public listing projects it away rather than shipping it to every poll.
- */
-export function navProjection(manifest: SolutionManifest): SolutionNav {
-	return { id: manifest.id, nav: { ...manifest.nav } };
-}
-
-/**
- * What one kind of client may read: the surfaces declared for that kind, named
- * by the solution offering them. A client asks for its own kind and gets
- * exactly what applies to it, so learning what is on offer no longer means
- * shipping a table of who offers what inside every client.
- *
- * Solutions are registered deployment-wide, not per tenant, so every caller
- * sees the same set today. When per-tenant enablement exists it narrows this
- * projection, and every client inherits the narrowing without changing.
- *
- * Returns null when this solution declares nothing for that client, which is
- * how the listing leaves it out rather than listing it empty.
- */
-export function surfacesProjection(
-	manifest: SolutionManifest,
-	client: string,
-	hostOrigin?: string,
-): SolutionClientSurfaces | null {
-	const surfaces = (manifest.surfaces ?? []).filter(
-		(surface) => surface.client === client,
-	);
-	if (surfaces.length === 0) {
-		return null;
-	}
-	// A solution served through this host has no origin of its own a client can
-	// reach: its modules are paths on its backend, which this host serves under
-	// the solution's proxy base. Without the host's own origin there is nothing
-	// to resolve them against, so the solution is left out rather than answered
-	// with an address that cannot work.
-	const servedByHost = manifest.frontend.manifestUrl.startsWith("/");
-	if (servedByHost && !hostOrigin) {
-		return null;
-	}
-	const modulePath = (module: string) =>
-		servedByHost ? `${solutionProxyBase(manifest.id)}${module}` : module;
-	return {
-		id: manifest.id,
-		title: manifest.nav.title,
-		// A declared module is a path on the solution's origin, so without the
-		// origin no caller can fetch one. The origin is not withheld topology
-		// here the way the manifest path is: the client fetches the module from
-		// it directly, and every signed-in document already carries it in the
-		// CSP that admits the same origin's code.
-		origin: servedByHost
-			? (hostOrigin as string)
-			: new URL(manifest.frontend.manifestUrl).origin,
-		// A shallow copy would share `applies.tagged` and `events` with the
-		// cached snapshot, which outlives this response and is read by every
-		// later caller — including other client kinds, which read the same
-		// manifest objects.
-		surfaces: surfaces.map((surface) => ({
-			...surface,
-			module: modulePath(surface.module),
-			applies:
-				typeof surface.applies === "object"
-					? { tagged: [...surface.applies.tagged] }
-					: surface.applies,
-			events: surface.events === undefined ? undefined : [...surface.events],
-		})),
-	};
 }
 
 /**

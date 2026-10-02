@@ -15,6 +15,6 @@ sources:
       services:
         - ModuleCapabilitiesService
 generated-by:
-    codefly: 0.1.160
+    codefly: 0.1.168
     companion: ghcr.io/codefly-dev/proto:0.0.16
     facade: true

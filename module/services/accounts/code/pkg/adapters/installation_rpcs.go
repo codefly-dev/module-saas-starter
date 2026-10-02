@@ -105,6 +105,24 @@ func (s *InstallationServer) GetInstallation(ctx context.Context, req *gen.GetIn
 	return &gen.GetInstallationResponse{Installation: installation, Health: health}, nil
 }
 
+// ListInstallations enumerates one organization's installations. Internal-tier,
+// like the scope listing it is read beside: the organization is a request field,
+// so a bare tenant JWT must never be able to ask this — the caller that may is
+// the auth-gateway, naming the tenant it projected from a verified identity.
+func (s *InstallationServer) ListInstallations(ctx context.Context, req *gen.ListInstallationsRequest) (*gen.ListInstallationsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	resp, err := service.ListInstallations(ctx, req)
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	return resp, nil
+}
+
 func mapInstallationError(err error) error {
 	if err == nil {
 		return nil

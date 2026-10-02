@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:df255d9766248b1f96a704ae6dfaeff0eb13d38f53358e1a39fdac1819718c26",
+      "digest": "sha256:6e2be9a3038296538cba72fbac4ca9e5b1dea695938bc8ed9667dca3094d1328",
       "services": [
         {
           "name": "APIKeyService",
@@ -173,6 +173,7 @@
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
             "/saas.accounts.v1.InstallationService/InstallSolution",
+            "/saas.accounts.v1.InstallationService/ListInstallations",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -362,6 +363,13 @@
             "/saas.accounts.v1.SSOAdminService/Disable",
             "/saas.accounts.v1.SSOAdminService/GetSSO",
             "/saas.accounts.v1.SSOAdminService/StartSetup"
+          ]
+        },
+        {
+          "name": "SolutionEntitlementService",
+          "fullName": "saas.accounts.v1.SolutionEntitlementService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
           ]
         },
         {
