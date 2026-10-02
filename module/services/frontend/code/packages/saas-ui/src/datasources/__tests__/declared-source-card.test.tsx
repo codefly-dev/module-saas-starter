@@ -275,6 +275,32 @@ describe("DeclaredSourceCard", () => {
 		expect(screen.queryByRole("button", { name: /Reconnect/ })).toBeNull();
 	});
 
+	it("tells the three states apart by shape, and says the repository was not chosen here", async () => {
+		// The consuming solution reported that a Connected badge on `secondary`
+		// reads neutral beside an outline "Set up", so a working source looks
+		// like one nobody has connected. Each state now carries a dot as well as
+		// a tone, and Connected no longer borrows `secondary`.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [connected]),
+		});
+		const { container } = renderWithClient(
+			<DeclaredSourceCard client={client} orgId="org-1" declared={declared} />,
+		);
+
+		const badge = await screen.findByText("Connected");
+		expect(badge.className).not.toMatch(/bg-secondary/);
+		expect(container.querySelector('[data-slot="badge-dot"]')).toBeTruthy();
+		// The card's own description slot, not a muted paragraph in the body:
+		// the first thing to understand is that the repository below is not a
+		// choice being offered.
+		const description = container.querySelector(
+			'[data-slot="card-description"]',
+		);
+		expect(description?.textContent).toBe(
+			"Declared by this solution, not chosen here.",
+		);
+	});
+
 	it("does not call a source in error when the host did not report its state", async () => {
 		// "unknown" is what an OLDER host sends: the status field decodes to its
 		// proto default and the gateway maps it there rather than guessing. The

@@ -210,6 +210,9 @@ function DeclaredSourceCardView({
 		<Card
 			className={cn("space-y-4", className)}
 			title={declared.label?.trim() || declared.repo}
+			// The one thing a person has to understand before reading the rest:
+			// the repository below is not a choice they are being offered.
+			description="Declared by this solution, not chosen here."
 			actions={
 				list.isSuccess ? <StateBadge state={state} source={source} /> : null
 			}
@@ -402,13 +405,32 @@ function StateBadge({
 	state: DeclaredSourceState;
 	source: DatasourceView | undefined;
 }) {
+	// Every state carries a dot, so the three are told apart at a glance by
+	// shape as well as by colour. Connected does NOT use `secondary`: it reads
+	// as neutral beside an outline "Set up", which leaves a reader unable to
+	// tell a source that is working from one nobody has connected yet — the
+	// opposite of what this card exists to say. (The kit has no `success`
+	// token to tint it with; see the note in the PR.)
 	if (state === "connected")
-		return <Badge variant="secondary">Connected</Badge>;
-	if (state === "setup") return <Badge variant="outline">Set up</Badge>;
+		return (
+			<Badge variant="default" dot>
+				Connected
+			</Badge>
+		);
+	if (state === "setup")
+		return (
+			<Badge variant="outline" dot>
+				Set up
+			</Badge>
+		);
 	if (state === "ambiguous")
-		return <Badge variant="destructive">More than one source</Badge>;
+		return (
+			<Badge variant="destructive" dot>
+				More than one source
+			</Badge>
+		);
 	return (
-		<Badge variant="destructive">
+		<Badge variant="destructive" dot>
 			Error{source?.status === "paused" ? " · paused" : ""}
 		</Badge>
 	);

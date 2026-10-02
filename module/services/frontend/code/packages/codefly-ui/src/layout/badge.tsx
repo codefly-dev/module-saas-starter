@@ -27,17 +27,41 @@ const badgeVariants = cva(
 	},
 );
 
+/**
+ * `dot` prefixes a small filled circle that inherits the variant's text colour.
+ *
+ * It is decorative and `aria-hidden`: the badge's own text is what a reader and
+ * a screen reader get, so the dot adds a glanceable mark without adding a
+ * second, colour-only channel that carries meaning of its own. That is the
+ * point of keeping it here rather than letting each caller prepend its own —
+ * a hand-rolled dot is where a status ends up encoded in colour alone.
+ */
 function Badge({
 	className,
 	variant = "default",
+	dot = false,
 	render,
+	children,
 	...props
-}: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
+}: useRender.ComponentProps<"span"> &
+	VariantProps<typeof badgeVariants> & { dot?: boolean }) {
 	return useRender({
 		defaultTagName: "span",
 		props: mergeProps<"span">(
 			{
 				className: cn(badgeVariants({ variant }), className),
+				children: dot ? (
+					<>
+						<span
+							aria-hidden
+							data-slot="badge-dot"
+							className="size-1.5 shrink-0 rounded-full bg-current"
+						/>
+						{children}
+					</>
+				) : (
+					children
+				),
 			},
 			props,
 		),
