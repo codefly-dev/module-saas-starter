@@ -12,6 +12,7 @@ import { Card } from "../layout/card.js";
 import { Section } from "../layout/page.js";
 import { AreaChart, BarList, LineChart, StatChart } from "./charts.js";
 import { cn } from "./cn.js";
+import { formatShare } from "./format.js";
 import type { DashboardView, DashboardWidgetView } from "./types.js";
 
 // Column-span utility classes, matching the responsive grid below so a spanning
@@ -33,21 +34,23 @@ const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 
 function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	const { series, visualization } = widget;
+	// Undefined for a plain number, so each chart keeps its own default.
+	const formatValue = widget.format === "percent" ? formatShare : undefined;
 	if (series.points.length === 0) {
 		return <div className="py-6 type-body text-muted-foreground">No data yet.</div>;
 	}
 	switch (visualization) {
 		case "line":
-			return <LineChart points={series.points} className="text-primary" axes />;
+			return <LineChart points={series.points} className="text-primary" axes formatValue={formatValue} />;
 		case "area":
-			return <AreaChart points={series.points} className="text-primary" axes />;
+			return <AreaChart points={series.points} className="text-primary" axes formatValue={formatValue} />;
 		case "bar":
-			return <BarList points={series.points} />;
+			return <BarList points={series.points} formatValue={formatValue} />;
 		case "number":
 			return series.total === null ? (
 				<p className="type-body text-muted-foreground">Total unavailable</p>
 			) : (
-				<StatChart total={series.total} points={series.points} />
+				<StatChart total={series.total} points={series.points} formatValue={formatValue} />
 			);
 		case "table":
 			return (
@@ -57,7 +60,9 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 							{series.points.map((p) => (
 								<tr key={p.key} className="border-b last:border-0">
 									<td className="py-1 pr-4 text-muted-foreground">{p.key}</td>
-									<td className="py-1 text-right tabular-nums">{p.value.toLocaleString()}</td>
+									<td className="py-1 text-right tabular-nums">
+										{formatValue ? formatValue(p.value) : p.value.toLocaleString()}
+									</td>
 								</tr>
 							))}
 						</tbody>

@@ -1,6 +1,7 @@
 import type {
 	DashboardLayout,
 	DataGraph,
+	MetricValueFormat,
 	WidgetVisualization,
 } from "../schema.js";
 import { resolveMetrics } from "./run.js";
@@ -30,6 +31,8 @@ export interface ResolvedWidget {
 	title?: string;
 	metricId: string;
 	series: MetricSeries;
+	/** How the widget's values are written: its metric's declared format. */
+	format?: MetricValueFormat;
 }
 
 /**
@@ -84,6 +87,8 @@ export async function runDashboard<const T extends DataGraph>(
 			title: widget.title,
 			metricId: widget.metric,
 			series,
+			format: graph.metrics.find((metric) => metric.id === widget.metric)
+				?.format,
 		};
 	});
 

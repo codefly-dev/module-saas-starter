@@ -37,6 +37,13 @@ export type MetricAggregation =
 /** How a derived metric combines the metrics it references. */
 export type MetricOperation = "sum" | "ratio" | "difference";
 
+/**
+ * How a metric's value is written wherever the dashboard shows it. `number`,
+ * the default, writes it as it is. `percent` reads it as a share from 0 to 1
+ * and writes it times 100 with a percent sign, so 0.4 reads "40%".
+ */
+export type MetricValueFormat = "number" | "percent";
+
 /** How a widget renders the metric it is bound to. */
 export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
@@ -118,6 +125,8 @@ export interface SourceMetric {
 	field?: string;
 	/** Quantile in (0,1] for `aggregation: "percentile"` (0.95 → p95). */
 	percentile?: number;
+	/** How the value is written; `number` when omitted. */
+	format?: MetricValueFormat;
 }
 
 /** A metric derived by combining metrics already declared in the same graph. */
@@ -129,6 +138,8 @@ export interface DerivedMetric {
 	operation: MetricOperation;
 	/** Ids of the metrics this one combines (`ratio`/`difference` take two, `sum` at least two). */
 	inputs: readonly string[];
+	/** How the value is written; `number` when omitted. */
+	format?: MetricValueFormat;
 }
 
 export type Metric = SourceMetric | DerivedMetric;
@@ -139,6 +150,15 @@ export interface MetricWidget {
 	metric: string;
 	visualization: WidgetVisualization;
 	title?: string;
+	/** The dashboard section the widget is drawn in, when the dashboard declares sections. */
+	section?: string;
+}
+
+/** A titled group of a dashboard's widgets. A section may hold no widgets. */
+export interface DashboardSection {
+	id: string;
+	title: string;
+	description?: string;
 }
 
 /** A layout of widgets, each rendering one metric. */
@@ -146,6 +166,8 @@ export interface Dashboard {
 	id: string;
 	title?: string;
 	layout: DashboardLayout;
+	/** The sections the widgets are grouped into, drawn in this order. */
+	sections?: readonly DashboardSection[];
 	widgets: readonly MetricWidget[];
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatAxisKey, formatAxisValue, parseTimeKey } from "../format.js";
+import {
+	formatAxisKey,
+	formatAxisValue,
+	formatShare,
+	parseTimeKey,
+} from "../format.js";
 
 describe("formatAxisValue", () => {
 	it("keeps small numbers plain and compacts large ones", () => {
@@ -58,5 +63,16 @@ describe("parseTimeKey", () => {
 	it("is null for a key that is not a time", () => {
 		expect(parseTimeKey("saas.auth.login")).toBeNull();
 		expect(parseTimeKey("42")).toBeNull();
+	});
+});
+
+describe("formatShare", () => {
+	// A ratio metric's value is a share from 0 to 1; a viewer reads it as a
+	// percentage, to one decimal at most.
+	it("writes a share from 0 to 1 as a percentage", () => {
+		expect(formatShare(0.4)).toBe("40%");
+		expect(formatShare(17 / 22)).toBe("77.3%");
+		expect(formatShare(0)).toBe("0%");
+		expect(formatShare(1)).toBe("100%");
 	});
 });

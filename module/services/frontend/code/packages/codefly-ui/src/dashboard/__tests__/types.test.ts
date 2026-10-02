@@ -29,6 +29,20 @@ describe("fromDashboardData", () => {
 		expect(view.widgets[0].series.total).toBe(3);
 	});
 
+	it("carries a widget's value format through", () => {
+		const view = fromDashboardData({
+			widgets: [
+				{
+					id: "rate",
+					visualization: "number",
+					series: { points: [{ key: "all", value: 0.4 }], total: 0.4 },
+					format: "percent",
+				},
+			],
+		});
+		expect(view.widgets[0].format).toBe("percent");
+	});
+
 	it("defaults layout to grid when the source omits it", () => {
 		const view = fromDashboardData({ widgets: [] });
 		expect(view.layout).toBe("grid");

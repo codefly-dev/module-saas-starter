@@ -101,6 +101,12 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"metric bucket without a time group_by": (m) => {
 		arr(rec(m.dashboard).metrics)[0].groupBy = "actor";
 	},
+	"unsupported source metric format": (m) => {
+		arr(rec(m.dashboard).metrics)[0].format = "currency";
+	},
+	"unsupported derived metric format": (m) => {
+		arr(rec(m.dashboard).metrics)[3].format = "fraction";
+	},
 	"unsupported derived metric operation": (m) => {
 		arr(rec(m.dashboard).metrics)[3].operation = "product";
 	},
@@ -116,6 +122,29 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	},
 	"unsupported widget visualization": (m) => {
 		arr(arr(rec(m.dashboard).dashboards)[0].widgets)[0].visualization = "pie";
+	},
+	"widget section on a dashboard with no sections": (m) => {
+		arr(arr(rec(m.dashboard).dashboards)[0].widgets)[0].section = "overview";
+	},
+	"widget with no section on a dashboard with sections": (m) => {
+		const dashboard = arr(rec(m.dashboard).dashboards)[0];
+		dashboard.sections = [{ id: "overview", title: "Overview" }];
+		for (const widget of arr(dashboard.widgets).slice(1))
+			widget.section = "overview";
+	},
+	"section id that is not a logical id": (m) => {
+		const dashboard = arr(rec(m.dashboard).dashboards)[0];
+		dashboard.sections = [{ id: "Overview Band", title: "Overview" }];
+		for (const widget of arr(dashboard.widgets))
+			widget.section = "Overview Band";
+	},
+	"section with an empty title": (m) => {
+		const dashboard = arr(rec(m.dashboard).dashboards)[0];
+		dashboard.sections = [{ id: "overview", title: "" }];
+		for (const widget of arr(dashboard.widgets)) widget.section = "overview";
+	},
+	"empty sections list": (m) => {
+		arr(rec(m.dashboard).dashboards)[0].sections = [];
 	},
 	"bad subscribe handler": (m) => {
 		arr(rec(m.events).subscribes)[0].handler = "Bad Handler";
@@ -165,6 +194,29 @@ describe("JSON Schema conformance", () => {
 	it("accepts the reference manifest in both the schema and the validator", () => {
 		expect(validateWithSchema(example)).toBe(true);
 		expect(() => assertPluginManifest(example)).not.toThrow();
+	});
+
+	it("accepts a dashboard grouped into sections in both the schema and the validator", () => {
+		const manifest = clone();
+		const dashboard = arr(rec(manifest.dashboard).dashboards)[0];
+		dashboard.sections = [
+			{ id: "overview", title: "Overview", description: "The headline read." },
+			{ id: "activity", title: "Activity" },
+		];
+		const widgets = arr(dashboard.widgets);
+		widgets[0].section = "activity";
+		for (const widget of widgets.slice(1)) widget.section = "overview";
+		expect(validateWithSchema(manifest)).toBe(true);
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
+	});
+
+	it("accepts metrics that name a value format in both the schema and the validator", () => {
+		const manifest = clone();
+		const metrics = arr(rec(manifest.dashboard).metrics);
+		metrics[0].format = "number";
+		metrics[3].format = "percent";
+		expect(validateWithSchema(manifest)).toBe(true);
+		expect(() => assertPluginManifest(manifest)).not.toThrow();
 	});
 
 	it.each(Object.keys(OWNED_FIELD_VIOLATIONS))(

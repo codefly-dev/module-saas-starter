@@ -151,6 +151,74 @@ describe("parseManifest dashboard slot", () => {
     expect(parsed?.dashboard?.dashboards[0]?.id).toBe("activity");
   });
 
+  it("carries a dashboard grouped into sections through", () => {
+    const sectioned = {
+      ...validGraph,
+      dashboards: [
+        {
+          ...validGraph.dashboards[0],
+          sections: [
+            { id: "overview", title: "Overview" },
+            { id: "detail", title: "Detail", description: "Day by day." },
+          ],
+          widgets: [
+            {
+              id: "logins",
+              metric: "logins",
+              visualization: "line",
+              section: "detail",
+            },
+          ],
+        },
+      ],
+    };
+    const parsed = parseManifest(baseManifest({ dashboard: sectioned }));
+    expect(parsed?.dashboard?.dashboards[0]?.sections).toEqual(
+      sectioned.dashboards[0].sections,
+    );
+    expect(parsed?.dashboard?.dashboards[0]?.widgets[0]?.section).toBe(
+      "detail",
+    );
+  });
+
+  it("rejects the registration when a widget names a section its dashboard does not declare", () => {
+    const misplaced = {
+      ...validGraph,
+      dashboards: [
+        {
+          ...validGraph.dashboards[0],
+          sections: [{ id: "overview", title: "Overview" }],
+          widgets: [
+            {
+              id: "logins",
+              metric: "logins",
+              visualization: "line",
+              section: "elsewhere",
+            },
+          ],
+        },
+      ],
+    };
+    expect(parseManifest(baseManifest({ dashboard: misplaced }))).toBeNull();
+  });
+
+  it("carries a metric's value format through", () => {
+    const formatted = {
+      ...validGraph,
+      metrics: [{ ...validGraph.metrics[0], format: "percent" }],
+    };
+    const parsed = parseManifest(baseManifest({ dashboard: formatted }));
+    expect(parsed?.dashboard?.metrics[0]?.format).toBe("percent");
+  });
+
+  it("rejects the registration when a metric names an unsupported format", () => {
+    const misformatted = {
+      ...validGraph,
+      metrics: [{ ...validGraph.metrics[0], format: "currency" }],
+    };
+    expect(parseManifest(baseManifest({ dashboard: misformatted }))).toBeNull();
+  });
+
   it("rejects the whole registration when the dashboard graph is malformed", () => {
     // A widget bound to a metric the graph never declares fails referential
     // integrity; the registration is refused rather than stored without it.

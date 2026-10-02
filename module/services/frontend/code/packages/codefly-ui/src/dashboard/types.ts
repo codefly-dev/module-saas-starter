@@ -11,6 +11,12 @@
 /** How a widget draws its series. */
 export type WidgetVisualization = "line" | "bar" | "area" | "number" | "table";
 
+/**
+ * How a widget writes its values, from its metric's declared format: `number`
+ * as they are, `percent` a share from 0 to 1 as a percentage (0.4 → "40%").
+ */
+export type WidgetValueFormat = "number" | "percent";
+
 /** How a dashboard arranges its widgets. */
 export type DashboardLayoutKind = "grid" | "stack";
 
@@ -33,6 +39,8 @@ export interface DashboardWidgetView {
 	visualization: WidgetVisualization;
 	title?: string;
 	series: WidgetSeries;
+	/** How the widget writes its values; `number` when omitted. */
+	format?: WidgetValueFormat;
 	/** Grid columns this widget spans (1–4); ignored in a stack. */
 	span?: 1 | 2 | 3 | 4;
 }
@@ -57,6 +65,7 @@ interface ResolvedWidgetLike {
 	visualization: WidgetVisualization;
 	title?: string;
 	series: WidgetSeries;
+	format?: WidgetValueFormat;
 }
 interface DashboardDataLike {
 	title?: string;
@@ -84,6 +93,7 @@ export function fromDashboardData(
 			visualization: widget.visualization,
 			title: widget.title,
 			series: widget.series,
+			format: widget.format,
 		})),
 	};
 }

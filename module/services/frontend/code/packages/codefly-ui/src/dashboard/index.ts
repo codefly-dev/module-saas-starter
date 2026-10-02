@@ -14,7 +14,12 @@ export {
 	StatChart,
 } from "./charts.js";
 export { Dashboard } from "./dashboard.js";
-export { formatAxisKey, formatAxisValue, parseTimeKey } from "./format.js";
+export {
+	formatAxisKey,
+	formatAxisValue,
+	formatShare,
+	parseTimeKey,
+} from "./format.js";
 export {
 	linearScale,
 	niceTicks,
@@ -29,6 +34,7 @@ export {
 	fromDashboardData,
 	type SeriesPoint,
 	type WidgetSeries,
+	type WidgetValueFormat,
 	type WidgetVisualization,
 } from "./types.js";
 
@@ -54,7 +60,14 @@ export {
 } from "./metric-geometry.js";
 
 export { Sparkline } from "./sparkline.js";
-export { SortableGrid, type SortableGridProps } from "./sortable-grid.js";
+export {
+	SortableBoard,
+	type SortableBoardProps,
+	SortableGrid,
+	type SortableGridProps,
+	type SortableGroup,
+	type SortableGroupHandle,
+} from "./sortable-grid.js";
 
 export {
 	MetricProvenance,
