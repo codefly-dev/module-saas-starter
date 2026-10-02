@@ -114,7 +114,8 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 	require.NoError(t, err)
 	secrets, err := ParseRegistrationSecrets("example:" + declarationDigest("example-secret"))
 	require.NoError(t, err)
-	s := &Service{modulePrincipals: registry}
+	s := &Service{}
+	s.SetModulePrincipals(registry)
 	s.SetModuleIdentitySecrets(secrets)
 
 	authority, err := s.ModuleAuthorizeOperationContext("example", "example-secret", "model")
@@ -163,7 +164,8 @@ func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testi
 	changed.Queues = []string{"b"}
 	require.NotEqual(t, revision, ModuleOperationContextRevision(changed))
 
-	s := &Service{modulePrincipals: first}
+	s := &Service{}
+	s.SetModulePrincipals(first)
 	owner := []ModuleOperationRevisionSubject{{PrincipalID: id, Scopes: []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"invoke"}, ResourceIDs: []string{"p-1"}}}}}
 	handled, err := s.CheckModuleOperationContextRevision("019f6bf7-5b4b-74e5-8c17-092259bb1661", id, revision, owner)
 	require.True(t, handled)

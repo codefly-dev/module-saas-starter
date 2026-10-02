@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -89,11 +90,44 @@ type Service struct {
 	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient
 	newUploadClient          func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
-	newOAuth2Refresh         OAuth2RefreshFunc       // refreshes an OAuth 2.0 API source's access token
-	moduleProducer           jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
-	moduleJobStore           jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
-	modulePrincipals         ModulePrincipalRegistry // per-principal capability grants for the module-facing surface
-	eventTransport           events.Transport        // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
+	newOAuth2Refresh         OAuth2RefreshFunc // refreshes an OAuth 2.0 API source's access token
+	moduleProducer           jobs.Producer     // request-scoped, transactional outbox producer for the module-facing surface
+	moduleJobStore           jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface
+	eventTransport           events.Transport  // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
+
+	// modulePrincipals holds the per-principal capability grants for the
+	// module-facing surface, behind an atomic pointer rather than as a bare
+	// field.
+	//
+	// It is replaced, not mutated: every writer swaps a whole registry. A bare
+	// field made that swap a data race against the eighteen authorization sites
+	// that read it — unsynchronized, and therefore undefined rather than merely
+	// stale. Nothing replaces it at runtime TODAY (work.go wires it once at
+	// boot), so the race is latent; it goes live the moment a platform
+	// administrator can narrow a module's ceiling without a redeploy, which is
+	// what the envelope record makes possible. Closing it before the writer
+	// exists is the cheap order.
+	//
+	// What this does NOT yet give is one immutable snapshot per REQUEST. Each
+	// read takes the registry as it is at that moment, so a request that
+	// consults it twice could still straddle a replacement. Threading a
+	// request-scoped snapshot is the other half, and it lands with the runtime
+	// writer that makes a mid-request replacement reachable at all — doing it
+	// now, against a registry nothing replaces, would be eighteen call sites no
+	// test could hold.
+	modulePrincipals atomic.Pointer[ModulePrincipalRegistry]
+}
+
+// declaredModules is the module principal registry as it stands right now.
+//
+// An unset registry reads as empty, which denies every module caller — the same
+// fail-closed answer a nil map gave, kept deliberately: a deployment that has
+// not declared its modules must authorize none of them, never all of them.
+func (s *Service) declaredModules() ModulePrincipalRegistry {
+	if registry := s.modulePrincipals.Load(); registry != nil {
+		return *registry
+	}
+	return ModulePrincipalRegistry{}
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -105,7 +139,7 @@ type Service struct {
 func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store, registry ModulePrincipalRegistry) {
 	s.moduleProducer = producer
 	s.moduleJobStore = store
-	s.modulePrincipals = registry
+	s.modulePrincipals.Store(&registry)
 }
 
 // ModulePrincipals returns the declared registry, and SetModulePrincipals
@@ -114,11 +148,11 @@ func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store
 // resources its content is governed by — so a caller that needs to read or
 // stand in for that declaration goes through here rather than re-deriving it.
 func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
-	return s.modulePrincipals
+	return s.declaredModules()
 }
 
 func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
-	s.modulePrincipals = registry
+	s.modulePrincipals.Store(&registry)
 }
 
 // SetModuleEventTransport wires the domain-event pub/sub transport backing

@@ -246,7 +246,7 @@ func (s *Service) ListCollectionAccess(ctx context.Context, req *gen.ListCollect
 	var collections []*gen.CollectionAccess
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
 		var err error
-		collections, err = s.store.ListCollectionAccess(ctx, req.OrgId, req.PageToken, size+1, s.modulePrincipals.ContentResources())
+		collections, err = s.store.ListCollectionAccess(ctx, req.OrgId, req.PageToken, size+1, s.declaredModules().ContentResources())
 		return err
 	}); err != nil {
 		return nil, err

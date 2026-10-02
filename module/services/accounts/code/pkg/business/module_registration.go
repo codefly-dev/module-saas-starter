@@ -307,7 +307,7 @@ func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkC
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)
-	grant, registered := s.modulePrincipals[principalID]
+	grant, registered := s.declaredModules()[principalID]
 	if !registered {
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
