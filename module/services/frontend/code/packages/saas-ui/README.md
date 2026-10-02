@@ -195,7 +195,18 @@ components:
   picked**: they can disagree about credential, branch, scope and health, so
   rendering the first would sync one and leave the other ingesting invisibly.
   `matchDeclaredSources(declared, sources)` is that rule as a pure function, for
-  a consumer rendering the states in its own shell.
+  a consumer rendering the states in its own shell; `declaredCollectionLabel`
+  resolves where connected entries land.
+- `CredentialMethodField` / `AccessTokenField` / `WebhookSecretField` /
+  `AppInstallPrompt` (with `CredentialMethod`, `credentialMethodFrom`,
+  `fieldErrorClass`) — the credential block `ConnectGitHubForm` and
+  `<DeclaredSourceCard>` both render, presentational and controlled, exported
+  so a consumer building its own shell around `matchDeclaredSources` can **ask
+  for the credential without copying the form**. Compose these; do not copy
+  `ConnectGitHubForm` — `solutions/README.md` refuses a copied capability
+  wrapped in a shared card, and these three modes are the whole of what a
+  person decides between, so two surfaces that word them differently teach two
+  different products.
   Do not mount this and `<DatasourcesPanel>` on the same page: both redeem the
   GitHub App's single-use return state, and the loser reports a rejection for an
   installation that in fact succeeded.
