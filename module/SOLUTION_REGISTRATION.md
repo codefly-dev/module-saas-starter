@@ -171,8 +171,11 @@ They are frequently conflated. In this module they are not the same, and the
 boundary is deliberate:
 
 - **Deployment registration** (this document) is cluster-wide and governs
-  **route and page exposure**: whether `/s/{id}` renders a remote and whether
-  `/solutions/{id}/…` proxies. It is per-deployment, not per-organization.
+  **availability**: whether a solution exists on this deployment at all, and so
+  whether `/s/{id}` can render a remote for it. It is per-deployment, not
+  per-organization, and since issue #952 it is no longer sufficient to reach a
+  solution: `/solutions/{id}/…` additionally requires the caller's organization
+  to have installed it and a grant to reach the caller.
 - **Per-org installation** (`InstallationService/InstallSolution`) governs
   **agent authority only**. Installing composes an agent principal, a
   `kind='solution'` scope node, a least-privilege standing grant with an
@@ -187,11 +190,14 @@ boundary is deliberate:
 - **Entitlement** (plans and grants, `BillingService`) governs feature
   availability within the product and is independent of both.
 
-**The limitation, stated plainly:** uninstalling a solution in one organization
-revokes that organization's agent authority — the principal and its standing
-grant — and does **not** remove the solution's nav entry, page, or gateway route,
-for that organization or any other. Its ability to *act* on a tenant's behalf as
-an agent is what installation confers and uninstall withdraws. Other
+**What uninstalling does, stated plainly:** it revokes that organization's agent
+authority — the principal and its standing grant — withdraws that organization's
+viewers from the projections, and refuses that organization's traffic at the
+solution proxy. It does **not** remove the solution's page for that organization,
+because `/s/{id}` server-renders from the registry and this origin cannot read a
+verified viewer server-side without rotating a refresh token per render; the page
+discloses a nav title and a manifest URL the public asset surface already serves,
+and every call it makes goes through the gated proxy. Other
 tenants are unaffected either way, because installation state is per-org.
 
 ### What the projections answer (issue #949)
@@ -235,10 +241,56 @@ Four distinctions the projections keep:
 Backend authorization is unchanged and remains the real boundary: a client holding
 a stale menu still has every call denied by the authority it calls.
 
-**Route and page exposure is still deployment-wide.** `/s/{id}` renders and
-`/solutions/{id}/…` proxies for any caller the gateway authenticates, whatever any
-organization installed. Per-tenant admission *there* would be an additional gate —
-a tenant check in the solution page and proxy route — and is not implemented here.
+### What the proxy admits (issue #952)
+
+#949 narrowed the projections and deliberately left route and page exposure
+deployment-wide. That was a hole rather than a boundary: a viewer in **any**
+organization could call the data endpoints of **every** solution the deployment
+ran — with a real bearer forwarded to them — by typing the path the menu declined
+to show. Available, installed and exposed are three layers and none is inferred
+from another.
+
+So **the solution proxy admits traffic through the same authority the
+projections read.** `/solutions/{id}/…` consults
+`SolutionEntitlementService.ListSolutionEntitlements` for the identity
+`ext_authz` verified, and forwards nothing until that answer admits the
+solution the request addressed. Three answers, kept apart:
+
+| answer | response |
+| --- | --- |
+| installed and granted | proxied, as before |
+| the authority answered and this organization has no installation of it, or no grant reaches this viewer | `403`, `X-Codefly-Entitlement-Refusal: not-entitled` |
+| the authority could not be asked (outage, no client wired, a cursor that never terminates) | `503` — never `403`, and nothing forwarded |
+
+Four properties worth stating, because each is a decision:
+
+- **The refusal is named.** A `403` meaning "nobody granted your organization
+  this" is acted on by installing and granting; a `403` from `ext_authz` by
+  signing in again. The header is what separates them, and it is the same header
+  the entitlement listing uses for the same reason.
+- **An outage is not a verdict.** "I cannot ask" must neither route nor read as a
+  missing grant, so it is a `503`. A gateway with no authority client wired fails
+  closed for the same reason: the behaviour this check replaces was *serve every
+  solution to every organization*, and that must never be the fallback.
+- **Health is not admission.** An unhealthy installation is still installed and
+  still granted; the registry's own `resolve` already answers `503` for a
+  registration that is not serving. Reading health here would make "nobody
+  granted you this" indistinguishable from "it is restarting".
+- **Impersonation is decided on the impersonated viewer**, the effective subject
+  accounts authorizes against — not the administrator acting. Otherwise
+  impersonation would show more than the user can reach, which is the one thing
+  it exists to check.
+
+**The public Module-Federation surface is not gated, and cannot be.**
+`/solutions/{id}/assets/*` and `/.well-known/*` are fetched by the browser's
+module loader with no credential, so there is no viewer to ask about; what they
+serve is the solution's own static bytes, which carry no tenant data. That is a
+deliberate residual exposure, not a pending gate: gating it would make a remote
+impossible to load same-origin.
+
+**Backend authorization remains the real boundary** either way: a client holding
+a stale menu, or reaching a solution through some path not listed here, still has
+every call denied by the authority it calls.
 
 ## 5. Rollout
 

@@ -54,12 +54,17 @@ func (g *Gateway) handleSolutionViewerSegment(w http.ResponseWriter, r *http.Req
 
 const listSolutionEntitlementsMethod = "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
 
-// solutionEntitlementRefusalHeader names which of this endpoint's OWN refusals
-// an answer is, so the caller can tell them apart from an ext_authz verdict on the
-// user's credential. Status codes alone cannot: a refused internal credential and
-// a refused user bearer are both 401, and a caller that read the first as the
-// second would tell every signed-in user to re-authenticate over a server-side
-// credential fault (and drive a refresh-token rotation on every poll).
+// solutionEntitlementRefusalHeader names which of the host's OWN entitlement
+// refusals an answer is, so the caller can tell them apart from an ext_authz
+// verdict on the user's credential. Status codes alone cannot: a refused internal
+// credential and a refused user bearer are both 401, and a caller that read the
+// first as the second would tell every signed-in user to re-authenticate over a
+// server-side credential fault (and drive a refresh-token rotation on every poll).
+//
+// It is set by both surfaces that consult the authority — this listing and the
+// solution proxy in gateway_solutions.go — because the distinction a caller needs
+// is the same on each: a 403 that means "nobody granted your organization this"
+// is acted on by installing and granting, and a 403 from ext_authz by signing in.
 const solutionEntitlementRefusalHeader = "X-Codefly-Entitlement-Refusal"
 
 const (
@@ -69,6 +74,11 @@ const (
 	// refusalNoOrganization: the user authenticated, but the session names no
 	// organization, so there is no org-scoped set to answer.
 	refusalNoOrganization = "no-organization"
+	// refusalNotEntitled: the authority answered, and this viewer's organization
+	// has no installation of the solution the request addressed, or no grant
+	// reaching this viewer. Set by the proxy, which refuses one named solution
+	// rather than listing a set.
+	refusalNotEntitled = "not-entitled"
 )
 
 // errSolutionEntitlementsUnbounded is what a cursor that never terminates
@@ -290,4 +300,79 @@ func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer s
 		}
 	}
 	return nil, errSolutionEntitlementsUnbounded
+}
+
+// viewerSolutionAdmission is what the proxy decision needs from the authority:
+// whether this organization installed this solution and this viewer was granted
+// it. It is deliberately not a boolean — "not entitled" and "I could not ask"
+// are different answers, and a proxy that collapsed them would route an
+// uninstalled solution during an accounts outage or refuse an installed one.
+type viewerSolutionAdmission int
+
+const (
+	// viewerSolutionAdmitted: the organization installed it and the viewer holds
+	// a grant that reaches it.
+	viewerSolutionAdmitted viewerSolutionAdmission = iota
+	// viewerSolutionNotEntitled: the authority answered, and this solution is
+	// not in the viewer's entitled set. A verdict, not an outage.
+	viewerSolutionNotEntitled
+	// viewerSolutionUndecidable: the authority could not be asked. Never routed
+	// and never refused as a verdict — the caller answers 503.
+	viewerSolutionUndecidable
+)
+
+// admitViewerSolution asks the authority whether one solution is in the viewer's
+// entitled set.
+//
+// It stops at the first match rather than reading every page: finding the id is
+// a positive answer on its own, while NOT finding it is only sound after the
+// whole set has been walked — so the short-circuit applies to exactly the
+// direction where a partial read is conclusive. A cursor that never terminates
+// is undecidable, not "not entitled", for the same reason the listing endpoint
+// refuses a short answer: a truncated set is indistinguishable from a smaller
+// one, and here that difference is whether traffic is refused.
+//
+// There is no cache, by the same reasoning #949 settled for the listing: the
+// answer changes with no write at all — a grant's expires_at passes, a member
+// leaves a team, a role loses a permission, an owner is demoted — so a cache
+// keyed on any revision a write advances would route on an expired grant.
+func (g *Gateway) admitViewerSolution(
+	ctx context.Context, org, viewer, solutionID string,
+) viewerSolutionAdmission {
+	if g.solutionEntitlements == nil {
+		// No authority client wired. Undecidable, never admitted: a deployment
+		// that forgot to wire this must fail closed rather than serve every
+		// solution to every organization, which is the behaviour this check
+		// replaces.
+		return viewerSolutionUndecidable
+	}
+	token := ""
+	for page := 0; page < solutionEntitlementPageLimit; page++ {
+		resp, err := g.solutionEntitlements.List(ctx, &accountsv1.ListSolutionEntitlementsRequest{
+			OrgId:     org,
+			SubjectId: viewer,
+			PageSize:  solutionEntitlementPageSize,
+			PageToken: token,
+		})
+		if err != nil {
+			return viewerSolutionUndecidable
+		}
+		for _, entitlement := range resp.GetEntitlements() {
+			// Membership of the entitled set is the whole test. Health is
+			// deliberately NOT read here: an unhealthy installation is still
+			// installed and still granted, and the registry's own resolve
+			// already answers 503 for a registration that is not serving — so
+			// reading Healthy here would turn one condition into two answers
+			// and make "nobody granted you this" indistinguishable from "it is
+			// restarting".
+			if entitlement.GetSolutionIdentifier() == solutionID {
+				return viewerSolutionAdmitted
+			}
+		}
+		token = resp.GetNextPageToken()
+		if token == "" {
+			return viewerSolutionNotEntitled
+		}
+	}
+	return viewerSolutionUndecidable
 }

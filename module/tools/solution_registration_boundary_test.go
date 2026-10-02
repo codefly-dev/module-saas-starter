@@ -9,48 +9,80 @@ import (
 )
 
 // The registration/installation boundary is a DECISION, not an accident, and it
-// MOVED — partly — with issue #949.
+// has MOVED TWICE.
 //
 // What it was: a deployment-wide registration governed UI and API availability,
 // while a per-org installation governed only the solution agent's authority, so
 // nothing about a tenant affected what any surface served.
 //
-// What it is now: the PROJECTIONS — the navigation menu and the per-client surface
-// listing — answer per organization and per viewer, narrowed through installations
-// and the viewer's scope grants. What did NOT move is route and page exposure:
-// `/s/{id}` still renders and `/solutions/{id}/…` still proxies for any caller the
-// gateway authenticates, whatever any organization installed. Uninstalling still
-// takes no page or route away.
+// #949 moved the PROJECTIONS — the navigation menu and the per-client surface
+// listing answer per organization and per viewer, narrowed through installations
+// and the viewer's scope grants. It deliberately left route and page exposure
+// deployment-wide.
 //
-// So this file now guards two things rather than one, and the halves pull in
-// opposite directions. The surfaces that must STAY installation-blind are scanned
-// for coupling as before; the projections that must now BE installation-aware are
-// asserted to consult it, so the narrowing cannot silently regress to the
-// deployment-wide answer it replaced. module/SOLUTION_REGISTRATION.md §4 states
-// both halves, and the claim test below keeps the doc and the code together.
+// #952 moves the PROXY, because leaving it was a hole rather than a boundary: a
+// viewer in any organization could call the data endpoints of every solution the
+// deployment ran — with a real bearer forwarded to them — by typing the path the
+// menu declined to show. Available, installed and exposed are three layers and
+// none is inferred from another, so the component that holds the verified
+// identity and forwards the credential is where the second and third are
+// enforced for traffic.
+//
+// What has NOT moved, and why each is deliberate rather than pending:
+//
+//   - The PUBLIC Module-Federation surface (`/solutions/{id}/assets/*` and
+//     `/.well-known/*`) is fetched by the browser's module loader with no
+//     credential, so there is no viewer to ask about. It serves the solution's
+//     own static bytes, which carry no tenant data.
+//   - The `/s/{id}` PAGE server-renders from the registry. The access token
+//     lives in this origin's memory, not in a cookie the server can read, so a
+//     server-side admission check would have to exchange the httpOnly refresh
+//     cookie — rotating a viewer's refresh token on every page render. The page
+//     discloses a nav title and a manifest URL the public asset surface already
+//     serves; every call it makes goes through the gated proxy.
+//
+// So this file guards two things, and the halves pull in opposite directions.
+// The surfaces that must STAY installation-blind are scanned for coupling; the
+// surfaces that must now BE installation-aware are asserted to consult it, so
+// the narrowing cannot silently regress to the deployment-wide answer it
+// replaced. module/SOLUTION_REGISTRATION.md §4 states every half, and the claim
+// test below keeps the doc and the code together.
 
-// registrationSurfaces are the files that decide whether a solution's UI and API
-// are SERVED — route and page exposure, which remains deployment-wide. None of
-// them may consult installation, entitlement, or tenant state; if one ever does,
-// that half of the boundary has moved too and the doc has to move with it.
+// registrationSurfaces are the files that answer from the deployment-wide
+// registry alone. None of them may consult installation, entitlement, or tenant
+// state; if one ever does, that half of the boundary has moved too and the doc
+// has to move with it.
 //
-// registry.ts is here because its findSolution is what `/s/{id}` renders from.
-// The per-viewer narrowing lives in projections.ts precisely so this file can
-// stay in the scan; the projection routes are covered by
-// TestSolutionProjectionsNarrowByInstallation below, which requires the opposite.
+// registry.ts is here because its findSolution is what `/s/{id}` renders from,
+// and the page is here for the reason stated at the top of this file: this
+// origin cannot read a verified viewer server-side without rotating a refresh
+// token per render. The per-viewer narrowing lives in projections.ts precisely
+// so registry.ts can stay in this scan.
+//
+// gateway_solutions.go LEFT this list with #952. It is now asserted in
+// TestSolutionTrafficIsAdmittedByInstallation below, which requires the
+// opposite.
 var registrationSurfaces = []string{
 	"services/frontend/code/src/solutions/registry.ts",
 	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx",
-	"services/auth-gateway/code/gateway_solutions.go",
 }
 
 // projectionSurfaces are the files that decide what a VIEWER is shown. Each must
 // consult the per-viewer entitlement read, because a projection that does not is
-// the deployment-wide listing this issue removed — and that regression would look
+// the deployment-wide listing #949 removed — and that regression would look
 // like working code, since every viewer would simply see everything.
 var projectionSurfaces = []string{
 	"services/frontend/code/src/app/api/solutions/register/route.ts",
 	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
+}
+
+// trafficSurfaces are the files that decide whether a REQUEST reaches a
+// solution. The proxy must consult the per-viewer admission before it forwards
+// anything, and the regression it guards against is the one #952 fixed: a proxy
+// that routes on registration alone serves every solution to every
+// organization, and looks like working code while doing it.
+var trafficSurfaces = []string{
+	"services/auth-gateway/code/gateway_solutions.go",
 }
 
 // installationCoupling are the identifiers that would signal a registration
@@ -125,12 +157,23 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 	for _, claim := range []string{
 		"A registered solution is host-trusted",
 		"governs **agent authority only**",
-		"does **not** remove the solution's nav entry, page, or gateway route",
 		"Other tenants are unaffected",
 		// The half that moved with #949. Without these the doc would still read as
 		// though every caller saw every registered solution.
 		"the **projections** answer per organization and per viewer",
 		"`installations.solution_identifier` is the registered manifest `id`",
+		// The half that moved with #952. The first sentence is the one a reader
+		// needs in order to know that registration alone no longer reaches a
+		// solution; the second and third are the two answers that must not be
+		// collapsed into one, which is the mistake this gate is most likely to
+		// be "simplified" into.
+		"the solution proxy admits traffic through the same authority the",
+		"An outage is not a verdict.",
+		"Health is not admission.",
+		// The residual exposure, stated as a decision rather than left to be
+		// rediscovered as a gap.
+		"The public Module-Federation surface is not gated, and cannot be.",
+		"does **not** remove the solution's page for that organization",
 	} {
 		if !strings.Contains(document, strings.Join(strings.Fields(claim), " ")) {
 			t.Errorf("SOLUTION_REGISTRATION.md no longer states %q", claim)
@@ -166,6 +209,47 @@ func TestSolutionProjectionsNarrowByInstallation(t *testing.T) {
 			if !strings.Contains(code, identifier) {
 				t.Errorf(
 					"%s does not reference %q: a solution projection must narrow through installations and the viewer's grants (SOLUTION_REGISTRATION.md §4, issue #949), never answer the deployment-wide set",
+					relative, identifier,
+				)
+			}
+		}
+	}
+}
+
+// TestSolutionTrafficIsAdmittedByInstallation is the #952 half of the inverse
+// scan: the solution proxy MUST consult the per-viewer admission.
+//
+// The regression is invisible for the same reason the projection one is. A proxy
+// that dropped the check throws nothing, logs nothing and answers 200 — it just
+// serves every registered solution to every organization, which is precisely the
+// behaviour that was there before and the reason this hole existed for as long as
+// it did. Asserting the coupling is present is what makes its removal a failure.
+//
+// Presence is all this proves. That an UNINSTALLED solution is actually refused,
+// that an authority outage is a 503 rather than a verdict, and that the public
+// asset surface stays ungated are proven by the gateway's own tests
+// (gateway_solution_admission_test.go), each of which answers 200 against the
+// pre-#952 gateway.
+func TestSolutionTrafficIsAdmittedByInstallation(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	for _, relative := range trafficSurfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		for _, identifier := range []string{
+			// The authority call, and the refusal that is a verdict rather than
+			// an outage. Both, because a proxy that called the authority and
+			// then forwarded regardless of the answer would pass on the first
+			// alone.
+			"admitViewerSolution",
+			"viewerSolutionNotEntitled",
+			"viewerSolutionUndecidable",
+		} {
+			if !strings.Contains(code, identifier) {
+				t.Errorf(
+					"%s does not reference %q: solution traffic must be admitted through the viewer's installation and grants (SOLUTION_REGISTRATION.md §4, issue #952), never routed on registration alone",
 					relative, identifier,
 				)
 			}
