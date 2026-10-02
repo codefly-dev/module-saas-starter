@@ -10,7 +10,6 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -422,14 +421,16 @@ func listedHealth(t *testing.T, orgID, installationID string) gen.InstallationHe
 }
 
 // controlPlaneExec runs one statement as the control plane, for states no tenant
-// write path produces directly (an expiry that has already passed).
+// write path produces directly (an expiry that has already passed, a role
+// demoted behind the API's back).
+//
+// It goes through the store's own exported helper rather than fishing the
+// transaction out of the context. The context key is internal to pkg/infra by
+// design — only the code that opens a transaction may say what authority it
+// carries — so a plain-string lookup here is not refused, it reads nil.
 func controlPlaneExec(t *testing.T, sql string, args ...any) {
 	t.Helper()
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
-		_, err := tx.Exec(ctx, sql, args...)
-		return err
-	}))
+	require.NoError(t, testStore.ExecAsControlPlane(testCtx, sql, args...))
 }
 
 // The listing resolves health for every row inside one statement; GetInstallation

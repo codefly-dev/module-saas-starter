@@ -117,6 +117,16 @@ type SolutionHostBindingApplied struct {
 	SolutionID string
 	// Release is publisher/name@version of the applied generation.
 	Release string
+	// Domain is the ownership domain the applied generation declared.
+	//
+	// It is persisted rather than re-derived because it decides WHO MAY CHANGE
+	// this record: core refuses a later generation for the binding that arrives
+	// under a different domain, which is what stops one accepted delivery taking
+	// over a binding another delivery owns. Re-deriving it from the host's own
+	// configured domain list would answer "a domain this host accepts" instead
+	// of "the domain this binding was claimed under", and those differ exactly
+	// when it matters — a host accepting two domains.
+	Domain string
 }
 
 // SolutionHostBindingRecord is the host's durable record for one binding ID.
@@ -142,6 +152,7 @@ func (r *SolutionHostBindingRecord) AppliedState() (solutionhost.Applied, bool) 
 		Binding:    r.BindingID,
 		Generation: r.Applied.Generation,
 		Digest:     r.Applied.Digest,
+		Domain:     r.Applied.Domain,
 		Routes:     r.Applied.Routes,
 		Removed:    r.Applied.Removed,
 	}, true

@@ -57,6 +57,17 @@ CREATE TABLE public.solution_host_bindings (
     -- publisher/name@version of the applied generation, so a heartbeat that
     -- would replace the release can be refused against a declared record.
     applied_release text,
+    -- The ownership domain the applied generation declared.
+    --
+    -- It is NOT decoration beside host_coordinate. The domain is what says who
+    -- may change this record: core refuses a later generation for this binding
+    -- that arrives under a different one, which is what stops an accepted
+    -- delivery taking over a binding another delivery owns. A host that did not
+    -- persist it would hand core an applied state with no domain, and core
+    -- refuses THAT too — so the symptom is not a widened check, it is a
+    -- reconciler that applies its first generation and then refuses the whole
+    -- set on every pass afterwards.
+    applied_domain text,
     applied_at timestamp with time zone,
 
     -- Pending: why the desired generation is not the applied one. Whole or
@@ -94,7 +105,13 @@ CREATE TABLE public.solution_host_bindings (
     CONSTRAINT solution_host_bindings_desired_whole
         CHECK ((num_nonnulls(desired_generation, desired_digest, desired_document, desired_seen_at) = ANY (ARRAY[0, 4]))),
     CONSTRAINT solution_host_bindings_applied_whole
-        CHECK ((num_nonnulls(applied_generation, applied_digest, applied_document, applied_solution_id, applied_release, applied_at) = ANY (ARRAY[0, 6]))),
+        CHECK ((num_nonnulls(applied_generation, applied_digest, applied_document, applied_solution_id, applied_release, applied_domain, applied_at) = ANY (ARRAY[0, 7]))),
+    -- A domain is only meaningful on an applied generation, and an applied
+    -- generation without one is the state core refuses. The whole-or-absent
+    -- group above already pairs them; this names the non-empty rule, because
+    -- '' passes num_nonnulls and is exactly the value core rejects.
+    CONSTRAINT solution_host_bindings_applied_domain_check
+        CHECK ((applied_domain <> ''::text)),
     -- A tombstone holds no alias; core asserts the same invariant when it reads
     -- a host's applied state back, and would refuse the whole pass rather than
     -- this one row.
