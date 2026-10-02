@@ -30,6 +30,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/codefly-dev/core v0.5.11-0.20260926231217-d481a2d49683 h1:/vzymsu5B9NWwdhWRtlU+68VcVEVDmeZNChRCXAUwlE=
 github.com/codefly-dev/core v0.5.11-0.20260926231217-d481a2d49683/go.mod h1:SVF+t040X+9pAXAqBnNE/JkXwmw9peVuKnHKFSOzyzk=
+github.com/codefly-dev/core v0.7.1 h1:fU4ZU9BvUTVLLOR4LU/zbU3htOGDu0kjNkBH4KoT6/I=
+github.com/codefly-dev/core v0.7.1/go.mod h1:2wt5DdL+OnJbIQT0w4cc7dS2sAGVK3QjnwW43r5cQQg=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
