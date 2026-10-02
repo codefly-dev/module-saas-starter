@@ -101,3 +101,6 @@ export {
 	viewerIdentity,
 	viewerOrganization,
 } from "./solution/index.js";
+// When someone last signed in, said as a person reads it and kept true as time
+// passes; relativeTime is its words alone, for a consumer's own shell.
+export { LastLogin, type LastLoginProps, relativeTime } from "./audit/last-login.js";

@@ -292,6 +292,19 @@ role via Accounts' registration/grant service paths. Only `admin@acme.com` and
 a demo source; other fixture viewers remain ungranted. Reseeding reconverges the
 declared grants, so test revocation without restarting the fixture runtime.
 
+## Audit
+
+`<LastLogin at subject? label? />` says when someone last signed in the way a
+person reads it ("Last login · 12 seconds ago"), and keeps it true as time
+passes: it re-says itself every second for the first minute, then every 30
+seconds, then every five minutes. The exact time is on the `<time>` element
+(`dateTime`, and a `title` for hover) and on the line beneath. `at` is an ISO
+string or a `Date`; `null`, or anything that is not a date, reads "Never" with
+"No sign-in is recorded yet", never "Invalid Date". A solution hands it the
+value it read (from the audit log, say) and owns nothing of how it is said.
+`relativeTime(at, now, locale?)` is its words alone, counting whole units
+elapsed through `Intl.RelativeTimeFormat`, for a consumer's own shell.
+
 ## Installing from a solution
 
 This package is published to GitHub Packages under the org's `@codefly-dev`
