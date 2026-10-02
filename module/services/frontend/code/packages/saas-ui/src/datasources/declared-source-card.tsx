@@ -189,12 +189,20 @@ function DeclaredSourceCardView({
 		}
 	};
 
+	// "unknown" is not a fourth status, it is the ABSENCE of one: an older host
+	// leaves the field at its proto default and the gateway maps it there
+	// rather than guessing, exactly as it leaves `liveDelivery` undefined. A
+	// source that matched the declaration IS connected, so folding that
+	// absence into Error would paint a healthy source red, with no
+	// `status_reason` to show for it (an older host sends none either), and
+	// offer to Reconnect — asking a person for a credential again to fix
+	// nothing. It reads as Connected, and says the state is not reported.
 	const state: DeclaredSourceState =
 		matches.length > 1
 			? "ambiguous"
 			: !source
 				? "setup"
-				: source.status === "active"
+				: source.status === "active" || source.status === "unknown"
 					? "connected"
 					: "error";
 
@@ -489,6 +497,12 @@ function SourceState({ source }: { source: DatasourceView }) {
 			    safe to render as it arrives, and rewording it would lose the one
 			    thing a reader can act on. */}
 			{source.statusReason && <p role="status">{source.statusReason}</p>}
+			{source.status === "unknown" && (
+				<p className="text-muted-foreground">
+					This host does not report this source&apos;s state. It is connected;
+					whether its last pull succeeded is not something this page can say.
+				</p>
+			)}
 			{source.status === "degraded" && (
 				<p className="text-muted-foreground">
 					Scheduled pulls have stopped; reconnecting retries once the cause is

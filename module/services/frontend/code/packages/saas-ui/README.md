@@ -178,6 +178,13 @@ components:
   - **Error** — `DEGRADED` or `PAUSED`: the host's `status_reason` verbatim,
     and Reconnect, which asks for the credential again (a replacement PAT, or
     nothing on the App and public paths) and enqueues a sync.
+  There is no fourth state. A source whose status an **older host does not
+  report** (the field decodes to its proto default, which the gateway maps to
+  `unknown` rather than guessing) reads as **Connected** and says its state is
+  not reported: it matched the declaration, so it *is* connected, and calling
+  the absence of a status an error would paint a healthy source red with no
+  `status_reason` to show for it and offer to Reconnect — asking a person for a
+  credential again to fix nothing. Sync is still offered; Reconnect is not.
   A viewer without `canManage` still sees the state and the reason, and is told
   who acts; the host refuses the calls either way. The card takes no query or
   auth context of its own — the same `client | gateway` binding

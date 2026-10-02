@@ -275,6 +275,32 @@ describe("DeclaredSourceCard", () => {
 		expect(screen.queryByRole("button", { name: /Reconnect/ })).toBeNull();
 	});
 
+	it("does not call a source in error when the host did not report its state", async () => {
+		// "unknown" is what an OLDER host sends: the status field decodes to its
+		// proto default and the gateway maps it there rather than guessing. The
+		// source is connected; treating the absence of a status as DEGRADED
+		// would paint it red, with no status_reason to show for it, and offer to
+		// Reconnect — asking for a credential again to fix nothing.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...connected, status: "unknown" as const },
+			]),
+		});
+		renderWithClient(
+			<DeclaredSourceCard client={client} orgId="org-1" declared={declared} />,
+		);
+
+		expect(await screen.findByText("Connected")).toBeTruthy();
+		expect(screen.queryByText("Error")).toBeNull();
+		expect(
+			screen.getByText(/This host does not report this source's state/),
+		).toBeTruthy();
+		// Sync is offered — it works on any host — and Reconnect is not.
+		expect(screen.getByRole("button", { name: "Sync now" })).toBeTruthy();
+		expect(screen.queryByRole("button", { name: /Reconnect/ })).toBeNull();
+		expect(screen.queryByLabelText("Access token")).toBeNull();
+	});
+
 	it("reports two matching sources instead of silently picking one", async () => {
 		// Two sources can legitimately exist for one repository — one through the
 		// App and one through a PAT, say — and they can disagree about branch,
