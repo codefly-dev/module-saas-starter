@@ -535,3 +535,67 @@ signed with the developer's keyless identity and POSTed to the same
 coordinate and an allowlist containing that developer identity.
 
 Nothing on the host is conditional on any of it. That is the point.
+
+### The three fields a local run looks unable to fill, and why it can
+
+The renderer's objection to this decision was precise and worth recording with its
+answer, because it is the objection anyone will raise again: a present generation
+must declare at least one rendered artifact with a SHA-256 digest, and v2 adds a
+required OCI manifest digest and a SPIFFE ID — so a laptop appears to have to
+**invent digests**, which it must not.
+
+It does not, once the local run uses pods:
+
+- **`artifacts[].digest`** — to run pods the renderer must produce Kubernetes
+  manifests, and those are real bytes with a real digest. That is a rendered
+  artifact in the honest sense; it lives in a local tree rather than a delivery
+  repository, which the document never contradicts because there is deliberately
+  no artifact URI.
+- **`execution.image.manifest_digest`** — the locally built image's manifest
+  digest. Real, and it moves on every rebuild, which is correct rather than
+  awkward: the generation moves with it, so each rebuild is an ordinary apply.
+- **`execution.identity.spiffe_id`** — the one that looks impossible and is not.
+  Core validates this field for **well-formedness only**: the parsed scheme must
+  be `spiffe` and nothing more. It does not require an issuer to exist, a trust
+  bundle to be present, or an SVID to be obtainable. So a local run populates it
+  with the service-account-derived identity, which *is* the identity the pod runs
+  as, and whether anything verifies it remains the conditional-mTLS rule — require
+  and verify a peer certificate only where a trust bundle is projected. No local
+  SPIRE, no invention, and no schema exception.
+
+So presence v2 **can** describe a local run honestly. What it cannot describe
+honestly is a run of bare *processes* — which is an argument for running pods
+locally, not an argument for a second trust model.
+
+### Two rules that do not bend locally
+
+**Absence is never removal, under any policy.** A local run makes this tempting in
+a way a deployment does not: stopping `codefly run` feels like removing what it was
+running. It is not. Removal is a tombstone generation, delivered, locally included.
+A reconciler that inverted this under a local flag would hold two opposite answers
+to "the desired set is empty" selected by configuration, and one misdetection would
+withdraw every solution on a deployed host silently, with the audit trail recording
+that it was asked to. `TestSolutionHostBinding_AnEmptyMountRemovesNothing` and its
+unreadable-mount sibling exist for that reason.
+
+**The envelope stays an independent upper bound.** Locally there is no reviewed
+envelope, and the tempting shortcut is to let the delivered authority *be* the
+ceiling. That collapses two of the three terms in `binding ∩ envelope ∩
+installation`, so a developer would exercise a different authorisation shape than
+production computes. A local envelope file in the host's `local` configuration
+profile — same schema as the reviewed one, authored by the developer — keeps the
+structure identical at the cost of one more file.
+
+### If the local-cluster requirement is judged too expensive
+
+The honest alternative is **not** a second trust model. It is **no capability
+surface locally**: a local run gets presence and routing so a developer sees their
+UI, and module credentials are simply not minted. This host already has that shape
+— an absent `MODULE_IDENTITY_SECRETS` denies every module identity exchange, and
+the fake-auth fixture is the established local-authority mechanism.
+
+That is a *reduction* in local capability, which is honest and leaves one trust
+path, rather than an *addition* of a parallel one. "Lighter laptop" against "two
+trust models" is a false choice while "lighter laptop, less local capability"
+exists, and it is the option to weigh against this section rather than the local
+attestation.
