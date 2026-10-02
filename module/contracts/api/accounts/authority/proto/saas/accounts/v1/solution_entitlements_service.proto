@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "saas/accounts/v1/solution_entitlements.proto";
+import "saas/policy/v1/options.proto";
+
+// The per-viewer solution entitlement service surface (issue #949). It is split
+// from the messages in solution_entitlements.proto for the reason
+// solution_registry_service.proto is split from its own: the auth-gateway is the
+// only client and generates those messages without also vendoring the policy
+// options this file needs.
+
+// SolutionEntitlementService answers what one viewer may use inside one
+// organization. Internal-tier: it takes both the organization and the subject as
+// request fields, so it is an authority oracle about an arbitrary principal and
+// only a caller holding the cluster-internal credential may ask. The caller that
+// does is the auth-gateway, naming the tenant and the viewer it projected from a
+// verified identity — never values a browser supplied.
+service SolutionEntitlementService {
+  // ListSolutionEntitlements enumerates the installed solutions a subject may
+  // use, reading the installation set and the scope grant + share union in one
+  // org transaction so the two can never describe different moments.
+  rpc ListSolutionEntitlements(ListSolutionEntitlementsRequest) returns (ListSolutionEntitlementsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

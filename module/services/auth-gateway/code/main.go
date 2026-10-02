@@ -233,6 +233,10 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
+		// The per-viewer solution entitlement read (#949), over the same internal
+		// connection. It is not a cache: the answer is per viewer and must not
+		// outlive a revoke, so every request asks.
+		gateway.solutionEntitlements = &accountsSolutionEntitlements{conn: internalAPIConn, internalToken: authz.internalToken}
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {

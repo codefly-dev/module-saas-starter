@@ -139,6 +139,42 @@ message GetInstallationResponse {
   InstallationHealth health = 2;
 }
 
+// ListInstallationsRequest asks what one organization has installed. Every other
+// RPC on this service names a single installation, so until this existed nothing
+// could answer "what has this org installed?" — which is the authority read a
+// per-organization solution projection is built on (issue #949).
+message ListInstallationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
+  // caller that must see only live installs asks for ACTIVE explicitly rather
+  // than leaning on a default that would silently widen if the enum grew.
+  InstallationStatus status = 2;
+  // Page bound. 0 -> server default; capped so an organization with many
+  // installations can never return an unbounded result in one call.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 4;
+}
+
+// InstallationSummary is one row of the listing: the installation, plus the health
+// resolved live beside it exactly as GetInstallation resolves it for one. Health
+// travels with the row because a consumer that renders an installed solution as
+// unavailable would otherwise need one GetInstallation per installation.
+message InstallationSummary {
+  Installation installation = 1;
+  InstallationHealth health = 2;
+}
+
+message ListInstallationsResponse {
+  repeated InstallationSummary installations = 1;
+  // Set when more installations remain; pass it back as page_token. Empty on the
+  // last page.
+  string next_page_token = 2;
+}
+
 // InstallationService composes and administers installations. The headless mint
 // that turns an installation into a short-lived Work Context is
 // WorkContextService.StartInstallationTask.
@@ -254,5 +290,27 @@ service InstallationService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {get: "/v1/installations/{installation_id}"};
+  }
+
+  // ListInstallations enumerates one organization's installations with their live
+  // health. It is internal-tier on purpose: it takes the organization as a request
+  // field, so only a caller holding the cluster-internal credential may ask, and
+  // the tenant it asks about is the one the auth-gateway projected from a verified
+  // identity — never one a browser supplied. It sits beside
+  // PermissionService.ListAccessibleScopes for that reason: the two are read
+  // together to answer what a viewer's organization installed and what that viewer
+  // was granted.
+  rpc ListInstallations(ListInstallationsRequest) returns (ListInstallationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
   }
 }

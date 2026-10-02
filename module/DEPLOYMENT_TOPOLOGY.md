@@ -165,7 +165,8 @@ service's declared in-mesh callers (`notPrincipals`). It is a different resource
 from the internal-authority ALLOW above and gates a different surface; the two
 share only the waypoint that evaluates them. Istio evaluates DENY before ALLOW,
 so it subtracts from the port-wide grant; other methods on the same path — the
-unauthenticated `GET /api/solutions/register` the sidebar polls — are untouched,
+`GET /api/solutions/register` the sidebar polls, which is authenticated on the
+viewer's own bearer rather than on this DENY (issue #949) — are untouched,
 as is the proxy's own loopback read of `/api/internal/solutions`, which never
 leaves the pod and so is never captured by the mesh. Each path is emitted twice,
 exactly and as a `*`-prefixed suffix pattern, because Istio's default path

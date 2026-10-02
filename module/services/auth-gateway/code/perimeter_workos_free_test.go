@@ -148,6 +148,11 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// upstreams. It runs the same ext_authz Check as any protected route and
 	// reaches no external IdP — the ext_authz check remains the token authority.
 	"gateway_modules.go": true,
+	// gateway_solution_entitlements.go answers what the calling viewer may use. It
+	// runs the same ext_authz Check as any protected route — so the token authority
+	// is unchanged and local — and its only network call is the internal gRPC hop to
+	// accounts for the installation and grant state. It reaches no external IdP.
+	"gateway_solution_entitlements.go": true,
 	// gateway_cors.go answers cross-origin access for registered clients. It
 	// decides from the registry snapshot and from the client id the ext_authz
 	// check already resolved from a locally verified token; it makes no network
