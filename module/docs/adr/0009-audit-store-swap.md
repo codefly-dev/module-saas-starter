@@ -129,9 +129,15 @@ Postgres transaction.
 
    A **locked object-storage archive** holds the compliance copy, one object
    per relay batch: full for security-class events, content-free (envelope plus
-   hash) for content-class events. Locked means write-once under a retention lock the operator cannot
-   shorten: GCS Bucket Lock, S3 Object Lock, Azure Blob immutability policies,
-   or an object-lock-capable store on-premises.
+   hash) for content-class events. Locked means write-once under a retention
+   lock the operator cannot shorten: GCS Bucket Lock, S3 Object Lock, Azure Blob
+   immutability policies, or an object-lock-capable store on-premises.
+
+   Archive objects are named per batch. A retried batch writes a new object, so
+   the archive may hold an event more than once. Every archive reader —
+   including the history-copy verification (item 7) and any compliance export —
+   deduplicates by event id, and the per-event hash makes duplicates provably
+   identical.
 
    Windows are deployment configuration, not code.
 
@@ -173,6 +179,7 @@ The queue between the transaction and the warehouse (item 2):
 | Change data capture on the Postgres WAL | Still needs the Postgres row in order to capture it, and replication slots plus a connector are heavier to run than a relay over a table. |
 | Queue rows in `audit_events`, with the no-delete trigger relaxed for them | Weakens the append-only guarantee on the table every `postgres` and `both` deployment keeps its history in, to serve a mode those deployments do not use. |
 | Fill the archive from the warehouse later, on a schedule | Opens a window in which the compliance copy lags the store of record, and adds a second job to watch. |
+| Conditional create-if-absent archive object names, so a retry cannot duplicate | Needs the same batch composition on every retry — more moving parts for no compliance gain. |
 
 Where the adapters live (item 3):
 
@@ -248,6 +255,3 @@ The sink shape itself:
   archive bucket — and a relay whose lag needs watching.
 - Each adapter must stay at parity with the Postgres implementation; the
   conformance suite is what holds it there.
-- A batch whose warehouse append fails after its archive object was written is
-  retried whole, and a locked object cannot be replaced — so the archive is
-  at-least-once like the relay and can hold an event more than once.
