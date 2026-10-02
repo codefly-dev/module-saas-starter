@@ -67,8 +67,17 @@ func declaredBinding(t *testing.T, solutionID string, generation uint64) *soluti
 		OwnershipDomain:  testOwnershipDomain,
 		EnvelopeRevision: 1,
 		Host:             solutionhost.HostTarget{Coordinate: testHostCoordinate, Component: "saas-host"},
-		Release:          solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
-		Routes:           []solutionhost.Route{{Alias: solutionID, Surface: solutionhost.SurfaceBackend}},
+		// Three digests, three distinct values. Presence v2 requires the release
+		// digest — a generation that omits it is one no authority document can be
+		// matched to — and core types the three separately so that comparing a
+		// rendered digest to an image digest is a compile error. Giving them
+		// different bytes here is what keeps a test from passing on a mix-up the
+		// types happen not to catch.
+		Release: solutionhost.Release{
+			Publisher: "acme", Name: solutionID, Version: "1.4.0",
+			Digest: solutionhost.ReleaseDigest("sha256:" + strings.Repeat("ef", 32)),
+		},
+		Routes: []solutionhost.Route{{Alias: solutionID, Surface: solutionhost.SurfaceBackend}},
 		Artifacts: []solutionhost.Artifact{{
 			Surface: solutionhost.SurfaceBackend,
 			Name:    "api",
@@ -208,11 +217,20 @@ func TestSolutionHostBinding_RereadingTheSameGenerationChangesNothing(t *testing
 		t.Fatalf("first pass: %v", err)
 	}
 	first := registration(t, solutionID)
+	if first == nil {
+		t.Fatalf("no registration after the first pass: %+v", bindingState(t, "acme.test."+solutionID))
+	}
 
 	if err := reconciler.RunOnce(testCtx); err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
 	second := registration(t, solutionID)
+	if second == nil {
+		// The re-read refused. This is where an applied record core cannot
+		// judge shows up: the pass withholds the whole set, so the record a
+		// previous pass wrote is still there but nothing reconciles again.
+		t.Fatalf("registration vanished on a re-read: %+v", bindingState(t, "acme.test."+solutionID))
+	}
 
 	if second.Revision != first.Revision {
 		t.Fatalf("revision moved on a re-read: %d then %d", first.Revision, second.Revision)

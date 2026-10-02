@@ -276,11 +276,31 @@ func (s *Service) applySolutionHostBinding(
 			At:         now,
 		}
 		record.Desired = &generation
+		// The half core owns is built by core. AppliedFrom is defined as "the
+		// record a host persists after applying a document", so deriving those
+		// fields here would be a second copy of its rules — and the copy is what
+		// drifts: presence v2 made the ownership domain a required part of this
+		// record, and a host that assembled it by hand fed core an applied state
+		// with no domain, which core refuses. The symptom was not a widened
+		// check. It was a reconciler that applied its first generation and then
+		// refused the WHOLE set on every pass afterwards, because one unusable
+		// applied record makes the set unjudgeable.
+		//
+		// Reading it from core instead means the next required field is a
+		// compile error or a loud refusal here, not a silent omission.
+		owned, err := solutionhost.AppliedFrom(document)
+		if err != nil {
+			return fmt.Errorf("build applied record for binding %q: %w", document.Binding, err)
+		}
 		record.Applied = &SolutionHostBindingApplied{
 			SolutionHostBindingGeneration: generation,
-			Removed:                       document.Removed,
-			Routes:                        document.Aliases(),
-			Release:                       document.Release.Identity(),
+			Removed:                       owned.Removed,
+			Routes:                        owned.Routes,
+			Domain:                        owned.Domain,
+			// Release is the host's own column: core's Applied does not carry it,
+			// because it is what a heartbeat for a declared record is refused
+			// against rather than anything core decides.
+			Release: document.Release.Identity(),
 		}
 		if document.Removed {
 			// A tombstone keeps the key it withdrew, so the removal stays

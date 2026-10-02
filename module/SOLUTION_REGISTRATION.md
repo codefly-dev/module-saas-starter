@@ -480,19 +480,57 @@ registry snapshot alone cannot answer: a binding whose first generation was
 refused has no registration record at all, so it is invisible there, and
 "declared but never observed" and "never declared" look identical.
 
+### The ownership domain, and why the host persists it
+
+A document declares the **ownership domain** it speaks for: the slice of this
+host's binding space that delivery may add to, change and remove within. It is
+what lets a module-scoped render express a removal without "remove everything
+else" being expressible at all.
+
+Core requires the host to declare the domains it accepts whenever it knows its
+own coordinate, and refuses a document from an unstated one — **first generation
+included**. That is not belt-and-braces: the applied record cannot bound a
+binding's *first* generation, because there is nothing yet to compare against, so
+without the declaration any accepted delivery could claim an unseen binding ID
+under a domain of its own choosing and own it from then on.
+
+The host therefore **persists the domain each generation applied under**
+(`solution_host_bindings.applied_domain`) and hands it back to Core on every
+pass. Core refuses a later generation for a binding that arrives under a
+different domain, which is what stops one delivery taking over a binding another
+delivery owns. Two consequences worth stating, because neither is obvious:
+
+- **It is not re-derivable from configuration.** The host's configured list
+  answers "a domain this host accepts", not "the domain this binding was claimed
+  under", and those differ exactly when it matters — a host accepting two.
+- **An applied record without one is unusable, and unusable means the whole
+  set.** Core refuses an applied state with no domain, and a pass judges the
+  desired set as a whole, so a single domainless record does not degrade one
+  binding: the reconciler applies its first generation and then refuses
+  everything on every pass afterwards. The applied group's whole-or-absent CHECK
+  and a non-empty constraint keep that state out of the table.
+
+The core-owned half of the applied record is built by `solutionhost.AppliedFrom`
+rather than assembled here, so the next field Core makes required is a loud
+refusal at the apply instead of a silent omission that surfaces as a frozen
+reconciler.
+
 ### Configuration
 
-Both keys are in the `federation` group.
+Every key is in the `federation` group.
 
 | Key | Meaning |
 | --- | --- |
 | `SOLUTION_HOST_BINDINGS_DIR` | the directory delivery places rendered documents in. Empty leaves the reconciler **off**, which is the default while runtimes migrate: nothing is declared and every solution is present because it heartbeats. |
 | `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. |
+| `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the mount and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
 | `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the mount is re-read. Empty uses 30s. |
 
-Declaring one of the first two without the other refuses to boot. A mount with no
-coordinate would leave this host unable to refuse a document delivered to another
-host, and Core's target check is the only thing standing between the two.
+Declaring the mount without the coordinate, or either without the ownership
+domains, refuses to boot. A mount with no coordinate would leave this host unable
+to refuse a document delivered to another host, and Core's target check is the
+only thing standing between the two; a mount with no domains would leave it
+unable to refuse a document claiming a binding it has never seen.
 
 The host reads a **directory of files** and knows nothing about how they got
 there: a projected ConfigMap volume in a deployment, a plain directory under

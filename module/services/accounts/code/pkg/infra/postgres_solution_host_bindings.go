@@ -18,7 +18,7 @@ import (
 const solutionHostBindingColumns = `binding_id, host_coordinate, host_component,
 	desired_generation, desired_digest, desired_document, desired_seen_at,
 	applied_generation, applied_digest, applied_document, applied_removed, applied_routes,
-	applied_solution_id, applied_release, applied_at,
+	applied_solution_id, applied_release, applied_domain, applied_at,
 	pending_reason, pending_since, updated_at`
 
 func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, error) {
@@ -35,6 +35,7 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 		appliedRoutes     []string
 		appliedSolutionID *string
 		appliedRelease    *string
+		appliedDomain     *string
 		appliedAt         *time.Time
 		pendingReason     *string
 		pendingSince      *time.Time
@@ -43,7 +44,7 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 		&record.BindingID, &record.HostCoordinate, &record.HostComponent,
 		&desiredGeneration, &desiredDigest, &desiredDocument, &desiredSeenAt,
 		&appliedGeneration, &appliedDigest, &appliedDocument, &appliedRemoved, &appliedRoutes,
-		&appliedSolutionID, &appliedRelease, &appliedAt,
+		&appliedSolutionID, &appliedRelease, &appliedDomain, &appliedAt,
 		&pendingReason, &pendingSince, &record.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -71,6 +72,7 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 			Routes:     appliedRoutes,
 			SolutionID: derefString(appliedSolutionID),
 			Release:    derefString(appliedRelease),
+			Domain:     derefString(appliedDomain),
 		}
 	}
 	record.PendingReason = derefString(pendingReason)
@@ -114,6 +116,7 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 		appliedDocument   *string
 		appliedSolutionID *string
 		appliedRelease    *string
+		appliedDomain     *string
 		appliedAt         *time.Time
 		pendingReason     *string
 	)
@@ -129,6 +132,7 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 		appliedGeneration, appliedDigest = &generation, &applied.Digest
 		appliedDocument, appliedAt = &applied.Document, &applied.At
 		appliedSolutionID, appliedRelease = &applied.SolutionID, &applied.Release
+		appliedDomain = &applied.Domain
 		appliedRemoved = applied.Removed
 		if applied.Routes != nil {
 			appliedRoutes = applied.Routes
@@ -142,9 +146,9 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 			binding_id, host_coordinate, host_component,
 			desired_generation, desired_digest, desired_document, desired_seen_at,
 			applied_generation, applied_digest, applied_document, applied_removed, applied_routes,
-			applied_solution_id, applied_release, applied_at,
+			applied_solution_id, applied_release, applied_domain, applied_at,
 			pending_reason, pending_since, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (binding_id) DO UPDATE SET
 			host_coordinate = EXCLUDED.host_coordinate,
 			host_component = EXCLUDED.host_component,
@@ -159,6 +163,7 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 			applied_routes = EXCLUDED.applied_routes,
 			applied_solution_id = EXCLUDED.applied_solution_id,
 			applied_release = EXCLUDED.applied_release,
+			applied_domain = EXCLUDED.applied_domain,
 			applied_at = EXCLUDED.applied_at,
 			pending_reason = EXCLUDED.pending_reason,
 			pending_since = EXCLUDED.pending_since,
@@ -166,7 +171,7 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 		record.BindingID, record.HostCoordinate, record.HostComponent,
 		desiredGeneration, desiredDigest, desiredDocument, desiredSeenAt,
 		appliedGeneration, appliedDigest, appliedDocument, appliedRemoved, appliedRoutes,
-		appliedSolutionID, appliedRelease, appliedAt,
+		appliedSolutionID, appliedRelease, appliedDomain, appliedAt,
 		pendingReason, record.PendingSince, record.UpdatedAt)
 	return err
 }

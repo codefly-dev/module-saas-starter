@@ -126,3 +126,27 @@ func OpenScopedBoundaryWithWrites(ctx context.Context, readOnlyConnection, readW
 func BindControlPlaneTx(ctx context.Context, tx pgx.Tx) context.Context {
 	return txbind.BindControlPlane(ctx, tx)
 }
+
+// ExecAsControlPlane runs one statement inside a real control-plane
+// transaction, for test states no tenant write path produces directly (an
+// expiry that has already passed, a role demoted behind the API's back).
+//
+// It exists because the obvious shortcut is silently wrong. A test outside this
+// package cannot reach the transaction WithControlPlane opens — the binding key
+// is internal by design, so that only the code opening a transaction may say
+// what authority it carries. A test that pulled the transaction out of the
+// context with a plain string key (`ctx.Value("tx").(pgx.Tx)`) worked only for
+// as long as that was the binding, and when the binding moved it did not start
+// failing on a permission: it read nil and panicked, which is the better of the
+// two outcomes. The other, described on BindControlPlaneTx above, is a silent
+// fall back to the request pool.
+//
+// Routing through WithControlPlane keeps the role handling in exactly one
+// place, so a test cannot run as the control plane in a way production never
+// does.
+func (s *PostgresStore) ExecAsControlPlane(ctx context.Context, sql string, args ...any) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		_, err := s.getQueryExecutor(ctx).Exec(ctx, sql, args...)
+		return err
+	})
+}
