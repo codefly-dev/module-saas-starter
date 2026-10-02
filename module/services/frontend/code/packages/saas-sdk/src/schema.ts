@@ -84,6 +84,12 @@ export interface EventDeclaration {
 	name: string;
 	type: string;
 	description?: string;
+	/**
+	 * The declared type's retention class: `security` keeps its full details
+	 * for the compliance window, `content` (the default) for the shorter content
+	 * window. Only with `fields`; it only ever grows.
+	 */
+	retention?: "security" | "content";
 	fields?: readonly EventFieldDeclaration[];
 }
 

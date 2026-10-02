@@ -51,11 +51,12 @@ func TestParseDeclaredAuditEventTypes_ReadsTypedFields(t *testing.T) {
 	}
 	want := []DeclaredAuditEventType{
 		// A declaration that names no visibility gets the default: the event
-		// stays inside the platform.
-		{Type: "acme.item.closed", Namespace: "acme", SolutionID: "acme", Visibility: AuditVisibilityTenant, Fields: []PayloadField{}},
+		// stays inside the platform. One that names no retention class is
+		// content.
+		{Type: "acme.item.closed", Namespace: "acme", SolutionID: "acme", Visibility: AuditVisibilityTenant, Retention: RetentionContent, Fields: []PayloadField{}},
 		{
 			Type: "acme.item.created", Namespace: "acme", SolutionID: "acme", Description: "An item was created.",
-			Visibility: AuditVisibilityTenant,
+			Visibility: AuditVisibilityTenant, Retention: RetentionContent,
 			Fields: []PayloadField{
 				{Name: "count", Kind: FieldInt},
 				{Name: "score", Kind: FieldNumber},
@@ -120,7 +121,7 @@ func manyFields(n int) string {
 func TestDeclaredAuditEventType_SchemaRoundTrip(t *testing.T) {
 	declared := DeclaredAuditEventType{
 		Type: "acme.item.created", Namespace: "acme", SolutionID: "acme", Description: "An item was created.",
-		Visibility: AuditVisibilityExternal,
+		Visibility: AuditVisibilityExternal, Retention: RetentionSecurity,
 		Fields: []PayloadField{
 			{Name: "count", Kind: FieldInt},
 			{Name: "enabled", Kind: FieldBool},
@@ -133,14 +134,14 @@ func TestDeclaredAuditEventType_SchemaRoundTrip(t *testing.T) {
 		},
 	}
 	back, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace,
-		SolutionAuditOwner("acme"), declared.Visibility, declared.PayloadSchemaJSON())
+		SolutionAuditOwner("acme"), declared.Visibility, string(declared.Retention), declared.PayloadSchemaJSON())
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	if !reflect.DeepEqual(back, declared) {
 		t.Fatalf("round trip = %#v\nwant %#v", back, declared)
 	}
-	if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace, "accounts", declared.Visibility, declared.PayloadSchemaJSON()); err == nil {
+	if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace, "accounts", declared.Visibility, string(declared.Retention), declared.PayloadSchemaJSON()); err == nil {
 		t.Fatal("a code-owned row must not read back as a declared type")
 	}
 	// The column is the delivery gate's input, so a row carrying anything the
@@ -149,8 +150,15 @@ func TestDeclaredAuditEventType_SchemaRoundTrip(t *testing.T) {
 	// leave the platform.
 	for _, visibility := range []string{"", "internal", "External"} {
 		if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace,
-			SolutionAuditOwner("acme"), visibility, declared.PayloadSchemaJSON()); err == nil {
+			SolutionAuditOwner("acme"), visibility, string(declared.Retention), declared.PayloadSchemaJSON()); err == nil {
 			t.Fatalf("visibility %q must not read back", visibility)
+		}
+	}
+	// So is the retention class, which routes the type's details.
+	for _, retention := range []string{"", "Security", "permanent"} {
+		if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace,
+			SolutionAuditOwner("acme"), declared.Visibility, retention, declared.PayloadSchemaJSON()); err == nil {
+			t.Fatalf("retention %q must not read back", retention)
 		}
 	}
 }

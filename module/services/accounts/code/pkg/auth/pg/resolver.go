@@ -42,6 +42,7 @@ const BootstrapAdminEmailEnv = "BOOTSTRAP_ADMIN_EMAIL"
 // user row.
 type Resolver struct {
 	bootstrap           BootstrapStore
+	audit               business.AuditRecorder
 	bootstrapAdminEmail *string
 	signupMode          auth.SignupMode
 }
@@ -58,6 +59,15 @@ type BootstrapStore interface {
 
 func NewResolver(bootstrap BootstrapStore) *Resolver {
 	return &Resolver{bootstrap: bootstrap}
+}
+
+// SetAuditRecorder sets how the resolver records the events it writes on the
+// resolution transaction — a registration and an SSO just-in-time provisioning.
+// It is required: Resolve refuses to run without it, so no provisioning path can
+// commit unrecorded. Production passes the service's audit emitter, which writes
+// the audit_events row, or under a swap value (ADR 0009) the queue row.
+func (r *Resolver) SetAuditRecorder(recorder business.AuditRecorder) {
+	r.audit = recorder
 }
 
 // SetBootstrapAdminEmail makes runtime composition authoritative for the
@@ -126,6 +136,9 @@ func (r *Resolver) Resolve(ctx context.Context, c *auth.Claims, intent auth.Inte
 
 	if r.bootstrap == nil {
 		return nil, errors.New("pgauth: bootstrap store is required")
+	}
+	if r.audit == nil {
+		return nil, errors.New("pgauth: audit recorder is required")
 	}
 
 	// Authentication is an interactive boundary. Bound the complete database
@@ -200,7 +213,7 @@ func (r *Resolver) resolveInTx(
 	//     can never produce one: re-provisioning a known user into an org they
 	//     were removed from is a membership change, not a registration.
 	if !found {
-		if err := r.emitUserRegistered(ctx, tx, c, userID, orgID, signupMethod); err != nil {
+		if err := r.emitUserRegistered(ctx, c, userID, orgID, signupMethod); err != nil {
 			return nil, err
 		}
 	}
@@ -856,7 +869,7 @@ func (r *Resolver) provisionSsoJit(
 	if err := r.joinOrg(ctx, tx, orgID, userID, policy.defaultRole); err != nil {
 		return uuid.Nil, uuid.Nil, "", err
 	}
-	if err := r.emitSsoJitAudit(ctx, tx, c, userID, orgID); err != nil {
+	if err := r.emitSsoJitAudit(ctx, c, userID, orgID); err != nil {
 		return uuid.Nil, uuid.Nil, "", err
 	}
 	return userID, orgID, policy.defaultRole, nil
@@ -907,7 +920,7 @@ func (r *Resolver) provisionSsoInvite(
 	if err := r.acceptInvitation(ctx, tx, invID, orgID, userID, role); err != nil {
 		return uuid.Nil, uuid.Nil, "", err
 	}
-	if err := r.emitSsoJitAudit(ctx, tx, c, userID, orgID); err != nil {
+	if err := r.emitSsoJitAudit(ctx, c, userID, orgID); err != nil {
 		return uuid.Nil, uuid.Nil, "", err
 	}
 	return userID, orgID, role, nil
@@ -951,19 +964,21 @@ func (r *Resolver) joinOrg(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UU
 // transaction, so the audit trail commits atomically with the membership it
 // describes. The provider and org travel in the event for enterprise-tenant
 // forensics.
-func (r *Resolver) emitSsoJitAudit(ctx context.Context, tx pgx.Tx, c *auth.Claims, userID, orgID uuid.UUID) error {
-	payload, err := json.Marshal(map[string]string{"provider": c.Provider})
-	if err != nil {
-		return fmt.Errorf("pgauth: marshal sso jit audit payload: %w", err)
-	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO audit_events (
-			id, actor_id, actor_type, event_type, schema_version, resource, resource_id, org_id, payload
-		) VALUES ($1, $2, 'user', $3, 1, 'organization', $4, $5, $6::jsonb)`,
-		business.NewID(), userID, string(business.EventAuthSSOJitProvisioned), orgID.String(), orgID, string(payload),
-	)
-	if err != nil {
-		return fmt.Errorf("pgauth: insert sso jit audit event: %w", err)
+//
+// ctx carries the resolution transaction (WithAuthBootstrapTx binds it), which
+// is where the recorder writes. The recorder writes the record and nothing
+// else — no domain event, no tee job — which is all this path has ever written.
+func (r *Resolver) emitSsoJitAudit(ctx context.Context, c *auth.Claims, userID, orgID uuid.UUID) error {
+	if err := r.audit.RecordTx(ctx, business.AuditEntry{
+		ActorID:    userID.String(),
+		ActorType:  business.ActorTypeUser,
+		EventType:  business.EventAuthSSOJitProvisioned,
+		Resource:   "organization",
+		ResourceID: orgID.String(),
+		OrgID:      orgID.String(),
+		Payload:    map[string]any{"provider": c.Provider},
+	}); err != nil {
+		return fmt.Errorf("pgauth: record sso jit audit event: %w", err)
 	}
 	return nil
 }
@@ -984,7 +999,6 @@ func (r *Resolver) emitSsoJitAudit(ctx context.Context, tx pgx.Tx, c *auth.Claim
 // invitation is accepted.
 func (r *Resolver) emitUserRegistered(
 	ctx context.Context,
-	tx pgx.Tx,
 	c *auth.Claims,
 	userID, orgID uuid.UUID,
 	signupMethod string,
@@ -994,33 +1008,30 @@ func (r *Resolver) emitUserRegistered(
 	// still recorded, with a NULL org_id — the shape audit_events' tenant policy
 	// already admits, scoped to the actor — rather than dropped: the person did
 	// register, and no tenant should count them until they join one.
-	var org any
+	org := ""
 	if orgID != uuid.Nil {
-		org = orgID
+		org = orgID.String()
 	}
 	fields := map[string]any{"email": strings.ToLower(c.Email)}
 	if signupMethod != "" {
 		fields["signup_method"] = signupMethod
 	}
-	// The row is written with raw SQL on the resolution transaction, so the
-	// business emitter's declared-payload check does not run over it; call it
-	// here so an undeclared key or an out-of-enum value fails the login that
-	// would otherwise have written an unreadable record.
+	// The emitter only logs a payload that drifts from its declaration; check it
+	// strictly here so an undeclared key or an out-of-enum value fails the login
+	// that would otherwise have written an unreadable record.
 	if err := business.ValidatePayload(business.EventUserRegistered, fields); err != nil {
 		return fmt.Errorf("pgauth: registration audit payload: %w", err)
 	}
-	payload, err := json.Marshal(fields)
-	if err != nil {
-		return fmt.Errorf("pgauth: marshal registration audit payload: %w", err)
-	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO audit_events (
-			id, actor_id, actor_type, event_type, schema_version, resource, resource_id, org_id, payload
-		) VALUES ($1, $2, 'user', $3, 1, 'user', $4, $5, $6::jsonb)`,
-		business.NewID(), userID, string(business.EventUserRegistered), userID.String(), org, string(payload),
-	)
-	if err != nil {
-		return fmt.Errorf("pgauth: insert registration audit event: %w", err)
+	if err := r.audit.RecordTx(ctx, business.AuditEntry{
+		ActorID:    userID.String(),
+		ActorType:  business.ActorTypeUser,
+		EventType:  business.EventUserRegistered,
+		Resource:   "user",
+		ResourceID: userID.String(),
+		OrgID:      org,
+		Payload:    fields,
+	}); err != nil {
+		return fmt.Errorf("pgauth: record registration audit event: %w", err)
 	}
 	return nil
 }

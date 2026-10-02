@@ -65,7 +65,12 @@ survives a restart and reaches every replica, and is only served when it is
   re-declaration that changes it is refused — because narrowing would silently
   stop deliveries to endpoints already subscribed and widening would start
   sending out facts under a name a tenant subscribed to when it meant something
-  else.
+  else. A declared type may also state its **retention class** (ADR 0009) —
+  `content` by default, or `security` (manifest `dashboard.events[].retention`,
+  or `ModuleAuditEventTypeDeclaration.retention`) — which decides how long a
+  warehouse store of record keeps its full details. The class only grows, like
+  `pii`: a re-declaration may raise it to `security` and is refused if it would
+  lower it, omission included.
 - A composed **module** with no frontend half declares its own audit event
   types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
   (`pkg/business/module_audit_declarations.go`): the same validator

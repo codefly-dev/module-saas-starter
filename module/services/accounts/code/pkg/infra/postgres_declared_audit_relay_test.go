@@ -35,6 +35,7 @@ func admitDeclaredType(t *testing.T, visibility string) business.EventType {
 		Namespace:  namespace,
 		SolutionID: namespace,
 		Visibility: visibility,
+		Retention:  business.RetentionSecurity,
 		Fields:     []business.PayloadField{{Name: "count", Kind: business.FieldInt}},
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
@@ -51,6 +52,7 @@ func admitDeclaredType(t *testing.T, visibility string) business.EventType {
 	}))
 	require.NotNil(t, admitted)
 	require.Equal(t, visibility, admitted.Visibility)
+	require.Equal(t, business.RetentionSecurity, admitted.Retention, "and the retention class it was declared with")
 	return declared.Type
 }
 

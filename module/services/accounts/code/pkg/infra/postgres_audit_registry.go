@@ -54,22 +54,23 @@ func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business
 		// reads it from the composed event catalog for a code-owned type. Writing
 		// it here is what lets one table answer "may this leave the platform" for
 		// the whole registry, instead of a reader having to know which half a
-		// name came from.
+		// name came from. The retention class is projected for the same reason.
 		tag, err := q.Exec(ctx, `
-			INSERT INTO audit_event_types (name, namespace, version, category, owner, visibility, payload_schema, deprecated, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())
+			INSERT INTO audit_event_types (name, namespace, version, category, owner, visibility, retention_class, payload_schema, deprecated, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, NOW())
 			ON CONFLICT (name) DO UPDATE SET
 				namespace = EXCLUDED.namespace,
 				version = EXCLUDED.version,
 				category = EXCLUDED.category,
 				owner = EXCLUDED.owner,
 				visibility = EXCLUDED.visibility,
+				retention_class = EXCLUDED.retention_class,
 				payload_schema = EXCLUDED.payload_schema,
 				deprecated = FALSE,
 				updated_at = NOW()
-			WHERE NOT starts_with(audit_event_types.owner, $8)`,
+			WHERE NOT starts_with(audit_event_types.owner, $9)`,
 			string(d.Type), d.Namespace, d.Version, string(d.Category), d.Owner,
-			d.EffectiveVisibility(), d.PayloadSchemaJSON(),
+			d.EffectiveVisibility(), string(d.Retention), d.PayloadSchemaJSON(),
 			business.SolutionAuditOwnerPrefix)
 		if err != nil {
 			return err

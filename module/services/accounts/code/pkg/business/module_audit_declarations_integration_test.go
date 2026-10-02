@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // Module-declared audit types against Postgres, under the codefly harness: the
@@ -172,4 +173,42 @@ func exportPayload(t *testing.T, row map[string]any) map[string]any {
 	}
 	t.Fatal(errors.New("export row carries no payload"))
 	return nil
+}
+
+// The retention class a module declares is stored on the type's row and read
+// back by the one type lookup the relay classifies with; it only grows; and a
+// code-owned type's row carries the catalog's class.
+func TestModuleAuditDeclarations_RetentionClassIsStoredAndOnlyGrows(t *testing.T) {
+	clearData(t)
+	namespace := freshAuditNamespace(t)
+	prefix := testSolutionID(t)
+	svc := moduleDeclaringService(t, map[string][]string{prefix: {namespace}})
+	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(prefix)}
+	eventType := business.EventType(namespace + ".access.granted")
+	declare := func(retention string) error {
+		_, _, err := svc.ModuleDeclareAuditEventTypes(testCtx, caller, prefix,
+			[]business.AuditEventTypeDeclaration{{Type: string(eventType), Retention: retention}})
+		return err
+	}
+	stored := func() business.AuditRetentionClass {
+		t.Helper()
+		resolved, err := business.NewAuditEventResolver(testStore).Resolve(testCtx, eventType)
+		require.NoError(t, err)
+		require.True(t, resolved.Registered)
+		return resolved.RetentionClass()
+	}
+
+	require.NoError(t, declare(""))
+	require.Equal(t, business.RetentionContent, stored(), "saying nothing is content")
+	require.NoError(t, declare("security"))
+	require.Equal(t, business.RetentionSecurity, stored(), "the class may rise")
+	require.Error(t, declare(""), "and may not fall, not even by omission")
+	require.Equal(t, business.RetentionSecurity, stored())
+
+	var catalogClass string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx,
+			`SELECT retention_class FROM audit_event_types WHERE name = $1`, string(business.EventAuthLogin)).Scan(&catalogClass)
+	}))
+	require.Equal(t, string(business.RetentionSecurity), catalogClass, "the startup projection writes the catalog's class")
 }

@@ -370,6 +370,23 @@ enum ModuleAuditEventVisibility {
   MODULE_AUDIT_EVENT_VISIBILITY_EXTERNAL = 2;
 }
 
+// How long the full details of a declared type's events are kept once a
+// warehouse is the audit store of record (ADR 0009). The envelope — who, which
+// organization, what type, which target, when — and a hash of the details are
+// kept for the compliance window either way; the class decides where the
+// details go.
+enum ModuleAuditEventRetention {
+  // Unset means CONTENT, the class of a type that says nothing.
+  MODULE_AUDIT_EVENT_RETENTION_UNSPECIFIED = 0;
+  // Full details kept for the shorter, configured content window; the locked
+  // archive holds only the envelope and the hash.
+  MODULE_AUDIT_EVENT_RETENTION_CONTENT = 1;
+  // Full details kept for the compliance window, in the warehouse and the
+  // locked archive alike: authentication, permission and role changes, admin
+  // actions, data exports, configuration changes.
+  MODULE_AUDIT_EVENT_RETENTION_SECURITY = 2;
+}
+
 // ModuleAuditEventTypeDeclaration is one audit event type a composed module
 // declares for itself.
 message ModuleAuditEventTypeDeclaration {
@@ -388,6 +405,11 @@ message ModuleAuditEventTypeDeclaration {
   // subscribed and widening it would start sending out facts a tenant's
   // endpoint never agreed to receive under this name.
   ModuleAuditEventVisibility visibility = 4 [(buf.validate.field).enum.defined_only = true];
+  // The type's retention class. It only grows: a later declaration may raise
+  // CONTENT to SECURITY, and one that would lower SECURITY — including by
+  // leaving this unset — is refused, because that would shorten how long the
+  // type's evidence is kept without anyone deciding so.
+  ModuleAuditEventRetention retention = 5 [(buf.validate.field).enum.defined_only = true];
 }
 
 // ModuleDeclareAuditEventTypesRequest declares the audit event types a composed

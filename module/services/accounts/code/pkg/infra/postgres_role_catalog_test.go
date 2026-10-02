@@ -130,7 +130,7 @@ func TestImportRoleCatalogAppliesExampleThenNoOp(t *testing.T) {
 	catalog, err := rolecatalog.Parse(document)
 	require.NoError(t, err)
 
-	result, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{})
+	result, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	require.True(t, result.Applied)
 	require.Len(t, result.Plan.Creates, 1)
@@ -152,7 +152,7 @@ func TestImportRoleCatalogAppliesExampleThenNoOp(t *testing.T) {
 	}
 
 	// Second run is a true no-op.
-	again, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{})
+	again, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	require.True(t, again.Plan.Empty())
 }
@@ -162,7 +162,7 @@ func TestImportRoleCatalogOnePermissionChangeIsOneRowOneAudit(t *testing.T) {
 	base := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:reader","description":"d","scope":"m",
 		 "permissions":[{"resource":"reports","action":"read"}]}]}`)
-	_, err := testStore.ImportRoleCatalog(testCtx, base, infra.ImportOptions{})
+	_, err := testStore.ImportRoleCatalog(testCtx, base, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 
 	role, found := readBuiltinRole(t, "catalog-test:reader")
@@ -175,7 +175,7 @@ func TestImportRoleCatalogOnePermissionChangeIsOneRowOneAudit(t *testing.T) {
 	changed := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:reader","description":"d","scope":"m",
 		 "permissions":[{"resource":"reports","action":"read"},{"resource":"reports","action":"write"}]}]}`)
-	result, err := testStore.ImportRoleCatalog(testCtx, changed, infra.ImportOptions{})
+	result, err := testStore.ImportRoleCatalog(testCtx, changed, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	require.True(t, result.Applied)
 	require.Len(t, result.Plan.Updates, 1)
@@ -190,7 +190,7 @@ func TestImportRoleCatalogOnePermissionChangeIsOneRowOneAudit(t *testing.T) {
 	require.Equal(t, updatesBefore+1, countCatalogAudits(t, "saas.role.updated"), "exactly one update audit event")
 
 	// Removing a single permission is likewise one row change and one event.
-	reverted, err := testStore.ImportRoleCatalog(testCtx, base, infra.ImportOptions{})
+	reverted, err := testStore.ImportRoleCatalog(testCtx, base, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	require.True(t, reverted.Applied)
 	require.Len(t, reverted.Plan.Updates, 1)
@@ -231,7 +231,7 @@ func TestImportRoleCatalogLeavesCustomRolesAndAssignmentsUntouched(t *testing.T)
 
 	catalog := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:writer","permissions":[{"resource":"docs","action":"write"}]}]}`)
-	_, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{})
+	_, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 
 	// The custom role and its assignment are intact.
@@ -259,7 +259,7 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 	seedCatalog := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:keep","permissions":[{"resource":"y","action":"read"}]},
 		{"name":"catalog-test:temp","permissions":[{"resource":"x","action":"read"}]}]}`)
-	_, err := testStore.ImportRoleCatalog(testCtx, seedCatalog, infra.ImportOptions{})
+	_, err := testStore.ImportRoleCatalog(testCtx, seedCatalog, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	role, found := readBuiltinRole(t, "catalog-test:temp")
 	require.True(t, found)
@@ -276,7 +276,7 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 	// the empty-catalog guard) refuses it without force.
 	dropTemp := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:keep","permissions":[{"resource":"y","action":"read"}]}]}`)
-	refused, err := testStore.ImportRoleCatalog(testCtx, dropTemp, infra.ImportOptions{})
+	refused, err := testStore.ImportRoleCatalog(testCtx, dropTemp, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	require.True(t, refused.Refused)
 	require.Contains(t, refused.RefusalReason, "orphan")
@@ -285,7 +285,7 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 	require.True(t, stillThere, "refused import must not remove anything")
 
 	// Force applies the removal; the assignment cascades away.
-	forced, err := testStore.ImportRoleCatalog(testCtx, dropTemp, infra.ImportOptions{Force: true})
+	forced, err := testStore.ImportRoleCatalog(testCtx, dropTemp, infra.ImportOptions{Audit: catalogAudit(t), Force: true})
 	require.NoError(t, err)
 	require.True(t, forced.Applied)
 	_, gone := readBuiltinRole(t, "catalog-test:temp")
@@ -309,11 +309,11 @@ func TestImportRoleCatalogRefusesEmptyCatalogWipeUnlessForced(t *testing.T) {
 	// not protect it, so an empty catalog would previously delete it silently.
 	seedCatalog := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:unassigned","permissions":[{"resource":"x","action":"read"}]}]}`)
-	_, err := testStore.ImportRoleCatalog(testCtx, seedCatalog, infra.ImportOptions{})
+	_, err := testStore.ImportRoleCatalog(testCtx, seedCatalog, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 
 	empty := parseCatalog(t, `{"version":1,"roles":[]}`)
-	refused, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{})
+	refused, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{Audit: catalogAudit(t)})
 	require.NoError(t, err)
 	require.True(t, refused.Refused, "empty catalog must not silently wipe catalog-managed roles")
 	require.Contains(t, refused.RefusalReason, "no roles")
@@ -322,7 +322,7 @@ func TestImportRoleCatalogRefusesEmptyCatalogWipeUnlessForced(t *testing.T) {
 	require.True(t, stillThere)
 
 	// Force makes the wipe a deliberate act.
-	forced, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{Force: true})
+	forced, err := testStore.ImportRoleCatalog(testCtx, empty, infra.ImportOptions{Audit: catalogAudit(t), Force: true})
 	require.NoError(t, err)
 	require.True(t, forced.Applied)
 	_, gone := readBuiltinRole(t, "catalog-test:unassigned")
@@ -334,7 +334,7 @@ func TestImportRoleCatalogStampsProvenanceOnAudit(t *testing.T) {
 	catalog := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:provenance","permissions":[{"resource":"x","action":"read"}]}]}`)
 
-	_, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Source: "roles.json"})
+	_, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Audit: catalogAudit(t), Source: "roles.json"})
 	require.NoError(t, err)
 
 	role, found := readBuiltinRole(t, "catalog-test:provenance")
@@ -362,7 +362,7 @@ func TestImportRoleCatalogDryRunWritesNothing(t *testing.T) {
 	catalog := parseCatalog(t, `{"version":1,"roles":[
 		{"name":"catalog-test:dryrun","permissions":[{"resource":"x","action":"read"}]}]}`)
 
-	result, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{DryRun: true})
+	result, err := testStore.ImportRoleCatalog(testCtx, catalog, infra.ImportOptions{Audit: catalogAudit(t), DryRun: true})
 	require.NoError(t, err)
 	require.False(t, result.Applied)
 	require.Len(t, result.Plan.Creates, 1)

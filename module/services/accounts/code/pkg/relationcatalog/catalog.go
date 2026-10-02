@@ -126,6 +126,10 @@ var authorities = map[string]Authority{
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
 		Notes: "Append-only emit-reservation guard; system emits reserve against the sentinel organization.",
 	},
+	"audit_event_queue": {
+		Scope: ScopeTenant, PolicyShape: ShapePolymorphic, ScopeColumn: "org_id",
+		Notes: "The transactional audit queue under a swap value (ADR 0009): writers insert only, under audit_events' tenant policy; the relay reads and deletes as the job worker.",
+	},
 	"audit_events": {
 		Scope: ScopeTenant, PolicyShape: ShapePolymorphic, ScopeColumn: "org_id",
 		Notes: "NULL org_id rows (system events) are visible only under the control-plane role. Monthly partitions inherit the partitioned parent's policy.",

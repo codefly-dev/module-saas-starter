@@ -55,13 +55,13 @@ func (s *PostgresStore) ListAuditEventNamespaceOwners(ctx context.Context, names
 
 func scanDeclaredAuditEventType(row pgx.Row) (*business.DeclaredAuditEventType, error) {
 	var (
-		name, namespace, owner, visibility string
-		schema                             []byte
+		name, namespace, owner, visibility, retention string
+		schema                                        []byte
 	)
-	if err := row.Scan(&name, &namespace, &owner, &visibility, &schema); err != nil {
+	if err := row.Scan(&name, &namespace, &owner, &visibility, &retention, &schema); err != nil {
 		return nil, err
 	}
-	declared, err := business.DeclaredAuditEventTypeFromSchema(business.EventType(name), namespace, owner, visibility, schema)
+	declared, err := business.DeclaredAuditEventTypeFromSchema(business.EventType(name), namespace, owner, visibility, retention, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *PostgresStore) GetDeclaredAuditEventType(ctx context.Context, eventType
 		return declared, err
 	}
 	declared, err := scanDeclaredAuditEventType(s.getQueryExecutor(ctx).QueryRow(ctx,
-		`SELECT name, namespace, owner, visibility, payload_schema FROM audit_event_types
+		`SELECT name, namespace, owner, visibility, retention_class, payload_schema FROM audit_event_types
 		 WHERE name = $1 AND starts_with(owner, $2)`,
 		string(eventType), business.SolutionAuditOwnerPrefix))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -102,7 +102,7 @@ func (s *PostgresStore) GetDeclaredAuditEventType(ctx context.Context, eventType
 // type.
 func (s *PostgresStore) ListDeclaredAuditEventTypes(ctx context.Context) ([]business.DeclaredAuditEventType, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
-		`SELECT name, namespace, owner, visibility, payload_schema FROM audit_event_types
+		`SELECT name, namespace, owner, visibility, retention_class, payload_schema FROM audit_event_types
 		 WHERE starts_with(owner, $1) ORDER BY name`, business.SolutionAuditOwnerPrefix)
 	if err != nil {
 		return nil, err
@@ -122,19 +122,21 @@ func (s *PostgresStore) ListDeclaredAuditEventTypes(ctx context.Context) ([]busi
 // PutDeclaredAuditEventType inserts a declared type or replaces the one its
 // owner already holds. The conflict update is conditioned on the owner, so a
 // row another producer holds is left alone and the write is refused rather
-// than silently transferring the type.
+// than silently transferring the type. Visibility is never rewritten (it is
+// fixed at admission); the retention class is, since admission lets it rise.
 func (s *PostgresStore) PutDeclaredAuditEventType(ctx context.Context, declared business.DeclaredAuditEventType) error {
 	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
-		INSERT INTO audit_event_types (name, namespace, version, category, owner, visibility, payload_schema, deprecated, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())
+		INSERT INTO audit_event_types (name, namespace, version, category, owner, visibility, retention_class, payload_schema, deprecated, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, NOW())
 		ON CONFLICT (name) DO UPDATE SET
+			retention_class = EXCLUDED.retention_class,
 			payload_schema = EXCLUDED.payload_schema,
 			deprecated = FALSE,
 			updated_at = NOW()
 		WHERE audit_event_types.owner = EXCLUDED.owner`,
 		string(declared.Type), declared.Namespace, business.DeclaredAuditEventVersion,
 		string(business.CategorySolution), business.SolutionAuditOwner(declared.SolutionID),
-		declared.Visibility, declared.PayloadSchemaJSON())
+		declared.Visibility, string(declared.Retention), declared.PayloadSchemaJSON())
 	if err != nil {
 		return err
 	}

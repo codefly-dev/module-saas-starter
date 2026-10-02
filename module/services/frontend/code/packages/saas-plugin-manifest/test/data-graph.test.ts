@@ -363,6 +363,14 @@ describe("assertDataGraph — declared event types", () => {
 		).not.toThrow();
 	});
 
+	it("accepts a declared retention class", () => {
+		for (const retention of ["security", "content"]) {
+			expect(() =>
+				assertDataGraph(declaring({ ...itemCreated, retention })),
+			).not.toThrow();
+		}
+	});
+
 	it("keeps an event without fields exactly as before", () => {
 		expect(() =>
 			assertDataGraph(declaring({ name: "viewed", type: "acme.viewed" })),
@@ -436,6 +444,18 @@ describe("assertDataGraph — declared event types", () => {
 				fields: [{ name: "email", kind: "string", pii: "yes" }],
 			},
 			/pii must be a boolean/,
+		],
+		"an unknown retention class": [
+			{ ...itemCreated, retention: "permanent" },
+			/retention 'permanent' must be one of security, content/,
+		],
+		"a misspelt retention class": [
+			{ ...itemCreated, retention: "Security" },
+			/retention 'Security' must be one of/,
+		],
+		"a retention class on an event that only binds": [
+			{ name: "viewed", type: "acme.page.viewed", retention: "security" },
+			/declares a retention class but no fields/,
 		],
 		"an unknown key on a field": [
 			{

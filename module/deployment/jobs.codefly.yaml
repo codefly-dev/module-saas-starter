@@ -10,7 +10,12 @@ deploy_jobs:
   # store dependency, so it is a module deploy Job, not a self-serving store
   # bootstrap Job. force applies the authoritative generated catalog past the
   # importer's empty-catalog truncation guard; re-runs of an unchanged catalog
-  # are an empty no-op.
+  # are an empty no-op. The import records one audit event per changed role
+  # through the same emitter as the accounts service, so it runs under the
+  # service's AUDIT_SINK: under a swap value (ADR 0009) its events go to the
+  # queue the accounts relay delivers, not to audit_events. AUDIT_SINK is the one
+  # audit setting the importer reads; the rest name destinations only the relay
+  # writes to.
   - name: role-catalog-import
     service: accounts
     command: role-catalog-import
@@ -21,3 +26,5 @@ deploy_jobs:
       endpoint: tcp
     after:
       - store
+    service_environment:
+      - AUDIT_SINK
