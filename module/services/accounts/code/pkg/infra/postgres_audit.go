@@ -50,7 +50,34 @@ func (s *PostgresStore) ReserveAuditIdempotency(ctx context.Context, orgID, even
 }
 
 func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.AuditEntry) error {
-	q := s.getQueryExecutor(ctx)
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		INSERT INTO audit_events (
+			id, event_type, schema_version, actor_id, actor_type,
+			resource, resource_id, org_id, payload, ip_address, created_at,
+			impersonated_by, is_impersonated, client_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		auditEventColumns(entry)...)
+	return err
+}
+
+// EnqueueAuditEvent writes the event into audit_event_queue on the ambient
+// transaction: the record under a swap value (ADR 0009). The row carries
+// exactly the columns an audit_events row would, normalized the same way, so
+// the event the relay delivers is the event Postgres would have kept.
+func (s *PostgresStore) EnqueueAuditEvent(ctx context.Context, entry business.AuditEntry) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		INSERT INTO audit_event_queue (
+			id, event_type, schema_version, actor_id, actor_type,
+			resource, resource_id, org_id, payload, ip_address, created_at,
+			impersonated_by, is_impersonated, client_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		auditEventColumns(entry)...)
+	return err
+}
+
+// auditEventColumns normalizes an entry into the fourteen column values
+// audit_events and audit_event_queue share, in their INSERT order.
+func auditEventColumns(entry business.AuditEntry) []any {
 	if entry.ID == "" {
 		entry.ID = business.NewIDString()
 	}
@@ -66,12 +93,7 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		payload = []byte("{}")
 	}
 
-	_, err = q.Exec(ctx, `
-		INSERT INTO audit_events (
-			id, event_type, schema_version, actor_id, actor_type,
-			resource, resource_id, org_id, payload, ip_address, created_at,
-			impersonated_by, is_impersonated, client_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+	return []any{
 		entry.ID, string(entry.EventType), entry.SchemaVersion,
 		nilIfNotUUID(entry.ActorID), entry.ActorType,
 		// resource_id is text: a resource is named by whatever id its owner mints
@@ -80,8 +102,8 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		entry.Resource, nilIfEmpty(entry.ResourceID), nilIfNotUUID(entry.OrgID),
 		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt,
 		nilIfNotUUID(entry.ImpersonatedBy), entry.IsImpersonated,
-		nilIfEmpty(entry.ClientID))
-	return err
+		nilIfEmpty(entry.ClientID),
+	}
 }
 
 // encodeAuditCursor / decodeAuditCursor carry the keyset position for audit

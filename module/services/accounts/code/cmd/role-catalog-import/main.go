@@ -5,11 +5,15 @@
 //
 // Usage:
 //
-//	role-catalog-import -catalog roles.json -database-url "$DATABASE_URL" [-dry-run] [-force]
+//	role-catalog-import -catalog roles.json -database-url "$DATABASE_URL" [-audit-sink "$AUDIT_SINK"] [-dry-run] [-force]
 //
 // The connection principal must be a member of app_control_plane (the same
 // authority migrations run under); built-in roles cannot be written otherwise.
 // See AUTHZ.md ("Built-in role catalog import") for the format and workflow.
+//
+// -audit-sink must be the deployment's AUDIT_SINK: under a swap value
+// (ADR 0009) the import's audit events go to the transactional queue, which
+// the accounts relay delivers, rather than to audit_events.
 package main
 
 import (
@@ -19,6 +23,7 @@ import (
 	"io"
 	"os"
 
+	"accounts/pkg/business"
 	"accounts/pkg/infra"
 	"accounts/pkg/rolecatalog"
 )
@@ -43,8 +48,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	databaseURL := fs.String("database-url", os.Getenv("DATABASE_URL"), "Postgres connection URL (defaults to $DATABASE_URL)")
 	dryRun := fs.Bool("dry-run", false, "print the plan without applying it")
 	force := fs.Bool("force", false, "apply removals even when they would delete assignments or wipe the whole catalog")
+	auditSink := fs.String("audit-sink", os.Getenv("AUDIT_SINK"), "the deployment's AUDIT_SINK (defaults to $AUDIT_SINK; empty is postgres)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	sinkMode, err := business.ParseAuditSinkMode(*auditSink)
+	if err != nil {
+		line(stderr, "role-catalog-import:", err)
+		return 1
 	}
 
 	if *catalogPath == "" {
@@ -75,7 +86,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	defer store.Close()
 
-	result, err := store.ImportRoleCatalog(ctx, catalog, infra.ImportOptions{DryRun: *dryRun, Force: *force, Source: *catalogPath})
+	var recorderOptions []business.DurableAuditEmitterOption
+	if sinkMode.Swaps() {
+		recorderOptions = append(recorderOptions, business.WithQueuedRecords())
+	}
+	// The import records platform events only (built-in roles have no
+	// organization), which neither the tee nor webhook delivery carries, so
+	// the recorder needs nothing from the mode but where the record goes.
+	recorder, err := business.NewDurableAuditEmitter(store, store, recorderOptions...)
+	if err != nil {
+		line(stderr, "role-catalog-import:", err)
+		return 1
+	}
+
+	result, err := store.ImportRoleCatalog(ctx, catalog, infra.ImportOptions{
+		DryRun: *dryRun, Force: *force, Source: *catalogPath, Audit: recorder,
+	})
 	if err != nil {
 		line(stderr, "role-catalog-import:", err)
 		return 1

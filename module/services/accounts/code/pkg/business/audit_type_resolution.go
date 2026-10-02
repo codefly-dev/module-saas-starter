@@ -40,6 +40,17 @@ func (r ResolvedAuditEvent) Category() string {
 	return string(r.Definition.Category)
 }
 
+// RetentionClass is the type's retention class. A type the registry does not
+// know — one renamed or retired after its event was written — is held as
+// security, so its full details are kept for the compliance window: a record
+// whose meaning can no longer be looked up is not one to shorten.
+func (r ResolvedAuditEvent) RetentionClass() AuditRetentionClass {
+	if !r.Registered || r.Definition.Retention == "" {
+		return RetentionSecurity
+	}
+	return r.Definition.Retention
+}
+
 // Redact returns a copy of payload with every field the definition marks PII
 // removed. Every path that sends an event outside the audit store uses it, so
 // downstream sinks never receive personally identifying fields. An unregistered

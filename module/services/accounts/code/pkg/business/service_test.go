@@ -184,6 +184,7 @@ func runBusinessTests(m *testing.M) int {
 	}
 	defer auditEmitter.Close()
 	service.SetAuditEmitter(auditEmitter)
+	resolver.SetAuditRecorder(auditEmitter)
 
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)

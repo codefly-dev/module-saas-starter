@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
-	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/infra/storetx"
 )
 
@@ -58,7 +57,7 @@ func registeredAuditCount(t *testing.T, orgID uuid.UUID) int {
 func TestResolver_Registration_RecordedOncePerIdentityInTheJoiningOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	setSsoProvisioning(t, orgID, "jit", "member", []string{"acme.test"})
@@ -105,7 +104,7 @@ func TestResolver_Registration_RecordedOncePerIdentityInTheJoiningOrg(t *testing
 func TestResolver_Registration_RecordedForInviteOnlySsoProvisioning(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	ownerID := seedUser(t)
 	orgID := seedOrg(t, ownerID, "Acme", "workos-acme")
@@ -122,7 +121,7 @@ func TestResolver_Registration_RecordedForInviteOnlySsoProvisioning(t *testing.T
 func TestResolver_SsoJit_FirstLoginProvisions_SecondIsPlainLogin(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	setSsoProvisioning(t, orgID, "jit", "member", []string{"acme.test"})
@@ -159,7 +158,7 @@ func TestResolver_SsoJit_FirstLoginProvisions_SecondIsPlainLogin(t *testing.T) {
 func TestResolver_SsoJit_EmailDomainNotAllowed_RejectedAndProvisionsNothing(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	setSsoProvisioning(t, orgID, "jit", "member", []string{"acme.test"})
@@ -178,7 +177,7 @@ func TestResolver_SsoJit_EmailDomainNotAllowed_RejectedAndProvisionsNothing(t *t
 func TestResolver_SsoJit_EmptyAllowlist_ReportsMisconfiguration(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	// jit enabled but no trusted domains named — a misconfiguration, distinct
@@ -198,7 +197,7 @@ func TestResolver_SsoJit_EmptyAllowlist_ReportsMisconfiguration(t *testing.T) {
 func TestResolver_SsoJit_ReprovisionsIdentityRemovedFromOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	setSsoProvisioning(t, orgID, "jit", "member", []string{"acme.test"})
@@ -231,7 +230,7 @@ func TestResolver_SsoJit_ReprovisionsIdentityRemovedFromOrg(t *testing.T) {
 func TestResolver_SsoJit_InviteOnly_RequiresPendingInvitation(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	ownerID := seedUser(t)
 	orgID := seedOrg(t, ownerID, "Acme", "workos-acme")
@@ -269,7 +268,7 @@ func TestResolver_SsoJit_InviteOnly_RequiresPendingInvitation(t *testing.T) {
 func TestResolver_SsoJit_Disabled_RejectsFirstSeen_ExistingMemberLogsIn(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	setSsoProvisioning(t, orgID, "disabled", "member", []string{"acme.test"})
@@ -296,7 +295,7 @@ func TestResolver_SsoJit_Disabled_RejectsFirstSeen_ExistingMemberLogsIn(t *testi
 func TestResolver_SsoJit_ExistingMemberShortCircuits_NotReGatedByDomain(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	orgID := seedOrg(t, seedUser(t), "Acme", "workos-acme")
 	// Allowlist deliberately excludes the member's email domain.
@@ -316,7 +315,7 @@ func TestResolver_SsoJit_ExistingMemberShortCircuits_NotReGatedByDomain(t *testi
 func TestResolver_SsoJit_NeverCreatesOrgOrTouchesAnotherOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	target := seedOrg(t, seedUser(t), "Target", "workos-target")
 	setSsoProvisioning(t, target, "jit", "member", []string{"acme.test"})
@@ -346,7 +345,7 @@ func TestResolver_SsoJit_NeverCreatesOrgOrTouchesAnotherOrg(t *testing.T) {
 func TestResolver_ResolveOrgProvisioning(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	withPolicy := seedOrg(t, seedUser(t), "WithPolicy", "workos-with")
 	setSsoProvisioning(t, withPolicy, "jit", "member", []string{"acme.test"})

@@ -136,6 +136,7 @@ type DurableAuditEmitter struct {
 	producer    jobs.Producer
 	transport   events.Transport
 	teeExternal bool
+	queued      bool
 }
 
 // DurableAuditEmitterOption tunes the emitter at construction.
@@ -147,6 +148,15 @@ type DurableAuditEmitterOption func(*DurableAuditEmitter)
 // on the synchronous mutation path (see AuditExportQueue in audit_jobs.go).
 func WithExternalTee() DurableAuditEmitterOption {
 	return func(e *DurableAuditEmitter) { e.teeExternal = true }
+}
+
+// WithQueuedRecords writes each event's record into the transactional queue
+// (audit_event_queue) instead of audit_events. It is the emitter under a swap
+// value (ADR 0009): the queue row commits on the same transaction the
+// audit_events row would have, beside the same domain event, and AuditRelay
+// delivers it to the store of record afterwards. audit_events receives nothing.
+func WithQueuedRecords() DurableAuditEmitterOption {
+	return func(e *DurableAuditEmitter) { e.queued = true }
 }
 
 // WithDomainEventTransport publishes an external-visibility domain event beside
@@ -167,6 +177,10 @@ func NewDurableAuditEmitter(store Store, producer jobs.Producer, opts ...Durable
 	emitter := &DurableAuditEmitter{store: store, producer: producer}
 	for _, opt := range opts {
 		opt(emitter)
+	}
+	if emitter.teeExternal && emitter.queued {
+		// The tee copies audit_events rows; under a swap there are none to copy.
+		return nil, errors.New("audit: the external tee and the queued store of record are exclusive")
 	}
 	return emitter, nil
 }
@@ -211,22 +225,8 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 	if err != nil {
 		return err
 	}
-	if entry.IdempotencyKey != "" {
-		reserved, err := e.store.ReserveAuditIdempotency(ctx, entry.OrgID, string(entry.EventType), entry.IdempotencyKey)
-		if err != nil {
-			return err
-		}
-		if !reserved {
-			// A prior emit of this (org, event_type, idempotency_key) already wrote
-			// the event in a committed transaction. Skip the insert and the webhook
-			// fan-out and report success: the intended effect (exactly one audit row
-			// and one set of deliveries) is already in place. Reserving inside the
-			// caller's tx keeps the guard row and the audit row atomic, so a rolled
-			// back audit write also frees the key for a genuine retry.
-			return nil
-		}
-	}
-	if err := e.store.InsertAuditEvent(ctx, entry); err != nil {
+	written, err := e.record(ctx, entry)
+	if err != nil || !written {
 		return err
 	}
 	if entry.OrgID == "" {
@@ -245,6 +245,31 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 		}
 	}
 	return nil
+}
+
+// record writes the event's record — the audit_events row, or under a swap
+// value the queue row — on the ambient transaction, after reserving its
+// idempotency key. written is false for a duplicate emit, which writes nothing.
+func (e *DurableAuditEmitter) record(ctx context.Context, entry AuditEntry) (bool, error) {
+	if entry.IdempotencyKey != "" {
+		reserved, err := e.store.ReserveAuditIdempotency(ctx, entry.OrgID, string(entry.EventType), entry.IdempotencyKey)
+		if err != nil {
+			return false, err
+		}
+		if !reserved {
+			// A prior emit of this (org, event_type, idempotency_key) already wrote
+			// the event in a committed transaction. Skip the insert and the webhook
+			// fan-out and report success: the intended effect (exactly one audit row
+			// and one set of deliveries) is already in place. Reserving inside the
+			// caller's tx keeps the guard row and the audit row atomic, so a rolled
+			// back audit write also frees the key for a genuine retry.
+			return false, nil
+		}
+	}
+	if e.queued {
+		return true, e.store.EnqueueAuditEvent(ctx, entry)
+	}
+	return true, e.store.InsertAuditEvent(ctx, entry)
 }
 
 func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
@@ -275,6 +300,18 @@ func (e *DurableAuditEmitter) Emit(ctx context.Context, entry AuditEntry) {
 func (e *DurableAuditEmitter) EmitTx(ctx context.Context, entry AuditEntry) error {
 	e.normalize(&entry)
 	return e.write(ctx, entry)
+}
+
+// RecordTx writes only the event's record on the caller's transaction — no
+// domain event, no tee job (AuditRecorder). Like EmitTx it MUST run inside an
+// active transaction and its error MUST be propagated.
+func (e *DurableAuditEmitter) RecordTx(ctx context.Context, entry AuditEntry) error {
+	e.normalize(&entry)
+	if _, err := e.resolve(ctx, &entry); err != nil {
+		return err
+	}
+	_, err := e.record(ctx, entry)
+	return err
 }
 
 func (e *DurableAuditEmitter) Close() {}

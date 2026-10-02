@@ -127,6 +127,31 @@ const (
 	DurabilityObservational AuditDurability = "observational"
 )
 
+// AuditRetentionClass declares how long an event type's full details must be
+// kept once a warehouse is the audit store of record (ADR 0009). The envelope —
+// who, which organization, what type, which target, when — and a hash of the
+// details are kept for the compliance window whatever the class; the class
+// decides where the details themselves go.
+//
+// It is its own field, deliberately not derived from Category: CategorySecurity
+// names a narrower set (sign-in and MFA), and most security-class events —
+// role changes, credential issuance, configuration — sit in other categories.
+type AuditRetentionClass string
+
+const (
+	// RetentionSecurity is the record of who could get in and what they were
+	// allowed to do: authentication (including its failures), credentials issued
+	// and revoked, permission, role, membership, sharing and delegation changes,
+	// administrative and operator actions, data leaving the platform (exports,
+	// replays), and configuration changes. Its full details are kept for the
+	// compliance window, in the events table and the locked archive alike.
+	RetentionSecurity AuditRetentionClass = "security"
+	// RetentionContent is everything else: what happened to a tenant's own
+	// content and operations. Its full details are kept for the shorter,
+	// configured content window; the archive holds only its envelope and hash.
+	RetentionContent AuditRetentionClass = "content"
+)
+
 // AuditEventDefinition is one registered event type. Namespace is the collision
 // key (always the leading segment of Type); Owner names the service that emits
 // it, which is a different axis entirely. Durability says how the record must
@@ -142,13 +167,17 @@ const (
 // (an observation about a whole solution; an event that is genuinely distinct on
 // every emit) go through the same two fields.
 type AuditEventDefinition struct {
-	Type                   EventType
-	Namespace              string
-	Version                int
-	Category               AuditCategory
-	Owner                  string
-	Description            string
-	Durability             AuditDurability
+	Type        EventType
+	Namespace   string
+	Version     int
+	Category    AuditCategory
+	Owner       string
+	Description string
+	Durability  AuditDurability
+	// Retention is the type's retention class, required the way Durability is:
+	// every catalog entry is wrapped in securityRetained or contentRetained, and
+	// the index refuses one that is not.
+	Retention              AuditRetentionClass
 	RequiresEntry          bool
 	RequiresIdempotencyKey bool
 	Fields                 []PayloadField
@@ -242,6 +271,19 @@ func requiresEntry(d AuditEventDefinition) AuditEventDefinition {
 // the host guessed from the payload would silently suppress the second.
 func requiresIdempotencyKey(d AuditEventDefinition) AuditEventDefinition {
 	d.RequiresIdempotencyKey = true
+	return d
+}
+
+// securityRetained and contentRetained declare a definition's retention class.
+// Every catalog entry carries exactly one of them, outermost, so the class is
+// read at the declaration and a new type cannot be added without choosing.
+func securityRetained(d AuditEventDefinition) AuditEventDefinition {
+	d.Retention = RetentionSecurity
+	return d
+}
+
+func contentRetained(d AuditEventDefinition) AuditEventDefinition {
+	d.Retention = RetentionContent
 	return d
 }
 
@@ -521,33 +563,33 @@ const (
 )
 
 var auditEventCatalog = []AuditEventDefinition{
-	userJoined(mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
-		enum("signup_method", "password", "sso", "magic_link"), pii(str("email")))),
-	userJoined(mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email")))),
-	mutation(EventUserUpdated, CategoryIdentity, "A user profile was updated."),
-	mutation(EventUserDeleted, CategoryIdentity, "A user account was deleted."),
+	securityRetained(userJoined(mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
+		enum("signup_method", "password", "sso", "magic_link"), pii(str("email"))))),
+	securityRetained(userJoined(mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email"))))),
+	contentRetained(mutation(EventUserUpdated, CategoryIdentity, "A user profile was updated.")),
+	securityRetained(mutation(EventUserDeleted, CategoryIdentity, "A user account was deleted.")),
 	// A suspension is allowed to leave an organization with no administrator —
 	// containing a compromised account outranks that — so the organizations it
 	// did leave that way are part of the record rather than a reason to refuse.
-	mutation(EventUserSuspended, CategoryIdentity, "A user account was suspended.",
-		strs("organizations_without_administrator")),
-	mutation(EventUserUnsuspended, CategoryIdentity, "A user account was reinstated."),
-	mutation(EventUserIdentityAdd, CategoryIdentity, "An external identity was linked to a user.", str("provider")),
-	observation(EventSettingsUpdated, CategoryIdentity, "A user's personal settings changed."),
-	mutation(EventConsentTerms, CategoryIdentity, "A user accepted the terms of service.", str("version")),
-	mutation(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences."),
+	securityRetained(mutation(EventUserSuspended, CategoryIdentity, "A user account was suspended.",
+		strs("organizations_without_administrator"))),
+	securityRetained(mutation(EventUserUnsuspended, CategoryIdentity, "A user account was reinstated.")),
+	securityRetained(mutation(EventUserIdentityAdd, CategoryIdentity, "An external identity was linked to a user.", str("provider"))),
+	contentRetained(observation(EventSettingsUpdated, CategoryIdentity, "A user's personal settings changed.")),
+	contentRetained(mutation(EventConsentTerms, CategoryIdentity, "A user accepted the terms of service.", str("version"))),
+	contentRetained(mutation(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences.")),
 
-	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
-	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
-	observation(EventModuleOrgAdminsNotified, CategorySystem, "A composed module notified a tenant's administrators; the host resolved the recipients.",
+	securityRetained(mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray})),
+	securityRetained(mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix"))),
+	contentRetained(observation(EventModuleOrgAdminsNotified, CategorySystem, "A composed module notified a tenant's administrators; the host resolved the recipients.",
 		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, str("category"), str("type"),
 		PayloadField{Name: "recipients", Kind: FieldInt, Required: true}, PayloadField{Name: "delivered", Kind: FieldInt, Required: true},
-		str("idempotency_key")),
-	mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
-		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over")),
-	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
-	mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
-		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes")),
+		str("idempotency_key"))),
+	securityRetained(mutation(EventModuleAuditTypesDeclared, CategorySystem, "A composed module declared audit event types of its own, or took a namespace over from the producer the operator unbound.",
+		PayloadField{Name: "prefix", Kind: FieldString, Required: true}, strs("event_types"), strs("namespaces_taken_over"))),
+	securityRetained(mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant"))),
+	securityRetained(mutation(EventModuleOperationContextMint, CategoryAccess, "A composed module was issued, with no person present, a Work Context for one of its installed operation audiences.",
+		str("prefix"), str("tenant"), str("binding_id"), str("audience"), strs("scopes"))),
 	// v2 adds `delegation_id` and stops requiring `owner_principal_id`.
 	//
 	// The exchange now has two arms. One presents a live parent capability, and
@@ -562,7 +604,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	// which is the one kind of refusal an authority surface most needs to keep.
 	// `delegation_id` is what identifies them instead, so a probe against a
 	// grant reference is legible even when no owner was ever resolved.
-	revised(observation(EventDelegatedAudienceExchange, CategoryAccess, "A composed module's installed delegated-audience exchange was issued or refused.",
+	securityRetained(revised(observation(EventDelegatedAudienceExchange, CategoryAccess, "A composed module's installed delegated-audience exchange was issued or refused.",
 		PayloadField{Name: "owner_principal_id", Kind: FieldUUID},
 		uid("delegation_id"),
 		PayloadField{Name: "actor_principal_id", Kind: FieldUUID, Required: true},
@@ -572,164 +614,164 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("audience"),
 		PayloadField{Name: "lookup", Kind: FieldBool, Required: true},
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
-		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
-	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
-	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
-	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
-	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
-	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
-	mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions")),
-	mutation(EventRoleDeleted, CategoryAccess, "A role was deleted."),
-	mutation(EventRoleAssigned, CategoryAccess, "A role was assigned to a principal.", uid("role_id"), uid("subject_id")),
-	mutation(EventRoleRevoked, CategoryAccess, "A role assignment was revoked.", uid("role_id")),
-	mutation(EventSessionRevoked, CategoryAccess, "A session was revoked."),
-	mutation(EventInvitationCreated, CategoryAccess, "An organization invitation was created.", pii(str("email"))),
-	mutation(EventInvitationAccepted, CategoryAccess, "An organization invitation was accepted."),
-	mutation(EventInvitationRevoked, CategoryAccess, "An organization invitation was revoked."),
-	mutation(EventInvitationResent, CategoryAccess, "An organization invitation was resent."),
-	mutation(EventInvitationLinkIssued, CategoryAccess, "An organization invitation's accept link was issued to an administrator instead of emailed."),
-	mutation(EventDelegationRequested, CategoryAccess, "A delegation grant was requested."),
-	mutation(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
-	mutation(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
-	mutation(EventDelegationAutoApproved, CategoryAccess, "A delegation grant was auto-approved by policy."),
-	mutation(EventApprovalAsked, CategoryAccess, "An approval request was opened for a gated action.", str("resource"), str("action")),
-	mutation(EventApprovalApproved, CategoryAccess, "An approval request reached quorum and was approved.", str("resource"), str("action")),
-	mutation(EventApprovalDenied, CategoryAccess, "An approval request was denied."),
-	mutation(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
-	mutation(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
-	mutation(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
-	mutation(EventApprovalDecisionRecorded, CategoryAccess, "An approver recorded a decision on an approval request.", str("decision")),
-	mutation(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
-	mutation(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
-	mutation(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason")),
-	mutation(EventPrincipalEnabled, CategoryAccess, "An agent principal was re-enabled."),
-	mutation(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
-	mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
-	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
-	mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
-		uid("agent_principal_id"), str("solution_identifier"), uid("role_id"), uid("owner_principal_id")),
-	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
-		str("solution_identifier")),
-	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
-		uid("owner_principal_id")),
-	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
-	mutation(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
-	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
-	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
-	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
-	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
-	mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
+		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2)),
+	securityRetained(mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id"))),
+	securityRetained(mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over"))),
+	securityRetained(mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt})),
+	securityRetained(mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id"))),
+	securityRetained(mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name"))),
+	securityRetained(mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions"))),
+	securityRetained(mutation(EventRoleDeleted, CategoryAccess, "A role was deleted.")),
+	securityRetained(mutation(EventRoleAssigned, CategoryAccess, "A role was assigned to a principal.", uid("role_id"), uid("subject_id"))),
+	securityRetained(mutation(EventRoleRevoked, CategoryAccess, "A role assignment was revoked.", uid("role_id"))),
+	securityRetained(mutation(EventSessionRevoked, CategoryAccess, "A session was revoked.")),
+	securityRetained(mutation(EventInvitationCreated, CategoryAccess, "An organization invitation was created.", pii(str("email")))),
+	securityRetained(mutation(EventInvitationAccepted, CategoryAccess, "An organization invitation was accepted.")),
+	securityRetained(mutation(EventInvitationRevoked, CategoryAccess, "An organization invitation was revoked.")),
+	securityRetained(mutation(EventInvitationResent, CategoryAccess, "An organization invitation was resent.")),
+	securityRetained(mutation(EventInvitationLinkIssued, CategoryAccess, "An organization invitation's accept link was issued to an administrator instead of emailed.")),
+	securityRetained(mutation(EventDelegationRequested, CategoryAccess, "A delegation grant was requested.")),
+	securityRetained(mutation(EventDelegationApproved, CategoryAccess, "A delegation grant was approved.")),
+	securityRetained(mutation(EventDelegationDenied, CategoryAccess, "A delegation grant was denied.")),
+	securityRetained(mutation(EventDelegationAutoApproved, CategoryAccess, "A delegation grant was auto-approved by policy.")),
+	securityRetained(mutation(EventApprovalAsked, CategoryAccess, "An approval request was opened for a gated action.", str("resource"), str("action"))),
+	securityRetained(mutation(EventApprovalApproved, CategoryAccess, "An approval request reached quorum and was approved.", str("resource"), str("action"))),
+	securityRetained(mutation(EventApprovalDenied, CategoryAccess, "An approval request was denied.")),
+	securityRetained(mutation(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum.")),
+	securityRetained(mutation(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set.")),
+	securityRetained(mutation(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason"))),
+	securityRetained(mutation(EventApprovalDecisionRecorded, CategoryAccess, "An approver recorded a decision on an approval request.", str("decision"))),
+	securityRetained(mutation(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier"))),
+	securityRetained(mutation(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason"))),
+	securityRetained(mutation(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason"))),
+	securityRetained(mutation(EventPrincipalEnabled, CategoryAccess, "An agent principal was re-enabled.")),
+	contentRetained(mutation(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind"))),
+	securityRetained(mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path"))),
+	securityRetained(mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path"))),
+	securityRetained(mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
+		uid("agent_principal_id"), str("solution_identifier"), uid("role_id"), uid("owner_principal_id"))),
+	securityRetained(mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
+		str("solution_identifier"))),
+	securityRetained(mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
+		uid("owner_principal_id"))),
+	securityRetained(mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id"))),
+	securityRetained(mutation(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id"))),
+	securityRetained(mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session.")),
+	securityRetained(mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task.")),
+	securityRetained(mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started.")),
+	securityRetained(mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience.")),
+	securityRetained(mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap.")),
 
-	observation(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method"), str("client_id")),
-	observation(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),
-	mutation(EventAuthSSOJitProvisioned, CategorySecurity, "A user was just-in-time provisioned via SSO.", str("provider")),
-	observation(EventAuthOrgSwitched, CategorySecurity, "A user switched active organization."),
-	observation(EventAuthMFAChallengeStart, CategorySecurity, "An MFA challenge was started."),
-	observation(EventAuthMFAChallengeDone, CategorySecurity, "An MFA challenge was completed.", enum("factor", "totp", "webauthn", "backup_code")),
-	observation(EventAuthClientAuthorized, CategorySecurity, "A person authorized a registered client to act for them.", str("client_id")),
-	mutation(EventMFATOTPSetupStarted, CategorySecurity, "TOTP enrollment was started."),
-	mutation(EventMFATOTPVerified, CategorySecurity, "A TOTP device was verified."),
-	mutation(EventMFAWebAuthnRegStarted, CategorySecurity, "WebAuthn registration was started."),
-	mutation(EventMFAWebAuthnRegistered, CategorySecurity, "A WebAuthn credential was registered."),
-	observation(EventMFAWebAuthnUsed, CategorySecurity, "A WebAuthn credential was used to authenticate."),
-	mutation(EventMFABackupGenerated, CategorySecurity, "MFA backup codes were generated."),
-	observation(EventMFABackupUsed, CategorySecurity, "An MFA backup code was consumed."),
-	mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
-	mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
-	mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
+	securityRetained(observation(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method"), str("client_id"))),
+	securityRetained(observation(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link.")),
+	securityRetained(mutation(EventAuthSSOJitProvisioned, CategorySecurity, "A user was just-in-time provisioned via SSO.", str("provider"))),
+	securityRetained(observation(EventAuthOrgSwitched, CategorySecurity, "A user switched active organization.")),
+	securityRetained(observation(EventAuthMFAChallengeStart, CategorySecurity, "An MFA challenge was started.")),
+	securityRetained(observation(EventAuthMFAChallengeDone, CategorySecurity, "An MFA challenge was completed.", enum("factor", "totp", "webauthn", "backup_code"))),
+	securityRetained(observation(EventAuthClientAuthorized, CategorySecurity, "A person authorized a registered client to act for them.", str("client_id"))),
+	securityRetained(mutation(EventMFATOTPSetupStarted, CategorySecurity, "TOTP enrollment was started.")),
+	securityRetained(mutation(EventMFATOTPVerified, CategorySecurity, "A TOTP device was verified.")),
+	securityRetained(mutation(EventMFAWebAuthnRegStarted, CategorySecurity, "WebAuthn registration was started.")),
+	securityRetained(mutation(EventMFAWebAuthnRegistered, CategorySecurity, "A WebAuthn credential was registered.")),
+	securityRetained(observation(EventMFAWebAuthnUsed, CategorySecurity, "A WebAuthn credential was used to authenticate.")),
+	securityRetained(mutation(EventMFABackupGenerated, CategorySecurity, "MFA backup codes were generated.")),
+	securityRetained(observation(EventMFABackupUsed, CategorySecurity, "An MFA backup code was consumed.")),
+	securityRetained(mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked.")),
+	securityRetained(mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted.")),
+	securityRetained(mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked.")),
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.
 	// session_id pairs this record with the user_impersonation_ended that closes
 	// the same window, so the two reconcile to each other rather than by
 	// timestamp proximity.
-	revised(mutation(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user.",
-		PayloadField{Name: "reason", Kind: FieldString, Required: true}, uid("session_id")), 3),
+	securityRetained(revised(mutation(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user.",
+		PayloadField{Name: "reason", Kind: FieldString, Required: true}, uid("session_id")), 3)),
 	// access_token_revoked records whether the window's access token was actually
 	// killed. Without a revocation store wired there is no mechanism to kill one
 	// early, and a close record that did not say so would overstate what the stop
 	// achieved.
-	mutation(EventPlatformImpersonationEnded, CategorySecurity, "A platform admin's impersonation session ended.",
+	securityRetained(mutation(EventPlatformImpersonationEnded, CategorySecurity, "A platform admin's impersonation session ended.",
 		uid("session_id"), PayloadField{Name: "duration_seconds", Kind: FieldInt},
-		PayloadField{Name: "access_token_revoked", Kind: FieldBool, Required: true}),
+		PayloadField{Name: "access_token_revoked", Kind: FieldBool, Required: true})),
 
-	observation(EventBillingCheckoutStarted, CategoryBilling, "A billing checkout session was started."),
-	observation(EventBillingPortalOpened, CategoryBilling, "The billing portal was opened."),
-	observation(EventBillingFreePlan, CategoryBilling, "The free plan was selected."),
-	mutation(EventEntitlementOverride, CategoryBilling, "An entitlement override was set.", str("key")),
+	contentRetained(observation(EventBillingCheckoutStarted, CategoryBilling, "A billing checkout session was started.")),
+	contentRetained(observation(EventBillingPortalOpened, CategoryBilling, "The billing portal was opened.")),
+	contentRetained(observation(EventBillingFreePlan, CategoryBilling, "The free plan was selected.")),
+	securityRetained(mutation(EventEntitlementOverride, CategoryBilling, "An entitlement override was set.", str("key"))),
 
-	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
-	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
-	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
-	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
-	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
-	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
-	mutation(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),
-	mutation(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated."),
-	mutation(EventTeamCreated, CategoryOrganization, "A team was created.", str("name")),
-	mutation(EventTeamUpdated, CategoryOrganization, "A team was updated."),
-	mutation(EventTeamDeleted, CategoryOrganization, "A team was deleted."),
-	mutation(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team."),
-	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team."),
-	mutation(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started."),
-	mutation(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization."),
-	observation(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),
-	observation(EventOnboardingStepSkip, CategoryOrganization, "An onboarding step was skipped.", str("step")),
-	observation(EventActivationAchieved, CategoryOrganization, "An organization reached activation."),
+	securityRetained(mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name"))),
+	securityRetained(mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization.")),
+	securityRetained(mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization.")),
+	securityRetained(mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization.")),
+	securityRetained(mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug"))),
+	securityRetained(mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug"))),
+	securityRetained(mutation(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated.")),
+	securityRetained(mutation(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated.")),
+	securityRetained(mutation(EventTeamCreated, CategoryOrganization, "A team was created.", str("name"))),
+	securityRetained(mutation(EventTeamUpdated, CategoryOrganization, "A team was updated.")),
+	securityRetained(mutation(EventTeamDeleted, CategoryOrganization, "A team was deleted.")),
+	securityRetained(mutation(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team.")),
+	securityRetained(mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team.")),
+	securityRetained(mutation(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started.")),
+	securityRetained(mutation(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization.")),
+	contentRetained(observation(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step"))),
+	contentRetained(observation(EventOnboardingStepSkip, CategoryOrganization, "An onboarding step was skipped.", str("step"))),
+	contentRetained(observation(EventActivationAchieved, CategoryOrganization, "An organization reached activation.")),
 
-	observation(EventDashboardCreated, CategoryOrganization, "A dashboard was created."),
-	observation(EventDashboardUpdated, CategoryOrganization, "A dashboard was updated."),
-	observation(EventDashboardDeleted, CategoryOrganization, "A dashboard was deleted."),
-	observation(EventDashboardShared, CategoryOrganization, "A dashboard's visibility was changed."),
+	contentRetained(observation(EventDashboardCreated, CategoryOrganization, "A dashboard was created.")),
+	contentRetained(observation(EventDashboardUpdated, CategoryOrganization, "A dashboard was updated.")),
+	contentRetained(observation(EventDashboardDeleted, CategoryOrganization, "A dashboard was deleted.")),
+	securityRetained(observation(EventDashboardShared, CategoryOrganization, "A dashboard's visibility was changed.")),
 
-	observation(EventWaitlistJoined, CategoryLifecycle, "A prospect joined the waitlist.", pii(str("email"))),
-	observation(EventWaitlistPending, CategoryLifecycle, "A waitlist entry moved to pending."),
-	observation(EventWaitlistVerified, CategoryLifecycle, "A waitlist entry was verified."),
-	observation(EventWaitlistReviewed, CategoryLifecycle, "A waitlist entry was reviewed by an administrator."),
-	observation(EventWaitlistApproved, CategoryLifecycle, "A waitlist entry was approved."),
-	observation(EventWaitlistInvited, CategoryLifecycle, "A waitlist entry was invited."),
-	observation(EventWaitlistConverted, CategoryLifecycle, "A waitlist entry converted to a user."),
-	observation(EventWaitlistRejected, CategoryLifecycle, "A waitlist entry was rejected."),
-	mutation(EventGDPRExportReq, CategoryLifecycle, "A GDPR data export was requested."),
-	mutation(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested."),
-	mutation(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed."),
+	contentRetained(observation(EventWaitlistJoined, CategoryLifecycle, "A prospect joined the waitlist.", pii(str("email")))),
+	contentRetained(observation(EventWaitlistPending, CategoryLifecycle, "A waitlist entry moved to pending.")),
+	contentRetained(observation(EventWaitlistVerified, CategoryLifecycle, "A waitlist entry was verified.")),
+	securityRetained(observation(EventWaitlistReviewed, CategoryLifecycle, "A waitlist entry was reviewed by an administrator.")),
+	securityRetained(observation(EventWaitlistApproved, CategoryLifecycle, "A waitlist entry was approved.")),
+	securityRetained(observation(EventWaitlistInvited, CategoryLifecycle, "A waitlist entry was invited.")),
+	contentRetained(observation(EventWaitlistConverted, CategoryLifecycle, "A waitlist entry converted to a user.")),
+	securityRetained(observation(EventWaitlistRejected, CategoryLifecycle, "A waitlist entry was rejected.")),
+	securityRetained(mutation(EventGDPRExportReq, CategoryLifecycle, "A GDPR data export was requested.")),
+	securityRetained(mutation(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested.")),
+	securityRetained(mutation(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed.")),
 
-	revised(mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created.", webhookAdminFields...), webhookAdminVersion),
-	revised(mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...), webhookAdminVersion),
-	revised(mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...), webhookAdminVersion),
+	securityRetained(revised(mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created.", webhookAdminFields...), webhookAdminVersion)),
+	securityRetained(revised(mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...), webhookAdminVersion)),
+	securityRetained(revised(mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...), webhookAdminVersion)),
 	// v2 records how a GitHub source authenticates — including `public`, a
 	// source connected with no credential at all — and declares the `provider`
 	// the provider-agnostic connect has always written, which v1 dropped.
-	revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
-		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2),
-	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
-	observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector")),
-	mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
-		str("connector"), str("provider_account_id")),
-	mutation(EventDatasourceAccountUnlinked, CategorySystem, "A linked provider account was removed.",
-		str("connector"), str("provider_account_id"), str("user_id")),
-	mutation(EventDatasourceGroupBound, CategorySystem, "An administrator bound a provider group to a team.",
-		str("connector"), str("provider_group_id"), str("team_id")),
-	mutation(EventDatasourceGroupUnbound, CategorySystem, "A provider group binding was removed.",
-		str("connector"), str("provider_group_id"), str("team_id")),
-	mutation(EventDatasourceDomainClaimed, CategorySystem, "An administrator claimed a domain for the organization.", str("domain")),
-	mutation(EventDatasourceDomainVerified, CategorySystem, "A claimed domain was verified by its DNS TXT record.", str("domain")),
-	mutation(EventDatasourceDomainRemoved, CategorySystem, "A claimed domain was removed.", str("domain")),
-	mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
-		str("installation_id")),
-	mutation(EventSourceDelegationCreated, CategoryAccess, "A person connecting a datasource delegated its sync to a module's installed operation binding.",
-		sourceDelegationFields...),
+	securityRetained(revised(mutation(EventDatasourceSourceAdded, CategorySystem, "A datasource was connected.",
+		str("repo"), str("provider"), enum("credential_kind", "pat", "app", "public")), 2)),
+	securityRetained(mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization.")),
+	contentRetained(observation(EventDatasourceAccountLinkStarted, CategorySystem, "A person started linking a provider account.", str("connector"))),
+	securityRetained(mutation(EventDatasourceAccountLinked, CategorySystem, "A person linked a provider account they signed in as.",
+		str("connector"), str("provider_account_id"))),
+	securityRetained(mutation(EventDatasourceAccountUnlinked, CategorySystem, "A linked provider account was removed.",
+		str("connector"), str("provider_account_id"), str("user_id"))),
+	securityRetained(mutation(EventDatasourceGroupBound, CategorySystem, "An administrator bound a provider group to a team.",
+		str("connector"), str("provider_group_id"), str("team_id"))),
+	securityRetained(mutation(EventDatasourceGroupUnbound, CategorySystem, "A provider group binding was removed.",
+		str("connector"), str("provider_group_id"), str("team_id"))),
+	securityRetained(mutation(EventDatasourceDomainClaimed, CategorySystem, "An administrator claimed a domain for the organization.", str("domain"))),
+	securityRetained(mutation(EventDatasourceDomainVerified, CategorySystem, "A claimed domain was verified by its DNS TXT record.", str("domain"))),
+	securityRetained(mutation(EventDatasourceDomainRemoved, CategorySystem, "A claimed domain was removed.", str("domain"))),
+	securityRetained(mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
+		str("installation_id"))),
+	securityRetained(mutation(EventSourceDelegationCreated, CategoryAccess, "A person connecting a datasource delegated its sync to a module's installed operation binding.",
+		sourceDelegationFields...)),
 	// v2 records `lookup`: a delegation now mints for one call at a time, and a
 	// capability narrowed to recovering a receipt carries strictly less than
 	// one that may produce the effect. A trail that cannot tell the two apart
 	// cannot answer what a module was actually let do.
-	revised(mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
-		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup"))...), 2),
-	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
-		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
-	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
-	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
-		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
+	securityRetained(revised(mutation(EventSourceDelegationUsed, CategoryAccess, "A module was issued an operation context from a person's source delegation.",
+		append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup"))...), 2)),
+	securityRetained(mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
+		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...)),
+	contentRetained(observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo"))),
+	securityRetained(revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
+		str("repo"), enum("credential_kind", "pat", "app", "public")), 2)),
 	// v2 names what was removed — v1 recorded an empty payload, so the trail
 	// could not say which repository or which collection lost its source.
 	// `boundary` is the collection (boundary node) the source fed, spelled as
@@ -743,83 +785,83 @@ var auditEventCatalog = []AuditEventDefinition{
 	// would accept a provider that could never have been stored, and the
 	// module-facing EmitAuditEvent — the one path where registry validation
 	// rejects rather than warns — would pass it through.
-	revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
+	securityRetained(revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
 		enum("provider", DatasourceProviderGitHub, DatasourceProviderAPI, DatasourceProviderCrawler, DatasourceProviderUpload),
-		str("repo"), str("boundary")), 2),
-	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
-	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
-	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
-		str("base"), str("head"), PayloadField{Name: "ops", Kind: FieldInt}, enum("mode", "compare", "snapshot"), str("delivery_id")),
-	observation(EventDatasourceForcePushReconciled, CategorySystem, "A GitHub force push or divergence was reconciled with a snapshot.",
-		str("head"), str("delivery_id")),
-	observation(EventDatasourceBranchDeleted, CategorySystem, "A GitHub branch-deletion delivery was acknowledged without removing documents.",
-		str("ref"), str("delivery_id")),
-	observation(EventDatasourceSnapshotTooLarge, CategorySystem, "A datasource snapshot manifest exceeded the ingest payload limit; the source was degraded pending operator reset.",
-		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id")),
-	observation(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
-		str("head"), str("delivery_id")),
+		str("repo"), str("boundary")), 2)),
+	contentRetained(observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...)),
+	contentRetained(observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...)),
+	contentRetained(observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
+		str("base"), str("head"), PayloadField{Name: "ops", Kind: FieldInt}, enum("mode", "compare", "snapshot"), str("delivery_id"))),
+	contentRetained(observation(EventDatasourceForcePushReconciled, CategorySystem, "A GitHub force push or divergence was reconciled with a snapshot.",
+		str("head"), str("delivery_id"))),
+	contentRetained(observation(EventDatasourceBranchDeleted, CategorySystem, "A GitHub branch-deletion delivery was acknowledged without removing documents.",
+		str("ref"), str("delivery_id"))),
+	contentRetained(observation(EventDatasourceSnapshotTooLarge, CategorySystem, "A datasource snapshot manifest exceeded the ingest payload limit; the source was degraded pending operator reset.",
+		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id"))),
+	contentRetained(observation(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
+		str("head"), str("delivery_id"))),
 	// v2 adds the third cause, public_repository_unreadable: a source connected
 	// to a public repository that GitHub has stopped serving unauthenticated.
 	// It has no installation, so installation_id is empty on those records —
 	// which is also how a consumer tells the two families apart without reading
 	// the reason.
-	revised(observation(EventDatasourceSourceAccessLost, CategorySystem,
+	contentRetained(revised(observation(EventDatasourceSourceAccessLost, CategorySystem,
 		"A datasource source lost access to its repository — a GitHub App installation stopped granting it, or a public repository stopped being readable without a credential; the source was degraded until access returns.",
 		str("repo"), str("installation_id"), enum("reason",
 			DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended,
-			DatasourceAccessLostPublicRepositoryUnreadable)), 2),
-	revised(observation(EventDatasourceSourceAccessRestored, CategorySystem,
+			DatasourceAccessLostPublicRepositoryUnreadable)), 2)),
+	contentRetained(revised(observation(EventDatasourceSourceAccessRestored, CategorySystem,
 		"A datasource source could read its repository again and was returned to active.",
 		str("repo"), str("installation_id"),
 		enum("restored_from",
 			DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended,
-			DatasourceAccessLostPublicRepositoryUnreadable)), 2),
-	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
-		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
-	observation(EventDatasourceFilesFetched, CategorySystem, "A module fetched a batch of a datasource's files at one version over FetchDatasourceFiles.",
-		str("repo"), str("version"), PayloadField{Name: "files", Kind: FieldInt}, PayloadField{Name: "bytes", Kind: FieldInt}),
-	revised(mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...), webhookAdminVersion),
-	observation(EventJobReplayed, CategorySystem, "A background job was replayed."),
-	mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
-	mutation(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
-		uid("subscription_id"), uid("subscriber_principal_id"), str("type_pattern"), str("queue")),
-	mutation(EventEventSubscriptionRevoked, CategorySystem, "A domain-event subscription was revoked.", uid("subscription_id")),
-	mutation(EventEventReplayed, CategorySystem, "Domain events were replayed to a subscriber.",
-		str("type"), PayloadField{Name: "redelivered", Kind: FieldInt}),
-	observation(EventDocumentRead, CategoryAccess, "A document read returned evidence or an explicit outcome.", documentReadFields...),
-	observation(EventDocumentSearch, CategoryAccess, "A collection search returned evidence or an explicit outcome.", documentReadFields...),
-	mutation(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...),
-	mutation(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
-	mutation(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
-	mutation(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...),
-	mutation(EventDocumentArchived, CategoryLifecycle, "A document was archived: taken out of the listing, every version kept.", documentFields...),
-	mutation(EventDocumentUnarchived, CategoryLifecycle, "A document was unarchived: listed again.", documentFields...),
-	mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
+			DatasourceAccessLostPublicRepositoryUnreadable)), 2)),
+	contentRetained(observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
+		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt})),
+	contentRetained(observation(EventDatasourceFilesFetched, CategorySystem, "A module fetched a batch of a datasource's files at one version over FetchDatasourceFiles.",
+		str("repo"), str("version"), PayloadField{Name: "files", Kind: FieldInt}, PayloadField{Name: "bytes", Kind: FieldInt})),
+	securityRetained(revised(mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...), webhookAdminVersion)),
+	securityRetained(observation(EventJobReplayed, CategorySystem, "A background job was replayed.")),
+	securityRetained(mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated.")),
+	securityRetained(mutation(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
+		uid("subscription_id"), uid("subscriber_principal_id"), str("type_pattern"), str("queue"))),
+	securityRetained(mutation(EventEventSubscriptionRevoked, CategorySystem, "A domain-event subscription was revoked.", uid("subscription_id"))),
+	securityRetained(mutation(EventEventReplayed, CategorySystem, "Domain events were replayed to a subscriber.",
+		str("type"), PayloadField{Name: "redelivered", Kind: FieldInt})),
+	contentRetained(observation(EventDocumentRead, CategoryAccess, "A document read returned evidence or an explicit outcome.", documentReadFields...)),
+	contentRetained(observation(EventDocumentSearch, CategoryAccess, "A collection search returned evidence or an explicit outcome.", documentReadFields...)),
+	contentRetained(mutation(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...)),
+	contentRetained(mutation(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...)),
+	contentRetained(mutation(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...)),
+	contentRetained(mutation(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...)),
+	contentRetained(mutation(EventDocumentArchived, CategoryLifecycle, "A document was archived: taken out of the listing, every version kept.", documentFields...)),
+	contentRetained(mutation(EventDocumentUnarchived, CategoryLifecycle, "A document was unarchived: listed again.", documentFields...)),
+	securityRetained(mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...)),
 	// Version 2 of the release and the subscription pair: `outcome` became
 	// required when a refusal stopped being its own type, so a v1 row (no
 	// outcome) and a v2 row are told apart by schema_version, not guessed at.
-	revised(mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine, or the release refused (outcome failure).",
+	securityRetained(revised(mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine, or the release refused (outcome failure).",
 		append(append([]PayloadField(nil), documentOutcomeFields...),
-			PayloadField{Name: "tenant_mismatch", Kind: FieldBool}, PayloadField{Name: "solution_mismatch", Kind: FieldBool})...), 2),
-	revised(mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created, or refused (outcome failure).", documentOutcomeFields...), 2),
-	revised(mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed, or the removal refused (outcome failure).", documentOutcomeFields...), 2),
-	mutation(EventDocumentOwnershipTransferred, CategoryLifecycle, "A document's owner was reassigned, or the transfer refused (outcome failure).",
-		append(append([]PayloadField(nil), documentOutcomeFields...), str("new_owner_subject_id"))...),
-	mutation(EventDocumentFrozen, CategoryLifecycle, "A document was frozen into a boundary-governed record, or the freeze refused (outcome failure). A freeze lasts until a saas.document.unfrozen with outcome success.", documentOutcomeFields...),
-	mutation(EventDocumentUnfrozen, CategoryLifecycle, "A frozen document was released from its freeze, or the unfreeze refused (outcome failure).", documentOutcomeFields...),
-	observation(EventDocumentIngestSkippedStale, CategoryLifecycle, "A document ingest op was refused as behind the order already applied at its path; nothing was written.",
-		append(append([]PayloadField(nil), documentFields...), str("path"), PayloadField{Name: "ordinal", Kind: FieldInt})...),
-	observation(EventDocumentPayloadConflict, CategorySystem, "A producer re-ran and offered different bytes for an artifact already stored; the stored bytes were kept.",
+			PayloadField{Name: "tenant_mismatch", Kind: FieldBool}, PayloadField{Name: "solution_mismatch", Kind: FieldBool})...), 2)),
+	contentRetained(revised(mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created, or refused (outcome failure).", documentOutcomeFields...), 2)),
+	contentRetained(revised(mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed, or the removal refused (outcome failure).", documentOutcomeFields...), 2)),
+	securityRetained(mutation(EventDocumentOwnershipTransferred, CategoryLifecycle, "A document's owner was reassigned, or the transfer refused (outcome failure).",
+		append(append([]PayloadField(nil), documentOutcomeFields...), str("new_owner_subject_id"))...)),
+	securityRetained(mutation(EventDocumentFrozen, CategoryLifecycle, "A document was frozen into a boundary-governed record, or the freeze refused (outcome failure). A freeze lasts until a saas.document.unfrozen with outcome success.", documentOutcomeFields...)),
+	securityRetained(mutation(EventDocumentUnfrozen, CategoryLifecycle, "A frozen document was released from its freeze, or the unfreeze refused (outcome failure).", documentOutcomeFields...)),
+	contentRetained(observation(EventDocumentIngestSkippedStale, CategoryLifecycle, "A document ingest op was refused as behind the order already applied at its path; nothing was written.",
+		append(append([]PayloadField(nil), documentFields...), str("path"), PayloadField{Name: "ordinal", Kind: FieldInt})...)),
+	contentRetained(observation(EventDocumentPayloadConflict, CategorySystem, "A producer re-ran and offered different bytes for an artifact already stored; the stored bytes were kept.",
 		str("solution"), str("producer"), str("producer_version"), str("entry"), str("entry_version"),
-		PayloadField{Name: "stored_bytes", Kind: FieldInt}, PayloadField{Name: "offered_bytes", Kind: FieldInt}),
-	mutation(EventDocumentSnapshotCommitted, CategoryLifecycle, "A complete source listing was reconciled into a document scope as one effect.", documentSnapshotFields...),
-	observation(EventDocumentSnapshotSkippedStale, CategoryLifecycle, "A source listing was refused as older than the order its scope already holds; nothing was written.", documentSnapshotFields...),
-	mutation(EventDocumentEffectCommitted, CategoryLifecycle, "A batch of document changes committed as one effect.",
-		str("solution"), str("digest"), PayloadField{Name: "applied", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}),
-	mutation(EventDocumentProductionCommitted, CategoryLifecycle, "A producer's derived artifact for a document version committed as one effect.",
-		str("solution"), str("effect_key"), str("task_id"), str("digest"), str("producer"), str("producer_version")),
-	mutation(EventDocumentKnowledgePublished, CategoryLifecycle, "A knowledge card was published into a collection as one effect.",
-		append(append([]PayloadField(nil), documentFields...), str("effect_key"), str("run_id"), str("digest"))...),
+		PayloadField{Name: "stored_bytes", Kind: FieldInt}, PayloadField{Name: "offered_bytes", Kind: FieldInt})),
+	contentRetained(mutation(EventDocumentSnapshotCommitted, CategoryLifecycle, "A complete source listing was reconciled into a document scope as one effect.", documentSnapshotFields...)),
+	contentRetained(observation(EventDocumentSnapshotSkippedStale, CategoryLifecycle, "A source listing was refused as older than the order its scope already holds; nothing was written.", documentSnapshotFields...)),
+	contentRetained(mutation(EventDocumentEffectCommitted, CategoryLifecycle, "A batch of document changes committed as one effect.",
+		str("solution"), str("digest"), PayloadField{Name: "applied", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt})),
+	contentRetained(mutation(EventDocumentProductionCommitted, CategoryLifecycle, "A producer's derived artifact for a document version committed as one effect.",
+		str("solution"), str("effect_key"), str("task_id"), str("digest"), str("producer"), str("producer_version"))),
+	contentRetained(mutation(EventDocumentKnowledgePublished, CategoryLifecycle, "A knowledge card was published into a collection as one effect.",
+		append(append([]PayloadField(nil), documentFields...), str("effect_key"), str("run_id"), str("digest"))...)),
 	// Everything this record exists to say is required, because a redrive row
 	// that names no version, no stage or no operation is indistinguishable from a
 	// complete one while answering none of the questions it was written to
@@ -842,12 +884,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	// input. `producer` cannot be an enum — the host does not know a module's
 	// stages — so it is bounded instead: short enough to name a stage, too short
 	// to carry the failure text the spine deliberately does not hold.
-	requiresIdempotencyKey(requiresEntry(mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
+	securityRetained(requiresIdempotencyKey(requiresEntry(mutation(EventDocumentDeadLetterRedriven, CategoryLifecycle, "An operator re-queued a document's dead-lettered derivation.",
 		append(required(documentFields, "version"),
 			PayloadField{Name: "correlation_id", Kind: FieldString, Required: true, MaxLen: 255},
 			PayloadField{Name: "producer", Kind: FieldString, Required: true, MaxLen: 128},
 			PayloadField{Name: "error_class", Kind: FieldEnum, Required: true,
-				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...))),
+				Enum: []string{"permanent", "exhausted", "cancelled", "unknown"}})...)))),
 }
 
 // webhookAdminVersion is version 2 of the webhook administration events: the
@@ -935,6 +977,9 @@ var auditEventIndex = func() map[EventType]AuditEventDefinition {
 		}
 		if d.Durability != DurabilityTransactional && d.Durability != DurabilityObservational {
 			panic(fmt.Sprintf("audit registry: event type %q has no durability classification", d.Type))
+		}
+		if d.Retention != RetentionSecurity && d.Retention != RetentionContent {
+			panic(fmt.Sprintf("audit registry: event type %q has no retention class", d.Type))
 		}
 		m[d.Type] = d
 	}

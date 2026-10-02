@@ -164,7 +164,7 @@ func seedInvitation(t *testing.T, orgID, inviterID uuid.UUID, email, role, statu
 func TestResolver_Signup_NewUser_Provisioning(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("alice@test.local", "dev-alice"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -189,7 +189,7 @@ func TestResolver_Signup_NewUser_Provisioning(t *testing.T) {
 func TestResolver_Signup_MagicLinkProvider_Provisioning(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	c := claims("linked@test.local", "linked@test.local")
 	c.Provider = business.MagicLinkIdentityProvider
@@ -212,7 +212,7 @@ func TestResolver_Signup_MagicLinkProvider_Provisioning(t *testing.T) {
 func TestResolver_CarriesPresentationalIdentity(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	c := claims("Alice@Test.Local", "dev-alice")
 	c.DisplayName = "Alice Example"
@@ -228,7 +228,7 @@ func TestResolver_CarriesPresentationalIdentity(t *testing.T) {
 func TestResolver_Login_UnknownIdentity_ReturnsNoAccount(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	_, err := r.Resolve(ctx, claims("stranger@test.local", "dev-stranger"), auth.LoginIntent{})
 	require.ErrorIs(t, err, auth.ErrNoAccount)
@@ -244,7 +244,7 @@ func TestResolver_Login_UnknownIdentity_ReturnsNoAccount(t *testing.T) {
 func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	first, err := r.Resolve(ctx, claims("bob@test.local", "dev-bob"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestResolver_ExistingUser_Idempotent(t *testing.T) {
 func TestResolver_LastUsedIsInitializedCoalescedAndRefreshed(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 	loginClaims := claims("last-used@test.local", "dev-last-used")
 
 	identity, err := r.Resolve(ctx, loginClaims, auth.SignupIntent{})
@@ -294,7 +294,7 @@ func TestResolver_LastUsedIsInitializedCoalescedAndRefreshed(t *testing.T) {
 func TestResolver_ConcurrentExistingLogin_AllSucceed(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	first, err := r.Resolve(ctx, claims("concurrent@test.local", "dev-concurrent"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -339,7 +339,7 @@ func identityLastUsed(t *testing.T, userID uuid.UUID) time.Time {
 func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	identity, err := r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -356,7 +356,7 @@ func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
 func TestResolver_Signup_CreatesOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("carol@test.local", "dev-carol"), auth.SignupIntent{OrganizationName: "Carol's Corp"})
 	require.NoError(t, err)
@@ -380,7 +380,7 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 func TestResolver_Signup_NoOrgNameDoesNotCreateOrg(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("dave@test.local", "dev-dave"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestResolver_Signup_NoOrgNameDoesNotCreateOrg(t *testing.T) {
 func TestResolver_ExistingOrgIsLoaded(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// Provision user + org
 	first, err := r.Resolve(ctx, claims("erin@test.local", "dev-erin"), auth.SignupIntent{OrganizationName: "Erin Inc"})
@@ -406,7 +406,7 @@ func TestResolver_ExistingOrgIsLoaded(t *testing.T) {
 func TestResolver_Login_DefaultOrgWins_NotMostRecentMembership(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("multi@test.local", "dev-multi"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -426,7 +426,7 @@ func TestResolver_Login_DefaultOrgWins_NotMostRecentMembership(t *testing.T) {
 func TestResolver_Login_MultipleMembershipsNoDefault_Orgless(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("ambig@test.local", "dev-ambig"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -444,7 +444,7 @@ func TestResolver_Login_MultipleMembershipsNoDefault_Orgless(t *testing.T) {
 func TestResolver_Login_SSOProviderOrgWins_OverMoreRecentMembership(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("sso@test.local", "dev-sso"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -465,7 +465,7 @@ func TestResolver_Login_SSOProviderOrgWins_OverMoreRecentMembership(t *testing.T
 func TestResolver_Login_SSOProviderOrgNonMember_Rejected(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("outsider@test.local", "dev-outsider"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -513,7 +513,7 @@ func TestOrganizations_SSOOrganizationIDIsUnique(t *testing.T) {
 func TestResolver_Signup_SSOProviderOrgNonMember_Rejected(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// A provisioned tenant already carries the asserted WorkOS org id.
 	owner := seedUser(t)
@@ -538,7 +538,7 @@ func TestResolver_Signup_SSOProviderOrgNonMember_Rejected(t *testing.T) {
 func TestResolver_Login_SSOProviderOrgUnknown_FallsThroughToDefault(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("firstsso@test.local", "dev-firstsso"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -561,7 +561,7 @@ func TestResolver_Login_SSOProviderOrgUnknown_FallsThroughToDefault(t *testing.T
 func TestResolver_Login_SingleMembershipNoDefault_ResolvesToIt(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("solo@test.local", "dev-solo"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -577,7 +577,7 @@ func TestResolver_Login_SingleMembershipNoDefault_ResolvesToIt(t *testing.T) {
 func TestResolver_Login_ZeroMemberships_OrglessSuccess(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	signup, err := r.Resolve(ctx, claims("lonely@test.local", "dev-lonely"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -592,7 +592,7 @@ func TestResolver_Login_ZeroMemberships_OrglessSuccess(t *testing.T) {
 func TestResolver_Invite_ProvisionsUserAndMembershipAtomically(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	inviterID, orgID := seedInviteOrg(t)
 	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
@@ -622,7 +622,7 @@ func TestResolver_Invite_ProvisionsUserAndMembershipAtomically(t *testing.T) {
 func TestResolver_Invite_EmailMismatchRejectedAndProvisionsNothing(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	inviterID, orgID := seedInviteOrg(t)
 	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "member", "pending", time.Now().Add(24*time.Hour))
@@ -645,7 +645,7 @@ func TestResolver_Invite_EmailMismatchRejectedAndProvisionsNothing(t *testing.T)
 func TestResolver_Invite_UnverifiedEmailRejectedAndProvisionsNothing(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	inviterID, orgID := seedInviteOrg(t)
 	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
@@ -670,7 +670,7 @@ func TestResolver_Invite_UnverifiedEmailRejectedAndProvisionsNothing(t *testing.
 func TestResolver_Invite_VerifiedEmailIsAccepted(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	inviterID, orgID := seedInviteOrg(t)
 	token := seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
@@ -686,7 +686,7 @@ func TestResolver_Invite_VerifiedEmailIsAccepted(t *testing.T) {
 func TestResolver_EmailVerifiedPersistsAndSurvivesRelogin(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// An unverified signup persists the provider's actual assertion, not a
 	// hardcoded true.
@@ -711,7 +711,7 @@ func TestResolver_EmailVerifiedPersistsAndSurvivesRelogin(t *testing.T) {
 func TestResolver_VerifiedUserNotDowngradedByLaterUnverifiedLogin(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	verified, err := r.Resolve(ctx, claims("stable@test.local", "dev-stable"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -728,7 +728,7 @@ func TestResolver_VerifiedUserNotDowngradedByLaterUnverifiedLogin(t *testing.T) 
 func TestResolver_Invite_ExistingMemberRoleUpgraded(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	inviterID, orgID := seedInviteOrg(t)
 
@@ -761,7 +761,7 @@ func TestResolver_Invite_ExistingMemberRoleUpgraded(t *testing.T) {
 func TestResolver_Invite_IdempotentReacceptReportsCurrentRole(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	inviterID, orgID := seedInviteOrg(t)
 	token := seedInvitation(t, orgID, inviterID, "current@test.local", "member", "pending", time.Now().Add(24*time.Hour))
@@ -787,7 +787,7 @@ func TestResolver_Invite_IdempotentReacceptReportsCurrentRole(t *testing.T) {
 
 func TestResolver_Invite_NonPendingFailsClosed(t *testing.T) {
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	cases := []struct {
 		name      string
@@ -818,7 +818,7 @@ func TestResolver_Invite_NonPendingFailsClosed(t *testing.T) {
 func TestResolver_Invite_UnknownTokenFailsClosed(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	_, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.InviteIntent{Token: "not-a-real-token"})
 	require.ErrorIs(t, err, business.ErrInvitationUnavailable)
@@ -827,7 +827,7 @@ func TestResolver_Invite_UnknownTokenFailsClosed(t *testing.T) {
 func TestResolver_Invite_ExistingUserJoinsAndReacceptIsIdempotent(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// The invitee already has an account (e.g. member of another org).
 	existing, err := r.Resolve(ctx, claims("member@test.local", "dev-member"), auth.SignupIntent{})
@@ -858,7 +858,7 @@ func TestResolver_Bootstrap_FirstMatchGetsSuperAdmin(t *testing.T) {
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@test.local")
 
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 	id, err := r.Resolve(ctx, claims("boss@test.local", "dev-boss"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, "super_admin", id.PlatformRole)
@@ -881,7 +881,7 @@ func TestResolver_Bootstrap_SelfDisarms(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "first@test.local")
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// First call grants
 	id1, err := r.Resolve(ctx, claims("first@test.local", "dev-first"), auth.SignupIntent{})
@@ -908,7 +908,7 @@ func TestResolver_Bootstrap_UnverifiedEmailDenied(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "boss@test.local")
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// An unverified claim matching the bootstrap address must not be granted
 	// super_admin, and must leave the bootstrap slot unclaimed.
@@ -937,7 +937,7 @@ func TestResolver_Bootstrap_NoEnvNoGrant(t *testing.T) {
 	ctx := context.Background()
 
 	_ = os.Unsetenv(pgauth.BootstrapAdminEmailEnv)
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("anyone@test.local", "dev-anyone"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -949,7 +949,7 @@ func TestResolver_Bootstrap_CaseInsensitiveEmail(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv(pgauth.BootstrapAdminEmailEnv, "  Boss@Test.LOCAL  ")
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	id, err := r.Resolve(ctx, claims("BOSS@test.local", "dev-boss-caps"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -960,7 +960,7 @@ func TestResolver_Bootstrap_CaseInsensitiveEmail(t *testing.T) {
 func TestResolver_ConcurrentFirstSignup_OneUser(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	// Fire 10 concurrent first signups for the same identity — must converge
 	// on a single user row without deadlocking or duplicating rows.
@@ -995,7 +995,7 @@ func TestResolver_ConcurrentFirstSignup_OneUser(t *testing.T) {
 
 func TestResolver_InvalidClaims_Rejected(t *testing.T) {
 	ctx := context.Background()
-	r := pgauth.NewResolver(testStore)
+	r := newResolver(t)
 
 	_, err := r.Resolve(ctx, &auth.Claims{Provider: "dev"}, auth.LoginIntent{})
 	require.Error(t, err)
@@ -1007,8 +1007,9 @@ func TestResolver_InvalidClaims_Rejected(t *testing.T) {
 	require.Error(t, err)
 }
 
-func resolverWithSignupMode(mode auth.SignupMode) *pgauth.Resolver {
-	r := pgauth.NewResolver(testStore)
+func resolverWithSignupMode(t *testing.T, mode auth.SignupMode) *pgauth.Resolver {
+	t.Helper()
+	r := newResolver(t)
 	r.SetSignupMode(mode)
 	return r
 }
@@ -1043,7 +1044,7 @@ func execControlPlane(t *testing.T, query string, args ...any) {
 func TestResolver_SignupMode_Open_UnknownSignsUp(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := resolverWithSignupMode(auth.SignupModeOpen)
+	r := resolverWithSignupMode(t, auth.SignupModeOpen)
 
 	id, err := r.Resolve(ctx, claims("open-unknown@test.local", "dev-open-unknown"), auth.SignupIntent{})
 	require.NoError(t, err)
@@ -1057,7 +1058,7 @@ func TestResolver_SignupMode_Open_UnknownSignsUp(t *testing.T) {
 func TestResolver_SignupMode_Invite_StrangerRejectedAndProvisionsNothing(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
-	r := resolverWithSignupMode(auth.SignupModeInvite)
+	r := resolverWithSignupMode(t, auth.SignupModeInvite)
 
 	_, err := r.Resolve(ctx, claims("stranger@test.local", "dev-invite-stranger"), auth.SignupIntent{})
 	require.ErrorIs(t, err, auth.ErrSignupNotAllowed)
@@ -1075,7 +1076,7 @@ func TestResolver_SignupMode_Invite_InvitedSignsUpIntoOrg(t *testing.T) {
 	inviterID, orgID := seedInviteOrg(t)
 	seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
 
-	r := resolverWithSignupMode(auth.SignupModeInvite)
+	r := resolverWithSignupMode(t, auth.SignupModeInvite)
 	id, err := r.Resolve(ctx, claims("invitee@test.local", "dev-invitee"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.Equal(t, orgID, id.OrgID, "invited signup lands in the inviting org")
@@ -1098,11 +1099,11 @@ func TestResolver_SignupMode_Invite_ExistingUserCanLogin(t *testing.T) {
 	ctx := context.Background()
 
 	// Provision the user while signup is open, then flip to invite mode.
-	open := resolverWithSignupMode(auth.SignupModeOpen)
+	open := resolverWithSignupMode(t, auth.SignupModeOpen)
 	first, err := open.Resolve(ctx, claims("member@test.local", "dev-member"), auth.SignupIntent{})
 	require.NoError(t, err)
 
-	invite := resolverWithSignupMode(auth.SignupModeInvite)
+	invite := resolverWithSignupMode(t, auth.SignupModeInvite)
 	second, err := invite.Resolve(ctx, claims("member@test.local", "dev-member"), auth.LoginIntent{})
 	require.NoError(t, err, "login is never gated by signup mode")
 	require.Equal(t, first.UserID, second.UserID)
@@ -1113,7 +1114,7 @@ func TestResolver_SignupMode_Waitlist_PendingRejected(t *testing.T) {
 	ctx := context.Background()
 	seedWaitlistEntry(t, "pending@test.local", "pending")
 
-	r := resolverWithSignupMode(auth.SignupModeWaitlist)
+	r := resolverWithSignupMode(t, auth.SignupModeWaitlist)
 	_, err := r.Resolve(ctx, claims("pending@test.local", "dev-waitlist-pending"), auth.SignupIntent{})
 	require.ErrorIs(t, err, auth.ErrSignupNotAllowed)
 
@@ -1127,7 +1128,7 @@ func TestResolver_SignupMode_Waitlist_ApprovedAccepted(t *testing.T) {
 	ctx := context.Background()
 	seedWaitlistEntry(t, "approved@test.local", "approved")
 
-	r := resolverWithSignupMode(auth.SignupModeWaitlist)
+	r := resolverWithSignupMode(t, auth.SignupModeWaitlist)
 	id, err := r.Resolve(ctx, claims("approved@test.local", "dev-waitlist-approved"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, id.UserID)
@@ -1143,7 +1144,7 @@ func TestResolver_SignupMode_Invite_UnverifiedEmailRejectedAndProvisionsNothing(
 	inviterID, orgID := seedInviteOrg(t)
 	seedInvitation(t, orgID, inviterID, "invitee@test.local", "admin", "pending", time.Now().Add(24*time.Hour))
 
-	r := resolverWithSignupMode(auth.SignupModeInvite)
+	r := resolverWithSignupMode(t, auth.SignupModeInvite)
 	// The email matches a pending invitation, but the provider did not verify it.
 	// Authorising on an unverified email would let a stranger inherit the org, so
 	// the gate must reject it and leave every table untouched.
@@ -1166,7 +1167,7 @@ func TestResolver_SignupMode_Waitlist_UnverifiedEmailRejectedAndProvisionsNothin
 	ctx := context.Background()
 	seedWaitlistEntry(t, "approved@test.local", "approved")
 
-	r := resolverWithSignupMode(auth.SignupModeWaitlist)
+	r := resolverWithSignupMode(t, auth.SignupModeWaitlist)
 	// An approved waitlist entry matches by email, but an unverified claim has not
 	// proven it controls that address and must not clear the gate.
 	_, err := r.Resolve(ctx, claimsUnverified("approved@test.local", "dev-unverified-approved"), auth.SignupIntent{})
@@ -1195,7 +1196,7 @@ func TestResolver_SignupMode_Invite_NewerExpiredInvitationDoesNotShadowValidOne(
 	execControlPlane(t, `UPDATE invitations SET created_at = NOW() - INTERVAL '2 hours' WHERE org_id = $1`, orgValid)
 	execControlPlane(t, `UPDATE invitations SET created_at = NOW() - INTERVAL '1 hour' WHERE org_id = $1`, orgExpired)
 
-	r := resolverWithSignupMode(auth.SignupModeInvite)
+	r := resolverWithSignupMode(t, auth.SignupModeInvite)
 	id, err := r.Resolve(ctx, claims("invitee@test.local", "dev-shadowed-invitee"), auth.SignupIntent{})
 	require.NoError(t, err, "a valid invitation must not be shadowed by a newer expired one")
 	require.Equal(t, orgValid, id.OrgID, "signup lands in the org whose invitation is still valid")

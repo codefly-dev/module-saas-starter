@@ -20,6 +20,10 @@ type ImportOptions struct {
 	// Source is an optional provenance label (e.g. the catalog file path)
 	// recorded on every audit event this import emits.
 	Source string
+	// Audit records the import's events on its transaction: the audit_events
+	// row, or under a swap value (ADR 0009) the queue row. Required unless
+	// DryRun, so an import cannot change roles unrecorded.
+	Audit business.AuditRecorder
 }
 
 // ImportResult reports the outcome of an import.
@@ -44,6 +48,9 @@ type ImportResult struct {
 func (s *PostgresStore) ImportRoleCatalog(ctx context.Context, cat *rolecatalog.Catalog, opts ImportOptions) (*ImportResult, error) {
 	w := wool.Get(ctx).In("ImportRoleCatalog")
 	result := &ImportResult{}
+	if opts.Audit == nil && !opts.DryRun {
+		return nil, w.NewError("an audit recorder is required to apply a role catalog")
+	}
 
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		state, err := s.snapshotBuiltinRoles(ctx)
@@ -61,7 +68,7 @@ func (s *PostgresStore) ImportRoleCatalog(ctx context.Context, cat *rolecatalog.
 			result.RefusalReason = reason
 			return nil
 		}
-		if err := s.applyRoleCatalogPlan(ctx, plan, catalogProvenance(cat, opts.Source)); err != nil {
+		if err := s.applyRoleCatalogPlan(ctx, plan, opts.Audit, catalogProvenance(cat, opts.Source)); err != nil {
 			return err
 		}
 		result.Applied = true
@@ -215,7 +222,7 @@ func catalogProvenance(cat *rolecatalog.Catalog, source string) map[string]strin
 // applyRoleCatalogPlan writes the plan's changes and emits one system audit
 // event per changed role. Runs inside the control-plane transaction opened by
 // ImportRoleCatalog.
-func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecatalog.Plan, provenance map[string]string) error {
+func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecatalog.Plan, audit business.AuditRecorder, provenance map[string]string) error {
 	w := wool.Get(ctx).In("applyRoleCatalogPlan")
 	executor := s.getQueryExecutor(ctx)
 
@@ -233,7 +240,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 				return w.Wrapf(err, "failed to seed permission for role %q", create.Role.Name)
 			}
 		}
-		if err := s.emitCatalogAudit(ctx, business.EventRoleCreated, roleID, map[string]string{
+		if err := emitCatalogAudit(ctx, audit, business.EventRoleCreated, roleID, map[string]string{
 			"name":              create.Role.Name,
 			"permissions_added": strconv.Itoa(len(create.Role.Permissions)),
 		}, provenance); err != nil {
@@ -264,7 +271,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 				return w.Wrapf(err, "failed to add permission to role %q", update.Name)
 			}
 		}
-		if err := s.emitCatalogAudit(ctx, business.EventRoleUpdated, update.RoleID, map[string]string{
+		if err := emitCatalogAudit(ctx, audit, business.EventRoleUpdated, update.RoleID, map[string]string{
 			"name":                update.Name,
 			"permissions_added":   strconv.Itoa(len(update.AddPermissions)),
 			"permissions_removed": strconv.Itoa(len(update.RemovePermissions)),
@@ -278,7 +285,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 		if _, err := executor.Exec(ctx, `DELETE FROM roles WHERE id = $1`, remove.RoleID); err != nil {
 			return w.Wrapf(err, "failed to remove role %q", remove.Name)
 		}
-		if err := s.emitCatalogAudit(ctx, business.EventRoleDeleted, remove.RoleID, map[string]string{
+		if err := emitCatalogAudit(ctx, audit, business.EventRoleDeleted, remove.RoleID, map[string]string{
 			"name":                remove.Name,
 			"assignments_removed": strconv.Itoa(remove.AssignmentCount),
 		}, provenance); err != nil {
@@ -296,11 +303,11 @@ func insertRolePermission(ctx context.Context, executor QueryExecutor, roleID st
 	return err
 }
 
-// emitCatalogAudit writes one system-actor audit event with a NULL org — the
-// catalog reconciles global built-in roles, which belong to no tenant. The
-// enclosing control-plane transaction lets the polymorphic audit_events policy
-// accept the NULL org_id.
-func (s *PostgresStore) emitCatalogAudit(ctx context.Context, event business.EventType, roleID string, metadata, provenance map[string]string) error {
+// emitCatalogAudit records one system-actor audit event with a NULL org — the
+// catalog reconciles global built-in roles, which belong to no tenant — through
+// the recorder, on the enclosing control-plane transaction, whose role the
+// polymorphic audit_events policy (and the queue's) admits a NULL org_id for.
+func emitCatalogAudit(ctx context.Context, audit business.AuditRecorder, event business.EventType, roleID string, metadata, provenance map[string]string) error {
 	w := wool.Get(ctx).In("emitCatalogAudit")
 	for k, v := range provenance {
 		metadata[k] = v
@@ -309,7 +316,7 @@ func (s *PostgresStore) emitCatalogAudit(ctx context.Context, event business.Eve
 	for k, v := range metadata {
 		payload[k] = v
 	}
-	if err := s.InsertAuditEvent(ctx, business.AuditEntry{
+	if err := audit.RecordTx(ctx, business.AuditEntry{
 		ActorType:  "system",
 		EventType:  event,
 		Resource:   "role",

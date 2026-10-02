@@ -249,6 +249,11 @@ func (d DeclaredAuditEventType) PayloadSchemaJSON() []byte {
 // Definition projects a declared type onto the definition shape the catalog
 // listing uses. It is observational: a module emission is its own operation,
 // written on the emitter's own transaction.
+//
+// Its retention class is content. A declaration does not yet carry a class of
+// its own — the manifest, the module declaration RPC and the audit_event_types
+// row would each have to grow one — so every declared type is held to the
+// shorter details window, exactly as Durability is fixed above.
 func (d DeclaredAuditEventType) Definition() AuditEventDefinition {
 	return AuditEventDefinition{
 		Type:        d.Type,
@@ -258,6 +263,7 @@ func (d DeclaredAuditEventType) Definition() AuditEventDefinition {
 		Owner:       SolutionAuditOwner(d.SolutionID),
 		Description: d.Description,
 		Durability:  DurabilityObservational,
+		Retention:   RetentionContent,
 		Visibility:  d.Visibility,
 		// The whole payload the type carries, the host-stamped solution
 		// included, so a declared type validates and redacts exactly as the

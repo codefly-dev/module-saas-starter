@@ -535,13 +535,19 @@ func doWork(ctx context.Context) (Clean, error) {
 	// AUDIT_SINK=both additionally tees each org-scoped audit row to an external
 	// warehouse, fed asynchronously from the durable outbox — Postgres stays the
 	// atomic source of truth (an external destination cannot join its tx).
-	auditSinkMode, externalAuditSink, err := configuredAuditSink()
+	// AUDIT_SINK=bigquery swaps the store of record (ADR 0009): the record is a
+	// queue row on that same transaction, and the audit relay delivers it to
+	// BigQuery and the archive afterwards.
+	auditSink, err := configuredAuditSink()
 	if err != nil {
 		return nil, err
 	}
 	var auditEmitterOpts []business.DurableAuditEmitterOption
-	if auditSinkMode == auditSinkBoth {
+	switch {
+	case auditSink.mode == business.AuditSinkBoth:
 		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
+	case auditSink.mode.Swaps():
+		auditEmitterOpts = append(auditEmitterOpts, business.WithQueuedRecords())
 	}
 	// Every org-scoped audit record publishes its external domain event in the
 	// same transaction; that event is what the relay fans out to the endpoints
@@ -552,6 +558,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	service.SetAuditEmitter(auditEmitter)
+	// The resolver records registrations and SSO provisioning on its own
+	// transaction, through the same emitter, so they reach whichever store of
+	// record the sink selects.
+	resolver.SetAuditRecorder(auditEmitter)
 	// Refuse to serve behind an emitter that cannot write on the caller's
 	// transaction: every security mutation commits its audit row and webhook
 	// fan-out inside its own transaction, and an emitter without EmitTx would let
@@ -560,15 +570,26 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
+	var auditRelay *business.AuditRelay
+	closeAuditRelay := func() {}
+	if auditSink.bigQuery != nil {
+		w.Warn("AUDIT_SINK=bigquery: audit events are queued in Postgres and relayed to BigQuery and the archive; " +
+			"the activity list, aggregates, exports and readable-source queries still read audit_events, which receives no new rows, until reads move to the store (ADR 0009)")
+		auditRelay, closeAuditRelay, err = newBigQueryAuditRelay(ctx, store, auditSink.bigQuery)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var auditExportWorker *jobs.Worker
-	if auditSinkMode == auditSinkBoth {
+	if auditSink.mode == business.AuditSinkBoth {
 		// The tee carries org-scoped events only. Control-plane / platform-admin
 		// audit events (NULL org) are Postgres-only: the job platform reserves
 		// global-scope enqueue for the privileged worker pool, which opens its own
 		// transaction and so cannot commit atomically with the audit row. Surface
 		// this so operators don't assume the warehouse holds platform events.
 		w.Warn("AUDIT_SINK=both tees only org-scoped audit events to the external sink; control-plane/platform-admin (NULL-org) events remain Postgres-only")
-		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink, store)
+		auditExportHandler, err := business.NewAuditExportJobHandler(auditSink.external, store)
 		if err != nil {
 			return nil, err
 		}
@@ -1120,6 +1141,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if auditExportWorker != nil {
 		auditExportWorker.Start(ctx)
 	}
+	if auditRelay != nil {
+		auditRelay.Start(ctx)
+	}
 	if emailWorker != nil {
 		emailWorker.Start(ctx)
 	}
@@ -1157,6 +1181,15 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 			cancel()
 		}
+		if auditRelay != nil {
+			sw.Info("stopping audit relay")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := auditRelay.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("audit relay shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		closeAuditRelay()
 		if jobOperationsMonitor != nil {
 			sw.Info("stopping durable job metrics monitor")
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1281,48 +1314,6 @@ func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 	default:
 		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
 	}
-}
-
-type auditSinkMode int
-
-const (
-	auditSinkPostgres auditSinkMode = iota
-	auditSinkBoth
-)
-
-// configuredAuditSink selects the audit backend. "postgres" (default) keeps the
-// durable emitter alone. "both" adds an asynchronous tee to an external
-// warehouse while Postgres stays the atomic source of truth. "external" is
-// rejected: an external destination cannot join the audit transaction, so it
-// cannot replace the durable emitter without forfeiting audit/webhook
-// atomicity — a deliberate posture we refuse to let a config value break.
-func configuredAuditSink() (auditSinkMode, business.ExternalAuditSink, error) {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("AUDIT_SINK"))) {
-	case "", "postgres":
-		return auditSinkPostgres, nil, nil
-	case "both":
-		sink, err := configuredExternalAuditSink()
-		if err != nil {
-			return auditSinkPostgres, nil, err
-		}
-		return auditSinkBoth, sink, nil
-	case "external":
-		return auditSinkPostgres, nil, fmt.Errorf(
-			"AUDIT_SINK=external is not permitted: Postgres is the atomic source of truth and an external destination cannot join its transaction; use AUDIT_SINK=both to tee to the external sink")
-	default:
-		return auditSinkPostgres, nil, fmt.Errorf("AUDIT_SINK must be postgres or both")
-	}
-}
-
-func configuredExternalAuditSink() (business.ExternalAuditSink, error) {
-	endpoint := strings.TrimSpace(os.Getenv("AUDIT_EXTERNAL_URL"))
-	if endpoint == "" {
-		return nil, fmt.Errorf("AUDIT_SINK=both requires AUDIT_EXTERNAL_URL for the external audit destination")
-	}
-	return business.NewHTTPAuditSink(business.HTTPAuditSinkConfig{
-		Endpoint: endpoint,
-		Token:    strings.TrimSpace(os.Getenv("AUDIT_EXTERNAL_TOKEN")),
-	})
 }
 
 // anonymousEndpointsUnprotected reports whether the four anonymous endpoints

@@ -530,6 +530,10 @@ type Store interface {
 
 	// Audit
 	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
+	// EnqueueAuditEvent writes the event into the transactional audit queue on
+	// the ambient transaction — the record under a swap value (ADR 0009), which
+	// AuditRelay delivers to the store of record. Only the emitter calls it.
+	EnqueueAuditEvent(ctx context.Context, entry AuditEntry) error
 	// ReserveAuditIdempotency records a (org_id, event_type, idempotency_key)
 	// guard row so a retried emit collapses to one event. It returns true when the
 	// row was newly inserted (write the event) and false when it already existed (a

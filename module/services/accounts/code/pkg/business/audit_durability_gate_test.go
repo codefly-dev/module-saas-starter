@@ -296,8 +296,9 @@ func auditEventConstants(files []*ast.File) map[string]EventType {
 // TestAuditDurability_NoBypassOfTheClassifiedEmitPath closes the hole the
 // durability rules would otherwise have: a caller can write an audit row without
 // any emit site by reaching for the store directly, and every classification the
-// gate above enforces would be silently irrelevant to it. InsertAuditEvent is the
-// emitter's own call; nothing else in this package may make it.
+// gate above enforces would be silently irrelevant to it. InsertAuditEvent and
+// EnqueueAuditEvent — the record under the default and under a swap value — are
+// the emitter's own calls; nothing else in this package may make them.
 func TestAuditDurability_NoBypassOfTheClassifiedEmitPath(t *testing.T) {
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")
@@ -317,7 +318,7 @@ func TestAuditDurability_NoBypassOfTheClassifiedEmitPath(t *testing.T) {
 				return true
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "InsertAuditEvent" {
+			if !ok || (sel.Sel.Name != "InsertAuditEvent" && sel.Sel.Name != "EnqueueAuditEvent") {
 				return true
 			}
 			if name == "audit.go" {
@@ -331,5 +332,5 @@ func TestAuditDurability_NoBypassOfTheClassifiedEmitPath(t *testing.T) {
 	sort.Strings(callers)
 	require.Empty(t, callers,
 		"audit rows must be written through Service.emit / emitTx so their durability is classified and enforced; "+
-			"direct InsertAuditEvent calls bypass that entirely:\n%s", strings.Join(callers, "\n"))
+			"direct InsertAuditEvent or EnqueueAuditEvent calls bypass that entirely:\n%s", strings.Join(callers, "\n"))
 }
