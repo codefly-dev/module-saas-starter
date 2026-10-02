@@ -83,7 +83,9 @@ export function LastLogin({ at, subject, label = "Last login", now = systemNow, 
 	// The clock is read through a ref, so a caller handing a new function on
 	// every render does not restart the schedule below.
 	const clock = useRef(now);
-	clock.current = now;
+	useEffect(() => {
+		clock.current = now;
+	}, [now]);
 	// null until mounted: the first render is the hydration render.
 	const [current, setCurrent] = useState<Date | null>(null);
 	useEffect(() => {
