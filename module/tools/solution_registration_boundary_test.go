@@ -174,6 +174,20 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// rediscovered as a gap.
 		"The public Module-Federation surface is not gated, and cannot be.",
 		"does **not** remove the solution's page for that organization",
+		// §7b. The host's own control paths, published because three
+		// repositories independently invented `/platform/_credential` from a
+		// design note and nothing failed at build time. The paths are pinned
+		// here so a consumer reading this document is reading a contract: a
+		// rename that does not move these lines is a rename that breaks every
+		// consumer silently.
+		"`POST /platform/_credential`",
+		"`POST /platform/_delivery/presence`",
+		"`POST /platform/_delivery/authority`",
+		// The rule that makes hardcoding the path correct and hardcoding the
+		// origin wrong. Without it the table reads as an invitation to pin
+		// everything.
+		"a path is a contract, an origin is a resolution result",
+		"`/platform/` is **reserved for the host**",
 	} {
 		if !strings.Contains(document, strings.Join(strings.Fields(claim), " ")) {
 			t.Errorf("SOLUTION_REGISTRATION.md no longer states %q", claim)
