@@ -179,9 +179,32 @@ once the capability exists. The response carries
   credentials never substitute for missing identity digests.
 - The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking.
-- The capability **seals identity and tenant only**: what the principal may do is
-  re-read from the declared grant on every call, so narrowing a grant takes
-  effect immediately rather than when the outstanding token expires.
+- The capability's effective authority is **`min(sealed, live)`** — blocker
+  decision **B1**, which *reverses* what this file said before. It used to seal
+  identity and tenant only and re-read what the principal may do from the declared
+  grant on every call. That is sound for narrowing and silent about widening: a
+  grant that widens, or a database restored to a broader state, retroactively
+  widens a credential already in flight.
+
+  So both halves now bind, and neither alone is enough. The credential **seals** a
+  ceiling — principal id and epoch, the one installation id and revision it is for,
+  the build incarnation, and for an operation context the binding id and revision —
+  and every capability decision **re-reads** the live envelope, authority document
+  and installation before acting. The effective authority is the intersection.
+
+  Read the two directions separately, because that is why it has to be both:
+  **narrowing still takes effect immediately**, through the live re-read, exactly as
+  it did before — uninstalling or narrowing bumps `installation.revision` and that
+  org's outstanding credentials fail at their next check. **Widening never reaches a
+  credential already issued**, through the sealed ceiling: a widened grant changes
+  the *replacement* credential, not the one in flight. Sealing alone would be weaker
+  than what this file described; re-reading alone is what it described; the
+  intersection is strictly stronger than either.
+
+  The intersection covers queues, resources, namespaces, external publication and
+  audiences — not only operation scopes — and verification is by **exact binding
+  lookup**, never by searching a principal's bindings for one that happens to
+  contain the presented scopes.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,
