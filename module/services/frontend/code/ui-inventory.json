@@ -1184,6 +1184,32 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/audit/last-login.tsx",
+      "imports": [
+        "react",
+        "../datasources/util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "When someone last signed in, said as a person reads it ('12 seconds ago') and kept true as time passes, so a solution showing a sign-in time does not write its own 'x ago'.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/audit.stories.tsx",
+          "export": "LastLoginSecondsAgo"
+        },
+        {
+          "file": "packages/saas-ui/stories/audit.stories.tsx",
+          "export": "LastLoginYesterday"
+        },
+        {
+          "file": "packages/saas-ui/stories/audit.stories.tsx",
+          "export": "LastLoginNeverRecorded"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Verify explorer rendering and the metric type slots under external skins."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/collection-access.tsx",
       "imports": [
         "@tanstack/react-query",
