@@ -279,7 +279,7 @@ func (r ModulePrincipalRegistry) SourceDelegationTargets() []SourceDelegationTar
 // role a later mint could re-check. The source then reads as having no
 // delegation until an administrator of the organization reconnects it.
 func (s *Service) recordSourceDelegationsTx(ctx context.Context, actorID, orgID, sourceID string) error {
-	targets := s.modulePrincipals.SourceDelegationTargets()
+	targets := s.declaredModules().SourceDelegationTargets()
 	if len(targets) == 0 {
 		return nil
 	}
@@ -484,7 +484,7 @@ func (s *Service) AuthorizeSourceOperationContext(ctx context.Context, prefix, s
 	if err != nil {
 		return SourceOperationContextAuthority{}, err
 	}
-	grant, registered := s.modulePrincipals[identity.PrincipalID]
+	grant, registered := s.declaredModules()[identity.PrincipalID]
 	if !registered {
 		return SourceOperationContextAuthority{}, ErrModuleRegistrationDenied
 	}
@@ -546,7 +546,7 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		}
 		// The delegating module is the one the person granted to, which is not
 		// the caller: the caller is the module that grant authorizes calling.
-		delegating, declared := s.modulePrincipals[ModulePrincipalID(delegation.ModulePrefix)]
+		delegating, declared := s.declaredModules()[ModulePrincipalID(delegation.ModulePrefix)]
 		if !declared {
 			return ErrSourceDelegationInvalid
 		}
@@ -795,11 +795,11 @@ func (s *Service) confirmSourceDelegationTx(
 // and some actor is; the module grant returned is that actor's. Every other
 // context is not one (ok false) and takes the checks it always took.
 func (s *Service) sourceDelegationShape(ownerPrincipalID string, actorPrincipalIDs []string) (ModulePrincipalGrant, bool) {
-	if _, ownerIsModule := s.modulePrincipals[ownerPrincipalID]; ownerIsModule {
+	if _, ownerIsModule := s.declaredModules()[ownerPrincipalID]; ownerIsModule {
 		return ModulePrincipalGrant{}, false
 	}
 	for _, actor := range actorPrincipalIDs {
-		if grant, isModule := s.modulePrincipals[actor]; isModule {
+		if grant, isModule := s.declaredModules()[actor]; isModule {
 			return grant, true
 		}
 	}
