@@ -200,6 +200,12 @@ func (s *Service) applySolutionHostBinding(
 		}
 
 		previous := record.Applied
+		// The identity an organisation installs moves with this transaction, so a
+		// reused alias cannot carry an installation across to another binding
+		// (solution_targets.go).
+		if err := s.reconcileSolutionTarget(ctx, document, solutionID, now); err != nil {
+			return err
+		}
 		if document.Removed {
 			if err := s.withdrawDeclaredSolutionRegistration(ctx, record, document, now); err != nil {
 				return err
@@ -398,4 +404,56 @@ func solutionHostBindingResource(record *SolutionHostBindingRecord) string {
 		return record.Applied.SolutionID
 	}
 	return record.BindingID
+}
+
+// reconcileSolutionTarget keeps the installable identity in step with the
+// generation being applied, in the same transaction.
+//
+// A present generation for a binding with no live target OPENS one: this is the
+// start of a period an organisation may consent to. A present generation for a
+// binding that already has one keeps that identity and only moves its alias — the
+// identity surviving a rename is the point, because an installation named it. A
+// tombstone CLOSES it, and the row survives: a closed target is the evidence that
+// consent ended, and deleting it would make a reused alias indistinguishable from
+// a continuous presence.
+//
+// A tombstone for a binding with no live target is a no-op, like the registry
+// withdrawal beside it: there is no period to end.
+func (s *Service) reconcileSolutionTarget(
+	ctx context.Context, document *solutionhost.SolutionHostBinding, solutionID string, now time.Time,
+) error {
+	live, err := s.store.GetLiveSolutionTargetForUpdate(ctx, document.Binding)
+	if err != nil {
+		return err
+	}
+	if document.Removed {
+		if live == nil {
+			return nil
+		}
+		return s.store.CloseSolutionTarget(ctx, live.ID, document.Generation, now)
+	}
+	if live == nil {
+		_, err := s.store.OpenSolutionTarget(ctx, document.Binding, solutionID, document.Generation, now)
+		return err
+	}
+	if live.SolutionID == solutionID {
+		return nil
+	}
+	return s.store.RetargetSolutionTarget(ctx, live.ID, solutionID, now)
+}
+
+// ListSolutionTargets returns every installable identity, open and closed. An
+// operator reads it to tell a solution that is still the one an organisation
+// installed from one that merely reuses its route.
+func (s *Service) ListSolutionTargets(ctx context.Context) ([]*SolutionTarget, error) {
+	var targets []*SolutionTarget
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		targets, err = s.store.ListSolutionTargets(ctx)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list solution targets: %w", err)
+	}
+	return targets, nil
 }

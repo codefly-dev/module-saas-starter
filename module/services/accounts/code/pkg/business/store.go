@@ -670,6 +670,24 @@ type Store interface {
 	//     generation instead of applying it twice.
 	//   - SaveSolutionHostBinding writes the whole record.
 	//   - ListSolutionHostBindings returns every record, ordered by binding ID.
+	// The identity an organisation installs (solution_targets.go). A target is
+	// one continuous period of one binding's presence, minted on the first
+	// present generation and closed by the tombstone that withdraws it, so a
+	// reused route alias can never carry an installation across to a different
+	// binding.
+	//
+	//   - GetLiveSolutionTargetForUpdate returns nil when the binding has no OPEN
+	//     target, which covers both "never present" and "withdrawn".
+	//   - OpenSolutionTarget mints one; the partial unique indexes make two
+	//     replicas racing one pass a unique violation rather than two identities.
+	//   - RetargetSolutionTarget moves the alias and never the identity.
+	//   - CloseSolutionTarget ends the period; the row is never deleted.
+	GetLiveSolutionTargetForUpdate(ctx context.Context, bindingID string) (*SolutionTarget, error)
+	OpenSolutionTarget(ctx context.Context, bindingID, solutionID string, generation uint64, now time.Time) (*SolutionTarget, error)
+	RetargetSolutionTarget(ctx context.Context, targetID, solutionID string, now time.Time) error
+	CloseSolutionTarget(ctx context.Context, targetID string, generation uint64, now time.Time) error
+	ListSolutionTargets(ctx context.Context) ([]*SolutionTarget, error)
+
 	GetSolutionHostBindingForUpdate(ctx context.Context, bindingID string) (*SolutionHostBindingRecord, error)
 	SaveSolutionHostBinding(ctx context.Context, record *SolutionHostBindingRecord) error
 	ListSolutionHostBindings(ctx context.Context) ([]*SolutionHostBindingRecord, error)

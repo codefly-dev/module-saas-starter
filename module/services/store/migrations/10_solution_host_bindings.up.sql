@@ -167,7 +167,14 @@ ALTER TABLE public.solution_registrations
         CHECK ((declared_binding_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,126}[A-Za-z0-9]$'::text));
 
 -- A registration is declared by at most one binding, and a binding declares at
--- most one registration.
+-- most one LIVE registration.
+--
+-- Partial on the tombstone, not just on NULL. A binding whose generation renames
+-- its route withdraws the record it held and declares the one it moved to, in a
+-- single transaction, and the withdrawal deliberately KEEPS its declaration — that
+-- is what makes the removal hold against a late heartbeat. So that binding names
+-- two rows for an instant and forever after: one live, and one tombstoned for
+-- every alias it has ever released. Only the live one may be unique.
 CREATE UNIQUE INDEX solution_registrations_declared_binding
     ON public.solution_registrations USING btree (declared_binding_id)
-    WHERE (declared_binding_id IS NOT NULL);
+    WHERE ((declared_binding_id IS NOT NULL) AND (tombstoned_at IS NULL));

@@ -50,6 +50,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"event_subscriptions":           {}, // platform relation; request traffic has no direct access
 	"solution_registrations":        {}, // platform relation; request traffic has no direct access
 	"solution_host_bindings":        {}, // platform relation; only the reconcile pass writes it
+	"solution_targets":              {}, // platform relation; the identity an installation names
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"job_attempts":                  {},
 	"job_messages":                  {},
@@ -370,6 +371,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// a monotonic cursor revision. The control plane reads, inserts,
 			// and updates both; organization deletion uses the FK cascade.
 			if relation == "approval_requests" || relation == "source_read_revisions" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// solution_targets is never row-deleted either: a CLOSED target is the
+			// evidence that an installation's consent ended, and deleting it
+			// would make a reused alias indistinguishable from a continuous one.
+			if relation == "solution_targets" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// solution_host_bindings is never row-deleted: removal of a declared
