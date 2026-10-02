@@ -256,6 +256,8 @@ func TestMalformedForwardedActingAsIsRefused(t *testing.T) {
 
 	connectHeaders := http.Header{
 		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+		"X-Credential-Kind":       []string{credentialKindSession},
+		"X-Scopes":                []string{""},
 		"X-User-Id":               []string{supportActorID},
 		"X-Acting-As-User-Id":     []string{"not-a-uuid"},
 	}
@@ -265,6 +267,8 @@ func TestMalformedForwardedActingAsIsRefused(t *testing.T) {
 
 	grpcMD := metadata.Pairs(
 		"x-codefly-gateway-token", "test-gateway-token",
+		"x-credential-kind", credentialKindSession,
+		"x-scopes", "",
 		"x-user-id", supportActorID,
 		"x-acting-as-user-id", "not-a-uuid",
 	)
@@ -299,6 +303,8 @@ func TestImpersonationProjectionIsIdenticalAcrossTransports(t *testing.T) {
 	forwardedConnectCtx, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.UserService/GetSelf", http.Header{
 			"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+			"X-Credential-Kind":       []string{credentialKindSession},
+			"X-Scopes":                []string{""},
 			"X-User-Id":               []string{supportActorID},
 			"X-Acting-As-User-Id":     []string{targetMemberID},
 			"X-Org-Id":                []string{targetOrgID},
@@ -309,6 +315,8 @@ func TestImpersonationProjectionIsIdenticalAcrossTransports(t *testing.T) {
 	forwardedGRPCCtx, err := (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"x-codefly-gateway-token", "test-gateway-token",
+			"x-credential-kind", credentialKindSession,
+			"x-scopes", "",
 			"x-user-id", supportActorID,
 			"x-acting-as-user-id", targetMemberID,
 			"x-org-id", targetOrgID,
@@ -404,6 +412,8 @@ func TestForwardedActingAsWithoutUsableActorIsRefused(t *testing.T) {
 
 	connectHeaders := http.Header{
 		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+		"X-Credential-Kind":       []string{credentialKindSession},
+		"X-Scopes":                []string{""},
 		"X-User-Id":               []string{"not-a-uuid"},
 		"X-Acting-As-User-Id":     []string{targetMemberID},
 	}
@@ -413,6 +423,8 @@ func TestForwardedActingAsWithoutUsableActorIsRefused(t *testing.T) {
 
 	grpcMD := metadata.Pairs(
 		"x-codefly-gateway-token", "test-gateway-token",
+		"x-credential-kind", credentialKindSession,
+		"x-scopes", "",
 		"x-user-id", "not-a-uuid",
 		"x-acting-as-user-id", targetMemberID,
 	)

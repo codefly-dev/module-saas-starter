@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	pgauth "accounts/pkg/auth/pg"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // These tests exercise the BOOTSTRAP_ADMIN_EMAIL flow through the
@@ -27,7 +27,7 @@ func wipeBootstrapState(t *testing.T) {
 	// Both relations are platform state that only the control plane writes;
 	// the tenant role reads them and nothing more.
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `UPDATE public.bootstrap_state SET bootstrapped_at = NULL WHERE id = 1`); err != nil {
 			return err
 		}
@@ -61,7 +61,7 @@ func TestBootstrap_FirstMatchingLoginGrantsSuperAdmin(t *testing.T) {
 	// subquery is RLS-protected, so read under WithControlPlane.
 	var role string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT platform_role::text FROM platform_admins
 			WHERE user_id = (SELECT user_uuid FROM user_identities WHERE provider = 'google' AND provider_id = 'google-boss')`,

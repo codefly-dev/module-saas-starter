@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -73,6 +74,9 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
 			return nil, err
 		}
+		if err := enforceAPIKeyScopePolicy(ctx, info.FullMethod); err != nil {
+			return nil, err
+		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
 			return nil, err
 		}
@@ -89,6 +93,9 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 			return err
 		}
 		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
+			return err
+		}
+		if err := enforceAPIKeyScopePolicy(ctx, info.FullMethod); err != nil {
 			return err
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
@@ -238,6 +245,42 @@ func enforceImpersonationPolicy(ctx context.Context, fullMethod string) error {
 	return nil
 }
 
+// enforceAPIKeyScopePolicy holds an API key to the scopes the RPC declares.
+// The declaration is the method policy's `scopes` list — the API-key ceilings
+// the method accepts (METHOD_POLICY.md) — and a key is admitted when one of its
+// scopes covers one of them. The rules, all fail-closed:
+//
+//   - an RPC that declares no scope has not been opened to API keys and
+//     refuses every key, whatever it carries;
+//   - a key with no scopes has no authority anywhere;
+//   - an RPC whose policy will not resolve refuses the key.
+//
+// A session is untouched: its authority is RBAC, which the handlers and the
+// central tenant floor enforce. Like the impersonation gate this is never
+// shadowed and runs before any handler, so a handler that forgets requireScope
+// no longer hands a key its owner's whole authority. Whether the caller is a
+// key is the credential kind the perimeter reported, which forwarded admission
+// requires on every trusted assertion.
+func enforceAPIKeyScopePolicy(ctx context.Context, fullMethod string) error {
+	if credentialKindFromContext(ctx) != credentialKindAPIKey {
+		return nil
+	}
+	policy, ok := business.LookupRPCPolicy(fullMethod)
+	if !ok {
+		return status.Error(codes.PermissionDenied, "RPC is not classified by the authorization policy")
+	}
+	if len(policy.Scopes) == 0 {
+		return status.Error(codes.PermissionDenied, "this operation does not accept API keys")
+	}
+	granted := scopesFromContext(ctx)
+	for _, required := range policy.Scopes {
+		if grantsScope(granted, required) {
+			return nil
+		}
+	}
+	return status.Errorf(codes.PermissionDenied, "missing_scope: %s", strings.Join(policy.Scopes, " or "))
+}
+
 type contextServerStream struct {
 	grpc.ServerStream
 	ctx context.Context
@@ -247,7 +290,10 @@ func (stream *contextServerStream) Context() context.Context { return stream.ctx
 
 func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string) (context.Context, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	trustedForwarded := validGatewayToken(firstMetadataValue(md, "x-codefly-gateway-token"))
+	trustedForwarded := singleValidGatewayToken(md.Get("x-codefly-gateway-token"))
+	if trustedForwarded && forwardedIdentityAmbiguous(md.Get) {
+		return ctx, status.Error(codes.PermissionDenied, "forwarded identity is ambiguous")
+	}
 	forwardedPublicOrigin := firstMetadataValue(md, "x-codefly-public-origin")
 	if !trustedForwarded {
 		ctx = stripForwardedIdentity(ctx)
@@ -345,6 +391,9 @@ func firstMetadataValue(md metadata.MD, key string) string {
 }
 
 func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Context, error) {
+	if forwardedCredentialIncomplete(md.Get) {
+		return ctx, errForwardedCredentialIncomplete
+	}
 	identity, err := auth.ParseRequestIdentity(
 		firstMetadataValue(md, "x-user-id"),
 		firstMetadataValue(md, "x-acting-as-user-id"),
@@ -430,11 +479,25 @@ func validInternalToken(candidate string) bool {
 	return false
 }
 
+// validGatewayToken reports whether candidate is the current or, during a
+// rotation, the previous gateway credential, as of now.
 func validGatewayToken(candidate string) bool {
-	if gatewayToken == "" || candidate == "" || len(candidate) != len(gatewayToken) {
+	return validGatewayTokenAt(candidate, time.Now())
+}
+
+// validGatewayTokenAt is validGatewayToken at the instant now. Both comparisons
+// always run, each in constant time over the token's content; an unset slot
+// never matches. The previous credential matches only while now is before its
+// expiry; that test does not read the candidate, so it adds no timing signal
+// about the token's content.
+func validGatewayTokenAt(candidate string, now time.Time) bool {
+	if candidate == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(gatewayToken)) == 1
+	current := constantTimeTokenMatch(candidate, gatewayToken)
+	previous := constantTimeTokenMatch(candidate, previousGatewayToken)
+	previousOpen := now.Before(previousGatewayTokenExpiresAt)
+	return current || (previous && previousOpen)
 }
 
 // constantTimeTokenMatch reports whether candidate equals expected without a

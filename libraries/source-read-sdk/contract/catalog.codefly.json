@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:aa0bd045d989b28d0f771fd38fba5e9cf26b130fcacfe52d9222fb10aacdc94c",
+      "digest": "sha256:b8ef1ba87e5d9b96c067194fa0fb07892c2ba937c623e54a8c5290cc6609cab8",
       "services": [
         {
           "name": "ModuleCapabilitiesService",

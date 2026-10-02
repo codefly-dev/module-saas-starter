@@ -50,6 +50,15 @@ const (
 	// OrganizationServiceRemoveMemberProcedure is the fully-qualified name of the OrganizationService's
 	// RemoveMember RPC.
 	OrganizationServiceRemoveMemberProcedure = "/saas.accounts.v1.OrganizationService/RemoveMember"
+	// OrganizationServiceUpdateOrganizationProcedure is the fully-qualified name of the
+	// OrganizationService's UpdateOrganization RPC.
+	OrganizationServiceUpdateOrganizationProcedure = "/saas.accounts.v1.OrganizationService/UpdateOrganization"
+	// OrganizationServiceLeaveOrganizationProcedure is the fully-qualified name of the
+	// OrganizationService's LeaveOrganization RPC.
+	OrganizationServiceLeaveOrganizationProcedure = "/saas.accounts.v1.OrganizationService/LeaveOrganization"
+	// OrganizationServiceDeleteOrganizationProcedure is the fully-qualified name of the
+	// OrganizationService's DeleteOrganization RPC.
+	OrganizationServiceDeleteOrganizationProcedure = "/saas.accounts.v1.OrganizationService/DeleteOrganization"
 	// OrganizationServiceListMembersProcedure is the fully-qualified name of the OrganizationService's
 	// ListMembers RPC.
 	OrganizationServiceListMembersProcedure = "/saas.accounts.v1.OrganizationService/ListMembers"
@@ -74,6 +83,17 @@ type OrganizationServiceClient interface {
 	ListOrganizations(context.Context, *connect.Request[v1.ListOrganizationsRequest]) (*connect.Response[v1.ListOrganizationsResponse], error)
 	AddMember(context.Context, *connect.Request[v1.AddOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	RemoveMember(context.Context, *connect.Request[v1.RemoveOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
+	// UpdateOrganization renames an organization or changes its slug.
+	UpdateOrganization(context.Context, *connect.Request[v1.UpdateOrganizationRequest]) (*connect.Response[v1.Organization], error)
+	// LeaveOrganization removes the caller's own membership. The subject is
+	// always the caller; the last administrator of an organization others still
+	// belong to is refused.
+	LeaveOrganization(context.Context, *connect.Request[v1.LeaveOrganizationRequest]) (*connect.Response[emptypb.Empty], error)
+	// DeleteOrganization archives an organization: it disappears from every
+	// member's list, admits no further request, and its credentials, grants and
+	// pending invitations are revoked. Its history is kept. Only an owner or a
+	// platform super administrator may delete.
+	DeleteOrganization(context.Context, *connect.Request[v1.DeleteOrganizationRequest]) (*connect.Response[emptypb.Empty], error)
 	ListMembers(context.Context, *connect.Request[v1.ListOrgMembersRequest]) (*connect.Response[v1.ListOrgMembersResponse], error)
 	GetOrgSettings(context.Context, *connect.Request[v1.GetOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
 	UpdateOrgSettings(context.Context, *connect.Request[v1.UpdateOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
@@ -126,6 +146,24 @@ func NewOrganizationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(organizationServiceMethods.ByName("RemoveMember")),
 			connect.WithClientOptions(opts...),
 		),
+		updateOrganization: connect.NewClient[v1.UpdateOrganizationRequest, v1.Organization](
+			httpClient,
+			baseURL+OrganizationServiceUpdateOrganizationProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("UpdateOrganization")),
+			connect.WithClientOptions(opts...),
+		),
+		leaveOrganization: connect.NewClient[v1.LeaveOrganizationRequest, emptypb.Empty](
+			httpClient,
+			baseURL+OrganizationServiceLeaveOrganizationProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("LeaveOrganization")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteOrganization: connect.NewClient[v1.DeleteOrganizationRequest, emptypb.Empty](
+			httpClient,
+			baseURL+OrganizationServiceDeleteOrganizationProcedure,
+			connect.WithSchema(organizationServiceMethods.ByName("DeleteOrganization")),
+			connect.WithClientOptions(opts...),
+		),
 		listMembers: connect.NewClient[v1.ListOrgMembersRequest, v1.ListOrgMembersResponse](
 			httpClient,
 			baseURL+OrganizationServiceListMembersProcedure,
@@ -166,6 +204,9 @@ type organizationServiceClient struct {
 	listOrganizations          *connect.Client[v1.ListOrganizationsRequest, v1.ListOrganizationsResponse]
 	addMember                  *connect.Client[v1.AddOrgMemberRequest, emptypb.Empty]
 	removeMember               *connect.Client[v1.RemoveOrgMemberRequest, emptypb.Empty]
+	updateOrganization         *connect.Client[v1.UpdateOrganizationRequest, v1.Organization]
+	leaveOrganization          *connect.Client[v1.LeaveOrganizationRequest, emptypb.Empty]
+	deleteOrganization         *connect.Client[v1.DeleteOrganizationRequest, emptypb.Empty]
 	listMembers                *connect.Client[v1.ListOrgMembersRequest, v1.ListOrgMembersResponse]
 	getOrgSettings             *connect.Client[v1.GetOrgSettingsRequest, v1.OrgSettings]
 	updateOrgSettings          *connect.Client[v1.UpdateOrgSettingsRequest, v1.OrgSettings]
@@ -196,6 +237,21 @@ func (c *organizationServiceClient) AddMember(ctx context.Context, req *connect.
 // RemoveMember calls saas.accounts.v1.OrganizationService.RemoveMember.
 func (c *organizationServiceClient) RemoveMember(ctx context.Context, req *connect.Request[v1.RemoveOrgMemberRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.removeMember.CallUnary(ctx, req)
+}
+
+// UpdateOrganization calls saas.accounts.v1.OrganizationService.UpdateOrganization.
+func (c *organizationServiceClient) UpdateOrganization(ctx context.Context, req *connect.Request[v1.UpdateOrganizationRequest]) (*connect.Response[v1.Organization], error) {
+	return c.updateOrganization.CallUnary(ctx, req)
+}
+
+// LeaveOrganization calls saas.accounts.v1.OrganizationService.LeaveOrganization.
+func (c *organizationServiceClient) LeaveOrganization(ctx context.Context, req *connect.Request[v1.LeaveOrganizationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.leaveOrganization.CallUnary(ctx, req)
+}
+
+// DeleteOrganization calls saas.accounts.v1.OrganizationService.DeleteOrganization.
+func (c *organizationServiceClient) DeleteOrganization(ctx context.Context, req *connect.Request[v1.DeleteOrganizationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteOrganization.CallUnary(ctx, req)
 }
 
 // ListMembers calls saas.accounts.v1.OrganizationService.ListMembers.
@@ -231,6 +287,17 @@ type OrganizationServiceHandler interface {
 	ListOrganizations(context.Context, *connect.Request[v1.ListOrganizationsRequest]) (*connect.Response[v1.ListOrganizationsResponse], error)
 	AddMember(context.Context, *connect.Request[v1.AddOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
 	RemoveMember(context.Context, *connect.Request[v1.RemoveOrgMemberRequest]) (*connect.Response[emptypb.Empty], error)
+	// UpdateOrganization renames an organization or changes its slug.
+	UpdateOrganization(context.Context, *connect.Request[v1.UpdateOrganizationRequest]) (*connect.Response[v1.Organization], error)
+	// LeaveOrganization removes the caller's own membership. The subject is
+	// always the caller; the last administrator of an organization others still
+	// belong to is refused.
+	LeaveOrganization(context.Context, *connect.Request[v1.LeaveOrganizationRequest]) (*connect.Response[emptypb.Empty], error)
+	// DeleteOrganization archives an organization: it disappears from every
+	// member's list, admits no further request, and its credentials, grants and
+	// pending invitations are revoked. Its history is kept. Only an owner or a
+	// platform super administrator may delete.
+	DeleteOrganization(context.Context, *connect.Request[v1.DeleteOrganizationRequest]) (*connect.Response[emptypb.Empty], error)
 	ListMembers(context.Context, *connect.Request[v1.ListOrgMembersRequest]) (*connect.Response[v1.ListOrgMembersResponse], error)
 	GetOrgSettings(context.Context, *connect.Request[v1.GetOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
 	UpdateOrgSettings(context.Context, *connect.Request[v1.UpdateOrgSettingsRequest]) (*connect.Response[v1.OrgSettings], error)
@@ -279,6 +346,24 @@ func NewOrganizationServiceHandler(svc OrganizationServiceHandler, opts ...conne
 		connect.WithSchema(organizationServiceMethods.ByName("RemoveMember")),
 		connect.WithHandlerOptions(opts...),
 	)
+	organizationServiceUpdateOrganizationHandler := connect.NewUnaryHandler(
+		OrganizationServiceUpdateOrganizationProcedure,
+		svc.UpdateOrganization,
+		connect.WithSchema(organizationServiceMethods.ByName("UpdateOrganization")),
+		connect.WithHandlerOptions(opts...),
+	)
+	organizationServiceLeaveOrganizationHandler := connect.NewUnaryHandler(
+		OrganizationServiceLeaveOrganizationProcedure,
+		svc.LeaveOrganization,
+		connect.WithSchema(organizationServiceMethods.ByName("LeaveOrganization")),
+		connect.WithHandlerOptions(opts...),
+	)
+	organizationServiceDeleteOrganizationHandler := connect.NewUnaryHandler(
+		OrganizationServiceDeleteOrganizationProcedure,
+		svc.DeleteOrganization,
+		connect.WithSchema(organizationServiceMethods.ByName("DeleteOrganization")),
+		connect.WithHandlerOptions(opts...),
+	)
 	organizationServiceListMembersHandler := connect.NewUnaryHandler(
 		OrganizationServiceListMembersProcedure,
 		svc.ListMembers,
@@ -321,6 +406,12 @@ func NewOrganizationServiceHandler(svc OrganizationServiceHandler, opts ...conne
 			organizationServiceAddMemberHandler.ServeHTTP(w, r)
 		case OrganizationServiceRemoveMemberProcedure:
 			organizationServiceRemoveMemberHandler.ServeHTTP(w, r)
+		case OrganizationServiceUpdateOrganizationProcedure:
+			organizationServiceUpdateOrganizationHandler.ServeHTTP(w, r)
+		case OrganizationServiceLeaveOrganizationProcedure:
+			organizationServiceLeaveOrganizationHandler.ServeHTTP(w, r)
+		case OrganizationServiceDeleteOrganizationProcedure:
+			organizationServiceDeleteOrganizationHandler.ServeHTTP(w, r)
 		case OrganizationServiceListMembersProcedure:
 			organizationServiceListMembersHandler.ServeHTTP(w, r)
 		case OrganizationServiceGetOrgSettingsProcedure:
@@ -358,6 +449,18 @@ func (UnimplementedOrganizationServiceHandler) AddMember(context.Context, *conne
 
 func (UnimplementedOrganizationServiceHandler) RemoveMember(context.Context, *connect.Request[v1.RemoveOrgMemberRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.RemoveMember is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) UpdateOrganization(context.Context, *connect.Request[v1.UpdateOrganizationRequest]) (*connect.Response[v1.Organization], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.UpdateOrganization is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) LeaveOrganization(context.Context, *connect.Request[v1.LeaveOrganizationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.LeaveOrganization is not implemented"))
+}
+
+func (UnimplementedOrganizationServiceHandler) DeleteOrganization(context.Context, *connect.Request[v1.DeleteOrganizationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.OrganizationService.DeleteOrganization is not implemented"))
 }
 
 func (UnimplementedOrganizationServiceHandler) ListMembers(context.Context, *connect.Request[v1.ListOrgMembersRequest]) (*connect.Response[v1.ListOrgMembersResponse], error) {

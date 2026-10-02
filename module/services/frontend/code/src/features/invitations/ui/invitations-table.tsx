@@ -7,8 +7,8 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Ban, RefreshCw } from "lucide-react";
-import { useMemo } from "react";
+import { Ban, Link2, RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { formatDate } from "@/shared/lib/utils";
 import {
@@ -31,7 +31,12 @@ import {
 	formatInvitationStatus,
 } from "../model/transforms";
 import type { Invitation } from "../model/types";
-import { useResendInvitation, useRevokeInvitation } from "../service/mutations";
+import {
+	useIssueInvitationLink,
+	useResendInvitation,
+	useRevokeInvitation,
+} from "../service/mutations";
+import { InvitationLinkDialog } from "./invitation-link-dialog";
 
 const col = createColumnHelper<Invitation>();
 
@@ -44,6 +49,8 @@ export function InvitationsTable({
 }) {
 	const revokeInvitation = useRevokeInvitation();
 	const resendInvitation = useResendInvitation();
+	const issueLink = useIssueInvitationLink();
+	const [link, setLink] = useState<{ url: string; email: string } | null>(null);
 
 	const columns = useMemo(
 		() => [
@@ -92,6 +99,22 @@ export function InvitationsTable({
 					if (inv.status !== 1) return null;
 					return (
 						<div className="flex justify-end gap-1">
+							<Button
+								variant="ghost"
+								size="sm"
+								aria-label={`Copy invitation link for ${inv.email}`}
+								disabled={issueLink.isPending}
+								onClick={() =>
+									issueLink.mutate(inv.id, {
+										onSuccess: (response) =>
+											setLink({ url: response.acceptUrl, email: inv.email }),
+										onError: () =>
+											toast.error("Couldn't issue an invitation link"),
+									})
+								}
+							>
+								<Link2 className="h-4 w-4" />
+							</Button>
 							<Button
 								variant="ghost"
 								size="sm"
@@ -151,7 +174,7 @@ export function InvitationsTable({
 				},
 			}),
 		],
-		[resendInvitation, revokeInvitation],
+		[issueLink, resendInvitation, revokeInvitation],
 	);
 
 	const table = useReactTable({
@@ -163,10 +186,17 @@ export function InvitationsTable({
 	});
 
 	return (
-		<DataTable
-			table={table}
-			isLoading={isLoading}
-			emptyMessage="No invitations"
-		/>
+		<>
+			<DataTable
+				table={table}
+				isLoading={isLoading}
+				emptyMessage="No invitations"
+			/>
+			<InvitationLinkDialog
+				url={link?.url ?? null}
+				email={link?.email ?? ""}
+				onClose={() => setLink(null)}
+			/>
+		</>
 	);
 }

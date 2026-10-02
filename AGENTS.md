@@ -172,8 +172,9 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
 - Beside it, CI runs nine repository-specific gates that no service owns — the
   module verification job, authorization coverage, the release-gate contract,
-  interface docs and story tests, the kit's version, provider shims, marketing
-  isolation, the SDK boundary, the immutable module package. [RELEASE_GATES.md § Repository-specific
+  interface docs and story tests, the kit's version, marketing isolation, the
+  SDK boundary, the immutable module package, the scoped pools' database
+  authority. [RELEASE_GATES.md § Repository-specific
   gates](./RELEASE_GATES.md#repository-specific-gates) says what each runs, and
   `release-gates.test.mjs` holds this prose to the enforced set.
 - More checks run as *steps* inside the `base-integrity` job than as gates of their

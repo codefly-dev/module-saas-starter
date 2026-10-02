@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // seedPendingInvitation writes a pending invitation directly and returns its
@@ -21,7 +21,7 @@ func seedPendingInvitation(t *testing.T, orgID, inviterID, email, role string, e
 	t.Helper()
 	token := business.NewIDString()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO invitations (id, org_id, inviter_id, email, role, token_hash, status, expires_at)
 			VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)`,
@@ -88,7 +88,7 @@ func TestAuthenticate_Invite_ExpiredMarksInvitationExpired(t *testing.T) {
 
 	var status string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT status FROM invitations WHERE token_hash = $1`,
 			business.HashInvitationToken(token)).Scan(&status)

@@ -7,6 +7,7 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -212,7 +213,7 @@ func (s *PostgresStore) GetTeamMembership(ctx context.Context, orgID string, tea
 			FROM team_members
 			WHERE team_id = $1 AND user_id = $2`, teamID, userID)
 	}
-	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx { //nolint:staticcheck // legacy transaction bridge
+	if storetx.Tx(ctx) != nil {
 		return membership, legacyRead(ctx)
 	}
 	err := s.WithOrgTx(ctx, orgID, legacyRead)

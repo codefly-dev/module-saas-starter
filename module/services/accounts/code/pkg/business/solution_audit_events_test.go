@@ -50,9 +50,12 @@ func TestParseDeclaredAuditEventTypes_ReadsTypedFields(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	want := []DeclaredAuditEventType{
-		{Type: "acme.item.closed", Namespace: "acme", SolutionID: "acme", Fields: []PayloadField{}},
+		// A declaration that names no visibility gets the default: the event
+		// stays inside the platform.
+		{Type: "acme.item.closed", Namespace: "acme", SolutionID: "acme", Visibility: AuditVisibilityTenant, Fields: []PayloadField{}},
 		{
 			Type: "acme.item.created", Namespace: "acme", SolutionID: "acme", Description: "An item was created.",
+			Visibility: AuditVisibilityTenant,
 			Fields: []PayloadField{
 				{Name: "count", Kind: FieldInt},
 				{Name: "score", Kind: FieldNumber},
@@ -117,6 +120,7 @@ func manyFields(n int) string {
 func TestDeclaredAuditEventType_SchemaRoundTrip(t *testing.T) {
 	declared := DeclaredAuditEventType{
 		Type: "acme.item.created", Namespace: "acme", SolutionID: "acme", Description: "An item was created.",
+		Visibility: AuditVisibilityExternal,
 		Fields: []PayloadField{
 			{Name: "count", Kind: FieldInt},
 			{Name: "enabled", Kind: FieldBool},
@@ -129,15 +133,25 @@ func TestDeclaredAuditEventType_SchemaRoundTrip(t *testing.T) {
 		},
 	}
 	back, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace,
-		SolutionAuditOwner("acme"), declared.PayloadSchemaJSON())
+		SolutionAuditOwner("acme"), declared.Visibility, declared.PayloadSchemaJSON())
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	if !reflect.DeepEqual(back, declared) {
 		t.Fatalf("round trip = %#v\nwant %#v", back, declared)
 	}
-	if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace, "accounts", declared.PayloadSchemaJSON()); err == nil {
+	if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace, "accounts", declared.Visibility, declared.PayloadSchemaJSON()); err == nil {
 		t.Fatal("a code-owned row must not read back as a declared type")
+	}
+	// The column is the delivery gate's input, so a row carrying anything the
+	// vocabulary does not name is refused rather than read as either value: a
+	// scan that defaulted would decide, silently, whether a tenant's events
+	// leave the platform.
+	for _, visibility := range []string{"", "internal", "External"} {
+		if _, err := DeclaredAuditEventTypeFromSchema(declared.Type, declared.Namespace,
+			SolutionAuditOwner("acme"), visibility, declared.PayloadSchemaJSON()); err == nil {
+			t.Fatalf("visibility %q must not read back", visibility)
+		}
 	}
 }
 

@@ -11,17 +11,20 @@ import (
 	"testing"
 	"time"
 
+	apigen "auth-gateway/external/saas-starter/accounts"
+
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 // These tests exercise the ext_authz check in isolation. They don't require the
 // full codefly stack — the ext_authz check is constructed with a generated Ed25519
 // key, and the api-key path is stubbed out (nil client — api-key requests
-// panic, which is fine: we don't exercise them here).
+// panic unless a test installs its own).
 
 func newTestExtAuthz(t *testing.T) (*ExtAuthz, ed25519.PrivateKey) {
 	t.Helper()
@@ -145,7 +148,7 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 	require.Equal(t, c.OrgRole, h["x-org-role"])
 	require.Equal(t, c.PlatformRole, h["x-platform-role"])
 	require.Equal(t, c.SessionID, h["x-session-id"])
-	require.Equal(t, "test-gateway-token", h["x-codefly-gateway-token"])
+	require.NotContains(t, h, "x-codefly-gateway-token", "the gateway credential never rides a Check answer")
 	require.Empty(t, h["x-acting-as-user-id"], "acting header is empty unless impersonating")
 }
 
@@ -183,12 +186,13 @@ func TestUnit_Allow_RemovesUnstampedTrustHeaders(t *testing.T) {
 	}
 
 	// Trust headers the ext_authz check never stamps on an allow must be removed.
+	// The gateway credential is one of them: the HTTP gateway stamps it itself.
 	require.Contains(t, removed, "x-codefly-internal-token")
 	require.Contains(t, removed, "x-codefly-public-origin")
+	require.Contains(t, removed, "x-codefly-gateway-token")
 
 	// A restamped header is overwritten, not removed.
 	require.NotContains(t, removed, "x-user-id")
-	require.NotContains(t, removed, "x-codefly-gateway-token")
 }
 
 func TestUnit_ValidJWT_ForwardsActorChainAndOverwritesSpoofedHeader(t *testing.T) {
@@ -434,6 +438,47 @@ func TestUnit_NoKey_Denied(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse())
 	require.Equal(t, int32(503), int32(resp.GetDeniedResponse().Status.Code))
+}
+
+// ============================================================================
+// API-key path
+// ============================================================================
+
+// scopesAPIKeyClient admits every key with the scopes it is given, standing in
+// for accounts' ValidateAPIKey.
+type scopesAPIKeyClient struct {
+	apigen.APIKeyServiceClient
+	scopes []string
+}
+
+func (c scopesAPIKeyClient) ValidateAPIKey(context.Context, *apigen.ValidateAPIKeyRequest, ...grpc.CallOption) (*apigen.ValidateAPIKeyResponse, error) {
+	return &apigen.ValidateAPIKeyResponse{Valid: true, UserId: "user-1", OrganizationId: "org-1", Scopes: c.scopes}, nil
+}
+
+// The check joins a key's scopes into x-scopes with commas and every service
+// splits them on the same comma, so a scope holding one is refused rather than
+// joined: `users:read,*:*` would reach accounts as the root `*:*`. The check
+// does not rely on accounts having refused it first.
+func TestUnit_APIKeyScopeHoldingTheSeparator_Denied(t *testing.T) {
+	s, _ := newTestExtAuthz(t)
+	check := func(scopes ...string) *authv3.CheckResponse {
+		s.apiKey = scopesAPIKeyClient{scopes: scopes}
+		resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
+			"authorization": "Bearer cfly_sk_live_example",
+		}))
+		require.NoError(t, err)
+		return resp
+	}
+
+	for _, scopes := range [][]string{{"users:read,*:*"}, {"api_keys:write", "*:*,users:read"}} {
+		resp := check(scopes...)
+		require.NotNil(t, resp.GetDeniedResponse(), "%q must not be joined into x-scopes", scopes)
+		require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))
+	}
+
+	resp := check("api_keys:write", "users:read")
+	require.Nil(t, resp.GetDeniedResponse())
+	require.Equal(t, "api_keys:write,users:read", headerMap(resp)["x-scopes"], "well-formed scopes are joined as before")
 }
 
 // Suppress unused import warnings on narrow builds.

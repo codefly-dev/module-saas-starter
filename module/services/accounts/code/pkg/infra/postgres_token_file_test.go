@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -144,6 +145,77 @@ func TestTokenFileAccessTokenProviderRetainsOneProjectedCredential(t *testing.T)
 	token, err = provider(context.Background(), "writer")
 	require.NoError(t, err)
 	require.Equal(t, "second", token)
+}
+
+func TestTokenFilesSelectPhysicalLoginAndRotateIndependently(t *testing.T) {
+	clearDatabaseEnvironment(t)
+	dir := t.TempDir()
+	paths := map[string]string{
+		"reader@example.invalid": filepath.Join(dir, "reader"),
+		"writer":                 filepath.Join(dir, "writer"),
+		"control":                filepath.Join(dir, "control"),
+	}
+	for login, path := range paths {
+		require.NoError(t, os.WriteFile(path, []byte(login+"-first"), 0o600))
+	}
+	raw, err := json.Marshal(paths)
+	require.NoError(t, err)
+	t.Setenv(databaseTokenFilesEnv, string(raw))
+	provider := tokenFileAccessTokenProvider()
+	require.NotNil(t, provider)
+	for login := range paths {
+		token, err := provider(context.Background(), login)
+		require.NoError(t, err)
+		require.Equal(t, login+"-first", token)
+	}
+	path := paths["writer"]
+	require.NoError(t, os.WriteFile(path+".next", []byte("writer-second"), 0o600))
+	require.NoError(t, os.Rename(path+".next", path))
+	for login := range paths {
+		config, err := pgx.ParseConfig("postgres://localhost/test?sslmode=disable")
+		require.NoError(t, err)
+		config.User = login
+		config.Password = "embedded"
+		require.NoError(t, accessTokenBeforeConnect(provider)(context.Background(), config))
+		want := login + "-first"
+		if login == "writer" {
+			want = "writer-second"
+		}
+		require.Equal(t, want, config.Password)
+	}
+	for _, login := range []string{"", "unknown", "Reader@example.invalid", " writer"} {
+		token, err := provider(context.Background(), login)
+		require.ErrorContains(t, err, "no database token file")
+		require.Empty(t, token)
+	}
+	require.NoError(t, os.Remove(paths["control"]))
+	token, err := provider(context.Background(), "control")
+	require.Error(t, err)
+	require.Empty(t, token)
+}
+
+func TestTokenFilesRejectInvalidOrAmbiguousConfiguration(t *testing.T) {
+	clearDatabaseEnvironment(t)
+	for _, raw := range []string{
+		" ", "null", "[]", "{}", `{"reader":"relative"}`,
+		`{"reader":null}`, `{"reader":3}`, `{"":"/token"}`,
+		`{" reader":"/token"}`, `{"reader":"/one","reader":"/two"}`,
+		`{"reader":"/token"} {}`, `{"reader":"/token\u0000"}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			t.Setenv(databaseTokenFilesEnv, raw)
+			provider := tokenFileAccessTokenProvider()
+			require.NotNil(t, provider, "invalid configuration must not fall back to embedded credentials")
+			token, err := provider(context.Background(), "reader")
+			require.ErrorContains(t, err, "POSTGRES_TOKEN_FILES")
+			require.Empty(t, token)
+		})
+	}
+	t.Setenv(databaseTokenFileEnv, "/single")
+	t.Setenv(databaseTokenFilesEnv, `{"reader":"/per-login"}`)
+	token, err := tokenFileAccessTokenProvider()(context.Background(), "reader")
+	require.ErrorContains(t, err, "mutually exclusive")
+	require.Empty(t, token)
 }
 
 func TestOpenScopedBoundaryRetainsProxySeparation(t *testing.T) {

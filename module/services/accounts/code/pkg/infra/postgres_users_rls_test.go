@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,7 +72,7 @@ func TestUsersVisibilityUsesSelfAndNarrowOrganizationOperation(t *testing.T) {
 
 func TestOrganizationMemberEmailFunctionHasPinnedAuthority(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var owner string
 		var securityDefiner, tenantCanExecute, publicCanExecute bool
 		var policyExpression string

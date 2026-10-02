@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // GetOrgPlanID returns the plan ID for an org's active subscription.
@@ -186,7 +187,7 @@ func (s *PostgresStore) CreateEntitlementOverride(ctx context.Context, override 
 // both the authoritative count and the resource insert; otherwise a pair of
 // concurrent requests could observe the same remaining slot.
 func (s *PostgresStore) LockEntitlementQuota(ctx context.Context, orgID string, feature string) error {
-	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+	if storetx.Tx(ctx) == nil {
 		return errors.New("entitlement quota lock requires a tenant transaction")
 	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx,
@@ -267,7 +268,7 @@ func (s *PostgresStore) ConsumeUsage(ctx context.Context, consumption business.U
 	// The advisory idempotency lock and aggregate row lock only have meaning in
 	// one explicit transaction. The business layer always enters through
 	// WithOrgTx; reject accidental direct calls instead of weakening atomicity.
-	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+	if storetx.Tx(ctx) == nil {
 		return nil, errors.New("usage consumption requires a tenant transaction")
 	}
 	q := s.getQueryExecutor(ctx)

@@ -67,6 +67,24 @@ export {
 export { Separator } from "@codefly-dev/ui/layout";
 export { Sheet, SheetContent, SheetTrigger } from "@codefly-dev/ui/layout";
 export { Skeleton } from "@codefly-dev/ui/layout";
+// The never-flash loading primitive: nothing for the first 200ms of a wait, then
+// an indicator that stays long enough to read. Re-exported here because this
+// file is the host's one import surface for the kit, and a rule with no import
+// path is a rule surfaces cannot follow — before this, `src/` had zero call
+// sites and every surface hand-rolled a "Loading…" that flashed. Prefer
+// `useLoadingPhase` wherever an empty state sits below the wait.
+export {
+	DelayedLoading,
+	type DelayedLoadingOptions,
+	type DelayedLoadingProps,
+	LOADING_DELAY_MS,
+	LOADING_MIN_VISIBLE_MS,
+	type LoadingPhase,
+	Spinner,
+	type SpinnerProps,
+	useDelayedLoading,
+	useLoadingPhase,
+} from "@codefly-dev/ui/layout";
 export { Toaster } from "@/components/ui/sonner";
 export { Switch } from "@codefly-dev/ui/layout";
 export {

@@ -19,8 +19,8 @@ import {
 	type CreateWebhookValues,
 	createWebhookSchema,
 } from "../model/schemas";
+import { useAuditEventTypes } from "@/features/audit/service/queries";
 import { formatEventType } from "../model/transforms";
-import { WEBHOOK_EVENT_TYPES } from "../model/types";
 
 interface WebhookFormProps {
 	open: boolean;
@@ -33,7 +33,7 @@ export function WebhookForm({
 	open,
 	onSubmit,
 	onCancel,
-	isPending,
+	isPending: isSubmitting,
 }: WebhookFormProps) {
 	const form = useForm<CreateWebhookValues>({
 		resolver: zodResolver(createWebhookSchema),
@@ -41,6 +41,16 @@ export function WebhookForm({
 	});
 
 	const selectedEvents = form.watch("events");
+
+	// The registry decides what may be offered, not this build: only a type it
+	// reports as webhook-eligible can ever reach an endpoint, and CreateSubscription
+	// refuses any other name. Fetched only while the dialog is open, and sorted so
+	// the order does not depend on the server's.
+	const { data, isPending, isError } = useAuditEventTypes({ enabled: open });
+	const eventTypes = (data ?? [])
+		.filter((type) => type.webhookEligible && !type.deprecated)
+		.map((type) => type.name)
+		.sort();
 
 	const toggleEvent = (event: string) => {
 		const current = form.getValues("events");
@@ -98,7 +108,23 @@ export function WebhookForm({
 							</p>
 						)}
 						<div className="grid grid-cols-2 gap-2 rounded-md border p-3 max-h-48 overflow-y-auto">
-							{WEBHOOK_EVENT_TYPES.map((event) => (
+							{isPending && (
+								<p className="col-span-2 text-sm text-muted-foreground">
+									Loading event types...
+								</p>
+							)}
+							{isError && (
+								<p className="col-span-2 text-sm text-destructive">
+									Event types could not be loaded. Try again in a moment.
+								</p>
+							)}
+							{!isPending && !isError && eventTypes.length === 0 && (
+								<p className="col-span-2 text-sm text-muted-foreground">
+									No event type in this deployment can be delivered to an
+									endpoint.
+								</p>
+							)}
+							{eventTypes.map((event) => (
 								<label
 									key={event}
 									className="flex items-center gap-2 text-sm cursor-pointer"
@@ -117,8 +143,8 @@ export function WebhookForm({
 						<Button type="button" variant="outline" onClick={onCancel}>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={isPending}>
-							{isPending ? "Creating..." : "Create Webhook"}
+						<Button type="submit" disabled={isSubmitting}>
+							{isSubmitting ? "Creating..." : "Create Webhook"}
 						</Button>
 					</DialogFooter>
 				</form>

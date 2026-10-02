@@ -163,25 +163,23 @@ SMTP. Every box should pass cleanly with just the dev-admin fixture.
 
 ## Tier 2 — Stripe test mode
 
-Configure the generic Codefly `billing` capability. The script refuses live
-keys and resolves the local signed-webhook callback from the product ingress:
+Configure the generic Codefly `billing` capability through the
+[`codefly-dev/provider-stripe`](https://github.com/codefly-dev/provider-stripe)
+plugin, which refuses live keys, validates the account, observes the webhook
+and projects the `billing` group. For local webhook delivery, forward to the
+product ingress:
 
 ```bash
-# Terminal A: keep this running and save the displayed signing secret.
+# Terminal A: keep this running; hand its signing secret to the plugin.
 stripe listen --forward-to \
   "$(codefly endpoint frontend --type http)/v1/billing/webhook"
 
-# Terminal B: configure the secret from that same listener, then run the stack.
-scripts/setup/stripe.sh \
-  --api-key-file /secure/path/stripe.env \
-  --webhook-secret-file /secure/path/stripe-webhook.env
+# Terminal B: run the stack once the billing group is configured.
 codefly run service --env local-dogfood --fixture dev-admin
 ```
 
-Use the signing secret printed by the same Stripe CLI listener. For a remotely
-registered webhook, expose the ingress through public HTTPS and use
-`--webhook-origin ... --provision-webhook`; the script rejects remote
-provisioning to localhost.
+Use the signing secret printed by the same Stripe CLI listener. A remotely
+registered webhook needs the ingress exposed through public HTTPS.
 
 - [ ] `/admin/billing` — Plan card shows **Pro** badge.
 - [ ] Click **Manage subscription** — redirects to Stripe-hosted billing portal.
@@ -214,27 +212,24 @@ Admin Portal integration; `IDENTITY_CLIENT_ID` and
 
 ## Tier 4 — full provider telemetry and abuse stack
 
-Configure the remaining adapters using
-[`scripts/setup/README.md`](./scripts/setup/README.md), then start the same
-Codefly-managed graph:
+Configure the remaining adapters as Codefly configuration groups, then start
+the same Codefly-managed graph. For each of `email` (Resend),
+`product-analytics` (PostHog), `error-tracking` (Sentry), `observability` and
+`abuse-protection` (Turnstile), copy
+`configurations/local-dogfood/<group>.env.example` and
+`<group>.secret.env.example` to their Git-ignored names and fill them in
+([LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md#configure-providers-through-codefly)).
+Keep `observability.env.example` as it is for local (`debug`) telemetry.
+Turnstile's published test keys drive the three abuse-protection cases:
+
+| Case | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | `TURNSTILE_SECRET_KEY` |
+| --- | --- | --- |
+| pass | `1x00000000000000000000AA` | `1x0000000000000000000000000000000AA` |
+| fail | `2x00000000000000000000AB` | `2x0000000000000000000000000000000AA` |
+| replay | `1x00000000000000000000AA` | `3x0000000000000000000000000000000AA` |
 
 ```bash
-scripts/setup/resend.sh \
-  --api-key-file /secure/path/resend.env \
-  --webhook-secret-file /secure/path/resend-webhook.env \
-  --from 'Example <onboarding@example.com>'
-scripts/setup/posthog.sh \
-  --project-key-file /secure/path/posthog-project.env \
-  --personal-key-file /secure/path/posthog-personal.env \
-  --project-id 12345 \
-  --host https://eu.i.posthog.com \
-  --api-host https://eu.posthog.com
-scripts/setup/sentry.sh \
-  --token-file /secure/path/sentry.env \
-  --org example \
-  --project saas-starter
-scripts/setup/otel.sh --debug
-scripts/setup/turnstile.sh --fixture pass
+codefly doctor workspace --env local-dogfood
 codefly run service --env local-dogfood
 ```
 
@@ -244,9 +239,9 @@ codefly run service --env local-dogfood
 - [ ] Grant analytics consent, navigate through onboarding, and verify bounded browser plus durable backend events in PostHog.
 - [ ] Withdraw analytics consent or log out. Browser capture stops immediately and identity resets.
 - [ ] Trigger controlled browser and backend errors. Sentry correlates release and environment without creating performance transactions.
-- [ ] With `otel.sh --debug`, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
-- [ ] Switch Turnstile to `--fixture fail --force`. Registration and waitlist submission fail without database writes.
-- [ ] Switch Turnstile to `--fixture replay --force`. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.
+- [ ] With the `debug` exporter, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
+- [ ] Switch Turnstile to the **fail** keys. Registration and waitlist submission fail without database writes.
+- [ ] Switch Turnstile to the **replay** keys. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.
 
 ---
 

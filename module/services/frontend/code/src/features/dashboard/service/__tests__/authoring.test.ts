@@ -22,6 +22,7 @@ function fakeEventTypes(): AuditEventTypeInfo[] {
 			owner: "accounts",
 			deprecated: false,
 			marksUserJoined: false,
+			webhookEligible: true,
 			description: "A user logged in.",
 		},
 		{
@@ -32,6 +33,7 @@ function fakeEventTypes(): AuditEventTypeInfo[] {
 			owner: "accounts",
 			deprecated: false,
 			marksUserJoined: false,
+			webhookEligible: true,
 			description: "An organization was created.",
 		},
 	];

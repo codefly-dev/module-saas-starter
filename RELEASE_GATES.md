@@ -12,7 +12,7 @@ same gate as this repository.
 guard artifacts and contracts no single service owns: the canonical base
 manifest that seeds every consumer, the authorization catalog, the release
 gating graph itself, the interface docs, the published frontend kit's version,
-the provider shims, the marketing isolation build, the SDK boundary, and the
+the marketing isolation build, the SDK boundary, and the
 immutable module package. They run
 `node --test`, `go test`, `buf breaking`, and `npm` commands directly — see
 [Repository-specific gates](#repository-specific-gates) for the full list and
@@ -66,11 +66,10 @@ authz-coverage ───────┤
 release-contract ─────┤
 docs-sync ────────────┤
 kit-version ──────────┤
-provider-shim ────────┤                     ┌─▶ publish-module-package  (module-package/v*)
-marketing ────────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
-sdk-boundary ─────────┤   (!cancelled() +   └─▶ handbook-surface-bump   (v*)
-module-package ───────┤     decide)
-codefly-plan ─────────┤
+marketing ────────────┤                     ┌─▶ publish-module-package  (module-package/v*)
+sdk-boundary ─────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
+module-package ───────┤   (!cancelled() +   └─▶ handbook-surface-bump   (v*)
+codefly-plan ─────────┤     decide)
 codefly-quality ──────┤
 codefly-supply-chain ─┤
 codefly-build ────────┘
@@ -112,7 +111,6 @@ no per-track exemption.
 | `release-contract` | required | required | this gating graph itself |
 | `docs-sync` | required | required | interface docs and story tests |
 | `kit-version` | required | required | published frontend kit version vs. content |
-| `provider-shim` | required | required | non-writing provider shims |
 | `marketing` | required | required | marketing isolation build |
 | `sdk-boundary` | required | required | Codefly SDK boundary and contracts |
 | `module-package` | required | required | package contract, determinism, buf breaking |
@@ -437,10 +435,10 @@ reverse, fails the `release-contract` job.
 | `release-contract` | this gating graph itself, and the Dependabot configuration that feeds it | `node --test scripts/ci/release-gates.test.mjs`, `node --test scripts/ci/dependabot-coverage.test.mjs`, `node scripts/ci/release-gates.mjs check`, `node scripts/ci/dependabot-coverage.mjs check` |
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
 | `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
-| `provider-shim` | provider setup scripts stay non-writing shims | `node --test scripts/setup/*.test.mjs` |
 | `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
 | `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, the exported API contract, and the published module-authority client against the real host | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check`, `go test ./...` in `qualification/module-authority` |
 | `module-package` | the package contract, protobuf compatibility, generator determinism, published conformance suites, and byte-identical archive builds | `go test ./...` **in `module/tools` only**, `go run ./cmd/module-package …`, `buf breaking`, `npm run test:published-plugin-contract` |
+| `scoped-pools` | the authority of the pools the store's logins reach: the scoped reader, the scoped writer and the request pool, judged against a native PostgreSQL the suite provisions and widens one grant at a time | `python3 scripts/qualify-scoped-pools.py --postgres-bin "$(pg_config --bindir)"`, which runs `go test -race ./qualification/scopedpools` and fails unless every declared test in that package ran and passed |
 
 Two of those `go test ./...` invocations are worth reading carefully. This
 repository holds **six independent Go modules** — root, `module/tools`, and one
@@ -656,9 +654,11 @@ rather than merely discouraged. `tools/authz-coverage-gate.mjs` runs, in order:
   emit audit. A mutation that records nothing fails.
 - **Permission no-broadening** (`no-broadening`) — the catalog is diffed against
   `main`; any change that widens who may call a route (a relaxed exposure,
-  tenant, platform-role, or MFA requirement, or a dropped permission/scope) fails
-  unless the pull request carries the `authz-broadening-approved` label, which
-  sets `AUTHZ_ALLOW_BROADENING` for the run.
+  tenant, platform-role, or MFA requirement, a dropped permission, or an added
+  API-key scope — a route's scopes are the keys it admits, so adding one opens
+  it and dropping one narrows it) fails unless the pull request carries the
+  `authz-broadening-approved` label, which sets `AUTHZ_ALLOW_BROADENING` for the
+  run.
 
 Both coverage gates read ticketed exemptions from
 `tools/authz-coverage-allowlist.json`; every entry needs a reason and a ticket,

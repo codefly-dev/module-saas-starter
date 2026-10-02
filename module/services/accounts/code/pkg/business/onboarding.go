@@ -126,12 +126,15 @@ func (s *Service) GetProgress(ctx context.Context, userID, orgID string) (*Onboa
 		}
 	}
 
+	configured, err := s.organizationConfigured(ctx, userID, organization)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot resolve organization setup")
+	}
 	detected := map[gen.OnboardingStepId]bool{
-		gen.OnboardingStepId_ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION: organization != nil &&
-			(organization.Name != "Personal" || !strings.HasPrefix(organization.Slug, "personal-")),
-		gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM:   pendingInvitations > 0,
-		gen.OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN:   subscriptionCompletesOnboarding(subscription),
-		gen.OnboardingStepId_ONBOARDING_STEP_ID_SETUP_API_KEY: len(apiKeys) > 0,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_CONFIGURE_ORGANIZATION: configured,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_INVITE_TEAM:            pendingInvitations > 0,
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_CHOOSE_PLAN:            subscriptionCompletesOnboarding(subscription),
+		gen.OnboardingStepId_ONBOARDING_STEP_ID_SETUP_API_KEY:          len(apiKeys) > 0,
 	}
 
 	now := time.Now()
@@ -484,4 +487,41 @@ func onboardingChecklistComplete(
 		}
 	}
 	return true
+}
+
+// isPersonalOrganization reports whether an organization is the one
+// registration created, still under its generated name.
+func isPersonalOrganization(org *gen.Organization) bool {
+	return org.Name == "Personal" && strings.HasPrefix(org.Slug, "personal-")
+}
+
+// organizationConfigured decides the one required onboarding step. The current
+// organization being a real one completes it, and so does the user belonging to
+// any real organization: someone who joined an existing organization has
+// nothing to set up, and sitting in their personal organization must not trap
+// them in a wizard whose only way out is creating yet another one. A user the
+// creation policy forbids from creating has no way to perform the step at all,
+// so for them it is not required.
+func (s *Service) organizationConfigured(ctx context.Context, userID string, current *gen.Organization) (bool, error) {
+	if current != nil && !isPersonalOrganization(current) {
+		return true, nil
+	}
+	var orgs []*gen.Organization
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		orgs, err = s.store.ListOrganizationsForUser(ctx, userID)
+		return err
+	}); err != nil {
+		return false, err
+	}
+	for _, org := range orgs {
+		if !isPersonalOrganization(org) {
+			return true, nil
+		}
+	}
+	mayCreate, err := s.mayCreateOrganization(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return !mayCreate, nil
 }

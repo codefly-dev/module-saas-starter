@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,7 +91,7 @@ func TestApprovals_Decisions_AppendOnly(t *testing.T) {
 	// immutable trigger rejects the verb (append-only) if a privileged path ever
 	// reaches it. Either error proves the row cannot be mutated.
 	updErr := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx)
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx, "UPDATE approval_decisions SET reason = 'tamper' WHERE id = $1", decID)
 		return e
 	})
@@ -99,7 +99,7 @@ func TestApprovals_Decisions_AppendOnly(t *testing.T) {
 	require.True(t, mutationRejected(updErr), "expected append-only/permission-denied, got: %v", updErr)
 
 	delErr := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx)
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx, "DELETE FROM approval_decisions WHERE id = $1", decID)
 		return e
 	})

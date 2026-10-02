@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
+	"accounts/pkg/infra/storetx"
 )
 
 // These tests cover the scoped-role claim path end to end against Postgres:
@@ -33,7 +33,7 @@ func builtinRoleID(t *testing.T, name string) uuid.UUID {
 func assignScopedRole(t *testing.T, userID, orgID, roleID uuid.UUID, scope string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO role_assignments (subject_id, subject_kind, role_id, org_id, scope)
 			VALUES ($1, 'principal', $2, $3, $4)`, userID, roleID, orgID, scope)

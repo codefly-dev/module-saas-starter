@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"accounts/pkg/eventcatalog"
 )
 
 // The typed audit-event registry. This Go catalog is the single source of
@@ -155,6 +157,36 @@ type AuditEventDefinition struct {
 	// served over ListAuditEventTypes so no client has to keep its own list of
 	// names in step with this one.
 	MarksUserJoined bool
+	// Visibility is how far an event of this type may travel, for a type whose
+	// producer declares it: AuditVisibilityTenant or AuditVisibilityExternal.
+	// A code-owned definition leaves it empty and is answered by the composed
+	// event catalog instead (eventcatalog.IsExternalPublished), which is where
+	// compose records the same fact for every published type. Read it through
+	// ResolvedAuditEvent.ExternallyDeliverable, never directly, so the two
+	// halves of the registry are never consulted separately.
+	Visibility string
+}
+
+// EffectiveVisibility is how far an event of this type may travel, over the
+// WHOLE registry. A declared type states it on the definition; a code-owned
+// type leaves it empty and is answered by the composed event catalog, where
+// module-compose recorded the same fact at compose time. Nothing else may read
+// only one of the two halves — a gate that did is exactly how a declared type
+// came to be subscribable and undeliverable.
+func (d AuditEventDefinition) EffectiveVisibility() string {
+	if d.Visibility != "" {
+		return d.Visibility
+	}
+	if eventcatalog.IsExternalPublished(string(d.Type)) {
+		return AuditVisibilityExternal
+	}
+	return AuditVisibilityTenant
+}
+
+// ExternallyDeliverable reports whether an event of this type may be delivered
+// to a tenant's outbound webhook endpoint.
+func (d AuditEventDefinition) ExternallyDeliverable() bool {
+	return d.EffectiveVisibility() == AuditVisibilityExternal
 }
 
 // mutation registers a privileged write (DurabilityTransactional); observation
@@ -304,6 +336,7 @@ const (
 	EventInvitationAccepted          EventType = "saas.invitation.accepted"
 	EventInvitationRevoked           EventType = "saas.invitation.revoked"
 	EventInvitationResent            EventType = "saas.invitation.resent"
+	EventInvitationLinkIssued        EventType = "saas.invitation.link_issued"
 	EventDelegationRequested         EventType = "saas.delegation.requested"
 	EventDelegationApproved          EventType = "saas.delegation.approved"
 	EventDelegationDenied            EventType = "saas.delegation.denied"
@@ -364,6 +397,9 @@ const (
 	EventOrgCreated                EventType = "saas.org.created"
 	EventOrgMemberAdded            EventType = "saas.org.member_added"
 	EventOrgMemberRemoved          EventType = "saas.org.member_removed"
+	EventOrgMemberLeft             EventType = "saas.org.member_left"
+	EventOrgUpdated                EventType = "saas.org.updated"
+	EventOrgDeleted                EventType = "saas.org.deleted"
 	EventOrgSettingsUpdated        EventType = "saas.org.settings_updated"
 	EventOrgGenericSettingsUpdated EventType = "saas.org.generic_settings_updated"
 	EventTeamCreated               EventType = "saas.team.created"
@@ -559,6 +595,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventInvitationAccepted, CategoryAccess, "An organization invitation was accepted."),
 	mutation(EventInvitationRevoked, CategoryAccess, "An organization invitation was revoked."),
 	mutation(EventInvitationResent, CategoryAccess, "An organization invitation was resent."),
+	mutation(EventInvitationLinkIssued, CategoryAccess, "An organization invitation's accept link was issued to an administrator instead of emailed."),
 	mutation(EventDelegationRequested, CategoryAccess, "A delegation grant was requested."),
 	mutation(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
 	mutation(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
@@ -632,6 +669,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
 	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
+	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
+	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
+	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
 	mutation(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),
 	mutation(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated."),
 	mutation(EventTeamCreated, CategoryOrganization, "A team was created.", str("name")),
@@ -726,13 +766,22 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id")),
 	observation(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
 		str("head"), str("delivery_id")),
-	observation(EventDatasourceSourceAccessLost, CategorySystem,
-		"A GitHub App installation stopped granting a source access to its repository; the source was degraded until access returns.",
-		str("repo"), str("installation_id"), enum("reason", DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended)),
-	observation(EventDatasourceSourceAccessRestored, CategorySystem,
-		"A GitHub App installation granted a source access to its repository again and the source was returned to active.",
+	// v2 adds the third cause, public_repository_unreadable: a source connected
+	// to a public repository that GitHub has stopped serving unauthenticated.
+	// It has no installation, so installation_id is empty on those records —
+	// which is also how a consumer tells the two families apart without reading
+	// the reason.
+	revised(observation(EventDatasourceSourceAccessLost, CategorySystem,
+		"A datasource source lost access to its repository — a GitHub App installation stopped granting it, or a public repository stopped being readable without a credential; the source was degraded until access returns.",
+		str("repo"), str("installation_id"), enum("reason",
+			DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended,
+			DatasourceAccessLostPublicRepositoryUnreadable)), 2),
+	revised(observation(EventDatasourceSourceAccessRestored, CategorySystem,
+		"A datasource source could read its repository again and was returned to active.",
 		str("repo"), str("installation_id"),
-		enum("restored_from", DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended)),
+		enum("restored_from",
+			DatasourceAccessLostRepositoryUnavailable, DatasourceAccessLostSuspended,
+			DatasourceAccessLostPublicRepositoryUnreadable)), 2),
 	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
 	observation(EventDatasourceFilesFetched, CategorySystem, "A module fetched a batch of a datasource's files at one version over FetchDatasourceFiles.",

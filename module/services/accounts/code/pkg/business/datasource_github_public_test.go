@@ -456,3 +456,135 @@ func TestReconnect_CredentialedSourceNeedsAReplacement(t *testing.T) {
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
 	require.Contains(t, status.Convert(err).Message(), "saved credential")
 }
+
+// The sync-time half of the public-repository check. Connecting already refuses
+// a repository GitHub will not serve unauthenticated; nothing re-asked
+// afterwards, so a repository made private (or renamed, or deleted — GitHub
+// answers all three identically) after it was connected produced a 404 the
+// generic classifier called retryable and blamed on "this PAT", for a source
+// that holds no PAT at all. It retried up to 24 times, dead-lettered, and left
+// the source reading active with nothing on it to say why it had stopped.
+func TestDelivery_PublicSourceTurnedPrivateIsParkedTerminally(t *testing.T) {
+	gh := &fakeGitHub{defaultBranch: "main", commit: "HEAD", public: true}
+	h := newPublicHarness(t, gh)
+	source := h.publicSource(t)
+	require.Equal(t, business.DatasourceStatusActive, source.Status)
+
+	// From here GitHub answers the source's unauthenticated read the way it
+	// answers any read of a repository it will not serve without a credential.
+	gh.resolveErr = github.ErrNotFound
+
+	err := h.svc.NewDatasourceDeliveryJobHandler()(context.Background(), &jobsv1.JobEnvelope{
+		Queue:      business.DatasourceDeliveryQueue,
+		Topic:      business.DatasourceReconcileTopic,
+		Attributes: map[string]string{"datasource.source_id": source.ID, "datasource.reconcile_mode": "conditional"},
+	})
+
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.False(t, processing.Retryable, "retrying cannot make a private repository readable without a credential")
+	require.Equal(t, "datasource.public_repository_unreadable", processing.Failure.Code)
+	require.Contains(t, processing.Failure.Message, "without a credential")
+
+	stored := h.stored(t, source.ID)
+	require.Equal(t, business.DatasourceStatusDegraded, stored.Status)
+	require.Equal(t, business.DatasourceReasonPublicRepositoryUnreadable, stored.StatusReason)
+	require.Nil(t, stored.NextReconcileAt, "a parked source must leave the reconcile sweep")
+
+	lost := h.audit.entriesOf(business.EventDatasourceSourceAccessLost)
+	require.Len(t, lost, 1)
+	require.Equal(t, business.DatasourceAccessLostPublicRepositoryUnreadable, lost[0].Payload["reason"])
+	require.Equal(t, "acme/handbook", lost[0].Payload["repo"])
+	// The event declares installation_id, and this path has none; sending it
+	// empty keeps every record of the type the same shape. An undeclared or
+	// mistyped key would have the whole payload dropped with only a warning.
+	require.Equal(t, "", lost[0].Payload["installation_id"])
+	requireDeclaredPayloads(t, h.audit)
+}
+
+// Parking is a state transition: a repeat — which can only arrive from "Sync
+// now", since a parked source has left the sweep — still stops the job, but
+// writes no second row and records no second access_lost.
+func TestDelivery_PublicSourceParkIsRecordedOnce(t *testing.T) {
+	gh := &fakeGitHub{defaultBranch: "main", commit: "HEAD", public: true}
+	h := newPublicHarness(t, gh)
+	source := h.publicSource(t)
+	gh.resolveErr = github.ErrNotFound
+
+	handler := h.svc.NewDatasourceDeliveryJobHandler()
+	envelope := &jobsv1.JobEnvelope{
+		Queue:      business.DatasourceDeliveryQueue,
+		Topic:      business.DatasourceReconcileTopic,
+		Attributes: map[string]string{"datasource.source_id": source.ID, "datasource.reconcile_mode": "force"},
+	}
+	for i := 0; i < 3; i++ {
+		var processing *jobs.ProcessingError
+		require.ErrorAs(t, handler(context.Background(), envelope), &processing)
+		require.False(t, processing.Retryable)
+	}
+	require.Len(t, h.audit.entriesOf(business.EventDatasourceSourceAccessLost), 1,
+		"a repeated attempt must not bury the one real transition under audit spam")
+}
+
+// A PAT source's 404 is a different fact with a different remedy — a token can
+// regain a scope — so it keeps the generic, retryable classification. The check
+// is narrow on purpose; this is what pins that.
+func TestDelivery_CredentialledSourceNotFoundIsNotParked(t *testing.T) {
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	gh := &fakeGitHub{defaultBranch: "main", commit: "HEAD"}
+	svc, audit := newDatasourceService(store, producer, gh)
+	source := githubSource(t, svc, "main", nil, "")
+	gh.resolveErr = github.ErrNotFound
+
+	err := svc.NewDatasourceDeliveryJobHandler()(context.Background(), &jobsv1.JobEnvelope{
+		Queue:      business.DatasourceDeliveryQueue,
+		Topic:      business.DatasourceReconcileTopic,
+		Attributes: map[string]string{"datasource.source_id": source.ID, "datasource.reconcile_mode": "conditional"},
+	})
+
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.True(t, processing.Retryable)
+	require.Equal(t, "datasource.github_not_found", processing.Failure.Code)
+	require.Equal(t, business.DatasourceStatusActive, storedSource(t, store, source.ID).Status)
+	require.Empty(t, audit.entriesOf(business.EventDatasourceSourceAccessLost))
+}
+
+// Recovery is the ordinary one — a snapshot succeeding again — which a
+// repository made public again, or reconnected with a PAT or through the App,
+// all reach. It is recorded as an access restored, not as the generic ingest
+// recovery, so the access_lost above has a matching record.
+func TestDelivery_PublicSourceRecoveryRecordsAccessRestored(t *testing.T) {
+	gh := &fakeGitHub{
+		defaultBranch: "main", commit: "HEAD", public: true,
+		files: []github.File{{Path: "docs/a.md", SHA: "sa"}},
+	}
+	h := newPublicHarness(t, gh)
+	source := h.publicSource(t)
+
+	gh.resolveErr = github.ErrNotFound
+	handler := h.svc.NewDatasourceDeliveryJobHandler()
+	envelope := &jobsv1.JobEnvelope{
+		Queue:      business.DatasourceDeliveryQueue,
+		Topic:      business.DatasourceReconcileTopic,
+		Attributes: map[string]string{"datasource.source_id": source.ID, "datasource.reconcile_mode": "force"},
+	}
+	require.Error(t, handler(context.Background(), envelope))
+	require.Equal(t, business.DatasourceStatusDegraded, h.stored(t, source.ID).Status)
+
+	gh.resolveErr = nil
+	require.NoError(t, handler(context.Background(), envelope))
+
+	stored := h.stored(t, source.ID)
+	require.Equal(t, business.DatasourceStatusActive, stored.Status)
+	require.Empty(t, stored.StatusReason)
+	require.NotNil(t, stored.NextReconcileAt, "a recovered source rejoins the sweep")
+
+	restored := h.audit.entriesOf(business.EventDatasourceSourceAccessRestored)
+	require.Len(t, restored, 1)
+	require.Equal(t, business.DatasourceAccessLostPublicRepositoryUnreadable, restored[0].Payload["restored_from"])
+	require.Empty(t, h.audit.entriesOf(business.EventDatasourceSourceRecovered),
+		"an access recovery recorded as an ingest recovery leaves its access_lost unmatched")
+	requireDeclaredPayloads(t, h.audit)
+}

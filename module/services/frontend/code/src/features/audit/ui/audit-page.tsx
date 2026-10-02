@@ -50,6 +50,11 @@ export function AuditPage() {
 	const [eventTypeFilter, setEventTypeFilter] = useState("all");
 	const [categoryFilter, setCategoryFilter] = useState("all");
 	const [namespaceFilter, setNamespaceFilter] = useState("all");
+	// A filter the page holds but the dropdowns cannot express: a SET of event
+	// types, which is what a tile summarising a family of them opens. null means
+	// no set is selected; the dropdowns clear it when they change, because a
+	// category drill-down would silently change what the tile counted.
+	const [eventTypeSet, setEventTypeSet] = useState<string[] | null>(null);
 	const [range, setRange] = useState<AuditRangePreset>("30d");
 	// The bucket follows the range until the viewer picks one: 90 days at a
 	// daily grain is noise, and a viewer who changed it meant to.
@@ -63,13 +68,17 @@ export function AuditPage() {
 	const eventType = eventTypeFilter === "all" ? undefined : eventTypeFilter;
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
 	const namespace = namespaceFilter === "all" ? undefined : namespaceFilter;
+	const eventTypes = eventTypeSet ?? undefined;
 
 	const { organizationId } = useAuth();
 
-	const { data: eventTypes } = useAuditEventTypes();
+	// The registry's own list of registered types. Named for what it is, so it
+	// cannot be confused with the eventTypes FILTER below.
+	const { data: registeredTypes } = useAuditEventTypes();
 	// The table shows the same window the tiles and the series describe.
 	const { data, isLoading } = useAuditLog({
 		eventType,
+		eventTypes,
 		category,
 		namespace,
 		from: windows.current.from,
@@ -79,7 +88,7 @@ export function AuditPage() {
 	const events = useMemo(() => data?.events ?? [], [data]);
 	const exportMutation = useExportAuditLog();
 
-	const scope = { eventType, category, namespace };
+	const scope = { eventType, eventTypes, category, namespace };
 	const current = { from: windows.current.from, to: windows.current.to };
 	const previous = { from: windows.previous.from, to: windows.previous.to };
 
@@ -89,6 +98,7 @@ export function AuditPage() {
 	// own category whatever the viewer is drilling into.
 	const headline = {
 		eventType,
+		eventTypes,
 		namespace,
 		groupBys: ["category", "event_type"] as AuditGroupDimension[],
 	};
@@ -148,8 +158,8 @@ export function AuditPage() {
 	);
 	// The registry decides which names still mean "a person joined".
 	const newUserTypes = useMemo(
-		() => newUserEventTypes(eventTypes ?? []),
-		[eventTypes],
+		() => newUserEventTypes(registeredTypes ?? []),
+		[registeredTypes],
 	);
 
 	// Every clickable tile reads the unfiltered window and selects exactly the
@@ -161,20 +171,29 @@ export function AuditPage() {
 		setEventTypeFilter("all");
 		setCategoryFilter("all");
 		setNamespaceFilter("all");
+		setEventTypeSet(null);
 	};
 	const selectSecurityOnly = () => {
 		setCategoryFilter(SECURITY_CATEGORY);
 		setEventTypeFilter("all");
 		setNamespaceFilter("all");
+		setEventTypeSet(null);
 	};
 	const showsSecurityOnly =
 		categoryFilter === SECURITY_CATEGORY &&
 		eventTypeFilter === "all" &&
+		namespaceFilter === "all" &&
+		eventTypeSet === null;
+	const showsNewUsersOnly =
+		eventTypeSet !== null &&
+		eventTypeFilter === "all" &&
+		categoryFilter === "all" &&
 		namespaceFilter === "all";
 	const showsNoFilter =
 		eventTypeFilter === "all" &&
 		categoryFilter === "all" &&
-		namespaceFilter === "all";
+		namespaceFilter === "all" &&
+		eventTypeSet === null;
 
 	const tiles = useMemo(() => {
 		const tile = (
@@ -201,16 +220,40 @@ export function AuditPage() {
 			"New users",
 			countEventTypes(allTypesNow, newUserTypes),
 			countEventTypes(allTypesBefore, newUserTypes),
-			// Not clickable: "new users" is however many event types the
-			// registry marks, and the wire contract's event_type filter on
-			// QueryAuditLogRequest / AggregateAuditLogRequest is a single
-			// scalar — there is no "event type IN (...)" filter to drive a
-			// click through. Selecting one of them would misrepresent the
-			// tile's own count.
+			// Clickable through the set form of the event-type filter
+			// (QueryAuditLogRequest / AggregateAuditLogRequest event_types).
+			// While the wire carried only a scalar event_type there was no way
+			// to open this: the tile counts a FAMILY the registry owns and may
+			// extend, and selecting one member would have shown a different
+			// number from the one that was clicked.
+			//
+			// With no registered new-user type there is no set to select, so the
+			// tile stays presentational rather than offering a click that would
+			// filter to nothing.
+			newUserTypes.length > 0
+				? {
+						// The handler is built here rather than in the component body
+						// because it closes over newUserTypes, which this memo already
+						// depends on: one declared outside would be a dependency of its
+						// own and would rebuild the whole row every render. Selecting
+						// again clears the filter — a tile that can only be switched on
+						// strands the reader on a narrowing with no obvious way back,
+						// since no dropdown shows a set.
+						onSelect: () => {
+							setEventTypeSet((current) =>
+								current === null ? newUserTypes : null,
+							);
+							setEventTypeFilter("all");
+							setCategoryFilter("all");
+							setNamespaceFilter("all");
+						},
+						selected: showsNewUsersOnly,
+					}
+				: {},
 		);
 		// Say so when the registry no longer knows the names this tile counts:
 		// a zero here would otherwise read as "nobody joined".
-		if (eventTypes !== undefined && newUserTypes.length === 0)
+		if (registeredTypes !== undefined && newUserTypes.length === 0)
 			newUsers.deltaLabel = "no registered new-user event type";
 		return [
 			tile(
@@ -248,7 +291,7 @@ export function AuditPage() {
 		];
 	}, [
 		range,
-		eventTypes,
+		registeredTypes,
 		newUserTypes,
 		allTypesNow,
 		allTypesBefore,
@@ -258,6 +301,7 @@ export function AuditPage() {
 		actorsBefore.data,
 		showsNoFilter,
 		showsSecurityOnly,
+		showsNewUsersOnly,
 	]);
 	const tilesLoading = totalNow.isLoading || actorsNow.isLoading;
 	const tilesError = totalNow.error ?? actorsNow.error;
@@ -279,31 +323,32 @@ export function AuditPage() {
 
 	// Categories are the distinct set advertised by the registry.
 	const categories = useMemo(() => {
-		const set = new Set((eventTypes ?? []).map((t) => t.category));
+		const set = new Set((registeredTypes ?? []).map((t) => t.category));
 		return Array.from(set).sort();
-	}, [eventTypes]);
+	}, [registeredTypes]);
 
 	// Namespaces are the modules that mint events into this tenant's audit spine.
 	// One today; a composed workspace adds one per module that emits.
 	const namespaces = useMemo(() => {
 		const set = new Set(
-			(eventTypes ?? []).map((t) => t.namespace).filter(Boolean),
+			(registeredTypes ?? []).map((t) => t.namespace).filter(Boolean),
 		);
 		return Array.from(set).sort();
-	}, [eventTypes]);
+	}, [registeredTypes]);
 
 	const visibleEventTypes = useMemo(() => {
-		let list = eventTypes ?? [];
+		let list = registeredTypes ?? [];
 		if (category) list = list.filter((t) => t.category === category);
 		if (namespace) list = list.filter((t) => t.namespace === namespace);
 		return list.slice().sort((a, b) => a.name.localeCompare(b.name));
-	}, [eventTypes, category, namespace]);
+	}, [registeredTypes, category, namespace]);
 
 	const handleExport = (format: "csv" | "json") => {
 		// The download is what the page is showing: same filters, same window.
 		exportMutation.mutate({
 			format,
 			eventType,
+			eventTypes,
 			category,
 			namespace,
 			from: windows.current.from,
@@ -368,6 +413,9 @@ export function AuditPage() {
 					if (v) {
 						setCategoryFilter(v);
 						setEventTypeFilter("all");
+						// No dropdown can show a set, so a set left on here would
+						// narrow the result behind the reader's back.
+						setEventTypeSet(null);
 					}
 				}}
 			>
@@ -393,6 +441,7 @@ export function AuditPage() {
 					if (v) {
 						setNamespaceFilter(v);
 						setEventTypeFilter("all");
+						setEventTypeSet(null);
 					}
 				}}
 			>
@@ -418,7 +467,10 @@ export function AuditPage() {
 					})),
 				]}
 				onValueChange={(v) => {
-					if (v) setEventTypeFilter(v);
+					if (v) {
+						setEventTypeFilter(v);
+						setEventTypeSet(null);
+					}
 				}}
 			>
 				<SelectTrigger className="w-[220px]">
@@ -438,7 +490,15 @@ export function AuditPage() {
 
 	const dashboard: DashboardData = {
 		title: "Audit Log",
-		description: `What happened in the last ${range}, and who did it.`,
+		// When a set filter is on, say so here. Every dropdown still reads "all"
+		// — none of them can express a set — so without this the table, the
+		// series and the breakdowns would all be narrowed with nothing on the
+		// page naming the narrowing or how to undo it.
+		description: showsNewUsersOnly
+			? `New users in the last ${range}: ${newUserTypes.length} event ${
+					newUserTypes.length === 1 ? "type" : "types"
+				} the registry marks as a person joining. Select the tile again to clear it.`
+			: `What happened in the last ${range}, and who did it.`,
 		actions,
 		widgets: [
 			{

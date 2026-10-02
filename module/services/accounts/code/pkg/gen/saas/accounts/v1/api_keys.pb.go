@@ -715,9 +715,9 @@ const file_saas_accounts_v1_api_keys_proto_rawDesc = "" +
 	"\x11APIKeyEnvironment\x12#\n" +
 	"\x1fAPI_KEY_ENVIRONMENT_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18API_KEY_ENVIRONMENT_LIVE\x10\x01\x12\x1c\n" +
-	"\x18API_KEY_ENVIRONMENT_TEST\x10\x022\x81\x06\n" +
-	"\rAPIKeyService\x12\xdd\x01\n" +
-	"\fCreateAPIKey\x12%.saas.accounts.v1.CreateAPIKeyRequest\x1a&.saas.accounts.v1.CreateAPIKeyResponse\"~\xc2\xf3\x18c\b\x02\x10\x04\x1a\x0eapi_keys:write\"\x0eapi_keys:write*\x15\n" +
+	"\x18API_KEY_ENVIRONMENT_TEST\x10\x022\xf1\x05\n" +
+	"\rAPIKeyService\x12\xcd\x01\n" +
+	"\fCreateAPIKey\x12%.saas.accounts.v1.CreateAPIKeyRequest\x1a&.saas.accounts.v1.CreateAPIKeyResponse\"n\xc2\xf3\x18S\b\x02\x10\x04\x1a\x0eapi_keys:write*\x15\n" +
 	"\x0forganization_id\x10\x02\x18\x010\x01:\x18\n" +
 	"\x14saas.api_key.created\x10\x02@\x01H\x04P\x03X\x04`\x01x\x02\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/api-keys\x12\xbd\x01\n" +
 	"\vListAPIKeys\x12$.saas.accounts.v1.ListAPIKeysRequest\x1a%.saas.accounts.v1.ListAPIKeysResponse\"a\xc2\xf3\x18I\b\x02\x10\x03\x1a\rapi_keys:read\"\rapi_keys:read*\x15\n" +

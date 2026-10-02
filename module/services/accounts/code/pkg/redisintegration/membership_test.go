@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
@@ -20,6 +19,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/membership"
 )
 
@@ -55,7 +55,7 @@ func seedUser(t *testing.T) string {
 	t.Helper()
 	id := business.NewIDString()
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO users (uuid, primary_email, status) VALUES ($1, $2, 'active')`,
 			id, fmt.Sprintf("user-%s@test.local", id))
@@ -68,7 +68,7 @@ func seedOrg(t *testing.T, ownerID string) string {
 	t.Helper()
 	id := business.NewIDString()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, 'Cache Org', $2, $3)`,
 			id, "org-"+id, ownerID)

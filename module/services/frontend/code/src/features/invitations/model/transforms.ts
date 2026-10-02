@@ -61,8 +61,10 @@ export function formatInvitationRole(role: InvitationRole): string {
 
 export function formatDeliveryStatus(status: InvitationDeliveryStatus): string {
 	switch (status) {
+		// No email was sent for this invitation — the deployment sends none, or
+		// the invitee opted out. The link is the delivery: "Copy link" issues it.
 		case InvitationDeliveryStatus.DISABLED:
-			return "Provider disabled";
+			return "Email not sent — share the link";
 		case InvitationDeliveryStatus.QUEUED:
 			return "Queued";
 		case InvitationDeliveryStatus.SENT:

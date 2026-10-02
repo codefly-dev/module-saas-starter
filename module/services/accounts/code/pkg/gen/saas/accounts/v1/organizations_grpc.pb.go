@@ -26,6 +26,9 @@ const (
 	OrganizationService_ListOrganizations_FullMethodName          = "/saas.accounts.v1.OrganizationService/ListOrganizations"
 	OrganizationService_AddMember_FullMethodName                  = "/saas.accounts.v1.OrganizationService/AddMember"
 	OrganizationService_RemoveMember_FullMethodName               = "/saas.accounts.v1.OrganizationService/RemoveMember"
+	OrganizationService_UpdateOrganization_FullMethodName         = "/saas.accounts.v1.OrganizationService/UpdateOrganization"
+	OrganizationService_LeaveOrganization_FullMethodName          = "/saas.accounts.v1.OrganizationService/LeaveOrganization"
+	OrganizationService_DeleteOrganization_FullMethodName         = "/saas.accounts.v1.OrganizationService/DeleteOrganization"
 	OrganizationService_ListMembers_FullMethodName                = "/saas.accounts.v1.OrganizationService/ListMembers"
 	OrganizationService_GetOrgSettings_FullMethodName             = "/saas.accounts.v1.OrganizationService/GetOrgSettings"
 	OrganizationService_UpdateOrgSettings_FullMethodName          = "/saas.accounts.v1.OrganizationService/UpdateOrgSettings"
@@ -44,6 +47,17 @@ type OrganizationServiceClient interface {
 	ListOrganizations(ctx context.Context, in *ListOrganizationsRequest, opts ...grpc.CallOption) (*ListOrganizationsResponse, error)
 	AddMember(ctx context.Context, in *AddOrgMemberRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RemoveMember(ctx context.Context, in *RemoveOrgMemberRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// UpdateOrganization renames an organization or changes its slug.
+	UpdateOrganization(ctx context.Context, in *UpdateOrganizationRequest, opts ...grpc.CallOption) (*Organization, error)
+	// LeaveOrganization removes the caller's own membership. The subject is
+	// always the caller; the last administrator of an organization others still
+	// belong to is refused.
+	LeaveOrganization(ctx context.Context, in *LeaveOrganizationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// DeleteOrganization archives an organization: it disappears from every
+	// member's list, admits no further request, and its credentials, grants and
+	// pending invitations are revoked. Its history is kept. Only an owner or a
+	// platform super administrator may delete.
+	DeleteOrganization(ctx context.Context, in *DeleteOrganizationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListMembers(ctx context.Context, in *ListOrgMembersRequest, opts ...grpc.CallOption) (*ListOrgMembersResponse, error)
 	GetOrgSettings(ctx context.Context, in *GetOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error)
 	UpdateOrgSettings(ctx context.Context, in *UpdateOrgSettingsRequest, opts ...grpc.CallOption) (*OrgSettings, error)
@@ -113,6 +127,36 @@ func (c *organizationServiceClient) RemoveMember(ctx context.Context, in *Remove
 	return out, nil
 }
 
+func (c *organizationServiceClient) UpdateOrganization(ctx context.Context, in *UpdateOrganizationRequest, opts ...grpc.CallOption) (*Organization, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Organization)
+	err := c.cc.Invoke(ctx, OrganizationService_UpdateOrganization_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *organizationServiceClient) LeaveOrganization(ctx context.Context, in *LeaveOrganizationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, OrganizationService_LeaveOrganization_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *organizationServiceClient) DeleteOrganization(ctx context.Context, in *DeleteOrganizationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, OrganizationService_DeleteOrganization_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *organizationServiceClient) ListMembers(ctx context.Context, in *ListOrgMembersRequest, opts ...grpc.CallOption) (*ListOrgMembersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListOrgMembersResponse)
@@ -174,6 +218,17 @@ type OrganizationServiceServer interface {
 	ListOrganizations(context.Context, *ListOrganizationsRequest) (*ListOrganizationsResponse, error)
 	AddMember(context.Context, *AddOrgMemberRequest) (*emptypb.Empty, error)
 	RemoveMember(context.Context, *RemoveOrgMemberRequest) (*emptypb.Empty, error)
+	// UpdateOrganization renames an organization or changes its slug.
+	UpdateOrganization(context.Context, *UpdateOrganizationRequest) (*Organization, error)
+	// LeaveOrganization removes the caller's own membership. The subject is
+	// always the caller; the last administrator of an organization others still
+	// belong to is refused.
+	LeaveOrganization(context.Context, *LeaveOrganizationRequest) (*emptypb.Empty, error)
+	// DeleteOrganization archives an organization: it disappears from every
+	// member's list, admits no further request, and its credentials, grants and
+	// pending invitations are revoked. Its history is kept. Only an owner or a
+	// platform super administrator may delete.
+	DeleteOrganization(context.Context, *DeleteOrganizationRequest) (*emptypb.Empty, error)
 	ListMembers(context.Context, *ListOrgMembersRequest) (*ListOrgMembersResponse, error)
 	GetOrgSettings(context.Context, *GetOrgSettingsRequest) (*OrgSettings, error)
 	UpdateOrgSettings(context.Context, *UpdateOrgSettingsRequest) (*OrgSettings, error)
@@ -207,6 +262,15 @@ func (UnimplementedOrganizationServiceServer) AddMember(context.Context, *AddOrg
 }
 func (UnimplementedOrganizationServiceServer) RemoveMember(context.Context, *RemoveOrgMemberRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveMember not implemented")
+}
+func (UnimplementedOrganizationServiceServer) UpdateOrganization(context.Context, *UpdateOrganizationRequest) (*Organization, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateOrganization not implemented")
+}
+func (UnimplementedOrganizationServiceServer) LeaveOrganization(context.Context, *LeaveOrganizationRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method LeaveOrganization not implemented")
+}
+func (UnimplementedOrganizationServiceServer) DeleteOrganization(context.Context, *DeleteOrganizationRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteOrganization not implemented")
 }
 func (UnimplementedOrganizationServiceServer) ListMembers(context.Context, *ListOrgMembersRequest) (*ListOrgMembersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
@@ -334,6 +398,60 @@ func _OrganizationService_RemoveMember_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrganizationService_UpdateOrganization_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateOrganizationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).UpdateOrganization(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_UpdateOrganization_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).UpdateOrganization(ctx, req.(*UpdateOrganizationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrganizationService_LeaveOrganization_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveOrganizationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).LeaveOrganization(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_LeaveOrganization_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).LeaveOrganization(ctx, req.(*LeaveOrganizationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrganizationService_DeleteOrganization_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteOrganizationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrganizationServiceServer).DeleteOrganization(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrganizationService_DeleteOrganization_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrganizationServiceServer).DeleteOrganization(ctx, req.(*DeleteOrganizationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _OrganizationService_ListMembers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListOrgMembersRequest)
 	if err := dec(in); err != nil {
@@ -450,6 +568,18 @@ var OrganizationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveMember",
 			Handler:    _OrganizationService_RemoveMember_Handler,
+		},
+		{
+			MethodName: "UpdateOrganization",
+			Handler:    _OrganizationService_UpdateOrganization_Handler,
+		},
+		{
+			MethodName: "LeaveOrganization",
+			Handler:    _OrganizationService_LeaveOrganization_Handler,
+		},
+		{
+			MethodName: "DeleteOrganization",
+			Handler:    _OrganizationService_DeleteOrganization_Handler,
 		},
 		{
 			MethodName: "ListMembers",

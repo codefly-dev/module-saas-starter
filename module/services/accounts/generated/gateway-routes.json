@@ -1236,6 +1236,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.InvitationService/IssueInvitationLink",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/IssueInvitationLink",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InvitationService/IssueInvitationLink",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.InvitationService/ListInvitations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
@@ -1572,6 +1588,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.OrganizationService/DeleteOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/DeleteOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/DeleteOrganization",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.OrganizationService/GetOrgSettings",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
@@ -1615,6 +1647,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/LeaveOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/LeaveOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/LeaveOrganization",
       "remove_after": "2026-10-11"
     },
     {
@@ -1679,6 +1727,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.OrganizationService/UpdateOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.OrganizationService/UpdateOrganization",
       "remove_after": "2026-10-11"
     },
     {
@@ -2004,6 +2068,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.PlatformAdminService/GetOrganizationRoster",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.PlatformAdminService/GrantPlatformRole",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -2047,6 +2127,22 @@
       "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
       "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/customers.PlatformAdminService/ListAllOrganizations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
       "remove_after": "2026-10-11"
     },
     {
@@ -4276,6 +4372,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.InvitationService/IssueInvitationLink",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InvitationService/IssueInvitationLink",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.InvitationService/ListInvitations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InvitationService/ListInvitations",
@@ -4612,6 +4724,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/DeleteOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/DeleteOrganization",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
@@ -4647,6 +4775,22 @@
       "path": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/LeaveOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/LeaveOrganization",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4711,6 +4855,22 @@
       "path": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.OrganizationService/UpdateOrganization",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganization",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -5044,6 +5204,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
@@ -5079,6 +5255,22 @@
       "path": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

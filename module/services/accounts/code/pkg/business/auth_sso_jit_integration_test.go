@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	authcore "accounts/pkg/auth"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // setOrgSsoJitPolicy stamps an org's provider id and JIT provisioning policy so
@@ -19,7 +19,7 @@ import (
 func setOrgSsoJitPolicy(t *testing.T, orgID, providerOrgID, mode string, domains []string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			UPDATE organizations
 			   SET sso_organization_id       = $2,

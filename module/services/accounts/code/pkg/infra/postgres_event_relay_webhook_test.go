@@ -11,9 +11,9 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/events"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -192,7 +192,7 @@ func webhookSubscriptionPatterns(t *testing.T, endpointID string) []string {
 	t.Helper()
 	var patterns []string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		rows, err := tx.Query(ctx, `
 			SELECT type_pattern FROM public.event_subscriptions
 			WHERE webhook_subscription_id = $1 AND revoked_at IS NULL
@@ -240,7 +240,7 @@ func TestAuditPublishTakesNoPartitionLock(t *testing.T) {
 
 	var partitionKey string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT partition_key FROM public.domain_events WHERE id = $1::uuid`, entryID).Scan(&partitionKey)
 	}))
@@ -271,7 +271,7 @@ func TestPostgresRelaySurvivesEndpointDeletedMidFanOut(t *testing.T) {
 		Time: timestamppb.New(time.Now().UTC()), TenantId: orgID, Data: []byte(`{}`),
 	}
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		return transport.Publish(ctx, ctx.Value("tx"), event) //nolint:staticcheck // shared "tx" key
+		return transport.Publish(ctx, storetx.Tx(ctx), event)
 	}))
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		return testStore.DeleteWebhookSubscription(ctx, doomed)
@@ -320,7 +320,7 @@ func TestWebhookSubscriptionQueueIsPinnedToTheDispatcher(t *testing.T) {
 	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
 
 	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx, `
 			INSERT INTO public.event_subscriptions
 				(subscriber_principal_id, type_pattern, queue, delivery, org_id, webhook_subscription_id)
@@ -354,11 +354,10 @@ func TestRequireWebhookRelayRefusesATransportWithNoDispatcher(t *testing.T) {
 func TestSyncWebhookEventSubscriptionsRejectsMissingTenantScope(t *testing.T) {
 	orgID := seedOrg(t, seedUser(t))
 	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
-	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
-		if _, err := tx.Exec(ctx, "SET LOCAL ROLE app_tenant"); err != nil {
-			return err
-		}
+	// A request transaction runs as app_tenant on the request login; the
+	// control-plane login cannot step down into it.
+	err := testStore.RunInTransaction(testCtx, func(ctx context.Context) error {
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, "SELECT set_config('app.current_org_id', '', true)"); err != nil {
 			return err
 		}
@@ -411,7 +410,7 @@ func TestWebhookDeliveryOutcomesAreDistinguished(t *testing.T) {
 		Time: timestamppb.New(time.Now().UTC()), TenantId: orgID, Data: []byte(`{}`),
 	}
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		return transport.Publish(ctx, ctx.Value("tx"), second) //nolint:staticcheck // shared "tx" key
+		return transport.Publish(ctx, storetx.Tx(ctx), second)
 	}))
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		return testStore.DeleteWebhookSubscription(ctx, doomed)

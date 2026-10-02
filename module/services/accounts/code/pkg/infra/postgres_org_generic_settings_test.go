@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ import (
 // stored ProtoJSON directly.
 func orgTxSettings(ctx context.Context, t *testing.T, orgID string) string {
 	t.Helper()
-	tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+	tx := storetx.Tx(ctx)
 	var raw string
 	require.NoError(t, tx.QueryRow(ctx,
 		`SELECT settings::text FROM org_generic_settings WHERE org_id = $1`, orgID).Scan(&raw))
@@ -60,7 +60,7 @@ func TestOrgGenericSettingsResetPrunesEmptyParentsAndPreservesSiblings(t *testin
 	orgID := seedOrg(t, owner)
 
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO org_generic_settings (org_id, settings) VALUES ($1, $2::jsonb)`,
 			orgID,
@@ -86,7 +86,7 @@ func TestOrgGenericSettingsDeepMergePreservesSiblingsAndExplicitFalse(t *testing
 	orgID := seedOrg(t, owner)
 
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO org_generic_settings (org_id, settings) VALUES ($1, $2::jsonb)`,
 			orgID, `{"future":{"new_field":true},"email":{"marketing":true}}`,
@@ -127,7 +127,7 @@ func TestOrgGenericSettingsRLSIsolatesTenants(t *testing.T) {
 		}
 		require.NotNil(t, got)
 
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		var visible int
 		if err := tx.QueryRow(ctx,
 			`SELECT COUNT(*) FROM org_generic_settings WHERE org_id = $1`, orgA).Scan(&visible); err != nil {
@@ -139,7 +139,7 @@ func TestOrgGenericSettingsRLSIsolatesTenants(t *testing.T) {
 
 	// Org B cannot write a row scoped to A: the RLS WITH CHECK rejects it.
 	err := testStore.WithOrgTx(testCtx, orgB, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		_, execErr := tx.Exec(ctx,
 			`INSERT INTO org_generic_settings (org_id, settings) VALUES ($1, '{}'::jsonb)`, orgA)
 		return execErr
@@ -148,7 +148,7 @@ func TestOrgGenericSettingsRLSIsolatesTenants(t *testing.T) {
 
 	// Org A still sees its own row.
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgA, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		var visible int
 		if err := tx.QueryRow(ctx,
 			`SELECT COUNT(*) FROM org_generic_settings WHERE org_id = $1`, orgA).Scan(&visible); err != nil {
@@ -164,7 +164,7 @@ func TestOrgGenericSettingsColumnRejectsNonObjectAndOversize(t *testing.T) {
 	orgID := seedOrg(t, owner)
 
 	nonObject := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO org_generic_settings (org_id, settings) VALUES ($1, '"scalar"'::jsonb)`, orgID)
 		return err
@@ -172,7 +172,7 @@ func TestOrgGenericSettingsColumnRejectsNonObjectAndOversize(t *testing.T) {
 	require.Error(t, nonObject, "non-object settings must fail the typed-object CHECK")
 
 	oversize := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO org_generic_settings (org_id, settings)
 			 VALUES ($1, jsonb_build_object('k', repeat('x', 200000)))`, orgID)
@@ -191,7 +191,7 @@ func TestOrgGenericSettingsConcurrentResetsSerializeWithoutLostUpdates(t *testin
 	orgID := seedOrg(t, owner)
 
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithOrgTx
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO org_generic_settings (org_id, settings) VALUES ($1, $2::jsonb)`,
 			orgID, `{"keya":1,"keyb":1,"keyc":1,"keyd":1}`)

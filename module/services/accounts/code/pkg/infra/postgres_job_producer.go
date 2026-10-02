@@ -8,6 +8,7 @@ import (
 	"time"
 
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
 
 	"github.com/google/uuid"
@@ -50,8 +51,8 @@ func (s *PostgresStore) EnqueueJob(
 	if err != nil {
 		return nil, err
 	}
-	tx, ok := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-	if !ok {
+	tx := storetx.Tx(ctx)
+	if tx == nil {
 		return nil, jobs.ErrTransactionRequired
 	}
 	return enqueuePreparedJob(ctx, tx, prepared)

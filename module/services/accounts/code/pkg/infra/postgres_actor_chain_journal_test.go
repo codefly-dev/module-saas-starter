@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // =====================================================================
@@ -197,7 +197,7 @@ func readOwnerEffectiveRevision(t *testing.T, orgID, ownerID string) int64 {
 	t.Helper()
 	var revision int64
 	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT GREATEST(
 				(SELECT revision FROM organization_authorization_revisions WHERE org_id = $1),
@@ -215,7 +215,7 @@ func seedActiveGrant(t *testing.T, orgID, actorID, grantorID string) string {
 	t.Helper()
 	id := business.NewIDString()
 	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO delegation_grants (
 				id, org_id, actor_principal_id, grantor_principal_id,

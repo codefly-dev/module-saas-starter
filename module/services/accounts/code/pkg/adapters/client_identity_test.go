@@ -27,6 +27,8 @@ func TestForwardedClientIsProjectedAcrossTransports(t *testing.T) {
 	connectCtx, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.UserService/GetSelf", http.Header{
 			"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+			"X-Credential-Kind":       []string{credentialKindSession},
+			"X-Scopes":                []string{""},
 			"X-User-Id":               []string{supportActorID},
 			"X-Org-Id":                []string{targetOrgID},
 			"X-Client-Id":             []string{forwardedClientID},
@@ -36,6 +38,8 @@ func TestForwardedClientIsProjectedAcrossTransports(t *testing.T) {
 	grpcCtx, err := (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"x-codefly-gateway-token", "test-gateway-token",
+			"x-credential-kind", credentialKindSession,
+			"x-scopes", "",
 			"x-user-id", supportActorID,
 			"x-org-id", targetOrgID,
 			"x-client-id", forwardedClientID,
@@ -63,6 +67,8 @@ func TestSessionWithoutAClientProjectsNone(t *testing.T) {
 	ctx, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.UserService/GetSelf", http.Header{
 			"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+			"X-Credential-Kind":       []string{credentialKindSession},
+			"X-Scopes":                []string{""},
 			"X-User-Id":               []string{supportActorID},
 			"X-Org-Id":                []string{targetOrgID},
 		})
@@ -122,6 +128,8 @@ func TestMalformedForwardedClientIsRefused(t *testing.T) {
 	_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.UserService/GetSelf", http.Header{
 			"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+			"X-Credential-Kind":       []string{credentialKindSession},
+			"X-Scopes":                []string{""},
 			"X-User-Id":               []string{supportActorID},
 			"X-Client-Id":             []string{"Not A Client Id"},
 		})
@@ -130,6 +138,8 @@ func TestMalformedForwardedClientIsRefused(t *testing.T) {
 	_, err = (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"x-codefly-gateway-token", "test-gateway-token",
+			"x-credential-kind", credentialKindSession,
+			"x-scopes", "",
 			"x-user-id", supportActorID,
 			"x-client-id", "Not A Client Id",
 		)), "/saas.accounts.v1.UserService/GetSelf")

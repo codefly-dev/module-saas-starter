@@ -4,20 +4,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { Team } from "@/gen/saas/accounts/v1/common_pb";
 import { OrgSelector } from "@/components/org-selector";
+import type { Team } from "@/gen/saas/accounts/v1/common_pb";
+import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
+import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
-import { Badge, Button } from "@/shared/ui";
+import { Badge, Button, Spinner, useLoadingPhase } from "@/shared/ui";
 import { roleLabel } from "../model/transforms";
 import { toTeamRole } from "../model/types";
-import { teamQueries } from "../service/queries";
 import { teamMutations } from "../service/mutations";
+import { teamQueries } from "../service/queries";
 import { TeamForm } from "./team-form";
 import { TeamMembersPanel } from "./team-members-panel";
 import { TeamRoles } from "./team-roles";
-import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
-import { hasPermission } from "@/lib/permissions";
 
 export function TeamDetailsPage({ teamId }: { teamId: string }) {
 	const { organizationId = "" } = useAuth();
@@ -37,9 +38,10 @@ function TeamDetailsForOrganization({
 	orgId: string;
 	teamId: string;
 }) {
-	const { data, isLoading, isError, refetch } = useQuery(
+	const { data, isLoading, isError, error, refetch } = useQuery(
 		teamQueries.list(orgId),
 	);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
 	const team = data?.teams.find(
 		(item) => item.id === teamId && item.orgId === orgId,
 	);
@@ -56,11 +58,11 @@ function TeamDetailsForOrganization({
 			</div>
 			{!orgId ? (
 				<p>Select an organization to view this team.</p>
-			) : isLoading ? (
-				<p>Loading team…</p>
+			) : quiet ? null : indicator ? (
+				<Spinner label="Loading team" />
 			) : isError ? (
 				<div role="alert">
-					Couldn&apos;t load this team.{" "}
+					{readOutcomeMessage(readOutcome(true, error), "this team", "")}{" "}
 					<Button onClick={() => void refetch()}>Retry</Button>
 				</div>
 			) : !team ? (
@@ -82,6 +84,9 @@ function TeamDetails({ team }: { team: Team }) {
 	const queryClient = useQueryClient();
 	const [editing, setEditing] = useState(false);
 	const members = useQuery(teamQueries.members(team.id));
+	const { indicator: accessIndicator, quiet: accessQuiet } = useLoadingPhase(
+		members.isPending,
+	);
 	const membership = members.data?.members.find(
 		(member) => member.userId === user?.id,
 	);
@@ -95,10 +100,13 @@ function TeamDetails({ team }: { team: Team }) {
 	const update = useMutation({
 		mutationFn: (values: { name: string; description?: string }) =>
 			teamMutations.update(team.id, values.name, values.description),
-		onSuccess: async () => {
-			await queryClient.invalidateQueries({ queryKey: ["teams", team.orgId] });
+		// Closed on the write, not on the refetch that follows it — an awaited
+		// invalidation keeps the mutation `isPending`, holding this dialog open on
+		// "Saving…" while the teams list reloads. Same shape as #964's add button.
+		onSuccess: () => {
 			setEditing(false);
 			toast.success("Team updated");
+			void queryClient.invalidateQueries({ queryKey: ["teams", team.orgId] });
 		},
 	});
 	return (
@@ -124,10 +132,16 @@ function TeamDetails({ team }: { team: Team }) {
 				className="space-y-2 rounded-lg border p-4"
 			>
 				<h2 className="font-semibold">Your access</h2>
-				{members.isPending ? (
-					<p>Checking your team role…</p>
+				{accessQuiet ? null : accessIndicator ? (
+					<Spinner label="Checking your team role" />
 				) : members.isError ? (
-					<p>Unable to verify your team role.</p>
+					<p>
+						{readOutcomeMessage(
+							readOutcome(true, members.error),
+							"your role in this team",
+							"",
+						)}
+					</p>
 				) : (
 					<>
 						<Badge variant={teamAdmin ? "default" : "outline"}>

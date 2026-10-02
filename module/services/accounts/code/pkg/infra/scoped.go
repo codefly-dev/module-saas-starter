@@ -2,10 +2,10 @@ package infra
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5"
+	"fmt"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/internal/txbind"
 )
 
 // Scoped is a Store handle bound to a principal Identity. Every call runs inside
@@ -40,13 +40,31 @@ func (sc *Scoped) Identity() business.Identity { return sc.id }
 // One tx sets both vars directly — WithOrgTx/WithUserTx each open their own tx
 // and must not be nested (see tenant_tx.go's no-nesting rule). System() delegates
 // to the audited WithControlPlane.
+//
+// Within joins a transaction already on ctx only when that transaction carries
+// exactly the identity's authority: System() joins a control-plane transaction,
+// and a tenant or user identity a request transaction bound for exactly its own
+// org and user. Any other pairing is refused rather than joined — a tenant
+// identity inside a control-plane transaction would run as app_control_plane
+// with no org or user bound, across every tenant; System() inside a request
+// transaction would silently run as app_tenant; and an identity inside a
+// request transaction bound for another org or user would read that org's or
+// user's rows, since an id-only lookup such as GetPrincipal filters by nothing
+// but the transaction's own binding.
 func (sc *Scoped) Within(ctx context.Context, fn func(ctx context.Context) error) error {
 	// Nesting-safe: if a tx is already on ctx (an outer As().Within or With*Tx),
 	// reuse it — the outer scope already established the RLS context, and opening
 	// a second tx would deadlock under pool pressure (see tenant_tx.go's
 	// no-nesting rule). Lets leaf methods wrap in Within without caring whether a
 	// caller already opened a tx.
-	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx { //nolint:staticcheck // shared "tx" key
+	if bound, ok := txbind.Lookup(ctx); ok {
+		if want := sc.pool(); bound.Pool != want {
+			return fmt.Errorf("store: %s cannot join the %s transaction already on this context; it runs only inside a %s transaction", sc.describe(), bound.Pool, want)
+		}
+		// The identity's ids stay out of the error: it can reach a log line.
+		if !sc.id.IsSystem() && (bound.OrgID != sc.id.OrgID || bound.UserID != sc.id.UserID) {
+			return fmt.Errorf("store: %s cannot join the request transaction already on this context; it is bound for a different org or user", sc.describe())
+		}
 		return fn(ctx)
 	}
 	if sc.id.IsSystem() {
@@ -58,27 +76,37 @@ func (sc *Scoped) Within(ctx context.Context, fn func(ctx context.Context) error
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
-	// The connection runs as app_tenant (pool BeforeAcquire hook); we set the
-	// identity's RLS vars for the tx lifetime. SET LOCAL semantics via
-	// set_config(..., true): cleared on commit/rollback, no leak across reuse.
-	if sc.id.UserID != "" {
-		if _, err := tx.Exec(ctx, "SELECT set_config('app.current_user_id', $1, true)", sc.id.UserID); err != nil {
-			return err
-		}
-	}
-	if sc.id.OrgID != "" {
-		if _, err := tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", sc.id.OrgID); err != nil {
-			return err
-		}
+	// The connection runs as app_tenant (the request login's only role); we set the
+	// identity's RLS vars for the tx lifetime, clearing whichever it lacks. SET
+	// LOCAL semantics via set_config(..., true): cleared on commit/rollback, no
+	// leak across reuse.
+	if err := bindRequestScope(ctx, tx, sc.id.OrgID, sc.id.UserID); err != nil {
+		return err
 	}
 
-	// Same "tx" context key as WithOrgTx/RunInTransaction so existing Store
-	// methods pick up the tx through getQueryExecutor without a refactor.
-	txCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // shared "tx" key, intentional
+	// Bound as a request transaction for this identity's org and user, as
+	// WithOrgTx/WithUserTx bind theirs, so existing Store methods pick up the tx
+	// through getQueryExecutor and a nested Within for the same identity joins it.
+	txCtx := txbind.BindRequest(ctx, tx, sc.id.OrgID, sc.id.UserID)
 	if err := fn(txCtx); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// pool is the pool whose transaction carries this identity's authority.
+func (sc *Scoped) pool() txbind.Pool {
+	if sc.id.IsSystem() {
+		return txbind.ControlPlane
+	}
+	return txbind.Request
+}
+
+func (sc *Scoped) describe() string {
+	if sc.id.IsSystem() {
+		return "System()"
+	}
+	return "a tenant or user identity"
 }
 
 // ----------------------------------------------------------------------------

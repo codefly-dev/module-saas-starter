@@ -1,9 +1,11 @@
 import { createClient } from "@connectrpc/connect";
 import { queryOptions } from "@tanstack/react-query";
 import { OrganizationService } from "@/gen/saas/accounts/v1/organizations_pb";
+import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { apiTransport } from "@/lib/connect/transport";
 
 const client = createClient(OrganizationService, apiTransport);
+const platform = createClient(PlatformAdminService, apiTransport);
 
 export const orgQueries = {
 	list: () =>
@@ -23,6 +25,16 @@ export const orgQueries = {
 		queryOptions({
 			queryKey: ["org-members", orgId],
 			queryFn: () => client.listMembers({ orgId }),
+			enabled: !!orgId,
+		}),
+
+	// The platform view of a roster: any organization's members, for a
+	// platform administrator who need not belong to it. ListMembers requires a
+	// membership, so it cannot serve that view.
+	roster: (orgId: string) =>
+		queryOptions({
+			queryKey: ["org-roster", orgId],
+			queryFn: () => platform.getOrganizationRoster({ orgId }),
 			enabled: !!orgId,
 		}),
 

@@ -33,7 +33,7 @@ type servicePermissionDefinition struct {
 var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "*:*", Description: "Full access to all resources and actions.", BuiltInRoles: []string{"admin"}, APIKeyScope: true},
 	{Permission: "api_keys:read", Description: "List API keys.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
-	{Permission: "api_keys:write", Description: "Mint and revoke API keys.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "api_keys:write", Description: "Mint and revoke API keys. As an API-key scope it only revokes: minting takes an interactive session.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "audit:read", Description: "Read and export audit events.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "billing:read", Description: "View billing state and invoices.", BuiltInRoles: []string{"admin (via *:*)", "editor"}, APIKeyScope: true},
 	{Permission: "billing:write", Description: "Open checkout and billing portal sessions.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},

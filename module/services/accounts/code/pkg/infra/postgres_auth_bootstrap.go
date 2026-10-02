@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"accounts/pkg/infra/storetx"
 	"context"
 	"errors"
 	"math/rand/v2"
@@ -41,8 +42,8 @@ func (s *PostgresStore) WithAuthBootstrapTx(
 	recordControlPlane(ctx)
 	for attempt := 1; attempt <= authBootstrapMaxAttempts; attempt++ {
 		err := s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable}, func(ctx context.Context) error {
-			tx, ok := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared store transaction key
-			if !ok {
+			tx := storetx.Tx(ctx)
+			if tx == nil {
 				return errors.New("auth bootstrap transaction is unavailable")
 			}
 			return fn(ctx, tx)
@@ -109,8 +110,8 @@ func (s *PostgresStore) WithAuthLookupTx(
 		IsoLevel:   pgx.RepeatableRead,
 		AccessMode: pgx.ReadOnly,
 	}, func(ctx context.Context) error {
-		tx, ok := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared store transaction key
-		if !ok {
+		tx := storetx.Tx(ctx)
+		if tx == nil {
 			return errors.New("auth lookup transaction is unavailable")
 		}
 		return fn(ctx, tx)

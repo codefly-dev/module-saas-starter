@@ -21,8 +21,8 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -239,7 +239,7 @@ func TestMFALoginLocksTransactionAfterFiveRejectedFactors(t *testing.T) {
 	var maxAttempts int
 	var lockedUntil *time.Time
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		return ctx.Value("tx").(pgx.Tx).QueryRow(ctx, `
+		return storetx.Tx(ctx).QueryRow(ctx, `
 			SELECT failed_attempts, max_attempts, locked_until
 			FROM mfa_login_transactions
 			WHERE user_id = $1`, userID).Scan(&failedAttempts, &maxAttempts, &lockedUntil)

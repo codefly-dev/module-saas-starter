@@ -72,15 +72,15 @@ func TestDatasourceSourceToProto_FlagsNonConformantProviders(t *testing.T) {
 	svc, _ := business.NewService(nil)
 	svc.SetDatasourceConnector(nil, nil, "")
 	reg := svc.DatasourceConnectors()
-	gh := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderGitHub}, reg)
+	gh := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderGitHub}, reg, business.DatasourceLiveDeliveryNone)
 	if !gh.GetConformant() || gh.GetConformanceGap() != "" {
 		t.Fatalf("github source = conformant %v gap %q", gh.GetConformant(), gh.GetConformanceGap())
 	}
-	crawl := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderCrawler, Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "https://docs.example.com/sitemap.xml"}}, reg)
+	crawl := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderCrawler, Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "https://docs.example.com/sitemap.xml"}}, reg, business.DatasourceLiveDeliveryNone)
 	if crawl.GetConformant() || crawl.GetConformanceGap() == "" {
 		t.Fatalf("crawler source = conformant %v gap %q, want flagged with its gap", crawl.GetConformant(), crawl.GetConformanceGap())
 	}
-	if unconfigured := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderGitHub}, nil); unconfigured.GetConformant() {
+	if unconfigured := datasourceSourceToProto(&business.DatasourceSource{Provider: business.DatasourceProviderGitHub}, nil, business.DatasourceLiveDeliveryNone); unconfigured.GetConformant() {
 		t.Fatal("with no registry nothing is reported conformant")
 	}
 }
@@ -98,7 +98,7 @@ func TestDatasourceSourceToProto_ProjectsIngestProvenance(t *testing.T) {
 		Status:             business.DatasourceStatusActive,
 		LastIngestedAt:     &ingested,
 		LastIngestedCommit: "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 
 	if got := out.GetLastIngestedAt().AsTime(); !got.Equal(ingested) {
 		t.Errorf("last_ingested_at = %s, want %s", got, ingested)
@@ -123,7 +123,7 @@ func TestDatasourceSourceToProto_PullProviderKeepsSyncClock(t *testing.T) {
 		Provider:     business.DatasourceProviderAPI,
 		Status:       business.DatasourceStatusActive,
 		LastSyncedAt: &synced,
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 
 	if got := out.GetLastSyncedAt().AsTime(); !got.Equal(synced) {
 		t.Errorf("last_synced_at = %s, want %s", got, synced)
@@ -145,7 +145,7 @@ func TestDatasourceSourceToProto_OmitsUnadvancedCursor(t *testing.T) {
 		OrgID:    "22222222-2222-2222-2222-222222222222",
 		Provider: business.DatasourceProviderGitHub,
 		Status:   business.DatasourceStatusActive,
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 
 	if out.GetLastIngestedAt() != nil {
 		t.Errorf("last_ingested_at = %v, want unset", out.GetLastIngestedAt())
@@ -169,7 +169,7 @@ func TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason(t *testing.T) {
 		Provider:     business.DatasourceProviderGitHub,
 		Status:       business.DatasourceStatusDegraded,
 		StatusReason: reason,
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 
 	if got := out.GetStatus(); got != gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED {
 		t.Errorf("status = %v, want DATASOURCE_STATUS_DEGRADED", got)
@@ -187,7 +187,7 @@ func TestDatasourceSourceToProto_ProjectsBoundaryLabel(t *testing.T) {
 		Status:         business.DatasourceStatusActive,
 		BoundaryNodeID: "33333333-3333-3333-3333-333333333333",
 		BoundaryLabel:  "guides",
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 	if got := out.GetBoundaryNodeId(); got != "33333333-3333-3333-3333-333333333333" {
 		t.Errorf("boundary_node_id = %q", got)
 	}
@@ -231,7 +231,7 @@ func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
 		Repo:           "acme/docs",
 		Paths:          []string{"docs"},
 		FileExtensions: []string{".md", ".mdx"},
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 	got := filtered.GetGithub().GetFileExtensions()
 	if len(got) != 2 || got[0] != ".md" || got[1] != ".mdx" {
 		t.Errorf("file_extensions = %v", got)
@@ -243,7 +243,7 @@ func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
 		Provider: business.DatasourceProviderGitHub,
 		Status:   business.DatasourceStatusActive,
 		Repo:     "acme/docs",
-	}, nil)
+	}, nil, business.DatasourceLiveDeliveryNone)
 	// Assert the config block is present before reading through it. The generated
 	// getters are nil-safe, so GetGithub().GetFileExtensions() reads as an empty
 	// allowlist whether the projection carries an unfiltered source or drops its

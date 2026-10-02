@@ -1,5 +1,6 @@
 import {
 	Activity,
+	Building2,
 	CreditCard,
 	Flag,
 	ListChecks,
@@ -12,6 +13,13 @@ import { readPublicRuntimeConfig } from "@/lib/read-public-runtime-config";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/shared/ui";
 
 const sections = [
+	{
+		title: "Organizations",
+		description:
+			"Find any organization and manage it: members, roles, name, deletion.",
+		href: "/admin/platform/organizations",
+		icon: Building2,
+	},
 	{
 		title: "Platform Admins",
 		description: "Manage platform-level admin roles and permissions.",

@@ -252,6 +252,22 @@ func TestGateway_Solution_StripsSpoofedIdentity(t *testing.T) {
 	require.Equal(t, "admin", fake.lastHeaders.Get("x-org-role"))
 }
 
+// A solution backend may transcode REST to gRPC the way accounts does, so the
+// Grpc-Metadata- spelling of an identity header is dropped here too.
+func TestGateway_Solution_StripsGRPCMetadataPrefixedHeaders(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "audit")
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	setGRPCMetadataSpellings(req, "attacker")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	requireNoGRPCMetadataHeaders(t, fake.lastHeaders)
+}
+
 // A request with no solution id after the prefix is a 404, not a proxy attempt.
 func TestGateway_Solution_MissingID_NotFound(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)

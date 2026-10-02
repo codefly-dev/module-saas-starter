@@ -61,6 +61,20 @@ message QueryAuditLogRequest {
   // It is the companion to reading the client off each record: without it
   // "what did this client do" can only be answered by paging the whole trail.
   string client_id = 14;
+  // event_types is the set form of event_type: a record matches when its type is
+  // any one of them. Both may be sent; a record must then satisfy each, which
+  // for a single-element set is the same answer as either alone.
+  //
+  // It exists because a summary over a *family* of event types had no filter to
+  // open. "New users" counts every type the registry marks as recording a
+  // person joining — a set the registry owns and may extend — and a scalar
+  // event_type cannot name a set, so the figure could be shown and never
+  // checked. Picking one member instead would have shown a different number
+  // from the one clicked.
+  repeated string event_types = 15 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {string: {max_len: 255}}
+  }];
 }
 
 message QueryAuditLogResponse {
@@ -75,6 +89,12 @@ message ExportAuditLogRequest {
   string actor_id = 3;
   string action = 4 [deprecated = true]; // use event_type
   string event_type = 5;
+  // The set form of event_type, matching QueryAuditLogRequest.event_types, so a
+  // download carries the same filter as the list it was taken from.
+  repeated string event_types = 6 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {string: {max_len: 255}}
+  }];
 }
 
 message ExportAuditLogResponse {
@@ -151,6 +171,14 @@ message AggregateAuditLogRequest {
   // client_id narrows the aggregation to calls made through one registered
   // client, matching QueryAuditLogRequest.client_id.
   string client_id = 17;
+  // The set form of event_type, matching QueryAuditLogRequest.event_types. A
+  // tile that summarises a family of event types reads its figure through this
+  // and drives its own click through the same value, so the number shown and
+  // the list it opens cannot disagree.
+  repeated string event_types = 18 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {string: {max_len: 255}}
+  }];
 }
 
 message AuditAggregateBucket {
@@ -196,6 +224,14 @@ message AuditEventType {
   // stand in for it — a category groups events for facets, and not every
   // identity event is a person arriving.
   bool marks_user_joined = 8;
+  // Whether an outbound webhook endpoint may subscribe to this type and ever
+  // receive it. A type is eligible when it is declared with external
+  // visibility: every platform type is, and a solution-declared or
+  // module-declared type is only when its producer declared it external AND
+  // the operator marked its namespace externally deliverable. The registry
+  // owns the answer so a subscription form cannot offer a name that can never
+  // fire, which is the silent acceptance this flag exists to end.
+  bool webhook_eligible = 9;
 }
 
 message ListAuditEventTypesResponse {

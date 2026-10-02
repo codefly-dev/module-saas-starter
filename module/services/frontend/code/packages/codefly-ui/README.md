@@ -177,6 +177,118 @@ and skipped so the compiled default always renders.
 `Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
 optional actions and dismissal. The caller owns data, authorization and read state.
 
+## A loading indicator never flashes
+
+A product-wide rule, and it lives here so every kit gets it by composing rather
+than by remembering: **an indicator that appears and vanishes tells the reader
+nothing they could not already see, while pulling their eye off what they were
+reading.** Two numbers make that unwritable-otherwise:
+
+- Nothing is shown for the first **200 ms** (`LOADING_DELAY_MS`). Most waits end
+  inside that window — a warm cache, a local read — and they render their
+  answer with no intervening state at all.
+- Once something *has* appeared it stays for at least **300 ms**
+  (`LOADING_MIN_VISIBLE_MS`). Without a floor, a wait that ends just past the
+  delay shows its indicator for a few milliseconds: the same blink, moved later
+  rather than removed.
+
+```tsx
+import { DelayedLoading, Spinner, useDelayedLoading } from "@codefly-dev/ui/layout";
+
+// The common case: the kit owns the timing and the indicator.
+<DelayedLoading active={query.isPending} label="Loading data sources" />
+
+// Your own indicator, the kit's timing.
+<DelayedLoading active={query.isPending} label="Loading data sources">
+  <PanelMessage>Loading data sources…</PanelMessage>
+</DelayedLoading>
+
+// The decision alone, for a surface that is not a subtree — a disabled button,
+// a row that dims, an aria-busy on a container you already render.
+const busy = useDelayedLoading(query.isPending);
+```
+
+`active` is simply whether the thing you are waiting for is outstanding; the
+hook owns everything else. A wait that restarts while the indicator is up does
+**not** restart the delay, so a series of quick refetches cannot tear the
+indicator down and build it back up — that is the same flicker arriving by
+another route. `delayMs` and `minVisibleMs` are overridable per call for a
+surface whose timings genuinely differ; prefer the defaults, because the point
+of a shared rule is that surfaces agree.
+
+`Spinner` is the kit's busy indicator — `role="status"`, polite, with a
+**required** `label`, because a spinner with no accessible name announces that
+*something* is happening, which is the one thing the reader can already see.
+Rendered directly it has no delay and will flash; reach for `DelayedLoading`
+unless you are inside something that already gates it.
+
+The clock is read in effects and timers, never during render, so two renders of
+the same state can never disagree about what is on screen.
+
+**A surface with an empty state needs three states, not two.** Feeding the
+delayed boolean straight into a renderer says "not loading" during the delay,
+and the branch after that is usually the empty one — so "No documents yet", and
+its invitation to go and connect something, flashes for the first 200 ms of
+every load. That is worse than the indicator the delay was meant to spare the
+reader, because it is not merely noise, it is wrong. Every list, table and panel
+with an empty state has this shape:
+
+```tsx
+const { indicator, quiet } = useLoadingPhase(query.isPending);
+if (indicator) return <Spinner label="Loading documents" />;
+if (quiet) return null;              // too early to say anything at all
+if (!documents.length) return <EmptyState … />;
+```
+
+`DelayedLoading` cannot express this — a component that renders `null` while
+hidden gives its caller no way to tell "hidden because idle" from "hidden
+because it is too early to speak" — so reach for `useLoadingPhase` wherever
+"nothing yet" is not neutral.
+
+**Pass the wait in; never gate the mount on it.** This is the one way to hold
+both numbers and still flash, and it reads as correct:
+
+```tsx
+// WRONG. The delay works; the floor cannot.
+{query.isPending ? (
+  <DelayedLoading active label="Loading data sources">…</DelayedLoading>
+) : rows.length === 0 ? <EmptyState … /> : <Table … />}
+```
+
+The minimum-visible floor lives in state *inside* the component, so a branch
+gated on the wait unmounts the indicator — and its floor — at the instant the
+answer lands. A response at 210 ms shows the indicator for 10 ms: the blink the
+floor exists to prevent, arriving by the one route the delay does not cover.
+Either keep the component mounted and let `active` carry the wait, or lift the
+decision out with `useLoadingPhase` and branch on `indicator` / `quiet` — which
+is also what gives you the third state the empty branch needs. Found three times
+in one panel in this repo, with the primitive already imported.
+
+**`DataTable` already owns this.** Every table in the product renders through it,
+so the rule is kept in one place: pass `isLoading` and it holds the frame and its
+column headers for the first 200 ms, then shows a skeleton that stays long enough
+to read, and it never falls through to `emptyMessage` while the read is
+outstanding. The frame is held rather than returning `null`, because a query key
+that changes under a mounted table — switching organization — puts `isLoading`
+back to true with rows on screen, and `null` would collapse the table to nothing
+and bring it back. A header is neither an indicator nor an answer about the data,
+so holding it breaks neither rule. `DataTableSkeleton` is
+that skeleton's appearance on its own, with no timing — for an example or a test
+that exists to *show* it. A product surface passes `isLoading` to `DataTable`
+and does not reach for the skeleton directly.
+
+**Do not put any of these inside a `Suspense` fallback.** They hold state, and a
+fallback that holds state makes React re-render the boundary's *content* when
+that state settles: one mount and two renders of the child, which re-runs its
+`useMemo` and can rebuild whatever that memo constructs. Gate it at the
+boundary's parent instead; a fallback should be a pure element.
+
+`Spinner` fades rather than rotates for a reader who asked for reduced motion
+(`motion-safe:animate-spin` / `motion-reduce:animate-pulse`). Rotation is
+vestibular-triggering, and dropping the animation entirely would leave a ring
+that sits still and conveys nothing — both forms say "busy"; only one of them
+moves through space.
+
 ## Every blocking surface has a way out
 
 A surface that covers the page must always let the user leave it, and the kit

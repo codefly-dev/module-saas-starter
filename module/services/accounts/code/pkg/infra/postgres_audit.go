@@ -128,6 +128,13 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any, error) {
 	if q.EventType != "" {
 		add("event_type = $%d", q.EventType)
 	}
+	// The set form, ANDed with the scalar above like every other predicate here.
+	// An empty slice adds nothing: it means the caller named no set. Bound as one
+	// array parameter rather than an expanded IN list so the argument count does
+	// not depend on the caller's input.
+	if len(q.EventTypes) > 0 {
+		add("event_type = ANY($%d)", q.EventTypes)
+	}
 	if q.Category != "" {
 		add("event_type IN (SELECT name FROM audit_event_types WHERE category = $%d)", q.Category)
 	}

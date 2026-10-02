@@ -1,1 +1,1 @@
-export { DataTable } from "./data-table.js";
+export { DataTable, DataTableSkeleton } from "./data-table.js";

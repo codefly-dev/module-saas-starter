@@ -11,7 +11,7 @@ require (
 	github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba
 	github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e
 	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260926212413-b91ce91eb23e
-	github.com/codefly-dev/service-postgres v0.0.129
+	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211
 	github.com/codefly-dev/service-redis/cache v0.2.0
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/golang-jwt/jwt/v5 v5.3.1

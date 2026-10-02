@@ -120,6 +120,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/organizations",
+      "source_path": "src/app/admin/platform/organizations/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/waitlist",
       "source_path": "src/app/admin/platform/waitlist/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -503,6 +509,21 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 200
+    },
+    {
+      "id": "admin-platform-organizations",
+      "plugin": "platform-admin",
+      "label": "Organizations",
+      "path": "/admin/platform/organizations",
+      "icon": "Building2",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 205
     },
     {
       "id": "admin-feature-flags",

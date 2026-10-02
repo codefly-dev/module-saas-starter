@@ -263,5 +263,9 @@ func writeStreamAuthnError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSONError(w, http.StatusServiceUnavailable, "authorization temporarily unavailable")
 		return
 	}
+	if errors.Is(err, errAPIKeyNotAccepted) {
+		writeJSONError(w, http.StatusForbidden, errAPIKeyNotAccepted.Error())
+		return
+	}
 	writeJSONError(w, http.StatusUnauthorized, "authentication required")
 }

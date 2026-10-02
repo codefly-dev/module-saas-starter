@@ -77,7 +77,7 @@ components:
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
-  (repo · status · paths · branch · boundary · webhook · last sync) with per-row **Sync**/**Delete** and
+  (repo · status · paths · branch · boundary · live updates · last sync) with per-row **Sync**/**Delete** and
   a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
@@ -92,6 +92,51 @@ components:
   slot through which a consumer shows what the module that ingests a source's
   files knows about them (its per-source ingestion progress, say). The host
   names no such module.
+  The **live updates** cell reads `liveDelivery`, the host's composed answer to
+  "how does a change at the source reach this deployment": through the source's
+  own repository webhook, through the deployment's single GitHub App webhook, or
+  not at all — in which case it names the reconcile interval that bounds how
+  stale the source may be. It is NOT `webhookConfigured`, which reports only
+  whether a signing secret is stored against the source: an App-backed source
+  holds none, so reading that flag showed every source on the recommended
+  connect path as having no live delivery whether or not the App webhook was
+  registered. An older host sends no `liveDelivery`; the cell then says so rather
+  than presenting a guess as an answer.
+  `renderSourceExecution={({ source, sync }) => …}` is the sibling slot for the
+  **durable execution** of a sync — the fan-out task it became, its items,
+  attempts, receipts and dead-letters. Opened from the row's **Execution**
+  action and from the progress card; offered on no row when the prop is absent,
+  since an empty panel promising an execution view is worse than not offering
+  one. The host renders the frame and hands you the sync it resolved; what runs
+  the work is a module this package may not name, so the view itself is yours.
+
+  Three rules the host cannot enforce for you, each of which fails by
+  *succeeding*:
+  - **Pass the slot only for a viewer who may read the organization's
+    executions.** The durable work behind a sync is admitted by the module that
+    ingests it, not by the person reading the panel, so a caller-scoped "my own
+    runs" read is a correct answer to a different question — and its answer here
+    is an empty page. The panel's own empty state says "this source has never
+    synced", so an under-permissioned viewer is told something false by two
+    correct components.
+  - **Distinguish "no runs" from "you may not see the runs"** in what you
+    render, for the same reason. The kit carries that sentence:
+    `<SourceExecutionRestricted />` renders "Sync runs are visible to
+    organization administrators." so it reads the same wherever it appears.
+    Render it when your viewer cannot read the organization's runs — it names
+    no module and no permission, because which authority governs this is yours
+    to know. If you render *nothing* the host says the neutral thing instead
+    ("No runs to show for this sync. If you expected some, you may not have
+    permission to see them."), since it cannot tell the two apart and must not
+    let silence pick one.
+  - **Never report a count taken from a page of results.** One sync can produce
+    many runs, and the host already knows how many without paging:
+    `sync.changes.snapshot ? 1 : sync.changes.files` — on the incremental path
+    that *is* the hand-off count by construction, counted after the source's
+    path and extension filters. Show it beside the runs you loaded, not as a
+    count of them, so the two disagreeing reads as work that was never admitted
+    rather than as a paging bug. It is final only once the sync is terminal:
+    mid-sync it counts the hand-offs enqueued so far.
   A source whose provider does not yet meet the host's datasource connector
   envelope is badged **Non-conformant provider** with the host's stated gap:
   it keeps syncing, but the host connects no new source of that provider. The
@@ -117,6 +162,28 @@ components:
   progress in the panel's per-source slot can watch closely at once. It returns the
   unsubscribe. The registry lives on `globalThis`, so a remote's own copy of the kit hears
   the host panel.
+- **Live sync progress.** While a sync runs the panel shows a card per source
+  above the table: a phase bar (queued → fetching → compiled → handed off), the
+  compiled change set's counts, and — when it goes quiet or fails — what is
+  wrong. Every phase, count and failure sentence is the host's own projection,
+  stamped from the durable sync and hand-off jobs; nothing is inferred from
+  elapsed time. The read tightens to a two-second poll while a sync is active,
+  slackens to thirty seconds once it settles, and is re-armed the instant
+  `onSourceSyncRequested` fires, so the bar appears on the press rather than on
+  the next interval. A card leaves the panel ten minutes after its sync
+  finished — an older sync lives in History.
+  Six states are distinguished, because collapsing any two of them misreports a
+  healthy sync: **queued**, **running**, **no progress** (a phase that has not
+  advanced for `DEFAULT_STALL_AFTER_MS`; still running, never called failed —
+  only the host may say that), **retrying** (the host failed an attempt and will
+  try again, with the reason and the wait), **done**, **no changes** (finished
+  having handed nothing off — the source had not moved, which is a success and
+  not an empty failure), and **failed**.
+- `describeSync(sync, { now, stallAfterMs })` → `SyncProgressReport` is that
+  decision as a pure function, exported so a consumer can render the same states
+  in its own shell — a line in a header, say — without re-deriving them from the
+  phase names and getting the terminal cases wrong. `<SourceSyncProgress source
+  report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
 
@@ -159,9 +226,22 @@ platform administrator rather than through a grant (see accounts `AUTHZ.md`,
 
 The host's `/admin/datasources` picker lists existing collections, their active
 read grants (including inherited grants), and the creator's current read access.
-Administrators can choose a member or team and grant a role containing only
-that resource, or revoke a displayed grant. Revoking an inherited grant removes
-that role at its ancestor and all descendants; the confirmation names this impact.
+Administrators can choose **any number of** members and teams and grant a role
+containing only that resource in one press, or revoke a displayed grant. The
+grants are applied one at a time on purpose — the host mints the read role on
+its first use and concurrent grants would race to create one name, which is
+unique per organization — and the outcome is reported per subject, since a run
+that granted six of eight is neither a success nor a failure; the ones that did
+not land stay selected, so the retry is the same press. Revoking an inherited
+grant removes that role at its ancestor and all descendants; the confirmation
+names this impact.
+
+**`CollectionGrants` is also offered at connect time.** `DatasourcesPanel`
+opens it on the collection a connect just landed in, passing `connectedRepo` so
+it names what was connected and that nobody can read it yet, and `onDismiss` so
+it can be put away — the grant belongs where the person already is and knows who
+needs it, not in a separate later journey. "Manage read grants" wins when both
+are open, since that was asked for afterwards.
 Accounts checks admin authority and emits its transactional grant/revoke audit and
 lifecycle events. The host audit page resolves actor names, and grant rows display
 the granting actor. The host adapter supplies `listCollections`,
@@ -211,6 +291,19 @@ role via Accounts' registration/grant service paths. Only `admin@acme.com` and
 `bob@acme.com` receive that grant. Select this existing collection when connecting
 a demo source; other fixture viewers remain ungranted. Reseeding reconverges the
 declared grants, so test revocation without restarting the fixture runtime.
+
+## Audit
+
+`<LastLogin at subject? label? />` says when someone last signed in the way a
+person reads it ("Last login · 12 seconds ago"), and keeps it true as time
+passes: it re-says itself every second for the first minute, then every 30
+seconds, then every five minutes. The exact time is on the `<time>` element
+(`dateTime`, and a `title` for hover) and on the line beneath. `at` is an ISO
+string or a `Date`; `null`, or anything that is not a date, reads "Never" with
+"No sign-in is recorded yet", never "Invalid Date". A solution hands it the
+value it read (from the audit log, say) and owns nothing of how it is said.
+`relativeTime(at, now, locale?)` is its words alone, counting whole units
+elapsed through `Intl.RelativeTimeFormat`, for a consumer's own shell.
 
 ## Installing from a solution
 

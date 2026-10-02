@@ -8,7 +8,6 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/core/wool"
-	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,7 +16,7 @@ const webhookProjectionDatabaseRole = "app_webhook_worker"
 
 func NewWebhookProjectionPool(ctx context.Context) (*pgxpool.Pool, error) {
 	w := wool.Get(ctx).In("NewWebhookProjectionPool")
-	connection, err := codefly.For(ctx).Service("store").Secret("postgres", "read-write-connection")
+	connection, err := storeConnection(ctx, controlPlaneConnectionKey)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to get connection string")
 	}

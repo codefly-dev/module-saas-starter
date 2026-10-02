@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 )
 
 // A security mutation and the record of it are one fact. These tests hold that
@@ -36,7 +36,7 @@ func countRows(t *testing.T, query string, args ...any) int {
 	t.Helper()
 	var count int
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, query, args...).Scan(&count)
 	}))
 	return count
@@ -322,7 +322,7 @@ func TestControlScopeAuditRowIsPinnedToTheActingUser(t *testing.T) {
 
 	var visible int
 	require.NoError(t, testStore.As(business.Identity{UserID: userID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT count(*) FROM audit_events WHERE org_id IS NULL`).Scan(&visible)
 	}))
@@ -342,7 +342,7 @@ func TestSecurityMutation_HumanPrincipalRevokeRecordsInControlScope(t *testing.T
 	var kind string
 	var org *string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT kind, org_id FROM principals WHERE id = $1`, userID).Scan(&kind, &org)
 	}))
@@ -395,7 +395,7 @@ func TestSecurityMutation_RegistrationRecordDoesNotHingeOnTheRoleCatalog(t *test
 
 	var provider string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `SELECT provider_id FROM identity_providers LIMIT 1`).Scan(&provider)
 	}))
 
@@ -470,7 +470,7 @@ func TestAuditRowKeepsANonUUIDResourceID(t *testing.T) {
 	}))
 	var stored *string
 	require.NoError(t, testStore.As(business.Identity{OrgID: org}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `SELECT resource_id FROM audit_events WHERE id = $1`, id).Scan(&stored)
 	}))
 	require.NotNil(t, stored, "the entry id was dropped from the audit row")

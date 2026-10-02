@@ -82,6 +82,8 @@ func TestStampForwardedHTTPIdentityCarriesScopedRoles(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("X-User-Id", "11111111-1111-1111-1111-111111111111")
 	headers.Set("X-Org-Id", "22222222-2222-2222-2222-222222222222")
+	headers.Set("X-Credential-Kind", credentialKindSession)
+	headers.Set("X-Scopes", "")
 	headers.Set("X-Scoped-Roles", `{"module-a":["analyst"]}`)
 
 	ctx, err := stampForwardedHTTPIdentity(context.Background(), headers)
@@ -105,6 +107,8 @@ func TestStampForwardedHTTPIdentityCarriesTruncationSignal(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("X-User-Id", "11111111-1111-1111-1111-111111111111")
 	headers.Set("X-Org-Id", "22222222-2222-2222-2222-222222222222")
+	headers.Set("X-Credential-Kind", credentialKindSession)
+	headers.Set("X-Scopes", "")
 	headers.Set("X-Scoped-Roles", `{"module-a":["analyst"]}`)
 	headers.Set("X-Scoped-Roles-Truncated", "true")
 

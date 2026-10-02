@@ -32,22 +32,14 @@ export interface WebhookDelivery {
 	responseBody: string;
 }
 
-// Webhook fan-out routes on the audit event type (DurableAuditEmitter.write), so
-// a subscription only ever fires for a name the audit registry mints — which is
-// namespaced from issue #520 on.
-export const WEBHOOK_EVENT_TYPES = [
-	"saas.user.created",
-	"saas.user.updated",
-	"saas.user.deleted",
-	"saas.org.created",
-	"saas.org.updated",
-	"saas.org.deleted",
-	"saas.team.member.added",
-	"saas.team.member.removed",
-	"saas.invite.sent",
-	"saas.invite.accepted",
-	"saas.api_key.created",
-	"saas.api_key.revoked",
-] as const;
-
-export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
+// The names an endpoint may subscribe to come from the server-owned audit
+// registry (AuditService/ListAuditEventTypes, `webhookEligible`), never from a
+// list kept here.
+//
+// The list that used to live here offered four names the catalog never had —
+// saas.org.updated, saas.org.deleted, saas.invite.sent and saas.invite.accepted;
+// the catalog has saas.invitation.* — so an endpoint subscribed to them through
+// this form silently never received anything. It also could not offer the types
+// a solution or a composed module declares, which are registered at runtime and
+// cannot be known to a list compiled into this build. Both failures are the same
+// one: a client deciding what the registry alone can answer.

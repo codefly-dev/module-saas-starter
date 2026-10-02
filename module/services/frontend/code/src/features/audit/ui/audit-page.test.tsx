@@ -375,14 +375,92 @@ describe("AuditPage admin container", () => {
 			expect(security.getAttribute("aria-pressed")).toBe("false");
 		});
 
-		it("the New users and Active actors tiles stay static (no matching single filter value exists)", async () => {
-			serveAudit();
+		// "New users" counts a FAMILY of event types the registry owns, so no
+		// single filter value could open it: while the wire carried only a
+		// scalar event_type, the figure could be shown and never checked, and
+		// picking one member would have opened a different number from the one
+		// clicked. The set form of the filter is what makes the click honest.
+		it("the New users tile opens exactly the family of types it counts", async () => {
+			const queryAuditLog = vi.fn();
+			serveAudit({ queryAuditLog });
+			renderInApp(<AuditPage />);
+
+			const newUsers = await screen.findByRole("button", {
+				name: /New users/,
+			});
+			expect(newUsers.getAttribute("aria-pressed")).toBe("false");
+			await waitFor(() => expect(queryAuditLog).toHaveBeenCalled());
+			expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toBeFalsy();
+
+			fireEvent.click(newUsers);
+
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toEqual([
+					"saas.user.registered",
+					"saas.user.created",
+				]),
+			);
+			// Every marked type and nothing else: a provisioning the registry
+			// does not mark must not be swept in by the click either.
+			expect(
+				queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes,
+			).not.toContain("saas.auth.sso_jit_provisioned");
+			expect(newUsers.getAttribute("aria-pressed")).toBe("true");
+
+			// No dropdown can show a set, so the page says the narrowing is on
+			// and how to undo it — otherwise the table, the series and the
+			// breakdowns are all narrowed with nothing naming the narrowing.
+			expect(
+				screen.getByText(/Select the tile again to clear it/),
+			).toBeTruthy();
+
+			fireEvent.click(newUsers);
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toBeFalsy(),
+			);
+			expect(newUsers.getAttribute("aria-pressed")).toBe("false");
+		});
+
+		// With no registered new-user type there is no set to select, so the
+		// tile offers no click rather than one that filters to nothing.
+		it("the New users tile offers no click when the registry marks nothing", async () => {
+			serveAudit({ registry: false });
 			renderInApp(<AuditPage />);
 			await screen.findByText("New users");
 			expect(screen.queryByRole("button", { name: /New users/ })).toBeNull();
+		});
+
+		// Active actors stays presentational: it is a distinct-actor cardinality,
+		// and no filter names a cardinality. The "Top actors" breakdown below it
+		// is where that number is opened.
+		it("the Active actors tile stays static (a cardinality has no filter value)", async () => {
+			serveAudit();
+			renderInApp(<AuditPage />);
+			await screen.findByText("Active actors");
 			expect(
 				screen.queryByRole("button", { name: /Active actors/ }),
 			).toBeNull();
+		});
+
+		// A dropdown cannot express a set, so changing one must clear it rather
+		// than silently intersect with a narrowing the reader cannot see.
+		it("picking a category clears the New users set", async () => {
+			const queryAuditLog = vi.fn();
+			serveAudit({ queryAuditLog });
+			renderInApp(<AuditPage />);
+
+			fireEvent.click(await screen.findByRole("button", { name: /New users/ }));
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toBeTruthy(),
+			);
+
+			fireEvent.click(
+				screen.getByRole("button", { name: /Security events/ }),
+			);
+			await waitFor(() =>
+				expect(queryAuditLog.mock.calls.at(-1)?.[0]?.category).toBe("security"),
+			);
+			expect(queryAuditLog.mock.calls.at(-1)?.[0]?.eventTypes).toBeFalsy();
 		});
 
 		// The download is the thing on screen. Before this, it carried only the

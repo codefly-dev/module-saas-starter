@@ -349,6 +349,27 @@ message ModuleAuditFieldDeclaration {
   bool pii = 4;
 }
 
+// ModuleAuditEventVisibility is how far an event of a declared audit type may
+// travel. It is the vocabulary the composed event catalog already declares its
+// published events under, narrowed to the two values a declaration can mean:
+// an audit record is always readable by its own tenant, so `internal` has no
+// reading here.
+enum ModuleAuditEventVisibility {
+  // Unset means TENANT. A declaration that says nothing keeps its events
+  // inside the platform, because eligibility to leave is granted by an
+  // explicit declaration and never by omission.
+  MODULE_AUDIT_EVENT_VISIBILITY_UNSPECIFIED = 0;
+  // Recorded in the tenant's audit log and never delivered outside the
+  // platform.
+  MODULE_AUDIT_EVENT_VISIBILITY_TENANT = 1;
+  // May additionally be delivered to a tenant's outbound webhook endpoint.
+  // Admitted only in a namespace the operator marked externally deliverable
+  // (`external_namespaces` of the declaring principal's MODULE_PRINCIPALS
+  // entry): the producer decides which of its facts are customer-facing, and
+  // the operator decides whether that producer may send anything out at all.
+  MODULE_AUDIT_EVENT_VISIBILITY_EXTERNAL = 2;
+}
+
 // ModuleAuditEventTypeDeclaration is one audit event type a composed module
 // declares for itself.
 message ModuleAuditEventTypeDeclaration {
@@ -361,6 +382,12 @@ message ModuleAuditEventTypeDeclaration {
   }];
   string description = 2 [(buf.validate.field).string.max_len = 1024];
   repeated ModuleAuditFieldDeclaration fields = 3 [(buf.validate.field).repeated.max_items = 32];
+  // How far an event of this type may travel. Fixed at admission: a later
+  // declaration that names a different visibility is refused, because
+  // narrowing it would silently stop deliveries to endpoints already
+  // subscribed and widening it would start sending out facts a tenant's
+  // endpoint never agreed to receive under this name.
+  ModuleAuditEventVisibility visibility = 4 [(buf.validate.field).enum.defined_only = true];
 }
 
 // ModuleDeclareAuditEventTypesRequest declares the audit event types a composed

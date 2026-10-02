@@ -222,33 +222,36 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	actorType := s.actorTypeForCreator(ctx, actorID)
-	var installation *gen.Installation
-	var transitioned bool
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		var e error
-		installation, transitioned, e = s.installationStore().UninstallSolution(ctx, orgID, installationID)
-		if e != nil {
-			return e
-		}
-		// Only a real active→revoked transition is a fact worth publishing;
-		// an idempotent re-uninstall emits neither event nor audit. Publish in
-		// the same transaction (outbox) so the revoke and its event are atomic.
-		if !transitioned {
-			return nil
-		}
-		if e := s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
-			installation.GetRootScopeNodeId(), actorID, map[string]any{
-				"installation_id":     installationID,
-				"solution_identifier": installation.GetSolutionIdentifier(),
-			}); e != nil {
-			return e
-		}
-		return s.emitTx(ctx, actorID, actorType, EventInstallationRevoked,
-			"installation", installationID, orgID, map[string]any{
-				"solution_identifier": installation.SolutionIdentifier,
-			})
+		return s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot uninstall solution")
 	}
 	return nil
+}
+
+// uninstallSolutionTx is one uninstall inside the caller's organization
+// transaction, shared by an operator's uninstall and an organization's deletion.
+func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, orgID, installationID string) error {
+	installation, transitioned, err := s.installationStore().UninstallSolution(ctx, orgID, installationID)
+	if err != nil {
+		return err
+	}
+	// Only a real active→revoked transition is a fact worth publishing;
+	// an idempotent re-uninstall emits neither event nor audit. Publish in
+	// the same transaction (outbox) so the revoke and its event are atomic.
+	if !transitioned {
+		return nil
+	}
+	if err := s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
+		installation.GetRootScopeNodeId(), actorID, map[string]any{
+			"installation_id":     installationID,
+			"solution_identifier": installation.GetSolutionIdentifier(),
+		}); err != nil {
+		return err
+	}
+	return s.emitTx(ctx, actorID, actorType, EventInstallationRevoked,
+		"installation", installationID, orgID, map[string]any{
+			"solution_identifier": installation.SolutionIdentifier,
+		})
 }
