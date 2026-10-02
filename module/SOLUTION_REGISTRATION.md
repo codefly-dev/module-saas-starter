@@ -447,3 +447,91 @@ there: a projected ConfigMap volume in a deployment, a plain directory under
 `codefly run` locally. Kubernetes' atomic writer is honoured — every dot-prefixed
 path element (`..data`, `..2026_…`) is skipped, so one document is never read
 twice under two names, which Core would refuse as a binding declared twice.
+
+## 8. Local runs: one attestation path, not a local mode
+
+Binding a credential to an approved execution means reading what the workload
+actually runs: `TokenReview` on its projected service-account token, then the pod
+by the name that review returns, then the application container's `imageID`. That
+is Kubernetes. `codefly run` on a laptop has none of it, and the adversarial
+review is right that the delivery API does not preserve the old laptop behaviour —
+a host that reads pods is not a Kubernetes-free host any more.
+
+Two paths were allowed: an equally authoritative local attestation the host
+verifies under a `local` trust policy, or Kubernetes locally. **This host takes
+Kubernetes locally, and ships no local attestation path at all.**
+
+### Why the local path is not built, rather than built carefully
+
+A `local` trust policy can be made *argably* safe. Key it to a reserved coordinate
+namespace, refuse it whenever the host's own coordinate is not in that namespace,
+and the attack needs a deployed host configured with a local coordinate — which
+would also make it refuse every real presence document and serve nothing. The
+misconfiguration is self-defeating.
+
+That argument is sound and it is still the wrong thing to rely on, for three
+reasons that compound:
+
+1. **It is a property of configuration, not of the artifact.** "A local path must
+   not be usable against a deployed host" is a promise a check keeps, and a check
+   can be wrong. With no local path, the promise is kept by absence. Under the
+   maximum-security rule the structural answer wins and the resulting prerequisite
+   is a tool to build, never a reason to soften.
+2. **It is a second implementation of a trust decision**, which is the mistake the
+   Work Context single-implementation rule exists to stop, in a different place. A
+   wire contract has one implementation in the repo that owns the type; an
+   attestation contract is no different, and the second copy is what drifts.
+3. **It would put signing keys back on laptops** at exactly the moment delivery
+   went keyless to eliminate key custody. Whatever signs a local attestation is
+   material a host is configured to trust, held on every developer's machine. That
+   is a new custody problem adopted to avoid a dependency.
+
+There is also a gain, not only a cost. Under a local attestation the laptop
+exercises a path production never runs, so what a developer verifies is a
+simulation of the mechanism. Under Kubernetes locally, `codefly run` drives the
+real `TokenReview`, the real pod read, the real `imageID` comparison and the real
+incarnation record. The local run becomes a test of the thing that ships.
+
+The cost is plain and is not hidden here: every developer needs a local cluster,
+and `codefly run` has to provision or attach one and run each service as a Pod
+with a projected service-account token for audience `accounts`. That is work for
+the tooling, which is where the rule puts it.
+
+### The delivery signature has the same gap, and it closes without a local mode
+
+The options as posed cover the mint. They do not cover the other half: delivery
+documents are signed **keyless, over the CI provider's OIDC identity**, and a
+laptop has no such identity either. A local run therefore cannot produce a
+delivery signature any more than it can produce a pod.
+
+It does not need a second mechanism. Keyless signing is not limited to a CI
+workflow identity — a person has an OIDC identity too. So a local run signs with
+the **developer's own identity**, through the same Sigstore flow, verified by the
+same verifier against the same kind of policy. **What differs between local and
+deployed is the identity allowlist, which is data, not code.**
+
+That is what makes the boundary structural rather than promised. A deployed host's
+allowlist names the reviewed-change workflow identity and nothing else, so a
+locally signed document is refused there by the **ordinary** check that refuses any
+unlisted identity — not by a mode flag, not by a coordinate comparison, and not by
+a code path that exists only to be disabled. There is no `local` trust policy
+because there is no local trust *mechanism*: one verifier, one policy shape, two
+sets of listed identities.
+
+A deployed host that somehow listed a developer identity would be misconfigured in
+exactly the way an allowlist is designed to make visible — it is a reviewable line
+in the policy, which is the property the signing decision was taken for.
+
+### What a local run must therefore supply
+
+The host's requirements do not change for local; what changes is who provides
+them. A local run needs: a presence document whose `host.coordinate` is the
+coordinate the local host is configured with; an `execution.image.manifest_digest`
+read from the **locally built** image rather than a registry, which moves on every
+build and is fine because the generation moves with it; workloads running as Pods
+with projected service-account tokens for audience `accounts`; and the documents
+signed with the developer's keyless identity and POSTed to the same
+`/platform/_delivery/*` endpoints. The local host is configured with its local
+coordinate and an allowlist containing that developer identity.
+
+Nothing on the host is conditional on any of it. That is the point.
