@@ -858,4 +858,70 @@ describe("a time series with days that have no events", () => {
 		expect(offStep.points).toHaveLength(2);
 		expect(notADate.points).toHaveLength(2);
 	});
+
+	// Before the zeros, a day no input had events on was a key no input
+	// returned, so a derived metric had nothing there to combine or miss.
+	it("does not call a derived metric partial over a day no input had events on", async () => {
+		const byActor = (
+			id: string,
+			aggregation: SourceMetric["aggregation"],
+		): SourceMetric => ({
+			...perDay(aggregation),
+			id,
+			filter: { event: "signed_in", actor: id },
+		});
+		const graph: DataGraph = {
+			events: [{ name: "signed_in", type: "user.signed_in.v1" }],
+			metrics: [
+				byActor("won", "count"),
+				byActor("all", "count"),
+				byActor("typical", "avg"),
+				{
+					id: "rate",
+					kind: "derived",
+					operation: "ratio",
+					inputs: ["won", "all"],
+				},
+				{
+					id: "spread",
+					kind: "derived",
+					operation: "difference",
+					inputs: ["all", "typical"],
+				},
+			],
+			dashboards: [],
+		};
+		// No events at all on 09-04; on 09-03 none won.
+		const { client } = fakeAuditClient((request) => {
+			if (request.actorId === "won")
+				return [
+					{ key: day("2026-09-02"), count: 1 },
+					{ key: day("2026-09-05"), count: 1 },
+				];
+			if (request.actorId === "all")
+				return [
+					{ key: day("2026-09-02"), count: 2 },
+					{ key: day("2026-09-03"), count: 4 },
+					{ key: day("2026-09-05"), count: 4 },
+				];
+			return [
+				{ key: day("2026-09-02"), count: 2, metrics: { value: 2 } },
+				{ key: day("2026-09-03"), count: 4, metrics: { value: 3 } },
+				{ key: day("2026-09-05"), count: 4, metrics: { value: 1 } },
+			];
+		});
+
+		const resolved = await runDataGraph(client, graph, context);
+
+		expect(resolved.rate.points).toEqual([
+			{ key: day("2026-09-02"), value: 0.5 },
+			{ key: day("2026-09-03"), value: 0 },
+			{ key: day("2026-09-05"), value: 0.25 },
+		]);
+		expect(resolved.rate.coverage).toBe("complete");
+		expect(resolved.spread.points.map((point) => point.value)).toEqual([
+			0, 1, 3,
+		]);
+		expect(resolved.spread.coverage).toBe("complete");
+	});
 });

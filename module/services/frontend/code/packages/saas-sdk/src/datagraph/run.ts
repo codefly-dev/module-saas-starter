@@ -89,6 +89,10 @@ const TIME_KEY = /^(\d{4})-(\d{2})-(\d{2})(.*)$/;
 // buckets, and two keys far apart must not balloon one series.
 const MAX_FILLED_BUCKETS = 100_000;
 
+// The zeros put on buckets the RPC returned none for: no event matched there.
+// A derived metric tells them apart from a returned bucket by this mark.
+const noEvents = new WeakSet<MetricPoint>();
+
 function bucketDate(key: string): { date: Date; rest: string } | null {
 	const match = TIME_KEY.exec(key);
 	if (!match) return null;
@@ -159,7 +163,10 @@ export function fillEmptyBuckets(
 	return grid.flatMap((date): MetricPoint[] => {
 		const point = valueAt.get(date);
 		if (point) return [point];
-		return seen.has(date) ? [] : [{ key: `${date}${first.rest}`, value: 0 }];
+		if (seen.has(date)) return [];
+		const zero = { key: `${date}${first.rest}`, value: 0 };
+		noEvents.add(zero);
+		return [zero];
 	});
 }
 
@@ -218,9 +225,13 @@ export async function runMetric(
 
 // Combine the resolved series of a derived metric's inputs. Inputs are aligned
 // on the union of their point keys (first-seen order). Missing operands
-// remain unknown and are never substituted with zero. Combining series grouped by different dimensions is
-// meaningless — the keyspaces don't line up — so it is rejected rather than
-// silently producing a series of stray values.
+// remain unknown and are never substituted with zero. A key no input has an
+// event on (each operand there is a filled zero or missing) is not missing
+// telemetry: before the zeros, no input returned it. Its zeros still sum, to a
+// filled zero in turn, and a ratio of them has no value. Combining series
+// grouped by different dimensions is meaningless — the keyspaces don't line
+// up — so it is rejected rather than silently producing a series of stray
+// values.
 function combineDerived(
 	metric: DerivedMetric,
 	inputs: MetricSeries[],
@@ -260,14 +271,18 @@ function combineDerived(
 			}
 		}
 	}
-	const valueAt = (input: MetricSeries, key: string): number | undefined =>
-		input.points.find((point) => point.key === key)?.value;
+	const pointAt = (input: MetricSeries, key: string): MetricPoint | undefined =>
+		input.points.find((point) => point.key === key);
 	let partial = inputs.some((input) => input.coverage === "partial");
 	const points: MetricPoint[] = [];
 	for (const key of keys) {
-		const values = inputs.map((input) => valueAt(input, key));
+		const operands = inputs.map((input) => pointAt(input, key));
+		const empty = operands.every(
+			(point) => point === undefined || noEvents.has(point),
+		);
+		const values = operands.map((point) => point?.value);
 		if (values.some((value) => value === undefined)) {
-			partial = true;
+			if (!empty) partial = true;
 			continue;
 		}
 		const present = values as number[];
@@ -281,7 +296,7 @@ function combineDerived(
 				break;
 			case "ratio":
 				if (present[1] === 0) {
-					partial = true;
+					if (!empty) partial = true;
 					continue;
 				}
 				value = present[0] / present[1];
@@ -295,7 +310,9 @@ function combineDerived(
 			partial = true;
 			continue;
 		}
-		points.push({ key, value });
+		const point = { key, value };
+		if (empty) noEvents.add(point);
+		points.push(point);
 	}
 
 	return toSeries(
