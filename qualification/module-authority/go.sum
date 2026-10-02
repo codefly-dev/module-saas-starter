@@ -2,8 +2,8 @@ buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-202608252041
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2/go.mod h1:TCt1lluMFnctISJXvkIQ4x3ABrPuUKCWKyjKdkJNBpw=
 connectrpc.com/connect v1.21.0 h1:LhqSJt7jHf5NJBo9Jq/t/9FjcYAideif0mg+qe2jCUs=
 connectrpc.com/connect v1.21.0/go.mod h1:A2ygJrukXwWy32vkCAAHNVguZrqZ+jeZ9rGRnGR4dN4=
-github.com/codefly-dev/core v0.3.32 h1:zVgGAljUERRjHe5ONhI2uBuQg0eayZzkFSm0murp5NI=
-github.com/codefly-dev/core v0.3.32/go.mod h1:f5LY9gRu5lpBQ0tNKujP0q6MF9K8fUnbYvItuHaUWlY=
+github.com/codefly-dev/core v0.7.0 h1:w2702W4Rg2qJqoB5dq7bmBY9GFzNp5t2vJaOt4Q1gWw=
+github.com/codefly-dev/core v0.7.0/go.mod h1:SVF+t040X+9pAXAqBnNE/JkXwmw9peVuKnHKFSOzyzk=
 github.com/codefly-dev/saas-sdk-go v0.0.3-0.20260927130902-fed59a51306c h1:xZHqwC4BG2+N8Rz8euD6pF60f0QuHVljHVkPXShS2zU=
 github.com/codefly-dev/saas-sdk-go v0.0.3-0.20260927130902-fed59a51306c/go.mod h1:o/Gkv2g9T9ObjHxg54Dafp6/yPJDEgSSrh+pyg4SD44=
 github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260927024316-b3fb40d43099 h1:MEzUboHy6HzBex1VoAOo3JqBgjTjSYs3jQGyqIwHOhQ=
