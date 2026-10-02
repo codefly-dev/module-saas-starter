@@ -663,3 +663,238 @@ func TestSolutionHostBinding_AliasHandsOverInOnePass(t *testing.T) {
 		t.Fatalf("the record is declared by %+v, want the claimant", live.Declared)
 	}
 }
+
+// The installable identity (the adversarial review's §9). These run against
+// Postgres because the partial unique indexes and the row lock are the things
+// under test: they are what make "mint a target if the binding has no live one"
+// race-free, and what stops two replicas minting two identities for one presence.
+
+func liveTarget(t *testing.T, bindingID string) *business.SolutionTarget {
+	t.Helper()
+	targets, err := testService.ListSolutionTargets(testCtx)
+	if err != nil {
+		t.Fatalf("list targets: %v", err)
+	}
+	for _, target := range targets {
+		if target.BindingID == bindingID && target.Live() {
+			return target
+		}
+	}
+	return nil
+}
+
+func targetHistory(t *testing.T, bindingID string) []*business.SolutionTarget {
+	t.Helper()
+	targets, err := testService.ListSolutionTargets(testCtx)
+	if err != nil {
+		t.Fatalf("list targets: %v", err)
+	}
+	var history []*business.SolutionTarget
+	for _, target := range targets {
+		if target.BindingID == bindingID {
+			history = append(history, target)
+		}
+	}
+	return history
+}
+
+// A present generation mints the identity an organisation can install.
+func TestSolutionTarget_APresentGenerationOpensAnInstallableIdentity(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	document := declaredBinding(t, solutionID, 1)
+	mount := &deliveredSet{}
+	mount.put(t, document)
+	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	target := liveTarget(t, document.Binding)
+	if target == nil {
+		t.Fatal("a present generation must open a target")
+	}
+	if target.SolutionID != solutionID || target.OpenedGeneration != 1 {
+		t.Fatalf("target = %+v, want alias %q opened at generation 1", target, solutionID)
+	}
+	if target.ID == "" {
+		t.Fatal("a target must carry an identity of its own")
+	}
+}
+
+// Renaming the route keeps the identity. An installation named the identity, and
+// a rename is not a new thing to install.
+func TestSolutionTarget_ARenameKeepsTheIdentityAndMovesTheAlias(t *testing.T) {
+	first := testDeclaredSolutionID(t)
+	second := testDeclaredSolutionID(t)
+	document := declaredBinding(t, first, 1)
+	mount := &deliveredSet{}
+	mount.put(t, document)
+	reconciler := newTestReconciler(t, mount)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("apply generation 1: %v", err)
+	}
+	before := liveTarget(t, document.Binding)
+
+	renamed := declaredBinding(t, first, 2)
+	renamed.Routes[0].Alias = second
+	renamed.Artifacts[0].Release = renamed.Release.Identity()
+	mount.put(t, renamed)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("apply the rename: %v", err)
+	}
+
+	after := liveTarget(t, document.Binding)
+	if after == nil {
+		t.Fatal("the target must survive a rename")
+	}
+	if after.ID != before.ID {
+		t.Fatalf("identity moved from %q to %q; an installation named the old one", before.ID, after.ID)
+	}
+	if after.SolutionID != second {
+		t.Fatalf("alias = %q, want it moved to %q", after.SolutionID, second)
+	}
+	if len(targetHistory(t, document.Binding)) != 1 {
+		t.Fatalf("a rename minted a second identity: %d targets", len(targetHistory(t, document.Binding)))
+	}
+}
+
+// A tombstone closes the identity, and the row survives as the evidence that
+// consent ended.
+func TestSolutionTarget_ATombstoneClosesTheIdentityAndKeepsTheRecord(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	present := declaredBinding(t, solutionID, 4)
+	mount := &deliveredSet{}
+	mount.put(t, present)
+	reconciler := newTestReconciler(t, mount)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	opened := liveTarget(t, present.Binding)
+
+	mount.put(t, tombstoneOf(t, present, 5))
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+
+	if liveTarget(t, present.Binding) != nil {
+		t.Fatal("a tombstone must leave no live identity to install")
+	}
+	history := targetHistory(t, present.Binding)
+	if len(history) != 1 {
+		t.Fatalf("history = %d targets, want the closed one retained", len(history))
+	}
+	closed := history[0]
+	if closed.ID != opened.ID {
+		t.Fatalf("the closed target is not the one that was opened: %q vs %q", closed.ID, opened.ID)
+	}
+	if closed.ClosedGeneration == nil || *closed.ClosedGeneration != 5 {
+		t.Fatalf("closed at %v, want the tombstone generation 5", closed.ClosedGeneration)
+	}
+}
+
+// THE REVIEW'S §9 FAILURE, as a test: a second binding taking a withdrawn
+// binding's route alias must get its OWN identity, so it cannot inherit an
+// organisation's installation or its team exposure.
+func TestSolutionTarget_AReusedAliasDoesNotInheritTheWithdrawnIdentity(t *testing.T) {
+	alias := testDeclaredSolutionID(t)
+	first := declaredBinding(t, alias, 1)
+	first.Binding = "acme.test." + alias + ".x"
+	mount := &deliveredSet{}
+	mount.put(t, first)
+	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
+		t.Fatalf("present the first binding: %v", err)
+	}
+	inherited := liveTarget(t, first.Binding)
+	if inherited == nil {
+		t.Fatal("the first binding must have a target to inherit")
+	}
+
+	// Withdraw it, which is what ends the consent an organisation gave.
+	mount.put(t, tombstoneOf(t, first, 2))
+	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
+		t.Fatalf("withdraw the first binding: %v", err)
+	}
+
+	// A different binding now takes the alias the tombstone released.
+	second := declaredBinding(t, alias, 1)
+	second.Binding = "acme.test." + alias + ".y"
+	mount.put(t, second)
+	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
+		t.Fatalf("present the second binding on the reused alias: %v", err)
+	}
+
+	claimant := liveTarget(t, second.Binding)
+	if claimant == nil {
+		t.Fatal("the second binding must get a target of its own")
+	}
+	if claimant.ID == inherited.ID {
+		t.Fatalf("the reused alias %q handed the withdrawn identity %q to binding %q; "+
+			"an installation naming it would have transferred without anybody acting",
+			alias, inherited.ID, second.Binding)
+	}
+	if claimant.SolutionID != alias {
+		t.Fatalf("claimant alias = %q, want the reused %q", claimant.SolutionID, alias)
+	}
+	// And the withdrawn identity stays closed, so nothing resolves through it.
+	for _, target := range targetHistory(t, first.Binding) {
+		if target.Live() {
+			t.Fatalf("the withdrawn binding %q still has a live identity", first.Binding)
+		}
+	}
+}
+
+// Re-presenting a binding that was withdrawn mints a NEW identity. The tombstone
+// ended the presence an administrator consented to; consenting again is a
+// deliberate act, not something a later delivery can restore.
+func TestSolutionTarget_RePresentingAWithdrawnBindingMintsANewIdentity(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	present := declaredBinding(t, solutionID, 1)
+	mount := &deliveredSet{}
+	mount.put(t, present)
+	reconciler := newTestReconciler(t, mount)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	original := liveTarget(t, present.Binding)
+
+	mount.put(t, tombstoneOf(t, present, 2))
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+
+	again := declaredBinding(t, solutionID, 3)
+	mount.put(t, again)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("re-present: %v", err)
+	}
+
+	revived := liveTarget(t, present.Binding)
+	if revived == nil {
+		t.Fatal("re-presenting must open a target")
+	}
+	if revived.ID == original.ID {
+		t.Fatalf("re-presenting revived the withdrawn identity %q; "+
+			"the tombstone ended the consent that named it", original.ID)
+	}
+	if len(targetHistory(t, present.Binding)) != 2 {
+		t.Fatalf("history = %d, want one closed period and one open",
+			len(targetHistory(t, present.Binding)))
+	}
+}
+
+// Re-reading the same generation mints nothing: the pass is a poll, and a target
+// per pass would be a new installable identity every thirty seconds.
+func TestSolutionTarget_RereadingTheSameGenerationMintsNothing(t *testing.T) {
+	solutionID := testDeclaredSolutionID(t)
+	mount := &deliveredSet{}
+	mount.put(t, declaredBinding(t, solutionID, 1))
+	reconciler := newTestReconciler(t, mount)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if got := len(targetHistory(t, "acme.test."+solutionID)); got != 1 {
+		t.Fatalf("history = %d targets after two passes, want 1", got)
+	}
+}
