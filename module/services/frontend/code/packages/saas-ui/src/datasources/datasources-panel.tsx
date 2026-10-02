@@ -22,8 +22,6 @@ import {
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 
-import { ConnectError } from "@connectrpc/connect";
-
 import {
 	QueryClient,
 	QueryClientProvider,
@@ -40,7 +38,9 @@ import {
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
+import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
+import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
 import {
 	useAccessibleScopes,
 	useAddGitHubSource,
@@ -61,6 +61,8 @@ import {
 	cn,
 	formatGrants,
 	formatIngest,
+	formatLiveDelivery,
+	formatReconcileInterval,
 	formatSyncedAt,
 	parsePaths,
 	shortBoundaryId,
@@ -895,59 +897,10 @@ function PanelMessage({
 	);
 }
 
-/**
- * The parameters GitHub appends to the App's configured setup URL when it sends
- * the browser back: the installation it claims was installed, and the state we
- * minted. Both are required — `setup_action` is deliberately not consulted, so
- * an existing installation gaining repositories (`update`) lands here exactly as
- * a first install does.
- *
- * Returns null under SSR, where the panel renders before any address exists.
- */
-function readAppSetupReturn(): {
-	state: string;
-	installationId: string;
-	code: string;
-} | null {
-	if (typeof window === "undefined") return null;
-	const params = new URLSearchParams(window.location.search);
-	const state = params.get("state");
-	const installationId = params.get("installation_id");
-	// `code` is deliberately not part of the trigger. It is absent when the App
-	// was registered without "Request user authorization (OAuth) during
-	// installation", and the host answers that with the error naming the setting
-	// — which an operator can act on, where ignoring the return says nothing.
-	return state && installationId
-		? { state, installationId, code: params.get("code") ?? "" }
-		: null;
-}
-
-function scrubAppSetupReturn(): void {
-	const params = new URLSearchParams(window.location.search);
-	for (const key of ["state", "installation_id", "setup_action", "code"])
-		params.delete(key);
-	const query = params.toString();
-	window.history.replaceState(
-		null,
-		"",
-		`${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
-	);
-}
-
 function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
 	const next = new Set(set);
 	next.delete(id);
 	return next;
-}
-
-function messageOf(error: unknown): string {
-	const message =
-		error instanceof ConnectError
-			? error.rawMessage
-			: error instanceof Error
-				? error.message
-				: "unexpected error";
-	return message.replace(/^rpc error: code = \w+ desc = /, "");
 }
 
 /**
@@ -1004,12 +957,7 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
 			</>
 		);
 	}
-	const label =
-		source.liveDelivery === "source_webhook"
-			? "On push, through this source's webhook"
-			: source.liveDelivery === "app_webhook"
-				? "On push, through the GitHub App"
-				: "No live updates";
+	const label = formatLiveDelivery(source.liveDelivery);
 	return (
 		<>
 			<div>{label}</div>
@@ -1018,23 +966,6 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
 			)}
 		</>
 	);
-}
-
-/**
- * The reconcile schedule in words. Undefined when the host does not report it;
- * an interval of 0 means the periodic reconcile is off for this source, which
- * — with no live delivery — leaves "Sync now" as the only thing that ever
- * refreshes it, and is worth saying rather than leaving blank.
- */
-function formatReconcileInterval(seconds: number | undefined): string {
-	if (seconds === undefined) return "";
-	if (seconds <= 0) return "No periodic reconcile; refreshed by Sync now only";
-	if (seconds % 3600 === 0) {
-		const hours = seconds / 3600;
-		return `Otherwise reconciled every ${hours} ${hours === 1 ? "hour" : "hours"}`;
-	}
-	const minutes = Math.max(1, Math.round(seconds / 60));
-	return `Otherwise reconciled every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
 }
 
 /**

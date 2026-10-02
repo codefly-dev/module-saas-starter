@@ -14,6 +14,20 @@ manifest — `id`, `nav`, `frontend.manifestUrl` + `exposedModule`, optional
 `src/solutions/registry.ts`, which then writes the frontend half **through the
 gateway** (`POST /solutions/_frontend`).
 
+`sources` is the optional declaration of what a solution is **built on**:
+`[{ provider: github, repo: owner/name, paths, ref, label }]`. `repo` is held
+to `AddGitHubSourceRequest`'s own pattern, and the paths and ref to its bounds,
+at the far end of the same journey — the declaration is submitted unedited by
+the kit's `<DeclaredSourceCard>`, so a repository the connect RPC would refuse
+is refused when it is *declared* rather than weeks later when somebody presses
+Connect. A malformed declaration fails the registration whole, as a dashboard
+or a surface does, and one repository declared twice is refused outright:
+nothing downstream could say which of the two a card renders. It is a
+statement, not an authority — declaring a source connects nothing and grants
+no read of its contents. The solution page reads it in process and hands it to
+the remote it mounts as `SolutionBinding.declaredSources`, so it is on neither
+the public nor the internal HTTP projection and no new RPC exists to serve it.
+
 The route **relays the registry's own answer**: `409` for a revision conflict,
 `403` when the id belongs to another publisher, `422` (`registration_rejected`)
 when the registry will not admit the manifest, `503` when the registry cannot be

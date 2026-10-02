@@ -8,6 +8,15 @@ export {
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
 export {
+	type DeclaredSource,
+	declaredCollectionLabel,
+	matchDeclaredSources,
+} from "./datasources/declared-source.js";
+export {
+	DeclaredSourceCard,
+	type DeclaredSourceCardProps,
+} from "./datasources/declared-source-card.js";
+export {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
 } from "./datasources/directory.js";

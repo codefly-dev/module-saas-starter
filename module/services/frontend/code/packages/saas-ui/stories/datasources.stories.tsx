@@ -5,6 +5,8 @@ import {
 	type DatasourceClient,
 	DatasourcesPanel,
 	type DatasourceView,
+	DeclaredSourceCard,
+	type DeclaredSource,
 	describeSync,
 	SourceExecutionRestricted,
 	SourceSyncProgress,
@@ -236,4 +238,78 @@ export const ConnectionPending = {
  */
 export const ExecutionRestricted = {
 	render: () => <SourceExecutionRestricted />,
+};
+
+/**
+ * A solution that declares the one repository it is built on: the repository
+ * is shown, never asked for, and the three states are the whole of what a
+ * person can be told about it.
+ */
+const declaredSource: DeclaredSource = {
+	provider: "github",
+	repo: "example-org/handbook",
+	paths: ["proposals/"],
+	ref: "main",
+	label: "Proposals",
+};
+const declaredConnected: DatasourceView = {
+	...source,
+	id: "example-declared-source",
+	repo: "example-org/handbook",
+	paths: ["proposals/"],
+	liveDelivery: "app_webhook",
+	reconcileIntervalSeconds: 3600,
+	lastIngestedAt: new Date(Date.now() - 42 * 60_000).toISOString(),
+	lastIngestedCommit: "9f2c1ab0d4e5",
+};
+function DeclaredPreview({
+	state,
+}: {
+	state: "setup" | "connected" | "error";
+}) {
+	const [queryClient] = useState(
+		() => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+	);
+	const [client] = useState<DatasourceClient>(() => ({
+		listSources: async () =>
+			state === "setup"
+				? []
+				: [
+						state === "error"
+							? {
+									...declaredConnected,
+									status: "degraded" as const,
+									statusReason:
+										"the stored credential was rejected by GitHub (401) on the last 3 attempts",
+								}
+							: declaredConnected,
+					],
+		addGitHubSource: async () => {
+			throw new Error("Connection is unavailable in this preview.");
+		},
+		syncSource: async () => {
+			throw new Error("Synchronization is unavailable in this preview.");
+		},
+		deleteSource: async () => {
+			throw new Error("Deletion is unavailable in this preview.");
+		},
+	}));
+	return (
+		<QueryClientProvider client={queryClient}>
+			<DeclaredSourceCard
+				client={client}
+				orgId="example-org"
+				declared={declaredSource}
+			/>
+		</QueryClientProvider>
+	);
+}
+export const DeclaredSourceSetUp = {
+	render: () => <DeclaredPreview state="setup" />,
+};
+export const DeclaredSourceConnected = {
+	render: () => <DeclaredPreview state="connected" />,
+};
+export const DeclaredSourceError = {
+	render: () => <DeclaredPreview state="error" />,
 };
