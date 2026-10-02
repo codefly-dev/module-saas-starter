@@ -16,6 +16,12 @@ import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import {
+	mayKeepRetainedRows,
+	readOutcome,
+	readOutcomeMessage,
+	staleReadNotice,
+} from "@/shared/lib/read-outcome";
 import { truncateUUID } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -26,6 +32,7 @@ import {
 	PageHeader,
 	Panel,
 	Section,
+	Spinner,
 	Stack,
 	Table,
 	TableBody,
@@ -33,6 +40,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@/shared/ui";
 import type { Permission, Role } from "../model/types";
 import { useRevokeRole, useUpdateRole } from "../service/mutations";
@@ -61,11 +69,40 @@ function RoleDetail({
 	orgId: string;
 	canWrite: boolean;
 }) {
-	const { data: roles = [], isLoading } = useRoles(orgId);
+	const { data: roles = [], isLoading, isError, error } = useRoles(orgId);
 	const role = (roles as Role[]).find((candidate) => candidate.id === roleId);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
 
-	if (isLoading) {
-		return <PageBody>Loading…</PageBody>;
+	// `quiet` renders nothing rather than falling through: the next branch is
+	// "Role not found", which would flash over every load of a role that exists.
+	if (quiet) return null;
+	if (indicator) {
+		return (
+			<PageBody>
+				<Spinner label="Loading role" />
+			</PageBody>
+		);
+	}
+	// "Role not found" is a statement about the organization's roles, so it is
+	// only ever made about a list that was actually read. A refused or failed
+	// read defaults `roles` to [] exactly as a genuinely absent id does, and
+	// saying "not found" there sends an administrator looking for a deleted role
+	// instead of at the grant or the outage that is really in their way.
+	if (isError) {
+		return (
+			<PageBody>
+				<PageHeader
+					title="This role can't be shown"
+					description={readOutcomeMessage(
+						readOutcome(true, error),
+						"this organization's roles",
+						"",
+					)}
+					actions={<OrgSelector />}
+				/>
+				<BackToRoles />
+			</PageBody>
+		);
 	}
 	if (!role) {
 		return (
@@ -252,20 +289,36 @@ function RoleHolders({
 	orgId: string;
 	canWrite: boolean;
 }) {
-	const { data: assignments = [], isLoading } = useRoleAssignments(
-		orgId,
-		undefined,
-		SubjectKind.UNSPECIFIED,
-	);
+	const {
+		data: assignments = [],
+		isLoading,
+		isError,
+		error,
+	} = useRoleAssignments(orgId, undefined, SubjectKind.UNSPECIFIED);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
 	const { data: teams } = useQuery(teamQueries.list(orgId));
+	const outcome = readOutcome(isError, error);
+	// A refused read takes precedence over rows already on screen. TanStack keeps
+	// the last successful answer when a refetch rejects, so testing `length === 0`
+	// first would leave the previous holders rendered after the read was refused —
+	// the same wrong answer as "nobody holds this role", reached from the other
+	// side. A transient failure keeps them: blanking a good list because one
+	// request did not come back is worse than saying it may be out of date.
+	const withheld = !mayKeepRetainedRows(outcome);
+	const stale = staleReadNotice(outcome, "who holds this role");
 	const revokeRole = useRevokeRole();
 
 	const teamNameById = new Map(
 		(teams?.teams ?? []).map((team) => [team.id, team.name] as const),
 	);
-	const holders = assignments.filter(
-		(assignment) => assignment.roleId === role.id,
-	);
+	const holders = withheld
+		? []
+		: assignments.filter((assignment) => assignment.roleId === role.id);
+	// A disabled query is not a loading one: with no organization selected
+	// `useRoleAssignments` never runs, `isLoading` is false, and the render would
+	// otherwise fall through to a confident "Nobody holds this role" about a read
+	// that was never issued.
+	const noOrganization = !orgId;
 
 	return (
 		<Section
@@ -273,84 +326,106 @@ function RoleHolders({
 			description="Every principal and team this role is assigned to in this organization."
 		>
 			<Panel>
-				{isLoading ? (
-					<span className="text-sm text-muted-foreground">Loading…</span>
-				) : holders.length === 0 ? (
+				{quiet ? null : indicator ? (
+					<Spinner label="Loading who holds this role" size="sm" />
+				) : noOrganization ? (
 					<span className="text-sm text-muted-foreground">
-						Nobody holds this role.
+						Select an organization to see who holds this role.
+					</span>
+				) : holders.length === 0 ? (
+					// "Nobody holds this role" is a conclusion an administrator acts on,
+					// so it is only ever said about a read that succeeded. A denied or
+					// failed read says so instead of borrowing that sentence.
+					<span
+						className="text-sm text-muted-foreground"
+						{...(isError ? { role: "alert" as const } : {})}
+					>
+						{readOutcomeMessage(
+							outcome,
+							"who holds this role",
+							"Nobody holds this role.",
+						)}
 					</span>
 				) : (
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Subject</TableHead>
-								<TableHead>Kind</TableHead>
-								<TableHead />
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{holders.map((assignment) => {
-								const isTeam = assignment.subjectKind === SubjectKind.TEAM;
-								const name = isTeam
-									? (teamNameById.get(assignment.subjectId) ??
-										truncateUUID(assignment.subjectId))
-									: truncateUUID(assignment.subjectId);
-								const href = isTeam
-									? `/admin/teams/${assignment.subjectId}`
-									: `/admin/users/${assignment.subjectId}`;
-								return (
-									<TableRow key={assignment.id}>
-										<TableCell>
-											<Link
-												href={href}
-												className="font-mono text-xs text-primary hover:underline"
-											>
-												{name}
-											</Link>
-										</TableCell>
-										<TableCell>
-											<Badge variant="outline">
-												{isTeam ? "Team" : "Principal"}
-											</Badge>
-											{assignment.scope ? (
-												<Badge variant="secondary" className="ml-2">
-													{assignment.scope}
-												</Badge>
-											) : null}
-										</TableCell>
-										<TableCell>
-											{canWrite && (
-												<Button
-													variant="ghost"
-													size="sm"
-													disabled={revokeRole.isPending}
-													onClick={() =>
-														revokeRole.mutate(
-															{
-																subjectId: assignment.subjectId,
-																roleId: role.id,
-																orgId,
-																scope: assignment.scope,
-															},
-															{
-																onSuccess: () => toast.success("Role revoked"),
-																onError: (error) =>
-																	toast.error(
-																		`Failed to revoke: ${(error as Error).message}`,
-																	),
-															},
-														)
-													}
+					<>
+						{stale && (
+							<p role="status" className="text-sm text-muted-foreground">
+								{stale}
+							</p>
+						)}
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Subject</TableHead>
+									<TableHead>Kind</TableHead>
+									<TableHead />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{holders.map((assignment) => {
+									const isTeam = assignment.subjectKind === SubjectKind.TEAM;
+									const name = isTeam
+										? (teamNameById.get(assignment.subjectId) ??
+											truncateUUID(assignment.subjectId))
+										: truncateUUID(assignment.subjectId);
+									const href = isTeam
+										? `/admin/teams/${assignment.subjectId}`
+										: `/admin/users/${assignment.subjectId}`;
+									return (
+										<TableRow key={assignment.id}>
+											<TableCell>
+												<Link
+													href={href}
+													className="font-mono text-xs text-primary hover:underline"
 												>
-													<X className="h-4 w-4 text-destructive" />
-												</Button>
-											)}
-										</TableCell>
-									</TableRow>
-								);
-							})}
-						</TableBody>
-					</Table>
+													{name}
+												</Link>
+											</TableCell>
+											<TableCell>
+												<Badge variant="outline">
+													{isTeam ? "Team" : "Principal"}
+												</Badge>
+												{assignment.scope ? (
+													<Badge variant="secondary" className="ml-2">
+														{assignment.scope}
+													</Badge>
+												) : null}
+											</TableCell>
+											<TableCell>
+												{canWrite && (
+													<Button
+														variant="ghost"
+														size="sm"
+														disabled={revokeRole.isPending}
+														onClick={() =>
+															revokeRole.mutate(
+																{
+																	subjectId: assignment.subjectId,
+																	roleId: role.id,
+																	orgId,
+																	scope: assignment.scope,
+																},
+																{
+																	onSuccess: () =>
+																		toast.success("Role revoked"),
+																	onError: (error) =>
+																		toast.error(
+																			`Failed to revoke: ${(error as Error).message}`,
+																		),
+																},
+															)
+														}
+													>
+														<X className="h-4 w-4 text-destructive" />
+													</Button>
+												)}
+											</TableCell>
+										</TableRow>
+									);
+								})}
+							</TableBody>
+						</Table>
+					</>
 				)}
 			</Panel>
 		</Section>

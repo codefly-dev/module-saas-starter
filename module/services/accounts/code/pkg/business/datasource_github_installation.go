@@ -65,6 +65,14 @@ const (
 const (
 	DatasourceAccessLostRepositoryUnavailable = "repository_unavailable"
 	DatasourceAccessLostSuspended             = "suspended"
+	// DatasourceAccessLostPublicRepositoryUnreadable is the cause that reaches a
+	// source holding no credential at all: GitHub stopped serving its repository
+	// to an unauthenticated read. It is paired with
+	// DatasourceReasonPublicRepositoryUnreadable, and it is written by the
+	// change-set compiler rather than by the installation reconciler below —
+	// there is no installation involved, which is exactly why nothing was
+	// watching for it.
+	DatasourceAccessLostPublicRepositoryUnreadable = "public_repository_unreadable"
 )
 
 // datasourceInstallationReasonCodes pairs every cause this path may write with
@@ -77,6 +85,20 @@ const (
 var datasourceInstallationReasonCodes = map[string]string{
 	DatasourceReasonInstallationRepositoryUnavailable: DatasourceAccessLostRepositoryUnavailable,
 	DatasourceReasonInstallationSuspended:             DatasourceAccessLostSuspended,
+}
+
+// datasourceAccessLostCodes is every cause a source can lose access for, across
+// every path that parks one: the two the installation reconciler writes, and the
+// one the change-set compiler writes for a source holding no credential at all.
+//
+// It exists because the event's declared enum has to match the codes some path
+// can actually put in a payload, and that set is no longer "the installation
+// map's values" — a registry test holds the two together, and an undeclared
+// value would otherwise have the whole payload dropped with only a warning.
+var datasourceAccessLostCodes = []string{
+	DatasourceAccessLostRepositoryUnavailable,
+	DatasourceAccessLostSuspended,
+	DatasourceAccessLostPublicRepositoryUnreadable,
 }
 
 // datasourceInstallationReasons bounds what this path may park over, revive and
@@ -505,4 +527,79 @@ func (s *Service) applyGitHubInstallationAccess(ctx context.Context, source *Dat
 			})
 	}
 	return nil
+}
+
+// DatasourceLiveDelivery names how a change at a source reaches this deployment
+// without waiting for the periodic reconcile. It mirrors
+// saas.accounts.v1.DatasourceLiveDelivery.
+type DatasourceLiveDelivery string
+
+const (
+	// DatasourceLiveDeliveryNone: nothing pushes. The source is as current as
+	// its last scheduled or manual sync and no more.
+	DatasourceLiveDeliveryNone DatasourceLiveDelivery = "none"
+	// DatasourceLiveDeliverySourceWebhook: the source's own repository webhook,
+	// verified with the signing secret stored against it, on a deployment that
+	// has actually mounted the receiver for it.
+	DatasourceLiveDeliverySourceWebhook DatasourceLiveDelivery = "source_webhook"
+	// DatasourceLiveDeliveryAppWebhook: the deployment's single GitHub App
+	// webhook, fanned out to this source on receipt.
+	DatasourceLiveDeliveryAppWebhook DatasourceLiveDelivery = "app_webhook"
+)
+
+// SetDatasourceWebhookReceiverMounted records whether this deployment mounted
+// the per-source GitHub push receiver. It is deployment configuration the way
+// the App registration is, and it is set from the same place the route is
+// mounted so the two cannot drift: a stored per-source signing secret verifies
+// nothing at all if no endpoint is listening for the deliveries it signs.
+func (s *Service) SetDatasourceWebhookReceiverMounted(mounted bool) {
+	s.datasourceWebhookMounted = mounted
+}
+
+// DatasourceWebhookReceiverMounted reports that switch.
+func (s *Service) DatasourceWebhookReceiverMounted() bool { return s.datasourceWebhookMounted }
+
+// LiveDeliveryFor answers, for one source, how a change at it reaches this
+// deployment. It is deliberately the composition of a source fact and a
+// deployment fact, because neither alone is the answer and reading either alone
+// has been actively misleading:
+//
+//   - A source connected through the App holds no push secret of its own, so its
+//     WebhookConfigured() is false. Every client reading that flag showed the
+//     recommended connect path as having no live delivery, whether or not the
+//     operator had registered the App webhook — which is what makes "is the
+//     webhook configured on this environment?" unanswerable from the product.
+//   - A source that does hold its own secret still receives nothing on a
+//     deployment that never mounted the per-source receiver
+//     (DATASOURCE_GITHUB_WEBHOOK_ENABLED is off by default), so a stored secret
+//     is not a delivery path either.
+//
+// Order matters: a source holding its own secret is served by the per-source
+// receiver, which verifies against that secret; the App path carries only
+// sources bound to an installation.
+func (s *Service) LiveDeliveryFor(source *DatasourceSource) DatasourceLiveDelivery {
+	if source == nil || source.Provider != DatasourceProviderGitHub {
+		return DatasourceLiveDeliveryNone
+	}
+	if source.WebhookConfigured() && s.datasourceWebhookMounted {
+		return DatasourceLiveDeliverySourceWebhook
+	}
+	if source.GitHubInstallationID != "" && s.GitHubAppWebhookConfigured() {
+		return DatasourceLiveDeliveryAppWebhook
+	}
+	return DatasourceLiveDeliveryNone
+}
+
+// DatasourceLiveDeliveryConfigured reports whether this deployment has wired the
+// provider-level push endpoint a connector receives on — the catalog's answer to
+// "has anyone turned live delivery on here at all", as distinct from the
+// descriptor's SupportsWebhook, which only says the connector could take it.
+//
+// Only GitHub has a receiver in this host; the other connectors declare
+// SupportsWebhook false and there is nothing for an operator to configure.
+func (s *Service) DatasourceLiveDeliveryConfigured(connectorKey string) bool {
+	if connectorKey != DatasourceProviderGitHub {
+		return false
+	}
+	return s.GitHubAppWebhookConfigured() || s.datasourceWebhookMounted
 }

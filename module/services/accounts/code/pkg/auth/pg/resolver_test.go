@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // Reset clears the rows Resolver touches so each test starts from a clean
@@ -40,7 +40,7 @@ func resetAuthTables(t *testing.T) {
 		`UPDATE bootstrap_state SET bootstrapped_at = NULL WHERE id = 1`,
 	}
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for _, q := range queries {
 			if _, err := tx.Exec(ctx, q); err != nil {
 				return fmt.Errorf("%s: %w", q, err)
@@ -93,7 +93,7 @@ func seedOrg(t *testing.T, ownerID uuid.UUID, name, ssoOrgID string) uuid.UUID {
 	t.Helper()
 	orgID := business.NewID()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO organizations (id, name, slug, owner_id, sso_organization_id)
 			VALUES ($1, $2, $3, $4, NULLIF($5, ''))`,
@@ -106,7 +106,7 @@ func seedOrg(t *testing.T, ownerID uuid.UUID, name, ssoOrgID string) uuid.UUID {
 func addMember(t *testing.T, orgID, userID uuid.UUID, role string, joinedAt time.Time) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO organization_members (org_id, user_id, role, joined_at)
 			VALUES ($1, $2, $3, $4)`, orgID, userID, role, joinedAt)
@@ -117,7 +117,7 @@ func addMember(t *testing.T, orgID, userID uuid.UUID, role string, joinedAt time
 func setDefaultOrg(t *testing.T, userID, orgID uuid.UUID) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE users SET default_org_id = $2 WHERE uuid = $1`, userID, orgID)
 		return err
 	}))
@@ -130,7 +130,7 @@ func seedInviteOrg(t *testing.T) (uuid.UUID, uuid.UUID) {
 	inviterID := seedUser(t)
 	orgID := business.NewID()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO organizations (id, name, slug, owner_id)
 			VALUES ($1, $2, $3, $4)`,
@@ -150,7 +150,7 @@ func seedInvitation(t *testing.T, orgID, inviterID uuid.UUID, email, role, statu
 	t.Helper()
 	token := business.NewID().String()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO invitations (id, org_id, inviter_id, email, role, token_hash, status, expires_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -277,7 +277,7 @@ func TestResolver_LastUsedIsInitializedCoalescedAndRefreshed(t *testing.T) {
 
 	stale := time.Now().Add(-2 * time.Minute).UTC().Truncate(time.Microsecond)
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`UPDATE user_identities SET last_used = $2 WHERE user_uuid = $1`,
 			identity.UserID,
@@ -344,7 +344,7 @@ func TestResolver_ExistingInactiveUserRejected(t *testing.T) {
 	identity, err := r.Resolve(ctx, claims("suspended@test.local", "dev-suspended"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE users SET status = 'suspended' WHERE uuid = $1`, identity.UserID)
 		return err
 	}))
@@ -369,7 +369,7 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 	// the assertion read.
 	var name, slug string
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with PostgresStore.getQueryExecutor
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT name, slug FROM organizations WHERE id = $1`, id.OrgID).Scan(&name, &slug)
 	}))
@@ -495,7 +495,7 @@ func TestOrganizations_SSOOrganizationIDIsUnique(t *testing.T) {
 	seedOrg(t, owner, "Primary", "workos-org-dup")
 
 	err := testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx, `
 			INSERT INTO organizations (id, name, slug, owner_id, sso_organization_id)
 			VALUES ($1, $2, $3, $4, $5)`,
@@ -736,7 +736,7 @@ func TestResolver_Invite_ExistingMemberRoleUpgraded(t *testing.T) {
 	existing, err := r.Resolve(ctx, claims("promote@test.local", "dev-promote"), auth.SignupIntent{})
 	require.NoError(t, err)
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx,
 			`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'member')`,
 			orgID, existing.UserID)
@@ -772,7 +772,7 @@ func TestResolver_Invite_IdempotentReacceptReportsCurrentRole(t *testing.T) {
 
 	// Promote the member out of band after acceptance.
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx,
 			`UPDATE organization_members SET role = 'owner' WHERE org_id = $1 AND user_id = $2`,
 			orgID, joined.UserID)
@@ -1017,7 +1017,7 @@ func resolverWithSignupMode(mode auth.SignupMode) *pgauth.Resolver {
 func seedWaitlistEntry(t *testing.T, email, state string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		id := business.NewID()
 		_, err := tx.Exec(ctx, `
 			INSERT INTO waitlist_entries (
@@ -1034,7 +1034,7 @@ func seedWaitlistEntry(t *testing.T, email, state string) {
 func execControlPlane(t *testing.T, query string, args ...any) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(context.Background(), func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, query, args...)
 		return err
 	}))

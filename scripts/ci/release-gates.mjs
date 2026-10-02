@@ -59,8 +59,8 @@ export const REQUIRED_GATES = [
   "kit-version",
   "marketing",
   "module-package",
-  "provider-shim",
   CONTRACT_JOB,
+  "scoped-pools",
   "sdk-boundary",
 ];
 
@@ -404,9 +404,9 @@ export const REQUIRED_CONTEXTS = [
   "Immutable module package",
   "Interface docs and story tests",
   "Marketing isolation",
-  "Provider setup shims",
   "Release gate contract",
   "Release gates",
+  "Scoped pool authority",
 ];
 
 const MERGE_GROUP_BASE = "github.event.merge_group.base_sha";

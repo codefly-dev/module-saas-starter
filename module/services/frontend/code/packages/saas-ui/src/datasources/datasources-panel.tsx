@@ -2,7 +2,9 @@
 
 import {
 	Badge,
+	Banner,
 	Button,
+	Card,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -10,12 +12,14 @@ import {
 	DropdownMenuTrigger,
 	Input,
 	Label,
+	Spinner,
 	Table,
 	TableBody,
 	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
+	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 
 import { ConnectError } from "@connectrpc/connect";
@@ -45,11 +49,13 @@ import {
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
+import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
 import type {
 	AccessibleScopeView,
 	DatasourceClient,
 	DatasourceStatusName,
 	DatasourceView,
+	SourceSyncView,
 } from "./types.js";
 import {
 	cn,
@@ -81,6 +87,52 @@ interface DatasourcesPanelBaseProps {
 	 * the consumer composing both hands that module's view in here.
 	 */
 	renderSourceDetail?: (source: DatasourceView) => ReactNode;
+	/**
+	 * Renders the durable execution of a source's sync, opened from its row: the
+	 * fan-out task the sync became, its items, attempts, receipts and
+	 * dead-letters.
+	 *
+	 * An extension point for the same reason `renderSourceDetail` is one. The
+	 * host enqueues a sync and keeps the job; what executes it is whichever
+	 * module runs durable work, and this repository may not name one — so the
+	 * consumer composing both passes that module's own view in here, built from
+	 * its own transport. Absent, no row offers the action: an empty panel
+	 * promising an execution view would be worse than not offering one.
+	 *
+	 * `sync` is the host's projection of the sync the action was opened for, so a
+	 * consumer can resolve it to whatever key its execution store is aged on
+	 * without re-reading it.
+	 *
+	 * Three things the host cannot enforce for you, because it may not name the
+	 * module that runs the work — and each of them fails by SUCCEEDING, which is
+	 * why they are written down rather than left to be discovered:
+	 *
+	 * 1. **Pass this only for a viewer who may read the organization's
+	 *    executions.** Durable work for a sync is admitted by the module that
+	 *    ingests it, not by the person reading this panel, so a caller-scoped
+	 *    "my own runs" read is not a weaker version of the organization read —
+	 *    it is a correct answer to a different question, and its answer here is
+	 *    an empty page. The panel's own empty state says "this source has never
+	 *    synced", so a viewer without that permission would be told something
+	 *    false by two correct components.
+	 * 2. **Distinguish "no runs" from "you may not see the runs"** in whatever
+	 *    you render, for the same reason. Render `SourceExecutionRestricted`
+	 *    for the second, so the sentence reads the same wherever it appears.
+	 *    Rendering nothing gets the host's neutral fallback, which names both
+	 *    readings rather than letting silence pick one.
+	 * 3. **Never report a count taken from a page of results.** One sync can
+	 *    produce many runs, and the host already knows how many without paging:
+	 *    `sync.changes.snapshot ? 1 : sync.changes.files`, which on the
+	 *    incremental path *is* the hand-off count by construction. Show that
+	 *    beside the runs you loaded rather than as a count of them — the two
+	 *    disagreeing is then real information (work that was never admitted)
+	 *    instead of a paging bug. Note it is only final once the sync is
+	 *    terminal: read mid-sync it counts the hand-offs enqueued so far.
+	 */
+	renderSourceExecution?: (context: {
+		source: DatasourceView;
+		sync?: SourceSyncView;
+	}) => ReactNode;
 	className?: string;
 }
 
@@ -154,9 +206,13 @@ function DatasourcesPanelView({
 	onSyncEnqueued,
 	canManage = true,
 	renderSourceDetail,
+	renderSourceExecution,
 	className,
 }: DatasourcesPanelViewProps) {
 	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
+		null,
+	);
+	const [executionSource, setExecutionSource] = useState<DatasourceView | null>(
 		null,
 	);
 	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
@@ -218,6 +274,9 @@ function DatasourcesPanelView({
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
+	const { indicator: listIndicator, quiet: listQuiet } = useLoadingPhase(
+		list.isLoading,
+	);
 	const scopes = useAccessibleScopes(client, orgId);
 	const collections = useQuery({
 		queryKey: ["collection-access", orgId],
@@ -227,12 +286,38 @@ function DatasourcesPanelView({
 		refetchInterval: 5000,
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
+	// What was just connected, so the read grant can be offered where the person
+	// already is and knows what they connected — rather than as a separate later
+	// journey through Manage read grants, which is the whole of what made the
+	// flow unreasonable. Held as what the form said rather than as a node id,
+	// because a connect that MINTED a collection has no id until the boundary
+	// listing comes back with it.
+	const [justConnected, setJustConnected] = useState<{
+		repo: string;
+		nodeId?: string | undefined;
+		label: string;
+	} | null>(null);
 	const listedCollections = collections.isError ? undefined : collections.data;
 	const selectedCollection = collections.isError
 		? undefined
 		: collections.data?.find(
 				(collection) => collection.nodeId === editingCollection,
 			);
+	// The collection the connect landed in, resolved out of the boundary listing
+	// the connect invalidated. Matched by node id when an existing collection was
+	// picked, and by label when one was minted — the label is what the host
+	// resolved the new node from, and it is unique within the organization.
+	//
+	// "Manage read grants" wins when both are open: the person asked for that one
+	// after the connect, so the offer has been superseded.
+	const connectedCollection =
+		justConnected && !selectedCollection && !collections.isError
+			? collections.data?.find((collection) =>
+					justConnected.nodeId
+						? collection.nodeId === justConnected.nodeId
+						: collection.label === justConnected.label,
+				)
+			: undefined;
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -264,6 +349,11 @@ function DatasourcesPanelView({
 				onSuccess: () => {
 					setConnectedRepos((prev) => new Set(prev).add(values.repo));
 					setShowConnect(false);
+					setJustConnected({
+						repo: values.repo,
+						nodeId: values.boundaryNodeId || undefined,
+						label: values.targetCollection,
+					});
 				},
 			},
 		);
@@ -460,18 +550,27 @@ function DatasourcesPanelView({
 					</div>
 				) : null}
 				{appSetupUnredeemed && (
-					<p role="status" className="type-body text-muted-foreground">
+					<Banner title="Repositories are waiting to be connected">
 						The GitHub App installation finished, but only an organization
 						administrator can connect the repositories it granted. Ask one to
 						connect them in Admin → Data sources; the installation itself is
 						already in place.
-					</p>
+					</Banner>
 				)}
 				{selectedCollection && (
 					<CollectionGrants
 						client={client}
 						orgId={orgId}
 						collection={selectedCollection}
+					/>
+				)}
+				{connectedCollection && (
+					<CollectionGrants
+						client={client}
+						orgId={orgId}
+						collection={connectedCollection}
+						connectedRepo={justConnected?.repo}
+						onDismiss={() => setJustConnected(null)}
 					/>
 				)}
 				{activitySource && (
@@ -483,28 +582,77 @@ function DatasourcesPanelView({
 					/>
 				)}
 
+				{/* The enqueue receipt, in a container. It used to be a bare paragraph
+				    between the section heading and the table, which read as stray text
+				    rather than as this panel's answer to the button that had just been
+				    pressed. It is dismissible because the progress below supersedes it
+				    within a poll: a notice that cannot be put away outlives the thing
+				    it announced. */}
 				{syncNotice && (
-					<p role="status" className="text-sm text-muted-foreground">
+					<Banner
+						title="Sync queued"
+						onDismiss={() => setSyncNotice(null)}
+						dismissLabel="Dismiss the sync notice"
+					>
 						{syncNotice}
-					</p>
+					</Banner>
 				)}
 				{actionError && (
-					<div
-						role="alert"
-						className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
-					>
-						<span>{actionError}</span>
-						<Button
-							type="button"
-							className="text-xs underline"
-							onClick={() => setActionError(null)}
+					<Card className="border-destructive/40 bg-destructive/10">
+						<div
+							role="alert"
+							className="flex items-center justify-between gap-3 type-body text-destructive"
 						>
-							Dismiss
-						</Button>
-					</div>
+							<span>{actionError}</span>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => setActionError(null)}
+							>
+								Dismiss
+							</Button>
+						</div>
+					</Card>
 				)}
 
-				{list.isLoading ? (
+				{/* One card per source whose sync is worth watching, above the table so
+				    a reader who just pressed Sync does not have to find the row again. */}
+				{client.getSourceSync &&
+					sources.map((source) => (
+						<SourceSyncWatch
+							key={source.id}
+							client={client}
+							orgId={orgId}
+							source={source}
+							onOpenExecution={
+								renderSourceExecution
+									? () => setExecutionSource(source)
+									: undefined
+							}
+						/>
+					))}
+
+				{executionSource && renderSourceExecution && (
+					<SourceExecution
+						client={client}
+						orgId={orgId}
+						source={executionSource}
+						render={renderSourceExecution}
+						onClose={() => setExecutionSource(null)}
+					/>
+				)}
+
+				{/* The hook holds the timing and this branch only reads it. Wrapping the
+				    line in `<DelayedLoading active>` inside a branch gated on
+				    `list.isLoading` — which is what stood here — unmounts the indicator
+				    the instant the answer lands, and the minimum-visible floor lives in
+				    state inside that component: a response at 210ms showed the line for
+				    10ms, the exact blink the floor exists to prevent. Reading the hook
+				    here keeps that state above the branch. `quiet` renders nothing at
+				    all: falling through it would flash "No data sources connected."
+				    over a list that is still loading. */}
+				{listQuiet ? null : listIndicator ? (
 					<PanelMessage>Loading data sources…</PanelMessage>
 				) : list.isError ? (
 					<PanelMessage tone="error">
@@ -538,6 +686,7 @@ function DatasourcesPanelView({
 					<SourcesTable
 						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
+						onExecution={renderSourceExecution ? setExecutionSource : undefined}
 						onReconnect={(source) => {
 							setReconnectError(undefined);
 							setReconnecting(source);
@@ -675,7 +824,11 @@ function DatasourcesPanelView({
 						setReconnectError(undefined);
 						try {
 							const jobId = reconnectSource
-								? await reconnectSource(orgId, reconnecting.id, token || undefined)
+								? await reconnectSource(
+										orgId,
+										reconnecting.id,
+										token || undefined,
+									)
 								: await client.syncSource(orgId, reconnecting.id, token);
 							setSyncNotice(
 								token
@@ -818,6 +971,73 @@ function LastSyncCell({ source }: { source: DatasourceView }) {
 }
 
 /**
+ * How a change at the source reaches this deployment, and — when nothing pushes
+ * — how stale the source may therefore be.
+ *
+ * This column used to render `webhookConfigured`, which reports one thing: that
+ * a signing secret is stored against this source. A source connected through
+ * the GitHub App holds no secret of its own, because its pushes arrive at the
+ * App's single webhook URL, so every source on the recommended connect path
+ * read "Not configured" whether or not an operator had registered that
+ * webhook — and a reader had no way to tell the two deployments apart. The
+ * converse was just as wrong: a stored secret delivers nothing where the
+ * per-source receiver was never mounted, which is the default.
+ *
+ * `liveDelivery` composes both facts server-side. It is absent from an older
+ * host, where the honest answer is that nothing here knows: the cell then falls
+ * back to what the old flag actually means, and says which of the two it is
+ * reporting rather than presenting a guess as an answer.
+ */
+function LiveDeliveryCell({ source }: { source: DatasourceView }) {
+	const every = formatReconcileInterval(source.reconcileIntervalSeconds);
+	if (source.liveDelivery === undefined) {
+		return (
+			<>
+				<div>
+					{source.webhookConfigured
+						? "Signing secret configured"
+						: "No signing secret"}
+				</div>
+				<div className="type-caption-plain text-muted-foreground">
+					This host does not report how live updates reach this source.
+				</div>
+			</>
+		);
+	}
+	const label =
+		source.liveDelivery === "source_webhook"
+			? "On push, through this source's webhook"
+			: source.liveDelivery === "app_webhook"
+				? "On push, through the GitHub App"
+				: "No live updates";
+	return (
+		<>
+			<div>{label}</div>
+			{every && (
+				<div className="type-caption-plain text-muted-foreground">{every}</div>
+			)}
+		</>
+	);
+}
+
+/**
+ * The reconcile schedule in words. Undefined when the host does not report it;
+ * an interval of 0 means the periodic reconcile is off for this source, which
+ * — with no live delivery — leaves "Sync now" as the only thing that ever
+ * refreshes it, and is worth saying rather than leaving blank.
+ */
+function formatReconcileInterval(seconds: number | undefined): string {
+	if (seconds === undefined) return "";
+	if (seconds <= 0) return "No periodic reconcile; refreshed by Sync now only";
+	if (seconds % 3600 === 0) {
+		const hours = seconds / 3600;
+		return `Otherwise reconciled every ${hours} ${hours === 1 ? "hour" : "hours"}`;
+	}
+	const minutes = Math.max(1, Math.round(seconds / 60));
+	return `Otherwise reconciled every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
+/**
  * How each status that is not `active` presents. Active is deliberately absent:
  * it is the state of nearly every row, so badging it too would bury the states
  * that need a reader under a column of noise — and it and `unknown` would then
@@ -871,8 +1091,8 @@ function StatusCell({ source }: { source: DatasourceView }) {
 				<>
 					<Badge variant="outline">Non-conformant provider</Badge>
 					<p className="type-caption-plain text-muted-foreground">
-						This source keeps syncing, but new sources of its provider cannot
-						be connected until it meets the datasource connector requirements.
+						This source keeps syncing, but new sources of its provider cannot be
+						connected until it meets the datasource connector requirements.
 						{source.conformanceGap && ` ${source.conformanceGap}.`}
 					</p>
 				</>
@@ -897,6 +1117,7 @@ function SourcesTable({
 	onSync,
 	onDelete,
 	onActivity,
+	onExecution,
 	onReconnect,
 	onMigrateToApp,
 	renderSourceDetail,
@@ -911,13 +1132,16 @@ function SourcesTable({
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
 	onActivity?: (source: DatasourceView) => void;
+	/** Present only when a consumer handed the panel an execution view. */
+	onExecution?: (source: DatasourceView) => void;
 	onReconnect: (source: DatasourceView) => void;
 	onMigrateToApp?: (source: DatasourceView) => void;
 	renderSourceDetail?: (source: DatasourceView) => ReactNode;
 }) {
 	// A viewer who manages nothing is offered nothing to do but read a row's
-	// history, so the column is there only when there is something in it.
-	const showActions = canManage || !!onActivity;
+	// history or its execution, so the column is there only when there is
+	// something in it.
+	const showActions = canManage || !!onActivity || !!onExecution;
 	return (
 		<div className="overflow-x-auto rounded-lg border">
 			<Table className="w-full text-sm">
@@ -936,7 +1160,7 @@ function SourcesTable({
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
-						<TableHead className={headerClass}>Webhook</TableHead>
+						<TableHead className={headerClass}>Live updates</TableHead>
 						<TableHead className={headerClass}>Last sync dispatch</TableHead>
 						{showActions && (
 							<TableHead className={cn(headerClass, "text-right")}>
@@ -982,10 +1206,8 @@ function SourcesTable({
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
 							</TableCell>
-							<TableCell className={cellClass}>
-								{source.webhookConfigured
-									? "Signing secret configured"
-									: "Not configured"}
+							<TableCell className={cn(cellClass, wrapClass)}>
+								<LiveDeliveryCell source={source} />
 							</TableCell>
 							<TableCell
 								className={cn(cellClass, wrapClass, "text-muted-foreground")}
@@ -995,15 +1217,30 @@ function SourcesTable({
 							{showActions && (
 								<TableCell className={cn(cellClass, "text-right")}>
 									{!canManage ? (
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											aria-label={`History of ${source.repo}`}
-											onClick={() => onActivity?.(source)}
-										>
-											History
-										</Button>
+										<div className="inline-flex items-center gap-2">
+											{onActivity && (
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													aria-label={`History of ${source.repo}`}
+													onClick={() => onActivity(source)}
+												>
+													History
+												</Button>
+											)}
+											{onExecution && (
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													aria-label={`Execution of ${source.repo}`}
+													onClick={() => onExecution(source)}
+												>
+													Execution
+												</Button>
+											)}
+										</div>
 									) : (
 										/* Sync is the row's one routine action; the rest sit behind
 								    a menu so the table fits a content column instead of
@@ -1057,6 +1294,13 @@ function SourcesTable({
 															onClick={() => onActivity(source)}
 														>
 															History
+														</DropdownMenuItem>
+													)}
+													{onExecution && (
+														<DropdownMenuItem
+															onClick={() => onExecution(source)}
+														>
+															Execution
 														</DropdownMenuItem>
 													)}
 													<DropdownMenuSeparator />
@@ -1120,6 +1364,151 @@ function BoundaryCell({
 	);
 }
 
+/**
+ * How long a finished sync's card stays up. Its result belongs on the surface
+ * that ran it for long enough to be read, and no longer: History is where an
+ * older sync lives, and a panel that keeps every outcome becomes a list of
+ * cards above the table it is meant to introduce.
+ *
+ * A failure is not special-cased into permanence. The source's own Status cell
+ * carries a source that went degraded, and that one does not age out.
+ */
+const SETTLED_SYNC_VISIBLE_MS = 600_000;
+
+/**
+ * One source's live sync, or nothing.
+ *
+ * A component per source rather than a loop over one hook, so each row's watch
+ * has its own query and mounting a new source cannot change how many hooks the
+ * panel calls.
+ */
+function SourceSyncWatch({
+	client,
+	orgId,
+	source,
+	onOpenExecution,
+}: {
+	client: DatasourceClient;
+	orgId: string;
+	source: DatasourceView;
+	onOpenExecution?: () => void;
+}) {
+	// `now` comes from the hook's ticking clock rather than being read here: a
+	// stalled sync produces an identical read on every poll, so the clock
+	// advancing is the only thing that can re-render this — and reading it during
+	// render would make two renders of the same data disagree.
+	const { sync, report, now } = useSourceSync(client, orgId, source);
+	if (!sync || !report) return null;
+	if (!report.active) {
+		const finishedAt = sync.finishedAt
+			? Date.parse(sync.finishedAt)
+			: Number.NaN;
+		// An unparseable or absent finish stamp on a settled sync says nothing
+		// about how old it is, so it is treated as old: showing it would pin a
+		// card of unknown age above the table for as long as the page is open.
+		if (
+			Number.isNaN(finishedAt) ||
+			now - finishedAt > SETTLED_SYNC_VISIBLE_MS
+		) {
+			return null;
+		}
+	}
+	return (
+		<SourceSyncProgress
+			source={source}
+			report={report}
+			{...(onOpenExecution ? { onOpenExecution } : {})}
+		/>
+	);
+}
+
+/**
+ * The consumer's rendering, or the host saying plainly that there is none.
+ *
+ * A consumer that renders nothing would otherwise leave an empty card directly
+ * beneath a panel whose own empty state says the source has never synced — and
+ * an empty answer here most often means the viewer may not read these runs, not
+ * that there are none. The host cannot tell those apart (it may not name the
+ * module that runs the work, let alone evaluate its permissions), so it says
+ * the one true thing it knows and points at the two readings rather than
+ * letting silence pick one.
+ *
+ * A consumer that *can* tell them apart renders `SourceExecutionRestricted`
+ * instead, and never reaches this.
+ */
+function SourceExecutionBody({ children }: { children: ReactNode }) {
+	// `null`, `undefined`, `false` and `[]` all mean "rendered nothing" from a
+	// render prop, and a caller returning any of them meant the same thing.
+	const rendered =
+		children !== null &&
+		children !== undefined &&
+		children !== false &&
+		!(Array.isArray(children) && children.length === 0);
+	if (rendered) return <>{children}</>;
+	return (
+		<p role="status" className="type-body text-muted-foreground">
+			No runs to show for this sync. If you expected some, you may not have
+			permission to see them.
+		</p>
+	);
+}
+
+/**
+ * The consumer's execution view for one source, in a card the host owns.
+ *
+ * The host reads the sync so the consumer is handed a resolved projection
+ * rather than having to ask for it again, and renders the frame — heading, close
+ * — so an execution view drops in looking like the rest of the panel. What is
+ * inside it is entirely the consumer's.
+ */
+function SourceExecution({
+	client,
+	orgId,
+	source,
+	render,
+	onClose,
+}: {
+	client: DatasourceClient;
+	orgId: string;
+	source: DatasourceView;
+	render: (context: {
+		source: DatasourceView;
+		sync?: SourceSyncView;
+	}) => ReactNode;
+	onClose: () => void;
+}) {
+	const { sync, pending } = useSourceSync(client, orgId, source);
+	const { indicator: executionIndicator, quiet: executionQuiet } =
+		useLoadingPhase(pending);
+	return (
+		<section aria-label={`Execution of ${source.repo}`}>
+			<Card
+				title={`Execution · ${source.repo}`}
+				actions={
+					<Button variant="outline" size="sm" onClick={onClose}>
+						Close execution
+					</Button>
+				}
+			>
+				{/* The consumer is handed the resolved sync so it can key its own view
+				    on it, so its view waits for that read rather than mounting against
+				    an absent key and remounting when one arrives. A cached read
+				    resolves well inside the delay, so opening the view normally shows
+				    no indicator at all — and the timing lives in the hook above this
+				    branch, so an answer landing just past the delay still leaves the
+				    indicator up long enough to read. */}
+				{executionQuiet ? null : executionIndicator ? (
+					<Spinner label={`Loading the execution of ${source.repo}`} />
+				) : (
+					<SourceExecutionBody>
+						{render({ source, ...(sync ? { sync } : {}) })}
+					</SourceExecutionBody>
+				)}
+			</Card>
+		</section>
+	);
+}
+
 function SourceHistory({
 	client,
 	orgId,
@@ -1136,6 +1525,9 @@ function SourceHistory({
 		queryFn: () => client.listActivity!(orgId, source.id),
 		refetchInterval: 15000,
 	});
+	const { indicator: historyIndicator, quiet: historyQuiet } = useLoadingPhase(
+		history.isPending,
+	);
 	const names: Record<string, string> = {
 		"saas.datasource.source.synced": "Sync requested",
 		"saas.datasource.source.added": "Source connected",
@@ -1145,55 +1537,63 @@ function SourceHistory({
 		"saas.datasource.sync.failed": "Sync attempt failed",
 	};
 	return (
-		<section
-			aria-label="Sync history"
-			className="rounded-lg border p-4 space-y-3"
-		>
-			<div className="flex items-center justify-between">
-				<h3 className="font-medium">Sync history · {source.repo}</h3>
-				<Button variant="outline" size="sm" onClick={onClose}>
-					Close history
-				</Button>
-			</div>
-			<p className="text-xs text-muted-foreground">
-				Sync requests, dispatched files, and ingestion results. History
-				refreshes automatically.
-			</p>
-			{history.isPending ? (
-				<p>Loading history…</p>
-			) : history.error ? (
-				<p role="alert">Could not load history: {messageOf(history.error)}</p>
-			) : !history.data?.length ? (
-				<p>No recorded activity yet.</p>
-			) : (
-				<ol className="space-y-3" style={{ maxHeight: 360, overflowY: "auto" }}>
-					{history.data.map((e) => (
-						<li key={e.id} className="border-t pt-3 text-sm">
-							<div className="flex justify-between gap-3">
-								<strong>{names[e.type] ?? e.type}</strong>
-								<time className="text-xs text-muted-foreground">
-									{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
-								</time>
-							</div>
-							<p className="text-xs text-muted-foreground">
-								Actor: {e.actor === source.id ? "Source sync worker" : e.actor}
-							</p>
-							<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-								{Object.entries(e.fields)
-									.filter(([k]) => k !== "solution")
-									.map(([k, v]) => (
-										<div key={k}>
-											<dt className="inline text-muted-foreground">
-												{k.replaceAll("_", " ")}:{" "}
-											</dt>
-											<dd className="inline break-all">{String(v)}</dd>
-										</div>
-									))}
-							</dl>
-						</li>
-					))}
-				</ol>
-			)}
+		<section aria-label="Sync history">
+			<Card
+				className="space-y-3"
+				title={`Sync history · ${source.repo}`}
+				actions={
+					<Button variant="outline" size="sm" onClick={onClose}>
+						Close history
+					</Button>
+				}
+			>
+				<p className="type-body text-muted-foreground">
+					Sync requests, dispatched files, and ingestion results. History
+					refreshes automatically.
+				</p>
+				{/* Same shape as the source list: the timing lives in the hook above the
+				    branch, and the pre-delay window renders nothing rather than "No
+				    recorded activity yet." over a history that is still loading. */}
+				{historyQuiet ? null : historyIndicator ? (
+					<p>Loading history…</p>
+				) : history.error ? (
+					<p role="alert">Could not load history: {messageOf(history.error)}</p>
+				) : !history.data?.length ? (
+					<p>No recorded activity yet.</p>
+				) : (
+					<ol
+						className="space-y-3"
+						style={{ maxHeight: 360, overflowY: "auto" }}
+					>
+						{history.data.map((e) => (
+							<li key={e.id} className="border-t pt-3 text-sm">
+								<div className="flex justify-between gap-3">
+									<strong>{names[e.type] ?? e.type}</strong>
+									<time className="text-xs text-muted-foreground">
+										{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
+									</time>
+								</div>
+								<p className="text-xs text-muted-foreground">
+									Actor:{" "}
+									{e.actor === source.id ? "Source sync worker" : e.actor}
+								</p>
+								<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+									{Object.entries(e.fields)
+										.filter(([k]) => k !== "solution")
+										.map(([k, v]) => (
+											<div key={k}>
+												<dt className="inline text-muted-foreground">
+													{k.replaceAll("_", " ")}:{" "}
+												</dt>
+												<dd className="inline break-all">{String(v)}</dd>
+											</div>
+										))}
+								</dl>
+							</li>
+						))}
+					</ol>
+				)}
+			</Card>
 		</section>
 	);
 }

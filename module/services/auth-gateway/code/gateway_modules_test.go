@@ -102,6 +102,23 @@ func TestGateway_Module_Federated_ValidJWT_Proxied(t *testing.T) {
 	require.Empty(t, moduleFake.lastHeaders.Get("x-codefly-internal-token"))
 }
 
+// A federated module may transcode REST to gRPC the way accounts does, so the
+// Grpc-Metadata- spelling of an identity header is dropped here too.
+func TestGateway_Module_Federated_StripsGRPCMetadataPrefixedHeaders(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	moduleFake, upstream := newModuleUpstream(t)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstream).Code)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	setGRPCMetadataSpellings(req, "attacker")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	requireNoGRPCMetadataHeaders(t, moduleFake.lastHeaders)
+}
+
 // A federated route consumes the same per-org rate-limit budget as an
 // equivalent catalog route: it must NOT be an unmetered proxy. With a tiny
 // budget, a burst of authenticated requests to /v1/<module>/* eventually 429s,

@@ -39,6 +39,7 @@ export {
 	type DatasourceAccountLink,
 	DatasourceDomainStatus,
 	type DatasourceGroupBinding,
+	DatasourceLiveDelivery,
 	DatasourceProvider,
 	DatasourceService,
 	DatasourceStatus,

@@ -79,7 +79,7 @@ export interface PermissionDefinition {
 export const PERMISSION_DEFINITIONS: Readonly<Record<Permission, PermissionDefinition>> = {
   [PERMISSIONS.ALL]: { resource: "*", action: "*", description: "Full access to all resources and actions.", builtInRoles: ["admin"], apiKeyScope: true },
   [PERMISSIONS.API_KEYS_READ]: { resource: "api_keys", action: "read", description: "List API keys.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
-  [PERMISSIONS.API_KEYS_WRITE]: { resource: "api_keys", action: "write", description: "Mint and revoke API keys.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.API_KEYS_WRITE]: { resource: "api_keys", action: "write", description: "Mint and revoke API keys. As an API-key scope it only revokes: minting takes an interactive session.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.AUDIT_READ]: { resource: "audit", action: "read", description: "Read and export audit events.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.BILLING_READ]: { resource: "billing", action: "read", description: "View billing state and invoices.", builtInRoles: ["admin (via *:*)", "editor"], apiKeyScope: true },
   [PERMISSIONS.BILLING_WRITE]: { resource: "billing", action: "write", description: "Open checkout and billing portal sessions.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },

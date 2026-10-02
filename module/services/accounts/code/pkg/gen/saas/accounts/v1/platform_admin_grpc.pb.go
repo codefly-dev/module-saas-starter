@@ -35,6 +35,8 @@ const (
 	PlatformAdminService_GrantPlatformRole_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"
 	PlatformAdminService_RevokePlatformRole_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole"
 	PlatformAdminService_ListPlatformAdmins_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
+	PlatformAdminService_ListAllOrganizations_FullMethodName   = "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations"
+	PlatformAdminService_GetOrganizationRoster_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster"
 	PlatformAdminService_ListFeatureFlags_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
 	PlatformAdminService_UpsertFeatureFlag_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
 	PlatformAdminService_GetJobOperations_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
@@ -76,6 +78,12 @@ type PlatformAdminServiceClient interface {
 	GrantPlatformRole(ctx context.Context, in *GrantPlatformRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RevokePlatformRole(ctx context.Context, in *RevokePlatformRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListPlatformAdmins(ctx context.Context, in *ListPlatformAdminsRequest, opts ...grpc.CallOption) (*ListPlatformAdminsResponse, error)
+	// ListAllOrganizations lists every organization on the platform, whether or
+	// not the caller belongs to it.
+	ListAllOrganizations(ctx context.Context, in *ListAllOrganizationsRequest, opts ...grpc.CallOption) (*ListAllOrganizationsResponse, error)
+	// GetOrganizationRoster lists any organization's members for the platform
+	// view, which needs no membership of its own.
+	GetOrganizationRoster(ctx context.Context, in *GetOrganizationRosterRequest, opts ...grpc.CallOption) (*GetOrganizationRosterResponse, error)
 	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(ctx context.Context, in *ListFeatureFlagsRequest, opts ...grpc.CallOption) (*ListFeatureFlagsResponse, error)
 	// Deprecated: Do not use.
@@ -223,6 +231,26 @@ func (c *platformAdminServiceClient) ListPlatformAdmins(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *platformAdminServiceClient) ListAllOrganizations(ctx context.Context, in *ListAllOrganizationsRequest, opts ...grpc.CallOption) (*ListAllOrganizationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAllOrganizationsResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_ListAllOrganizations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformAdminServiceClient) GetOrganizationRoster(ctx context.Context, in *GetOrganizationRosterRequest, opts ...grpc.CallOption) (*GetOrganizationRosterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrganizationRosterResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_GetOrganizationRoster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *platformAdminServiceClient) ListFeatureFlags(ctx context.Context, in *ListFeatureFlagsRequest, opts ...grpc.CallOption) (*ListFeatureFlagsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListFeatureFlagsResponse)
@@ -335,6 +363,12 @@ type PlatformAdminServiceServer interface {
 	GrantPlatformRole(context.Context, *GrantPlatformRoleRequest) (*emptypb.Empty, error)
 	RevokePlatformRole(context.Context, *RevokePlatformRoleRequest) (*emptypb.Empty, error)
 	ListPlatformAdmins(context.Context, *ListPlatformAdminsRequest) (*ListPlatformAdminsResponse, error)
+	// ListAllOrganizations lists every organization on the platform, whether or
+	// not the caller belongs to it.
+	ListAllOrganizations(context.Context, *ListAllOrganizationsRequest) (*ListAllOrganizationsResponse, error)
+	// GetOrganizationRoster lists any organization's members for the platform
+	// view, which needs no membership of its own.
+	GetOrganizationRoster(context.Context, *GetOrganizationRosterRequest) (*GetOrganizationRosterResponse, error)
 	// Legacy feature-flag migration inventory (platform-only, read-only)
 	ListFeatureFlags(context.Context, *ListFeatureFlagsRequest) (*ListFeatureFlagsResponse, error)
 	// Deprecated: Do not use.
@@ -397,6 +431,12 @@ func (UnimplementedPlatformAdminServiceServer) RevokePlatformRole(context.Contex
 }
 func (UnimplementedPlatformAdminServiceServer) ListPlatformAdmins(context.Context, *ListPlatformAdminsRequest) (*ListPlatformAdminsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPlatformAdmins not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) ListAllOrganizations(context.Context, *ListAllOrganizationsRequest) (*ListAllOrganizationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAllOrganizations not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) GetOrganizationRoster(context.Context, *GetOrganizationRosterRequest) (*GetOrganizationRosterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOrganizationRoster not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) ListFeatureFlags(context.Context, *ListFeatureFlagsRequest) (*ListFeatureFlagsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFeatureFlags not implemented")
@@ -659,6 +699,42 @@ func _PlatformAdminService_ListPlatformAdmins_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformAdminService_ListAllOrganizations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAllOrganizationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).ListAllOrganizations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_ListAllOrganizations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).ListAllOrganizations(ctx, req.(*ListAllOrganizationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformAdminService_GetOrganizationRoster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrganizationRosterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).GetOrganizationRoster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_GetOrganizationRoster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).GetOrganizationRoster(ctx, req.(*GetOrganizationRosterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PlatformAdminService_ListFeatureFlags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListFeatureFlagsRequest)
 	if err := dec(in); err != nil {
@@ -857,6 +933,14 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPlatformAdmins",
 			Handler:    _PlatformAdminService_ListPlatformAdmins_Handler,
+		},
+		{
+			MethodName: "ListAllOrganizations",
+			Handler:    _PlatformAdminService_ListAllOrganizations_Handler,
+		},
+		{
+			MethodName: "GetOrganizationRoster",
+			Handler:    _PlatformAdminService_GetOrganizationRoster_Handler,
 		},
 		{
 			MethodName: "ListFeatureFlags",

@@ -80,7 +80,7 @@ export function OrganizationsTable({
 									<DropdownMenuSeparator />
 									<DropdownMenuItem onClick={() => onViewMembers(org)}>
 										<Users className="mr-2 h-4 w-4" />
-										View Members
+										Manage
 									</DropdownMenuItem>
 								</DropdownMenuGroup>
 							</DropdownMenuContent>

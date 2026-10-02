@@ -69,6 +69,10 @@ message Organization {
   }];
   string owner_id = 4 [(buf.validate.field).string.uuid = true];
   google.protobuf.Timestamp created_at = 5;
+  // Set when the organization was deleted. An archived organization is never
+  // listed to its former members and admits no request; only the platform
+  // view shows it.
+  google.protobuf.Timestamp archived_at = 6;
 }
 
 message OrgMembership {
@@ -130,9 +134,20 @@ enum TeamRole {
 // Roles & Permissions (generic resource:action model)
 // ============================================================================
 
+// Permission is one resource:action grant: a role's RBAC grant, or one scope
+// of an API key. The pair travels joined as `resource:action`, and a key's
+// scopes as one comma-separated header, so neither half may hold `:`, `,`,
+// whitespace or a control character — `users` / `read,*:*` would read back
+// as the root `*:*`. A lone `*` is the wildcard.
 message Permission {
-  string resource = 1 [(buf.validate.field).string.min_len = 1];
-  string action = 2 [(buf.validate.field).string.min_len = 1];
+  string resource = 1 [(buf.validate.field).string = {
+    min_len: 1
+    pattern: "^(\\*|[A-Za-z0-9][A-Za-z0-9._-]*)$"
+  }];
+  string action = 2 [(buf.validate.field).string = {
+    min_len: 1
+    pattern: "^(\\*|[A-Za-z0-9][A-Za-z0-9._-]*)$"
+  }];
 }
 
 message Role {

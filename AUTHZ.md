@@ -161,7 +161,7 @@ they're per-RPC gates on the caller's claims + role.
 | `requireOrgAdmin(ctx, actor, orgID)` | Caller is admin/owner of `orgID`. |
 | `requirePlatformAdmin(ctx, actor)` | Caller has the platform `super_admin` role. |
 | `requireMFA(ctx, actor)` | Caller's JWT carries `mfa: true`. Used for sensitive ops (rotate webhook secret, override entitlement, GDPR delete). |
-| `requireScope(ctx, "res:action")` | API-key caller has the required scope (or wildcard). JWT callers pass through — RBAC handles them. |
+| `requireScope(ctx, "res:action")` | API-key caller has the required scope (or wildcard); a key with no scopes is refused. JWT callers pass through — RBAC handles them. The interceptors already hold every key to the scopes its RPC declares, and refuse keys on an RPC declaring none. |
 | `rateLimitInterceptor` | Per-key request budget. |
 
 **What this catches:** non-members hitting a tenant's RPCs, bare JWTs
@@ -593,6 +593,48 @@ would consume attempts and land a legally mandated request in `GDPRFailed`,
 blocked on an unrelated organization's staffing. A host integrating a privacy
 workflow owns that decision and should make the handover before the erasure,
 rather than discover the invariant from a failed job.
+
+### Leaving, deleting and creating organizations (#973)
+
+The same invariant governs a member who removes themself.
+`OrganizationService/LeaveOrganization` takes no subject — it is always the
+caller — and runs the administrator's removal path (`removeOrgMembershipTx`), so
+team memberships and source delegations go with the membership and the last
+administrator of an organization others still belong to is refused. One more
+refusal is its own: the organization's **only** member may not leave it
+(`ErrOrgSoleMember`). Nobody would be stranded, but an organization nobody
+belongs to is one nobody can ever see or remove again, so the answer offered is
+to delete it.
+
+`OrganizationService/DeleteOrganization` declares the `ORG_ADMIN` floor with a
+recent step-up when enrolled, and its handler narrows that to the
+organization's **owner** or a platform super administrator
+(`requireOrgOwner`); the request carries the slug, typed by the person
+deleting, and a mismatch is refused. Deleting archives: in one organization
+transaction the organization's API keys, pending invitations, installations and
+source delegations are revoked, **every membership is removed** and the row is
+marked `archived_at` with its slug released. Removing the memberships is what
+makes the organization unusable — every request-path authorization resolves
+through `organization_members`, and the membership trigger revokes each former
+member's sessions bound to it — and migration 16's trigger refuses any new
+membership into an archived organization by whatever path. The row and its
+history stay.
+
+`OrganizationService/CreateOrganization` is gated by the deployment's
+`ORGANIZATION_CREATION` (`application` group): `open` (the default),
+`platform_admin`, or `disabled`. A platform super administrator may always
+create, and is the only caller who may name another user as the owner
+(`owner_user_id`). `ListOrganizations` returns `can_create` so the product only
+offers what the policy allows. The registration-time personal organization and
+fixture seeding are not subject to the policy.
+
+The platform view — `PlatformAdminService/ListAllOrganizations` and
+`GetOrganizationRoster`, `PLATFORM_ROLE_REQUIREMENT_SUPPORT` — reads every
+organization under the control plane, because a platform administrator usually
+is not a member of the organization they are looking at, and `ListMembers` is
+member-only. Writes from that view reuse `AddMember`, `RemoveMember`,
+`UpdateOrganization` and `DeleteOrganization`, which already admit a super
+administrator; there is no second write path.
 
 ### `organizations.owner_id` is provenance, not authority
 

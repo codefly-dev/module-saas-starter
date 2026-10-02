@@ -4,8 +4,9 @@ package main
 //
 // The browser talks only to the frontend origin. Next.js forwards exact API
 // routes here and authenticates the observed browser origin with Codefly's
-// internal service token. In production, Envoy may also use the ext_authz check's gRPC
-// ext_authz endpoint.
+// internal service token. An Envoy may also call the gRPC ext_authz endpoint,
+// but must then stamp the gateway credential on accounts routes itself: the
+// Check answer never carries it (see ExtAuthz.allow and envoy.go).
 //
 // Routing is WHITELIST-ONLY: backend endpoints come from generated and
 // explicit REST/Connect catalogs. Frontend pages are never proxied by this
@@ -19,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
@@ -416,6 +418,10 @@ func limiterFailureModeFor(entry *RouteEntry) limiterFailureMode {
 }
 
 func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	// The caller's Connection header is applied here, before ReverseProxy
+	// applies it after every header below is stamped.
+	removeCallerConnectionOptions(r.Header)
+
 	// Public origin and gateway credentials are backend capabilities owned by
 	// this process. They are stamped after all caller-supplied trust headers
 	// have been removed, including for public Accounts routes without a bearer
@@ -445,6 +451,56 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// removeCallerConnectionOptions applies the caller's Connection header to the
+// caller's own headers, so it can never remove one this gateway stamped.
+//
+// httputil.ReverseProxy deletes every header named in Connection (RFC 9110
+// §7.6.1) when it forwards — after the identity headers and the gateway
+// credential are on the request. Left to it, `Connection: X-Scopes` on an
+// API-key request reached accounts with the gateway credential and no scope
+// ceiling, which accounts reads as an interactive session with the key owner's
+// whole authority; X-Credential-Kind, X-Client-Id and the credential itself
+// could be named away the same way.
+//
+// Every name in untrustedAuthHeaders was stripped from caller input on every
+// proxy path before anything was stamped, so a value under one of those names
+// is this gateway's and no Connection option removes it. Any other header the
+// caller named is removed here, exactly as ReverseProxy would have removed it.
+// Connection is then reduced to the one option ReverseProxy still reads —
+// Upgrade, to carry a protocol upgrade — so it has nothing left to delete.
+func removeCallerConnectionOptions(h http.Header) {
+	upgrade := false
+	for _, value := range h.Values("Connection") {
+		for _, option := range strings.Split(value, ",") {
+			option = textproto.TrimString(option)
+			switch {
+			case option == "":
+			case strings.EqualFold(option, "Upgrade"):
+				upgrade = true
+			case isGatewayOwnedHeader(option):
+			default:
+				h.Del(option)
+			}
+		}
+	}
+	h.Del("Connection")
+	if upgrade {
+		h.Set("Connection", "Upgrade")
+	}
+}
+
+// isGatewayOwnedHeader reports whether name is one only this gateway may set on
+// a forwarded request: the identity headers, the trust credentials and the
+// verified public origin.
+func isGatewayOwnedHeader(name string) bool {
+	for _, owned := range untrustedAuthHeaders {
+		if strings.EqualFold(name, owned) {
+			return true
+		}
+	}
+	return false
 }
 
 type trustedFrontendOriginContextKey struct{}
@@ -568,27 +624,30 @@ func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Reques
 	return false
 }
 
-// stripAllIdentityHeaders removes every identity header from the request.
-// Used on public routes when no auth was presented — prevents a caller
-// from spoofing identity by setting headers directly.
+// stripAllIdentityHeaders removes every identity header from the request, in
+// both the spellings an upstream can read one under: its own name, and any
+// grpc-metadata- prefixed name. Every proxy path runs it before ext_authz
+// re-stamps identity, so a caller cannot spoof identity by setting headers
+// directly.
 func stripAllIdentityHeaders(r *http.Request) {
 	for _, k := range untrustedAuthHeaders {
 		r.Header.Del(k)
 	}
-	// grpc-gateway turns every `Grpc-Metadata-<name>` header into `<name>`
-	// metadata, so on a transcoded upstream this prefix is a second spelling of
-	// every header above. No caller of the gateway has a reason to address an
-	// upstream's gRPC metadata directly, so the whole prefix is dropped rather
-	// than mirrored name by name.
-	for name := range r.Header {
-		if strings.HasPrefix(strings.ToLower(name), grpcMetadataHeaderPrefix) {
-			r.Header.Del(name)
+	for k := range r.Header {
+		if len(k) >= len(grpcMetadataHeaderPrefix) && strings.EqualFold(k[:len(grpcMetadataHeaderPrefix)], grpcMetadataHeaderPrefix) {
+			delete(r.Header, k)
 		}
 	}
 }
 
-// grpcMetadataHeaderPrefix is the prefix grpc-gateway's default header matcher
-// strips to derive a metadata key from an HTTP header.
+// grpcMetadataHeaderPrefix is grpc-gateway's prefix for "forward the rest of
+// this name as gRPC metadata" (runtime.MetadataHeaderPrefix). An upstream that
+// transcodes REST to gRPC through grpc-gateway — accounts does — reads
+// Grpc-Metadata-X-User-Id as x-user-id, beside the x-user-id this gateway
+// stamps, so stripping identity by exact name alone would let a caller assert
+// any identity header on a request that also carries the gateway credential.
+// Nothing a caller may legitimately ask of an upstream travels this way, so
+// every such header is dropped, not only the identity names.
 const grpcMetadataHeaderPrefix = "grpc-metadata-"
 
 var untrustedAuthHeaders = []string{

@@ -246,7 +246,7 @@ jobs:
         env:
           AUDIT_METRICS_REQUIRE_DB: "1"
           AUDIT_METRICS_TEST_DSN: postgres://postgres:audit-test-only@127.0.0.1:${{ job.services.audit-postgres.ports[5432] }}/audit_metrics?sslmode=disable
-        run: go test -race ./internal/auditmetricstest
+        run: go test -race ./pkg/infra/auditmetricstest
 
   release-contract:
     name: Release gate contract
@@ -316,17 +316,35 @@ jobs:
       - name: Require a version bump when the published kit changes
         run: node scripts/ci/kit-version.mjs check
 
-  provider-shim:
-    name: Provider setup shims
+  scoped-pools:
+    name: Scoped pool authority
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          node-version: 24
-      - name: Statically test the Stripe non-writing shim
-        run: node --test scripts/setup/stripe-shim.test.mjs
+          go-version: "1.27.0"
+          cache-dependency-path: module/services/accounts/code/go.sum
+      # The suite needs a native PostgreSQL it can initdb and own, not a service
+      # container: it provisions its own logins, roles and grants, and widens one
+      # at a time. The runner image ships a server; resolve its bindir from
+      # pg_config rather than assuming a path, and fail here if it is absent so a
+      # missing server never reaches the run as a skip.
+      - name: Resolve the PostgreSQL binaries
+        id: postgres
+        run: |
+          bindir="$(pg_config --bindir)"
+          test -x "${bindir}/initdb" || { echo "no initdb under ${bindir}"; exit 1; }
+          "${bindir}/postgres" --version
+          echo "bindir=${bindir}" >> "${GITHUB_OUTPUT}"
+      # The script runs the suite offline (GOPROXY=off), so it warms the module
+      # cache itself before closing the network off. It also reads the verbose
+      # output back: every test declared in the package must have run and
+      # passed, because the whole suite is gated on a DSN only this script
+      # exports and `go test` exits 0 when all of it skips.
+      - name: Qualify the scoped reader, writer and request pools
+        run: python3 scripts/qualify-scoped-pools.py --postgres-bin "${{ steps.postgres.outputs.bindir }}"
 
   marketing:
     name: Marketing isolation
@@ -1068,8 +1086,8 @@ jobs:
       - kit-version
       - marketing
       - module-package
-      - provider-shim
       - release-contract
+      - scoped-pools
       - sdk-boundary
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/events"
 	"accounts/pkg/events/eventstest"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -28,7 +29,7 @@ func seedSubscriptions(t *testing.T, subscriptions []events.Subscription) {
 		return
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		for _, subscription := range subscriptions {
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO public.event_subscriptions

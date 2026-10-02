@@ -4,9 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -25,6 +29,11 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 	}
 	if req.ExpiresAt != nil && !req.ExpiresAt.AsTime().After(time.Now()) {
 		return nil, w.NewError("API key expiration must be in the future")
+	}
+	for _, permission := range req.Scopes {
+		if err := CheckScopeShape(permission); err != nil {
+			return nil, err
+		}
 	}
 
 	// 32 base62 characters ≈ 190 bits of entropy.
@@ -118,9 +127,16 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		return &gen.ValidateAPIKeyResponse{Valid: false}, nil
 	}
 
-	// Build scopes list
+	// Build scopes list. A stored scope that cannot travel as one scope refuses
+	// the whole key rather than being dropped: a row written before CreateAPIKey
+	// checked the shape would otherwise be re-read downstream as a wider scope,
+	// and dropping it would silently change what the key does.
 	var scopes []string
 	for _, p := range key.Scopes {
+		if err := CheckScopeShape(p); err != nil {
+			w.Warn("API key refused: a stored scope cannot travel as one scope", wool.Field("key_id", key.Id))
+			return &gen.ValidateAPIKeyResponse{Valid: false}, nil
+		}
 		scopes = append(scopes, fmt.Sprintf("%s:%s", p.Resource, p.Action))
 	}
 
@@ -151,6 +167,33 @@ func (s *Service) ValidateAPIKey(ctx context.Context, plaintextKey string) (*gen
 		// via user keys — so this is constant here, not a guess.
 		PrincipalKind: "human",
 	}, nil
+}
+
+// CheckScopeShape refuses a permission that cannot travel as one scope. A
+// key's scopes cross every hop as strings: `resource:action`, comma-joined by
+// the auth-gateway into X-Scopes and split again by each service. A `:` or `,`
+// inside either half therefore reads back as a different scope, or as several —
+// users / read,*:* passes the mint ceiling as a scope under users:*, then is
+// re-read downstream as users:read and the root *:*. Whitespace and control
+// characters are refused with them: the header parser trims the one and
+// neither belongs in a name. Both halves must be present.
+func CheckScopeShape(permission *gen.Permission) error {
+	for _, half := range [...]struct{ name, value string }{
+		{"resource", permission.GetResource()},
+		{"action", permission.GetAction()},
+	} {
+		if half.value == "" {
+			return status.Errorf(codes.InvalidArgument, "a scope's %s is empty", half.name)
+		}
+		if strings.IndexFunc(half.value, scopeSeparatorOrSpace) >= 0 {
+			return status.Errorf(codes.InvalidArgument, "scope %s %q holds a ':', ',', whitespace or control character", half.name, half.value)
+		}
+	}
+	return nil
+}
+
+func scopeSeparatorOrSpace(r rune) bool {
+	return r == ':' || r == ',' || unicode.IsSpace(r) || unicode.IsControl(r)
 }
 
 func appendUnique(values []string, value string) []string {

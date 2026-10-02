@@ -326,3 +326,86 @@ func TestSecretDefaultProblems(t *testing.T) {
 		t.Errorf("secretDefaultProblems(shipped placeholders) = %v, want none", got)
 	}
 }
+
+// gatewayTokenKey is the credential that makes accounts believe the identity
+// headers auth-gateway stamps. Whoever holds it can tell accounts it is any
+// user, so only the process that stamps those headers and the one that reads
+// them may receive it — never the frontend, which shares the internal token.
+const gatewayTokenKey = "CODEFLY_GATEWAY_TOKEN"
+
+var gatewayTokenHolders = map[string]bool{"accounts": true, "auth-gateway": true}
+
+// groupsAssigning returns the configuration groups whose committed files in dir
+// assign key, including the local-dogfood templates.
+func groupsAssigning(t *testing.T, dir, key string) map[string]bool {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.env*"))
+	if err != nil {
+		t.Fatalf("glob %s: %v", dir, err)
+	}
+	groups := map[string]bool{}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			assigned, _, ok := strings.Cut(strings.TrimSpace(line), "=")
+			if ok && strings.TrimSpace(assigned) == key {
+				group, _, _ := strings.Cut(filepath.Base(path), ".")
+				groups[group] = true
+			}
+		}
+	}
+	return groups
+}
+
+// TestGatewayTokenReachesOnlyAccountsAndTheGateway guards where the gateway
+// credential can land. A group is delivered whole to every service that
+// declares it, so the credential must sit in a group no other service declares:
+// carried in internal-auth, it reached the frontend process with the internal
+// token, and anything able to read that process's environment could assert any
+// identity to accounts.
+func TestGatewayTokenReachesOnlyAccountsAndTheGateway(t *testing.T) {
+	carriers := groupsAssigning(t, moduleConfigLocalDir, gatewayTokenKey)
+	for group := range groupsAssigning(t, "configurations/local-dogfood", gatewayTokenKey) {
+		carriers[group] = true
+	}
+	if len(carriers) == 0 {
+		t.Fatalf("no shipped configuration group assigns %s", gatewayTokenKey)
+	}
+
+	manifests, err := filepath.Glob("module/services/*/service.codefly.yaml")
+	if err != nil || len(manifests) == 0 {
+		t.Fatalf("glob service manifests: %v", err)
+	}
+	holding := map[string]bool{}
+	for _, manifestPath := range manifests {
+		service := filepath.Base(filepath.Dir(manifestPath))
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			t.Fatalf("read %s: %v", manifestPath, err)
+		}
+		var manifest struct {
+			WorkspaceConfigurationDependencies []string `yaml:"workspace-configuration-dependencies"`
+		}
+		if err := yaml.Unmarshal(data, &manifest); err != nil {
+			t.Fatalf("parse %s: %v", manifestPath, err)
+		}
+		for _, group := range manifest.WorkspaceConfigurationDependencies {
+			if !carriers[group] {
+				continue
+			}
+			holding[service] = true
+			if !gatewayTokenHolders[service] {
+				t.Errorf("%s depends on %q, which carries %s: only %v may hold the gateway credential",
+					service, group, gatewayTokenKey, gatewayTokenHolders)
+			}
+		}
+	}
+	for service := range gatewayTokenHolders {
+		if !holding[service] {
+			t.Errorf("%s declares no group carrying %s (carriers: %v)", service, gatewayTokenKey, carriers)
+		}
+	}
+}

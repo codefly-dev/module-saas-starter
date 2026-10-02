@@ -20,6 +20,7 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // RLSWrapper is the subset of *infra.PostgresStore that
@@ -55,8 +56,8 @@ type SessionStore struct {
 }
 
 // NewSessionStore wires a SessionStore to the RLS-aware wrapper.
-// In production the wrapper is *infra.PostgresStore (which carries
-// the connection pool with the BeforeAcquire SET ROLE hook); in
+// In production the wrapper is *infra.PostgresStore (whose request pool
+// runs as app_tenant and whose control-plane pool is a separate login); in
 // tests it can be the same store or a thin pool-only adapter.
 func NewSessionStore(rls RLSWrapper, configured ...auth.SessionPolicy) *SessionStore {
 	policy := auth.DefaultSessionPolicy()
@@ -66,14 +67,13 @@ func NewSessionStore(rls RLSWrapper, configured ...auth.SessionPolicy) *SessionS
 	return &SessionStore{rls: rls, policy: policy, configErr: policy.Validate()}
 }
 
-// txFromCtx pulls the pgx.Tx that WithUserTx / WithControlPlane put on
-// ctx under the literal "tx" key. Same convention as PostgresStore's
-// getQueryExecutor in pkg/infra. Returns nil if the tx isn't there
+// txFromCtx pulls the pgx.Tx that WithUserTx / WithControlPlane bound on
+// ctx, through the store's typed binding (pkg/infra/storetx) — the one
+// PostgresStore's getQueryExecutor reads. Returns nil if the tx isn't there
 // — should never happen inside a wrap callback, but a nil-deref
 // would be a clearer failure than a silent un-RLS'd query.
 func txFromCtx(ctx context.Context) pgx.Tx {
-	tx, _ := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with PostgresStore.getQueryExecutor
-	return tx
+	return storetx.Tx(ctx)
 }
 
 // Insert persists a new sessions row with the Identity state snapshotted

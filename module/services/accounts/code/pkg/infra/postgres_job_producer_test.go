@@ -15,11 +15,11 @@ import (
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	notificationsv1 "accounts/pkg/gen/saas/notifications/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
 	"accounts/pkg/usersettings"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
@@ -228,7 +228,7 @@ func TestPostgresJobProducerAllowsPrivilegedInboxAndRejectsDirectTenantInsert(t 
 
 	orgID := uuid.NewString()
 	err = testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // test proves table authority
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO job_messages (
 				direction, scope_kind, organization_id, queue, topic, source,

@@ -20,11 +20,11 @@ codefly run service --fixture dev-admin
   reaps stray processes and containers between runs.
 
 For a real external identity provider and the production-grade provider stack,
-use the `local-dogfood` environment and the setup scripts:
+use the `local-dogfood` environment and its configuration groups:
 
 - [LOCAL_DOGFOODING.md](../../../LOCAL_DOGFOODING.md) — runnable local product
 - [DOGFOODING.md](../../../DOGFOODING.md) — feature-by-feature checklist
-- [scripts/setup/README.md](../../../scripts/setup/README.md) — provider bootstrap
+- [LOCAL_DOGFOODING.md § Configure providers through Codefly](../../../LOCAL_DOGFOODING.md#configure-providers-through-codefly) — provider configuration
 
 ## Running a solution against this host
 

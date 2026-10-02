@@ -717,7 +717,18 @@ func doWork(ctx context.Context) (Clean, error) {
 	// A previous internal token stays valid alongside the current one during an
 	// overlapping rotation window, so callers can be migrated without a flag day.
 	adapters.SetInternalTokenRotation(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"))
-	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
+	// The gateway credential lives in its own group, which only accounts and
+	// auth-gateway declare: internal-auth also reaches the frontend, and the
+	// holder of this credential can assert any identity to accounts. The
+	// previous value is accepted beside it only while a rotation rolls the
+	// gateway, and only until its expiry (TRUST_BOUNDARY.md).
+	gatewayCredentials, err := configuredGatewayTrust(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	adapters.SetGatewayToken(gatewayCredentials.current)
+	adapters.SetPreviousGatewayToken(gatewayCredentials.previous)
+	adapters.SetPreviousGatewayTokenExpiresAt(gatewayCredentials.previousExpiresAt)
 	// The datasource content-ticket signer is keyed from the same internal secret,
 	// domain-separated, so a change-set job's opaque content ticket verifies at
 	// redemption without a second key to provision.
@@ -753,46 +764,60 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Email production and transport are split by the generic outbox. Request
 	// paths render templates and enqueue exact messages in their product
-	// transaction; this worker is the only owner of the provider adapter.
-	fromAddr := applicationEnv("EMAIL_FROM")
-	if fromAddr == "" {
-		fromAddr = "no-reply@localhost"
+	// transaction; this worker is the only owner of the provider adapter. With
+	// EMAIL_PROVIDER=disabled there is no outbox and no worker: every request path
+	// already treats a nil outbox as "this deployment sends no email", and
+	// invitations are then handed to the inviting administrator as a link.
+	orgCreationPolicy, err := business.ParseOrganizationCreationPolicy(applicationEnv("ORGANIZATION_CREATION"))
+	if err != nil {
+		return nil, fmt.Errorf("application: %w", err)
+	}
+	service.SetOrganizationCreationPolicy(orgCreationPolicy)
+
+	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
+	if err != nil {
+		return nil, err
 	}
 	appBase, err := configuredApplicationBaseURL()
 	if err != nil {
 		return nil, err
 	}
-	templateStore := infra.NewPostgresTemplateStore(store)
-	requestEmailOutbox, err := email.NewOutbox(store, templateStore, fromAddr)
-	if err != nil {
-		return nil, err
-	}
-	service.SetEmailOutbox(requestEmailOutbox, appBase)
-	workerEmailOutbox, err := email.NewOutbox(jobStore, templateStore, fromAddr)
-	if err != nil {
-		return nil, err
-	}
-	emailSender, err := configuredEmailSender(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if resend, ok := emailSender.(*email.ResendSender); ok {
-		resendWebhook, err := resend.DeliveryWebhook(jobStore)
+	var workerEmailOutbox *email.Outbox
+	var emailWorker *jobs.Worker
+	if emailConfig.sender == nil {
+		// No outbox, but links handed to an administrator still need the
+		// canonical origin.
+		service.SetEmailOutbox(nil, appBase)
+		w.Warn("EMAIL DELIVERY DISABLED — EMAIL_PROVIDER=disabled: invitations, magic links and notifications send no email; an invitation's accept link is returned to the administrator who issues it")
+	} else {
+		templateStore := infra.NewPostgresTemplateStore(store)
+		requestEmailOutbox, err := email.NewOutbox(store, templateStore, emailConfig.from)
 		if err != nil {
 			return nil, err
 		}
-		adapters.RegisterHTTPRoute(email.ResendWebhookPath, resendWebhook)
-	}
-	emailJobHandler, err := email.NewJobHandler(emailSender)
-	if err != nil {
-		return nil, err
-	}
-	emailWorker, err := jobs.NewWorker(jobs.WorkerConfig{
-		Store: jobStore, Queue: email.DeliveryQueue,
-		Handler: emailJobHandler, RetryDelay: email.DeliveryRetryDelay,
-	})
-	if err != nil {
-		return nil, err
+		service.SetEmailOutbox(requestEmailOutbox, appBase)
+		workerEmailOutbox, err = email.NewOutbox(jobStore, templateStore, emailConfig.from)
+		if err != nil {
+			return nil, err
+		}
+		if resend, ok := emailConfig.sender.(*email.ResendSender); ok {
+			resendWebhook, err := resend.DeliveryWebhook(jobStore)
+			if err != nil {
+				return nil, err
+			}
+			adapters.RegisterHTTPRoute(email.ResendWebhookPath, resendWebhook)
+		}
+		emailJobHandler, err := email.NewJobHandler(emailConfig.sender)
+		if err != nil {
+			return nil, err
+		}
+		emailWorker, err = jobs.NewWorker(jobs.WorkerConfig{
+			Store: jobStore, Queue: email.DeliveryQueue,
+			Handler: emailJobHandler, RetryDelay: email.DeliveryRetryDelay,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Selecting the free plan is a first-party operation and must remain
@@ -950,7 +975,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	// connection, documents owns ingest. The switch is a declared key of the
 	// github-app configuration group, so a deployment turns it on from its own
 	// configuration rather than from an environment variable nothing declares.
-	if strings.EqualFold(strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
+	//
+	// Whether it is mounted is also told to the service, from here rather than
+	// from where the rest of the datasource configuration is read, so the fact a
+	// client is shown ("this source has live delivery") cannot drift from whether
+	// an endpoint exists to deliver it. A per-source signing secret verifies
+	// nothing when nothing is listening.
+	perSourceWebhookMounted := strings.EqualFold(
+		strings.TrimSpace(workspaceEnv("github-app", "DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true")
+	service.SetDatasourceWebhookReceiverMounted(perSourceWebhookMounted)
+	if perSourceWebhookMounted {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
 			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},
@@ -978,6 +1012,15 @@ func doWork(ctx context.Context) (Clean, error) {
 		// does not exist. Revocation then stays invisible for the life of a
 		// cached token with nothing anywhere to say why.
 		w.Warn("GitHub App registered without a webhook secret; installation lifecycle events cannot be verified and will not be received")
+	}
+	// Say the whole state once, at boot, whichever way it came out. "Is the
+	// webhook configured on this environment?" was previously answerable only by
+	// reading configuration on the box: a deployment with neither endpoint
+	// mounted logged nothing at all, and every source on it looked the same as a
+	// source on a deployment with both. A source is still kept current by the
+	// periodic reconcile, so this is a statement of latency, not of breakage.
+	if !service.GitHubAppWebhookConfigured() && !perSourceWebhookMounted {
+		w.Info("no GitHub push endpoint is configured on this deployment; datasource content is refreshed by the periodic reconcile and by Sync now only")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -1098,7 +1141,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if auditExportWorker != nil {
 		auditExportWorker.Start(ctx)
 	}
-	emailWorker.Start(ctx)
+	if emailWorker != nil {
+		emailWorker.Start(ctx)
+	}
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
 	privacyWorker.Start(ctx)
@@ -1149,14 +1194,16 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 			cancel()
 		}
-		sw.Info("stopping email delivery worker")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := emailWorker.Shutdown(shutdownCtx); err != nil {
-			sw.Warn("email delivery worker shutdown timed out", wool.ErrField(err))
+		if emailWorker != nil {
+			sw.Info("stopping email delivery worker")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := emailWorker.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("email delivery worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
 		}
-		cancel()
 		sw.Info("stopping outbound webhook worker")
-		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		if err := webhookWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
 		}
@@ -1389,6 +1436,54 @@ func configuredCentralEnforcement() (bool, error) {
 	default:
 		return false, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
 	}
+}
+
+// maxGatewayRotationWindow is the furthest ahead a previous gateway credential
+// may expire. The window only has to outlast one auth-gateway rollout, and
+// until it closes the old value can assert any identity to accounts.
+const maxGatewayRotationWindow = 24 * time.Hour
+
+// gatewayTrust is the gateway credential accounts accepts, and during a
+// rotation the previous one with the instant it stops being accepted.
+type gatewayTrust struct {
+	current           string
+	previous          string
+	previousExpiresAt time.Time
+}
+
+// configuredGatewayTrust reads the gateway-trust group. A previous credential
+// must differ from the current one and carry an RFC 3339
+// CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT after now and at most
+// maxGatewayRotationWindow ahead; anything else fails the boot, so a
+// rotated-out credential cannot keep its authority because nobody cleared the
+// slot. An expiry with no previous credential bounds nothing and is ignored.
+func configuredGatewayTrust(now time.Time) (gatewayTrust, error) {
+	trust := gatewayTrust{
+		current:  workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN"),
+		previous: workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN_PREVIOUS"),
+	}
+	if trust.previous == "" {
+		return trust, nil
+	}
+	if trust.previous == trust.current {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS must differ from CODEFLY_GATEWAY_TOKEN")
+	}
+	raw := strings.TrimSpace(workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT"))
+	if raw == "" {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT is required while CODEFLY_GATEWAY_TOKEN_PREVIOUS is set")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT must be an RFC 3339 timestamp")
+	}
+	if !now.Before(expiresAt) {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT has passed; clear CODEFLY_GATEWAY_TOKEN_PREVIOUS")
+	}
+	if expiresAt.After(now.Add(maxGatewayRotationWindow)) {
+		return gatewayTrust{}, fmt.Errorf("gateway-trust: CODEFLY_GATEWAY_TOKEN_PREVIOUS_EXPIRES_AT must be no more than %.0fh ahead", maxGatewayRotationWindow.Hours())
+	}
+	trust.previousExpiresAt = expiresAt
+	return trust, nil
 }
 
 func configuredSessionPolicy() (auth.SessionPolicy, error) {
@@ -1904,24 +1999,78 @@ func identityEnvList(key string) []string {
 	return out
 }
 
-// configuredEmailSender makes provider selection explicit. Production never
-// silently downgrades to a log sink because one Resend value is missing. Each
-// factory validates its own secrets and fails closed; adding a provider is one
-// Register call rather than a new switch case.
-func configuredEmailSender(ctx context.Context) (email.Sender, error) {
+// emailConfiguration is what the email group resolves to: the sender address
+// and the provider, or a nil sender when the deployment sends no email.
+type emailConfiguration struct {
+	from   string
+	sender email.Sender
+}
+
+// emailEnv is Codefly-only, like identityEnv: the provider, the sender address
+// and the provider's secrets all come from the `email` workspace configuration
+// group. A raw process variable is not a second authority — reading
+// EMAIL_PROVIDER from the process environment is what let a deployed cell that
+// configured the group fall back to the log sink without a word.
+func emailEnv(key string) string {
+	value, _ := codefly.For(codefly.Context()).WorkspaceValue("email", key)
+	return strings.TrimSpace(value)
+}
+
+// configuredEmail makes provider selection explicit and refuses every
+// configuration that would silently not deliver. Outside the local environment
+// an unset provider and the log sink are both refused: the log sink reports
+// success, prints each message — accept tokens included — to the service log,
+// and leaves invitations "queued" forever. A deployment that really sends no
+// email says so with EMAIL_PROVIDER=disabled. Each factory validates its own
+// secrets and fails closed; adding a provider is one Register call.
+func configuredEmail(ctx context.Context, isLocal bool) (emailConfiguration, error) {
+	if applicationEnv("EMAIL_FROM") != "" {
+		return emailConfiguration{}, fmt.Errorf("email: EMAIL_FROM is set in the application configuration group; it belongs to the email group")
+	}
+	provider := strings.ToLower(emailEnv("EMAIL_PROVIDER"))
+	switch {
+	case provider == "" && isLocal:
+		provider = "log"
+	case provider == "":
+		return emailConfiguration{}, fmt.Errorf("email: EMAIL_PROVIDER is required outside the local environment (resend, or disabled to run without email)")
+	case provider == "log" && !isLocal:
+		return emailConfiguration{}, fmt.Errorf("email: EMAIL_PROVIDER=log only prints messages and is refused outside the local environment (use resend, or disabled to run without email)")
+	}
+	from := emailEnv("EMAIL_FROM")
+	if from == "" {
+		if provider == "resend" && !isLocal {
+			return emailConfiguration{}, fmt.Errorf("email: EMAIL_FROM is required when EMAIL_PROVIDER=resend outside the local environment")
+		}
+		from = "no-reply@localhost"
+	}
+
 	registry := email.NewRegistry()
+	registry.Register("disabled", disabledEmailFactory)
 	registry.Register("log", logEmailFactory)
 	registry.Register("resend", resendEmailFactory)
-
-	name := strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))
-	if name == "" {
-		name = "log"
+	sender, err := registry.Select(ctx, provider)
+	if err != nil {
+		return emailConfiguration{}, err
 	}
-	return registry.Select(ctx, name)
+	return emailConfiguration{from: from, sender: sender}, nil
+}
+
+func resendCredentialsPresent() bool {
+	return emailEnv("RESEND_API_KEY") != "" || emailEnv("RESEND_WEBHOOK_SECRET") != ""
+}
+
+// disabledEmailFactory selects no sender. It is a registered provider rather
+// than an absence so that "this deployment sends no email" is a decision
+// someone wrote down, not a default nobody noticed.
+func disabledEmailFactory(context.Context) (email.Sender, error) {
+	if resendCredentialsPresent() {
+		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is disabled")
+	}
+	return nil, nil
 }
 
 func logEmailFactory(ctx context.Context) (email.Sender, error) {
-	if os.Getenv("RESEND_API_KEY") != "" || os.Getenv("RESEND_WEBHOOK_SECRET") != "" {
+	if resendCredentialsPresent() {
 		return nil, fmt.Errorf("email: Resend credentials are present while EMAIL_PROVIDER is log")
 	}
 	w := wool.Get(ctx).In("pickEmailSender")
@@ -1931,14 +2080,14 @@ func logEmailFactory(ctx context.Context) (email.Sender, error) {
 }
 
 func resendEmailFactory(_ context.Context) (email.Sender, error) {
-	key := strings.TrimSpace(os.Getenv("RESEND_API_KEY"))
-	webhookSecret := strings.TrimSpace(os.Getenv("RESEND_WEBHOOK_SECRET"))
+	key := emailEnv("RESEND_API_KEY")
+	webhookSecret := emailEnv("RESEND_WEBHOOK_SECRET")
 	if key == "" || webhookSecret == "" {
 		return nil, fmt.Errorf("email: RESEND_API_KEY and RESEND_WEBHOOK_SECRET are required when EMAIL_PROVIDER=resend")
 	}
 	return email.NewResendSender(email.ResendConfig{
 		APIKey:        key,
-		BaseURL:       strings.TrimSpace(os.Getenv("RESEND_API_BASE")),
+		BaseURL:       emailEnv("RESEND_API_BASE"),
 		WebhookSecret: webhookSecret,
 	})
 }

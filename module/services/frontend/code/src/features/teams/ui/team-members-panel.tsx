@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { UserPicker } from "@/components/user-picker";
+import type { TeamMembership } from "@/gen/saas/accounts/v1/common_pb";
+import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
 import {
 	Badge,
@@ -22,10 +24,11 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Spinner,
+	useLoadingPhase,
 } from "@/shared/ui";
-import type { TeamMembership } from "@/gen/saas/accounts/v1/common_pb";
 import { roleLabel } from "../model/transforms";
-import { fromTeamRole, toTeamRole, type TeamRole } from "../model/types";
+import { fromTeamRole, type TeamRole, toTeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
 import { teamQueries } from "../service/queries";
 
@@ -62,23 +65,42 @@ export function TeamMembersPanel({
 		member: TeamMembership;
 		role?: TeamRole;
 	} | null>(null);
-	const { data, isPending, isError, refetch } = useQuery(
+	const { data, isPending, isError, error, isFetching, refetch } = useQuery(
 		teamQueries.members(teamId),
+	);
+	// Nothing at all for the first 200ms, then an indicator that stays long enough
+	// to read. The `quiet` window must render nothing rather than fall through:
+	// below it sits the roster, whose own empty row would otherwise say "No
+	// members in this team yet." about a team still being read.
+	const { indicator, quiet } = useLoadingPhase(isPending);
+	// A refresh of a roster already on screen, as distinct from the first read.
+	const { indicator: refreshingIndicator } = useLoadingPhase(
+		isFetching && !isPending && !isError,
 	);
 	const members = data?.members ?? [];
 	const visible = members.filter((member) =>
 		(member.userEmail || "").toLowerCase().includes(search.toLowerCase()),
 	);
-	const refresh = () =>
-		queryClient.invalidateQueries({ queryKey: ["team-members", teamId] });
+	// Not awaited, deliberately. React Query holds a mutation `isPending` until
+	// its `onSuccess` resolves, and `invalidateQueries` resolves only once the
+	// refetch it triggers has settled — so awaiting it here would make the
+	// button's "Adding…" label, and this whole disabled form, report the roster
+	// *read* that follows the write instead of the write itself. A slow read then
+	// leaves the button stuck on "Adding…" beside the pre-add count with the
+	// membership already written, which is the reported symptom in #964.
+	const refresh = () => {
+		void queryClient.invalidateQueries({
+			queryKey: ["team-members", teamId],
+		});
+	};
 	const add = useMutation({
 		mutationFn: () =>
 			teamMutations.addMember(teamId, newUserId, fromTeamRole(newRole)),
-		onSuccess: async () => {
-			await refresh();
+		onSuccess: () => {
 			setNewUserId("");
 			setPickerVersion((version) => version + 1);
 			toast.success("Member added");
+			refresh();
 		},
 	});
 	const change = useMutation({
@@ -90,10 +112,10 @@ export function TeamMembersPanel({
 						fromTeamRole(target.role),
 					)
 				: teamMutations.removeMember(teamId, target.member.userId),
-		onSuccess: async (_data, target) => {
-			await refresh();
+		onSuccess: (_data, target) => {
 			setAction(null);
 			toast.success(target.role ? "Team role updated" : "Member removed");
+			refresh();
 		},
 	});
 	function confirm(member: TeamMembership, role?: TeamRole) {
@@ -105,6 +127,16 @@ export function TeamMembersPanel({
 			<div>
 				<h2 className="text-xl font-semibold">
 					Members {!isPending && !isError && `(${members.length})`}
+					{/* The count is the cached roster's, and after a write that roster is
+				    behind the database until the refresh lands — which is how a
+				    successful add sat beside "(0)" (#964). Saying so beats hiding the
+				    number: blanking it on every background refetch is its own flicker,
+				    and a read that never returns would blank it for good. Gated by the
+				    same 200/300 rule as every other indicator, so a refresh that lands
+				    quickly says nothing at all. */}
+					{refreshingIndicator && (
+						<Spinner label="Refreshing members" size="sm" className="ml-2" />
+					)}
 				</h2>
 				<p className="text-sm text-muted-foreground">
 					Team roles apply to {teamName}; they do not change organization roles.
@@ -112,11 +144,15 @@ export function TeamMembersPanel({
 			</div>
 			{isError ? (
 				<div role="alert">
-					Couldn&apos;t load team members.{" "}
+					{readOutcomeMessage(
+						readOutcome(true, error),
+						"this team's members",
+						"",
+					)}{" "}
 					<Button onClick={() => void refetch()}>Retry</Button>
 				</div>
-			) : isPending ? (
-				<p>Loading members…</p>
+			) : quiet ? null : indicator ? (
+				<Spinner label="Loading members" />
 			) : (
 				<>
 					{canManage && (

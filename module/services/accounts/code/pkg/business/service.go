@@ -32,6 +32,7 @@ type Service struct {
 	billing                   BillingClient    // optional: Stripe client for checkout/portal
 	billingURLs               BillingRedirects // server-owned Stripe return destinations
 	appBaseURL                string           // public URL of the frontend, used in email bodies
+	orgCreationPolicy         OrganizationCreationPolicy
 	audit                     AuditEmitter
 	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
 	entitlements              EntitlementChecker
@@ -73,24 +74,26 @@ type Service struct {
 	datasourceLinkKey         []byte              // signs account-link states; derived from the deployment's internal key
 	datasourceLinkers         map[string]DatasourceAccountLinker
 	datasourceTXTResolver     TXTResolver
-	datasourceBudgets         DatasourceBudgetStore   // meters provider credentials; nil leaves connectors unmetered
-	githubBaseURL             string                  // api.github.com override for the datasource connector
-	githubAppID               string                  // deployment's GitHub App registration; empty leaves sources on their own PAT
-	githubAppKeyPEM           string                  // the App's RSA signing key, deployment custody — never copied onto a source
-	githubAppWebhookSecret    string                  // signs the App's own lifecycle deliveries; App-wide, never per source
-	githubAppSlug             string                  // the App's URL slug, used to build its install link; empty disables App onboarding
-	githubAppClientID         string                  // the App's OAuth client, which identifies the person returning from an install
-	githubAppClientSecret     string                  // its secret; without the pair, an installation cannot be attributed to a caller
-	datasourceTicketSigner    *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
-	newGitHubClient           func(token string) GitHubContentClient
-	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
-	newCrawlerClient          func(cfg CrawlerDatasourceConfig) CrawlerContentClient
-	newUploadClient           func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
-	newOAuth2Refresh          OAuth2RefreshFunc       // refreshes an OAuth 2.0 API source's access token
-	moduleProducer            jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
-	moduleJobStore            jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
-	modulePrincipals          ModulePrincipalRegistry // per-principal capability grants for the module-facing surface
-	eventTransport            events.Transport        // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
+	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
+	githubBaseURL             string                // api.github.com override for the datasource connector
+	githubAppID               string                // deployment's GitHub App registration; empty leaves sources on their own PAT
+	githubAppKeyPEM           string                // the App's RSA signing key, deployment custody — never copied onto a source
+	githubAppWebhookSecret    string                // signs the App's own lifecycle deliveries; App-wide, never per source
+	githubAppSlug             string                // the App's URL slug, used to build its install link; empty disables App onboarding
+	githubAppClientID         string                // the App's OAuth client, which identifies the person returning from an install
+	githubAppClientSecret     string                // its secret; without the pair, an installation cannot be attributed to a caller
+	//nolint:lll // the mount this mirrors is a single deployment switch; splitting the note loses the pairing
+	datasourceWebhookMounted bool                    // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
+	datasourceTicketSigner   *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
+	newGitHubClient          func(token string) GitHubContentClient
+	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
+	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient
+	newUploadClient          func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
+	newOAuth2Refresh         OAuth2RefreshFunc       // refreshes an OAuth 2.0 API source's access token
+	moduleProducer           jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
+	moduleJobStore           jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
+	modulePrincipals         ModulePrincipalRegistry // per-principal capability grants for the module-facing surface
+	eventTransport           events.Transport        // domain-event pub/sub transport (transactional outbox + relay); nil denies publish/replay
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -670,8 +673,30 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // and the WITH CHECK on organization_members would reject the insert.
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.
-func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
-	return s.CreateFixtureOrganization(ctx, ownerID, req, "")
+//
+// The deployment's creation policy decides whether actorID may create one at
+// all, and only a platform super administrator may name another user as the
+// owner (req.OwnerUserId); the new organization is otherwise the caller's.
+func (s *Service) CreateOrganization(ctx context.Context, actorID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
+	ownerID := actorID
+	if req.OwnerUserId != "" && req.OwnerUserId != actorID {
+		superAdmin, err := s.isPlatformRole(ctx, actorID, "super_admin")
+		if err != nil {
+			return nil, err
+		}
+		if !superAdmin {
+			return nil, ErrOrganizationOwnerRefused
+		}
+		ownerID = req.OwnerUserId
+	}
+	allowed, err := s.mayCreateOrganization(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, ErrOrganizationCreationRefused
+	}
+	return s.createOrganization(ctx, actorID, ownerID, req, "")
 }
 
 // CreateFixtureOrganization is CreateOrganization with a caller-chosen id, for
@@ -685,6 +710,12 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 // a tenant id that reaches the database malformed is not recoverable by anything
 // downstream.
 func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
+	return s.createOrganization(ctx, ownerID, ownerID, req, id)
+}
+
+// createOrganization inserts the organization and its owner's membership and
+// records actorID as the one who created it.
+func (s *Service) createOrganization(ctx context.Context, actorID, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
 	slug := req.Slug
 	if slug == "" {
 		slug = Slugify(req.Name)
@@ -719,7 +750,7 @@ func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string,
 		if err := s.store.CreateOrganization(ctx, org); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
+		return s.emitTx(ctx, actorID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	}); err != nil {
 		return nil, err
 	}

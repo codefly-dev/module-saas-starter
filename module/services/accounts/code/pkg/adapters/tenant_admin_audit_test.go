@@ -62,6 +62,9 @@ func TestAuditTeamAdminCannotMutateOrganizationAuthority(t *testing.T) {
 			return err
 		}},
 		{"create api key", func(ctx context.Context) error {
+			// As a session, so the refusal is the organization-admin gate's rather
+			// than the one for a caller that is not an interactive session.
+			ctx = withCredentialKind(ctx, credentialKindSession)
 			_, err := (&APIKeyServer{}).CreateAPIKey(ctx, &gen.CreateAPIKeyRequest{OrganizationId: teamAdminOrgID, Name: "Example key"})
 			return err
 		}},

@@ -399,12 +399,26 @@ var moduleAuditFieldKinds = map[gen.ModuleAuditFieldKind]business.FieldKind{
 	gen.ModuleAuditFieldKind_MODULE_AUDIT_FIELD_KIND_STRING_ARRAY: business.FieldStringArray,
 }
 
+// moduleAuditVisibilities maps the wire visibility of a declared type to the
+// registry's. UNSPECIFIED has no entry and yields the empty string, which the
+// registry resolves to its default (tenant) — the same reading a manifest
+// declaration that omits `visibility` gets, so a module and a solution that say
+// nothing say the same thing.
+var moduleAuditVisibilities = map[gen.ModuleAuditEventVisibility]string{
+	gen.ModuleAuditEventVisibility_MODULE_AUDIT_EVENT_VISIBILITY_TENANT:   business.AuditVisibilityTenant,
+	gen.ModuleAuditEventVisibility_MODULE_AUDIT_EVENT_VISIBILITY_EXTERNAL: business.AuditVisibilityExternal,
+}
+
 // moduleAuditDeclarations converts the wire declarations to the registry's
 // declaration shape, the one a solution's manifest is decoded into as well.
 func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []business.AuditEventTypeDeclaration {
 	out := make([]business.AuditEventTypeDeclaration, 0, len(types))
 	for _, t := range types {
-		declaration := business.AuditEventTypeDeclaration{Type: t.GetType(), Description: t.GetDescription()}
+		declaration := business.AuditEventTypeDeclaration{
+			Type:        t.GetType(),
+			Description: t.GetDescription(),
+			Visibility:  moduleAuditVisibilities[t.GetVisibility()],
+		}
 		for _, f := range t.GetFields() {
 			field := business.AuditFieldDeclaration{
 				Name: f.GetName(),

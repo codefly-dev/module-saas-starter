@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"accounts/pkg/auth"
-	"accounts/pkg/eventcatalog"
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
@@ -285,9 +284,18 @@ func (e *DurableAuditEmitter) Close() {}
 // plus an optional JSONB payload-containment predicate. All fields are
 // optional; the zero value matches every row visible under RLS.
 type AuditQuery struct {
-	OrgID           string
-	ActorID         string
-	EventType       string
+	OrgID     string
+	ActorID   string
+	EventType string
+	// EventTypes is the set form of EventType: a record matches when its type is
+	// any one of them. Set alongside EventType both apply, so a one-element set
+	// and the scalar answer alike.
+	//
+	// A summary over a family of event types had nothing to filter on before
+	// this. An empty slice is no predicate at all — it is "the caller named no
+	// set", not "match nothing" — because the only producer of an empty set is a
+	// caller that did not send the field.
+	EventTypes      []string
 	Category        string
 	Namespace       string
 	Resource        string
@@ -689,8 +697,12 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 // endpoint deduplicates on, so a delivery is identified the same way it was
 // before webhooks moved onto subscriptions.
 //
-// Only a type the catalog declares external is published: eligibility to leave
-// the platform is granted by declaration. A platform-scope record never reaches
+// Only a type declared external is published: eligibility to leave the platform
+// is granted by declaration. The answer comes from the resolver the write
+// already made, which spans both halves of the registry — the composed catalog
+// for a code-owned type, the type's own row for one a solution or a composed
+// module declared — so a declared type is published exactly when its producer
+// and the operator both said it may be. A platform-scope record never reaches
 // here — the caller returns early when the entry has no organization — so an
 // event is always tenant-scoped.
 //
@@ -703,7 +715,7 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 // subscription-id order, and the platform namespace is not subscribable by a
 // module, so no ordered subscriber can exist for these types.
 func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry AuditEntry, resolved ResolvedAuditEvent) error {
-	if e.transport == nil || !eventcatalog.IsExternalPublished(string(entry.EventType)) {
+	if e.transport == nil || !resolved.ExternallyDeliverable() {
 		return nil
 	}
 	data, err := AuditEventWebhookData(entry, resolved)

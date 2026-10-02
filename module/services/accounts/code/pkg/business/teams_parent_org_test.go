@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,6 +17,7 @@ import (
 	authcore "accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // teamMemberRoles covers every role a team write can request: the invariant is
@@ -148,7 +148,7 @@ func TestTeamMembershipInvariantHoldsForDirectDatabaseWrites(t *testing.T) {
 	require.NoError(t, err)
 
 	insert := func(ctx context.Context, rowOrg string) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO team_members (team_id, org_id, user_id, role) VALUES ($1, $2, $3, 'admin')`,
 			team.Team.Id, rowOrg, outsider)

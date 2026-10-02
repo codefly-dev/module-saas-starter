@@ -37,6 +37,7 @@ import (
 // helper rather than listing its call sites keeps a new caller from failing
 // this gate for a reason that is already guaranteed.
 var auditActorTypeIndirectSites = map[string]string{
+	"installations.go:uninstallSolutionTx":                         "both callers (UninstallSolution, DeleteOrganization) pass actorTypeForCreator's result, which returns a registered constant on every branch.",
 	"delegated_audience_audit.go:ObserveDelegatedAudienceExchange": "delegatedAudienceActorType returns only registered constants; TestDelegatedAudienceActorTypeSpeaksTheRegisteredVocabulary pins every branch.",
 	"webhooks.go:CreateSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:DeleteSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",

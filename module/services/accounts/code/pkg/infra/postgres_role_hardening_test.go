@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/relationcatalog"
 )
 
@@ -141,7 +142,7 @@ func TestRuntimeDatabaseRolesHavePinnedAuthority(t *testing.T) {
 	}
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for role, want := range expected {
 			var canLogin, superuser, bypassRLS, createDB, createRole, inherit, replication bool
 			err := tx.QueryRow(ctx, `
@@ -165,7 +166,7 @@ func TestRuntimeDatabaseRolesHavePinnedAuthority(t *testing.T) {
 
 func TestRuntimeSessionAndRelationOwnershipAreSeparated(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var sessionRole, currentRole string
 		var superuser, bypassRLS, createDB, createRole, replication bool
 		err := tx.QueryRow(ctx, `
@@ -213,7 +214,7 @@ func TestRuntimeSessionAndRelationOwnershipAreSeparated(t *testing.T) {
 
 func TestTenantRoleCannotBypassRLSOrGrowSchemaAuthority(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var canTruncate, canCreate, canUseTemporary, controlPlaneMember, billingMember, webhookMember, jobMember bool
 		err := tx.QueryRow(ctx, `
 			SELECT has_table_privilege('app_tenant', 'organizations', 'TRUNCATE'),
@@ -238,7 +239,7 @@ func TestTenantRoleCannotBypassRLSOrGrowSchemaAuthority(t *testing.T) {
 
 func TestTenantRoleHasNoImplicitFutureTablePrivileges(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var unsafeDefault bool
 		err := tx.QueryRow(ctx, `
 			SELECT COALESCE(bool_or(
@@ -259,7 +260,7 @@ func TestTenantRoleHasNoImplicitFutureTablePrivileges(t *testing.T) {
 
 func TestTenantRoleRelationGrantsAreExact(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for relation, want := range appTenantRelationPrivileges {
 			var got relationPrivileges
 			var truncateRows bool
@@ -290,7 +291,7 @@ func TestTenantRoleRelationGrantsAreExact(t *testing.T) {
 // that happens to allow it.
 func TestTenantRoleColumnGrantsAreLimitedToDescription(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for column, want := range map[string]bool{
 			"description": true,
 			"org_id":      false,
@@ -319,13 +320,13 @@ func TestTenantCannotReparentAGlobalRole(t *testing.T) {
 
 	var globalRoleID string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `SELECT id FROM roles WHERE org_id IS NULL LIMIT 1`).Scan(&globalRoleID)
 	}))
 	require.NotEmpty(t, globalRoleID, "the role catalog must seed at least one global role")
 
 	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `UPDATE roles SET org_id = $1 WHERE id = $2`, orgID, globalRoleID)
 		return err
 	})
@@ -334,7 +335,7 @@ func TestTenantCannotReparentAGlobalRole(t *testing.T) {
 
 func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for relation, authority := range relationcatalog.All() {
 			want := relationPrivileges{
 				selectRows: true,
@@ -471,7 +472,7 @@ func TestBillingWorkerRoleHasProjectionOnlyAuthority(t *testing.T) {
 		"job_state_transitions": {},
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for relation, want := range expected {
 			var got relationPrivileges
 			var truncateRows bool
@@ -497,7 +498,7 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 		"webhook_deliveries":    {selectRows: true},
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for relation := range relationcatalog.All() {
 			var got relationPrivileges
 			var truncateRows bool
@@ -548,7 +549,7 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 
 func TestAnalyticsDeliveryRoleHasProjectionOnlyAuthority(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var canSelect, canInsert, canUpdate, canDelete, canTruncate bool
 		require.NoError(t, tx.QueryRow(ctx, `
 			SELECT has_table_privilege('app_job_worker', 'analytics_deliveries', 'SELECT'),
@@ -589,10 +590,12 @@ func TestAnalyticsDeliveryRoleHasProjectionOnlyAuthority(t *testing.T) {
 
 func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		// relispartition excludes the audit_events monthly partition children:
-		// they are dynamically named and inherit access through the partitioned
-		// parent, so they carry no independent authority to classify.
+		// they are dynamically named and classified by their parent. They do not
+		// inherit its row-level security — a partition queried by name is checked
+		// against its own policies — so TestPartitionsCarryTheirParentsRowSecurity
+		// holds each one to the parent's.
 		rows, err := tx.Query(ctx, `
 			SELECT c.relname
 			FROM pg_class c
@@ -666,7 +669,7 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 
 func TestDatabaseRelationRLSMatchesAuthorityScope(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for relation, authority := range relationcatalog.All() {
 			var enabled, forced bool
 			var policyCount int
@@ -696,7 +699,7 @@ func TestDatabaseRelationRLSMatchesAuthorityScope(t *testing.T) {
 
 func TestActivePoliciesDoNotTrustSessionBypassSettings(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		var count int
 		require.NoError(t, tx.QueryRow(ctx, `
 			SELECT COUNT(*)
@@ -726,7 +729,7 @@ func TestActivePoliciesDoNotTrustSessionBypassSettings(t *testing.T) {
 // the relation's policies.
 func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		for relation, authority := range relationcatalog.All() {
 			if !authority.Scope.RequiresRLS() {
 				require.Empty(t, authority.PolicyShape, relation)

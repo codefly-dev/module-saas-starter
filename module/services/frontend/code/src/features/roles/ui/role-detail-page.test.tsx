@@ -138,4 +138,90 @@ describe("RoleDetailPage", () => {
 
 		expect(await screen.findByText("Role not found")).toBeTruthy();
 	});
+
+	// A refused or failed role list defaults to [] exactly as a genuinely absent
+	// id does. "Role not found" there sends an administrator looking for a
+	// deleted role instead of at the grant or the outage actually in their way.
+	it("does not call a refused role list a missing role", async () => {
+		server.use(
+			http.post(rpc("PermissionService", "ListRoles"), () =>
+				HttpResponse.json(
+					{ code: "permission_denied", message: "nope" },
+					{ status: 403 },
+				),
+			),
+		);
+
+		renderInApp(<RoleDetailPage roleId="role-1" />);
+
+		expect(await screen.findByText("This role can't be shown")).toBeTruthy();
+		expect(
+			screen.getByText(
+				/don't have permission to see this organization's roles/,
+			),
+		).toBeTruthy();
+		expect(screen.queryByText("Role not found")).toBeNull();
+	});
+
+	it("does not call an unreachable role list a missing role", async () => {
+		server.use(
+			http.post(rpc("PermissionService", "ListRoles"), () =>
+				HttpResponse.json(
+					{ code: "unavailable", message: "down" },
+					{ status: 503 },
+				),
+			),
+		);
+
+		renderInApp(<RoleDetailPage roleId="role-1" />);
+
+		expect(await screen.findByText("This role can't be shown")).toBeTruthy();
+		expect(screen.getByText(/is unknown/)).toBeTruthy();
+		expect(screen.queryByText("Role not found")).toBeNull();
+	});
+
+	// TanStack keeps the last successful answer when a refetch rejects, so a
+	// branch that tests `length === 0` first would leave the previous holders
+	// rendered after the read was refused.
+	it("withholds who holds a role once the read of it is refused", async () => {
+		let denied = false;
+		server.use(
+			http.post(rpc("PermissionService", "ListRoles"), () =>
+				HttpResponse.json({ roles: [editor] }),
+			),
+			http.post(rpc("TeamService", "ListTeams"), () =>
+				HttpResponse.json({ teams: [] }),
+			),
+			http.post(rpc("PermissionService", "ListRoleAssignments"), () =>
+				denied
+					? HttpResponse.json(
+							{ code: "permission_denied", message: "nope" },
+							{ status: 403 },
+						)
+					: HttpResponse.json({
+							assignments: [
+								{
+									id: "a-1",
+									roleId: "role-1",
+									subjectId: "11111111-1111-1111-1111-111111111111",
+									subjectKind: 1,
+								},
+							],
+						}),
+			),
+		);
+
+		const { client } = renderInApp(<RoleDetailPage roleId="role-1" />);
+		expect(await screen.findByText("Principal")).toBeTruthy();
+
+		denied = true;
+		await client.refetchQueries({ queryKey: ["role-assignments"] });
+
+		await waitFor(() =>
+			expect(
+				screen.getByText(/don't have permission to see who holds this role/),
+			).toBeTruthy(),
+		);
+		expect(screen.queryByText("Principal")).toBeNull();
+	});
 });

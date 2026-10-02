@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // =====================================================================
@@ -56,7 +56,7 @@ func seedPatternGrant(t *testing.T, orgID, actorID, grantorID, actionPattern, re
 	t.Helper()
 	id := business.NewIDString()
 	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
         INSERT INTO delegation_grants (
             id, org_id, actor_principal_id, grantor_principal_id,
@@ -264,7 +264,7 @@ func TestDelegation_Subscribe_AlreadyDecided(t *testing.T) {
 	}))
 
 	// Subscribe AFTER decision — its snapshot path emits one terminal event then
-	// closes. Subscribe sets its own connection's org context internally.
+	// closes. Subscribe binds the org for each of its own reads.
 	ctx, cancel := context.WithTimeout(testCtx, 3*time.Second)
 	defer cancel()
 	events, err := testStore.Subscribe(ctx, id, orgID)
@@ -276,6 +276,49 @@ func TestDelegation_Subscribe_AlreadyDecided(t *testing.T) {
 		require.Equal(t, business.GrantStatusApproved, ev.Status)
 	case <-ctx.Done():
 		t.Fatal("snapshot event not delivered within timeout")
+	}
+	select {
+	case _, ok := <-events:
+		require.False(t, ok, "channel should close after terminal event")
+	case <-ctx.Done():
+		t.Fatal("channel did not close after terminal")
+	}
+}
+
+// A decision made after Subscribe starts reaches it through NOTIFY. Each read
+// the subscription makes binds the org for its own transaction only, so the
+// re-read after the notification still sees the row.
+func TestDelegation_Subscribe_DeliversALaterDecision(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	actor := seedActorPrincipal(t, orgID)
+	grantor := seedGrantorPrincipal(t, orgID)
+	sc := testStore.As(business.Identity{OrgID: orgID})
+
+	in := newRequestInput(orgID, actor, "github.merge_pr", "repo:bar")
+	var id string
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		var e error
+		id, e = testStore.Insert(ctx, in, business.ComputeRequestHash(in), time.Now().Add(5*time.Minute))
+		return e
+	}))
+
+	ctx, cancel := context.WithTimeout(testCtx, 5*time.Second)
+	defer cancel()
+	events, err := testStore.Subscribe(ctx, id, orgID)
+	require.NoError(t, err)
+
+	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
+		_, e := testStore.Decide(ctx, id, orgID, grantor, business.GrantStatusDenied, "not now")
+		return e
+	}))
+
+	select {
+	case ev, ok := <-events:
+		require.True(t, ok, "expected the decision event")
+		require.Equal(t, business.GrantStatusDenied, ev.Status)
+	case <-ctx.Done():
+		t.Fatal("decision event not delivered within timeout")
 	}
 	select {
 	case _, ok := <-events:
@@ -427,7 +470,7 @@ func TestDelegation_IncrementPatternUse_Revoked(t *testing.T) {
 
 	// Flip to cancelled (manual revoke) — under org context.
 	require.NoError(t, sc.Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx, `UPDATE delegation_grants SET status='cancelled' WHERE id=$1`, patID)
 		return e
 	}))

@@ -8,6 +8,16 @@ export type DatasourceProviderName = "github" | "unknown";
 
 export type DatasourceStatusName = "active" | "paused" | "degraded" | "unknown";
 
+/**
+ * How a change at a source reaches the deployment: through the source's own
+ * repository webhook, through the deployment's single GitHub App webhook, or not
+ * at all — in which case the source is only as current as its last reconcile.
+ */
+export type DatasourceLiveDeliveryName =
+	| "none"
+	| "source_webhook"
+	| "app_webhook";
+
 /** A connected datasource, already mapped out of protobuf at the boundary. */
 export interface DatasourceView {
 	id: string;
@@ -26,6 +36,28 @@ export interface DatasourceView {
 	 */
 	boundaryLabel?: string | undefined;
 	webhookConfigured: boolean;
+	/**
+	 * How a change at the source reaches this deployment without waiting for the
+	 * periodic reconcile.
+	 *
+	 * Strictly more informative than `webhookConfigured`, which reports only
+	 * whether a signing secret is stored against this source. A source connected
+	 * through the GitHub App — the recommended path — holds no secret of its
+	 * own, so that flag is false for it whether or not the operator registered
+	 * the App webhook; rendering it alone showed every App-backed source as
+	 * having no live delivery, and gave a reader no way to tell a deployment
+	 * with the webhook wired from one without it.
+	 *
+	 * Optional, and absent from an older host: a consumer reading one must treat
+	 * absence as "not known", never as "none".
+	 */
+	liveDelivery?: DatasourceLiveDeliveryName | undefined;
+	/**
+	 * How often the host reconciles this source from scratch when nothing
+	 * pushes — the bound on how stale it may be — in seconds. 0 means the
+	 * periodic reconcile is off for it. Absent from an older host.
+	 */
+	reconcileIntervalSeconds?: number | undefined;
 	status: DatasourceStatusName;
 	/**
 	 * Why the source left `active`, in prose a tenant can act on; absent while it

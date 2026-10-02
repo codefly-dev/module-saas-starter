@@ -12,8 +12,10 @@ import (
 	"github.com/codefly-dev/core/wool"
 )
 
-// ExportAuditLog queries all matching audit events and serializes them to CSV or JSON.
-func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, eventType string) ([]byte, string, string, error) {
+// ExportAuditLog queries all matching audit events and serializes them to CSV or
+// JSON. eventTypes is the set form of eventType, applied together with it, so a
+// download can carry the same family-of-types filter a summary tile opens.
+func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, eventType string, eventTypes []string) ([]byte, string, string, error) {
 	w := wool.Get(ctx).In("ExportAuditLog")
 
 	if format == "" {
@@ -32,7 +34,8 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 		// rows through. Don't use s.store.QueryAuditLog directly here
 		// — that bypasses the wrap and returns zero rows.
 		entries, nextToken, _, err := s.QueryAuditLog(ctx, AuditQuery{
-			OrgID: orgID, ActorID: actorID, EventType: eventType, PageSize: 100, PageToken: pageToken,
+			OrgID: orgID, ActorID: actorID, EventType: eventType, EventTypes: eventTypes,
+			PageSize: 100, PageToken: pageToken,
 		})
 		if err != nil {
 			return nil, "", "", w.Wrapf(err, "query audit log for export")

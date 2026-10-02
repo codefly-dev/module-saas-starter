@@ -21,7 +21,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/organizations.proto.
  */
 export const file_saas_accounts_v1_organizations: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL29yZ2FuaXphdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEicgoLT3JnU2V0dGluZ3MSDgoGb3JnX2lkGAEgASgJEhAKCGxvZ29fdXJsGAIgASgJEhUKDXByaW1hcnlfY29sb3IYAyABKAkSFQoNY3VzdG9tX2RvbWFpbhgEIAEoCRITCgtmYXZpY29uX3VybBgFIAEoCSJSChRPcmdhbml6YXRpb25TZXR0aW5ncxI6Cghjb21wb3NlZBjoByABKAsyJy5zYWFzLmNvbXBvc2VkLm9yZ19zZXR0aW5ncy52MS5TZXR0aW5ncyI6Ch5HZXRPcmdhbml6YXRpb25TZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASKkAQohVXBkYXRlT3JnYW5pemF0aW9uU2V0dGluZ3NSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNQoFcGF0Y2gYAiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvblNldHRpbmdzEi4KCmNsZWFyX21hc2sYAyABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrIjEKFUdldE9yZ1NldHRpbmdzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIqcCChhVcGRhdGVPcmdTZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIvCghsb2dvX3VybBgCIAEoCUIdukgachgYgBAyE14ofGh0dHBzOi8vW15cc10rKSQSMgoNcHJpbWFyeV9jb2xvchgDIAEoCUIbukgYchYyFF4ofCNbMC05QS1GYS1mXXs2fSkkElgKDWN1c3RvbV9kb21haW4YBCABKAlCQbpIPnI8GP0BMjdeKHwoW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pP1wuKStbYS16XXsyLDYzfSkkEjIKC2Zhdmljb25fdXJsGAUgASgJQh26SBpyGBiAEDITXih8aHR0cHM6Ly9bXlxzXSspJCJpChlDcmVhdGVPcmdhbml6YXRpb25SZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESNQoEc2x1ZxgCIAEoCUInukgkciIQARg/MhxeW2EtejAtOV1bYS16MC05LV0qW2EtejAtOV0kIlIKGkNyZWF0ZU9yZ2FuaXphdGlvblJlc3BvbnNlEjQKDG9yZ2FuaXphdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uIi4KFkdldE9yZ2FuaXphdGlvblJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIhoKGExpc3RPcmdhbml6YXRpb25zUmVxdWVzdCJSChlMaXN0T3JnYW5pemF0aW9uc1Jlc3BvbnNlEjUKDW9yZ2FuaXphdGlvbnMYASADKAsyHi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbiJzChNBZGRPcmdNZW1iZXJSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESJwoEcm9sZRgDIAEoDjIZLnNhYXMuYWNjb3VudHMudjEuT3JnUm9sZSJNChZSZW1vdmVPcmdNZW1iZXJSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQEymQ8KE09yZ2FuaXphdGlvblNlcnZpY2UStwEKEkNyZWF0ZU9yZ2FuaXphdGlvbhIrLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlT3JnYW5pemF0aW9uUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuQ3JlYXRlT3JnYW5pemF0aW9uUmVzcG9uc2UiRsLzGCYIAhACMAE6FAoQc2Fhcy5vcmcuY3JlYXRlZBACQAFIBFADWANgAYLT5JMCFjoBKiIRL3YxL29yZ2FuaXphdGlvbnMSnQEKD0dldE9yZ2FuaXphdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uIkDC8xgeCAIQAyoICgJpZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIYEhYvdjEvb3JnYW5pemF0aW9ucy97aWR9Ep8BChFMaXN0T3JnYW5pemF0aW9ucxIqLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbnNSZXF1ZXN0Gisuc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnYW5pemF0aW9uc1Jlc3BvbnNlIjHC8xgUCAIQAjABOgIQAUABSANQA1gDYAGC0+STAhMSES92MS9vcmdhbml6YXRpb25zErgBCglBZGRNZW1iZXISJS5zYWFzLmFjY291bnRzLnYxLkFkZE9yZ01lbWJlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkibMLzGDsIAhAEKgwKBm9yZ19pZBACGAEwAToZChVzYWFzLm9yZy5tZW1iZXJfYWRkZWQQAkABSARQA1gDYAF4AoLT5JMCJzoBKiIiL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vbWVtYmVycxLHAQoMUmVtb3ZlTWVtYmVyEiguc2Fhcy5hY2NvdW50cy52MS5SZW1vdmVPcmdNZW1iZXJSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5InXC8xg9CAIQBCoMCgZvcmdfaWQQAhgBMAE6GwoXc2Fhcy5vcmcubWVtYmVyX3JlbW92ZWQQAkABSARQA1gDYAF4AoLT5JMCLiosL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vbWVtYmVycy97dXNlcl9pZH0SsgEKC0xpc3RNZW1iZXJzEicuc2Fhcy5hY2NvdW50cy52MS5MaXN0T3JnTWVtYmVyc1JlcXVlc3QaKC5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdNZW1iZXJzUmVzcG9uc2UiUMLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIkEiIvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9tZW1iZXJzEqsBCg5HZXRPcmdTZXR0aW5ncxInLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnU2V0dGluZ3NSZXF1ZXN0Gh0uc2Fhcy5hY2NvdW50cy52MS5PcmdTZXR0aW5ncyJRwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAiUSIy92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L3NldHRpbmdzEs8BChFVcGRhdGVPcmdTZXR0aW5ncxIqLnNhYXMuYWNjb3VudHMudjEuVXBkYXRlT3JnU2V0dGluZ3NSZXF1ZXN0Gh0uc2Fhcy5hY2NvdW50cy52MS5PcmdTZXR0aW5ncyJvwvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMub3JnLnNldHRpbmdzX3VwZGF0ZWQQAkABSARQA1gDYAGC0+STAig6ASoaIy92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L3NldHRpbmdzEs4BChdHZXRPcmdhbml6YXRpb25TZXR0aW5ncxIwLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uU2V0dGluZ3NSZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb25TZXR0aW5ncyJZwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAi0SKy92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L2dlbmVyaWMtc2V0dGluZ3MS+gEKGlVwZGF0ZU9yZ2FuaXphdGlvblNldHRpbmdzEjMuc2Fhcy5hY2NvdW50cy52MS5VcGRhdGVPcmdhbml6YXRpb25TZXR0aW5nc1JlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvblNldHRpbmdzIn/C8xhFCAIQBCoMCgZvcmdfaWQQAhgBMAE6JQohc2Fhcy5vcmcuZ2VuZXJpY19zZXR0aW5nc191cGRhdGVkEAJAAUgEUANYA2ABgtPkkwIwOgEqIisvdjEvb3JnYW5pemF0aW9ucy97b3JnX2lkfS9nZW5lcmljLXNldHRpbmdzQroBChRjb20uc2Fhcy5hY2NvdW50cy52MUIST3JnYW5pemF0aW9uc1Byb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_field_mask, file_saas_accounts_v1_common, file_saas_accounts_v1_directory, file_saas_composed_org_settings_v1_settings, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL29yZ2FuaXphdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEicgoLT3JnU2V0dGluZ3MSDgoGb3JnX2lkGAEgASgJEhAKCGxvZ29fdXJsGAIgASgJEhUKDXByaW1hcnlfY29sb3IYAyABKAkSFQoNY3VzdG9tX2RvbWFpbhgEIAEoCRITCgtmYXZpY29uX3VybBgFIAEoCSJSChRPcmdhbml6YXRpb25TZXR0aW5ncxI6Cghjb21wb3NlZBjoByABKAsyJy5zYWFzLmNvbXBvc2VkLm9yZ19zZXR0aW5ncy52MS5TZXR0aW5ncyI6Ch5HZXRPcmdhbml6YXRpb25TZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASKkAQohVXBkYXRlT3JnYW5pemF0aW9uU2V0dGluZ3NSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNQoFcGF0Y2gYAiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvblNldHRpbmdzEi4KCmNsZWFyX21hc2sYAyABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrIjEKFUdldE9yZ1NldHRpbmdzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIqcCChhVcGRhdGVPcmdTZXR0aW5nc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIvCghsb2dvX3VybBgCIAEoCUIdukgachgYgBAyE14ofGh0dHBzOi8vW15cc10rKSQSMgoNcHJpbWFyeV9jb2xvchgDIAEoCUIbukgYchYyFF4ofCNbMC05QS1GYS1mXXs2fSkkElgKDWN1c3RvbV9kb21haW4YBCABKAlCQbpIPnI8GP0BMjdeKHwoW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pP1wuKStbYS16XXsyLDYzfSkkEjIKC2Zhdmljb25fdXJsGAUgASgJQh26SBpyGBiAEDITXih8aHR0cHM6Ly9bXlxzXSspJCKNAQoZQ3JlYXRlT3JnYW5pemF0aW9uUmVxdWVzdBIVCgRuYW1lGAEgASgJQge6SARyAhABEjUKBHNsdWcYAiABKAlCJ7pIJHIiEAEYPzIcXlthLXowLTldW2EtejAtOS1dKlthLXowLTldJBIiCg1vd25lcl91c2VyX2lkGAMgASgJQgu6SAjYAQFyA7ABASJSChpDcmVhdGVPcmdhbml6YXRpb25SZXNwb25zZRI0Cgxvcmdhbml6YXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbiIuChZHZXRPcmdhbml6YXRpb25SZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIaChhMaXN0T3JnYW5pemF0aW9uc1JlcXVlc3QiZgoZTGlzdE9yZ2FuaXphdGlvbnNSZXNwb25zZRI1Cg1vcmdhbml6YXRpb25zGAEgAygLMh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24SEgoKY2FuX2NyZWF0ZRgCIAEoCCKDAQoZVXBkYXRlT3JnYW5pemF0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhUKBG5hbWUYAiABKAlCB7pIBHICEAESNQoEc2x1ZxgDIAEoCUInukgkciIQARg/MhxeW2EtejAtOV1bYS16MC05LV0qW2EtejAtOV0kIjQKGExlYXZlT3JnYW5pemF0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIlQKGURlbGV0ZU9yZ2FuaXphdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIdCgxjb25maXJtX3NsdWcYAiABKAlCB7pIBHICEAEicwoTQWRkT3JnTWVtYmVyUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBEicKBHJvbGUYAyABKA4yGS5zYWFzLmFjY291bnRzLnYxLk9yZ1JvbGUiTQoWUmVtb3ZlT3JnTWVtYmVyUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBMusSChNPcmdhbml6YXRpb25TZXJ2aWNlErcBChJDcmVhdGVPcmdhbml6YXRpb24SKy5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZU9yZ2FuaXphdGlvblJlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLkNyZWF0ZU9yZ2FuaXphdGlvblJlc3BvbnNlIkbC8xgmCAIQAjABOhQKEHNhYXMub3JnLmNyZWF0ZWQQAkABSARQA1gDYAGC0+STAhY6ASoiES92MS9vcmdhbml6YXRpb25zEp0BCg9HZXRPcmdhbml6YXRpb24SKC5zYWFzLmFjY291bnRzLnYxLkdldE9yZ2FuaXphdGlvblJlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbiJAwvMYHggCEAMqCAoCaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCGBIWL3YxL29yZ2FuaXphdGlvbnMve2lkfRKfAQoRTGlzdE9yZ2FuaXphdGlvbnMSKi5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdhbml6YXRpb25zUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ2FuaXphdGlvbnNSZXNwb25zZSIxwvMYFAgCEAIwAToCEAFAAUgDUANYA2ABgtPkkwITEhEvdjEvb3JnYW5pemF0aW9ucxK4AQoJQWRkTWVtYmVyEiUuc2Fhcy5hY2NvdW50cy52MS5BZGRPcmdNZW1iZXJSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5ImzC8xg7CAIQBCoMCgZvcmdfaWQQAhgBMAE6GQoVc2Fhcy5vcmcubWVtYmVyX2FkZGVkEAJAAUgEUANYA2ABeAKC0+STAic6ASoiIi92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L21lbWJlcnMSxwEKDFJlbW92ZU1lbWJlchIoLnNhYXMuYWNjb3VudHMudjEuUmVtb3ZlT3JnTWVtYmVyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ1wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOhsKF3NhYXMub3JnLm1lbWJlcl9yZW1vdmVkEAJAAUgEUANYA2ABeAKC0+STAi4qLC92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L21lbWJlcnMve3VzZXJfaWR9Ep0BChJVcGRhdGVPcmdhbml6YXRpb24SKy5zYWFzLmFjY291bnRzLnYxLlVwZGF0ZU9yZ2FuaXphdGlvblJlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvbiI6wvMYNggCEAQqDAoGb3JnX2lkEAIYATABOhQKEHNhYXMub3JnLnVwZGF0ZWQQAkABSARQA1gDYAF4AhKXAQoRTGVhdmVPcmdhbml6YXRpb24SKi5zYWFzLmFjY291bnRzLnYxLkxlYXZlT3JnYW5pemF0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSI+wvMYOggCEAMqDAoGb3JnX2lkEAIYATABOhgKFHNhYXMub3JnLm1lbWJlcl9sZWZ0EAJAAUgEUANYA2ABeAISlQEKEkRlbGV0ZU9yZ2FuaXphdGlvbhIrLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlT3JnYW5pemF0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSI6wvMYNggCEAQqDAoGb3JnX2lkEAIYATAEOhQKEHNhYXMub3JnLmRlbGV0ZWQQAkABSAVQA1gDYAF4AhKyAQoLTGlzdE1lbWJlcnMSJy5zYWFzLmFjY291bnRzLnYxLkxpc3RPcmdNZW1iZXJzUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuTGlzdE9yZ01lbWJlcnNSZXNwb25zZSJQwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAiQSIi92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L21lbWJlcnMSqwEKDkdldE9yZ1NldHRpbmdzEicuc2Fhcy5hY2NvdW50cy52MS5HZXRPcmdTZXR0aW5nc1JlcXVlc3QaHS5zYWFzLmFjY291bnRzLnYxLk9yZ1NldHRpbmdzIlHC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCJRIjL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vc2V0dGluZ3MSzwEKEVVwZGF0ZU9yZ1NldHRpbmdzEiouc2Fhcy5hY2NvdW50cy52MS5VcGRhdGVPcmdTZXR0aW5nc1JlcXVlc3QaHS5zYWFzLmFjY291bnRzLnYxLk9yZ1NldHRpbmdzIm/C8xg9CAIQBCoMCgZvcmdfaWQQAhgBMAE6HQoZc2Fhcy5vcmcuc2V0dGluZ3NfdXBkYXRlZBACQAFIBFADWANgAYLT5JMCKDoBKhojL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vc2V0dGluZ3MSzgEKF0dldE9yZ2FuaXphdGlvblNldHRpbmdzEjAuc2Fhcy5hY2NvdW50cy52MS5HZXRPcmdhbml6YXRpb25TZXR0aW5nc1JlcXVlc3QaJi5zYWFzLmFjY291bnRzLnYxLk9yZ2FuaXphdGlvblNldHRpbmdzIlnC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCLRIrL3YxL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZ2VuZXJpYy1zZXR0aW5ncxL6AQoaVXBkYXRlT3JnYW5pemF0aW9uU2V0dGluZ3MSMy5zYWFzLmFjY291bnRzLnYxLlVwZGF0ZU9yZ2FuaXphdGlvblNldHRpbmdzUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuT3JnYW5pemF0aW9uU2V0dGluZ3Mif8LzGEUIAhAEKgwKBm9yZ19pZBACGAEwATolCiFzYWFzLm9yZy5nZW5lcmljX3NldHRpbmdzX3VwZGF0ZWQQAkABSARQA1gDYAGC0+STAjA6ASoiKy92MS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L2dlbmVyaWMtc2V0dGluZ3NCugEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhJPcmdhbml6YXRpb25zUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_field_mask, file_saas_accounts_v1_common, file_saas_accounts_v1_directory, file_saas_composed_org_settings_v1_settings, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.OrgSettings
@@ -204,6 +204,14 @@ export type CreateOrganizationRequest = Message<"saas.accounts.v1.CreateOrganiza
    * @generated from field: string slug = 2;
    */
   slug: string;
+
+  /**
+   * The user who owns the new organization. Only a platform administrator may
+   * name someone else; empty means the caller.
+   *
+   * @generated from field: string owner_user_id = 3;
+   */
+  ownerUserId: string;
 };
 
 /**
@@ -268,6 +276,14 @@ export type ListOrganizationsResponse = Message<"saas.accounts.v1.ListOrganizati
    * @generated from field: repeated saas.accounts.v1.Organization organizations = 1;
    */
   organizations: Organization[];
+
+  /**
+   * Whether the caller may create an organization under the deployment's
+   * creation policy. The UI offers "Create organization" only when true.
+   *
+   * @generated from field: bool can_create = 2;
+   */
+  canCreate: boolean;
 };
 
 /**
@@ -276,6 +292,76 @@ export type ListOrganizationsResponse = Message<"saas.accounts.v1.ListOrganizati
  */
 export const ListOrganizationsResponseSchema: GenMessage<ListOrganizationsResponse> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_organizations, 10);
+
+/**
+ * @generated from message saas.accounts.v1.UpdateOrganizationRequest
+ */
+export type UpdateOrganizationRequest = Message<"saas.accounts.v1.UpdateOrganizationRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string slug = 3;
+   */
+  slug: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UpdateOrganizationRequest.
+ * Use `create(UpdateOrganizationRequestSchema)` to create a new message.
+ */
+export const UpdateOrganizationRequestSchema: GenMessage<UpdateOrganizationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_organizations, 11);
+
+/**
+ * @generated from message saas.accounts.v1.LeaveOrganizationRequest
+ */
+export type LeaveOrganizationRequest = Message<"saas.accounts.v1.LeaveOrganizationRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.LeaveOrganizationRequest.
+ * Use `create(LeaveOrganizationRequestSchema)` to create a new message.
+ */
+export const LeaveOrganizationRequestSchema: GenMessage<LeaveOrganizationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_organizations, 12);
+
+/**
+ * @generated from message saas.accounts.v1.DeleteOrganizationRequest
+ */
+export type DeleteOrganizationRequest = Message<"saas.accounts.v1.DeleteOrganizationRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * The organization's current slug, typed by the person deleting it. A
+   * mismatch is refused, so a stale or mistaken id cannot delete the wrong
+   * organization.
+   *
+   * @generated from field: string confirm_slug = 2;
+   */
+  confirmSlug: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.DeleteOrganizationRequest.
+ * Use `create(DeleteOrganizationRequestSchema)` to create a new message.
+ */
+export const DeleteOrganizationRequestSchema: GenMessage<DeleteOrganizationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_organizations, 13);
 
 /**
  * @generated from message saas.accounts.v1.AddOrgMemberRequest
@@ -302,7 +388,7 @@ export type AddOrgMemberRequest = Message<"saas.accounts.v1.AddOrgMemberRequest"
  * Use `create(AddOrgMemberRequestSchema)` to create a new message.
  */
 export const AddOrgMemberRequestSchema: GenMessage<AddOrgMemberRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 11);
+  messageDesc(file_saas_accounts_v1_organizations, 14);
 
 /**
  * @generated from message saas.accounts.v1.RemoveOrgMemberRequest
@@ -324,7 +410,7 @@ export type RemoveOrgMemberRequest = Message<"saas.accounts.v1.RemoveOrgMemberRe
  * Use `create(RemoveOrgMemberRequestSchema)` to create a new message.
  */
 export const RemoveOrgMemberRequestSchema: GenMessage<RemoveOrgMemberRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_organizations, 12);
+  messageDesc(file_saas_accounts_v1_organizations, 15);
 
 /**
  * OrganizationService — org and membership management
@@ -370,6 +456,41 @@ export const OrganizationService: GenService<{
   removeMember: {
     methodKind: "unary";
     input: typeof RemoveOrgMemberRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * UpdateOrganization renames an organization or changes its slug.
+   *
+   * @generated from rpc saas.accounts.v1.OrganizationService.UpdateOrganization
+   */
+  updateOrganization: {
+    methodKind: "unary";
+    input: typeof UpdateOrganizationRequestSchema;
+    output: typeof OrganizationSchema;
+  },
+  /**
+   * LeaveOrganization removes the caller's own membership. The subject is
+   * always the caller; the last administrator of an organization others still
+   * belong to is refused.
+   *
+   * @generated from rpc saas.accounts.v1.OrganizationService.LeaveOrganization
+   */
+  leaveOrganization: {
+    methodKind: "unary";
+    input: typeof LeaveOrganizationRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * DeleteOrganization archives an organization: it disappears from every
+   * member's list, admits no further request, and its credentials, grants and
+   * pending invitations are revoked. Its history is kept. Only an owner or a
+   * platform super administrator may delete.
+   *
+   * @generated from rpc saas.accounts.v1.OrganizationService.DeleteOrganization
+   */
+  deleteOrganization: {
+    methodKind: "unary";
+    input: typeof DeleteOrganizationRequestSchema;
     output: typeof EmptySchema;
   },
   /**

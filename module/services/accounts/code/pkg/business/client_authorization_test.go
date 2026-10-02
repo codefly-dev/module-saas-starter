@@ -9,10 +9,9 @@ import (
 	"testing"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/infra/storetx"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/stretchr/testify/require"
 )
@@ -279,7 +278,7 @@ func TestRegisteredClientsAreReadableForTheGateway(t *testing.T) {
 func auditLoginRow(t *testing.T, userID string) (resourceID string, orgID *string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT resource_id, org_id::text
 			FROM audit_events

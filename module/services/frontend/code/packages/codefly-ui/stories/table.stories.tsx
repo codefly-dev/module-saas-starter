@@ -1,12 +1,12 @@
-import { useState } from "react";
 import {
 	getCoreRowModel,
 	getPaginationRowModel,
 	getSortedRowModel,
-	useReactTable,
 	type SortingState,
+	useReactTable,
 } from "@tanstack/react-table";
-import { DataTable } from "../src/table/index.js";
+import { useState } from "react";
+import { DataTable, DataTableSkeleton } from "../src/table/index.js";
 
 export default { title: "Shared UI/Data table" };
 const rows = [
@@ -43,6 +43,20 @@ function ExampleTable({
 		/>
 	);
 }
+function LoadingTable() {
+	const table = useReactTable({
+		data: [] as typeof rows,
+		columns: [
+			{ accessorKey: "name", header: "Workspace" },
+			{ accessorKey: "members", header: "Members" },
+		],
+		getCoreRowModel: getCoreRowModel(),
+	});
+	return <DataTableSkeleton table={table} />;
+}
 export const Paginated = { render: () => <ExampleTable /> };
 export const Empty = { render: () => <ExampleTable empty /> };
-export const Loading = { render: () => <ExampleTable loading /> };
+// The appearance, shown directly. `DataTable` owns *when* it appears (nothing
+// for the first 200ms of a wait), which is a timing rule a story cannot show
+// and `data-table.test.tsx` asserts instead.
+export const Loading = { render: () => <LoadingTable /> };

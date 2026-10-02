@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
-import { TeamDetailPage } from "./team-detail-page";
+import { TeamDetailsPage } from "./team-details-page";
 
 const session = vi.hoisted(() => ({
 	organizationId: "org-1" as string | undefined,
@@ -80,11 +80,11 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("TeamDetailPage", () => {
+describe("TeamDetailsPage (org-selection and access states)", () => {
 	it("shows the team's members and the roles it carries", async () => {
 		serveTeam();
 
-		renderInApp(<TeamDetailPage teamId="team-1" />);
+		renderInApp(<TeamDetailsPage teamId="team-1" />);
 
 		expect(
 			await screen.findByRole("heading", { name: "platform" }),
@@ -104,7 +104,7 @@ describe("TeamDetailPage", () => {
 			}),
 		);
 
-		renderInApp(<TeamDetailPage teamId="team-1" />);
+		renderInApp(<TeamDetailsPage teamId="team-1" />);
 
 		fireEvent.click(await screen.findByLabelText("Revoke"));
 
@@ -126,7 +126,7 @@ describe("TeamDetailPage", () => {
 			}),
 		);
 
-		renderInApp(<TeamDetailPage teamId="team-1" />);
+		renderInApp(<TeamDetailsPage teamId="team-1" />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Remove user@example.com" }),

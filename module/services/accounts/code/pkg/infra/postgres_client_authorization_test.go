@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +23,7 @@ func seedClientAuthorizationCode(t *testing.T, userID string, expiresAt time.Tim
 	id := business.NewIDString()
 	sessionID := business.NewIDString()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO sessions (id, user_id, family_id, refresh_token_hash, expires_at, idle_expires_at)
 			VALUES ($1, $2, $3, $4, $5, $5)`,
@@ -53,7 +53,7 @@ func clientAuthorizationCodeExists(t *testing.T, id string) bool {
 	t.Helper()
 	var exists bool
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx,
 			`SELECT EXISTS (SELECT 1 FROM client_authorization_codes WHERE id = $1)`, id).Scan(&exists)
 	}))

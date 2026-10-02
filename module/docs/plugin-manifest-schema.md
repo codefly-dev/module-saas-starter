@@ -97,8 +97,11 @@ has three node kinds:
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
 
-On a registered solution's page the host renders every declared dashboard, and
-each viewer can arrange it for themselves: reorder its declared widgets, remove
+On a registered solution's page the host renders every declared dashboard in a
+**Dashboard** tab beside the solution's own **App** tab, never stacked above
+the solution; the solution stays mounted while the dashboard is open. A
+solution that declares no dashboard gets no tab bar. Each viewer can arrange a
+dashboard for themselves: reorder its declared widgets, remove
 them, and re-add the ones they removed. The declared widgets, in declared order,
 are where every viewer starts, and a widget declared later reaches viewers who
 already rearranged. A viewer's arrangement is a preference (ADR 0007): it never

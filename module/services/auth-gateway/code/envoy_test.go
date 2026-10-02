@@ -18,7 +18,7 @@ func testUpstreams() map[string]Upstream {
 	}
 }
 
-func testExtAuthz() Upstream {
+func testExtAuthzUpstream() Upstream {
 	return Upstream{Address: "127.0.0.1", Port: 9000}
 }
 
@@ -61,7 +61,7 @@ func TestGenerateEnvoyConfig_PublicRouteDisablesExtAuthz(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -86,7 +86,7 @@ func TestGenerateEnvoyConfig_ProtectedRouteKeepsExtAuthz(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -124,7 +124,7 @@ func TestGenerateEnvoyConfig_MFAPendingRouteKeepsExtAuthz(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -144,7 +144,7 @@ func TestGenerateEnvoyConfig_PathParamsBecomeSafeRegex(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -168,7 +168,7 @@ func TestGenerateEnvoyConfig_ConnectRoutesAreExactMatch(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	// Parse YAML to inspect Connect route.
@@ -196,7 +196,7 @@ func TestGenerateEnvoyConfig_SelfRoutesAreDirectResponse(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -215,7 +215,7 @@ func TestGenerateEnvoyConfig_AllRoutesFromFile(t *testing.T) {
 	require.NoError(t, err)
 	config := ToEnvoyConfig(entries)
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 	require.NotEmpty(t, yamlBytes)
 
@@ -252,7 +252,7 @@ func TestGenerateEnvoyConfig_ValidYAML(t *testing.T) {
 	require.NoError(t, err)
 	config := ToEnvoyConfig(entries)
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	// Must parse as valid YAML.
@@ -292,7 +292,7 @@ func TestGenerateEnvoyConfig_ExtAuthzClusterIsGRPC(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -303,7 +303,7 @@ func TestGenerateEnvoyConfig_ExtAuthzClusterIsGRPC(t *testing.T) {
 }
 
 func TestGenerateEnvoyConfig_NilConfig(t *testing.T) {
-	_, err := GenerateEnvoyConfig(nil, testUpstreams(), nil, testExtAuthz(), 8080)
+	_, err := GenerateEnvoyConfig(nil, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	assert.Error(t, err)
 }
 
@@ -323,7 +323,7 @@ func TestGenerateEnvoyConfig_SeparateConnectUpstreams(t *testing.T) {
 		"accounts": {Address: "accounts-connect", Port: 5963},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), connectUpstreams, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), connectUpstreams, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -344,7 +344,7 @@ func TestGenerateEnvoyConfig_ListenPort(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 9090)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 9090)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -364,7 +364,7 @@ func TestGenerateEnvoyConfig_NoUnmatchedRoutes(t *testing.T) {
 		Routes: []EnvoyRouteEntry{},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -385,7 +385,7 @@ func TestGenerateEnvoyConfig_ComplexPathParams(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -415,7 +415,7 @@ func TestGenerateEnvoyConfig_CustomActionPaths(t *testing.T) {
 		},
 	}
 
-	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthz(), 8080)
+	yamlBytes, err := GenerateEnvoyConfig(config, testUpstreams(), nil, testExtAuthzUpstream(), 8080)
 	require.NoError(t, err)
 
 	output := string(yamlBytes)
@@ -441,7 +441,7 @@ func TestGenerateEnvoyConfig_LegacyConnectAliasRewritesToV1(t *testing.T) {
 		config,
 		testUpstreams(),
 		map[string]Upstream{"accounts": {Address: "accounts", Port: 5963}},
-		testExtAuthz(),
+		testExtAuthzUpstream(),
 		8080,
 	)
 	require.NoError(t, err)

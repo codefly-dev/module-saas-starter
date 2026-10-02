@@ -48,6 +48,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -492,6 +493,24 @@ const mintModuleWorkContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService
 // cannot reach accounts' internal listener itself, and this handler makes no
 // authorization decision — accounts decides which principal the presented secret
 // is good for and which tenant it may act on.
+// logModuleExchangeRefusal records WHY accounts refused a module exchange, where
+// the client is told only that it was refused.
+//
+// Every branch below answers a fixed, reasonless string — "unauthorized",
+// "forbidden" — and that is right: these endpoints are reached by a module
+// presenting its own secret, and the reply must not tell a caller which of the
+// composition's declarations it fell foul of. But accounts names the fault
+// exactly ("owner is not allowed <resource>:<action> at requested scope", an
+// unknown binding, a prefix whose grant is missing), and dropping it left the
+// gateway with no record at all: a composition whose MODULE_PRINCIPALS entry is
+// wrong produced a bare 403 here and silence in the log, which is how a
+// deployed module's refusal became undiagnosable. gRPC status messages carry no
+// credential — the secret never reaches accounts' error.
+func logModuleExchangeRefusal(exchange, prefix string, err error) {
+	log.Printf("WARN: module exchange refused: exchange=%s prefix=%s code=%s reason=%q",
+		exchange, prefix, status.Code(err), status.Convert(err).Message())
+}
+
 func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != moduleWorkContextPath {
 		return false
@@ -527,6 +546,7 @@ func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request
 	defer cancel()
 	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, secret)
 	if err != nil {
+		logModuleExchangeRefusal("module-work-context", payload.Prefix, err)
 		switch status.Code(err) {
 		case codes.PermissionDenied:
 			httpError(w, http.StatusUnauthorized, "unauthorized")
@@ -614,6 +634,7 @@ func (g *Gateway) handleModuleOperationContext(w http.ResponseWriter, r *http.Re
 	defer cancel()
 	issued, err := g.authz.mintModuleOperationContext(ctx, payload.Prefix, secret, payload.Binding)
 	if err != nil {
+		logModuleExchangeRefusal("module-operation-context/"+payload.Binding, payload.Prefix, err)
 		switch status.Code(err) {
 		case codes.Unauthenticated:
 			httpError(w, http.StatusUnauthorized, "unauthorized")
@@ -790,6 +811,7 @@ func (g *Gateway) handleModuleSourceOperationContext(w http.ResponseWriter, r *h
 	defer cancel()
 	issued, err := g.authz.mintSourceOperationContext(ctx, request)
 	if err != nil {
+		logModuleExchangeRefusal("source-operation-context", request.GetPrefix(), err)
 		switch status.Code(err) {
 		case codes.Unauthenticated:
 			httpError(w, http.StatusUnauthorized, "unauthorized")

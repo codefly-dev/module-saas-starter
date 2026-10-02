@@ -49,3 +49,33 @@ export function useOrgEntitlements(orgId: string | null) {
 		}),
 	});
 }
+
+/**
+ * Every organization on the platform, one page at a time — whether or not the
+ * caller belongs to it. The page token is the server's; an empty one is the
+ * first page.
+ */
+export function useAllOrganizations({
+	query,
+	includeArchived,
+	pageToken,
+	enabled = true,
+}: {
+	query: string;
+	includeArchived: boolean;
+	pageToken: string;
+	enabled?: boolean;
+}) {
+	const svc = usePlatformAdminService();
+	return useQuery({
+		queryKey: ["platform-organizations", query, includeArchived, pageToken],
+		queryFn: () =>
+			svc.listAllOrganizations({
+				query,
+				includeArchived,
+				pageToken,
+				pageSize: 25,
+			}),
+		enabled,
+	});
+}

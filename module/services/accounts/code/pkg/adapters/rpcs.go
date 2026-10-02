@@ -328,7 +328,8 @@ func (s *OrgServer) CreateOrganization(ctx context.Context, req *gen.CreateOrgan
 	if err != nil {
 		return nil, err
 	}
-	return service.CreateOrganization(ctx, userID, req)
+	response, err := service.CreateOrganization(ctx, userID, req)
+	return response, organizationLifecycleStatusError(err)
 }
 
 func (s *OrgServer) GetOrganization(ctx context.Context, req *gen.GetOrganizationRequest) (*gen.Organization, error) {
@@ -848,10 +849,16 @@ func (s *IdentServer) ResolveIdentity(ctx context.Context, req *gen.ResolveIdent
 // ============================================================================
 
 func (s *APIKeyServer) CreateAPIKey(ctx context.Context, req *gen.CreateAPIKeyRequest) (*gen.CreateAPIKeyResponse, error) {
+	if err := requireInteractiveSession(ctx); err != nil {
+		return nil, err
+	}
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
 	if err := requireScope(ctx, "api_keys:write"); err != nil {
+		return nil, err
+	}
+	if err := requireScopesWithinCaller(ctx, req.GetScopes()); err != nil {
 		return nil, err
 	}
 	actorID, err := requireAuth(ctx)
@@ -1225,6 +1232,7 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		OrgID:      req.OrgId,
 		ActorID:    req.ActorId,
 		EventType:  req.EventType,
+		EventTypes: req.EventTypes,
 		Category:   req.Category,
 		Namespace:  req.Namespace,
 		Resource:   req.Resource,
@@ -1298,6 +1306,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		OrgID:        req.OrgId,
 		ActorID:      req.ActorId,
 		EventType:    req.EventType,
+		EventTypes:   req.EventTypes,
 		Category:     req.Category,
 		Namespace:    req.Namespace,
 		Resource:     req.Resource,
@@ -1385,6 +1394,10 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 			Owner:           d.Owner,
 			Description:     d.Description,
 			MarksUserJoined: d.MarksUserJoined,
+			// What a subscription form must read instead of carrying its own
+			// list: a name this deployment would never deliver cannot be
+			// offered, and CreateSubscription refuses one anyway.
+			WebhookEligible: d.ExternallyDeliverable(),
 		})
 	}
 	return &gen.ListAuditEventTypesResponse{Types: out}, nil

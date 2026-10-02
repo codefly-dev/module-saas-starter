@@ -14,6 +14,7 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/rolecatalog"
 )
 
@@ -24,7 +25,7 @@ import (
 func resetCatalogRoles(t *testing.T) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `DELETE FROM roles WHERE catalog_managed = true`)
 		return err
 	}))
@@ -52,7 +53,7 @@ func readBuiltinRole(t *testing.T, name string) (builtinRole, bool) {
 	var role builtinRole
 	found := false
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		var (
 			desc, scope *string
 		)
@@ -94,7 +95,7 @@ func countCatalogAudits(t *testing.T, action string) int {
 	t.Helper()
 	var n int
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT COUNT(*) FROM audit_events
 			WHERE actor_type = 'system' AND resource = 'role' AND event_type = $1`, action).Scan(&n)
@@ -106,7 +107,7 @@ func readLatestAuditMetadata(t *testing.T, action, roleID string) map[string]str
 	t.Helper()
 	metadata := map[string]string{}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		var raw []byte
 		err := tx.QueryRow(ctx, `
 			SELECT payload FROM audit_events
@@ -212,7 +213,7 @@ func TestImportRoleCatalogLeavesCustomRolesAndAssignmentsUntouched(t *testing.T)
 	// touch either.
 	customRoleID := business.NewIDString()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO roles (id, name, description, built_in, org_id, catalog_managed)
 			VALUES ($1, 'custom-analyst', 'custom', false, $2, false)`, customRoleID, orgID); err != nil {
@@ -235,7 +236,7 @@ func TestImportRoleCatalogLeavesCustomRolesAndAssignmentsUntouched(t *testing.T)
 
 	// The custom role and its assignment are intact.
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		var roleCount, assignmentCount int
 		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM roles WHERE id = $1`, customRoleID).Scan(&roleCount); err != nil {
 			return err
@@ -264,7 +265,7 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 	require.True(t, found)
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO role_assignments (id, subject_id, subject_kind, role_id, org_id)
 			VALUES ($1, $2, 'principal', $3, $4)`, business.NewIDString(), userID, role.id, orgID)
@@ -291,7 +292,7 @@ func TestImportRoleCatalogRefusesOrphaningRemovalUnlessForced(t *testing.T) {
 	require.False(t, gone)
 
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		var n int
 		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM role_assignments WHERE role_id = $1`, role.id).Scan(&n); err != nil {
 			return err
@@ -347,7 +348,7 @@ func TestImportRoleCatalogStampsProvenanceOnAudit(t *testing.T) {
 
 func TestBuiltinRoleNamesAreUnique(t *testing.T) {
 	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		_, execErr := tx.Exec(ctx, `
 			INSERT INTO roles (id, name, description, built_in, org_id)
 			VALUES ($1, 'admin', 'duplicate built-in', true, NULL)`, business.NewIDString())

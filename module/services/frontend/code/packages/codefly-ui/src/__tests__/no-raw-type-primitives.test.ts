@@ -76,7 +76,7 @@ const files = sourceFiles(srcDir);
 const SAAS_UI_BASELINE: Record<string, number> = {
 	"datasources/collection-access.tsx": 2,
 	"datasources/connect-github-form.tsx": 16,
-	"datasources/datasources-panel.tsx": 22,
+	"datasources/datasources-panel.tsx": 17,
 };
 const saasUiDir = resolve(srcDir, "../../saas-ui/src");
 const saasUiFiles = existsSync(saasUiDir) ? sourceFiles(saasUiDir) : [];

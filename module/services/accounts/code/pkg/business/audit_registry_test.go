@@ -156,9 +156,15 @@ func TestAuditCatalog_InstallationReasonCodesAreDeclaredOnBothEvents(t *testing.
 	require.ElementsMatch(t, lost, restored,
 		"a cause a source can be parked for is a cause it can be restored from; the two enums must agree")
 
-	codes := slices.Sorted(maps.Values(datasourceInstallationReasonCodes))
-	require.ElementsMatch(t, codes, lost,
-		"every code datasourceInstallationReasonCodes can put in a payload must be declared on the event")
+	require.ElementsMatch(t, datasourceAccessLostCodes, lost,
+		"every code some path can put in this payload must be declared on the event")
+
+	// The installation reconciler is one of those paths, and the only one with a
+	// map of its own; every code it can write has to be in the whole vocabulary.
+	for _, code := range slices.Sorted(maps.Values(datasourceInstallationReasonCodes)) {
+		require.Containsf(t, datasourceAccessLostCodes, code,
+			"installation reason code %q is missing from the access-lost vocabulary", code)
+	}
 }
 
 // A document module records each re-queued dead letter with exactly this

@@ -7,11 +7,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 func deleteUser(service *business.Service, access business.Identity, userID string) error {
@@ -51,7 +51,7 @@ func userStatus(t *testing.T, userID string) string {
 	t.Helper()
 	var status string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `SELECT status FROM users WHERE uuid = $1`, userID).Scan(&status)
 	}))
 	return status
@@ -290,7 +290,7 @@ func TestSuspendingTheSoleAdministratorProceedsAndRecordsTheConsequence(t *testi
 
 	var payload []byte
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT payload FROM audit_events
 			WHERE event_type = $1 AND resource_id = $2
@@ -420,7 +420,7 @@ func requireEligibleAdministrator(t *testing.T, orgID string) {
 	t.Helper()
 	var eligible int
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			SELECT count(*)
 			FROM organization_members AS member

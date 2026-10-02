@@ -55,7 +55,17 @@ survives a restart and reaches every replica, and is only served when it is
   stripped like a catalog one and a declared type is never dead-lettered as
   unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
   `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
-  lists its namespace.
+  lists its namespace. A declared type also carries a **visibility** — `tenant`
+  by default, or `external` — and only an `external` one is ever delivered to a
+  tenant's outbound webhook endpoint. It takes two keys: the producer declares
+  it (manifest `dashboard.events[].visibility`, or
+  `ModuleAuditEventTypeDeclaration.visibility`) and the operator grants the
+  namespace external delivery (`external_namespaces`, a subset of `namespaces`,
+  refused at boot if it is not). Visibility is fixed at admission — a
+  re-declaration that changes it is refused — because narrowing would silently
+  stop deliveries to endpoints already subscribed and widening would start
+  sending out facts under a name a tenant subscribed to when it meant something
+  else.
 - A composed **module** with no frontend half declares its own audit event
   types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
   (`pkg/business/module_audit_declarations.go`): the same validator
@@ -76,7 +86,7 @@ survives a restart and reaches every replica, and is only served when it is
 
 ## Declared solution presence reconciles into that same record
 
-`solution_host_bindings` (migration `10_solution_host_bindings`) is the host's
+`solution_host_bindings` (migration `17_solution_host_bindings`) is the host's
 durable record of the `SolutionHostBinding` documents delivery hands it (issue
 #952). It is **not** a second registry: an applied generation writes the same
 `solution_registrations` row a self-registering runtime writes, and the only thing
@@ -388,3 +398,67 @@ not substitute for it: mTLS refuses the call before any token is read.
 The transport underneath — h2c rather than server TLS, the resolved origin, and
 the key set a consumer verifies host-signed credentials against — is
 [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).
+
+## A datasource source is refreshed by three things, and one of them covers every provider
+
+Ranked by latency, a source's content is refreshed by a push (near-live), by a
+person pressing "Sync now", and by the **periodic reconcile**. Only the last of
+the three is guaranteed to exist, so it is what makes "we sync on push" honest:
+without it, a missed webhook is permanent and nothing ever notices.
+
+- **The sweep is the whole schedule, not GitHub's.** `RunDatasourceReconcile`
+  runs on a one-minute ticker in `work.go`, selects every active source whose
+  `next_reconcile_at` has elapsed, and routes each to the engine its provider
+  syncs on: GitHub to a conditional reconcile on the delivery queue (the job
+  resolves the head and snapshots only if it moved), everything else to the same
+  sync request "Sync now" produces. It used to select GitHub alone, and a pull
+  source was never given a `next_reconcile_at` either — so an api, crawler or
+  object-storage source synced when a person pressed the button and at no other
+  time. None of the three has a webhook receiver, so there was no push path to
+  miss.
+- **The interval is per provider.** 30 minutes for GitHub; a day for the pull
+  providers, whose connectors re-send their whole content on every sync (the gap
+  registered against each in `datasource_connectors.go`, detailed per clause in
+  [pkg/datasource/connector/CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md)).
+  `datasourceReconcileInterval` is the one function that answers it, and
+  migration `14_datasource_pull_reconcile_schedule` backfilled the rows written
+  before there was a schedule to write.
+- **The sweep holds no lease and runs in every replica.** What makes that safe is
+  the job's idempotency key, which is the source paired with the schedule instant
+  it is due on (`scheduledReconcileKey`), so two replicas over one due row
+  enqueue the work once. Pull syncs also carry a per-source FIFO ordering key, so
+  a scheduled full re-send cannot run beside a manual one.
+- **Every provider syncs at connect**, not a whole interval later
+  (`startFirstSync`).
+
+### Whether live delivery exists at all is a deployment fact, and the host reports it
+
+`Datasource.webhook_configured` reports one thing: a signing secret is stored
+against that source. It is not the answer to "does a change here reach us
+quickly", and reading it as one has been actively misleading in both directions:
+an App-backed source holds no secret of its own — its pushes arrive at the App's
+single webhook URL — so every source on the recommended connect path read
+"not configured", and a source that does hold a secret receives nothing where
+`DATASOURCE_GITHUB_WEBHOOK_ENABLED` left the per-source receiver unmounted.
+
+`Service.LiveDeliveryFor` composes the source fact with the deployment fact and
+serves the answer as `Datasource.live_delivery`; `DatasourceProviderDescriptor.live_delivery_configured`
+is its catalog-level companion ("has an operator wired this connector's push
+endpoint here"), distinct from `supports_webhook` ("could this connector take
+one at all"). `work.go` sets the receiver-mounted switch from the same place it
+mounts the route, so the two cannot drift, and logs the whole posture once at
+boot — a deployment with neither endpoint wired used to log nothing at all.
+
+### A public source that stops being public
+
+Connecting refuses a repository GitHub will not serve unauthenticated, so a
+credential-less source is proof the repository was public at connect. Nothing
+re-asked afterwards, and the generic classifier called the resulting 404 a
+retryable failure "inaccessible to this PAT" — for a source that holds no PAT.
+`parkUnreadablePublicSource` makes it terminal, parks the source with
+`DatasourceReasonPublicRepositoryUnreadable`, and records
+`saas.datasource.source.access_lost` with the `public_repository_unreadable`
+cause (v2 of that type; `datasourceAccessLostCodes` is the whole vocabulary a
+registry test holds the declaration to). Recovery is the ordinary one — a later
+snapshot clearing the degrade — which a repository made public again, or
+reconnected with a PAT or through the App, all reach.

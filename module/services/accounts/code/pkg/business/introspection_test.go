@@ -56,8 +56,8 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 	require.NotEmpty(t, caps.RlsTables)
 	require.NotEmpty(t, caps.Scopes)
 
-	// Every RLS table claims fail-closed semantics — the load-bearing
-	// safety property of the BeforeAcquire pattern.
+	// Every RLS table claims fail-closed semantics: a request connection
+	// with no tenant set sees none of its rows.
 	for _, tbl := range caps.RlsTables {
 		require.True(t, tbl.FailClosed,
 			"table %q must declare fail_closed=true", tbl.Table)

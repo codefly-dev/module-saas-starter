@@ -190,7 +190,22 @@ func (s *Service) CreateInvitation(
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
 
-	return &gen.CreateInvitationResponse{Invitation: invitationToProto(inv)}, nil
+	// The link goes back to the administrator whether or not it was also
+	// emailed, so an invitation never depends on delivery. Without a trusted
+	// origin there is no link to give, and the invitation stands without one.
+	acceptURL, _ := s.invitationAcceptURL(ctx, plaintext)
+	return &gen.CreateInvitationResponse{Invitation: invitationToProto(inv), AcceptUrl: acceptURL}, nil
+}
+
+// invitationAcceptURL is the accept link for a plaintext invitation token, on
+// the operator-trusted public origin. It fails closed without one rather than
+// mint a link on an unverified host.
+func (s *Service) invitationAcceptURL(ctx context.Context, plaintext string) (string, error) {
+	appBase := s.publicBaseURL(ctx)
+	if appBase == "" {
+		return "", ErrPublicOriginUnavailable
+	}
+	return fmt.Sprintf("%s/invitations/accept?token=%s", appBase, plaintext), nil
 }
 
 func (s *Service) InspectInvitation(
@@ -689,15 +704,10 @@ func (s *Service) enqueueInvitationEmail(
 	if s.emailOutbox == nil {
 		return nil
 	}
-	appBase := s.publicBaseURL(ctx)
-	if appBase == "" {
-		return wool.Get(ctx).NewError("public application origin is unavailable")
+	acceptURL, err := s.invitationAcceptURL(ctx, plaintext)
+	if err != nil {
+		return err
 	}
-	acceptURL := fmt.Sprintf(
-		"%s/invitations/accept?token=%s",
-		appBase,
-		plaintext,
-	)
 	return s.emailOutbox.EnqueueTemplate(ctx, email.TemplateRequest{
 		DeliveryKey: deliveryKey,
 		Scope:       email.TenantScope(inv.OrgID),

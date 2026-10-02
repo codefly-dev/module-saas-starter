@@ -184,6 +184,8 @@ func streamRequest(t *testing.T, headers map[string]string) (*http.Request, cont
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, SubscriptionStreamPath, nil).WithContext(ctx)
 	req.Header.Set("X-Codefly-Gateway-Token", "test-gateway-token")
+	req.Header.Set("X-Credential-Kind", credentialKindSession)
+	req.Header.Set("X-Scopes", "")
 	req.Header.Set("X-User-Id", uuid.NewString())
 	req.Header.Set("X-Org-Id", uuid.NewString())
 	for name, value := range headers {

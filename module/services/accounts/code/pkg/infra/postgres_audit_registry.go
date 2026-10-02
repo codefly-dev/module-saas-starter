@@ -50,19 +50,26 @@ func (s *PostgresStore) SyncAuditEventTypes(ctx context.Context, defs []business
 	for _, d := range defs {
 		// The owner condition is the same refusal for a declaration admitted
 		// after the check above: the row is left alone and the sync fails.
+		// The projected visibility is the compiled catalog's: EffectiveVisibility
+		// reads it from the composed event catalog for a code-owned type. Writing
+		// it here is what lets one table answer "may this leave the platform" for
+		// the whole registry, instead of a reader having to know which half a
+		// name came from.
 		tag, err := q.Exec(ctx, `
-			INSERT INTO audit_event_types (name, namespace, version, category, owner, payload_schema, deprecated, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW())
+			INSERT INTO audit_event_types (name, namespace, version, category, owner, visibility, payload_schema, deprecated, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())
 			ON CONFLICT (name) DO UPDATE SET
 				namespace = EXCLUDED.namespace,
 				version = EXCLUDED.version,
 				category = EXCLUDED.category,
 				owner = EXCLUDED.owner,
+				visibility = EXCLUDED.visibility,
 				payload_schema = EXCLUDED.payload_schema,
 				deprecated = FALSE,
 				updated_at = NOW()
-			WHERE NOT starts_with(audit_event_types.owner, $7)`,
-			string(d.Type), d.Namespace, d.Version, string(d.Category), d.Owner, d.PayloadSchemaJSON(),
+			WHERE NOT starts_with(audit_event_types.owner, $8)`,
+			string(d.Type), d.Namespace, d.Version, string(d.Category), d.Owner,
+			d.EffectiveVisibility(), d.PayloadSchemaJSON(),
 			business.SolutionAuditOwnerPrefix)
 		if err != nil {
 			return err
@@ -100,8 +107,11 @@ func (s *PostgresStore) ListAuditEventTypes(ctx context.Context) ([]business.Aud
 
 // EnsureAuditPartitions provisions the current month plus the next `months`
 // (and the previous month, to absorb clock skew / late writes) via the
-// SECURITY DEFINER maintenance function. Called at startup and on each
-// retention tick.
+// SECURITY DEFINER maintenance function, then brings every partition's
+// row-level security back in step with the parent's. Retention keeps far more
+// months than this window provisions, and a partition queried by name is
+// checked against its own policies, so a policy change on audit_events must
+// reach the older partitions too. Called at startup and on each retention tick.
 func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) error {
 	q := s.getQueryExecutor(ctx)
 	base := time.Now().UTC()
@@ -111,6 +121,9 @@ func (s *PostgresStore) EnsureAuditPartitions(ctx context.Context, months int) e
 		if _, err := q.Exec(ctx, `SELECT audit_events_ensure_partition($1::date)`, first); err != nil {
 			return fmt.Errorf("ensure audit partition %s: %w", first.Format("2006-01"), err)
 		}
+	}
+	if _, err := q.Exec(ctx, `SELECT audit_events_secure_all_partitions()`); err != nil {
+		return fmt.Errorf("secure audit partitions: %w", err)
 	}
 	return nil
 }

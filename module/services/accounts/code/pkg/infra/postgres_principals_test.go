@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra/storetx"
 )
 
 // ============================================================================
@@ -47,7 +47,7 @@ func seedHumanPrincipal(t *testing.T, userID, displayName string) {
 	// registration), so this fixture inserts under the explicit System identity
 	// — the audited bypass — which satisfies the principals WITH CHECK.
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx,
 			`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
 			 VALUES ($1, 'human', $2, NULL, NULL, CURRENT_TIMESTAMP)
@@ -318,7 +318,7 @@ func TestPrincipal_ListPrincipals_PagesWithoutSkippingOrRepeating(t *testing.T) 
 		id := business.NewIDString()
 		identifier := fmt.Sprintf("test.codefly.dev/paging-%d-%d:1.0.0", time.Now().UnixNano(), i)
 		require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			tx := storetx.Tx(ctx)
 			_, err := tx.Exec(ctx,
 				`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
 				 VALUES ($1, 'agent', $2, $3, $4, $5)`,
@@ -367,7 +367,7 @@ func TestPrincipal_SchemaCHECK_HumanWithOrgID_Rejected(t *testing.T) {
 	orgID := seedOrg(t, owner)
 	id := business.NewIDString()
 	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx,
 			`INSERT INTO principals (id, kind, display_name, org_id) VALUES ($1, 'human', 'bad', $2)`,
 			id, orgID)
@@ -381,7 +381,7 @@ func TestPrincipal_SchemaCHECK_AgentWithoutAgentIdentifier_Rejected(t *testing.T
 	orgID := seedOrg(t, owner)
 	id := business.NewIDString()
 	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx,
 			`INSERT INTO principals (id, kind, display_name, org_id) VALUES ($1, 'agent', 'no-id', $2)`,
 			id, orgID)
@@ -395,7 +395,7 @@ func TestPrincipal_SchemaCHECK_NonAgentWithAgentIdentifier_Rejected(t *testing.T
 	orgID := seedOrg(t, owner)
 	id := business.NewIDString()
 	err := testStore.As(business.Identity{OrgID: orgID}).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, e := tx.Exec(ctx,
 			`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier)
 			 VALUES ($1, 'service', 'bad', $2, 'codefly.dev/x:0.0.1')`,
@@ -424,7 +424,7 @@ func TestPrincipal_Backfill_UsersHaveHumanPrincipals(t *testing.T) {
 	// at deploy. This test verifies the SQL shape produces a valid
 	// row that GetPrincipal can read.
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		tx := storetx.Tx(ctx)
 		_, err := tx.Exec(ctx, `
 			INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
 			SELECT u.uuid, 'human', u.primary_email, NULL, NULL, u.created_at

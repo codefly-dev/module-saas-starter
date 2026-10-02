@@ -195,7 +195,8 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 - **Default-deny coverage gates, ✅:** the audit's most-praised idea — structural
   CI gates over review discipline — is present. `module/tools/authz-coverage-gate.mjs`
   enforces RBAC + audit coverage and rejects permission-broadening without
-  approval; `module/tools/rls-migration-gate.mjs` enforces tenant RLS coverage;
+  approval; `module/tools/rls-migration-gate.mjs` enforces tenant RLS coverage
+  and a `search_path` ending in `pg_temp` on every `SECURITY DEFINER` function;
   the gateway header-lockstep invariant runs in CI. See §5.
 - **Delegation chain, ✅:** `actor_chain_journal` is append-only, hash-chained,
   with immutable UPDATE/DELETE triggers and revision-gated revocation — the
@@ -327,7 +328,7 @@ starter already follows.
 
 - **Structural gates shipped (✅):** `authz-coverage-gate.mjs` (RBAC + audit
   coverage, permission no-broadening), `rls-migration-gate.mjs` (tenant RLS
-  coverage), gateway header-lockstep, and clean-diff
+  coverage, `SECURITY DEFINER` search_path), gateway header-lockstep, and clean-diff
   checks on every generated catalog. Each gate has its own `--test` suite in CI
   (`.github/workflows/ci.yml`) — the audit's "test the guards themselves".
 - **Security-core tests (✅):** `pkg/business/rls_*_test.go` prove cross-tenant

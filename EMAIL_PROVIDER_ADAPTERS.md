@@ -25,11 +25,14 @@ The transport is already behind an interface. The relevant surface:
   `Validate()` boundary check.
 - **Implementations** — Resend HTTP (`pkg/email/resend.go`), `LogSender` (dev)
   and `FakeSender` (tests) in `pkg/email/fake.go`.
-- **Provider selection** — a hardcoded switch on `EMAIL_PROVIDER` (`log` |
-  `resend`) that **fails closed**: it refuses to boot if Resend secrets are
-  present while the provider is `log`, and refuses `resend` without both
-  `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET`
-  (`work.go:1208`, `configuredEmailSender`).
+- **Provider selection** — a name→factory registry (`pkg/email/registry.go`)
+  over `EMAIL_PROVIDER` (`disabled` | `log` | `resend`), read with every other
+  email setting from the Codefly `email` configuration group, never the process
+  environment (`work.go`, `configuredEmail`). It **fails closed**: outside the
+  local environment an unset provider and `log` refuse to boot, a deployed
+  `resend` must name `EMAIL_FROM`, Resend secrets present under `log` or
+  `disabled` refuse, and `resend` without both `RESEND_API_KEY` and
+  `RESEND_WEBHOOK_SECRET` refuses. `disabled` wires no outbox and no worker.
 - **Delivery is durable** — the business layer never calls `Send`. It renders a
   template and enqueues an `EmailDeliveryJob` (`Outbox.Enqueue`,
   `pkg/email/jobs.go:100`); the generic job worker's handler
@@ -39,7 +42,7 @@ The transport is already behind an interface. The relevant surface:
   verifies the signature, projects a privacy-minimized event into
   `email_delivery_events`, and advances `invitations.delivery_status`
   (`migrations/84_resend_delivery_events.up.sql`). The webhook route is
-  registered **only when `EMAIL_PROVIDER=resend`** (`work.go:451`).
+  registered **only when `EMAIL_PROVIDER=resend`** (`work.go`, beside `configuredEmail`).
 - **Notification policy** — channels (`in_app`, `email`) and categories
   (product/marketing/digest = opt-out; security/billing = mandatory) live in
   `pkg/business/notification_policy.go`. This layer decides *whether* to send,

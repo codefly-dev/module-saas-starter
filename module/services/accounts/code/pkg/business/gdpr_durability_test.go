@@ -11,9 +11,9 @@ import (
 	"accounts/pkg/business"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 	"accounts/pkg/jobs"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -563,7 +563,7 @@ func TestLapsedExportArtifactIsHiddenThenDeleted(t *testing.T) {
 // removeSubjectCredentials is what a deletion adapter does to the subject's own
 // authentication state before it reports completion.
 func removeSubjectCredentials(ctx context.Context, userID string) error {
-	tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+	tx := storetx.Tx(ctx)
 	for _, statement := range []string{
 		`DELETE FROM sessions WHERE user_id = $1`,
 		`DELETE FROM user_identities WHERE user_uuid = $1`,

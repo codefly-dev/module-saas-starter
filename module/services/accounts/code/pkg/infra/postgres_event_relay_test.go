@@ -13,9 +13,9 @@ import (
 
 	"accounts/pkg/events"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
@@ -45,7 +45,7 @@ func seedSubscriptionRow(t *testing.T, typePattern, queue string, delivery event
 	t.Helper()
 	var id string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		tx := storetx.Tx(ctx)
 		return tx.QueryRow(ctx, `
 			INSERT INTO public.event_subscriptions
 				(subscriber_principal_id, type_pattern, queue, delivery)

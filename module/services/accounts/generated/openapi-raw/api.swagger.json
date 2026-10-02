@@ -540,6 +540,17 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "eventTypes",
+            "description": "event_types is the set form of event_type: a record matches when its type is\nany one of them. Both may be sent; a record must then satisfy each, which\nfor a single-element set is the same answer as either alone.\n\nIt exists because a summary over a *family* of event types had no filter to\nopen. \"New users\" counts every type the registry marks as recording a\nperson joining — a set the registry owns and may extend — and a scalar\nevent_type cannot name a set, so the figure could be shown and never\nchecked. Picking one member instead would have shown a different number\nfrom the one clicked.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
@@ -668,6 +679,17 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "eventTypes",
+            "description": "The set form of event_type, matching QueryAuditLogRequest.event_types. A\ntile that summarises a family of event types reads its figure through this\nand drives its own click through the same value, so the number shown and\nthe list it opens cannot disagree.",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
           }
         ],
         "tags": [
@@ -6629,6 +6651,10 @@
         "marksUserJoined": {
           "type": "boolean",
           "description": "Whether this type records a person joining the tenant for the first time.\nThe registry owns the meaning so a client counting new users does not have\nto hardcode the names: a type renamed, retired or added here changes what\nclients count without any of them shipping a new list. `category` cannot\nstand in for it — a category groups events for facets, and not every\nidentity event is a person arriving."
+        },
+        "webhookEligible": {
+          "type": "boolean",
+          "description": "Whether an outbound webhook endpoint may subscribe to this type and ever\nreceive it. A type is eligible when it is declared with external\nvisibility: every platform type is, and a solution-declared or\nmodule-declared type is only when its producer declared it external AND\nthe operator marked its namespace externally deliverable. The registry\nowns the answer so a subscription form cannot offer a name that can never\nfire, which is the silent acceptance this flag exists to end."
         }
       }
     },
@@ -7022,6 +7048,10 @@
       "properties": {
         "invitation": {
           "$ref": "#/definitions/v1Invitation"
+        },
+        "acceptUrl": {
+          "type": "string",
+          "description": "The invitation's accept link, returned once to the administrator who\ncreated it so it can be shared without email. It is never stored in\nplaintext and never returned by any read."
         }
       }
     },
@@ -7033,6 +7063,10 @@
         },
         "slug": {
           "type": "string"
+        },
+        "ownerUserId": {
+          "type": "string",
+          "description": "The user who owns the new organization. Only a platform administrator may\nname someone else; empty means the caller."
         }
       }
     },
@@ -7399,6 +7433,13 @@
         },
         "eventType": {
           "type": "string"
+        },
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The set form of event_type, matching QueryAuditLogRequest.event_types, so a\ndownload carries the same filter as the list it was taken from."
         }
       }
     },
@@ -8734,6 +8775,10 @@
             "type": "object",
             "$ref": "#/definitions/v1Organization"
           }
+        },
+        "canCreate": {
+          "type": "boolean",
+          "description": "Whether the caller may create an organization under the deployment's\ncreation policy. The UI offers \"Create organization\" only when true."
         }
       }
     },
@@ -9299,6 +9344,11 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "archivedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Set when the organization was deleted. An archived organization is never\nlisted to its former members and admits no request; only the platform\nview shows it."
         }
       }
     },
@@ -9340,7 +9390,8 @@
         "action": {
           "type": "string"
         }
-      }
+      },
+      "description": "Permission is one resource:action grant: a role's RBAC grant, or one scope\nof an API key. The pair travels joined as `resource:action`, and a key's\nscopes as one comma-separated header, so neither half may hold `:`, `,`,\nwhitespace or a control character — `users` / `read,*:*` would read back\nas the root `*:*`. A lone `*` is the wildcard."
     },
     "v1PermissionInfo": {
       "type": "object",

@@ -188,6 +188,7 @@
         "/saas.accounts.v1.InvitationService/CreateInvitation",
         "/saas.accounts.v1.InvitationService/InspectInvitation",
         "/saas.accounts.v1.InvitationService/InspectInvitationById",
+        "/saas.accounts.v1.InvitationService/IssueInvitationLink",
         "/saas.accounts.v1.InvitationService/ListInvitations",
         "/saas.accounts.v1.InvitationService/ResendInvitation",
         "/saas.accounts.v1.InvitationService/RevokeInvitation"
@@ -269,13 +270,16 @@
       "procedures": [
         "/saas.accounts.v1.OrganizationService/AddMember",
         "/saas.accounts.v1.OrganizationService/CreateOrganization",
+        "/saas.accounts.v1.OrganizationService/DeleteOrganization",
         "/saas.accounts.v1.OrganizationService/GetOrgSettings",
         "/saas.accounts.v1.OrganizationService/GetOrganization",
         "/saas.accounts.v1.OrganizationService/GetOrganizationSettings",
+        "/saas.accounts.v1.OrganizationService/LeaveOrganization",
         "/saas.accounts.v1.OrganizationService/ListMembers",
         "/saas.accounts.v1.OrganizationService/ListOrganizations",
         "/saas.accounts.v1.OrganizationService/RemoveMember",
         "/saas.accounts.v1.OrganizationService/UpdateOrgSettings",
+        "/saas.accounts.v1.OrganizationService/UpdateOrganization",
         "/saas.accounts.v1.OrganizationService/UpdateOrganizationSettings"
       ]
     },
@@ -312,9 +316,11 @@
         "/saas.accounts.v1.PlatformAdminService/GetJob",
         "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
         "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
+        "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
         "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
         "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
         "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+        "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
         "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
         "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
         "/saas.accounts.v1.PlatformAdminService/ListJobs",
@@ -497,9 +503,7 @@
         "permissions": [
           "api_keys:write"
         ],
-        "scopes": [
-          "api_keys:write"
-        ],
+        "scopes": [],
         "resource_bindings": [
           {
             "request_field": "organization_id",
@@ -4668,7 +4672,7 @@
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
         "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
-        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
@@ -4778,6 +4782,61 @@
       },
       "policy_tier": "auth",
       "description": "Resolve an authenticated invitee's invitation summary.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InvitationService/IssueInvitationLink",
+      "service": "InvitationService",
+      "full_service": "saas.accounts.v1.InvitationService",
+      "method": "IssueInvitationLink",
+      "input_type": "saas.accounts.v1.IssueInvitationLinkRequest",
+      "output_type": "saas.accounts.v1.IssueInvitationLinkResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/invitations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "invitations:write"
+        ],
+        "scopes": [
+          "invitations:write"
+        ],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.invitation.link_issued"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Rotate a pending invitation's token and hand its accept link to the administrator, without email.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7233,6 +7292,57 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.OrganizationService/DeleteOrganization",
+      "service": "OrganizationService",
+      "full_service": "saas.accounts.v1.OrganizationService",
+      "method": "DeleteOrganization",
+      "input_type": "saas.accounts.v1.DeleteOrganizationRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/organizations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
+        "audit": {
+          "events": [
+            "saas.org.deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "mfa",
+      "description": "Archive an organization: revoke its credentials and grants, remove its members; owner or platform super admin.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.OrganizationService/GetOrgSettings",
       "service": "OrganizationService",
       "full_service": "saas.accounts.v1.OrganizationService",
@@ -7398,6 +7508,57 @@
       },
       "policy_tier": "org_member",
       "description": "Read generic typed org settings (composed JSONB blob).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.OrganizationService/LeaveOrganization",
+      "service": "OrganizationService",
+      "full_service": "saas.accounts.v1.OrganizationService",
+      "method": "LeaveOrganization",
+      "input_type": "saas.accounts.v1.LeaveOrganizationRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/organizations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.org.member_left"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_member",
+      "description": "Remove the caller's own membership; refused for the sole member and the last administrator.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7624,6 +7785,57 @@
       },
       "policy_tier": "org_admin",
       "description": "Update branding (logo, color, custom domain).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.OrganizationService/UpdateOrganization",
+      "service": "OrganizationService",
+      "full_service": "saas.accounts.v1.OrganizationService",
+      "method": "UpdateOrganization",
+      "input_type": "saas.accounts.v1.UpdateOrganizationRequest",
+      "output_type": "saas.accounts.v1.Organization",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/organizations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.org.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Rename an organization or change its slug.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8896,6 +9108,49 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetOrganizationRoster",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "GetOrganizationRoster",
+      "input_type": "saas.accounts.v1.GetOrganizationRosterRequest",
+      "output_type": "saas.accounts.v1.GetOrganizationRosterResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "List any organization's members for the platform view.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
       "service": "PlatformAdminService",
       "full_service": "saas.accounts.v1.PlatformAdminService",
@@ -9047,6 +9302,49 @@
       },
       "policy_tier": "platform_admin",
       "description": "Active sessions for a user.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListAllOrganizations",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "ListAllOrganizations",
+      "input_type": "saas.accounts.v1.ListAllOrganizationsRequest",
+      "output_type": "saas.accounts.v1.ListAllOrganizationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "List every organization on the platform, with member counts.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -13148,7 +13446,7 @@
       "permission": "api_keys:write",
       "resource": "api_keys",
       "action": "write",
-      "description": "Mint and revoke API keys.",
+      "description": "Mint and revoke API keys. As an API-key scope it only revokes: minting takes an interactive session.",
       "built_in_roles": [
         "admin (via *:*)"
       ],

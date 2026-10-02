@@ -21,6 +21,7 @@ export function useExportAuditLog() {
 		mutationFn: async ({
 			format,
 			eventType,
+			eventTypes,
 			category,
 			namespace,
 			from,
@@ -29,6 +30,8 @@ export function useExportAuditLog() {
 		}: {
 			format: "csv" | "json";
 			eventType?: string;
+			/** The set form, so a download carries the family a tile selected. */
+			eventTypes?: string[];
 			category?: string;
 			namespace?: string;
 			from?: Date;
@@ -38,6 +41,7 @@ export function useExportAuditLog() {
 			const resp = await svc.queryAuditLog({
 				orgId: orgId ?? "",
 				eventType: eventType ?? "",
+				eventTypes: eventTypes ?? [],
 				category: category ?? "",
 				namespace: namespace ?? "",
 				actorId: "",

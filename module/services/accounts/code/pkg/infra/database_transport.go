@@ -56,7 +56,7 @@ func parseDatabaseTransport(connection, profile string, tokenHook bool) (*pgxpoo
 		}
 	}
 	if profile == "local-identity-proxy" {
-		if u.Host != "" || q.Get("sslmode") != "disable" || q.Get("passfile") != "/dev/null" || tokenHook || os.Getenv("POSTGRES_TOKEN_FILE") != "" {
+		if u.Host != "" || q.Get("sslmode") != "disable" || q.Get("passfile") != "/dev/null" || tokenHook || os.Getenv(databaseTokenFileEnv) != "" || os.Getenv(databaseTokenFilesEnv) != "" {
 			return nil, invalid
 		}
 		if _, present := u.User.Password(); present {

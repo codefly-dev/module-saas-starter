@@ -12,12 +12,21 @@
 // convention, which is the wrong way round.
 //
 // This replays every up-migration in version order over a small in-memory model
-// (tables, forced-RLS state, policies, triggers) and, for every table carrying a
-// tenant column, asserts three invariants. See rlsGateErrors below. Failing
-// closed is appropriate — a silently unenforced isolation boundary is worse than
-// a build error.
+// (tables, forced-RLS state, policies, triggers, functions) and, for every table
+// carrying a tenant column, asserts three invariants. See rlsGateErrors below.
+// Partitions of a tenant table are held to them too: PostgreSQL applies a
+// partitioned table's policies only to a query that names the parent, so a
+// partition queried by name is checked against its own policies alone. A
+// partition declared in a migration is modelled as a table of its own, and a
+// function that creates partitions at runtime must secure each one it creates.
+// It also holds every SECURITY DEFINER function to a search_path that lists
+// pg_temp last (definerSearchPathErrors below): such a function runs with an
+// owner that bypasses the tenant policies, and without that a caller's temporary
+// table can stand in for a relation the function reads. Failing closed is
+// appropriate — a silently unenforced isolation boundary is worse than a build
+// error.
 //
-//   node tools/rls-migration-gate.mjs check   # fail on any unprotected tenant table
+//   node tools/rls-migration-gate.mjs check   # fail on any unprotected tenant boundary
 //
 // The module root is the parent of tools/, so this works identically in
 // canonical's `module/` and a consumer's `modules/<name>/`.
@@ -317,6 +326,14 @@ function expandDoBlock(stmt) {
   return expanded;
 }
 
+// The statements a migration runs, comments removed and every DO block we can
+// resolve expanded into the SQL it executes.
+function statementsOf(sql) {
+  return splitStatements(stripComments(sql)).flatMap((stmt) =>
+    /^\s*DO\b/i.test(stmt) ? expandDoBlock(stmt) : [stmt],
+  );
+}
+
 // Replay migration SQL into a model, then assert the tenant-isolation invariants.
 export function analyzeSql(sql) {
   const tables = new Map(); // name -> { tenantColumn }
@@ -324,11 +341,9 @@ export function analyzeSql(sql) {
   const policies = new Map(); // name -> [{ policy, verb, using, check }]
   const triggers = []; // { table, verbs, fn }
   const rejecting = new Map(); // fn -> bool (mutation always raises)
+  const functions = new Map(); // fn -> body of its latest definition
 
-  const clean = stripComments(sql);
-  const statements = splitStatements(clean).flatMap((stmt) =>
-    /^\s*DO\b/i.test(stmt) ? expandDoBlock(stmt) : [stmt],
-  );
+  const statements = statementsOf(sql);
 
   // Tenant isolation is owed where request traffic can reach: a table the request
   // role holds no privilege on is a platform or worker relation, whose boundary is
@@ -341,7 +356,12 @@ export function analyzeSql(sql) {
       if (/^ALL\s+TABLES/i.test(m[1])) everyTableReachable = true;
       else for (const name of m[1].split(",")) reachable.add(stripName(name.trim()));
     }
-    if ((m = /^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?[\w.]+"?)\s*\(/i.exec(stmt))) {
+    if ((m = /^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?[\w.]+"?)\s+PARTITION\s+OF\s+("?[\w.]+"?)/i.exec(stmt))) {
+      // A partition has the parent's columns, and request traffic reaches it
+      // wherever it reaches the parent.
+      const parent = stripName(m[2]);
+      tables.set(stripName(m[1]), { tenantColumn: tables.get(parent)?.tenantColumn ?? null, partitionOf: parent });
+    } else if ((m = /^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?[\w.]+"?)\s*\(/i.exec(stmt))) {
       const name = stripName(m[1]);
       const body = balanced(stmt, stmt.indexOf("(", m.index)).inner;
       let tenantColumn = null;
@@ -402,7 +422,10 @@ export function analyzeSql(sql) {
           stripName(m[1]),
           /RAISE\s+EXCEPTION/i.test(body[2]) && !/RETURN\s+(NEW|OLD)\b/i.test(body[2]),
         );
+        functions.set(stripName(m[1]), body[2]);
       }
+    } else if ((m = /^\s*DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?("?[\w.]+"?)/i.exec(stmt))) {
+      functions.delete(stripName(m[1]));
     } else if ((m = TRIGGER_RE.exec(stmt))) {
       const events = m[1].toUpperCase();
       triggers.push({
@@ -422,9 +445,9 @@ export function analyzeSql(sql) {
   }
 
   const errors = [];
-  for (const [name, { tenantColumn }] of tables) {
+  for (const [name, { tenantColumn, partitionOf }] of tables) {
     if (!tenantColumn) continue;
-    if (!everyTableReachable && !reachable.has(name)) continue;
+    if (!everyTableReachable && !reachable.has(name) && !reachable.has(partitionOf)) continue;
     const state = rls.get(name) ?? { enabled: false, forced: false };
     if (!state.enabled || !state.forced) {
       const missing = [!state.enabled && "ENABLE", !state.forced && "FORCE"].filter(Boolean);
@@ -462,6 +485,43 @@ export function analyzeSql(sql) {
       }
     }
   }
+
+  // A function that creates partitions of a tenant table at runtime must give
+  // each one row-level security of its own: ENABLE and FORCE it and create its
+  // policies, in its own body or in a function it calls. The model cannot see
+  // the partitions it creates, so this is where they are held to the rule.
+  const secures = (fn, seen = new Set()) => {
+    if (seen.has(fn)) return false;
+    seen.add(fn);
+    const body = functions.get(fn);
+    if (body === undefined) return false;
+    if (
+      /\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(body) &&
+      /\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(body) &&
+      /\bCREATE\s+POLICY\b/i.test(body)
+    ) {
+      return true;
+    }
+    for (const call of body.matchAll(/\b(?:public\.)?"?(\w+)"?\s*\(/gi)) {
+      const callee = call[1].toLowerCase();
+      if (functions.has(callee) && secures(callee, seen)) return true;
+    }
+    return false;
+  };
+  for (const [fn, body] of functions) {
+    const parents = new Set([...body.matchAll(/\bPARTITION\s+OF\s+("?[\w.]+"?)/gi)].map((p) => stripName(p[1])));
+    for (const parent of parents) {
+      const tenantColumn = tables.get(parent)?.tenantColumn;
+      if (!tenantColumn) continue;
+      if (!everyTableReachable && !reachable.has(parent)) continue;
+      if (!secures(fn)) {
+        errors.push(
+          `${parent}: ${fn}() creates partitions without ENABLE + FORCE ROW LEVEL SECURITY and policies of their own — ` +
+            `a partition queried by name is not covered by ${parent}'s policies`,
+        );
+      }
+    }
+  }
   return errors.sort();
 }
 
@@ -477,6 +537,249 @@ function exactRolePredicate(expr) {
   return text.replace(/\bCURRENT_USER\b/g, "current_user").replace(/'::name\b/g, "'").replace(/\s+/g, " ");
 }
 
+// ---------------------------------------------------------------------------
+// SECURITY DEFINER functions list pg_temp last in their search_path.
+//
+// A SECURITY DEFINER function runs with its owner's authority, which here is a
+// role that bypasses row-level security or owns the tables. PostgreSQL searches
+// the calling session's temporary schema for relation and type names FIRST
+// unless the search_path names pg_temp, so a function-level search_path of
+// `pg_catalog, public` still lets a caller that may create a temporary table
+// shadow a relation the function names unqualified — and the function reads the
+// caller's table with the owner's authority. Listing pg_temp last is the fix the
+// PostgreSQL documentation gives for exactly this. The rule is held to each
+// function's EFFECTIVE setting once every up-migration has run, so a later
+// CREATE OR REPLACE, ALTER FUNCTION … SET / RESET search_path or
+// ALTER FUNCTION … SECURITY DEFINER counts.
+
+// Multi-word type names, which would otherwise read as `<argname> <type>`.
+const MULTIWORD_TYPE =
+  /^(?:double\s+precision|(?:character|char)\s+varying|national\s+(?:character|char)(?:\s+varying)?|bit\s+varying|(?:timestamp|time)\s+with(?:out)?\s+time\s+zone|interval(?:\s+(?:year|month|day|hour|minute|second|to))*)(?:\s*\[\s*\d*\s*\])*$/i;
+
+const TYPE_ALIASES = new Map([
+  ["int", "integer"], ["int4", "integer"], ["int8", "bigint"], ["int2", "smallint"],
+  ["bool", "boolean"], ["float8", "double precision"], ["float4", "real"], ["decimal", "numeric"],
+  ["varchar", "character varying"], ["char varying", "character varying"], ["char", "character"],
+  ["timestamptz", "timestamp with time zone"], ["timestamp", "timestamp without time zone"],
+  ["timetz", "time with time zone"], ["time", "time without time zone"],
+]);
+
+// One argument's type, spelled the way PostgreSQL identifies it: no argument
+// name, mode, default or type modifier, and the canonical name of an alias.
+function argumentType(raw, kind) {
+  let text = raw.trim();
+  const defaulted = /\s(?:DEFAULT\b|=)/i.exec(text);
+  if (defaulted) text = text.slice(0, defaulted.index).trim();
+  const mode = /^(IN|OUT|INOUT|VARIADIC)\s+/i.exec(text);
+  // A function's OUT arguments are not part of its identity.
+  if (mode?.[1].toUpperCase() === "OUT" && kind === "FUNCTION") return null;
+  if (mode) text = text.slice(mode[0].length);
+  // Type modifiers are never part of an identity, and never part of a name.
+  text = text.replace(/\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\)/g, "");
+  if (!MULTIWORD_TYPE.test(text)) {
+    const named = /^("(?:[^"]|"")+"|[a-z_]\w*)\s+(\S[\s\S]*)$/i.exec(text);
+    if (named) text = named[2];
+  }
+  let type = text
+    .toLowerCase()
+    .replace(/"/g, "")
+    .replace(/^(?:pg_catalog|public)\./, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*\[\s*\d*\s*\]/g, "[]")
+    .trim();
+  const array = /(\[\])+$/.exec(type)?.[0] ?? "";
+  const base = type.slice(0, type.length - array.length);
+  type = (TYPE_ALIASES.get(base) ?? base) + array;
+  return type;
+}
+
+function argumentTypes(args, kind) {
+  if (!args.trim()) return [];
+  return splitTopLevel(args, ",")
+    .map((arg) => argumentType(arg, kind))
+    .filter((type) => type !== null);
+}
+
+// The schemas a `SET search_path {TO | =} …` value names, in order, starting at
+// `text`. Returns { elements, end }, or { reset } for `DEFAULT`.
+function searchPathValue(text) {
+  const elements = [];
+  let i = 0;
+  for (;;) {
+    while (/\s/.test(text[i] ?? "")) i++;
+    if (text[i] === "'") {
+      const end = endOfString(text, i);
+      if (end < 0) break;
+      elements.push(text.slice(i + 1, end).replace(/''/g, "'"));
+      i = end + 1;
+    } else if (text[i] === '"') {
+      const end = text.indexOf('"', i + 1);
+      if (end < 0) break;
+      elements.push(text.slice(i + 1, end));
+      i = end + 1;
+    } else {
+      const word = /^[\w$]+/.exec(text.slice(i));
+      if (!word) break;
+      if (!elements.length && /^DEFAULT$/i.test(word[0])) return { reset: true, end: i + word[0].length };
+      elements.push(word[0].toLowerCase());
+      i += word[0].length;
+    }
+    const comma = /^\s*,/.exec(text.slice(i));
+    if (!comma) break;
+    i += comma[0].length;
+  }
+  return { elements, end: i };
+}
+
+// The search_path and SECURITY actions in a routine's attribute text, in the
+// order they appear: CREATE FUNCTION's clauses and ALTER FUNCTION's actions are
+// both read this way.
+function routineActions(text) {
+  const actions = [];
+  const re = /\b(?:(?:EXTERNAL\s+)?SECURITY\s+(DEFINER|INVOKER)\b|SET\s+search_path\s+FROM\s+CURRENT\b|SET\s+search_path\s*(?:TO\b|=)|RESET\s+(?:search_path|ALL)\b)/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m[1]) actions.push({ definer: m[1].toUpperCase() === "DEFINER" });
+    else if (/FROM\s+CURRENT/i.test(m[0])) actions.push({ path: "from current" });
+    else if (/^RESET/i.test(m[0])) actions.push({ path: null });
+    else {
+      const value = searchPathValue(text.slice(m.index + m[0].length));
+      actions.push({ path: value.reset ? null : value.elements });
+      re.lastIndex = m.index + m[0].length + value.end;
+    }
+  }
+  return actions;
+}
+
+// A routine's attribute clauses with its body removed, so a body that mentions
+// SECURITY DEFINER or SET search_path in a string or a comment is not read as
+// one of its own clauses.
+function withoutBody(text) {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const tag = text[i] === "$" ? /^\$\w*\$/.exec(text.slice(i)) : null;
+    if (tag) {
+      const end = text.indexOf(tag[0], i + tag[0].length);
+      i = end < 0 ? text.length : end + tag[0].length - 1;
+      out += " ";
+      continue;
+    }
+    const body = /^AS\s*'/i.exec(text.slice(i));
+    if (body && (i === 0 || /\W/.test(text[i - 1]))) {
+      let end = endOfString(text, i + body[0].length - 1);
+      // `AS 'obj_file', 'link_symbol'` for a C function.
+      const link = end < 0 ? null : /^\s*,\s*'/.exec(text.slice(end + 1));
+      if (link) end = endOfString(text, end + link[0].length);
+      i = end < 0 ? text.length : end;
+      out += " ";
+      continue;
+    }
+    // A SQL-standard body (BEGIN ATOMIC … END) is the rest of the statement.
+    if (/^BEGIN\s+ATOMIC\b/i.test(text.slice(i)) && (i === 0 || /\W/.test(text[i - 1]))) break;
+    out += text[i];
+  }
+  return out;
+}
+
+const describePath = (path) =>
+  path === null ? "is not set" :
+  path === "from current" ? "is taken FROM CURRENT, which no migration can show" :
+  `is ${path.map((s) => (s === "" ? "''" : s)).join(", ")}`;
+
+// Unquoted names are folded to lower case when they are read, and a quoted
+// "PG_TEMP" names some other schema, so the comparison is exact.
+const pinsTempLast = (path) =>
+  Array.isArray(path) && path.at(-1) === "pg_temp" && !path.slice(0, -1).includes("pg_temp");
+
+// Replay migration SQL's routine definitions and changes, then report every
+// SECURITY DEFINER function or procedure whose search_path does not end in
+// pg_temp.
+const ROUTINE_NAME = String.raw`((?:"(?:[^"]|"")+"|\w+)(?:\.(?:"(?:[^"]|"")+"|\w+))?)`;
+
+export function definerSearchPathErrors(sql) {
+  const routines = new Map(); // "name(types)" -> { name, types, definer, path }
+  const errors = [];
+  const keyOf = (name, types) => `${name}(${types.join(",")})`;
+
+  // The routines an ALTER or DROP names. Without an argument list the name must
+  // be unique, as PostgreSQL requires. With one, a spelling this gate does not
+  // normalise can still name the only routine of that name and arity: the
+  // database resolved it when the migration ran.
+  const resolve = (name, types) => {
+    const candidates = [...routines.entries()].filter(([, r]) => r.name === name);
+    if (types === null) return candidates.length === 1 ? [candidates[0][0]] : [];
+    const exact = candidates.filter(([key]) => key === keyOf(name, types));
+    if (exact.length) return exact.map(([key]) => key);
+    const sameArity = candidates.filter(([, r]) => r.types.length === types.length);
+    return sameArity.length === 1 ? [sameArity[0][0]] : [];
+  };
+
+  for (const stmt of statementsOf(sql)) {
+    let m;
+    if ((m = new RegExp(String.raw`^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\s+${ROUTINE_NAME}\s*\(`, "i").exec(stmt))) {
+      const kind = m[1].toUpperCase();
+      const name = stripName(m[2]);
+      const { inner, end } = balanced(stmt, m.index + m[0].length - 1);
+      const types = argumentTypes(inner, kind);
+      // CREATE OR REPLACE replaces every attribute: a clause it leaves out is
+      // reset to the default, not kept from the definition it replaces.
+      const routine = { name, types, definer: false, path: null };
+      for (const action of routineActions(withoutBody(stmt.slice(end)))) Object.assign(routine, action);
+      routines.set(keyOf(name, types), routine);
+    } else if ((m = new RegExp(String.raw`^\s*ALTER\s+(FUNCTION|PROCEDURE|ROUTINE)\s+${ROUTINE_NAME}\s*`, "i").exec(stmt))) {
+      const kind = m[1].toUpperCase() === "PROCEDURE" ? "PROCEDURE" : "FUNCTION";
+      const name = stripName(m[2]);
+      let rest = stmt.slice(m.index + m[0].length);
+      let types = null;
+      if (rest.startsWith("(")) {
+        const { inner, end } = balanced(rest, 0);
+        types = argumentTypes(inner, kind);
+        rest = rest.slice(end);
+      }
+      const targets = resolve(name, types);
+      const rename = /^\s*RENAME\s+TO\s+("(?:[^"]|"")+"|\w+)/i.exec(rest);
+      if (rename) {
+        for (const key of targets) {
+          const routine = routines.get(key);
+          routines.delete(key);
+          routine.name = stripName(rename[1]);
+          routines.set(keyOf(routine.name, routine.types), routine);
+        }
+        continue;
+      }
+      const actions = routineActions(rest);
+      if (!targets.length) {
+        // Nothing modelled to weaken, unless the ALTER is what makes it a definer.
+        if (actions.some((a) => a.definer)) {
+          errors.push(
+            `${name}: ALTER ${m[1].toUpperCase()} makes a routine SECURITY DEFINER that the gate cannot resolve ` +
+              "to one definition in the migrations, so its search_path cannot be checked",
+          );
+        }
+        continue;
+      }
+      for (const key of targets) for (const action of actions) Object.assign(routines.get(key), action);
+    } else if ((m = /^\s*DROP\s+(FUNCTION|PROCEDURE|ROUTINE)\s+(?:IF\s+EXISTS\s+)?([\s\S]*?)\s*(?:\b(?:CASCADE|RESTRICT)\b\s*)?$/i.exec(stmt))) {
+      const kind = m[1].toUpperCase() === "PROCEDURE" ? "PROCEDURE" : "FUNCTION";
+      for (const target of splitTopLevel(m[2], ",")) {
+        const named = new RegExp(String.raw`^\s*${ROUTINE_NAME}\s*(\(([\s\S]*)\))?\s*$`).exec(target);
+        if (!named) continue;
+        const types = named[2] === undefined ? null : argumentTypes(named[3], kind);
+        for (const key of resolve(stripName(named[1]), types)) routines.delete(key);
+      }
+    }
+  }
+
+  for (const { name, types, definer, path } of routines.values()) {
+    if (!definer || pinsTempLast(path)) continue;
+    errors.push(
+      `${name}(${types.join(", ")}): SECURITY DEFINER, but its search_path ${describePath(path)} — ` +
+        "list pg_temp last, or a caller's temporary relations are searched before the schemas it names",
+    );
+  }
+  return errors.sort();
+}
+
 export function rlsGateErrors(moduleRoot = MODULE_ROOT) {
   const migrationRoot = join(moduleRoot, "services", "store", "migrations");
   if (!existsSync(migrationRoot)) return [];
@@ -490,22 +793,27 @@ export function rlsGateErrors(moduleRoot = MODULE_ROOT) {
   const combined = files
     .map((f) => readFileSync(join(migrationRoot, f.name), "utf8"))
     .join("\n;\n");
-  return analyzeSql(combined);
+  return [...analyzeSql(combined), ...definerSearchPathErrors(combined)];
 }
 
 function check() {
   const errors = rlsGateErrors();
   if (errors.length) {
-    console.error("rls-migration-gate: tenant-scoped tables are not fully protected:");
+    console.error("rls-migration-gate: the store migrations leave a tenant boundary unprotected:");
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
       `\nFAIL: ${errors.length} unprotected tenant boundary check(s). Every tenant-scoped ` +
-        "table must FORCE row level security, keep append-only-guarded verbs reachable by a " +
-        "policy, and scope every policy predicate to the tenant setting.",
+        "table, and every partition of one, must FORCE row level security, keep " +
+        "append-only-guarded verbs reachable by a policy, and scope every policy predicate " +
+        "to the tenant setting; every SECURITY DEFINER function must list pg_temp last in " +
+        "its search_path.",
     );
     process.exit(1);
   }
-  console.log("✓ every tenant-scoped table forces RLS with tenant-scoped, verb-complete policies.");
+  console.log(
+    "✓ every tenant-scoped table forces RLS with tenant-scoped, verb-complete policies, " +
+      "and every SECURITY DEFINER function lists pg_temp last.",
+  );
 }
 
 if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {

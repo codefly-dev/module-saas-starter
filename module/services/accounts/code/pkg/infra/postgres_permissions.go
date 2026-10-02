@@ -9,6 +9,8 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/internal/txbind"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -52,11 +54,12 @@ func (s *PostgresStore) CreateRole(ctx context.Context, role *gen.Role) error {
 		return nil
 	}
 
-	if _, hasTx := ctx.Value("tx").(pgx.Tx); hasTx {
+	if storetx.Tx(ctx) != nil {
 		return exec(ctx)
 	}
 	return pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck
+		// A fresh request connection carries no request scope.
+		ctx = txbind.BindRequest(ctx, tx, "", "")
 		return exec(ctx)
 	})
 }
@@ -579,8 +582,9 @@ func (s *PostgresStore) ResolveIdentity(ctx context.Context, provider string, pr
 	// matter for data correctness.
 	//
 	// Role membership is the explicit capability: app_tenant cannot mint it by
-	// setting a custom session variable.
-	tx, err := s.pool.Begin(ctx)
+	// setting a custom session variable, and only the control-plane pool's login
+	// holds it.
+	tx, err := s.controlPlane.Begin(ctx)
 	if err != nil {
 		return nil, w.Wrapf(err, "begin tx for resolve")
 	}

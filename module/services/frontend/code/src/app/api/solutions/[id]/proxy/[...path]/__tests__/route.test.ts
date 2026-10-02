@@ -661,6 +661,16 @@ describe("solution proxy passthrough", () => {
 		// A client/auth 4xx is a warning, never an error-level log line.
 		expect(warn).toHaveBeenCalledTimes(1);
 		expect(error).not.toHaveBeenCalled();
+		// The line has to name the call. A refusal logged as the solution id and
+		// a status and nothing else is indistinguishable between an expired token
+		// on a poll and a procedure this deployment never routed anywhere — which
+		// is exactly the confusion a run of these lines caused on a cell, where
+		// every other hop logged nothing at all.
+		const line = String(warn.mock.calls[0]?.[0]);
+		expect(line).toContain("path=records");
+		expect(line).toContain("method=GET");
+		expect(line).toContain("status=401");
+		expect(line).toContain("solution=audit");
 		warn.mockRestore();
 		error.mockRestore();
 	});

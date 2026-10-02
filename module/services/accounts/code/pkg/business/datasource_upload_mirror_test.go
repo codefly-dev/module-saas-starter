@@ -178,6 +178,9 @@ func TestRunDatasourceSync_UploadFailedOrTruncatedListingNeverMirrors(t *testing
 		fake.listErr = errors.New("AccessDenied")
 		svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
 		source := newUploadSource(t, svc)
+		// Connecting enqueues the source's first sync request; this subtest counts
+		// everything on the producer, so that one is taken out of the way first.
+		takeConnectSync(t, producer, source)
 		if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
 			t.Fatal("a failed listing reported success")
 		}

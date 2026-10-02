@@ -357,6 +357,13 @@ content even if a template changes. Built-in billing templates use the
 server-owned subscription-management URL and do not route users to a pricing
 page.
 
+A deployment that sends no email says so with `EMAIL_PROVIDER=disabled` in the
+`email` configuration group: no outbox and no worker are wired, every request
+path treats the missing outbox as "no delivery", and an invitation's accept
+link is returned to the administrator who created it (and re-issued by
+`IssueInvitationLink`) instead. Outside the local environment an unset
+provider and the `log` sink are refused at boot (#973).
+
 Invitation creation and its tenant-scoped email job share the same organization
 transaction. Magic-link token insertion and its global email job share the
 same audited pre-authentication control-plane transaction. A failure to enqueue

@@ -240,8 +240,13 @@ behind the [Transport port](#transport-port).
   the rows in the same transaction, and deleting it cascades them away. The relay
   confines delivery to the subscription's own organization, because a type
   pattern says nothing about ownership and the relay resolves subscriptions with
-  RLS bypassed. Every audit event type is declared `external` and published beside
-  its audit record, which is what an endpoint subscribes to.
+  RLS bypassed. Every **code-owned** audit event type is declared `external` and
+  published beside its audit record, which is what an endpoint subscribes to. A
+  type a solution or a composed module declares at runtime is not in the composed
+  catalog at all — compose never saw it — so it carries its visibility on its own
+  `audit_event_types` row, `tenant` unless its producer declared `external` and
+  the operator granted the namespace external delivery. The emitter and the relay
+  both resolve eligibility over the two halves together, never one of them.
 
 ## Transport port
 

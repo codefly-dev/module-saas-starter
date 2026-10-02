@@ -14,9 +14,11 @@ import { useState } from "react";
 
 import {
 	Button,
+	DelayedLoading,
 	Field,
 	Input,
 	Pagination,
+	Progress,
 	SegmentedControl,
 	Table,
 	TableBody,
@@ -210,5 +212,93 @@ export const TableEmpty = {
 				<TableEmptyState colSpan={2}>No members yet</TableEmptyState>
 			</TableBody>
 		</Table>
+	),
+};
+
+/**
+ * Every tone of the bar on one canvas. The tones exist so a stalled or failed
+ * phase is distinguishable without reading its label, which is only checkable
+ * with them side by side.
+ */
+export const ProgressTones = {
+	render: () => (
+		<div className="flex flex-col gap-4">
+			{(["neutral", "success", "warning", "danger"] as const).map((tone) => (
+				<Progress
+					key={tone}
+					value={60}
+					tone={tone}
+					label={`${tone} progress`}
+					valueText={`${tone} at 60%`}
+				/>
+			))}
+		</div>
+	),
+};
+
+/** The stepped form: a phase ladder rather than a smooth fill. */
+export const ProgressSteps = {
+	render: () => (
+		<div className="flex flex-col gap-4">
+			{[0, 25, 50, 75, 100].map((value) => (
+				<Progress
+					key={value}
+					value={value}
+					steps={4}
+					label={`Phase ${value}%`}
+					valueText={`Step ${value / 25} of 4`}
+				/>
+			))}
+		</div>
+	),
+};
+
+/**
+ * The rule made visible: press the button and watch. A fast wait shows nothing
+ * at all; a slow one shows the indicator and holds it long enough to read.
+ * Side by side is the only way to see that the fast case is genuinely silent
+ * rather than merely brief.
+ */
+function DelayedLoadingDemo({
+	waitMs,
+	title,
+}: {
+	waitMs: number;
+	title: string;
+}) {
+	const [active, setActive] = useState(false);
+	return (
+		<div className="flex items-center gap-3">
+			<Button
+				type="button"
+				variant="outline"
+				onClick={() => {
+					setActive(true);
+					setTimeout(() => setActive(false), waitMs);
+				}}
+			>
+				{title}
+			</Button>
+			<DelayedLoading active={active} label={`${title} in progress`} />
+		</div>
+	);
+}
+
+export const DelayedLoadingTimings = {
+	render: () => (
+		<div className="flex flex-col gap-4">
+			<DelayedLoadingDemo
+				waitMs={120}
+				title="Fast wait (120ms) — shows nothing"
+			/>
+			<DelayedLoadingDemo
+				waitMs={220}
+				title="Just past the delay (220ms) — still holds"
+			/>
+			<DelayedLoadingDemo
+				waitMs={1500}
+				title="Slow wait (1.5s) — shows and holds"
+			/>
+		</div>
 	),
 };

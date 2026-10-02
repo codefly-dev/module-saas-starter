@@ -277,14 +277,15 @@ their next owning change.
 
 | Feature                      | Status | Notes                                                                  |
 |------------------------------|--------|------------------------------------------------------------------------|
-| Organizations                | ✅    | Create / get / list / update / delete                                  |
-| Members + roles              | ✅    | owner / admin / member (built-in roles)                                |
+| Organizations                | ✅    | Create (gated by `ORGANIZATION_CREATION`) / get / list / rename and change slug / delete (archive: credentials and grants revoked, members removed, history kept) |
+| Members + roles              | ✅    | owner / admin / member (built-in roles); role changed inline from the members table |
 | Teams within orgs            | ✅    | Create / list members; team admins                                     |
-| Invitations                  | 🟡    | Hashed seven-day credential, member/admin roles, email/auth handoff, acceptance, resend cooldown, revoke, and queued delivery state; provider delivery projection and scheduled reminders are not included |
+| Invitations                  | 🟡    | Hashed seven-day credential, member/admin roles, email/auth handoff, acceptance, resend cooldown, revoke, queued delivery state, and an accept link handed to the administrator (`CreateInvitation`, `IssueInvitationLink`) so an invitation never depends on email; provider delivery projection and scheduled reminders are not included |
 | Org branding                 | 🟡    | Logo + name stored; update RPC missing                                 |
 | Transfer ownership           | ❌    | No explicit RPC; only role reassignment                                |
-| Leave org                    | ❌    | Member must be removed by admin                                        |
-| Org switcher (multi-org user)| ✅    | Generated `SwitchOrganization` exchange; signed session context drives one global FE selector and all tenant-scoped queries |
+| Leave org                    | ✅    | `LeaveOrganization`; the sole member and the last administrator of a shared organization are refused |
+| Platform organization view   | ✅    | `/admin/platform/organizations`: every organization, its roster, create for a named owner, edit, delete |
+| Org switcher (multi-org user)| ✅    | Generated `SwitchOrganization` exchange; signed session context drives the switcher in the product sidebar and all tenant-scoped queries |
 | Org-scoped subdomain         | ❌    | All routing is `app.example.com/admin/...` not `<org>.example.com`     |
 
 ### Acquisition, onboarding & activation
@@ -637,14 +638,12 @@ Environment variables consumed by the api:
 |--------------------------------|-------------------------------------------------------------|
 | `POSTGRES_URL`                 | DB connection (codefly auto-injects)                        |
 | `VAULT_ADDR`, `VAULT_TOKEN`    | Signing-key storage; falls back to ephemeral key in dev     |
-| Codefly `application` configuration | Canonical product origin, email sender, and optional one-time bootstrap admin email |
+| Codefly `application` configuration | Canonical product origin, `ORGANIZATION_CREATION` (`open` default, `platform_admin`, `disabled`), and optional one-time bootstrap admin email |
 | Codefly `identity` configuration | Required provider adapter, browser endpoints, client credentials, token validation, and exact redirect allowlist; see `LOCAL_DOGFOODING.md` |
 | `BILLING_PROVIDER`             | Explicit `disabled` (default) or `stripe` adapter            |
 | `STRIPE_API_KEY`               | Required in Stripe mode; test/live scope is operator-owned   |
 | `STRIPE_WEBHOOK_SECRET`        | Required in Stripe mode; exact-body webhook verification     |
-| `EMAIL_PROVIDER`               | Explicit `log` (default) or `resend` adapter                 |
-| `RESEND_API_KEY`               | Required in Resend mode                                      |
-| `RESEND_WEBHOOK_SECRET`        | Required in Resend mode; Svix verification and replay defense |
+| Codefly `email` configuration  | `EMAIL_PROVIDER` (`resend`, `disabled`, or `log` — the log sink only in the `local` environment, and the default only there; outside it an unset provider refuses to boot), `EMAIL_FROM` (required for a deployed `resend`), `RESEND_API_BASE`; secrets `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` (both required in Resend mode). Read only through the group, never the process environment |
 | `ACQUISITION_MODE`             | `open_signup` (default), `invite_only`, `approval_required`, or `closed` |
 | `WAITLIST_EMAIL_VERIFICATION`  | Require a time-limited verification email before waitlist approval |
 | `SLACK_WEBHOOK_URL`            | Internal alerts (optional)                                  |

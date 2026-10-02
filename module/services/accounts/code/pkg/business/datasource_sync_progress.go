@@ -296,19 +296,33 @@ func DatasourceSyncFailureReasonForCode(code string) DatasourceSyncFailureReason
 	return DatasourceSyncFailureOther
 }
 
-// startFirstGitHubSync enqueues a new GitHub source's first sync the moment it
-// is connected, so its progress is visible from the first second instead of
-// waiting for the periodic reconcile (its first run is a full interval away).
-// It is a forced reconcile — the same job "Sync now" enqueues — so it reports as
-// a manual sync. The source is already committed: a failure to enqueue is
-// logged, and the periodic reconcile or "Sync now" still syncs it.
-func (s *Service) startFirstGitHubSync(ctx context.Context, source *DatasourceSource) {
+// startFirstSync enqueues a new source's first sync the moment it is connected,
+// so its progress is visible from the first second instead of waiting a whole
+// reconcile interval. For GitHub it is a forced reconcile — the same job "Sync
+// now" enqueues — so it reports as a manual sync; for a pull provider it is the
+// same sync request "Sync now" enqueues, for the same reason.
+//
+// It used to run for GitHub alone, which paired badly with a pull provider
+// having no schedule either: an api, crawler or object-storage source was
+// connected and then did nothing at all until a person pressed "Sync now". Now
+// that every provider has a schedule, running this for every provider is what
+// keeps "connected" from meaning "empty for a day".
+//
+// The source is already committed: a failure to enqueue is logged, and the
+// periodic reconcile or "Sync now" still syncs it.
+func (s *Service) startFirstSync(ctx context.Context, source *DatasourceSource) {
 	if s.datasourceJobs == nil {
 		return
 	}
-	if err := s.enqueueReconcile(ctx, source, reconcileModeForce); err != nil {
-		wool.Get(ctx).In("startFirstGitHubSync").Warn("enqueue first sync failed; the periodic reconcile will sync the source",
-			wool.Field("source", source.ID), wool.ErrField(err))
+	var err error
+	if source.Provider == DatasourceProviderGitHub {
+		err = s.enqueueReconcile(ctx, source, reconcileModeForce, NewIDString())
+	} else {
+		err = s.enqueueFirstPullSync(ctx, source)
+	}
+	if err != nil {
+		wool.Get(ctx).In("startFirstSync").Warn("enqueue first sync failed; the periodic reconcile will sync the source",
+			wool.Field("source", source.ID), wool.Field("provider", source.Provider), wool.ErrField(err))
 	}
 }
 

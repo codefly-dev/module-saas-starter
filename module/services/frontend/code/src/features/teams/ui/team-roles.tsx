@@ -11,6 +11,12 @@ import {
 import { useRoleAssignments, useRoles } from "@/features/roles/service/queries";
 import { SubjectKind } from "@/gen/saas/accounts/v1/common_pb";
 import {
+	mayKeepRetainedRows,
+	readOutcome,
+	readOutcomeMessage,
+	staleReadNotice,
+} from "@/shared/lib/read-outcome";
+import {
 	Badge,
 	Button,
 	Panel,
@@ -20,7 +26,9 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Spinner,
 	Stack,
+	useLoadingPhase,
 } from "@/shared/ui";
 
 // The roles a team carries reach every member of it, which is why they belong
@@ -36,11 +44,20 @@ export function TeamRoles({
 }) {
 	const [picked, setPicked] = useState("");
 	const { data: roles = [] } = useRoles(orgId);
-	const { data: assignments = [], isLoading } = useRoleAssignments(
-		orgId,
-		teamId,
-		SubjectKind.TEAM,
-	);
+	const {
+		data: assignments = [],
+		isLoading,
+		isError,
+		error,
+	} = useRoleAssignments(orgId, teamId, SubjectKind.TEAM);
+	const { indicator, quiet } = useLoadingPhase(isLoading);
+	const outcome = readOutcome(isError, error);
+	// A refused read takes precedence over badges already on screen: TanStack keeps
+	// the last successful answer when a refetch rejects, so testing `length === 0`
+	// first would leave a team's grants rendered after the read was refused. A
+	// transient failure keeps them, with a note that they may be out of date.
+	const withheld = !mayKeepRetainedRows(outcome);
+	const stale = staleReadNotice(outcome, "the roles this team carries");
 	const assignRole = useAssignRole();
 	const revokeRole = useRevokeRole();
 
@@ -107,56 +124,73 @@ export function TeamRoles({
 			}
 		>
 			<Panel>
-				{isLoading ? (
-					<span className="text-sm text-muted-foreground">Loading…</span>
-				) : assignments.length === 0 ? (
-					<span className="text-sm text-muted-foreground">
-						This team carries no roles.
+				{quiet ? null : indicator ? (
+					<Spinner label="Loading the roles this team carries" size="sm" />
+				) : withheld || assignments.length === 0 ? (
+					// Which of the two: no roles, or no permission to see them. An
+					// unread `isError` here rendered a denied read as "carries no roles",
+					// which on a permissions console is a wrong answer, not a blank one.
+					<span
+						className="text-sm text-muted-foreground"
+						{...(isError ? { role: "alert" as const } : {})}
+					>
+						{readOutcomeMessage(
+							outcome,
+							"the roles this team carries",
+							"This team carries no roles.",
+						)}
 					</span>
 				) : (
-					<Stack direction="row" gap={2} className="flex-wrap">
-						{assignments.map((assignment) => (
-							<Badge
-								key={assignment.id}
-								variant="secondary"
-								className="gap-1 font-mono text-xs"
-							>
-								<Link
-									href={`/admin/roles/${assignment.roleId}`}
-									className="hover:underline"
+					<Stack gap={2}>
+						{stale && (
+							<span role="status" className="text-sm text-muted-foreground">
+								{stale}
+							</span>
+						)}
+						<Stack direction="row" gap={2} className="flex-wrap">
+							{assignments.map((assignment) => (
+								<Badge
+									key={assignment.id}
+									variant="secondary"
+									className="gap-1 font-mono text-xs"
 								>
-									{roleNameById.get(assignment.roleId) ?? "Role unavailable"}
-									{assignment.scope ? ` in ${assignment.scope}` : ""}
-								</Link>
-								{canGrant && (
-									<button
-										type="button"
-										aria-label="Revoke"
-										disabled={revokeRole.isPending}
-										className="ml-1 hover:text-destructive disabled:opacity-50"
-										onClick={() =>
-											revokeRole.mutate(
-												{
-													subjectId: teamId,
-													roleId: assignment.roleId,
-													orgId,
-													scope: assignment.scope,
-												},
-												{
-													onSuccess: () => toast.success("Role revoked"),
-													onError: (error) =>
-														toast.error(
-															`Failed to revoke: ${(error as Error).message}`,
-														),
-												},
-											)
-										}
+									<Link
+										href={`/admin/roles/${assignment.roleId}`}
+										className="hover:underline"
 									>
-										<X className="h-3 w-3" />
-									</button>
-								)}
-							</Badge>
-						))}
+										{roleNameById.get(assignment.roleId) ?? "Role unavailable"}
+										{assignment.scope ? ` in ${assignment.scope}` : ""}
+									</Link>
+									{canGrant && (
+										<button
+											type="button"
+											aria-label="Revoke"
+											disabled={revokeRole.isPending}
+											className="ml-1 hover:text-destructive disabled:opacity-50"
+											onClick={() =>
+												revokeRole.mutate(
+													{
+														subjectId: teamId,
+														roleId: assignment.roleId,
+														orgId,
+														scope: assignment.scope,
+													},
+													{
+														onSuccess: () => toast.success("Role revoked"),
+														onError: (error) =>
+															toast.error(
+																`Failed to revoke: ${(error as Error).message}`,
+															),
+													},
+												)
+											}
+										>
+											<X className="h-3 w-3" />
+										</button>
+									)}
+								</Badge>
+							))}
+						</Stack>
 					</Stack>
 				)}
 			</Panel>
