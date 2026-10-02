@@ -46,13 +46,14 @@ type deploymentBindings struct {
 }
 
 type deploymentDeployJobBinding struct {
-	Name    string                   `yaml:"name"`
-	Service string                   `yaml:"service"`
-	Command string                   `yaml:"command"`
-	Catalog string                   `yaml:"catalog"`
-	Force   bool                     `yaml:"force,omitempty"`
-	Writes  deploymentDeployJobWrite `yaml:"writes"`
-	After   []string                 `yaml:"after,omitempty"`
+	Name               string                   `yaml:"name"`
+	Service            string                   `yaml:"service"`
+	Command            string                   `yaml:"command"`
+	Catalog            string                   `yaml:"catalog"`
+	Force              bool                     `yaml:"force,omitempty"`
+	Writes             deploymentDeployJobWrite `yaml:"writes"`
+	After              []string                 `yaml:"after,omitempty"`
+	ServiceEnvironment []string                 `yaml:"service_environment,omitempty"`
 }
 
 type deploymentDeployJobWrite struct {

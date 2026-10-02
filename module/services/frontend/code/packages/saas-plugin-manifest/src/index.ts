@@ -37,6 +37,7 @@ export type {
 	EventDeclaration,
 	EventFieldDeclaration,
 	EventFieldKind,
+	EventRetention,
 	Metric,
 	MetricAggregation,
 	MetricBucket,

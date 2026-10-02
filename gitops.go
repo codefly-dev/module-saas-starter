@@ -113,6 +113,11 @@ type bundleDeployJob struct {
 	Force   bool               `json:"force,omitempty"`
 	Writes  bundleDeployTarget `json:"writes"`
 	After   []string           `json:"after,omitempty"`
+	// ServiceEnvironment names environment variables the driver sets on the Job
+	// to the values the running service has in the same environment, so the
+	// step behaves as the service would — the import, for one, records its audit
+	// events wherever the service's AUDIT_SINK sends them.
+	ServiceEnvironment []string `json:"serviceEnvironment,omitempty"`
 }
 
 type bundleDeployTarget struct {
@@ -317,6 +322,9 @@ type topologyDeployJob struct {
 	Force   bool                    `yaml:"force,omitempty"`
 	Writes  topologyDeployJobTarget `yaml:"writes"`
 	After   []string                `yaml:"after,omitempty"`
+	// ServiceEnvironment names the running service's environment variables the
+	// Job receives with the service's own values (bundleDeployJob).
+	ServiceEnvironment []string `yaml:"service_environment,omitempty"`
 }
 
 type topologyDeployJobTarget struct {
@@ -453,7 +461,8 @@ func planDeployJobs(topology deploymentTopology, plan environmentPlan) []bundleD
 				Endpoint: job.Writes.Endpoint,
 				Port:     endpoint.Port,
 			},
-			After: append([]string(nil), job.After...),
+			After:              append([]string(nil), job.After...),
+			ServiceEnvironment: append([]string(nil), job.ServiceEnvironment...),
 		})
 	}
 	if len(jobs) == 0 {
@@ -1833,9 +1842,23 @@ func validateDeployJobs(moduleDir string, topology deploymentTopology, services 
 				return fmt.Errorf("deployment topology deploy Job %q runs after undeclared service %q", job.Name, after)
 			}
 		}
+		inherited := make(map[string]struct{}, len(job.ServiceEnvironment))
+		for _, name := range job.ServiceEnvironment {
+			if !environmentVariableName.MatchString(name) {
+				return fmt.Errorf("deployment topology deploy Job %q service_environment entry %q is not an environment variable name", job.Name, name)
+			}
+			if _, repeated := inherited[name]; repeated {
+				return fmt.Errorf("deployment topology deploy Job %q service_environment repeats %q", job.Name, name)
+			}
+			inherited[name] = struct{}{}
+		}
 	}
 	return nil
 }
+
+// environmentVariableName is the shape of a name a deploy Job may inherit from
+// its running service: upper-case letters, digits and underscores.
+var environmentVariableName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 func serviceDependsOn(service topologyService, dependency, endpoint string) bool {
 	for _, declared := range service.Dependencies {

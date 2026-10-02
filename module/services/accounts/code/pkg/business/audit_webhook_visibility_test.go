@@ -76,6 +76,7 @@ func declaredType(namespace, visibility string) *DeclaredAuditEventType {
 		Namespace:  namespace,
 		SolutionID: namespace,
 		Visibility: visibility,
+		Retention:  RetentionContent,
 		Fields:     []PayloadField{{Name: "count", Kind: FieldInt}},
 	}
 }

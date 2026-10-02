@@ -656,9 +656,9 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `AUDIT_SINK`                   | `postgres` (default), `both` (tee to `AUDIT_EXTERNAL_URL`, optional `AUDIT_EXTERNAL_TOKEN`), or `bigquery` (swap the audit store of record, ADR 0009); `external` is refused |
 | `AUDIT_BIGQUERY_PROJECT`, `AUDIT_BIGQUERY_DATASET` | Required under `bigquery`: the store of record. The dataset must exist; the `audit_events` and `audit_event_details` tables are created if missing. Credentials are Application Default Credentials only |
-| `AUDIT_ARCHIVE_BUCKET`         | Required under `bigquery`: the GCS bucket, under a retention lock the deployment sets, that receives one object per relay batch |
+| `AUDIT_ARCHIVE_URL`            | Required under `bigquery`: the locked archive, as `gs://<bucket>` (the scheme picks the writer; GCS is the one built). The bucket carries a retention lock the deployment sets and receives one object per relay batch |
 | `AUDIT_DEPLOYMENT_ID`          | Required under `bigquery`: stamped on every record and the archive path |
-| `AUDIT_CONTENT_DETAIL_RETENTION_DAYS` | Required under `bigquery`: days a content-class event's full details are kept (the details table's partition expiration) |
+| `AUDIT_CONTENT_RETENTION_DAYS` | Required under `bigquery`: days a content-class event's full details are kept (the details table's partition expiration) |
 | `AUDIT_RELAY_BATCH_SIZE`, `AUDIT_RELAY_MAX_WAIT` | Optional under `bigquery`: events per delivery (default 500, at most 5000) and how long a partial batch waits (default `5s`) |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |

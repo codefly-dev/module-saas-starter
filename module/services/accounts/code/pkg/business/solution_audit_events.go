@@ -85,6 +85,13 @@ import (
 //     subscribed, and widening it would start sending outside the platform
 //     facts a tenant's endpoint never agreed to receive under that name. A
 //     producer that needs the other visibility declares another type.
+//   - A type may declare its retention class (ADR 0009): `content` (the
+//     default) or `security`, which keeps its full details for the compliance
+//     window once a warehouse is the audit store of record. Like `pii`, the
+//     class only ever grows: a re-declaration may raise `content` to
+//     `security`, and is refused if it would lower `security` to `content` —
+//     including by omitting the class — because that would shorten how long
+//     the type's evidence is kept without anyone deciding so.
 
 // SolutionAuditOwnerPrefix prefixes the owner of every solution-declared audit
 // event type, followed by the solution id — the same subject form the
@@ -178,7 +185,10 @@ type DeclaredAuditEventType struct {
 	// never empty on a validated declaration, so a zero value reaching a gate
 	// is a type that skipped validation rather than one that opted out.
 	Visibility string
-	Fields     []PayloadField
+	// Retention is RetentionContent or RetentionSecurity; never empty on a
+	// validated declaration.
+	Retention AuditRetentionClass
+	Fields    []PayloadField
 }
 
 // ExternallyDeliverable reports whether an event of this type may be delivered
@@ -250,10 +260,7 @@ func (d DeclaredAuditEventType) PayloadSchemaJSON() []byte {
 // listing uses. It is observational: a module emission is its own operation,
 // written on the emitter's own transaction.
 //
-// Its retention class is content. A declaration does not yet carry a class of
-// its own — the manifest, the module declaration RPC and the audit_event_types
-// row would each have to grow one — so every declared type is held to the
-// shorter details window, exactly as Durability is fixed above.
+// Its retention class is the one the producer declared, content by default.
 func (d DeclaredAuditEventType) Definition() AuditEventDefinition {
 	return AuditEventDefinition{
 		Type:        d.Type,
@@ -263,7 +270,7 @@ func (d DeclaredAuditEventType) Definition() AuditEventDefinition {
 		Owner:       SolutionAuditOwner(d.SolutionID),
 		Description: d.Description,
 		Durability:  DurabilityObservational,
-		Retention:   RetentionContent,
+		Retention:   d.Retention,
 		Visibility:  d.Visibility,
 		// The whole payload the type carries, the host-stamped solution
 		// included, so a declared type validates and redacts exactly as the
@@ -290,7 +297,7 @@ type storedDeclaredAuditSchema struct {
 // DeclaredAuditEventTypeFromSchema reads a declared type back from its stored
 // row. It inverts PayloadSchemaJSON exactly and refuses anything else, so a row
 // that was not written by admission never validates a payload.
-func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner, visibility string, schema []byte) (DeclaredAuditEventType, error) {
+func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner, visibility, retention string, schema []byte) (DeclaredAuditEventType, error) {
 	solutionID, ok := SolutionIDFromAuditOwner(owner)
 	if !ok {
 		return DeclaredAuditEventType{}, fmt.Errorf("audit: event type %q is not owned by a solution", eventType)
@@ -302,6 +309,11 @@ func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner, vis
 	if visibility != AuditVisibilityTenant && visibility != AuditVisibilityExternal {
 		return DeclaredAuditEventType{}, fmt.Errorf("audit: event type %q has unreadable visibility %q", eventType, visibility)
 	}
+	// The same for the retention class: the relay routes the type's details by
+	// it, and neither default is a scan's to pick.
+	if retention != string(RetentionContent) && retention != string(RetentionSecurity) {
+		return DeclaredAuditEventType{}, fmt.Errorf("audit: event type %q has unreadable retention class %q", eventType, retention)
+	}
 	var stored storedDeclaredAuditSchema
 	if err := json.Unmarshal(schema, &stored); err != nil {
 		return DeclaredAuditEventType{}, fmt.Errorf("audit: event type %q has an unreadable payload schema: %w", eventType, err)
@@ -312,6 +324,7 @@ func DeclaredAuditEventTypeFromSchema(eventType EventType, namespace, owner, vis
 		SolutionID:  solutionID,
 		Description: stored.Description,
 		Visibility:  visibility,
+		Retention:   AuditRetentionClass(retention),
 	}
 	for name, property := range stored.Properties {
 		if name == hostStampedAuditField {
@@ -358,6 +371,7 @@ type declaredEventJSON struct {
 	Type        string          `json:"type"`
 	Description string          `json:"description"`
 	Visibility  string          `json:"visibility"`
+	Retention   string          `json:"retention"`
 	Fields      json.RawMessage `json:"fields"`
 }
 
@@ -401,7 +415,7 @@ func ParseDeclaredAuditEventTypes(solutionID, manifest string) ([]DeclaredAuditE
 		}
 		inputs = append(inputs, AuditEventTypeDeclaration{
 			Type: event.Type, Description: event.Description,
-			Visibility: event.Visibility, Fields: fields,
+			Visibility: event.Visibility, Retention: event.Retention, Fields: fields,
 		})
 	}
 	return ValidateAuditEventTypeDeclarations(solutionID, inputs)
@@ -418,7 +432,9 @@ type AuditEventTypeDeclaration struct {
 	// The operator's grant is checked at admission, which is the only place
 	// the declaring principal's MODULE_PRINCIPALS entry is in hand.
 	Visibility string
-	Fields     []AuditFieldDeclaration
+	// Retention is "content", "security", or empty for the default (content).
+	Retention string
+	Fields    []AuditFieldDeclaration
 }
 
 // AuditFieldDeclaration is one declared payload field. Kind is a FieldKind's
@@ -464,6 +480,10 @@ func ValidateAuditEventTypeDeclarations(solutionID string, inputs []AuditEventTy
 		if err != nil {
 			return nil, err
 		}
+		retention, err := validateDeclaredAuditRetention(event.Type, event.Retention)
+		if err != nil {
+			return nil, err
+		}
 		fields, err := validateDeclaredAuditFields(event.Type, event.Fields)
 		if err != nil {
 			return nil, err
@@ -474,6 +494,7 @@ func ValidateAuditEventTypeDeclarations(solutionID string, inputs []AuditEventTy
 			SolutionID:  solutionID,
 			Description: strings.TrimSpace(event.Description),
 			Visibility:  visibility,
+			Retention:   retention,
 			Fields:      fields,
 		})
 	}
@@ -500,6 +521,22 @@ func validateDeclaredAuditVisibility(eventType, visibility string) (string, erro
 	default:
 		return "", declarationRejected("event type %q declares visibility %q; it must be %q or %q",
 			eventType, visibility, AuditVisibilityTenant, AuditVisibilityExternal)
+	}
+}
+
+// validateDeclaredAuditRetention resolves a declaration's retention class.
+// Empty is the default and means content; anything else the vocabulary does
+// not name is refused rather than defaulted, so a misspelt "Security" is a
+// legible refusal instead of a type whose evidence silently expires early.
+func validateDeclaredAuditRetention(eventType, retention string) (AuditRetentionClass, error) {
+	switch AuditRetentionClass(strings.TrimSpace(retention)) {
+	case "", RetentionContent:
+		return RetentionContent, nil
+	case RetentionSecurity:
+		return RetentionSecurity, nil
+	default:
+		return "", declarationRejected("event type %q declares retention %q; it must be %q or %q",
+			eventType, retention, RetentionContent, RetentionSecurity)
 	}
 }
 
@@ -633,7 +670,7 @@ func checkAdditiveAuditFieldChange(admitted, declared DeclaredAuditEventType) er
 }
 
 func sameDeclaredAuditEventType(a, b DeclaredAuditEventType) bool {
-	return bytes.Equal(a.PayloadSchemaJSON(), b.PayloadSchemaJSON())
+	return a.Retention == b.Retention && bytes.Equal(a.PayloadSchemaJSON(), b.PayloadSchemaJSON())
 }
 
 // admitDeclaredAuditEventTypes records a solution's declared types and
@@ -742,6 +779,14 @@ func (s *Service) admitDeclaredAuditEventTypesWritten(ctx context.Context, solut
 				return nil, nil, declarationRejected(
 					"event type %q is admitted with %q visibility and may not become %q; declare another type instead",
 					d.Type, admitted.Visibility, d.Visibility)
+			}
+			// The retention class only grows, like pii: lowering it would shorten
+			// how long this type's evidence is kept, and a re-declaration that
+			// simply omits it must not do that by default.
+			if admitted.Retention == RetentionSecurity && d.Retention != RetentionSecurity {
+				return nil, nil, declarationRejected(
+					"event type %q is admitted with %q retention and may not become %q",
+					d.Type, RetentionSecurity, d.Retention)
 			}
 			if err := checkAdditiveAuditFieldChange(*admitted, d); err != nil {
 				return nil, nil, err

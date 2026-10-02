@@ -598,6 +598,26 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			want: "references undeclared service",
 		},
 		{
+			name: "deploy job inheriting a malformed environment name",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				writeCatalogArtifact(t, moduleDir)
+				appendDeployJob(t, moduleDir, "store", "http")
+				replaceInDeployJobs(t, moduleDir, "      - AUDIT_SINK\n", "      - audit-sink\n")
+			},
+			want: "is not an environment variable name",
+		},
+		{
+			name: "deploy job inheriting an environment name twice",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				writeCatalogArtifact(t, moduleDir)
+				appendDeployJob(t, moduleDir, "store", "http")
+				replaceInDeployJobs(t, moduleDir, "      - AUDIT_SINK\n", "      - AUDIT_SINK\n      - AUDIT_SINK\n")
+			},
+			want: "service_environment repeats",
+		},
+		{
 			name: "deploy job to a migration-bearing target without ordering",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
@@ -808,6 +828,9 @@ func TestDeployJobWiresCatalogImport(t *testing.T) {
 		}
 		if !slices.Equal(job.After, []string{"store"}) {
 			t.Errorf("%s deploy job ordering = %v", env.Name, job.After)
+		}
+		if !slices.Equal(job.ServiceEnvironment, []string{"AUDIT_SINK"}) {
+			t.Errorf("%s deploy job service environment = %v, want the running service's AUDIT_SINK", env.Name, job.ServiceEnvironment)
 		}
 	}
 
@@ -2348,7 +2371,9 @@ func appendDeployJob(t *testing.T, moduleDir, writesService, writesEndpoint stri
 			"      service: "+writesService+"\n"+
 			"      endpoint: "+writesEndpoint+"\n"+
 			"    after:\n"+
-			"      - store\n")
+			"      - store\n"+
+			"    service_environment:\n"+
+			"      - AUDIT_SINK\n")
 }
 
 // serviceManifestFixture renders an authored service.codefly.yaml: one endpoint,

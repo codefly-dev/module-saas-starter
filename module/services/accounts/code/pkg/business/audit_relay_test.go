@@ -62,8 +62,9 @@ func (q *memQueue) remaining() []QueuedAuditEvent {
 	return slices.Clone(q.rows)
 }
 
-// memWarehouse is a fake store of record that keeps one record per event id,
-// as BigQuery's insert-id deduplication does for a prompt redelivery.
+// memWarehouse is a fake store of record. It keeps every append, duplicates
+// included, as BigQuery may after a redelivery; byID is what a read returns,
+// one record per event id.
 type memWarehouse struct {
 	mu       sync.Mutex
 	byID     map[string]AuditRecord
@@ -312,7 +313,7 @@ func TestAuditRelayDeletesOnlyAfterBothWritesAcknowledge(t *testing.T) {
 	})
 }
 
-func TestAuditRelayCrashBetweenWriteAndDeleteLosesAndDuplicatesNothingInTheStore(t *testing.T) {
+func TestAuditRelayCrashBetweenWriteAndDeleteLosesNothingAndReadsEachEventOnce(t *testing.T) {
 	f := newRelayFixture(t, 5, time.Second, nil)
 	ids := f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 5)...)
 	f.queue.crashes = 1
@@ -329,8 +330,8 @@ func TestAuditRelayCrashBetweenWriteAndDeleteLosesAndDuplicatesNothingInTheStore
 	require.Equal(t, 5, delivered)
 	require.Empty(t, f.queue.remaining())
 
-	require.Len(t, f.warehouse.appended, 10, "the batch was appended twice")
-	require.Len(t, f.warehouse.byID, 5, "and the store keeps one record per event id")
+	require.Len(t, f.warehouse.appended, 10, "the batch was appended twice: the store may hold an event more than once")
+	require.Len(t, f.warehouse.byID, 5, "and a read by event id returns each event once")
 	for _, record := range f.warehouse.appended {
 		require.Contains(t, ids, record.Entry.ID)
 	}

@@ -50,3 +50,36 @@ func TestModuleAuditDeclarations_CarryEveryFieldAttribute(t *testing.T) {
 		t.Errorf("withheld_turns = %#v", f)
 	}
 }
+
+// Every wire retention class but UNSPECIFIED maps to the registry's, and
+// UNSPECIFIED reads as the registry's default, content.
+func TestModuleAuditRetentions_CoverEveryWireClass(t *testing.T) {
+	for value, name := range gen.ModuleAuditEventRetention_name {
+		retention := gen.ModuleAuditEventRetention(value)
+		if retention == gen.ModuleAuditEventRetention_MODULE_AUDIT_EVENT_RETENTION_UNSPECIFIED {
+			continue
+		}
+		if _, ok := moduleAuditRetentions[retention]; !ok {
+			t.Errorf("%s has no registry class", name)
+		}
+	}
+	out := moduleAuditDeclarations([]*gen.ModuleAuditEventTypeDeclaration{
+		{Type: "acme.access.granted", Retention: gen.ModuleAuditEventRetention_MODULE_AUDIT_EVENT_RETENTION_SECURITY},
+		{Type: "acme.page.viewed", Retention: gen.ModuleAuditEventRetention_MODULE_AUDIT_EVENT_RETENTION_CONTENT},
+		{Type: "acme.page.opened"},
+	})
+	declared, err := business.ValidateAuditEventTypeDeclarations("acme", out)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	want := map[business.EventType]business.AuditRetentionClass{
+		"acme.access.granted": business.RetentionSecurity,
+		"acme.page.viewed":    business.RetentionContent,
+		"acme.page.opened":    business.RetentionContent,
+	}
+	for _, d := range declared {
+		if d.Retention != want[d.Type] {
+			t.Errorf("%s retention = %q, want %q", d.Type, d.Retention, want[d.Type])
+		}
+	}
+}

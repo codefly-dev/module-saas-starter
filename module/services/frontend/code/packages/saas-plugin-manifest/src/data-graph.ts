@@ -90,6 +90,16 @@ export interface EventFieldDeclaration {
 }
 
 /**
+ * How long the host keeps a declared type's full details once a warehouse is
+ * its audit store of record: `security` for the compliance window, `content`
+ * (the default) for the shorter content window. The class only ever grows: a
+ * type admitted as `security` stays so.
+ */
+export type EventRetention = "security" | "content";
+
+const EVENT_RETENTIONS: readonly EventRetention[] = ["security", "content"];
+
+/**
  * A named audit event a metric can filter on. `name` is graph-local (metrics
  * reference it); `type` is the audit event type it binds to, e.g.
  * `acme.item.created`.
@@ -108,6 +118,8 @@ export interface EventDeclaration {
 	name: string;
 	type: string;
 	description?: string;
+	/** The declared type's retention class; only with `fields`. */
+	retention?: EventRetention;
 	fields?: readonly EventFieldDeclaration[];
 }
 
@@ -356,7 +368,11 @@ function validateEventField(
 
 function validateEvent(value: unknown): asserts value is EventDeclaration {
 	assertGraph(isObject(value), "event must be an object");
-	assertExactKeys(value, ["name", "type", "description", "fields"], "event");
+	assertExactKeys(
+		value,
+		["name", "type", "description", "retention", "fields"],
+		"event",
+	);
 	assertLogicalId(value.name, "event name");
 	assertGraph(
 		typeof value.type === "string" && EVENT_TYPE.test(value.type),
@@ -366,8 +382,19 @@ function validateEvent(value: unknown): asserts value is EventDeclaration {
 		value.description,
 		`event '${String(value.name)}' description`,
 	);
-	if (value.fields === undefined) return;
+	if (value.fields === undefined) {
+		assertGraph(
+			value.retention === undefined,
+			`event '${String(value.name)}' declares a retention class but no fields; only a declared type has one`,
+		);
+		return;
+	}
 	const context = `event '${value.name}'`;
+	assertGraph(
+		value.retention === undefined ||
+			EVENT_RETENTIONS.includes(value.retention as EventRetention),
+		`${context} retention '${String(value.retention)}' must be one of ${EVENT_RETENTIONS.join(", ")}`,
+	);
 	const type = value.type as string;
 	assertGraph(
 		DECLARED_EVENT_TYPE.test(type) &&

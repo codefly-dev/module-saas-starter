@@ -59,9 +59,9 @@ func setBigQuerySwap(t *testing.T) {
 	t.Setenv("AUDIT_SINK", "bigquery")
 	t.Setenv("AUDIT_BIGQUERY_PROJECT", "example-project")
 	t.Setenv("AUDIT_BIGQUERY_DATASET", "audit")
-	t.Setenv("AUDIT_ARCHIVE_BUCKET", "example-audit-archive")
+	t.Setenv("AUDIT_ARCHIVE_URL", "gs://example-audit-archive")
 	t.Setenv("AUDIT_DEPLOYMENT_ID", "acme-prod-1")
-	t.Setenv("AUDIT_CONTENT_DETAIL_RETENTION_DAYS", "90")
+	t.Setenv("AUDIT_CONTENT_RETENTION_DAYS", "90")
 	t.Setenv("AUDIT_RELAY_BATCH_SIZE", "")
 	t.Setenv("AUDIT_RELAY_MAX_WAIT", "")
 }
@@ -76,12 +76,17 @@ func TestConfiguredAuditSinkBigQuery(t *testing.T) {
 	require.Equal(t, &bigQueryAuditSwap{
 		project:                "example-project",
 		dataset:                "audit",
-		archiveBucket:          "example-audit-archive",
+		archive:                auditArchiveLocation{scheme: "gs", bucket: "example-audit-archive"},
 		deploymentID:           "acme-prod-1",
 		contentDetailRetention: 90 * 24 * time.Hour,
 		batchSize:              business.DefaultAuditRelayBatchSize,
 		maxWait:                business.DefaultAuditRelayMaxWait,
 	}, sink.bigQuery)
+
+	t.Setenv("AUDIT_ARCHIVE_URL", "gs://example-audit-archive/")
+	sink, err = configuredAuditSink()
+	require.NoError(t, err, "a trailing slash still names only the bucket")
+	require.Equal(t, "example-audit-archive", sink.bigQuery.archive.bucket)
 
 	t.Setenv("AUDIT_RELAY_BATCH_SIZE", "200")
 	t.Setenv("AUDIT_RELAY_MAX_WAIT", "750ms")
@@ -94,31 +99,36 @@ func TestConfiguredAuditSinkBigQuery(t *testing.T) {
 func TestConfiguredAuditSinkBigQueryNamesEveryMissingSetting(t *testing.T) {
 	t.Setenv("AUDIT_SINK", "bigquery")
 	for _, name := range []string{
-		"AUDIT_BIGQUERY_PROJECT", "AUDIT_BIGQUERY_DATASET", "AUDIT_ARCHIVE_BUCKET",
-		"AUDIT_DEPLOYMENT_ID", "AUDIT_CONTENT_DETAIL_RETENTION_DAYS",
+		"AUDIT_BIGQUERY_PROJECT", "AUDIT_BIGQUERY_DATASET", "AUDIT_ARCHIVE_URL",
+		"AUDIT_DEPLOYMENT_ID", "AUDIT_CONTENT_RETENTION_DAYS",
 	} {
 		t.Setenv(name, "")
 	}
 	_, err := configuredAuditSink()
 	require.EqualError(t, err, "AUDIT_SINK=bigquery requires AUDIT_BIGQUERY_PROJECT, AUDIT_BIGQUERY_DATASET, "+
-		"AUDIT_ARCHIVE_BUCKET, AUDIT_DEPLOYMENT_ID, AUDIT_CONTENT_DETAIL_RETENTION_DAYS")
+		"AUDIT_ARCHIVE_URL, AUDIT_DEPLOYMENT_ID, AUDIT_CONTENT_RETENTION_DAYS")
 
 	setBigQuerySwap(t)
-	t.Setenv("AUDIT_ARCHIVE_BUCKET", "  ")
+	t.Setenv("AUDIT_ARCHIVE_URL", "  ")
 	_, err = configuredAuditSink()
-	require.EqualError(t, err, "AUDIT_SINK=bigquery requires AUDIT_ARCHIVE_BUCKET", "a blank value is a missing one")
+	require.EqualError(t, err, "AUDIT_SINK=bigquery requires AUDIT_ARCHIVE_URL", "a blank value is a missing one")
 }
 
 func TestConfiguredAuditSinkBigQueryRejectsInvalidSettings(t *testing.T) {
 	for _, tc := range []struct {
 		name, value, want string
 	}{
-		{"AUDIT_CONTENT_DETAIL_RETENTION_DAYS", "0", "AUDIT_CONTENT_DETAIL_RETENTION_DAYS"},
-		{"AUDIT_CONTENT_DETAIL_RETENTION_DAYS", "90d", "AUDIT_CONTENT_DETAIL_RETENTION_DAYS"},
-		{"AUDIT_CONTENT_DETAIL_RETENTION_DAYS", "-1", "AUDIT_CONTENT_DETAIL_RETENTION_DAYS"},
+		{"AUDIT_CONTENT_RETENTION_DAYS", "0", "AUDIT_CONTENT_RETENTION_DAYS"},
+		{"AUDIT_CONTENT_RETENTION_DAYS", "90d", "AUDIT_CONTENT_RETENTION_DAYS"},
+		{"AUDIT_CONTENT_RETENTION_DAYS", "-1", "AUDIT_CONTENT_RETENTION_DAYS"},
 		{"AUDIT_DEPLOYMENT_ID", "acme/prod", "AUDIT_DEPLOYMENT_ID"},
 		{"AUDIT_DEPLOYMENT_ID", "..", "AUDIT_DEPLOYMENT_ID"},
-		{"AUDIT_ARCHIVE_BUCKET", "gs://example-audit-archive", "AUDIT_ARCHIVE_BUCKET"},
+		{"AUDIT_ARCHIVE_URL", "example-audit-archive", "like gs://<bucket>"},
+		{"AUDIT_ARCHIVE_URL", "s3://example-audit-archive", `scheme "s3" has no archive writer`},
+		{"AUDIT_ARCHIVE_URL", "https://storage.example/archive", `scheme "https" has no archive writer`},
+		{"AUDIT_ARCHIVE_URL", "gs://example-audit-archive/audit", "names a bucket and nothing else"},
+		{"AUDIT_ARCHIVE_URL", "gs://user@example-audit-archive", "names a bucket and nothing else"},
+		{"AUDIT_ARCHIVE_URL", "gs://Example_Archive", "not a valid bucket name"},
 		{"AUDIT_RELAY_BATCH_SIZE", "0", "AUDIT_RELAY_BATCH_SIZE"},
 		{"AUDIT_RELAY_BATCH_SIZE", "5001", "AUDIT_RELAY_BATCH_SIZE"},
 		{"AUDIT_RELAY_MAX_WAIT", "5", "AUDIT_RELAY_MAX_WAIT"},

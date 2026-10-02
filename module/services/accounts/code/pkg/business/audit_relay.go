@@ -74,12 +74,12 @@ type AuditRelayConfig struct {
 // the archive (ADR 0009). Delivery is at-least-once: each batch is written to
 // the archive as one object, then appended to the store, and its queue rows are
 // deleted only after both writes were acknowledged. A crash anywhere before
-// that delete leaves the rows queued and the batch is delivered again — the
-// store keeps one record per event id, and the archive's readers deduplicate.
+// that delete leaves the rows queued and the batch is delivered again, so both
+// the store and the archive may hold an event twice; every read of either
+// returns each event once by event id.
 //
 // The archive is written first so that a failure between the two writes
-// leaves its duplicate in the archive, where readers already deduplicate, and
-// not in the store.
+// repeats the archive write, not the store's.
 //
 // While it runs, the relay remembers which writes the batch at the head of the
 // queue has already had acknowledged, so retrying it during an outage of one

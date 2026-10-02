@@ -230,8 +230,7 @@ func conforms(spec tableSpec, existing *bigquery.TableMetadata) error {
 
 // AppendAuditBatch implements business.AuditStoreWriter. Every record goes to
 // the events table; a content-class record's details go to the details table
-// instead of the events row. Each row's insert id is its event id, so a batch
-// delivered again is collapsed by BigQuery's streaming deduplication.
+// instead of the events row.
 func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
 	var events, details []bigquery.ValueSaver
 	for _, record := range batch.Records {
@@ -281,6 +280,13 @@ func (r Row) Save() (map[string]bigquery.Value, string, error) {
 }
 
 // EventRow is a record's events-table row.
+//
+// Its insert id is the event id. BigQuery collapses a repeated insert id only
+// within a short window, so a batch redelivered after a restart can write an
+// event twice; that is accepted (ADR 0009), not prevented here: every read of
+// these tables returns each event once by event id, as archive readers do.
+// Committed write streams with offsets would prevent it, at the cost of
+// stream state the relay would have to carry — machinery for no compliance gain.
 func EventRow(deploymentID string, record business.AuditRecord) Row {
 	entry := record.Entry
 	values := map[string]bigquery.Value{
@@ -308,7 +314,8 @@ func EventRow(deploymentID string, record business.AuditRecord) Row {
 	return Row{InsertID: entry.ID, Values: values}
 }
 
-// DetailRow is a content-class record's details-table row.
+// DetailRow is a content-class record's details-table row, keyed and
+// deduplicated on read exactly as EventRow is.
 func DetailRow(deploymentID string, record business.AuditRecord) Row {
 	entry := record.Entry
 	return Row{InsertID: entry.ID, Values: map[string]bigquery.Value{

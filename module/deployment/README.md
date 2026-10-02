@@ -51,7 +51,7 @@ It records no repository, revision, or Argo resource.
         {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
       ],
       "deployJobs": [
-        {"name": "role-catalog-import", "service": "accounts", "command": "role-catalog-import", "catalog": "deployment/generated/contributed-roles.json", "force": true, "writes": {"service": "store", "endpoint": "tcp", "port": 5432}, "after": ["store"]}
+        {"name": "role-catalog-import", "service": "accounts", "command": "role-catalog-import", "catalog": "deployment/generated/contributed-roles.json", "force": true, "writes": {"service": "store", "endpoint": "tcp", "port": 5432}, "after": ["store"], "serviceEnvironment": ["AUDIT_SINK"]}
       ]
     }
   ]
@@ -74,9 +74,14 @@ image but `writes` to a dependency it declares, consuming a generated artifact.
 The module ships `role-catalog-import`: it runs the `accounts` image but writes
 the composed built-in role catalog into the `store`, `after` the store's own
 migration. Each bundle `deployJobs` entry resolves the `catalog` artifact path,
-the target `service`/`endpoint`/`port`, the `force` flag, and the ordering; the
-driver mounts the catalog, connects the target, runs `command`, and fails the
-promotion if it exits non-zero. Re-running an unchanged catalog is an empty
+the target `service`/`endpoint`/`port`, the `force` flag, the ordering, and
+`serviceEnvironment` — the running service's environment variables the Job is
+given with that service's own values in the same environment; the
+driver mounts the catalog, connects the target, sets those variables, runs
+`command`, and fails the promotion if it exits non-zero. `role-catalog-import`
+inherits `AUDIT_SINK`: it records its audit events through the same emitter as
+`accounts`, so under a swap value (ADR 0009) they reach the queue the accounts
+relay delivers instead of `audit_events`. Re-running an unchanged catalog is an empty
 no-op, so the step is idempotent. Generation rejects a deploy Job whose catalog
 artifact is absent, whose write target is not a declared dependency of the
 running service, that references an undeclared service, or that writes to a

@@ -1,6 +1,7 @@
 package business
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func TestAuditCatalog_RetentionClassExamples(t *testing.T) {
 	}
 }
 
-func TestDeclaredAuditEventTypesAreContentRetained(t *testing.T) {
+func TestDeclaredAuditEventTypesThatSayNothingAreContent(t *testing.T) {
 	declared := declaredType("acme", AuditVisibilityExternal)
 	require.Equal(t, RetentionContent, declared.Definition().Retention)
 
@@ -70,4 +71,68 @@ func TestUnregisteredAuditEventTypesKeepTheirDetails(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resolved.Registered)
 	require.Equal(t, RetentionSecurity, resolved.RetentionClass())
+}
+
+// A solution's manifest and a module's declaration may each state a retention
+// class; saying nothing is content, and anything outside the vocabulary is
+// refused rather than defaulted.
+func TestDeclaredAuditEventTypesDeclareTheirRetentionClass(t *testing.T) {
+	declared, err := ParseDeclaredAuditEventTypes("acme", declaringManifest("acme",
+		`{"name":"granted","type":"acme.access.granted","retention":"security","fields":[]},`+
+			`{"name":"viewed","type":"acme.page.viewed","retention":"content","fields":[]},`+
+			`{"name":"opened","type":"acme.page.opened","fields":[]}`))
+	require.NoError(t, err)
+	classes := map[EventType]AuditRetentionClass{}
+	for _, d := range declared {
+		classes[d.Type] = d.Retention
+		require.Equal(t, d.Retention, d.Definition().Retention)
+	}
+	require.Equal(t, map[EventType]AuditRetentionClass{
+		"acme.access.granted": RetentionSecurity,
+		"acme.page.viewed":    RetentionContent,
+		"acme.page.opened":    RetentionContent,
+	}, classes)
+
+	for _, retention := range []string{"Security", "permanent", "compliance"} {
+		_, err := ParseDeclaredAuditEventTypes("acme", declaringManifest("acme",
+			`{"name":"granted","type":"acme.access.granted","retention":"`+retention+`","fields":[]}`))
+		require.ErrorIs(t, err, ErrSolutionAuditDeclarationRejected, retention)
+		require.ErrorContains(t, err, "retention", retention)
+	}
+
+	module, err := ValidateAuditEventTypeDeclarations("acme", []AuditEventTypeDeclaration{
+		{Type: "acme.access.granted", Retention: "security"},
+		{Type: "acme.page.viewed"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, RetentionSecurity, module[0].Retention)
+	require.Equal(t, RetentionContent, module[1].Retention)
+}
+
+// The class only grows, like pii: a re-declaration may raise content to
+// security, and may not lower security — not even by leaving the class out.
+func TestDeclaredAuditRetentionClassOnlyGrows(t *testing.T) {
+	store := newDeclaredAuditStore()
+	svc, _ := newModuleDeclaringService(t, store, moduleGrants("acme", "acme"))
+	caller := ModuleCaller{PrincipalID: ModulePrincipalID("acme")}
+	declare := func(retention string) error {
+		_, _, err := svc.ModuleDeclareAuditEventTypes(context.Background(), caller, "acme",
+			[]AuditEventTypeDeclaration{{Type: "acme.access.granted", Retention: retention}})
+		return err
+	}
+	stored := func() AuditRetentionClass { return store.rows["acme.access.granted"].declared.Retention }
+
+	require.NoError(t, declare(""))
+	require.Equal(t, RetentionContent, stored())
+
+	require.NoError(t, declare("security"), "raising the class is allowed")
+	require.Equal(t, RetentionSecurity, stored())
+
+	require.Error(t, declare("content"), "lowering it is refused")
+	require.Error(t, declare(""), "and so is lowering it by omission")
+	require.Equal(t, RetentionSecurity, stored())
+
+	puts := store.puts
+	require.NoError(t, declare("security"))
+	require.Equal(t, puts, store.puts, "re-declaring the admitted class writes nothing")
 }

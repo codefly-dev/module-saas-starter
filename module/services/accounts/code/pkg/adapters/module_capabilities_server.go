@@ -409,6 +409,15 @@ var moduleAuditVisibilities = map[gen.ModuleAuditEventVisibility]string{
 	gen.ModuleAuditEventVisibility_MODULE_AUDIT_EVENT_VISIBILITY_EXTERNAL: business.AuditVisibilityExternal,
 }
 
+// moduleAuditRetentions maps the wire retention class of a declared type to
+// the registry's. UNSPECIFIED has no entry and yields the empty string, which
+// the registry resolves to its default (content) — the reading a manifest
+// declaration that omits `retention` gets as well.
+var moduleAuditRetentions = map[gen.ModuleAuditEventRetention]string{
+	gen.ModuleAuditEventRetention_MODULE_AUDIT_EVENT_RETENTION_CONTENT:  string(business.RetentionContent),
+	gen.ModuleAuditEventRetention_MODULE_AUDIT_EVENT_RETENTION_SECURITY: string(business.RetentionSecurity),
+}
+
 // moduleAuditDeclarations converts the wire declarations to the registry's
 // declaration shape, the one a solution's manifest is decoded into as well.
 func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []business.AuditEventTypeDeclaration {
@@ -418,6 +427,7 @@ func moduleAuditDeclarations(types []*gen.ModuleAuditEventTypeDeclaration) []bus
 			Type:        t.GetType(),
 			Description: t.GetDescription(),
 			Visibility:  moduleAuditVisibilities[t.GetVisibility()],
+			Retention:   moduleAuditRetentions[t.GetRetention()],
 		}
 		for _, f := range t.GetFields() {
 			field := business.AuditFieldDeclaration{

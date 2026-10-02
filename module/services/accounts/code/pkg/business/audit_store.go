@@ -71,8 +71,10 @@ type AuditRecorder interface {
 type AuditStoreWriter interface {
 	// AppendAuditBatch appends one relay batch, in its order. It is
 	// at-least-once: a batch that failed, or whose queue rows were not deleted
-	// afterwards, is delivered again, so the store must key each record by its
-	// event id and keep one record per id.
+	// afterwards, is delivered again. The store keys every record by its event
+	// id and may hold an event more than once after a redelivery; every read of
+	// the store returns each event once by event id, exactly as every reader of
+	// the archive does.
 	AppendAuditBatch(ctx context.Context, batch AuditBatch) error
 }
 

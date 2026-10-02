@@ -7,6 +7,7 @@ import (
 	"accounts/pkg/infra"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -30,11 +31,11 @@ const (
 	// AUDIT_SINK=bigquery (ADR 0009). Credentials are Application Default
 	// Credentials only — on Kubernetes, the pod's workload identity — so there
 	// is deliberately no key-file or token setting.
-	envAuditBigQueryProject            = "AUDIT_BIGQUERY_PROJECT"
-	envAuditBigQueryDataset            = "AUDIT_BIGQUERY_DATASET"
-	envAuditArchiveBucket              = "AUDIT_ARCHIVE_BUCKET"
-	envAuditDeploymentID               = "AUDIT_DEPLOYMENT_ID"
-	envAuditContentDetailRetentionDays = "AUDIT_CONTENT_DETAIL_RETENTION_DAYS"
+	envAuditBigQueryProject      = "AUDIT_BIGQUERY_PROJECT"
+	envAuditBigQueryDataset      = "AUDIT_BIGQUERY_DATASET"
+	envAuditArchiveURL           = "AUDIT_ARCHIVE_URL"
+	envAuditDeploymentID         = "AUDIT_DEPLOYMENT_ID"
+	envAuditContentRetentionDays = "AUDIT_CONTENT_RETENTION_DAYS"
 	// Optional relay tuning.
 	envAuditRelayBatchSize = "AUDIT_RELAY_BATCH_SIZE"
 	envAuditRelayMaxWait   = "AUDIT_RELAY_MAX_WAIT"
@@ -89,11 +90,46 @@ func configuredExternalAuditSink() (business.ExternalAuditSink, error) {
 type bigQueryAuditSwap struct {
 	project                string
 	dataset                string
-	archiveBucket          string
+	archive                auditArchiveLocation
 	deploymentID           string
 	contentDetailRetention time.Duration
 	batchSize              int
 	maxWait                time.Duration
+}
+
+// auditArchiveLocation is a parsed AUDIT_ARCHIVE_URL. The scheme picks the
+// archive writer; gs (Google Cloud Storage) is the one built.
+type auditArchiveLocation struct {
+	scheme string
+	bucket string
+}
+
+// auditArchiveSchemeGCS is the AUDIT_ARCHIVE_URL scheme of a GCS bucket.
+const auditArchiveSchemeGCS = "gs"
+
+// gcsBucketNamePattern is GCS's bucket naming rule, loosely: lowercase
+// letters, digits, '-', '_' and '.', starting and ending alphanumeric.
+var gcsBucketNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
+
+// parseAuditArchiveURL reads AUDIT_ARCHIVE_URL: gs://<bucket>, nothing more.
+// Another scheme names an archive no writer exists for yet, which is refused
+// at startup rather than left to fail at the first delivery.
+func parseAuditArchiveURL(raw string) (auditArchiveLocation, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" {
+		return auditArchiveLocation{}, fmt.Errorf("%s must be a URL like gs://<bucket>; got %q", envAuditArchiveURL, raw)
+	}
+	if parsed.Scheme != auditArchiveSchemeGCS {
+		return auditArchiveLocation{}, fmt.Errorf("%s scheme %q has no archive writer; the supported scheme is %s:// (got %q)",
+			envAuditArchiveURL, parsed.Scheme, auditArchiveSchemeGCS, raw)
+	}
+	if parsed.User != nil || parsed.Port() != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return auditArchiveLocation{}, fmt.Errorf("%s names a bucket and nothing else, like gs://<bucket>; got %q", envAuditArchiveURL, raw)
+	}
+	if !gcsBucketNamePattern.MatchString(parsed.Host) {
+		return auditArchiveLocation{}, fmt.Errorf("%s bucket %q is not a valid bucket name", envAuditArchiveURL, parsed.Host)
+	}
+	return auditArchiveLocation{scheme: parsed.Scheme, bucket: parsed.Host}, nil
 }
 
 // auditDeploymentIDPattern keeps the deployment id usable as an archive path
@@ -104,21 +140,21 @@ var auditDeploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,
 // setting, reporting all the missing ones at once.
 func configuredBigQueryAuditSwap() (*bigQueryAuditSwap, error) {
 	swap := &bigQueryAuditSwap{
-		project:       strings.TrimSpace(os.Getenv(envAuditBigQueryProject)),
-		dataset:       strings.TrimSpace(os.Getenv(envAuditBigQueryDataset)),
-		archiveBucket: strings.TrimSpace(os.Getenv(envAuditArchiveBucket)),
-		deploymentID:  strings.TrimSpace(os.Getenv(envAuditDeploymentID)),
-		batchSize:     business.DefaultAuditRelayBatchSize,
-		maxWait:       business.DefaultAuditRelayMaxWait,
+		project:      strings.TrimSpace(os.Getenv(envAuditBigQueryProject)),
+		dataset:      strings.TrimSpace(os.Getenv(envAuditBigQueryDataset)),
+		deploymentID: strings.TrimSpace(os.Getenv(envAuditDeploymentID)),
+		batchSize:    business.DefaultAuditRelayBatchSize,
+		maxWait:      business.DefaultAuditRelayMaxWait,
 	}
-	retentionDays := strings.TrimSpace(os.Getenv(envAuditContentDetailRetentionDays))
+	archiveURL := strings.TrimSpace(os.Getenv(envAuditArchiveURL))
+	retentionDays := strings.TrimSpace(os.Getenv(envAuditContentRetentionDays))
 	var missing []string
 	for _, setting := range []struct{ name, value string }{
 		{envAuditBigQueryProject, swap.project},
 		{envAuditBigQueryDataset, swap.dataset},
-		{envAuditArchiveBucket, swap.archiveBucket},
+		{envAuditArchiveURL, archiveURL},
 		{envAuditDeploymentID, swap.deploymentID},
-		{envAuditContentDetailRetentionDays, retentionDays},
+		{envAuditContentRetentionDays, retentionDays},
 	} {
 		if setting.value == "" {
 			missing = append(missing, setting.name)
@@ -130,15 +166,15 @@ func configuredBigQueryAuditSwap() (*bigQueryAuditSwap, error) {
 
 	days, err := strconv.Atoi(retentionDays)
 	if err != nil || days < 1 {
-		return nil, fmt.Errorf("%s must be a whole number of days, at least 1; got %q", envAuditContentDetailRetentionDays, retentionDays)
+		return nil, fmt.Errorf("%s must be a whole number of days, at least 1; got %q", envAuditContentRetentionDays, retentionDays)
 	}
 	swap.contentDetailRetention = time.Duration(days) * 24 * time.Hour
 	if !auditDeploymentIDPattern.MatchString(swap.deploymentID) {
 		return nil, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 128, starting with a letter or digit); got %q",
 			envAuditDeploymentID, swap.deploymentID)
 	}
-	if strings.Contains(swap.archiveBucket, "/") {
-		return nil, fmt.Errorf("%s is a bucket name, not a URL or path; got %q", envAuditArchiveBucket, swap.archiveBucket)
+	if swap.archive, err = parseAuditArchiveURL(archiveURL); err != nil {
+		return nil, err
 	}
 	if raw := strings.TrimSpace(os.Getenv(envAuditRelayBatchSize)); raw != "" {
 		size, err := strconv.Atoi(raw)
@@ -192,12 +228,15 @@ func newBigQueryAuditRelay(ctx context.Context, types business.DeclaredAuditEven
 		return fail(err)
 	}
 
+	if swap.archive.scheme != auditArchiveSchemeGCS {
+		return fail(fmt.Errorf("audit archive: no writer for scheme %q", swap.archive.scheme))
+	}
 	storageClient, err := storage.NewClient(ctx)
 	if err != nil {
 		return fail(fmt.Errorf("audit archive: storage client: %w", err))
 	}
 	closers = append(closers, func() { _ = storageClient.Close() })
-	archive, err := gcsarchive.New(storageClient, swap.archiveBucket)
+	archive, err := gcsarchive.New(storageClient, swap.archive.bucket)
 	if err != nil {
 		return fail(err)
 	}
