@@ -2,6 +2,7 @@ package business
 
 import (
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 
@@ -115,34 +116,46 @@ func TestSolutionHostBindingStaleDocumentDoesNotBlockASibling(t *testing.T) {
 	}
 }
 
-// Two documents claiming one alias: neither is admitted. The host has no rule
-// that makes one of two simultaneous claims the winner, and picking the first
-// read would make what runs depend on the order a mount was walked in.
-func TestSolutionHostBindingTwoClaimantsOfOneAliasAreBothWithheld(t *testing.T) {
+// Two documents claiming one alias: exactly one is admitted, and which one does
+// not depend on the order the mount was walked in.
+//
+// This asserts core's rule, not a rule of this host's. An earlier version of this
+// host attributed collisions itself and withheld EVERY claimant, reasoning that it
+// had no rule making one of two simultaneous claims the winner. core v0.7.0 has
+// one — lowest binding ID, resolved one refusal at a time until the set is stable
+// — and it is the better answer: refusing both wedges two solutions where
+// admitting the deterministic winner keeps one serving. The host no longer owns
+// this policy, so the test pins core's.
+func TestSolutionHostBindingTwoClaimantsOfOneAliasYieldOneDeterministicWinner(t *testing.T) {
 	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate}
 	first := mustFixtureDocument(t, "valid")
 	first.Binding = "crm-eu-west-1-aa"
 	second := mustFixtureDocument(t, "valid")
 	second.Binding = "crm-eu-west-1-bb"
 
-	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{first, second})
+	forward := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{first, second})
+	reverse := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{second, first})
 
-	if len(admission.Accepted) != 0 {
-		t.Fatalf("accepted %v, want neither claimant", bindingsOf(admission.Accepted))
-	}
-	for _, binding := range []string{first.Binding, second.Binding} {
-		reason, withheld := admission.Withheld[binding]
-		if !withheld {
-			t.Fatalf("%s was neither admitted nor attributed a reason", binding)
+	for label, admission := range map[string]solutionHostBindingAdmission{"forward": forward, "reverse": reverse} {
+		if len(admission.Accepted) != 1 {
+			t.Fatalf("%s: accepted %v, want exactly one claimant", label, bindingsOf(admission.Accepted))
 		}
-		if !strings.Contains(reason, "crm") {
-			t.Fatalf("%s reason %q does not name the contested alias", binding, reason)
+		if got := admission.Accepted[0].Document.Binding; got != first.Binding {
+			t.Fatalf("%s: admitted %q, want the lowest binding ID %q", label, got, first.Binding)
+		}
+		reason, withheld := admission.Withheld[second.Binding]
+		if !withheld {
+			t.Fatalf("%s: the losing claimant was neither admitted nor attributed a reason", label)
+		}
+		if !strings.Contains(reason, composition.ErrCollision.Error()) {
+			t.Fatalf("%s: reason %q does not name the collision", label, reason)
 		}
 	}
 }
 
-// A collision must not take an unrelated binding down with it.
-func TestSolutionHostBindingCollisionWithholdsOnlyItsClaimants(t *testing.T) {
+// A collision must not take an unrelated binding down with it: the loser is
+// refused, the winner and every unrelated binding still apply.
+func TestSolutionHostBindingCollisionWithholdsOnlyTheLosingClaimant(t *testing.T) {
 	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate}
 	first := mustFixtureDocument(t, "valid")
 	first.Binding = "crm-eu-west-1-aa"
@@ -155,26 +168,38 @@ func TestSolutionHostBindingCollisionWithholdsOnlyItsClaimants(t *testing.T) {
 	admission := admitSolutionHostBindings(host,
 		[]*solutionhost.SolutionHostBinding{first, second, unrelated})
 
-	if len(admission.Accepted) != 1 || admission.Accepted[0].Document.Binding != unrelated.Binding {
-		t.Fatalf("accepted = %v, want only %q", bindingsOf(admission.Accepted), unrelated.Binding)
+	admitted := bindingsOf(admission.Accepted)
+	sort.Strings(admitted)
+	if len(admitted) != 2 || admitted[0] != first.Binding || admitted[1] != unrelated.Binding {
+		t.Fatalf("accepted = %v, want the winning claimant and the unrelated binding", admitted)
+	}
+	if _, withheld := admission.Withheld[second.Binding]; !withheld {
+		t.Fatal("the losing claimant must be withheld")
+	}
+	if len(admission.Withheld) != 1 {
+		t.Fatalf("withheld = %v, want only the losing claimant", admission.Withheld)
 	}
 }
 
-// One binding delivered twice in one pass is withheld, both copies, even when
-// they are byte-identical. core refuses a set that declares a binding twice, and
-// the host has no rule saying which of two mounts is authoritative.
-func TestSolutionHostBindingDeclaredTwiceInOnePassIsWithheld(t *testing.T) {
+// One binding delivered twice in one pass: the second occurrence is refused and
+// names both documents, so an operator can find the duplicate mount. The first
+// still applies — core resolves it rather than freezing the binding, and it
+// reports which two documents collided.
+func TestSolutionHostBindingDeclaredTwiceRefusesTheSecondOccurrence(t *testing.T) {
 	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate}
 	first := mustFixtureDocument(t, "valid")
 	second := mustFixtureDocument(t, "valid")
 
 	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{first, second})
 
-	if len(admission.Accepted) != 0 {
-		t.Fatalf("accepted %v, want nothing", bindingsOf(admission.Accepted))
+	if len(admission.Accepted) != 1 {
+		t.Fatalf("accepted %v, want exactly one of the two", bindingsOf(admission.Accepted))
 	}
-	reason := admission.Withheld[first.Binding]
-	if !strings.Contains(reason, "declared by 2") {
+	reason, withheld := admission.Withheld[first.Binding]
+	if !withheld {
+		t.Fatal("the duplicate must be attributed to its binding")
+	}
+	if !strings.Contains(reason, "declared twice") {
 		t.Fatalf("reason %q does not say the binding was delivered twice", reason)
 	}
 }

@@ -186,11 +186,14 @@ func (s *Service) applySolutionHostBinding(
 		if state, ok := record.AppliedState(); ok {
 			host.Applied = []solutionhost.Applied{state}
 		}
-		decisions, err := host.Admit(document)
+		admissions, err := host.Admit(document)
 		if err != nil {
+			// One document, so core's set-level error and this document's own
+			// refusal are the same thing; returning it is what leaves the
+			// running generation untouched.
 			return err
 		}
-		if decisions[0] == solutionhost.DecisionCurrent {
+		if admissions[0].Decision == solutionhost.DecisionCurrent {
 			// Another replica applied it, or this pass raced its own previous
 			// one. Nothing to do, and deliberately not an error.
 			return nil
