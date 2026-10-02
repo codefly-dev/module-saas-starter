@@ -56,6 +56,16 @@ Postgres transaction.
    default for every deployment that does not opt in. `both` — ADR 0006's tee —
    keeps its current behaviour, for compatibility. `external` stays refused.
 
+   A deployment that selects a swap value sets, beside `AUDIT_SINK`: the
+   warehouse (`AUDIT_BIGQUERY_PROJECT` and `AUDIT_BIGQUERY_DATASET` for
+   `bigquery`), `AUDIT_ARCHIVE_URL` — the locked archive as a URL whose scheme
+   picks the archive writer, `gs://<bucket>` for GCS, any scheme without a
+   writer refused at startup — `AUDIT_CONTENT_RETENTION_DAYS` (the details
+   window of item 5) and `AUDIT_DEPLOYMENT_ID`, stamped on every record. A
+   missing setting fails startup. Credentials are the platform's ambient
+   identity (on Kubernetes, the pod's workload identity), never a key in
+   configuration.
+
 2. **Postgres keeps only the transactional queue.** `EmitTx` still writes inside
    the caller's transaction (and `Emit` inside its own, for the observational
    types of ADR 0003's durability amendment), but what it writes is a row in a
@@ -74,8 +84,9 @@ Postgres transaction.
 
    A relay drains the queue:
    - in **batches**;
-   - **at-least-once, idempotent by event id** — a redelivered event leaves one
-     record in the warehouse;
+   - **at-least-once, keyed by event id** — a batch redelivered after a crash
+     may leave an event in the warehouse twice, as it may in the archive, and
+     every read returns each event once by event id (item 4);
    - **ordered per organization** (platform-level events form one more ordering
      key);
    - each batch is **appended to the warehouse and written as one object to the
@@ -108,12 +119,26 @@ Postgres transaction.
    Adapter-native row policies (BigQuery row-level access policies, ClickHouse
    row policies) are defence in depth, not the boundary.
 
-5. **Retention tiers.** Every registered event type — code-owned, or declared
-   by a solution or a composed module — declares a **retention class** in the
-   typed registry (ADR 0003):
+   Every read returns each event once by event id. The warehouse may hold an
+   event more than once after a redelivery (item 2): BigQuery collapses a
+   repeated streaming insert id only within a short window, and a relay that
+   restarts between its writes and its delete delivers the batch again. The
+   read half deduplicates exactly as every archive reader does (item 5), and
+   the per-event hash makes the copies provably identical.
+
+5. **Retention tiers.** Every registered event type has a **retention class**
+   in the typed registry (ADR 0003):
    - **security** — authentication, failed authentication, permission and role
      changes, admin actions, data exports, configuration changes;
    - **content** — everything else.
+
+   A code-owned type declares its class beside its durability, and cannot be
+   registered without one. A type declared by a solution (its manifest) or a
+   composed module (its declaration call) states its class in that
+   declaration; one that states none is **content**, and a value outside the
+   two is refused. A declared class only grows, as a `pii` mark does: a
+   re-declaration may raise `content` to `security` and is refused if it would
+   lower it, omission included.
 
    The retention class is its own field. `Category`'s `security` value names a
    narrower set and is not reused for it.
@@ -160,9 +185,9 @@ Postgres transaction.
    deleted and the append-only triggers stay as they are. From then on
    `audit_events` receives no new rows, and Postgres holds only the queue.
 
-8. **Conformance.** Every adapter passes one shared test suite: append
-   idempotency (a redelivered batch leaves one record per event id), batch
-   append, list and aggregate parity with the Postgres implementation over the
+8. **Conformance.** Every adapter passes one shared test suite: read
+   deduplication (after a batch is appended twice, every read returns each
+   event once by event id), batch append, list and aggregate parity with the Postgres implementation over the
    same fixture, refusal of a query without tenant scope, and retention-class
    routing (a content-class event's full details land only in the details table,
    and only its content-free form in the archive).
@@ -180,6 +205,7 @@ The queue between the transaction and the warehouse (item 2):
 | Queue rows in `audit_events`, with the no-delete trigger relaxed for them | Weakens the append-only guarantee on the table every `postgres` and `both` deployment keeps its history in, to serve a mode those deployments do not use. |
 | Fill the archive from the warehouse later, on a schedule | Opens a window in which the compliance copy lags the store of record, and adds a second job to watch. |
 | Conditional create-if-absent archive object names, so a retry cannot duplicate | Needs the same batch composition on every retry — more moving parts for no compliance gain. |
+| Committed write streams with offsets, so a redelivery cannot duplicate in the warehouse | Stream state the relay must carry across restarts and recover on every one — more machinery for no compliance gain, since every read already deduplicates by event id, as archive readers do. |
 
 Where the adapters live (item 3):
 
@@ -222,7 +248,9 @@ The sink shape itself:
   Under a swap value it becomes a warehouse query for the latest actor ids, then
   a join to display names in the service from Postgres — outside that snapshot.
 - `pkg/business/audit_registry.go` — `AuditEventDefinition` gains the retention
-  class, required the way `Durability` is.
+  class, required the way `Durability` is. A declared type's class comes from
+  its declaration — the manifest event, or the module declaration message —
+  and is stored on its `audit_event_types` row, `content` when it states none.
 - `pkg/business/retention.go` — partition drop keeps running for `audit_events`,
   and is also how the history migration (item 7) removes copied partitions.
   Under a swap value, tier expiry belongs to the warehouse (TTL or table
