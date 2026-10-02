@@ -45,3 +45,37 @@ type SolutionTarget struct {
 
 // Live reports whether this target is the one an installation may currently name.
 func (t *SolutionTarget) Live() bool { return t != nil && t.ClosedGeneration == nil }
+
+// SolutionGenerationDecision is one entry in the generation history: a generation
+// this host decided about, and what it decided (migration 19).
+//
+// It exists because nothing else can answer "what did this component move
+// through". The binding row holds one desired and one applied generation, and its
+// pending reason is the CURRENT refusal, overwritten every pass — so a superseded
+// refusal leaves no trace at all.
+type SolutionGenerationDecision struct {
+	BindingID string
+	// TargetID is the installable identity the decision applied into, empty for a
+	// refusal and for a tombstone of a binding that never applied.
+	TargetID   string
+	Generation uint64
+	Digest     string
+	// Decision is applied | current | refused | tombstoned. `current` is recorded
+	// deliberately: a re-read that changed nothing is still evidence the document
+	// was present and unchanged, which is what separates "delivery stopped" from
+	// "delivery kept saying the same thing".
+	Decision string
+	// Reason explains a refusal and is set for nothing else.
+	Reason           string
+	Release          string
+	RegistryRevision *int64
+	DecidedAt        time.Time
+}
+
+// Generation decisions, as recorded.
+const (
+	SolutionGenerationApplied    = "applied"
+	SolutionGenerationCurrent    = "current"
+	SolutionGenerationRefused    = "refused"
+	SolutionGenerationTombstoned = "tombstoned"
+)

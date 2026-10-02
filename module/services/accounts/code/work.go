@@ -1628,6 +1628,21 @@ func configuredSolutionHostBindingReconciler(
 	if coordinate == "" {
 		return nil, fmt.Errorf("SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_COORDINATE, so this host could not refuse a binding delivered to another host")
 	}
+	// The ownership domains this host accepts delivery from. Required with the
+	// mount for the same reason the coordinate is: Core refuses a document from an
+	// unstated domain, and without the declaration any delivery could claim an
+	// unseen binding ID under a domain of its own choosing and own it from then on
+	// — the applied record cannot bound a binding's FIRST generation, because
+	// there is nothing yet to compare against.
+	var domains []string
+	for _, domain := range strings.Split(workspaceEnv("federation", "SOLUTION_HOST_OWNERSHIP_DOMAINS"), ",") {
+		if domain = strings.TrimSpace(domain); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_OWNERSHIP_DOMAINS, so this host would accept a binding claimed under any domain a writer chose")
+	}
 	interval := business.SolutionHostBindingReconcileInterval
 	if raw := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDING_INTERVAL")); raw != "" {
 		parsed, err := time.ParseDuration(raw)
@@ -1637,7 +1652,7 @@ func configuredSolutionHostBindingReconciler(
 		interval = parsed
 	}
 	return business.NewSolutionHostBindingReconciler(
-		service, infra.NewSolutionHostBindingMount(mount), coordinate, interval)
+		service, infra.NewSolutionHostBindingMount(mount), coordinate, domains, interval)
 }
 
 func workspaceEnv(configuration, key string) string {

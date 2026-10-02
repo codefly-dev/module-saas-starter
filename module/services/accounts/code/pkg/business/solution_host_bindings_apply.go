@@ -84,7 +84,21 @@ func (s *Service) recordSolutionHostBindingDesired(
 			applyPendingReason(record, withheldReason, now)
 		}
 		record.UpdatedAt = now
-		return s.store.SaveSolutionHostBinding(ctx, record)
+		if err := s.store.SaveSolutionHostBinding(ctx, record); err != nil {
+			return err
+		}
+		if withheldReason == "" {
+			return nil
+		}
+		return s.store.RecordSolutionGenerationDecision(ctx, &SolutionGenerationDecision{
+			BindingID:  document.Binding,
+			Generation: document.Generation,
+			Digest:     digest,
+			Decision:   SolutionGenerationRefused,
+			Reason:     withheldReason,
+			Release:    document.Release.Identity(),
+			DecidedAt:  now,
+		})
 	})
 }
 
@@ -111,7 +125,22 @@ func (s *Service) recordSolutionHostBindingRefusal(
 		record.PendingReason = reason
 		record.PendingSince = pendingSince(record, now)
 		record.UpdatedAt = now
-		return s.store.SaveSolutionHostBinding(ctx, record)
+		if err := s.store.SaveSolutionHostBinding(ctx, record); err != nil {
+			return err
+		}
+		// The trail keeps a superseded refusal, which the binding row cannot:
+		// pending_reason is overwritten by the next pass's answer.
+		if record.Desired != nil {
+			return s.store.RecordSolutionGenerationDecision(ctx, &SolutionGenerationDecision{
+				BindingID:  bindingID,
+				Generation: record.Desired.Generation,
+				Digest:     record.Desired.Digest,
+				Decision:   SolutionGenerationRefused,
+				Reason:     reason,
+				DecidedAt:  now,
+			})
+		}
+		return nil
 	})
 }
 
@@ -147,7 +176,8 @@ func pendingSince(record *SolutionHostBindingRecord, now time.Time) *time.Time {
 // generation in between. core answers DecisionCurrent for that, which is not an
 // error and writes nothing — only a rewrite of an applied generation is.
 func (s *Service) applySolutionHostBinding(
-	ctx context.Context, document *solutionhost.SolutionHostBinding, coordinate string, now time.Time,
+	ctx context.Context, document *solutionhost.SolutionHostBinding,
+	coordinate string, domains []string, now time.Time,
 ) error {
 	digest, err := document.Digest()
 	if err != nil {
@@ -181,6 +211,7 @@ func (s *Service) applySolutionHostBinding(
 		// registry key is the durable backstop for two replicas racing.
 		host := solutionhost.Host{
 			Coordinate: coordinate,
+			Domains:    domains,
 			Reserved:   []string{SolutionHostReservedRouteNamespace},
 		}
 		if state, ok := record.AppliedState(); ok {
@@ -195,8 +226,19 @@ func (s *Service) applySolutionHostBinding(
 		}
 		if admissions[0].Decision == solutionhost.DecisionCurrent {
 			// Another replica applied it, or this pass raced its own previous
-			// one. Nothing to do, and deliberately not an error.
-			return nil
+			// one. Nothing to do, and deliberately not an error — but it is
+			// recorded, because "delivery kept saying the same thing" and
+			// "delivery stopped" are different facts and the append is
+			// idempotent on (binding, generation, digest, decision), so a poll
+			// does not grow the trail.
+			return s.store.RecordSolutionGenerationDecision(ctx, &SolutionGenerationDecision{
+				BindingID:  document.Binding,
+				Generation: document.Generation,
+				Digest:     digest,
+				Decision:   SolutionGenerationCurrent,
+				Release:    document.Release.Identity(),
+				DecidedAt:  now,
+			})
 		}
 
 		previous := record.Applied
@@ -253,6 +295,25 @@ func (s *Service) applySolutionHostBinding(
 		applyPendingReason(record, "", now)
 		record.UpdatedAt = now
 		if err := s.store.SaveSolutionHostBinding(ctx, record); err != nil {
+			return err
+		}
+		decided := SolutionGenerationApplied
+		if document.Removed {
+			decided = SolutionGenerationTombstoned
+		}
+		historyTarget := ""
+		if live, err := s.store.GetLiveSolutionTargetForUpdate(ctx, document.Binding); err == nil && live != nil {
+			historyTarget = live.ID
+		}
+		if err := s.store.RecordSolutionGenerationDecision(ctx, &SolutionGenerationDecision{
+			BindingID:  document.Binding,
+			TargetID:   historyTarget,
+			Generation: document.Generation,
+			Digest:     digest,
+			Decision:   decided,
+			Release:    record.Applied.Release,
+			DecidedAt:  now,
+		}); err != nil {
 			return err
 		}
 		return s.emitTx(ctx, solutionHostBindingActor(record), "system",
@@ -456,4 +517,22 @@ func (s *Service) ListSolutionTargets(ctx context.Context) ([]*SolutionTarget, e
 		return nil, fmt.Errorf("list solution targets: %w", err)
 	}
 	return targets, nil
+}
+
+// ListSolutionGenerationHistory returns one component's decision trail, newest
+// first. It is the Catalogue's history panel and the only record of a refusal the
+// next pass superseded.
+func (s *Service) ListSolutionGenerationHistory(
+	ctx context.Context, bindingID string, limit int,
+) ([]*SolutionGenerationDecision, error) {
+	var history []*SolutionGenerationDecision
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		history, err = s.store.ListSolutionGenerationHistory(ctx, bindingID, limit)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list solution generation history: %w", err)
+	}
+	return history, nil
 }

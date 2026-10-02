@@ -119,6 +119,7 @@ pkg/business/service.go: (*Service).VerifyEventWiring: WithControlPlane
 pkg/business/service.go: (*Service).createOrganization: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).applySolutionHostBinding: WithControlPlane

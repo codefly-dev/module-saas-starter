@@ -48,6 +48,11 @@ func (d *deliveredSet) put(t *testing.T, document *solutionhost.SolutionHostBind
 
 const testHostCoordinate = "acme/test/eu-west-1"
 
+// The ownership domain this test host accepts delivery from. Core refuses a
+// document from an unstated domain, which is what stops a writer claiming an
+// unseen binding ID under a domain of its own choosing.
+const testOwnershipDomain = "acme"
+
 // declaredBinding builds a present generation for one solution on this host. The
 // binding ID is dotted and the alias is a single lowercase segment, which is the
 // shape the renderer commits to (codefly-dev/cli#853): the binding ID is never
@@ -55,22 +60,35 @@ const testHostCoordinate = "acme/test/eu-west-1"
 func declaredBinding(t *testing.T, solutionID string, generation uint64) *solutionhost.SolutionHostBinding {
 	t.Helper()
 	document := &solutionhost.SolutionHostBinding{
-		Schema:     solutionhost.SchemaV1,
-		Binding:    "acme.test." + solutionID,
-		Generation: generation,
-		Host:       solutionhost.HostTarget{Coordinate: testHostCoordinate, Component: "saas-host"},
-		Release:    solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
-		Routes:     []solutionhost.Route{{Alias: solutionID, Surface: solutionhost.SurfaceBackend}},
+		Schema:           solutionhost.SchemaPresenceV2,
+		Kind:             solutionhost.KindSolution,
+		Binding:          "acme.test." + solutionID,
+		Generation:       generation,
+		OwnershipDomain:  testOwnershipDomain,
+		EnvelopeRevision: 1,
+		Host:             solutionhost.HostTarget{Coordinate: testHostCoordinate, Component: "saas-host"},
+		Release:          solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
+		Routes:           []solutionhost.Route{{Alias: solutionID, Surface: solutionhost.SurfaceBackend}},
 		Artifacts: []solutionhost.Artifact{{
 			Surface: solutionhost.SurfaceBackend,
 			Name:    "api",
 			Release: "acme/" + solutionID + "@1.4.0",
-			Digest:  "sha256:" + strings.Repeat("ab", 32),
+			Digest:  solutionhost.RenderedDigest("sha256:" + strings.Repeat("ab", 32)),
 		}},
-		Workload: solutionhost.WorkloadIdentity{
-			Audience: "https://test.acme.example/solutions",
-			Subject:  "system:serviceaccount:" + solutionID + ":api",
-		},
+		Workloads: []solutionhost.Workload{{
+			Name:      "api",
+			Artifact:  "api",
+			Container: "api",
+			Image: solutionhost.Image{
+				Repository: "registry.example/acme/" + solutionID,
+				Digest:     solutionhost.ImageDigest("sha256:" + strings.Repeat("cd", 32)),
+			},
+			Identity: solutionhost.WorkloadIdentity{
+				Audience: "https://test.acme.example/solutions",
+				Subject:  "system:serviceaccount:" + solutionID + ":api",
+				SPIFFEID: "spiffe://acme.test/ns/" + solutionID + "/sa/api",
+			},
+		}},
 	}
 	if err := document.Validate(); err != nil {
 		t.Fatalf("test document is not a valid binding: %v", err)
@@ -84,6 +102,7 @@ func tombstoneOf(t *testing.T, document *solutionhost.SolutionHostBinding, gener
 	removed.Generation = generation
 	removed.Routes = nil
 	removed.Artifacts = nil
+	removed.Workloads = nil
 	removed.Modules = nil
 	removed.Endpoints = nil
 	removed.Removed = true
@@ -101,7 +120,7 @@ func testDeclaredSolutionID(t *testing.T) string {
 func newTestReconciler(t *testing.T, source business.SolutionHostBindingSource) *business.SolutionHostBindingReconciler {
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(
-		testService, source, testHostCoordinate, time.Minute)
+		testService, source, testHostCoordinate, []string{testOwnershipDomain}, time.Minute)
 	if err != nil {
 		t.Fatalf("reconciler: %v", err)
 	}
