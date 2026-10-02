@@ -416,6 +416,15 @@ const SECTION_STEP: Partial<Record<string, number>> = {
 	ArrowDown: 1,
 };
 
+// The section a tile is in, and its place there.
+function placeOf(
+	layout: Layout,
+	tileId: string,
+): { section: LayoutSection; index: number } | undefined {
+	const section = layout.find(({ tiles }) => tiles.includes(tileId));
+	return section && { section, index: section.tiles.indexOf(tileId) };
+}
+
 // How many of the newest events the ⓘ lists.
 const RECENT_EVENTS = 5;
 
@@ -1007,9 +1016,28 @@ function SolutionDashboard({
 							const step = ARROW_STEP[event.key];
 							if (step === undefined) return;
 							event.preventDefault();
+							const next = moveBy(layout, tileId, step);
+							const from = placeOf(layout, tileId);
+							const to = placeOf(next, tileId);
+							// Past either end of the dashboard the tile stays, and a
+							// key that moves nothing saves nothing.
+							if (
+								!from ||
+								!to ||
+								(to.section.id === from.section.id && to.index === from.index)
+							) {
+								return;
+							}
 							// Moving a tile can move its DOM node, which drops focus;
 							// commit first so the grip can take focus back.
-							flushSync(() => save(moveBy(layout, tileId, step)));
+							flushSync(() => {
+								save(next);
+								if (to.section.id !== from.section.id) {
+									setAnnouncement(
+										`${title} moved to the ${step < 0 ? "end" : "start"} of ${nameOf(to.section)}.`,
+									);
+								}
+							});
 							gripOf(tileId)?.focus();
 						}}
 					>

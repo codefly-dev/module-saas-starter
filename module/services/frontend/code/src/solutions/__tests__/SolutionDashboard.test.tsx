@@ -680,6 +680,18 @@ describe("a viewer's layout", () => {
 		expect(tileTitles()).toEqual(DEFAULT_ORDER);
 	});
 
+	// A save pins the viewer to their own layout, so a key that moves nothing
+	// must not write one.
+	it("saves nothing when the arrow keys cannot move the tile", () => {
+		renderDashboards();
+		const grip = screen.getByRole("button", {
+			name: "Move Logins over time: drag the tile, or use the arrow keys",
+		});
+		fireEvent.keyDown(grip, { key: "ArrowUp" });
+		expect(tileTitles()).toEqual(DEFAULT_ORDER);
+		expect(window.localStorage.getItem(LAYOUT_KEY)).toBeNull();
+	});
+
 	it("keeps each viewer's layout to themselves", () => {
 		const { unmount } = renderDashboards();
 		fireEvent.click(
@@ -1108,6 +1120,23 @@ describe("a dashboard in sections", () => {
 			Trends: ["Logins over time", "Top event types"],
 		});
 		expect(document.activeElement).toBe(grip());
+	});
+
+	it("says where the arrow keys moved a tile into another section", () => {
+		renderDashboards(sectioned);
+		const grip = () =>
+			screen.getByRole("button", {
+				name: "Move Total logins: drag the tile, or use the arrow keys",
+			});
+		fireEvent.keyDown(grip(), { key: "ArrowDown" });
+		expect(
+			screen.getByText("Total logins moved to the start of Trends."),
+		).toBeTruthy();
+
+		fireEvent.keyDown(grip(), { key: "ArrowUp" });
+		expect(
+			screen.getByText("Total logins moved to the end of Overview."),
+		).toBeTruthy();
 	});
 
 	it("reads a layout saved before sections, each tile in its declared section", () => {
