@@ -28,6 +28,7 @@ import {
 } from "react";
 import * as ReactJSXRuntime from "react/jsx-runtime";
 import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import {
@@ -157,6 +158,16 @@ const REACT_SHARED = {
 	"react/jsx-runtime": {
 		version: React.version,
 		lib: () => ReactJSXRuntime,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	// A share key is an exact specifier, so a remote whose code mounts its own
+	// root (`createRoot` from react-dom/client, as an embedded editor or grid
+	// does) does not reach the react-dom share above. Unshared, it bundles its
+	// own react-dom client, which refuses to run against this host's React (a
+	// different build) and takes the remote down at load with React error #527.
+	"react-dom/client": {
+		version: React.version,
+		lib: () => ReactDOMClient,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 } as const;

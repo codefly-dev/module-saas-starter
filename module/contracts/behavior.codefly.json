@@ -273,6 +273,7 @@
           "keys": [
             "react",
             "react-dom",
+            "react-dom/client",
             "react/jsx-runtime",
             "@codefly-dev/ui",
             "@codefly-dev/ui/layout",
