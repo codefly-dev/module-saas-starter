@@ -17,8 +17,20 @@ export interface EmptyStateProps {
 	/** Leading glyph; defaults to a generic inbox so the block always has one. */
 	icon?: ReactNode;
 	heading: ReactNode;
+	/**
+	 * The line under the heading. Takes nodes, not just a string, so an empty
+	 * state whose explanation lives elsewhere on the page can **point at it**
+	 * — "the source card above says where this stands", with a link if there is
+	 * one to give. That is what this prop is for; `children` below is the
+	 * action slot, and a cross-reference is not an action, so putting a
+	 * sentence there (or hand-writing one outside the block) loses the
+	 * `empty-state-description` slot and its width bound.
+	 */
 	description?: ReactNode;
-	/** Optional trailing content, e.g. a call-to-action button. */
+	/**
+	 * Optional trailing content: a call to action, i.e. something to press.
+	 * Prose belongs in `description`.
+	 */
 	children?: ReactNode;
 	className?: string;
 	variant?: "default" | "illustrated";

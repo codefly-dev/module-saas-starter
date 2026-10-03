@@ -45,6 +45,15 @@ export default async function SolutionPage({
 				// services, e.g. the DatasourceService `<DatasourcesPanel>`
 				// calls), anything else reaches this solution's upstream.
 				apiBase: solutionProxyBase(solution.id),
+				// What this solution declared it is built on, handed straight
+				// back to it. The remote could hard-code the same repository,
+				// but then two statements would have to agree: the one the host
+				// validated at registration and an operator can read, and the
+				// one compiled into the bundle. Returning the validated
+				// declaration keeps it to one.
+				...(solution.sources?.length
+					? { declaredSources: solution.sources }
+					: {}),
 			}}
 		/>
 	);

@@ -29,14 +29,22 @@ from the package root and from `@codefly-dev/saas-ui/solution`, which imports
 React, Connect and the SDK's service descriptors but none of the datasource
 components:
 
-- `SolutionBinding` — the backend half of the props the host injects into every
-  solution page (`solutionId`, `apiBase`, `getAccessToken`, `subscribeToken`,
-  `refreshAccessToken`, `authedFetch`). The host's `SolutionPageProps` extends
-  it, so a remote types its props against the one definition. `subscribeToken`
+- `SolutionBinding` — the props the host injects into every solution page: the
+  backend half (`solutionId`, `apiBase`, `getAccessToken`, `subscribeToken`,
+  `refreshAccessToken`, `authedFetch`) plus `declaredSources`. The host's
+  `SolutionPageProps` extends it, so a remote types its props against the one
+  definition. `subscribeToken`
   is optional but a host that can notify should pass it: the getter stays stable
   while the token rotates underneath it, so without a subscription the kit
   re-reads on a short interval — one timer per observer, for as long as the page
   is open.
+- `declaredSources: DeclaredSource[]` — what this solution declared it is built
+  on (`sources:` in its registration manifest), validated by the host at
+  registration and handed straight back, so the repository is stated once
+  rather than once in the manifest an operator reads and again in the bundle.
+  Feed an entry to `<DeclaredSourceCard>`. Optional, and absent from an older
+  host: treat absence as "the host does not tell me", never as "this solution
+  declares nothing".
 - `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
   a request to the solution's own backend at `apiBase + path`, same-origin,
   through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer
@@ -151,6 +159,57 @@ components:
   GitHub's unauthenticated limit of 60 requests an hour per IP address. When the
   App is installed on that repository for the organization, the host uses the
   App instead.
+- `<DeclaredSourceCard gateway={{ apiBase, getAccessToken }} orgId={…}
+  declared={binding.declaredSources[0]} />` — one source a solution **declares**
+  it is built on, in one of three states. A solution built on one known
+  repository must not ask the person which repository: it declares it, and all
+  that is left to supply is the credential.
+  - **Set up** — nothing connected serves the declaration. The three credential
+    modes (App / public / PAT) and nothing else; `repo`, `paths` and `ref` come
+    from the declaration, are rendered as text, and are submitted unedited to
+    `AddGitHubSource`. There is no repository control at all, which is the
+    point: a field for it would let the person connect something other than
+    what the solution reads. The entries land in a collection named by the
+    declaration's `label`, falling back to the repository.
+  - **Connected** — the matched source is `ACTIVE`: its last ingest and commit,
+    how live updates reach it, the reconcile interval that bounds its
+    staleness, **Sync now**, and the same `renderSourceDetail` slot the panel
+    offers so the consumer can show the ingesting module's progress.
+  - **Error** — `DEGRADED` or `PAUSED`: the host's `status_reason` verbatim,
+    and Reconnect, which asks for the credential again (a replacement PAT, or
+    nothing on the App and public paths) and enqueues a sync.
+  There is no fourth state. A source whose status an **older host does not
+  report** (the field decodes to its proto default, which the gateway maps to
+  `unknown` rather than guessing) reads as **Connected** and says its state is
+  not reported: it matched the declaration, so it *is* connected, and calling
+  the absence of a status an error would paint a healthy source red with no
+  `status_reason` to show for it and offer to Reconnect — asking a person for a
+  credential again to fix nothing. Sync is still offered; Reconnect is not.
+  A viewer without `canManage` still sees the state and the reason, and is told
+  who acts; the host refuses the calls either way. The card takes no query or
+  auth context of its own — the same `client | gateway` binding
+  `DatasourcesPanel` takes — and adds **no RPC**: it reads `ListSources` for the
+  org and matches on `provider` + `repo` (case-insensitively, as GitHub treats
+  `owner/name`) plus `paths` when the declaration names any.
+  Two connected sources matching one declaration are **reported, never silently
+  picked**: they can disagree about credential, branch, scope and health, so
+  rendering the first would sync one and leave the other ingesting invisibly.
+  `matchDeclaredSources(declared, sources)` is that rule as a pure function, for
+  a consumer rendering the states in its own shell; `declaredCollectionLabel`
+  resolves where connected entries land.
+- `CredentialMethodField` / `AccessTokenField` / `WebhookSecretField` /
+  `AppInstallPrompt` (with `CredentialMethod`, `credentialMethodFrom`,
+  `fieldErrorClass`) — the credential block `ConnectGitHubForm` and
+  `<DeclaredSourceCard>` both render, presentational and controlled, exported
+  so a consumer building its own shell around `matchDeclaredSources` can **ask
+  for the credential without copying the form**. Compose these; do not copy
+  `ConnectGitHubForm` — `solutions/README.md` refuses a copied capability
+  wrapped in a shared card, and these three modes are the whole of what a
+  person decides between, so two surfaces that word them differently teach two
+  different products.
+  Do not mount this and `<DatasourcesPanel>` on the same page: both redeem the
+  GitHub App's single-use return state, and the loser reports a rejection for an
+  installation that in fact succeeded.
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a

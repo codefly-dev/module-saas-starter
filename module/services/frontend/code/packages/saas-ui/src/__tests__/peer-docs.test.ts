@@ -77,7 +77,12 @@ describe("the README install line matches peerDependencies", () => {
 });
 
 describe("SaaS presentation composes shared controls", () => {
-	for (const file of ["connect-github-form.tsx", "datasources-panel.tsx"]) {
+	for (const file of [
+		"connect-github-form.tsx",
+		"credential-mode.tsx",
+		"datasources-panel.tsx",
+		"declared-source-card.tsx",
+	]) {
 		it(file, () => {
 			const source = readFileSync(
 				join(packageRoot, "src/datasources", file),

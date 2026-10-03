@@ -1,3 +1,5 @@
+import type { DatasourceLiveDeliveryName } from "./types.js";
+
 // A tiny classnames joiner, inlined so the kit carries no dependency (truthy
 // joining only, no tailwind-merge conflict resolution).
 export function cn(...parts: Array<string | false | null | undefined>): string {
@@ -78,4 +80,38 @@ export function formatGrants(actions: string[]): string {
 		.sort((a, b) => rank(a) - rank(b))
 		.map((action) => action.charAt(0).toUpperCase() + action.slice(1))
 		.join(" · ");
+}
+
+/**
+ * The reconcile schedule in words. Undefined when the host does not report it;
+ * an interval of 0 means the periodic reconcile is off for this source, which
+ * — with no live delivery — leaves "Sync now" as the only thing that ever
+ * refreshes it, and is worth saying rather than leaving blank.
+ */
+export function formatReconcileInterval(seconds: number | undefined): string {
+	if (seconds === undefined) return "";
+	if (seconds <= 0) return "No periodic reconcile; refreshed by Sync now only";
+	if (seconds % 3600 === 0) {
+		const hours = seconds / 3600;
+		return `Otherwise reconciled every ${hours} ${hours === 1 ? "hour" : "hours"}`;
+	}
+	const minutes = Math.max(1, Math.round(seconds / 60));
+	return `Otherwise reconciled every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
+
+/**
+ * How a change at the source reaches this deployment, in words. Undefined when
+ * the host reports nothing — an older host — where the honest answer is that
+ * nothing here knows, and a caller must say so rather than present "no live
+ * updates" as an answer it was never given.
+ */
+export function formatLiveDelivery(
+	delivery: DatasourceLiveDeliveryName | undefined,
+): string | undefined {
+	if (delivery === undefined) return undefined;
+	return delivery === "source_webhook"
+		? "On push, through this source's webhook"
+		: delivery === "app_webhook"
+			? "On push, through the GitHub App"
+			: "No live updates";
 }
