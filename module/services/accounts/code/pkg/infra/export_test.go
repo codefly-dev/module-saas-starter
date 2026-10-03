@@ -162,6 +162,22 @@ func (s *PostgresStore) ExecAsControlPlane(ctx context.Context, sql string, args
 	})
 }
 
+// ScanAsControlPlane reads one row as the control plane, for a test asserting on
+// a column no store method returns.
+//
+// It goes through WithControlPlane like its Exec counterpart rather than fishing
+// the transaction out of the context: the context key is internal to pkg/infra
+// by design, so a plain-string lookup is not refused — it reads nil, and the
+// query silently falls back to the request pool where it would fail on a
+// permission it should never have lacked.
+func (s *PostgresStore) ScanAsControlPlane(
+	ctx context.Context, sql string, into []any, args ...any,
+) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.getQueryExecutor(ctx).QueryRow(ctx, sql, args...).Scan(into...)
+	})
+}
+
 // VerifySignedEntity exposes the keyless verifier's DECISION, so a test can
 // drive it with an in-process Sigstore instead of a hand-assembled bundle
 // document.

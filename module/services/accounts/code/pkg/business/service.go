@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
@@ -136,6 +137,27 @@ type Service struct {
 	deliveryStore           SolutionDeliveryStore
 	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
 	deliveryDomainsBySigner map[string][]string
+
+	// The policy log's wiring: the external append-only record, this host's
+	// local receipts and cursor, and an overridable clock.
+	//
+	// Both nil means no log. WithPolicyLoggedNarrowing then REFUSES — a host
+	// that cannot witness a narrowing must not perform one — while MayServe
+	// allows serving, because nothing has been narrowed through the protocol and
+	// there is therefore nothing unreconciled. Those two answers look
+	// inconsistent and are not: the first is about reducing authority, the
+	// second about honouring reductions that were recorded.
+	policyLog      PolicyLog
+	policyLogStore PolicyLogStore
+	policyClock    func() time.Time
+}
+
+// SetPolicyLog wires the append-only authority record and its local half.
+//
+// Boot wiring, called once before the service listens.
+func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
+	s.policyLog = log
+	s.policyLogStore = store
 }
 
 // SetSolutionDelivery wires the delivery endpoint: the bundle verifier, the

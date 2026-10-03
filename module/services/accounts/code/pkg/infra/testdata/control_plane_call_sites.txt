@@ -99,6 +99,11 @@ pkg/business/platform_admin.go: (*Service).SearchUsers: WithControlPlane
 pkg/business/platform_admin.go: (*Service).StopImpersonation: WithControlPlane
 pkg/business/platform_admin.go: (*Service).SuspendUser: WithControlPlane
 pkg/business/platform_admin.go: (*Service).UnsuspendUser: WithControlPlane
+pkg/business/policy_log.go: (*Service).MayServe: WithControlPlane
+pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
+pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
+pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
+pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/principals.go: (*Service).GetPrincipal: As(System())
 pkg/business/principals.go: (*Service).withPrincipalScope: As(System())
 pkg/business/principals.go: (*Service).withPrincipalScope: As(System())
