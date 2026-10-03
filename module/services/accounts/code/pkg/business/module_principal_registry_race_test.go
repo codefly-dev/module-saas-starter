@@ -74,3 +74,74 @@ func TestUndeclaredModuleRegistryDeniesEveryCaller(t *testing.T) {
 	require.Empty(t, service.ModulePrincipals(),
 		"the exported accessor answers the same empty registry")
 }
+
+// The atomic pointer guards the map HEADER. These two tests guard the map.
+//
+// Both reviews of #953 made the same point: a pointer swap synchronizes nothing
+// if the backing map stays reachable from outside, because a writer mutating it
+// in place swaps no pointer and so crosses no barrier. The registry was being
+// stored as the CALLER'S map and handed back out by the exported accessor, so
+// there were two such routes.
+//
+// Deliberately NOT race-dependent. The earlier test in this file can only fail
+// under `-race`, which CI runs on one package — so it proves little where it
+// matters. These fail on a plain `go test` by observing the authorization answer
+// change, which is the thing that actually goes wrong.
+func TestModulePrincipalRegistryIsNotMutableThroughTheMapItWasGiven(t *testing.T) {
+	service := &Service{}
+	caller := ModulePrincipalRegistry{
+		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a"}},
+	}
+	service.SetModulePrincipals(caller)
+
+	// The caller keeps its map and widens the grant it already handed over, and
+	// adds a principal that was never declared.
+	caller[ModulePrincipalID("example")] = ModulePrincipalGrant{
+		Prefix: "example", Queues: []string{"a", "b"}, CrossTenant: true,
+	}
+	caller[ModulePrincipalID("smuggled")] = ModulePrincipalGrant{Prefix: "smuggled"}
+
+	granted := service.declaredModules()[ModulePrincipalID("example")]
+	require.Equal(t, []string{"a"}, granted.Queues,
+		"a widened queue list must not reach the registry the service authorizes against")
+	require.False(t, granted.CrossTenant,
+		"cross-tenant must not be grantable by mutating the map the caller passed in")
+	_, smuggled := service.declaredModules()[ModulePrincipalID("smuggled")]
+	require.False(t, smuggled,
+		"a principal added after the store must not become declared")
+}
+
+func TestModulePrincipalRegistryIsNotMutableThroughTheAccessor(t *testing.T) {
+	service := &Service{}
+	service.SetModulePrincipals(ModulePrincipalRegistry{
+		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a"}},
+	})
+
+	// A caller reads the declaration and writes into what it was handed.
+	read := service.ModulePrincipals()
+	read[ModulePrincipalID("example")] = ModulePrincipalGrant{
+		Prefix: "example", Queues: []string{"a", "b"}, CrossTenant: true,
+	}
+	read[ModulePrincipalID("smuggled")] = ModulePrincipalGrant{Prefix: "smuggled"}
+
+	granted := service.declaredModules()[ModulePrincipalID("example")]
+	require.Equal(t, []string{"a"}, granted.Queues,
+		"the accessor must not hand out the registry the service authorizes against")
+	require.False(t, granted.CrossTenant)
+	_, smuggled := service.declaredModules()[ModulePrincipalID("smuggled")]
+	require.False(t, smuggled)
+}
+
+// Clearing the registry denies every module caller, rather than leaving the
+// previous one serving. maps.Clone of a nil map is nil, and both an unset
+// pointer and a nil registry read as empty — so the fail-closed answer survives
+// the clone that was added to make the registry unreachable from outside.
+func TestModulePrincipalRegistryClearedDeniesEveryCaller(t *testing.T) {
+	service := &Service{}
+	service.SetModulePrincipals(ModulePrincipalRegistry{
+		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a"}},
+	})
+	service.SetModulePrincipals(nil)
+	require.Empty(t, service.declaredModules(),
+		"a cleared registry must authorize nobody, never keep the previous declaration")
+}
