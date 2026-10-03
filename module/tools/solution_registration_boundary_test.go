@@ -234,13 +234,14 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// grouped on HTTP class and made a reviewable refusal retryable.
 		"what a retry would change",
 		"The review ran and refused",
-		// That the local policy is coordinate-bound. Without this line the
-		// table reads as "choose either", and the one that performs no
-		// cryptography is the convenient choice.
-		"a **local coordinate only**",
-		// And that the production policy is not available yet. A consumer
-		// planning against this document must not read `keyless` as live.
-		"**NOT YET AVAILABLE**",
+		// That there is ONE policy, and that the second one is gone rather than
+		// merely discouraged. These two pins replaced "the local policy is
+		// coordinate-bound" and "keyless is NOT YET AVAILABLE", both of which
+		// described a host that no longer exists — and the first of which
+		// documented a gate that was a string comparison against an
+		// operator-declared value.
+		"The `local` trust policy is deleted.",
+		"one verifier, one policy shape, two sets of listed identities",
 		// That a bundle is required and must be an object. A renderer whose
 		// pipeline has no signing step yet reaches for the field it can fill —
 		// `null` — and nothing in the carrier's own shape would have told it

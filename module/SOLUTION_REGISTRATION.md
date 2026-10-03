@@ -609,7 +609,7 @@ The host side of that:
   carrier whose attested payload will not re-read is refused like any other,
   rather than admitted from a value read earlier.
 
-#### The two trust policies
+#### The one trust policy
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
@@ -833,7 +833,21 @@ a host that reads pods is not a Kubernetes-free host any more.
 
 Two paths were allowed: an equally authoritative local attestation the host
 verifies under a `local` trust policy, or Kubernetes locally. **This host takes
-Kubernetes locally, and ships no local attestation path at all.**
+Kubernetes locally, and ships no local attestation path at all** — and as of the
+keyless verifier landing, that is now true of the CODE and not only of this
+paragraph. The `local` trust policy is deleted.
+
+It is worth saying why it existed and why its deletion is a fix rather than a
+tightening. `local` performed no cryptography and attested every carrier as the
+identity `local`, gated on the host's own coordinate beginning `local/`. Both
+adversarial reviews named the same concrete failure: the gate was a string
+comparison against an **operator-declared** value, so a deployed host configured
+with a local coordinate admitted any file any mount writer dropped — and because
+the coordinate is self-asserted on both sides, the misconfiguration was not
+self-defeating. §8 below had already argued at length that there should be no
+local trust *mechanism*; §7 shipped one anyway, because keyless was unavailable
+and a laptop had to run. Keyless exists now, so the argument and the code agree:
+one verifier, one policy shape, two sets of listed identities.
 
 ### Why the local path is not built, rather than built carefully
 

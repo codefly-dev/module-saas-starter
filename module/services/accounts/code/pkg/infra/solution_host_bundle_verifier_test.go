@@ -1,9 +1,6 @@
 package infra_test
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
@@ -13,12 +10,18 @@ import (
 // The trust policy decides whether a delivered carrier is checked at all, so
 // each of these is about a way the host could end up admitting something nobody
 // attested.
+//
+// There is ONE policy now. The `local` policy — which performed no cryptography
+// and attested every carrier, gated on the host's coordinate starting `local/` —
+// is deleted, and its tests went with it. What replaced them is the keyless
+// suite, which exercises the same verifier a laptop would run, against a local
+// trust root and a local allowlist.
 
-// No policy is not a permissive policy. Every default is wrong somewhere —
-// trusting delivery in production, refusing everything on a laptop — so the
-// absence is refused by name at boot.
+// No policy is not a permissive policy: the absence is refused by name at boot
+// rather than defaulted, because a host that does not say how it checks a
+// carrier must not be guessed at.
 func TestUnsetTrustPolicyIsRefused(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier("", "acme/prod/eu-west-1", "", []string{"acme"})
+	verifier, err := infra.NewSolutionHostBundleVerifier("", t.TempDir())
 	if err == nil {
 		t.Fatal("an unset trust policy must be refused, not defaulted")
 	}
@@ -31,76 +34,20 @@ func TestUnsetTrustPolicyIsRefused(t *testing.T) {
 }
 
 // A policy nobody implements must not fall back to one that does.
+//
+// `local` is included deliberately: it USED to be a working value, and a
+// deployment still carrying it in its configuration must fail to boot rather
+// than silently fall through to keyless — which would read as "my local policy
+// is still working" while the host had started verifying for real, or worse,
+// read as nothing at all.
 func TestUnknownTrustPolicyIsRefused(t *testing.T) {
-	if _, err := infra.NewSolutionHostBundleVerifier("trust-me", "acme/prod/eu-west-1", "", []string{"acme"}); err == nil {
-		t.Fatal("an unknown trust policy must be refused")
-	}
-}
-
-// The local policy performs no cryptography, so the coordinate is the only thing
-// standing between it and a production host trusting whatever is in its mount.
-// This is the test that makes that an invariant rather than a comment.
-func TestLocalTrustPolicyIsRefusedOnANonLocalCoordinate(t *testing.T) {
-	for _, coordinate := range []string{
-		"acme/prod/eu-west-1",
-		"acme/staging/eu-west-1",
-		// Deliberately adjacent to the allowlist without matching it: a
-		// coordinate is an operator-declared string, so "contains local" must
-		// not be enough.
-		"acme/local/eu-west-1",
-		"notlocal/prod/eu-west-1",
-		"",
-	} {
-		t.Run(coordinate, func(t *testing.T) {
-			verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustLocal, coordinate, "", []string{"acme"})
-			if err == nil {
-				t.Fatalf("the local trust policy must be refused on coordinate %q", coordinate)
-			}
-			if verifier != nil {
-				t.Fatal("a refused policy must yield no verifier")
-			}
-		})
-	}
-}
-
-// And it is allowed where the mount and the host are the same person.
-func TestLocalTrustPolicyAttestsALocalIdentity(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustLocal, "local/dev/laptop", "", []string{"acme"})
-	if err != nil {
-		t.Fatalf("local coordinate: %v", err)
-	}
-	signer, err := verifier.VerifyBundle(context.Background(), []byte("anything"), json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("local verifier: %v", err)
-	}
-	// It attests an identity rather than a bare yes, because the signer-to-domain
-	// check runs even on a laptop: a local developer still has to be granted the
-	// domain it delivers under, through the same policy a workflow identity uses.
-	if signer != infra.SolutionHostLocalSignerIdentity {
-		t.Fatalf("signer = %q, want %q", signer, infra.SolutionHostLocalSignerIdentity)
-	}
-}
-
-// The keyless policy refuses at BOOT rather than per document, and says why.
-//
-// A host configured for a policy it cannot perform must not start and then
-// refuse every document as though delivery were broken: those are different
-// facts, and only one of them is the operator's to fix.
-//
-// This used to assert that keyless was UNIMPLEMENTED. It is implemented now, and
-// the boot refusal survives for the original reason: with no trust mount there
-// is no root to verify against. The error moved to
-// ErrSolutionHostTrustRootUnavailable, which names the missing thing rather than
-// the missing feature.
-func TestKeylessTrustPolicyRefusesAtBootWithoutAMount(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustKeyless, "acme/prod/eu-west-1", "", []string{"acme"})
-	if !errors.Is(err, infra.ErrSolutionHostTrustRootUnavailable) {
-		t.Fatalf("error = %v, want ErrSolutionHostTrustRootUnavailable", err)
-	}
-	if verifier != nil {
-		t.Fatal("an unavailable policy must yield no verifier")
-	}
-	if !strings.Contains(err.Error(), "no trust mount") {
-		t.Fatalf("error %q does not say what is missing", err)
+	for _, policy := range []infra.SolutionHostTrustPolicy{"trust-me", "local", "none", "KEYLESS"} {
+		verifier, err := infra.NewSolutionHostBundleVerifier(policy, t.TempDir())
+		if err == nil {
+			t.Fatalf("trust policy %q must be refused", policy)
+		}
+		if verifier != nil {
+			t.Fatalf("trust policy %q must yield no verifier", policy)
+		}
 	}
 }
