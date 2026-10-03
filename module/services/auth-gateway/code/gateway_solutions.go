@@ -201,23 +201,6 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusForbidden, "no organization in this session")
 		return true
 	}
-	switch g.admitViewerSolution(r.Context(), org, viewer, id) {
-	case viewerSolutionNotEntitled:
-		// A verdict on this organization's admission, named so a client can
-		// tell it from an ext_authz denial on the credential: one is fixed by
-		// installing and granting, the other by signing in again.
-		w.Header().Set(solutionEntitlementRefusalHeader, refusalNotEntitled)
-		httpError(w, http.StatusForbidden, "solution is not installed for this organization")
-		return true
-	case viewerSolutionUndecidable:
-		// The authority could not be asked. 503 and nothing forwarded: routing
-		// would serve a solution nobody has confirmed is installed, and 403
-		// would tell an operator the grant is missing when accounts is simply
-		// down.
-		httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
-		return true
-	}
-
 	// Proxy to the solution. The caller's bearer is preserved so the solution
 	// can call accounts through the gateway on the user's behalf.
 	//
@@ -246,7 +229,35 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		Protected:      true,
 		RateLimitClass: class,
 	}
-	g.rateLimitThenProxy(w, r, upstream, entry)
+	// Metered FIRST, and the admission check runs inside the budget.
+	//
+	// The authority call is the expensive part of this path — up to one
+	// scope-tree read per entitlement page, per request — and it costs the same
+	// whether the request is forwarded, refused as not entitled, or abandoned
+	// because accounts is down. Admitting before metering therefore left an
+	// authenticated caller an unmetered way to spend that cost: ask about a
+	// solution it is not entitled to, as fast as it likes, and every refusal was
+	// free. The entitlement LISTING already wrapped its work this way; the proxy
+	// did not.
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch g.admitViewerSolution(r.Context(), org, viewer, id) {
+		case viewerSolutionNotEntitled:
+			// A verdict on this organization's admission, named so a client can
+			// tell it from an ext_authz denial on the credential: one is fixed by
+			// installing and granting, the other by signing in again.
+			w.Header().Set(solutionEntitlementRefusalHeader, refusalNotEntitled)
+			httpError(w, http.StatusForbidden, "solution is not installed for this organization")
+			return
+		case viewerSolutionUndecidable:
+			// The authority could not be asked. 503 and nothing forwarded:
+			// routing would serve a solution nobody has confirmed is installed,
+			// and 403 would tell an operator the grant is missing when accounts
+			// is simply down.
+			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
+			return
+		}
+		g.proxyTo(w, r, upstream, entry)
+	}))
 	return true
 }
 
@@ -531,10 +542,21 @@ type solutionRegistryProjection struct {
 }
 
 type solutionRegistrationProjection struct {
-	ID           string  `json:"id"`
-	Publisher    string  `json:"publisher"`
-	Revision     int64   `json:"revision"`
-	Status       string  `json:"status"`
+	ID        string `json:"id"`
+	Publisher string `json:"publisher"`
+	Revision  int64  `json:"revision"`
+	Status    string `json:"status"`
+	// TargetID is the immutable solution target this record is declared under —
+	// the identity an installation names, and therefore the key a consumer joins
+	// its entitlements against. Empty for a record nothing declared, which no
+	// entitlement can ever match.
+	//
+	// It is published because the alternative is what was here before: the
+	// consumer joined on `id`, the route alias, which a later binding may claim —
+	// so a replacement solution inherited the predecessor's menu entry and its
+	// team exposure. The alias stays in the projection because it is what a URL
+	// is built from; it is no longer what anything is authorised by.
+	TargetID     string  `json:"targetId,omitempty"`
 	ServiceAlias string  `json:"serviceAlias,omitempty"`
 	Manifest     *string `json:"manifest,omitempty"`
 }
@@ -570,6 +592,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 			Publisher:    record.GetPublisher(),
 			Revision:     record.GetRevision(),
 			Status:       solutionRegistryStatusLabel(record, now),
+			TargetID:     record.GetDeclared().GetTargetId(),
 			ServiceAlias: record.GetBackend().GetServiceAlias(),
 		}
 		if manifest := record.GetFrontend().GetManifest(); manifest != "" {

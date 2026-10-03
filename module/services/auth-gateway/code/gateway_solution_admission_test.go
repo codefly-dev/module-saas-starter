@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"errors"
 	"net/http"
@@ -38,7 +39,7 @@ func TestGatewaySolutionProxy_RefusesASolutionTheOrganizationDidNotInstall(t *te
 	registerSolutionUpstream(t, gw, "reports")
 	// The organization installed `reports` and nothing else. `audit` is
 	// available on the deployment and reachable by path.
-	gw.solutionEntitlements = &entitledTo{ids: []string{"reports"}}
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("reports")}}
 
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
@@ -55,7 +56,7 @@ func TestGatewaySolutionProxy_RefusesASolutionTheOrganizationDidNotInstall(t *te
 func TestGatewaySolutionProxy_AllowsASolutionTheOrganizationInstalled(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := registerSolutionUpstream(t, gw, "audit")
-	gw.solutionEntitlements = &entitledTo{ids: []string{"audit"}}
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
 
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
@@ -72,7 +73,7 @@ func TestGatewaySolutionProxy_AllowsASolutionTheOrganizationInstalled(t *testing
 func TestGatewaySolutionProxy_AsksAboutTheVerifiedIdentityNotTheCallersHeaders(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "audit")
-	authority := &entitledTo{ids: []string{"audit"}}
+	authority := &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
 	gw.solutionEntitlements = authority
 
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
@@ -97,7 +98,7 @@ func TestGatewaySolutionProxy_AsksAboutTheVerifiedIdentityNotTheCallersHeaders(t
 func TestGatewaySolutionProxy_ImpersonationIsDecidedOnTheImpersonatedViewer(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "audit")
-	authority := &entitledTo{ids: []string{"audit"}}
+	authority := &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
 	gw.solutionEntitlements = authority
 
 	actor := uuid.Must(uuid.NewV7()).String()
@@ -156,7 +157,7 @@ func TestGatewaySolutionProxy_NonTerminatingCursorIs503(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "audit")
 	gw.solutionEntitlements = &fakeSolutionEntitlements{pages: []*accountsv1.ListSolutionEntitlementsResponse{{
-		Entitlements:  []*accountsv1.SolutionEntitlement{{SolutionIdentifier: "other"}},
+		Entitlements:  []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("other")}},
 		NextPageToken: "forever",
 	}}}
 
@@ -175,11 +176,11 @@ func TestGatewaySolutionProxy_FindsAnEntitlementOnALaterPage(t *testing.T) {
 	registerSolutionUpstream(t, gw, "audit")
 	gw.solutionEntitlements = &fakeSolutionEntitlements{pages: []*accountsv1.ListSolutionEntitlementsResponse{
 		{
-			Entitlements:  []*accountsv1.SolutionEntitlement{{SolutionIdentifier: "reports"}},
+			Entitlements:  []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("reports")}},
 			NextPageToken: "page-2",
 		},
 		{
-			Entitlements: []*accountsv1.SolutionEntitlement{{SolutionIdentifier: "audit"}},
+			Entitlements: []*accountsv1.SolutionEntitlement{{TargetId: fakeSolutionTarget("audit")}},
 		},
 	}}
 
@@ -199,7 +200,7 @@ func TestGatewaySolutionProxy_UnhealthyEntitlementIsStillAdmitted(t *testing.T) 
 	registerSolutionUpstream(t, gw, "audit")
 	gw.solutionEntitlements = &fakeSolutionEntitlements{pages: []*accountsv1.ListSolutionEntitlementsResponse{{
 		Entitlements: []*accountsv1.SolutionEntitlement{
-			{SolutionIdentifier: "audit", Healthy: false},
+			{TargetId: fakeSolutionTarget("audit"), Healthy: false},
 		},
 	}}}
 
@@ -240,7 +241,7 @@ func TestGatewaySolutionProxy_PublicAssetSurfaceIsNotAdmissionGated(t *testing.T
 func TestGatewaySolutionProxy_NoOrganizationInSessionIsRefused(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := registerSolutionUpstream(t, gw, "audit")
-	authority := &entitledTo{ids: []string{"audit"}}
+	authority := &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
 	gw.solutionEntitlements = authority
 
 	orgless := signAccessToken(t, priv, accessKeyID(priv.Public().(ed25519.PublicKey)), accessClaims{
@@ -265,4 +266,133 @@ func TestGatewaySolutionProxy_NoOrganizationInSessionIsRefused(t *testing.T) {
 	require.Equal(t, refusalNoOrganization, w.Header().Get(solutionEntitlementRefusalHeader))
 	require.Nil(t, fake.lastHeaders)
 	require.Empty(t, authority.calls, "there is no org-scoped set to ask about")
+}
+
+// The §9 attack, executed rather than described: a REPLACEMENT binding that
+// claims a withdrawn route alias must inherit nothing from the installation that
+// named it.
+//
+// The previous shape of this check compared the alias an installation named to
+// the alias being requested. Both are the string "reports" here, so it admitted
+// org A's viewers to binding Y and forwarded their bearers to it — with no
+// administrator having acted, and with A's team grant now exposing Y.
+//
+// Against the pre-change gateway this test answers 200. It fails for the reason
+// it exists rather than because the entitlement shape changed: the authority
+// still answers an entitlement for the predecessor, the alias still resolves,
+// the upstream is still live, and the only thing that differs is the identity
+// behind the alias.
+func TestGatewaySolutionProxy_AReplacementBindingDoesNotInheritTheWithdrawnInstallation(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "reports")
+
+	// Org A installed the binding that held `reports`, and still holds that
+	// entitlement: an installation is not withdrawn by delivery, it is revoked —
+	// and this test is about the instant before any revocation has been seen.
+	withdrawn := fakeSolutionTarget("reports")
+	gw.solutionEntitlements = &entitledTo{ids: []string{withdrawn}}
+
+	// A different binding now serves the same alias. Its target is its own.
+	replacement := "target-replacement-binding"
+	require.NotEqual(t, withdrawn, replacement)
+	solutionRegistryFake(t, gw).declareTarget("reports", "acme.test.replacement", replacement)
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/reports/v1/reports/data", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code,
+		"a replacement binding must not be reachable through the predecessor's installation")
+	require.Nil(t, fake.lastHeaders,
+		"the replacement must never receive the request, and never the caller's bearer")
+	require.Equal(t, refusalNotEntitled, w.Header().Get(solutionEntitlementRefusalHeader))
+}
+
+// The other direction of the same rule, so the test above cannot pass by
+// refusing everything: the organisation that installed the REPLACEMENT reaches
+// it, on the same alias, in the same registry state.
+func TestGatewaySolutionProxy_TheReplacementsOwnInstallationIsAdmitted(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "reports")
+
+	replacement := "target-replacement-binding"
+	solutionRegistryFake(t, gw).declareTarget("reports", "acme.test.replacement", replacement)
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	gw.solutionEntitlements = &entitledTo{ids: []string{replacement}}
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/reports/v1/reports/data", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, fake.lastHeaders)
+}
+
+// Presence that nothing declared is admissible to NOBODY. There is no target for
+// an installation to have named, so there is no organisation whose consent could
+// admit it — and that is a verdict (403), not an outage (503): the authority was
+// reachable and the answer is final.
+//
+// Against the pre-change gateway this answers 200, because a self-registered
+// record was routable and its alias was the join key.
+func TestGatewaySolutionProxy_RefusesPresenceNothingDeclared(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "audit")
+	solutionRegistryFake(t, gw).undeclare("audit")
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	// Entitled to the alias's derived target, which is what an installation made
+	// before the declaration was stripped would have named.
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Nil(t, fake.lastHeaders)
+	require.Equal(t, refusalNotEntitled, w.Header().Get(solutionEntitlementRefusalHeader))
+}
+
+// A REFUSED request must cost the org's budget, because asking is what costs.
+//
+// Admission is an authority call to accounts — up to one scope-tree read per
+// entitlement page — and that cost is identical whether the answer forwards the
+// request or refuses it. With the limiter only in front of the proxy, a caller
+// could ask about a solution it was not entitled to as fast as it liked: every
+// refusal was free, so there was nothing to exhaust and the authority absorbed
+// the whole load.
+//
+// The assertion is on the AUTHORITY's call count, not on the response code: a
+// 429 proves the limiter ran, but only a bounded number of authority calls
+// proves the limiter ran BEFORE it.
+func TestGatewaySolutionProxy_RefusedRequestsAreMeteredBeforeTheAuthorityIsAsked(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "audit")
+	// Entitled to nothing, so every request is refused — the free path.
+	authority := &entitledTo{ids: nil}
+	gw.solutionEntitlements = authority
+	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
+	gw.rateLimiter = NewRateLimiter(1)
+
+	token := signValidToken(t, priv)
+	throttled := false
+	for i := 0; i < 8; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+		req.Header.Set("authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			throttled = true
+			continue
+		}
+		require.Equal(t, http.StatusForbidden, w.Code)
+	}
+	require.True(t, throttled, "refused solution requests must consume the budget")
+	require.LessOrEqual(t, len(authority.calls), 2,
+		"the authority must be asked only for requests the budget admitted: got %d calls for 8 requests",
+		len(authority.calls))
 }

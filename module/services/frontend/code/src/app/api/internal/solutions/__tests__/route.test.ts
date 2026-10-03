@@ -47,6 +47,11 @@ function fakeGateway() {
 				revision,
 				leaseSeconds: 120,
 				solutions: [...stored].map(([id, manifest]) => ({
+					// The host stamps the target from the record's declaration;
+					// the fixture derives it from the alias so the entitlement
+					// answer below can agree with it, which is what the join
+					// needs. See projections.ts.
+					targetId: `target-${id}`,
 					id,
 					status: "active",
 					manifest,
@@ -61,7 +66,7 @@ function fakeGateway() {
 				org: "org-acme",
 				viewer: "viewer-1",
 				solutions: [...stored.keys()].map((id) => ({
-					id,
+					targetId: `target-${id}`,
 					healthy: true,
 					scopeNodeId: `node-${id}`,
 				})),

@@ -51,7 +51,7 @@ interface EntitlementAnswer {
  * the per-viewer entitlement projection that narrows it (#949).
  */
 function gatewayServing(
-	solutions: Array<{ id: string; status: string; manifest: string }>,
+	solutions: Array<{ id: string; status: string; manifest?: string }>,
 	entitlements: EntitlementAnswer = {},
 ) {
 	return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -83,7 +83,7 @@ function gatewayServing(
 					org: entitlements.org ?? "org-acme",
 					viewer: entitlements.viewer ?? "viewer-1",
 					solutions: usable.map((id) => ({
-						id,
+						targetId: `target-${id}`,
 						healthy: !(entitlements.unhealthy ?? []).includes(id),
 						scopeNodeId: `node-${id}`,
 					})),
@@ -97,7 +97,19 @@ function gatewayServing(
 			});
 		}
 		return new Response(
-			JSON.stringify({ revision: 3, leaseSeconds: 120, solutions }),
+			JSON.stringify({
+				revision: 3,
+				leaseSeconds: 120,
+				// The host stamps each record's target from its declaration, and
+				// the entitlement answer above derives the same value from the
+				// alias — which is what lets the projection join them. A fixture
+				// that left this out would produce manifests with no target, and
+				// every projection would be legitimately empty.
+				solutions: solutions.map((entry) => ({
+					targetId: `target-${entry.id}`,
+					...entry,
+				})),
+			}),
 			{ status: 200, headers: { "content-type": "application/json" } },
 		);
 	});
@@ -310,7 +322,11 @@ describe("solutions surfaces route", () => {
 							org: "org-acme",
 							viewer: "viewer-1",
 							solutions: [
-								{ id: "audit", healthy: true, scopeNodeId: "node-audit" },
+								{
+									targetId: "target-audit",
+									healthy: true,
+									scopeNodeId: "node-audit",
+								},
 							],
 						}),
 						{ status: 200, headers: { "content-type": "application/json" } },

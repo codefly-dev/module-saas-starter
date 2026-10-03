@@ -706,6 +706,17 @@ type Store interface {
 	RetargetSolutionTarget(ctx context.Context, targetID, solutionID string, now time.Time) error
 	CloseSolutionTarget(ctx context.Context, targetID string, generation uint64, now time.Time) error
 	ListSolutionTargets(ctx context.Context) ([]*SolutionTarget, error)
+	//   - RevokeInstallationsOfTarget ends the consent a withdrawn presence
+	//     held, in the transaction that closed the target, and returns the rows
+	//     it flipped so the caller emits one audit event per organisation. It is
+	//     control-plane: the withdrawal crosses every tenant that installed the
+	//     target, so it cannot run inside one tenant's transaction.
+	RevokeInstallationsOfTarget(ctx context.Context, targetID, reason string, now time.Time) ([]RevokedInstallation, error)
+	//   - ListAvailableSolutionTargets is the catalogue read: live targets whose
+	//     binding's newest APPLIED generation is a present one, with the alias
+	//     and release that generation carries, and whether the asking
+	//     organisation already holds an active installation.
+	ListAvailableSolutionTargets(ctx context.Context, query AvailableSolutionQuery) ([]*AvailableSolutionTarget, error)
 
 	// The generation history (migration 19), append-only: the control plane holds
 	// SELECT and INSERT and nothing else, because a decision is a fact about the

@@ -185,6 +185,7 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 			BindingId:  declared.BindingID,
 			Generation: declared.Generation,
 			Release:    declared.Release,
+			TargetId:   declared.TargetID,
 		}
 	}
 	return out

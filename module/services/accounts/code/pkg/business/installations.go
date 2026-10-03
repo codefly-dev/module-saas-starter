@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -17,8 +18,17 @@ type InstallSolutionParams struct {
 	InstallerPrincipalID string
 	OrgID                string
 	AgentIdentifier      string // "publisher/name:version"
-	SolutionIdentifier   string
-	DisplayName          string // empty defaults to AgentIdentifier
+	// TargetID is the immutable solution target being installed — one continuous
+	// period of one binding's presence (solution_targets.go). An installer names
+	// an identity, never a route alias: an alias is reusable, so installing by
+	// alias installs whatever holds it now and whatever takes it later.
+	TargetID string
+	// RouteAlias is the alias the target currently serves, resolved from the
+	// target by the service before the transaction. DISPLAY ONLY — it is the
+	// default label of the authority-root scope node and appears in the audit
+	// payload. Nothing joins on it and nothing is authorised by it.
+	RouteAlias  string
+	DisplayName string // empty defaults to AgentIdentifier
 	// RootScopeLabel is the display label of the kind='solution' node. The node's
 	// ltree path is derived server-side from its id (ADR-0002), never caller-chosen.
 	RootScopeLabel string
@@ -74,7 +84,7 @@ func (s *Service) installationStore() InstallationStore {
 func (s *Service) InstallSolution(ctx context.Context, actorID string, params *InstallSolutionParams) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
-		wool.Field("solution", params.SolutionIdentifier))
+		wool.Field("target_id", params.TargetID))
 	params.GrantedBy = actorID
 	if params.OwnerPrincipalID == "" {
 		params.OwnerPrincipalID = actorID
@@ -89,9 +99,22 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 			ErrTypeValidation,
 		)
 	}
-	// Resolved before the transaction: the lookup runs as System, and calling it
-	// inside a tenant transaction would reuse that transaction instead, quietly
-	// downgrading an agent actor to "user".
+	// The target is resolved before the transaction, for the same reason the
+	// actor type is: it is control-plane state, and reading it inside the tenant
+	// transaction would reuse that transaction, where the request role holds no
+	// grant on the presence relations and the read would return nothing — a
+	// denied read printing as "no such target".
+	//
+	// Resolving is not the enforcement. A tombstone can be applied between this
+	// read and the insert, so liveness is enforced in the database by
+	// `installations_target_live_on_insert`, where the insert and the target row
+	// are in one transaction. What this read is for is the route alias (a display
+	// label) and a refusal that names the problem instead of surfacing a trigger.
+	alias, err := s.resolveInstallableTarget(ctx, params.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	params.RouteAlias = alias
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {
@@ -104,19 +127,19 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		// boundary is the solution scope node the install just composed.
 		if e := s.publishLifecycleEvent(ctx, EventInstallationCreated, params.OrgID,
 			installation.GetRootScopeNodeId(), actorID, map[string]any{
-				"installation_id":     installation.GetId(),
-				"agent_principal_id":  installation.GetAgentPrincipalId(),
-				"solution_identifier": params.SolutionIdentifier,
+				"installation_id":    installation.GetId(),
+				"agent_principal_id": installation.GetAgentPrincipalId(),
+				"target_id":          params.TargetID,
 			}); e != nil {
 			return e
 		}
 		return s.emitTx(ctx, actorID, actorType, EventInstallationCreated,
 			"installation", installation.Id, params.OrgID, map[string]any{
-				"agent_principal_id":  installation.AgentPrincipalId,
-				"solution_identifier": params.SolutionIdentifier,
-				"role_id":             params.RoleID,
-				"allowed_audiences":   params.AllowedAudiences,
-				"allowed_scopes":      params.AllowedScopes,
+				"agent_principal_id": installation.AgentPrincipalId,
+				"target_id":          params.TargetID,
+				"role_id":            params.RoleID,
+				"allowed_audiences":  params.AllowedAudiences,
+				"allowed_scopes":     params.AllowedScopes,
 			})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot install solution")
@@ -245,13 +268,96 @@ func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, o
 	}
 	if err := s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
 		installation.GetRootScopeNodeId(), actorID, map[string]any{
-			"installation_id":     installationID,
-			"solution_identifier": installation.GetSolutionIdentifier(),
+			"installation_id": installationID,
+			"target_id":       installation.GetTargetId(),
 		}); err != nil {
 		return err
 	}
 	return s.emitTx(ctx, actorID, actorType, EventInstallationRevoked,
 		"installation", installationID, orgID, map[string]any{
-			"solution_identifier": installation.SolutionIdentifier,
+			"target_id": installation.GetTargetId(),
 		})
+}
+
+// ErrSolutionTargetNotInstallable reports that a target cannot be installed: it
+// does not exist, it has been withdrawn, or its binding's newest applied
+// generation is not a present one.
+var ErrSolutionTargetNotInstallable = errors.New("solution target is not installable")
+
+// resolveInstallableTarget confirms a target is live and ACCEPTED, and returns
+// the route alias it currently serves.
+//
+// Accepted means the host has an applied, non-tombstone generation for the
+// target's binding. A target whose newest DESIRED generation was refused is
+// still installable at the release that WAS applied, which is the correct answer:
+// the host is serving that release, and refusing the install would make a bad
+// delivery pipeline run look like a withdrawn solution.
+//
+// It reads through the same catalogue query the listing serves, so there is no
+// second predicate that means to agree with it — an administrator cannot install
+// something the catalogue would not have offered.
+func (s *Service) resolveInstallableTarget(ctx context.Context, targetID string) (string, error) {
+	if targetID == "" {
+		return "", NewStoreError(
+			fmt.Errorf("%w: no target was named", ErrSolutionTargetNotInstallable),
+			ErrTypeValidation)
+	}
+	var alias string
+	var found bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		// The SAME query the catalogue listing serves, narrowed to one target.
+		// One statement, one acceptance predicate: an administrator cannot
+		// install something the catalogue would not have offered, and there is
+		// no second predicate here that means to agree with that one.
+		available, err := s.store.ListAvailableSolutionTargets(ctx,
+			AvailableSolutionQuery{TargetID: targetID, Limit: 1})
+		if err != nil {
+			return err
+		}
+		if len(available) == 1 {
+			alias, found = available[0].RouteAlias, true
+		}
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	if !found {
+		return "", NewStoreError(
+			fmt.Errorf("%w: %s is withdrawn, unknown, or has no applied present generation",
+				ErrSolutionTargetNotInstallable, targetID),
+			ErrTypeValidation)
+	}
+	return alias, nil
+}
+
+// ListAvailableSolutions is the catalogue an administrator installs from:
+// accepted applied state, never the diagnostic binding listing.
+//
+// It pages exactly as ListInstallations does — over-fetch one row and use the
+// last RETURNED row's key as the cursor — so the two listings an administration
+// screen reads side by side behave the same way.
+func (s *Service) ListAvailableSolutions(
+	ctx context.Context, orgID, pageToken string, pageSize int,
+) ([]*AvailableSolutionTarget, string, error) {
+	if pageSize <= 0 {
+		pageSize = listInstallationsDefaultPageSize
+	}
+	if pageSize > listInstallationsMaxPageSize {
+		pageSize = listInstallationsMaxPageSize
+	}
+	var available []*AvailableSolutionTarget
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		available, err = s.store.ListAvailableSolutionTargets(ctx,
+			AvailableSolutionQuery{OrgID: orgID, Cursor: pageToken, Limit: pageSize + 1})
+		return err
+	}); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(available) > pageSize {
+		available = available[:pageSize]
+		next = available[pageSize-1].TargetID
+	}
+	return available, next, nil
 }

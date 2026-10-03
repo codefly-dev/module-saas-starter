@@ -34,10 +34,16 @@ import {
   unregisterSolution,
 } from "@/solutions/registry";
 
+// The host's target for a route alias, in these fixtures. A projection joins
+// entitlements to manifests on the TARGET, so a fixture has to make the two
+// agree the way the registry snapshot does — the manifest's target is stamped
+// from the record, never parsed from the solution's own manifest.
+const targetFor = (alias: string) => `target-${alias}`;
+
 // The entitlement every projection now requires. A healthy one is the ordinary
 // case: the org installed the solution and the viewer's team was granted it.
 const granted: SolutionEntitlement = {
-  id: "audit",
+  targetId: targetFor("audit"),
   healthy: true,
   scopeNodeId: "11111111-1111-1111-1111-111111111111",
 };
@@ -999,8 +1005,10 @@ function entitlements(
   return {
     org: "org-acme",
     viewer: "viewer-1",
-    byId: new Map(solutions.map((entitlement) => [entitlement.id, entitlement])),
-    revision: solutions.map((s) => `${s.id}:${s.healthy}`).join("|"),
+    byTarget: new Map(
+      solutions.map((entitlement) => [entitlement.targetId, entitlement]),
+    ),
+    revision: solutions.map((s) => `${s.targetId}:${s.healthy}`).join("|"),
     ...rest,
   };
 }
@@ -1010,7 +1018,9 @@ function manifestFor(id: string) {
     baseManifest({ id, nav: { title: id, path: `/s/${id}` } }),
   );
   if (parsed === null) throw new Error("fixture manifest must parse");
-  return parsed;
+  // Stamped exactly as manifestsFromSnapshot stamps it: the target is the
+  // host's fact about the record, not a field of the document.
+  return { ...parsed, targetId: targetFor(id) };
 }
 
 describe("entitledSolutions", () => {
@@ -1036,8 +1046,8 @@ describe("entitledSolutions", () => {
     const clerks = entitlements({
       viewer: "viewer-in-clerks",
       solutions: [
-        { id: "ledger", healthy: true, scopeNodeId: "node-ledger" },
-        { id: "intake", healthy: true, scopeNodeId: "node-intake" },
+        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger" },
+        { targetId: targetFor("intake"), healthy: true, scopeNodeId: "node-intake" },
       ],
     });
     expect(
@@ -1053,7 +1063,7 @@ describe("entitledSolutions", () => {
     const before = entitlements({
       solutions: [
         granted,
-        { id: "ledger", healthy: true, scopeNodeId: "node-ledger" },
+        { targetId: targetFor("ledger"), healthy: true, scopeNodeId: "node-ledger" },
       ],
     });
     expect(entitledSolutions(registered, before)).toHaveLength(2);
@@ -1073,7 +1083,7 @@ describe("entitledSolutions", () => {
       entitlements({
         solutions: [
           granted,
-          { id: "retired", healthy: true, scopeNodeId: "node-retired" },
+          { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired" },
         ],
       }),
     );
@@ -1145,26 +1155,30 @@ describe("an entitlement that can never join a registration", () => {
       undefined;
   });
 
-  it("is reported once, instead of the solution silently never appearing", () => {
-    // An installation's solution_identifier is free text; a registered id is a
-    // slug. "acme.example/solution" can never match, so without a report the
-    // solution is installed, granted, and invisible with no error anywhere.
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("is reported once when a viewer is entitled to a target the registry does not serve", () => {
+    // Ordinary during a redeploy, so it is debug volume rather than an error —
+    // but reported ONCE per target, because a lasting mismatch means presence
+    // and installation have genuinely diverged and nothing else would say so.
+    const logged = vi.spyOn(console, "debug").mockImplementation(() => {});
     try {
-      const unjoinable = entitlements({
+      const unserved = entitlements({
         solutions: [
           granted,
-          { id: "acme.example/solution", healthy: true, scopeNodeId: "node-x" },
+          {
+            targetId: "target-not-currently-served",
+            healthy: true,
+            scopeNodeId: "node-x",
+          },
         ],
       });
-      entitledSolutions([manifestFor("audit")], unjoinable);
-      entitledSolutions([manifestFor("audit")], unjoinable);
-      const reports = errors.mock.calls.filter((call) =>
-        String(call[0]).includes("acme.example/solution"),
+      entitledSolutions([manifestFor("audit")], unserved);
+      entitledSolutions([manifestFor("audit")], unserved);
+      const reports = logged.mock.calls.filter((call) =>
+        String(call[0]).includes("target-not-currently-served"),
       );
       expect(reports).toHaveLength(1);
     } finally {
-      errors.mockRestore();
+      logged.mockRestore();
     }
   });
 
@@ -1176,7 +1190,7 @@ describe("an entitlement that can never join a registration", () => {
         entitlements({
           solutions: [
             granted,
-            { id: "retired", healthy: true, scopeNodeId: "node-retired" },
+            { targetId: targetFor("retired"), healthy: true, scopeNodeId: "node-retired" },
           ],
         }),
       );

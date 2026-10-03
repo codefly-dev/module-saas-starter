@@ -28,12 +28,8 @@ const (
 // consumer of this message renders a menu, and the owner of record, the
 // succession set and the agent principal are no part of that.
 type SolutionEntitlement struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The installed solution's identifier. This is the key a consumer joins
-	// against its own registered set — for the host's solution registry, the
-	// registered manifest `id`.
-	SolutionIdentifier string `protobuf:"bytes,1,opt,name=solution_identifier,json=solutionIdentifier,proto3" json:"solution_identifier,omitempty"`
-	InstallationId     string `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
 	// The installation's authority-root scope node — the node the viewer's grant
 	// had to reach for this entitlement to exist. Carried so a consumer can say
 	// which boundary admitted a solution without a second lookup.
@@ -47,7 +43,19 @@ type SolutionEntitlement struct {
 	// enum here would be a second copy of a value set to keep in lockstep. This
 	// reduces it instead, by the one rule that survives the enum growing: anything
 	// that is not HEALTHY is not healthy.
-	Healthy       bool `protobuf:"varint,4,opt,name=healthy,proto3" json:"healthy,omitempty"`
+	Healthy bool `protobuf:"varint,4,opt,name=healthy,proto3" json:"healthy,omitempty"`
+	// The immutable solution target this entitlement is for — the key a consumer
+	// joins against its own registered set.
+	//
+	// A consumer resolves a route alias to a target through the host's applied
+	// presence state and then compares THIS id. That is what makes the alias-reuse
+	// transfer inexpressible: a replacement binding claiming a withdrawn alias
+	// resolves to its own target, which no installation of the predecessor names.
+	//
+	// The alias is deliberately absent. Carrying it here would let a consumer go
+	// back to joining on it, and it would be a copy of a value the presence
+	// snapshot already owns and may move.
+	TargetId      string `protobuf:"bytes,5,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,13 +90,6 @@ func (*SolutionEntitlement) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_solution_entitlements_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *SolutionEntitlement) GetSolutionIdentifier() string {
-	if x != nil {
-		return x.SolutionIdentifier
-	}
-	return ""
-}
-
 func (x *SolutionEntitlement) GetInstallationId() string {
 	if x != nil {
 		return x.InstallationId
@@ -108,6 +109,13 @@ func (x *SolutionEntitlement) GetHealthy() bool {
 		return x.Healthy
 	}
 	return false
+}
+
+func (x *SolutionEntitlement) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
 }
 
 type ListSolutionEntitlementsRequest struct {
@@ -243,12 +251,12 @@ var File_saas_accounts_v1_solution_entitlements_proto protoreflect.FileDescripto
 
 const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
 	"\n" +
-	",saas/accounts/v1/solution_entitlements.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\"\xca\x01\n" +
-	"\x13SolutionEntitlement\x12/\n" +
-	"\x13solution_identifier\x18\x01 \x01(\tR\x12solutionIdentifier\x121\n" +
+	",saas/accounts/v1/solution_entitlements.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\"\xdb\x01\n" +
+	"\x13SolutionEntitlement\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x125\n" +
 	"\x12root_scope_node_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0frootScopeNodeId\x12\x18\n" +
-	"\ahealthy\x18\x04 \x01(\bR\ahealthy\"\xb3\x01\n" +
+	"\ahealthy\x18\x04 \x01(\bR\ahealthy\x12%\n" +
+	"\ttarget_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetIdJ\x04\b\x01\x10\x02R\x13solution_identifier\"\xb3\x01\n" +
 	"\x1fListSolutionEntitlementsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
 	"\n" +

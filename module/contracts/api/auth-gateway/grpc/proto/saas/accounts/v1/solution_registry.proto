@@ -206,6 +206,17 @@ message SolutionDeclaredBinding {
   // publisher/name@version of the applied generation: the release a heartbeat
   // may not replace.
   string release = 3;
+  // The immutable solution target this declaration opened — the identity an
+  // installation names. It is carried on the registration record so a consumer
+  // that was asked about a ROUTE ALIAS can resolve it to the target that
+  // currently serves it and compare identities.
+  //
+  // That resolution is the whole admission mechanism: a replacement binding
+  // which claimed a withdrawn alias resolves to its own target, which no
+  // installation of its predecessor names. A record with no declaration carries
+  // no target and is therefore admissible to nobody, which is the fail-closed
+  // answer and the direction of the cutover.
+  string target_id = 4;
 }
 
 // SolutionHostBindingGeneration is one generation of one document. The document

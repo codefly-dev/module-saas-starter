@@ -140,6 +140,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"InstallationService/TransferInstallationOwnership":            "Reassign an installation's accountable owner of record.",
 	"InstallationService/GetInstallation":                          "Get one installation and its live health.",
 	"InstallationService/ListInstallations":                        "List one organization's installations with their live health.",
+	"InstallationService/ListAvailableSolutions":                   "List the solution targets an administrator may install: accepted applied presence, never a refused desired generation.",
 	"SolutionEntitlementService/ListSolutionEntitlements":          "List the installed solutions a subject may use in one organization.",
 	"DelegationService/ListPendingDelegations":                     "List pending organization delegations.",
 	"DelegationService/RequestDelegation":                          "Request a scoped authority delegation.",

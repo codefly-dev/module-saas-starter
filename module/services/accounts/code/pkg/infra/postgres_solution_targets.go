@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -119,4 +120,132 @@ func (s *PostgresStore) ListSolutionTargets(ctx context.Context) ([]*business.So
 		targets = append(targets, target)
 	}
 	return targets, rows.Err()
+}
+
+// RevokeInstallationsOfTarget ends every active installation of a target the
+// reconcile pass has just closed, and returns the rows it flipped.
+//
+// It runs on the control-plane connection, in the same transaction as the close.
+// That is not an optimisation: a withdrawal crosses every organisation that
+// installed the target, so there is no single tenant transaction this could run
+// in, and leaving it to a later sweep would mean a window in which an
+// installation records consent to a presence that has ended.
+//
+// `installations` FORCEs row-level security and its policies admit the
+// control-plane role, so this UPDATE matches rows without lifting anything — the
+// relation is reached the same way every other control-plane installation write
+// reaches it.
+//
+// The status/revoked_at consistency CHECK is satisfied by setting both, and the
+// `installations_target_immutable` trigger is untouched because target_id is not
+// in the SET list: the row keeps naming the identity whose consent ended, which
+// is what makes the revocation attributable.
+func (s *PostgresStore) RevokeInstallationsOfTarget(
+	ctx context.Context, targetID, reason string, now time.Time,
+) ([]business.RevokedInstallation, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		UPDATE public.installations
+		   SET status = 'revoked', revoked_at = $3, revoked_reason = $2
+		 WHERE target_id = $1::uuid AND status = 'active'
+		RETURNING id::text, org_id::text`, targetID, reason, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	revoked := []business.RevokedInstallation{}
+	for rows.Next() {
+		var entry business.RevokedInstallation
+		if err := rows.Scan(&entry.InstallationID, &entry.OrgID); err != nil {
+			return nil, err
+		}
+		revoked = append(revoked, entry)
+	}
+	return revoked, rows.Err()
+}
+
+// ListAvailableSolutionTargets is the catalogue: live targets whose binding's
+// newest APPLIED generation is a present one.
+//
+// The acceptance predicate is the join itself, which is why it is one statement:
+// a target is offered only when `solution_host_bindings` holds an applied
+// generation for its binding that is NOT a tombstone. A binding whose newest
+// DESIRED generation was refused still has its previous applied generation, so it
+// stays offered at the release this host actually admitted — which is the correct
+// answer and the one a diagnostic listing would get wrong by reporting the
+// refused desired generation beside it.
+//
+// `installed` is resolved in the same statement rather than by a second query per
+// row, for the reason the installation listing resolves health inline: a
+// catalogue of n rows must not cost n+1 round trips.
+//
+// Control-plane: it reads presence state, which request traffic holds no grant
+// on. The org is a parameter, never the session's — the caller is an org admin
+// whose organisation the gateway projected from a verified identity.
+func (s *PostgresStore) ListAvailableSolutionTargets(
+	ctx context.Context, query business.AvailableSolutionQuery,
+) ([]*business.AvailableSolutionTarget, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 1
+	}
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		SELECT t.id::text, t.binding_id, t.solution_id,
+		       b.applied_release, t.opened_generation, b.applied_generation,
+		       ($1 <> '' AND EXISTS (
+		           SELECT 1 FROM public.installations i
+		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status = 'active'
+		       ))
+		  FROM public.solution_targets t
+		  JOIN public.solution_host_bindings b ON b.binding_id = t.binding_id
+		 WHERE t.closed_generation IS NULL
+		   AND b.applied_generation IS NOT NULL
+		   AND b.applied_removed = FALSE
+		   AND ($4 = '' OR t.id::text = $4)
+		   AND ($2 = '' OR t.id::text > $2)
+		 ORDER BY t.id
+		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	available := []*business.AvailableSolutionTarget{}
+	for rows.Next() {
+		var (
+			entry             business.AvailableSolutionTarget
+			release           *string
+			openedGeneration  int64
+			appliedGeneration int64
+		)
+		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias,
+			&release, &openedGeneration, &appliedGeneration, &entry.Installed); err != nil {
+			return nil, err
+		}
+		entry.OpenedGeneration = uint64(openedGeneration)
+		entry.AppliedGeneration = uint64(appliedGeneration)
+		entry.ReleasePublisher, entry.ReleaseName, entry.ReleaseVersion = splitReleaseIdentity(release)
+		available = append(available, &entry)
+	}
+	return available, rows.Err()
+}
+
+// splitReleaseIdentity reverses core's Release.Identity() —
+// `publisher/name@version` — whose publisher and name are single path segments,
+// so the joined string maps back to exactly one of each.
+//
+// A release that does not match the shape yields three empty strings rather than
+// a partial guess: a catalogue row showing half a release version is worse than
+// one showing none, because only the second is visibly wrong.
+func splitReleaseIdentity(identity *string) (publisher, name, version string) {
+	if identity == nil {
+		return "", "", ""
+	}
+	owner, version, found := strings.Cut(*identity, "@")
+	if !found {
+		return "", "", ""
+	}
+	publisher, name, found = strings.Cut(owner, "/")
+	if !found {
+		return "", "", ""
+	}
+	return publisher, name, version
 }

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **248 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **249 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -81,6 +81,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.IdentityService/ResolveIdentity` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Internal: provider id → user/org/roles. |
 | `/saas.accounts.v1.InstallationService/GetInstallation` | unary | `GET /v1/installations/{installation_id}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Get one installation and its live health. |
 | `/saas.accounts.v1.InstallationService/InstallSolution` | unary | `POST /v1/installations` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install a solution: compose its agent principal, scope node, standing grant, and installation row. |
+| `/saas.accounts.v1.InstallationService/ListAvailableSolutions` | unary | `GET /v1/installations:listAvailable` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the solution targets an administrator may install: accepted applied presence, never a refused desired generation. |
 | `/saas.accounts.v1.InstallationService/ListInstallations` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List one organization's installations with their live health. |
 | `/saas.accounts.v1.InstallationService/TransferInstallationOwnership` | unary | `POST /v1/installations/{installation_id}:transferOwnership` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.ownership_transferred | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Reassign an installation's accountable owner of record. |
 | `/saas.accounts.v1.InstallationService/UninstallSolution` | unary | `POST /v1/installations/{installation_id}:uninstall` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Uninstall a solution and reverse its composition. |
@@ -262,7 +263,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 43
 - `internal`: 52
 - `mfa`: 4
-- `org_admin`: 56
+- `org_admin`: 57
 - `org_member`: 49
 - `platform_admin`: 26
 - `public`: 18

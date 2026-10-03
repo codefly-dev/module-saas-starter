@@ -51,13 +51,42 @@ message Installation {
   string id = 1 [(buf.validate.field).string.uuid = true];
   string org_id = 2 [(buf.validate.field).string.uuid = true];
   string agent_principal_id = 3 [(buf.validate.field).string.uuid = true];
-  string solution_identifier = 4;
+  // Was `solution_identifier`: the free-text route alias. It was the join key
+  // every reader used, and because an alias is deliberately reusable by a later
+  // binding, an installation that named one inherited whatever took it next.
+  // Replaced by target_id below. Reserved rather than reused so no consumer can
+  // read an alias out of a field that now carries an identity.
+  reserved 4;
+  reserved "solution_identifier";
   string owner_principal_id = 5 [(buf.validate.field).string.uuid = true];
   repeated string co_owner_principal_ids = 6;
   string root_scope_node_id = 7 [(buf.validate.field).string.uuid = true];
   InstallationStatus status = 8;
   google.protobuf.Timestamp created_at = 9;
   optional google.protobuf.Timestamp revoked_at = 10;
+  // The immutable solution target this installation was consented to: one
+  // continuous period of one binding's presence on this host. It is never
+  // reused, so a replacement binding — even one claiming the same route alias —
+  // is a different target and inherits nothing.
+  //
+  // Deliberately NOT accompanied by the route alias. The alias is a property of
+  // the target that a later generation may move, and resolving it here would
+  // mean joining the host's presence state into a request-path listing — which
+  // would require granting request traffic read over every organisation's
+  // presence to answer about one. A consumer that needs the alias asks
+  // ListAvailableSolutions, which serves accepted applied state, and joins on
+  // this id.
+  //
+  // Empty only on a revoked historical row whose target could not be
+  // established at the cutover; an active installation always names one.
+  string target_id = 11 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Why a revoked installation was revoked, when it was not an administrator
+  // uninstalling: the installation-identity cutover, or a tenancy narrowing that
+  // withdrew this organisation. Empty on an active row.
+  string revoked_reason = 12 [(buf.validate.field).string.max_len = 512];
 }
 
 message InstallSolutionRequest {
@@ -68,10 +97,11 @@ message InstallSolutionRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
   ];
-  string solution_identifier = 3 [
-    (buf.validate.field).string.min_len = 1,
-    (buf.validate.field).string.max_len = 512
-  ];
+  // Was `solution_identifier`: the route alias the installer typed. An alias is
+  // reusable, so installing by alias is installing whatever holds it at the
+  // moment the write lands — and whatever takes it later. Replaced by target_id.
+  reserved 3;
+  reserved "solution_identifier";
   // Human display name for the agent principal. Empty defaults to the identifier.
   string display_name = 4 [(buf.validate.field).string.max_len = 512];
   // The authority-root scope path is derived server-side from the created node id
@@ -109,6 +139,14 @@ message InstallSolutionRequest {
     (buf.validate.field).repeated.max_items = 64,
     (buf.validate.field).repeated.items.string.max_len = 128
   ];
+  // The solution target being installed, from ListAvailableSolutions. Required.
+  //
+  // An installer chooses an identity, never an address. The target must be LIVE
+  // and ACCEPTED when the install lands: installing a withdrawn target would
+  // record consent to a presence that already ended, and installing a target
+  // whose newest generation was refused would record consent to a release this
+  // host never admitted.
+  string target_id = 12 [(buf.validate.field).string.uuid = true];
 }
 
 message UninstallSolutionRequest {
@@ -313,4 +351,85 @@ service InstallationService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
+
+  // ListAvailableSolutions is the catalogue: the solution targets an
+  // administrator may install right now.
+  //
+  // It answers from ACCEPTED applied state — a live target whose binding's
+  // newest APPLIED generation is a present one — and deliberately not from the
+  // diagnostic ListSolutionHostBindings, which also reports desired generations
+  // that were refused. The distinction is the point: a refused generation is
+  // something an operator must see and something an administrator must not be
+  // able to consent to, because consenting to a release this host never admitted
+  // records authority over a presence that does not exist.
+  //
+  // It carries the route alias, which the installation record deliberately does
+  // not: here the alias is a display and routing fact read from the target in
+  // the same statement, not an identity anything joins on.
+  rpc ListAvailableSolutions(ListAvailableSolutionsRequest) returns (ListAvailableSolutionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    // Mounted under `/v1/installations`, a prefix the catalog already owns.
+    // A `/v1/solutions` route would have taken that prefix away from every
+    // composed module that may register one, which is a contract change with
+    // every downstream composer and not a side effect of adding a read.
+    option (google.api.http) = {get: "/v1/installations:listAvailable"};
+  }
+}
+
+// AvailableSolution is one installable solution target: its immutable identity,
+// the release the host currently has applied for it, and where it is routed.
+message AvailableSolution {
+  // The immutable target identity an install names. Never reused.
+  string target_id = 1 [(buf.validate.field).string.uuid = true];
+  // The binding whose presence this target records. Carried so an operator can
+  // correlate a catalogue row with delivery; an installation does not join on it,
+  // because one binding may have several targets over time.
+  string binding_id = 2;
+  // The route alias the applied generation claims — `/solutions/<alias>/*`. A
+  // later generation may move it, so it is never an identity.
+  string route_alias = 3;
+  // The applied release: publisher, name, version.
+  string release_publisher = 4;
+  string release_name = 5;
+  string release_version = 6;
+  // The generation that opened this target, and the newest applied generation.
+  // Equal until a later generation is applied for the same presence.
+  uint64 opened_generation = 7;
+  uint64 applied_generation = 8;
+  // True when this organization already has an ACTIVE installation of this
+  // target. A catalogue shows it as installed rather than offering it twice; the
+  // unique index over (org_id, target_id) would refuse the second install anyway,
+  // and an administrator should not have to discover that by being refused.
+  bool installed = 9;
+}
+
+message ListAvailableSolutionsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 -> server default; capped for the same reason the installation
+  // listing is capped.
+  int32 page_size = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  string page_token = 3;
+}
+
+message ListAvailableSolutionsResponse {
+  repeated AvailableSolution solutions = 1;
+  string next_page_token = 2;
 }

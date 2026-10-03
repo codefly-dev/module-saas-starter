@@ -221,7 +221,40 @@ organization taken from there is one the caller chose.
 The authority answer is `SolutionEntitlementService.ListSolutionEntitlements`,
 which reads the installation set and the scope grant + share union in **one**
 transaction, so the two can never describe different moments. The join key is the
-solution id: `installations.solution_identifier` is the registered manifest `id`.
+immutable solution target: `installations.target_id` is the target a
+registration record was **declared** under, which the registry projection carries
+as `targetId`.
+
+It used to be the route alias — `installations.solution_identifier` against the
+registered manifest `id` — and that was a transfer of consent waiting to happen.
+A route alias is deliberately **reusable**: a tombstoned one may be claimed by
+another binding. So an organization that installed the binding behind `reports`,
+and exposed it to a team, had that installation and that team grant follow the
+alias to whatever claimed it next, with no administrator having acted. A rename
+is the same defect from the other side: the installation kept the old text, the
+organization silently lost access, and the next claimant of the old alias
+inherited the installation.
+
+A **solution target** is one continuous period of one binding's presence on this
+host (`solution_targets`, migration 18). It is opened when a present generation
+applies for a binding with no live target, closed by that binding's tombstone
+generation, and **never reused** — so a replacement is a different identity and
+inherits nothing. The alias lives on the target and moves with a generation that
+renames it, which is precisely why it is not the identity.
+
+Three consequences worth stating, because each is a behaviour rather than a
+restatement:
+
+- **Closing a target revokes every active installation of it, in the same
+  transaction as the tombstone**, and records `installations.revoked_reason` so a
+  withdrawal is distinguishable from an administrator's uninstall.
+- **Presence nothing declared is admissible to nobody.** A registration record
+  with no declaration carries no target, so no installation can name it and the
+  proxy refuses it as a verdict (`403`), not an outage.
+- **An installation names a target from `ListAvailableSolutions`**, which serves
+  accepted *applied* state — never the diagnostic binding listing, which also
+  reports desired generations that were refused. Consenting to a release this
+  host never admitted would record authority over a presence that does not exist.
 
 Four distinctions the projections keep:
 

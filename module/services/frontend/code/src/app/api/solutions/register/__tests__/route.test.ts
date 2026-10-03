@@ -103,6 +103,11 @@ function fakeGateway() {
 				revision,
 				leaseSeconds: 120,
 				solutions: [...stored].map(([id, manifest]) => ({
+					// The host stamps the target from the record's declaration;
+					// the fixture derives it from the alias so the entitlement
+					// answer below can agree with it, which is what the join
+					// needs. See projections.ts.
+					targetId: `target-${id}`,
 					id,
 					status: "active",
 					manifest,
@@ -121,7 +126,7 @@ function fakeGateway() {
 				org: "org-acme",
 				viewer: "viewer-1",
 				solutions: [...stored.keys()].map((id) => ({
-					id,
+					targetId: `target-${id}`,
 					healthy: true,
 					scopeNodeId: `node-${id}`,
 				})),
@@ -620,7 +625,7 @@ describe("solutions register route auth", () => {
 		expect(stored).not.toBeNull();
 		expect(stored).not.toBe("unavailable");
 		const projected = navProjection(stored as SolutionManifest, {
-			id: "audit",
+			targetId: (stored as SolutionManifest).targetId,
 			healthy: true,
 			scopeNodeId: "node-audit",
 		});

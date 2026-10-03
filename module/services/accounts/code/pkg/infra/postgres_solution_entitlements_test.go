@@ -37,22 +37,39 @@ func solutionRole(t *testing.T, orgID string) string {
 	return roleID
 }
 
-// installSolution installs one solution into org and returns it. The agent's own
-// standing grant is written at its root node; no team grant is, which is the
-// "no implicit grants" property several tests below rest on.
+// installSolution declares presence for one alias and installs the target it
+// opens, returning the installation. The agent's own standing grant is written at
+// its root node; no team grant is, which is the "no implicit grants" property
+// several tests below rest on.
+//
+// It declares presence first because an installation names a target, and a target
+// exists only where the host applied a present generation. The binding id is
+// derived from the alias so each alias gets its own binding, which is what lets a
+// test hand one alias from one binding to another.
 func installSolution(t *testing.T, orgID, ownerID, roleID, identifier string) *gen.Installation {
+	t.Helper()
+	alias := uniqueAlias(identifier)
+	return installSolutionTarget(t, orgID, ownerID, roleID, identifier,
+		declarePresence(t, "acme.test."+alias, alias))
+}
+
+// installSolutionTarget installs one already-declared target, so a test can
+// install the SAME target twice, or install a replacement target that claimed a
+// predecessor's alias.
+func installSolutionTarget(t *testing.T, orgID, ownerID, roleID, label, targetID string) *gen.Installation {
 	t.Helper()
 	var installation *gen.Installation
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
 		installation, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
-			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/" + identifier + ":1.0.0",
-			SolutionIdentifier: identifier,
-			RootScopeLabel:     identifier,
-			RoleID:             roleID,
-			OwnerPrincipalID:   ownerID,
-			GrantedBy:          ownerID,
+			OrgID:            orgID,
+			AgentIdentifier:  "acme.example/" + label + ":1.0.0",
+			TargetID:         targetID,
+			RouteAlias:       label,
+			RootScopeLabel:   label,
+			RoleID:           roleID,
+			OwnerPrincipalID: ownerID,
+			GrantedBy:        ownerID,
 		})
 		return err
 	}))
@@ -111,7 +128,7 @@ func entitledIdentifiers(t *testing.T, orgID, subjectID string) []string {
 	}))
 	identifiers := make([]string, 0, len(out))
 	for _, entitlement := range out {
-		identifiers = append(identifiers, entitlement.GetSolutionIdentifier())
+		identifiers = append(identifiers, entitlement.GetTargetId())
 	}
 	return identifiers
 }
@@ -319,17 +336,18 @@ func listInstallations(t *testing.T, orgID string, status gen.InstallationStatus
 
 func TestListInstallations_ReturnsTheOrgsInstallationsWithHealth(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	installSolution(t, orgID, ownerID, roleID, "audit")
-	installSolution(t, orgID, ownerID, roleID, "ledger")
+	audit := installSolution(t, orgID, ownerID, roleID, "audit")
+	ledger := installSolution(t, orgID, ownerID, roleID, "ledger")
 
 	summaries := listInstallations(t, orgID, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, "", 100)
 	require.Len(t, summaries, 2)
 	identifiers := make([]string, 0, 2)
 	for _, summary := range summaries {
-		identifiers = append(identifiers, summary.GetInstallation().GetSolutionIdentifier())
+		identifiers = append(identifiers, summary.GetInstallation().GetTargetId())
 		require.Equal(t, gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, summary.GetHealth())
 	}
-	require.ElementsMatch(t, []string{"audit", "ledger"}, identifiers)
+	require.ElementsMatch(t,
+		[]string{audit.GetTargetId(), ledger.GetTargetId()}, identifiers)
 }
 
 // UNSPECIFIED returns every status, so a caller that wants only live installs must
@@ -337,7 +355,7 @@ func TestListInstallations_ReturnsTheOrgsInstallationsWithHealth(t *testing.T) {
 func TestListInstallations_FiltersByStatus(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
 	audit := installSolution(t, orgID, ownerID, roleID, "audit")
-	installSolution(t, orgID, ownerID, roleID, "ledger")
+	ledger := installSolution(t, orgID, ownerID, roleID, "ledger")
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		_, _, err := testStore.UninstallSolution(ctx, orgID, audit.GetId())
 		return err
@@ -345,17 +363,17 @@ func TestListInstallations_FiltersByStatus(t *testing.T) {
 
 	active := listInstallations(t, orgID, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, "", 100)
 	require.Len(t, active, 1)
-	require.Equal(t, "ledger", active[0].GetInstallation().GetSolutionIdentifier())
+	require.Equal(t, ledger.GetId(), active[0].GetInstallation().GetId())
 
 	revoked := listInstallations(t, orgID, gen.InstallationStatus_INSTALLATION_STATUS_REVOKED, "", 100)
 	require.Len(t, revoked, 1)
-	require.Equal(t, "audit", revoked[0].GetInstallation().GetSolutionIdentifier())
+	require.Equal(t, audit.GetId(), revoked[0].GetInstallation().GetId())
 
 	require.Len(t, listInstallations(t, orgID, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, "", 100), 2)
 }
 
 // The keyset cursor walks every row exactly once. It is `id` rather than
-// solution_identifier because only `id` is unique across statuses.
+// target_id because only `id` is unique across statuses.
 func TestListInstallations_PagesWithoutRepeatingOrSkipping(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
 	for _, identifier := range []string{"one", "two", "three", "four"} {
@@ -370,7 +388,7 @@ func TestListInstallations_PagesWithoutRepeatingOrSkipping(t *testing.T) {
 			break
 		}
 		for _, summary := range summaries {
-			seen[summary.GetInstallation().GetSolutionIdentifier()]++
+			seen[summary.GetInstallation().GetTargetId()]++
 		}
 		token = summaries[len(summaries)-1].GetInstallation().GetId()
 		if len(summaries) < 2 {
@@ -385,13 +403,13 @@ func TestListInstallations_PagesWithoutRepeatingOrSkipping(t *testing.T) {
 
 func TestListInstallations_IsTenantIsolated(t *testing.T) {
 	orgA, ownerA, roleA := entitlementOrg(t)
-	installSolution(t, orgA, ownerA, roleA, "audit")
+	auditInA := installSolution(t, orgA, ownerA, roleA, "audit")
 	orgB, ownerB, roleB := entitlementOrg(t)
 	installSolution(t, orgB, ownerB, roleB, "ledger")
 
 	a := listInstallations(t, orgA, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, "", 100)
 	require.Len(t, a, 1)
-	require.Equal(t, "audit", a[0].GetInstallation().GetSolutionIdentifier())
+	require.Equal(t, auditInA.GetId(), a[0].GetInstallation().GetId())
 }
 
 func TestListInstallations_RejectsAForeignCursor(t *testing.T) {

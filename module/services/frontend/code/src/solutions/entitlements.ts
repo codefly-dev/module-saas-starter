@@ -29,8 +29,17 @@ import { getEndpoints, getWorkspaceSecret } from "codefly";
 
 /** One installed solution the viewer may use. */
 export interface SolutionEntitlement {
-	/** The registered solution id this entitlement admits. */
-	id: string;
+	/**
+	 * The immutable solution TARGET this entitlement admits — one continuous
+	 * period of one binding's presence on the host, never reused.
+	 *
+	 * It replaced the registered solution id, which is the route alias. An alias
+	 * is deliberately reusable by a later binding, so joining a menu on it let a
+	 * REPLACEMENT solution inherit the predecessor's entitlement: it appeared in
+	 * the viewer's menu, under the predecessor's team grant, with nobody having
+	 * acted. A target cannot be reused, so it cannot be inherited.
+	 */
+	targetId: string;
 	/**
 	 * Whether the installation is healthy right now. An unhealthy one is still
 	 * entitled — the org installed it and the viewer was granted it — so it stays
@@ -48,7 +57,12 @@ export interface ViewerEntitlements {
 	org: string;
 	/** The viewer the gateway verified. */
 	viewer: string;
-	byId: Map<string, SolutionEntitlement>;
+	/**
+	 * Keyed on the solution TARGET, which is what a consumer must join on. It is
+	 * named for the key rather than left as `byId`, so a reader cannot assume the
+	 * old alias join still works by reading the field name.
+	 */
+	byTarget: Map<string, SolutionEntitlement>;
 	/**
 	 * A fingerprint of the entitled set, for a consumer keying a cache on it.
 	 *
@@ -129,7 +143,7 @@ function internalToken(): string | null {
 }
 
 interface GatewayEntitlementEntry {
-	id?: unknown;
+	targetId?: unknown;
 	healthy?: unknown;
 	scopeNodeId?: unknown;
 }
@@ -148,7 +162,7 @@ function entitlementRevision(entitlements: SolutionEntitlement[]): string {
 	const canonical = entitlements
 		.map(
 			(entitlement) =>
-				`${entitlement.id}\u0000${entitlement.scopeNodeId}\u0000${entitlement.healthy ? "1" : "0"}`,
+				`${entitlement.targetId}\u0000${entitlement.scopeNodeId}\u0000${entitlement.healthy ? "1" : "0"}`,
 		)
 		.sort()
 		.join("\u0001");
@@ -183,10 +197,10 @@ function parseEntitlements(body: unknown): ViewerEntitlements | null {
 	const parsed: SolutionEntitlement[] = [];
 	for (const entry of solutions as GatewayEntitlementEntry[]) {
 		if (typeof entry !== "object" || entry === null) return null;
-		if (typeof entry.id !== "string" || entry.id === "") return null;
+		if (typeof entry.targetId !== "string" || entry.targetId === "") return null;
 		if (typeof entry.healthy !== "boolean") return null;
 		parsed.push({
-			id: entry.id,
+			targetId: entry.targetId,
 			healthy: entry.healthy,
 			scopeNodeId:
 				typeof entry.scopeNodeId === "string" ? entry.scopeNodeId : "",
@@ -195,7 +209,9 @@ function parseEntitlements(body: unknown): ViewerEntitlements | null {
 	return {
 		org,
 		viewer,
-		byId: new Map(parsed.map((entitlement) => [entitlement.id, entitlement])),
+		byTarget: new Map(
+			parsed.map((entitlement) => [entitlement.targetId, entitlement]),
+		),
 		revision: entitlementRevision(parsed),
 	};
 }

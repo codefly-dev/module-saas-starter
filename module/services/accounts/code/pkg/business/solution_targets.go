@@ -46,6 +46,54 @@ type SolutionTarget struct {
 // Live reports whether this target is the one an installation may currently name.
 func (t *SolutionTarget) Live() bool { return t != nil && t.ClosedGeneration == nil }
 
+// RevokedInstallation is one installation a withdrawal ended: enough to attribute
+// the audit event, and nothing more. The caller emits per organisation because an
+// installation-revoked event belongs to the tenant whose consent ended, and a
+// withdrawal can end several at once.
+type RevokedInstallation struct {
+	InstallationID string
+	OrgID          string
+}
+
+// AvailableSolutionQuery narrows the catalogue read. It exists so the listing and
+// the single-target check an install performs are ONE query with one acceptance
+// predicate: a second query that meant to agree with this one is how an install
+// ends up accepting something the catalogue would not offer.
+type AvailableSolutionQuery struct {
+	// OrgID is whose installations decide the `installed` flag. Empty answers
+	// false for every row, which is what a check that does not care wants.
+	OrgID string
+	// TargetID narrows to one target. When set, Cursor is ignored.
+	TargetID string
+	Cursor   string
+	Limit    int
+}
+
+// AvailableSolutionTarget is one row of the catalogue: a solution target an
+// administrator may install right now.
+//
+// It is built from ACCEPTED applied state and deliberately not from the
+// diagnostic binding listing, which also reports desired generations that were
+// refused. A refused generation is something an operator must see and something
+// an administrator must not be able to consent to: consenting to a release this
+// host never admitted records authority over a presence that does not exist.
+type AvailableSolutionTarget struct {
+	TargetID   string
+	BindingID  string
+	RouteAlias string
+	// The applied release, split so a consumer renders it without parsing.
+	ReleasePublisher string
+	ReleaseName      string
+	ReleaseVersion   string
+	OpenedGeneration uint64
+	// AppliedGeneration is the binding's newest applied generation, which is >=
+	// OpenedGeneration once a later present generation has been applied.
+	AppliedGeneration uint64
+	// Installed reports whether the asking organisation already holds an ACTIVE
+	// installation of this target.
+	Installed bool
+}
+
 // SolutionGenerationDecision is one entry in the generation history: a generation
 // this host decided about, and what it decided (migration 19).
 //

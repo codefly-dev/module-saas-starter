@@ -26,28 +26,32 @@ func (a *installedEverythingRegistered) List(
 	_ context.Context, _ *accountsv1.ListSolutionEntitlementsRequest,
 ) (*accountsv1.ListSolutionEntitlementsResponse, error) {
 	a.registry.mu.Lock()
-	ids := make([]string, 0, len(a.registry.records))
-	for id, record := range a.registry.records {
-		if record.GetTombstonedAt() != nil {
+	// The entitled set is keyed on the TARGET each record is declared under, not
+	// on the alias: that is what the gateway compares, and a fake answering
+	// aliases would make every admission test green against the alias join this
+	// change exists to remove.
+	targets := make([]string, 0, len(a.registry.records))
+	for _, record := range a.registry.records {
+		if record.GetTombstonedAt() != nil || record.GetDeclared().GetTargetId() == "" {
 			continue
 		}
-		ids = append(ids, id)
+		targets = append(targets, record.GetDeclared().GetTargetId())
 	}
 	a.registry.mu.Unlock()
-	sort.Strings(ids)
+	sort.Strings(targets)
 	resp := &accountsv1.ListSolutionEntitlementsResponse{}
-	for _, id := range ids {
+	for _, target := range targets {
 		resp.Entitlements = append(resp.Entitlements, &accountsv1.SolutionEntitlement{
-			SolutionIdentifier: id,
-			InstallationId:     "install-" + id,
-			RootScopeNodeId:    "node-" + id,
-			Healthy:            true,
+			TargetId:        target,
+			InstallationId:  "install-" + target,
+			RootScopeNodeId: "node-" + target,
+			Healthy:         true,
 		})
 	}
 	return resp, nil
 }
 
-// entitledTo is an authority that admits exactly the named solutions, and
+// entitledTo is an authority that admits exactly the named TARGETS, and
 // records what it was asked — which is the point of most admission tests: the
 // organization and viewer the authority is asked about must be the ones
 // ext_authz verified.
@@ -63,10 +67,10 @@ func (a *entitledTo) List(
 	resp := &accountsv1.ListSolutionEntitlementsResponse{}
 	for _, id := range a.ids {
 		resp.Entitlements = append(resp.Entitlements, &accountsv1.SolutionEntitlement{
-			SolutionIdentifier: id,
-			InstallationId:     "install-" + id,
-			RootScopeNodeId:    "node-" + id,
-			Healthy:            true,
+			TargetId:        id,
+			InstallationId:  "install-" + id,
+			RootScopeNodeId: "node-" + id,
+			Healthy:         true,
 		})
 	}
 	return resp, nil
