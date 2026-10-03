@@ -1673,7 +1673,7 @@ func configuredSolutionHostBindingReconciler(
 	trustMount := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_MOUNT"))
 	verifier, err := infra.NewSolutionHostBundleVerifier(
 		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))),
-		coordinate, trustMount, domains)
+		trustMount)
 	if err != nil {
 		return nil, err
 	}

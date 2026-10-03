@@ -323,7 +323,7 @@ func TestVerificationPolicyRefusesWhatWouldAdmitTooMuch(t *testing.T) {
 // facts an operator most needs to tell apart.
 func TestKeylessRefusesAtBootWithoutATrustRoot(t *testing.T) {
 	verifier, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustKeyless, "acme/prod/eu-west-1", t.TempDir(), []string{"acme"})
+		infra.SolutionHostTrustKeyless, t.TempDir())
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Nil(t, verifier, "an unusable policy must yield no verifier")
 	require.Contains(t, err.Error(), "trusted_root.json")
@@ -336,7 +336,7 @@ func TestKeylessRefusesARootWithNoPolicy(t *testing.T) {
 	writeTrustRoot(t, directory)
 
 	_, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustKeyless, "acme/prod/eu-west-1", directory, []string{"acme"})
+		infra.SolutionHostTrustKeyless, directory)
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Contains(t, err.Error(), "verification_policy.json")
 }
@@ -352,7 +352,7 @@ func TestVerificationPolicyDecodingIsStrict(t *testing.T) {
 		0o600))
 
 	_, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustKeyless, "acme/prod/eu-west-1", directory, []string{"acme"})
+		infra.SolutionHostTrustKeyless, directory)
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Contains(t, err.Error(), "does not decode")
 }
@@ -372,25 +372,4 @@ func writeTrustRoot(t *testing.T, directory string) {
 	encoded, err := json.Marshal(root)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "trusted_root.json"), encoded, 0o600))
-}
-
-// The local policy still produces a signer-to-domain mapping, so it goes THROUGH
-// the domain check rather than around it. A local developer granted one
-// ownership domain cannot deliver under another by editing a document.
-func TestLocalTrustPolicyStillScopesItsDomains(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustLocal, "local/dev/laptop", "", []string{"acme"})
-	require.NoError(t, err)
-	require.Equal(t, map[string][]string{
-		infra.SolutionHostLocalSignerIdentity: {"acme"},
-	}, verifier.SignerDomains())
-}
-
-// The local policy with no domains is refused: accepting every carrier as an
-// identity that may speak for nothing could admit nothing, which reads as a
-// configuration that works.
-func TestLocalTrustPolicyWithoutDomainsIsRefused(t *testing.T) {
-	_, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustLocal, "local/dev/laptop", "", nil)
-	require.Error(t, err)
 }
