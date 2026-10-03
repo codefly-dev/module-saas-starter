@@ -179,32 +179,47 @@ once the capability exists. The response carries
   credentials never substitute for missing identity digests.
 - The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking.
-- The capability's effective authority is **`min(sealed, live)`** — blocker
-  decision **B1**, which *reverses* what this file said before. It used to seal
-  identity and tenant only and re-read what the principal may do from the declared
-  grant on every call. That is sound for narrowing and silent about widening: a
-  grant that widens, or a database restored to a broader state, retroactively
-  widens a credential already in flight.
+- The capability's effective authority **is to become `min(sealed, live)`** —
+  blocker decision **B1**, which *reverses* what this file said before it.
+  **NOT BUILT YET. Read the gap below before you rely on any of it.**
 
-  So both halves now bind, and neither alone is enough. The credential **seals** a
-  ceiling — principal id and epoch, the one installation id and revision it is for,
-  the build incarnation, and for an operation context the binding id and revision —
-  and every capability decision **re-reads** the live envelope, authority document
-  and installation before acting. The effective authority is the intersection.
+  This paragraph said all of the following in the present tense while none of it
+  existed, which is worse than silence: a rules file other agents read as fact had
+  them believing an enforcement the code lacks. It is stated as the target, with
+  what actually happens today named, until it is built.
 
-  Read the two directions separately, because that is why it has to be both:
-  **narrowing still takes effect immediately**, through the live re-read, exactly as
-  it did before — uninstalling or narrowing bumps `installation.revision` and that
-  org's outstanding credentials fail at their next check. **Widening never reaches a
-  credential already issued**, through the sealed ceiling: a widened grant changes
-  the *replacement* credential, not the one in flight. Sealing alone would be weaker
-  than what this file described; re-reading alone is what it described; the
-  intersection is strictly stronger than either.
+  **What the code does today:** the capability seals identity and tenant only, and
+  what the principal may do is re-read from the declared grant on every call. There
+  is no sealed ceiling, no installation revision, no producer epoch, and no build
+  incarnation — the credential carries none of those fields. Verification of an
+  operation context **searches** the principal's bindings for one whose scopes
+  contain the presented set (`module_operation_context.go`), which is exactly the
+  lookup the target forbids. The mint authenticates with a shared secret, so it
+  cannot answer what the caller is running at all.
 
-  The intersection covers queues, resources, namespaces, external publication and
-  audiences — not only operation scopes — and verification is by **exact binding
-  lookup**, never by searching a principal's bindings for one that happens to
-  contain the presented scopes.
+  That is sound for narrowing and silent about widening: a grant that widens, or a
+  database restored to a broader state, retroactively widens a credential already
+  in flight. Narrowing does take effect immediately today, through the live
+  re-read.
+
+  **The target**, for whoever builds it: both halves bind and neither alone is
+  enough. The credential **seals** a ceiling — principal id and epoch, the one
+  installation id and revision it is for, the build incarnation, and for an
+  operation context the binding id and revision — and every capability decision
+  **re-reads** the live envelope, authority document and installation before
+  acting. The effective authority is the intersection, which is strictly stronger
+  than either half: narrowing keeps taking effect immediately through the live
+  re-read, and **widening never reaches a credential already issued**, because a
+  widened grant changes the *replacement* credential and not the one in flight.
+
+  The intersection must cover queues, resources, namespaces, external publication
+  and audiences — not only operation scopes — and verification must be by **exact
+  binding lookup**, never by searching a principal's bindings for one that happens
+  to contain the presented scopes. It is gated on the Work Context cutover to
+  core's `workcontext`, which is where the sealed fields come from, and on an
+  execution-bound mint, which is the only thing that can answer the build
+  incarnation from an independent source. Both are tracked on #952 / PR #953 as
+  Lane 3 conditions 1 and 2.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,
