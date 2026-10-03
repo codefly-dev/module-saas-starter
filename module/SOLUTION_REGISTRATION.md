@@ -699,6 +699,34 @@ change** rather than by severity:
 | `422` | the document parses and `Validate` refuses it | terminal |
 | `503` | the host could not REACH the API server or its trust root | **retryable** — nothing was verified, so nothing may be concluded |
 
+**The receipt's field names are part of the contract**, and they are
+`camelCase`:
+
+```json
+{
+  "disposition": "accepted",
+  "documentId":  "acme.test.example-solution",
+  "generation":  3,
+  "contentHash": "sha256:…",
+  "signer":      "<the ATTESTED signer identity, never the caller>"
+}
+```
+
+`disposition` is `accepted` on a `202` and `replayed` on a `200` — the same
+distinction the status codes carry, repeated in the body because a pipeline that
+reads only the body should not have to infer it. A refusal carries `error`
+instead. `signer` is the identity the BUNDLE attested, not the service account
+that handed the carrier over: those are different parties, and conflating them in
+a receipt would make an authorised carrier look like the author of whatever it
+delivered.
+
+These names are pinned by
+`TestNewGenerationIs202AndAnExactReplayIs200` in `pkg/adapters`, which declares
+them independently of the handler's own struct — a cross-repo contract that only
+one side spells out is a contract that side can rename silently. (The first draft
+of that test guessed `snake_case` and failed, which is how the names came to be
+written down here at all.)
+
 The `401`/`503` split is the one that matters and the one an earlier draft got
 wrong by grouping on HTTP class. "The review ran and refused" and "the review
 could not run" are different facts with opposite retry answers, and they come
