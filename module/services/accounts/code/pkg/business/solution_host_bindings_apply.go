@@ -176,9 +176,10 @@ func pendingSince(record *SolutionHostBindingRecord, now time.Time) *time.Time {
 // generation in between. core answers DecisionCurrent for that, which is not an
 // error and writes nothing — only a rewrite of an applied generation is.
 func (s *Service) applySolutionHostBinding(
-	ctx context.Context, document *solutionhost.SolutionHostBinding,
-	coordinate string, domains []string, now time.Time,
+	ctx context.Context, delivered *solutionhost.Delivered,
+	coordinate string, domains []string, domainsBySigner map[string][]string, now time.Time,
 ) error {
+	document := delivered.Document()
 	digest, err := document.Digest()
 	if err != nil {
 		return err
@@ -210,14 +211,19 @@ func (s *Service) applySolutionHostBinding(
 		// twice — were settled by the pass, and the partial unique index on the
 		// registry key is the durable backstop for two replicas racing.
 		host := solutionhost.Host{
-			Coordinate: coordinate,
-			Domains:    domains,
-			Reserved:   []string{SolutionHostReservedRouteNamespace},
+			Coordinate:      coordinate,
+			Domains:         domains,
+			DomainsBySigner: domainsBySigner,
+			Reserved:        []string{SolutionHostReservedRouteNamespace},
 		}
 		if state, ok := record.AppliedState(); ok {
 			host.Applied = []solutionhost.Applied{state}
 		}
-		admissions, err := host.Admit(document)
+		// The VERIFIED value, not the document read out of it. core's Admit
+		// takes *Delivered precisely so a second judgement cannot be made on
+		// bytes whose attestation was checked once and then dropped on the way
+		// here.
+		admissions, err := host.Admit(delivered)
 		if err != nil {
 			// One document, so core's set-level error and this document's own
 			// refusal are the same thing; returning it is what leaves the

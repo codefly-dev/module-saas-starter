@@ -4,6 +4,7 @@ package business_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -36,14 +37,49 @@ func (d *deliveredSet) Documents(context.Context) ([]business.SolutionHostBindin
 
 func (d *deliveredSet) put(t *testing.T, document *solutionhost.SolutionHostBinding) {
 	t.Helper()
-	data, err := solutionhost.Marshal(document)
-	if err != nil {
-		t.Fatalf("marshal %s: %v", document.Binding, err)
-	}
 	d.documents = []business.SolutionHostBindingDocument{{
 		Source: "mount/" + document.Binding + ".codefly.yaml",
-		Data:   data,
+		Data:   testCarrier(t, document),
 	}}
+}
+
+// The signer identity this test host attests delivery as. It is a keyless
+// certificate SAN in the shape a workflow identity takes, because that is what a
+// real BundleVerifier returns and what the host's signer policy is keyed by.
+const testSignerIdentity = "https://signer.example/acme-release@refs/heads/main"
+
+// testBundleVerifier stands in for sigstore-go. A real bundle needs a trust
+// root, a transparency-log entry and a certificate that expires, so what is
+// exercised here is the host's ORDERING — verify, then admit — rather than the
+// cryptography, which has its own unit tests at the seam.
+type testBundleVerifier struct{ signer string }
+
+func (v testBundleVerifier) VerifyBundle(context.Context, []byte, json.RawMessage) (string, error) {
+	return v.signer, nil
+}
+
+// testCarrier wraps a document in the signed carrier delivery ships: the
+// canonical bytes verbatim, plus a bundle over them. Admission takes only
+// verified values, so a mount that handed over bare documents would be refused —
+// which is the behaviour TestSolutionHostBindingRefusesAnUnsignedDocument pins.
+func testCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
+	t.Helper()
+	// CanonicalBytes, not Marshal: the signing input is the canonical JSON, and
+	// PresenceFromVerified refuses a payload that is not the canonical encoding
+	// of the document it decodes to.
+	canonical, err := document.CanonicalBytes()
+	if err != nil {
+		t.Fatalf("canonical bytes for %s: %v", document.Binding, err)
+	}
+	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
+		Schema:   solutionhost.SchemaSignedV1,
+		Document: canonical,
+		Bundle:   json.RawMessage(solutionhost.FixtureBundle),
+	})
+	if err != nil {
+		t.Fatalf("marshal carrier for %s: %v", document.Binding, err)
+	}
+	return carrier
 }
 
 const testHostCoordinate = "acme/test/eu-west-1"
@@ -97,6 +133,14 @@ func declaredBinding(t *testing.T, solutionID string, generation uint64) *soluti
 				Subject:  "system:serviceaccount:" + solutionID + ":api",
 				SPIFFEID: "spiffe://acme.test/ns/" + solutionID + "/sa/api",
 			},
+			// A sidecar that must never be accepted as the authenticating
+			// container. Core requires this list EXPLICITLY — empty declares
+			// "there are none", absent is refused — because a plain slice
+			// cannot tell those apart and a host that cannot tell has to choose
+			// between refusing every workload and trusting any container that
+			// asks. Naming one here rather than writing the empty list keeps
+			// the non-degenerate case in the reconciler's own fixtures.
+			NonAuthenticating: &[]string{"telemetry-sidecar"},
 		}},
 	}
 	if err := document.Validate(); err != nil {
@@ -128,8 +172,15 @@ func testDeclaredSolutionID(t *testing.T) string {
 
 func newTestReconciler(t *testing.T, source business.SolutionHostBindingSource) *business.SolutionHostBindingReconciler {
 	t.Helper()
-	reconciler, err := business.NewSolutionHostBindingReconciler(
-		testService, source, testHostCoordinate, []string{testOwnershipDomain}, time.Minute)
+	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
+		business.SolutionHostBindingReconcilerConfig{
+			Source:          source,
+			Verifier:        testBundleVerifier{signer: testSignerIdentity},
+			Coordinate:      testHostCoordinate,
+			Domains:         []string{testOwnershipDomain},
+			DomainsBySigner: map[string][]string{testSignerIdentity: {testOwnershipDomain}},
+			Interval:        time.Minute,
+		})
 	if err != nil {
 		t.Fatalf("reconciler: %v", err)
 	}
@@ -663,14 +714,8 @@ func TestSolutionHostBinding_AliasHandsOverInOnePass(t *testing.T) {
 	second := declaredBinding(t, solutionID, 1)
 	second.Binding = "acme.test." + solutionID + ".b"
 	retiring := tombstoneOf(t, first, 2)
-	firstData, err := solutionhost.Marshal(retiring)
-	if err != nil {
-		t.Fatalf("marshal tombstone: %v", err)
-	}
-	secondData, err := solutionhost.Marshal(second)
-	if err != nil {
-		t.Fatalf("marshal claimant: %v", err)
-	}
+	firstData := testCarrier(t, retiring)
+	secondData := testCarrier(t, second)
 	// Claimant first, which is the order a mount walk over these names produces.
 	mount.documents = []business.SolutionHostBindingDocument{
 		{Source: "mount/b.codefly.yaml", Data: secondData},
@@ -879,10 +924,18 @@ func TestSolutionTarget_AReusedAliasDoesNotInheritTheWithdrawnIdentity(t *testin
 	}
 }
 
-// Re-presenting a binding that was withdrawn mints a NEW identity. The tombstone
-// ended the presence an administrator consented to; consenting again is a
-// deliberate act, not something a later delivery can restore.
-func TestSolutionTarget_RePresentingAWithdrawnBindingMintsANewIdentity(t *testing.T) {
+// A tombstone is TERMINAL: re-presenting a withdrawn binding ID is refused, and
+// a replacement instance needs a new ID.
+//
+// This test previously asserted the weaker rule — that re-presenting the same ID
+// minted a new identity — and core cd443989 replaced it with a refusal, for the
+// reason this PR's own installation-target decision rests on: the binding ID is
+// the handle every other system holds (installations, operation bindings, team
+// grants), so reusing it makes a replacement indistinguishable from continuity,
+// which is the one thing a withdrawal exists to make distinguishable. Minting a
+// new identity under the old ID still left every holder of that ID re-attached
+// to a different instance.
+func TestSolutionTarget_RePresentingAWithdrawnBindingIsRefused(t *testing.T) {
 	solutionID := testDeclaredSolutionID(t)
 	present := declaredBinding(t, solutionID, 1)
 	mount := &deliveredSet{}
@@ -898,23 +951,53 @@ func TestSolutionTarget_RePresentingAWithdrawnBindingMintsANewIdentity(t *testin
 		t.Fatalf("withdraw: %v", err)
 	}
 
+	// The same binding ID, at a higher generation. Delivery is entitled to ship
+	// it; the host is not entitled to apply it.
 	again := declaredBinding(t, solutionID, 3)
 	mount.put(t, again)
 	if err := reconciler.RunOnce(testCtx); err != nil {
-		t.Fatalf("re-present: %v", err)
+		t.Fatalf("re-present pass: %v", err)
 	}
 
-	revived := liveTarget(t, present.Binding)
+	record := bindingState(t, present.Binding)
+	if record == nil {
+		t.Fatal("the withdrawn binding lost its record")
+	}
+	if !strings.Contains(record.PendingReason, solutionhost.ErrTombstoned.Error()) {
+		t.Fatalf("pending reason = %q, want it to name the terminal tombstone", record.PendingReason)
+	}
+	if record.Applied == nil || !record.Applied.Removed {
+		t.Fatalf("the withdrawal was undone by a re-presentation: %+v", record.Applied)
+	}
+	if revived := liveTarget(t, present.Binding); revived != nil {
+		t.Fatalf("re-presenting a withdrawn binding opened target %q; a tombstone is terminal", revived.ID)
+	}
+
+	// And the replacement path: a genuinely new instance has a genuinely new
+	// binding ID, which opens a target of its own. Without this half the test
+	// would pin "withdrawal is final" without pinning "replacement is possible",
+	// and the refusal would be indistinguishable from a dead end.
+	replacement := declaredBinding(t, solutionID, 1)
+	replacement.Binding = present.Binding + "r"
+	mount.put(t, replacement)
+	if err := reconciler.RunOnce(testCtx); err != nil {
+		t.Fatalf("replacement pass: %v", err)
+	}
+	revived := liveTarget(t, replacement.Binding)
 	if revived == nil {
-		t.Fatal("re-presenting must open a target")
+		t.Fatal("a replacement under a new binding ID must open a target")
 	}
 	if revived.ID == original.ID {
-		t.Fatalf("re-presenting revived the withdrawn identity %q; "+
-			"the tombstone ended the consent that named it", original.ID)
+		t.Fatalf("the replacement reused the withdrawn identity %q", original.ID)
 	}
-	if len(targetHistory(t, present.Binding)) != 2 {
-		t.Fatalf("history = %d, want one closed period and one open",
-			len(targetHistory(t, present.Binding)))
+	// The withdrawn binding's own history stays closed at one period: the
+	// refused re-presentation added nothing, and the replacement's period
+	// belongs to the replacement's ID.
+	if history := targetHistory(t, present.Binding); len(history) != 1 {
+		t.Fatalf("withdrawn binding history = %d, want the one closed period", len(history))
+	}
+	if history := targetHistory(t, replacement.Binding); len(history) != 1 {
+		t.Fatalf("replacement history = %d, want one open period", len(history))
 	}
 }
 

@@ -176,7 +176,15 @@ func (r *SolutionHostBindingRecord) PendingGeneration() uint64 {
 // comes from the document's own binding field, never from a file name.
 type SolutionHostBindingDocument struct {
 	Source string
-	Data   []byte
+
+	// Data is a SIGNED CARRIER — core's {schema, document, bundle} — not a bare
+	// presence document. Delivery signs at publish and the host verifies at
+	// admission, so the bytes that cross the mount are the bytes the signature
+	// covers. A bare document now fails to parse here rather than being
+	// admitted unverified, which is the point: core cd443989 removed every path
+	// from unattested bytes to a host judgement, and this is the host side of
+	// that removal.
+	Data []byte
 }
 
 // SolutionHostBindingSource is the delivered desired set.
@@ -190,9 +198,16 @@ type SolutionHostBindingSource interface {
 
 // SolutionHostBindingReconciler drives one pass and, when started, repeats it.
 type SolutionHostBindingReconciler struct {
-	service  *Service
-	source   SolutionHostBindingSource
-	host     solutionhost.Host
+	service *Service
+	source  SolutionHostBindingSource
+	host    solutionhost.Host
+
+	// verifier is this host's attestation check. core holds no verifier and
+	// never will: signing is keyless over a workload identity, so verifying is
+	// a trust root and an identity policy that belong to the deployment, not to
+	// a library every binary imports.
+	verifier solutionhost.BundleVerifier
+
 	interval time.Duration
 	now      func() time.Time
 
@@ -201,18 +216,52 @@ type SolutionHostBindingReconciler struct {
 	done   chan struct{}
 }
 
+// SolutionHostBindingReconcilerConfig is everything one host's reconciler needs
+// to judge delivery. Every field but Interval is required, and each absence is
+// refused by name rather than defaulted, because every one of them is a
+// different way for the host to accept a binding it should not.
+type SolutionHostBindingReconcilerConfig struct {
+	// Source is the delivered desired set, as signed carriers.
+	Source SolutionHostBindingSource
+
+	// Verifier is this host's attestation check over a carrier's bundle. It is
+	// required: without one there is no way to construct the verified value
+	// core's Admit takes, so a host with no verifier admits nothing at all
+	// rather than falling back to admitting everything.
+	Verifier solutionhost.BundleVerifier
+
+	// Coordinate is the host this reconciler answers for.
+	Coordinate string
+
+	// Domains are the ownership domains this host accepts delivery under.
+	Domains []string
+
+	// DomainsBySigner is which of those domains each attested signer identity
+	// may speak for, keyed by the identity Verifier returns. A document asserts
+	// its own ownership domain, so without this policy any signer the host
+	// accepted at all could deliver under any domain the host accepted and take
+	// over bindings in it.
+	DomainsBySigner map[string][]string
+
+	// Interval between passes. Zero takes the default.
+	Interval time.Duration
+}
+
 // NewSolutionHostBindingReconciler builds the reconciler for one host
 // coordinate. The coordinate is required: core refuses a document that targets
 // another host, and a host that did not know its own coordinate would reconcile
 // whatever it was handed.
 func NewSolutionHostBindingReconciler(
-	service *Service, source SolutionHostBindingSource, coordinate string,
-	domains []string, interval time.Duration,
+	service *Service, config SolutionHostBindingReconcilerConfig,
 ) (*SolutionHostBindingReconciler, error) {
+	source, domains, interval := config.Source, config.Domains, config.Interval
 	if service == nil || source == nil {
 		return nil, errors.New("solution host binding reconciler requires a service and a source")
 	}
-	if coordinate == "" {
+	if config.Verifier == nil {
+		return nil, errors.New("solution host binding reconciler requires a bundle verifier; a host that cannot verify a carrier must admit nothing, not everything")
+	}
+	if config.Coordinate == "" {
 		return nil, errors.New("solution host binding reconciler requires this host's coordinate")
 	}
 	// Core requires the accepted ownership domains whenever a coordinate is set,
@@ -225,16 +274,24 @@ func NewSolutionHostBindingReconciler(
 	if len(domains) == 0 {
 		return nil, errors.New("solution host binding reconciler requires the ownership domains this host accepts delivery from")
 	}
+	// Same reasoning one axis over, and core refuses the call without it: an
+	// unstated signer policy would let every accepted signer claim every
+	// accepted domain, which makes the domain list decorative.
+	if len(config.DomainsBySigner) == 0 {
+		return nil, errors.New("solution host binding reconciler requires the ownership domains each signer identity may deliver under")
+	}
 	if interval <= 0 {
 		interval = SolutionHostBindingReconcileInterval
 	}
 	return &SolutionHostBindingReconciler{
-		service: service,
-		source:  source,
+		service:  service,
+		source:   source,
+		verifier: config.Verifier,
 		host: solutionhost.Host{
-			Coordinate: coordinate,
-			Domains:    domains,
-			Reserved:   []string{SolutionHostReservedRouteNamespace},
+			Coordinate:      config.Coordinate,
+			Domains:         domains,
+			DomainsBySigner: config.DomainsBySigner,
+			Reserved:        []string{SolutionHostReservedRouteNamespace},
 		},
 		interval: interval,
 		now:      func() time.Time { return time.Now().UTC() },
@@ -257,7 +314,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		return fmt.Errorf("read delivered solution host bindings: %w", err)
 	}
 
-	parsed, unparsed := parseSolutionHostBindingDocuments(documents)
+	verified, unparsed := verifySolutionHostBindingDocuments(ctx, r.verifier, documents)
 
 	records, err := r.service.ListSolutionHostBindings(ctx)
 	if err != nil {
@@ -266,7 +323,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	host := r.host
 	host.Applied = appliedStates(records)
 
-	admission := admitSolutionHostBindings(host, parsed)
+	admission := admitSolutionHostBindings(host, verified)
 
 	// Desired state is recorded for every delivered document before anything is
 	// applied, so an operator sees what delivery is showing even when none of it
@@ -281,7 +338,8 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		settled[accepted.Document.Binding] = accepted.Decision == solutionhost.DecisionCurrent
 	}
 	var failures []error
-	for _, document := range parsed {
+	for _, one := range verified {
+		document := one.Document()
 		reason := admission.Withheld[document.Binding]
 		if err := r.service.recordSolutionHostBindingDesired(
 			ctx, document, reason, settled[document.Binding], r.now(),
@@ -298,7 +356,9 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			// to change.
 			continue
 		}
-		if err := r.service.applySolutionHostBinding(ctx, applied.Document, r.host.Coordinate, r.host.Domains, r.now()); err != nil {
+		if err := r.service.applySolutionHostBinding(
+			ctx, applied.Delivered, r.host.Coordinate, r.host.Domains, r.host.DomainsBySigner, r.now(),
+		); err != nil {
 			// One binding's apply failing leaves every other binding's progress
 			// intact: each apply is its own transaction, because each binding is
 			// independent desired state. The reason is recorded as this
@@ -385,32 +445,53 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 	}
 }
 
-// parseSolutionHostBindingDocuments parses every delivered document, keeping the
-// ones core accepts as documents and describing the ones it does not.
+// verifySolutionHostBindingDocuments verifies every delivered carrier, keeping
+// the ones this host's attestation check accepts and describing the ones it does
+// not.
 //
-// A document that does not parse is still attributed to a binding ID when it
-// names one, so its refusal is exposed rather than only logged. That attribution
-// reads the binding field with a NON-strict decode and is used for nothing else:
-// admission always runs on solutionhost.Parse's output, so a document that
-// cheats the attribution decode cannot be admitted by it.
-func parseSolutionHostBindingDocuments(
-	documents []SolutionHostBindingDocument,
-) ([]*solutionhost.SolutionHostBinding, []unparsedSolutionHostBinding) {
-	parsed := make([]*solutionhost.SolutionHostBinding, 0, len(documents))
+// Every refusal here is one of three things, and they are deliberately not
+// distinguished in what is recorded: not a carrier, a carrier whose bundle does
+// not verify, or a verified payload core will not parse. An operator needs to
+// know delivery is shipping something this host will not admit; which of the
+// three it is tells an attacker which half of the door it got past, so the
+// reason recorded against a binding stays coarse while the returned error — which
+// goes to the log, not the row — carries core's own wording.
+//
+// Attribution of a refusal to a binding ID reads UNVERIFIED bytes, and that is
+// a deliberate, bounded choice. A carrier that fails verification has no
+// attested signer by definition, so there is no verified name to attribute it
+// to; recording nothing would hide "delivery is broken for this binding" in a
+// log line. What it can do is write a refusal REASON onto an existing binding's
+// row — it cannot change what that binding is running, cannot create a row
+// (recordSolutionHostBindingRefusal answers ErrSolutionHostBindingNotDeclared
+// for an undeclared binding), and cannot reach Admit. So the residual is a
+// misleading reason string on a row whose applied generation is untouched, which
+// is why the attribution is kept and why the reason is coarse.
+func verifySolutionHostBindingDocuments(
+	ctx context.Context, verifier solutionhost.BundleVerifier, documents []SolutionHostBindingDocument,
+) ([]*solutionhost.Delivered, []unparsedSolutionHostBinding) {
+	verified := make([]*solutionhost.Delivered, 0, len(documents))
 	var problems []unparsedSolutionHostBinding
 	for _, delivered := range documents {
-		document, err := solutionhost.Parse(delivered.Data)
+		carrier, err := solutionhost.ParseSigned(delivered.Data)
 		if err != nil {
 			problems = append(problems, unparsedSolutionHostBinding{
-				binding: attributeSolutionHostBinding(delivered.Data),
+				err: fmt.Errorf("delivered solution host binding %s: %w", delivered.Source, err),
+			})
+			continue
+		}
+		one, err := solutionhost.VerifyDelivered(ctx, carrier, verifier)
+		if err != nil {
+			problems = append(problems, unparsedSolutionHostBinding{
+				binding: attributeSolutionHostBinding(carrier.Document),
 				err:     fmt.Errorf("delivered solution host binding %s: %w", delivered.Source, err),
 			})
 			continue
 		}
-		parsed = append(parsed, document)
+		verified = append(verified, one)
 	}
-	sort.Slice(parsed, func(i, j int) bool { return parsed[i].Binding < parsed[j].Binding })
-	return parsed, problems
+	sort.Slice(verified, func(i, j int) bool { return verified[i].Document().Binding < verified[j].Document().Binding })
+	return verified, problems
 }
 
 // unparsedSolutionHostBinding is a delivered document core would not parse, and
@@ -420,9 +501,10 @@ type unparsedSolutionHostBinding struct {
 	err     error
 }
 
-// attributeSolutionHostBinding reads only the binding ID out of a document that
-// solutionhost.Parse refused, so the refusal can be recorded against it. It
-// never produces a document and its result is never admitted.
+// attributeSolutionHostBinding reads only the binding ID out of a document this
+// host refused, so the refusal can be recorded against it. It never produces a
+// document and its result is never admitted. Its input is unverified by
+// construction — see verifySolutionHostBindingDocuments for why that is bounded.
 func attributeSolutionHostBinding(data []byte) string {
 	var named struct {
 		Binding string `yaml:"binding"`

@@ -524,6 +524,8 @@ Every key is in the `federation` group.
 | `SOLUTION_HOST_BINDINGS_DIR` | the directory delivery places rendered documents in. Empty leaves the reconciler **off**, which is the default while runtimes migrate: nothing is declared and every solution is present because it heartbeats. |
 | `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. |
 | `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the mount and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
+| `SOLUTION_HOST_SIGNER_DOMAINS` | which ownership domains each **attested signer identity** may deliver under: `<identity>=<domain>[\|<domain>]` entries, comma-separated. Required with the mount. An entry naming a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
+| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked: `keyless` or `local`. Required with the mount, with **no default** — every default is wrong somewhere. |
 | `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the mount is re-read. Empty uses 30s. |
 
 Declaring the mount without the coordinate, or either without the ownership
@@ -531,6 +533,59 @@ domains, refuses to boot. A mount with no coordinate would leave this host unabl
 to refuse a document delivered to another host, and Core's target check is the
 only thing standing between the two; a mount with no domains would leave it
 unable to refuse a document claiming a binding it has never seen.
+
+### What the host admits, and why it is now a signed carrier
+
+Core `cd443989` removed every path from unattested bytes to a host judgement.
+`Host.Admit` takes `*solutionhost.Delivered`, whose fields are unexported and
+whose only constructor is `VerifyDelivered(carrier, BundleVerifier)`. So "this
+document was attested" is held by the compiler rather than by a naming
+convention, and a host that forgot to verify cannot compile rather than
+discovering it in production.
+
+The host side of that:
+
+- **The mount carries signed carriers**, `{schema, document, bundle}`, not bare
+  documents. A bare document is refused — it is not a carrier — and that refusal
+  is pinned by a test.
+- **The signing input is the canonical JSON** (`CanonicalBytes()`), not the YAML
+  `Marshal` writes for a delivery repository. Core refuses a payload that is not
+  the canonical encoding of the document it decodes to *even when the attestation
+  over those bytes is genuine*, because a signer and a host that disagree about
+  which bytes represent the document disagree about what was approved.
+- **The verifier returns a signer identity, not a yes.** The host maps that
+  identity to the domains it may speak for, and Core refuses a document whose
+  asserted domain its attested signer may not. This closes the hole that a
+  document states its own ownership domain: without the policy, any signer the
+  host accepted at all could deliver under any domain it accepted and take over
+  bindings in it.
+
+#### The two trust policies
+
+| Policy | What it checks | Where it is usable |
+| --- | --- | --- |
+| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | production. **NOT YET AVAILABLE**: it refuses at boot, see below. |
+| `local` | **nothing.** It attests every carrier as the identity `local`. | a **local coordinate only** (`local/…`, `localhost/…`), enforced in code. A policy that trusts whatever is in the mount is sound exactly where the mount and the host are the same person. |
+
+`local` still goes **through** the signer-to-domain check rather than around it:
+the operator grants the `local` identity the domains a developer may deliver
+under, using the same key a workflow identity uses.
+
+**`keyless` refuses at boot, and that is deliberate.** Keyless verification needs
+a trust root and an identity allowlist provisioned **independently of both
+delivery writers** — a deployer who can edit the allowlist does not need to forge
+a signature, because it can replace the verifier. Nothing on this deployment
+provisions either yet. A verifier written against them could not be exercised
+against a single real bundle before shipping, in the one service that owns
+identity, so it is not written: the refusal names what is missing. It refuses at
+**boot rather than per document**, because "this host cannot perform its
+configured policy" and "delivery is shipping something bad" are different facts
+and only one of them is the operator's to fix.
+
+A refusal recorded against a binding is deliberately **coarse** — not a carrier,
+a bundle that did not verify, and a verified payload Core will not parse all read
+the same in the row. Which of the three it is tells an attacker which half of the
+door it got past; the full reason goes to the log.
 
 The host reads a **directory of files** and knows nothing about how they got
 there: a projected ConfigMap volume in a deployment, a plain directory under
