@@ -229,6 +229,11 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// And that a signed timestamp is not evidence of logging. This is the
 		// case a looser "has it got anything?" check admits silently.
 		"does not stand in for transparency evidence",
+		// The delivery response taxonomy, pinned because a Job's retry policy is
+		// written against it. The 401/503 split especially: an earlier draft
+		// grouped on HTTP class and made a reviewable refusal retryable.
+		"what a retry would change",
+		"The review ran and refused",
 		// That the local policy is coordinate-bound. Without this line the
 		// table reads as "choose either", and the one that performs no
 		// cryptography is the convenient choice.

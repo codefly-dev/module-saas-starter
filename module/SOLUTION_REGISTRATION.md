@@ -675,13 +675,36 @@ document, and every registrant hardcodes those paths today.
 | Path | Status | What it is |
 | --- | --- | --- |
 | `POST /platform/_credential` | **Settled, NOT YET LIVE** | the module/solution credential mint. On the **gateway**, which forwards `Authorization` verbatim; accounts performs the `TokenReview` on the pod's own token. |
-| `POST /platform/_delivery/presence` | **Settled, NOT YET LIVE** | a signed presence document, `{document, bundle}` |
-| `POST /platform/_delivery/authority` | **Settled, NOT YET LIVE** | a signed authority document, same carrier |
+| `POST /platform/_delivery/presence` | **LIVE** | a signed presence document, `{schema, document, bundle}` |
+| `POST /platform/_delivery/authority` | **LIVE** | a signed authority document, same carrier |
 
-**NOT YET LIVE means these paths do not exist on any deployment.** A consumer
-calling one today gets a 404 — on every deployment, not just one, which is the
-one mercy in the situation. Keep an override until this table says live, and do
-not treat a 404 as "my path is wrong".
+**The two delivery paths are now served by accounts**, which performs the
+`TokenReview` on the carrier's own token. The credential mint remains **NOT YET
+LIVE** and is brokered by the gateway when it lands; a consumer calling it today
+gets a 404 on every deployment, not just one, which is the one mercy in the
+situation. Keep an override until this table says live for it, and do not treat
+a 404 as "my path is wrong".
+
+Delivery answers on this taxonomy, and it is organised by **what a retry would
+change** rather than by severity:
+
+| code | meaning | retry? |
+| --- | --- | --- |
+| `202` | verified, new, and now durable desired state — applied or not | no, it worked |
+| `200` | an exact replay of a `(document, generation, content hash)` already held | no, it worked |
+| `400` | the carrier does not parse, or the payload is not the canonical encoding of the document it decodes to | terminal |
+| `401` | the carrier's token was REVIEWED and refused | terminal — the token is kubelet-projected and re-read per request, so a refusal is a configuration fault and a retry asks the same question |
+| `403` | authenticated, but not the authorised writer for this kind; or no accepted signer; or an accepted signer not granted the asserted ownership domain | terminal |
+| `409` | this generation is already held with DIFFERENT bytes | terminal — publish never rewrites a delivered generation, so this is a hand-edited delivery tree |
+| `422` | the document parses and `Validate` refuses it | terminal |
+| `503` | the host could not REACH the API server or its trust root | **retryable** — nothing was verified, so nothing may be concluded |
+
+The `401`/`503` split is the one that matters and the one an earlier draft got
+wrong by grouping on HTTP class. "The review ran and refused" and "the review
+could not run" are different facts with opposite retry answers, and they come
+from different branches of the same call. A `404` stays retryable too: a
+reachable host without the route is a version behind the Job, which is ordinary
+during a roll.
 
 `/platform/` is **reserved for the host** and no delivered binding may claim it.
 Route aliases live under `/solutions/<alias>/` and composed module routes under

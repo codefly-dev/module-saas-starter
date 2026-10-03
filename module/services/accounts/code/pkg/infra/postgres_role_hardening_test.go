@@ -37,22 +37,27 @@ var externalRelationAuthorities = map[string]externalRelationAuthority{}
 
 var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// Global catalogs and worker-owned job relations.
-	"identity_providers":            {selectRows: true},
-	"plans":                         {selectRows: true},
-	"plan_entitlements":             {selectRows: true},
-	"email_templates":               {selectRows: true},
-	"data_retention_policies":       {selectRows: true},
-	"bootstrap_state":               {selectRows: true}, // the bootstrap claim runs on the control plane
-	"feature_flags":                 {selectRows: true},
-	"audit_event_types":             {selectRows: true},
-	"platform_admins":               {selectRows: true}, // granting and revoking run on the control plane
-	"analytics_deliveries":          {},
-	"email_delivery_events":         {},
-	"event_subscriptions":           {}, // platform relation; request traffic has no direct access
-	"solution_registrations":        {}, // platform relation; request traffic has no direct access
-	"solution_host_bindings":        {}, // platform relation; only the reconcile pass writes it
-	"solution_targets":              {}, // platform relation; the identity an installation names
-	"solution_generation_history":   {}, // platform relation; append-only decision trail
+	"identity_providers":          {selectRows: true},
+	"plans":                       {selectRows: true},
+	"plan_entitlements":           {selectRows: true},
+	"email_templates":             {selectRows: true},
+	"data_retention_policies":     {selectRows: true},
+	"bootstrap_state":             {selectRows: true}, // the bootstrap claim runs on the control plane
+	"feature_flags":               {selectRows: true},
+	"audit_event_types":           {selectRows: true},
+	"platform_admins":             {selectRows: true}, // granting and revoking run on the control plane
+	"analytics_deliveries":        {},
+	"email_delivery_events":       {},
+	"event_subscriptions":         {}, // platform relation; request traffic has no direct access
+	"solution_registrations":      {}, // platform relation; request traffic has no direct access
+	"solution_host_bindings":      {}, // platform relation; only the reconcile pass writes it
+	"solution_targets":            {}, // platform relation; the identity an installation names
+	"solution_generation_history": {}, // platform relation; append-only decision trail
+	// The delivery inbox: every signed carrier this host was handed. Request
+	// traffic has no access, and the control plane holds SELECT and INSERT only
+	// — no UPDATE and no DELETE, because an inbox that can be edited is not a
+	// record of what was received.
+	"solution_delivery_documents":   {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"job_attempts":                  {},
 	"job_messages":                  {},
@@ -379,6 +384,16 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// update or delete. A decision is a fact about the past, and a trail
 			// whose rows can be edited is not a trail.
 			if relation == "solution_generation_history" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// solution_delivery_documents is APPEND-ONLY, and more strictly so
+			// than the decision trail: read and insert, never update and never
+			// delete. It holds the signed carriers this host was handed, so an
+			// inbox whose rows can be edited is not a record of what was
+			// received — and the carrier is what a restore re-verifies against,
+			// which is only worth anything if nothing could have rewritten it.
+			// A correction is a new generation.
+			if relation == "solution_delivery_documents" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 			// solution_targets is never row-deleted either: a CLOSED target is the

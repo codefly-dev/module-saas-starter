@@ -2,6 +2,9 @@ package infra
 
 import (
 	"context"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 
 	"accounts/pkg/infra/internal/txbind"
 
@@ -211,4 +214,40 @@ type trustedMaterialForTest = root.TrustedMaterial
 // policy it came from.
 func KeylessSignerDomains(verifier any) map[string][]string {
 	return verifier.(*keylessBundleVerifier).SignerDomains()
+}
+
+// NewKubernetesClientForTest points the client at a test API server, using a
+// throwaway token file.
+//
+// Exported for tests so the TokenReview path is exercised over real HTTP against
+// a real handler: a fake CLIENT would let the AUDIENCE go unsent and untested
+// while looking identical, and the audience is the thing that stops a token
+// minted for another service authenticating here.
+func NewKubernetesClientForTest(t testingT, server *httptest.Server) *KubernetesClient {
+	t.Helper()
+	directory := t.TempDir()
+	path := filepath.Join(directory, "token")
+	if err := os.WriteFile(path, []byte("host-own-token"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	return NewKubernetesClientForTestWithToken(t, server, path)
+}
+
+// NewKubernetesClientForTestWithToken is the same with a caller-owned token
+// file, so a test can rotate it mid-run.
+func NewKubernetesClientForTestWithToken(t testingT, server *httptest.Server, tokenPath string) *KubernetesClient {
+	t.Helper()
+	return &KubernetesClient{
+		endpoint:  server.URL,
+		tokenPath: tokenPath,
+		http:      server.Client(),
+	}
+}
+
+// testingT is the sliver of *testing.T these helpers need, so export_test.go
+// does not import testing into the production package's namespace.
+type testingT interface {
+	Helper()
+	TempDir() string
+	Fatalf(string, ...any)
 }

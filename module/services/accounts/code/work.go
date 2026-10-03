@@ -452,7 +452,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	// refuses to boot: a host that does not know which coordinate it answers for
 	// cannot refuse a document delivered to the wrong place, and core's check is
 	// the only thing standing between this host and another host's desired state.
-	solutionHostBindingReconciler, err := configuredSolutionHostBindingReconciler(service)
+	solutionHostBindingReconciler, err := configuredSolutionHostBindingReconciler(service, store)
 	if err != nil {
 		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
 	}
@@ -1626,7 +1626,7 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // signer speaks for without touching the policy that was supposed to be
 // independent of them.
 func configuredSolutionHostBindingReconciler(
-	service *business.Service,
+	service *business.Service, store *infra.PostgresStore,
 ) (*business.SolutionHostBindingReconciler, error) {
 	mount := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDINGS_DIR"))
 	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
@@ -1705,8 +1705,45 @@ func configuredSolutionHostBindingReconciler(
 		}
 		interval = parsed
 	}
+	// The delivery endpoint, and the inbox the reconciler reads from.
+	//
+	// The reconciler's source is now DURABLE STATE rather than the mount, which
+	// closes a gap the mount could not: a document that arrived, was recorded as
+	// desired, failed to apply and then disappeared from the mount was never
+	// retried — the host had recorded that delivery wanted something and had no
+	// way to want it again.
+	//
+	// The mount is still read when SOLUTION_HOST_BINDINGS_DIR is set, because a
+	// laptop has no Kubernetes to POST from and the same directory is the
+	// developer's delivery. Both paths end in the same place: a carrier that is
+	// verified and then judged by core.
+	kubernetes, kubeErr := infra.NewKubernetesClient()
+	if kubeErr != nil && mount == "" {
+		// No mount and no cluster: there is no way for a document to reach this
+		// host, so saying so at boot beats a reconciler that polls an empty
+		// inbox forever.
+		return nil, fmt.Errorf("the declared-presence reconciler has no input: %w", kubeErr)
+	}
+	if kubernetes != nil {
+		service.SetSolutionDelivery(verifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+		// Deliberately not routed at the gateway, and the asymmetry with the
+		// credential mint is the reason. `POST /platform/_credential` is
+		// brokered by the gateway because a solution runtime is an
+		// independently deployed workload that must not reach accounts'
+		// internal listener. A delivery Job is not that: it runs in-cluster as
+		// one of two known service accounts, so routing it through the edge
+		// would put accounts-audience tokens across the perimeter for no gain.
+		//
+		// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
+		adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
+	}
+
+	source := business.SolutionHostBindingSource(business.NewDeliveredSolutionHostBindings(service))
+	if mount != "" {
+		source = infra.NewSolutionHostBindingMount(mount)
+	}
 	return business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
-		Source:          infra.NewSolutionHostBindingMount(mount),
+		Source:          source,
 		Verifier:        verifier,
 		Coordinate:      coordinate,
 		Domains:         domains,
