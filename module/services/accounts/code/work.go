@@ -1612,12 +1612,19 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // optional and exists for a deployment that wants a tighter convergence bound
 // than the default.
 //
-// SOLUTION_HOST_TRUST_POLICY is how a delivered carrier's bundle is checked and
-// SOLUTION_HOST_SIGNER_DOMAINS is which ownership domains each attested signer
-// identity may deliver under. Both are required with the mount, because core
-// cd443989 admits only a verified carrier: a host with no verifier cannot
+// SOLUTION_HOST_TRUST_POLICY is how a delivered carrier's bundle is checked, and
+// SOLUTION_HOST_TRUST_MOUNT is where `keyless` reads the mirrored Fulcio/Rekor
+// root and the identity allowlist — which also declares which ownership domains
+// each accepted signer may deliver under. Both are required with the mount,
+// because core admits only a verified carrier: a host with no verifier cannot
 // produce the value Admit takes, and a host with no signer policy would let any
 // signer it accepted at all claim any domain it accepted.
+//
+// The allowlist and the domains it grants deliberately come from ONE document on
+// an independently delivered mount. When the domains lived in this environment
+// instead, a deployer who could set the environment could widen what an accepted
+// signer speaks for without touching the policy that was supposed to be
+// independent of them.
 func configuredSolutionHostBindingReconciler(
 	service *business.Service,
 ) (*business.SolutionHostBindingReconciler, error) {
@@ -1650,21 +1657,45 @@ func configuredSolutionHostBindingReconciler(
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_OWNERSHIP_DOMAINS, so this host would accept a binding claimed under any domain a writer chose")
 	}
-	// Which domains each attested signer may speak for. The document asserts its
-	// own ownership domain, so without this an accepted signer could deliver
-	// under any accepted domain and take over bindings in it — the hole core's
-	// DomainsBySigner exists to close, and the host's to fill because core cannot
-	// know which identity is entitled to which name.
-	domainsBySigner, err := parseSolutionHostSignerDomains(
-		workspaceEnv("federation", "SOLUTION_HOST_SIGNER_DOMAINS"), domains)
+	// The verifier owns the signer-to-domain mapping, and that is a change from
+	// reading it out of SOLUTION_HOST_SIGNER_DOMAINS.
+	//
+	// Two reasons, both of which the adversarial reviews named. The env var's
+	// key was a bare certificate SAN — no issuer, no repository, no ref — which
+	// bakes a weaker allowlist shape into configuration: a SAN alone is accepted
+	// from any issuer, and the same workflow path exists in every fork. And the
+	// allowlist and the thing it authorizes were separable, so a deployer who
+	// could set the environment could widen what an accepted signer speaks for
+	// without touching the independently-delivered policy at all.
+	//
+	// Now both come from one document on the trust mount, which a platform-owned
+	// delivery path writes and neither delivery writer can.
+	trustMount := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_MOUNT"))
+	verifier, err := infra.NewSolutionHostBundleVerifier(
+		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))),
+		coordinate, trustMount, domains)
 	if err != nil {
 		return nil, err
 	}
-	verifier, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))),
-		coordinate)
-	if err != nil {
-		return nil, err
+	// Every domain the policy grants a signer must be one this host accepts at
+	// all. Refused BY NAME rather than intersected silently: a policy naming a
+	// domain SOLUTION_HOST_OWNERSHIP_DOMAINS does not list is a disagreement
+	// between two independently delivered documents, and quietly dropping the
+	// entry reads exactly like a policy that works until the binding it was
+	// meant to admit is withheld.
+	domainsBySigner := verifier.SignerDomains()
+	accepted := make(map[string]bool, len(domains))
+	for _, domain := range domains {
+		accepted[domain] = true
+	}
+	for signer, granted := range domainsBySigner {
+		for _, domain := range granted {
+			if !accepted[domain] {
+				return nil, fmt.Errorf(
+					"the verification policy lets signer %q deliver under ownership domain %q, which SOLUTION_HOST_OWNERSHIP_DOMAINS does not accept",
+					signer, domain)
+			}
+		}
 	}
 	interval := business.SolutionHostBindingReconcileInterval
 	if raw := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDING_INTERVAL")); raw != "" {
@@ -1682,52 +1713,6 @@ func configuredSolutionHostBindingReconciler(
 		DomainsBySigner: domainsBySigner,
 		Interval:        interval,
 	})
-}
-
-// parseSolutionHostSignerDomains reads SOLUTION_HOST_SIGNER_DOMAINS, which maps
-// an attested signer identity to the ownership domains it may deliver under:
-//
-//	<identity>=<domain>[|<domain>...][,<identity>=<domain>...]
-//
-// Identities are keyless certificate SANs, which contain `/`, `:` and `@` but
-// not `,` or `|`, so those separate entries and domains respectively. An entry
-// naming a domain this host does not accept at all is refused BY NAME rather
-// than ignored: a typo that silently grants nothing reads exactly like a policy
-// that works, right up until the binding it was meant to admit is withheld.
-func parseSolutionHostSignerDomains(raw string, accepted []string) (map[string][]string, error) {
-	acceptable := make(map[string]bool, len(accepted))
-	for _, domain := range accepted {
-		acceptable[domain] = true
-	}
-	policy := map[string][]string{}
-	for _, entry := range strings.Split(raw, ",") {
-		if entry = strings.TrimSpace(entry); entry == "" {
-			continue
-		}
-		identity, list, found := strings.Cut(entry, "=")
-		identity = strings.TrimSpace(identity)
-		if !found || identity == "" {
-			return nil, fmt.Errorf("SOLUTION_HOST_SIGNER_DOMAINS entry %q is not <identity>=<domain>[|<domain>...]", entry)
-		}
-		for _, domain := range strings.Split(list, "|") {
-			if domain = strings.TrimSpace(domain); domain != "" {
-				if !acceptable[domain] {
-					return nil, fmt.Errorf(
-						"SOLUTION_HOST_SIGNER_DOMAINS lets %q deliver under domain %q, which SOLUTION_HOST_OWNERSHIP_DOMAINS does not accept",
-						identity, domain)
-				}
-				policy[identity] = append(policy[identity], domain)
-			}
-		}
-		if len(policy[identity]) == 0 {
-			return nil, fmt.Errorf("SOLUTION_HOST_SIGNER_DOMAINS names identity %q with no domain", identity)
-		}
-	}
-	if len(policy) == 0 {
-		return nil, fmt.Errorf(
-			"SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_SIGNER_DOMAINS, so any signer this host attested could deliver under any domain it accepts")
-	}
-	return policy, nil
 }
 
 func workspaceEnv(configuration, key string) string {

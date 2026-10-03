@@ -83,8 +83,8 @@ func (localBundleVerifier) VerifyBundle(context.Context, []byte, json.RawMessage
 // Checking it here rather than at the call site is the difference between an
 // invariant and a convention.
 func NewSolutionHostBundleVerifier(
-	policy SolutionHostTrustPolicy, coordinate string,
-) (solutionhost.BundleVerifier, error) {
+	policy SolutionHostTrustPolicy, coordinate, trustMount string, localDomains []string,
+) (solutionHostBundleVerifierWithPolicy, error) {
 	switch policy {
 	case SolutionHostTrustLocal:
 		if !isLocalSolutionHostCoordinate(coordinate) {
@@ -93,9 +93,21 @@ func NewSolutionHostBundleVerifier(
 					"a policy that trusts whatever is in the mount is sound only where the mount and the host are the same person",
 				policy, coordinate, strings.Join(localCoordinatePrefixes, ", "))
 		}
-		return localBundleVerifier{}, nil
+		if len(localDomains) == 0 {
+			return nil, fmt.Errorf("trust policy %q needs the ownership domains the local identity may deliver under; "+
+				"the local policy still goes through the signer-to-domain check rather than around it", policy)
+		}
+		return localVerifierDomains{domains: localDomains}, nil
 
 	case SolutionHostTrustKeyless:
+		// Built now, and it refuses at BOOT when the trust mount has no root or
+		// no policy. That refusal IS the correct behaviour: a host configured
+		// for a policy it cannot perform must not start and claim to verify,
+		// because refusing per document instead makes "this host has no trust
+		// root" and "delivery is shipping something bad" the same observable.
+		return NewSolutionHostKeylessVerifier(trustMount)
+
+	case "__unreachable_keyless_placeholder":
 		// Deliberately not implemented rather than implemented untested.
 		//
 		// Keyless verification needs a Sigstore trust root and an identity
@@ -133,4 +145,36 @@ func isLocalSolutionHostCoordinate(coordinate string) bool {
 		}
 	}
 	return false
+}
+
+// solutionHostBundleVerifierWithPolicy is a verifier that also declares the
+// signer-to-domain mapping it was built from.
+//
+// The two travel together because they come from the same independently
+// delivered document. When the mapping lived in a workspace environment
+// variable instead, a deployer who could set the environment could widen what an
+// accepted signer speaks for without touching the policy at all — the allowlist
+// was independent and the thing it authorized was not.
+type solutionHostBundleVerifierWithPolicy interface {
+	solutionhost.BundleVerifier
+
+	// SignerDomains maps each attested signer identity to the ownership domains
+	// it may deliver under, in the shape core's Host takes.
+	SignerDomains() map[string][]string
+}
+
+// localVerifierDomains is the local policy's mapping: the one local identity,
+// against the domains the operator declared for it.
+//
+// The local policy still goes THROUGH the signer-to-domain check rather than
+// around it. A local developer who declares one ownership domain cannot deliver
+// under another by editing a document, which keeps the two policies the same
+// shape and means a test written against one is meaningful against the other.
+type localVerifierDomains struct {
+	localBundleVerifier
+	domains []string
+}
+
+func (l localVerifierDomains) SignerDomains() map[string][]string {
+	return map[string][]string{SolutionHostLocalSignerIdentity: append([]string(nil), l.domains...)}
 }

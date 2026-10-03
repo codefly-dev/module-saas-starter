@@ -8,7 +8,15 @@ import (
 	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sigstore/sigstore-go/pkg/root"
+	"github.com/sigstore/sigstore-go/pkg/verify"
 )
+
+// VerifySignedEntityInput is verify.SignedEntity under a local name, exported so
+// an external test can embed it when building a signed entity with one field
+// changed — which is how the transparency-evidence refusal is exercised without
+// hand-assembling a bundle.
+type VerifySignedEntityInput = verify.SignedEntity
 
 // IdentityScopeProbe exposes the scope query ListAdministeredOrganizations runs,
 // so a test can assert what admits a control-plane transaction. Deciding on the
@@ -149,4 +157,58 @@ func (s *PostgresStore) ExecAsControlPlane(ctx context.Context, sql string, args
 		_, err := s.getQueryExecutor(ctx).Exec(ctx, sql, args...)
 		return err
 	})
+}
+
+// VerifySignedEntity exposes the keyless verifier's DECISION, so a test can
+// drive it with an in-process Sigstore instead of a hand-assembled bundle
+// document.
+//
+// Exported for tests deliberately rather than testing through VerifyBundle's
+// JSON: the thing worth proving is that the policy accepts and refuses the right
+// identities against a real trust root, and a bundle written by hand proves only
+// that the decoder works. The path under test is the one production takes — the
+// JSON entry point decodes and calls straight into this.
+func VerifySignedEntity(
+	verifier any, entity VerifySignedEntityInput, payload []byte,
+) (string, error) {
+	return verifier.(*keylessBundleVerifier).verifySignedEntity(entity, payload)
+}
+
+// NewKeylessVerifierWithoutPolicyValidation builds the keyless verifier over
+// trust material and a policy WITHOUT running the policy's boot validation.
+//
+// It exists for one reason, and the reason is a limitation worth stating rather
+// than hiding. Production policy hygiene requires every signer to name a source
+// repository or a build config, because a workflow identity alone matches that
+// same workflow path in every fork of a repository. The in-process Sigstore used
+// in tests mints leaf certificates carrying ONLY the OIDC issuer extension — it
+// has no way to emit `SourceRepositoryURI` — so no certificate it can produce
+// satisfies a policy that production would accept.
+//
+// So the accept path is exercised with a policy shape production REFUSES, and
+// the refusal of that shape is asserted separately by the Validate tests. What
+// is genuinely not covered end to end is the extension matching itself: that
+// `SourceRepositoryURI` and `SourceRepositoryRef` are compared at all is
+// delegated to sigstore-go and exercised only by its own suite.
+func NewKeylessVerifierWithoutPolicyValidation(
+	trustedMaterial trustedMaterialForTest, policy *SolutionHostVerificationPolicy,
+) (any, error) {
+	verifier, err := verify.NewVerifier(trustedMaterial,
+		verify.WithTransparencyLog(1),
+		verify.WithObserverTimestamps(1),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &keylessBundleVerifier{verifier: verifier, policy: policy}, nil
+}
+
+// trustedMaterialForTest is root.TrustedMaterial under a local name.
+type trustedMaterialForTest = root.TrustedMaterial
+
+// KeylessSignerDomains reads the signer-to-domain mapping off a verifier built
+// by either constructor, so a test can assert the mapping travels with the
+// policy it came from.
+func KeylessSignerDomains(verifier any) map[string][]string {
+	return verifier.(*keylessBundleVerifier).SignerDomains()
 }
