@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 )
@@ -127,6 +128,39 @@ type Service struct {
 	// now, against a registry nothing replaces, would be eighteen call sites no
 	// test could hold.
 	modulePrincipals atomic.Pointer[ModulePrincipalRegistry]
+
+	// The delivery inbox's wiring. All three or none: ReceiveSolutionDelivery
+	// fails closed and names the gap when any is absent, because a deployment
+	// that mounted the endpoint without a verifier must not accept documents.
+	deliveryVerifier        solutionhost.BundleVerifier
+	deliveryStore           SolutionDeliveryStore
+	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
+	deliveryDomainsBySigner map[string][]string
+}
+
+// SetSolutionDelivery wires the delivery endpoint: the bundle verifier, the
+// inbox's persistence, the carrier authorizer, and which ownership domains each
+// attested signer may deliver under.
+//
+// The signer-to-domain mapping comes from the SAME document as the identity
+// allowlist — the verifier's own policy — rather than from this host's
+// environment. When the two were separable, a deployer who could set the
+// environment could widen what an accepted signer speaks for without touching
+// the independently-delivered policy at all.
+//
+// Boot wiring, called once before the service listens, so these are plain
+// fields: an atomic that is only ever written once reads as a claim that
+// something might replace it.
+func (s *Service) SetSolutionDelivery(
+	verifier solutionhost.BundleVerifier,
+	store SolutionDeliveryStore,
+	carrier SolutionDeliveryCarrierAuthorizer,
+	domainsBySigner map[string][]string,
+) {
+	s.deliveryVerifier = verifier
+	s.deliveryStore = store
+	s.deliveryCarrier = carrier
+	s.deliveryDomainsBySigner = maps.Clone(domainsBySigner)
 }
 
 // declaredModules is the module principal registry as it stands right now.

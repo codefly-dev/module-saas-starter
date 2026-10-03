@@ -108,6 +108,7 @@ var authorities = map[string]Authority{
 	"solution_host_bindings":        {Scope: ScopeGlobal},
 	"solution_targets":              {Scope: ScopeGlobal},
 	"solution_generation_history":   {Scope: ScopeGlobal},
+	"solution_delivery_documents":   {Scope: ScopeGlobal},
 	"datasource_credential_budgets": {Scope: ScopeGlobal},
 
 	// Tenant-scoped relations.
