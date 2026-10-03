@@ -203,6 +203,16 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// And that the production policy is not available yet. A consumer
 		// planning against this document must not read `keyless` as live.
 		"**NOT YET AVAILABLE**",
+		// That a bundle is required and must be an object. A renderer whose
+		// pipeline has no signing step yet reaches for the field it can fill —
+		// `null` — and nothing in the carrier's own shape would have told it
+		// that produces a document the host treats as unsigned.
+		"A bundle must be present and be a JSON object",
+		// That what lands in a row is derived from the attested bytes rather
+		// than from whatever the pass was holding. This is the claim that makes
+		// the stored digest meaningful, and it is a property of the dependency,
+		// so a reader cannot check it by reading this repository alone.
+		"What the host stores is derived from the attested bytes",
 	} {
 		if !strings.Contains(document, strings.Join(strings.Fields(claim), " ")) {
 			t.Errorf("SOLUTION_REGISTRATION.md no longer states %q", claim)

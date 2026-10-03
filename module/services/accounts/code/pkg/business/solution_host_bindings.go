@@ -339,7 +339,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	}
 	var failures []error
 	for _, one := range verified {
-		document := one.Document()
+		document := one.Document
 		reason := admission.Withheld[document.Binding]
 		if err := r.service.recordSolutionHostBindingDesired(
 			ctx, document, reason, settled[document.Binding], r.now(),
@@ -469,8 +469,8 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 // is why the attribution is kept and why the reason is coarse.
 func verifySolutionHostBindingDocuments(
 	ctx context.Context, verifier solutionhost.BundleVerifier, documents []SolutionHostBindingDocument,
-) ([]*solutionhost.Delivered, []unparsedSolutionHostBinding) {
-	verified := make([]*solutionhost.Delivered, 0, len(documents))
+) ([]deliveredSolutionHostBinding, []unparsedSolutionHostBinding) {
+	verified := make([]deliveredSolutionHostBinding, 0, len(documents))
 	var problems []unparsedSolutionHostBinding
 	for _, delivered := range documents {
 		carrier, err := solutionhost.ParseSigned(delivered.Data)
@@ -488,10 +488,44 @@ func verifySolutionHostBindingDocuments(
 			})
 			continue
 		}
-		verified = append(verified, one)
+		document, err := one.Document()
+		if err != nil {
+			// core parsed these same bytes inside VerifyDelivered, so this is
+			// unreachable by construction rather than merely unlikely. It is
+			// still handled as a refusal: a host that cannot read back what it
+			// just verified must admit nothing from it, and the alternative is
+			// a nil document reaching admission.
+			problems = append(problems, unparsedSolutionHostBinding{
+				binding: attributeSolutionHostBinding(carrier.Document),
+				err:     fmt.Errorf("delivered solution host binding %s: %w", delivered.Source, err),
+			})
+			continue
+		}
+		verified = append(verified, deliveredSolutionHostBinding{Delivered: one, Document: document})
 	}
-	sort.Slice(verified, func(i, j int) bool { return verified[i].Document().Binding < verified[j].Document().Binding })
+	sort.Slice(verified, func(i, j int) bool { return verified[i].Document.Binding < verified[j].Document.Binding })
 	return verified, problems
+}
+
+// deliveredSolutionHostBinding pairs an attested carrier with the document
+// re-derived from its attested bytes, derived ONCE per pass.
+//
+// core 67ee7220 made Delivered.Document() a derivation returning an error
+// rather than a field returning a pointer, because the pointer form let a
+// caller mutate what Admit would afterwards consume — the attestation covered
+// one generation and admission consumed another, with nothing anywhere saying
+// so. Two consequences land here. A derivation that can fail cannot be read
+// inside a sort comparator, and re-reading it per use would re-parse and
+// canonically round-trip the same bytes once for every question asked of them.
+//
+// Holding the result is safe in a way holding the old pointer was not: Admit
+// re-derives from the attested payload itself, so this copy is what the pass
+// READS and cannot become what the host admits. That is the property core's
+// redesign bought, and pairing the two values here is what makes the pass use
+// one document rather than a fresh one per call site.
+type deliveredSolutionHostBinding struct {
+	Delivered *solutionhost.Delivered
+	Document  *solutionhost.SolutionHostBinding
 }
 
 // unparsedSolutionHostBinding is a delivered document core would not parse, and
