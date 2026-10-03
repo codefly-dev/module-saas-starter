@@ -202,6 +202,25 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// refuses even with a genuine attestation over it, and the document is
 		// the only place that is stated.
 		"The signing input is the canonical JSON",
+		// The delivery carrier contract, pinned because every line of it was
+		// something one of the three implementing repositories had wrong, and a
+		// rename that does not move these lines breaks a consumer silently.
+		//
+		// The authority pair is the only hardcoded (SA, namespace) in the
+		// scheme: a wrong constant there makes the TokenReview SUCCEED on a
+		// genuine identity and the host refuse the real carrier for a name.
+		"| authority | `delivery` | `platform-authority` — a fixed pair |",
+		// The presence namespace is NOT a constant, and the reason is the half
+		// that gets lost first: a fixed value refuses every genuine carrier.
+		"**the namespace the document's own workloads declare**",
+		// Offline verification, and the failure shape that makes it matter.
+		"would **hang rather than fail fast**",
+		// That the host is the second layer, not the perimeter. Without this
+		// line the check above reads as the only thing standing in the way.
+		"The host's SA-and-namespace check is the second",
+		// The named refusal. The library collapses these two; the distinction
+		// is the difference between "fix your signer" and "investigate".
+		"refused BY NAME",
 		// That the local policy is coordinate-bound. Without this line the
 		// table reads as "choose either", and the one that performs no
 		// cryptography is the convenient choice.

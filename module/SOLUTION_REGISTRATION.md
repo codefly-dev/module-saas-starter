@@ -691,6 +691,84 @@ to another handler — the same trap the adversarial review names for the
 `/solutions/_…` segments, where deleting a dispatch case lets a request reach
 generic solution routing and answer `502`.
 
+### The delivery carrier contract, settled across three repositories
+
+Published here because three repositories implement against it — the renderer
+that signs and posts, the infrastructure that provisions the identities, and this
+host that verifies — and because every item below was something at least one of
+them had wrong at some point.
+
+**The carrier is three keys**, exactly the renderer's `MarshalSigned` output:
+`{"schema":"codefly/solution-host-signed/v1","document":<canonical JSON>,"bundle":<bundle>}`.
+Parse it with core's `ParseSigned`, which requires `schema` — not by unmarshalling
+two of the three, which is how a hand-built carrier claiming any schema used to
+reach the bundle verifier before core's `Signed.validate()` closed it.
+
+**Carrier authorisation is the SA and the namespace, and the two halves differ:**
+
+| half | ServiceAccount | namespace |
+| --- | --- | --- |
+| authority | `delivery` | `platform-authority` — a fixed pair |
+| presence | `delivery` | **the namespace the document's own workloads declare** |
+
+The presence namespace is deliberately not a constant. A presence Job runs one
+per module tree in that module's own namespace, so a fixed value would refuse
+every genuine carrier. It is read out of each workload's `identity.spiffe_id`
+(`spiffe://<trust domain>/ns/<namespace>/sa/<account>`), which makes it a property
+of the **signed document** rather than of host configuration a deployer can edit
+— the same reason the ownership domain lives inside the canonical bytes. A
+presence document whose workloads declare two namespaces is refused by name: the
+renderer uses one namespace per render and cannot emit such a document, so one
+that exists was hand-built.
+
+Authority is the **only** half with a hardcoded pair, which is why it is written
+down rather than derived: get it wrong and the `TokenReview` *succeeds*, the
+identity is *genuine*, and the host refuses the real carrier for a name — which
+reads as an attack rather than a typo.
+
+**The perimeter is not this check.** A manifest claiming a namespace other than
+the one its delivery tree declares is refused by the delivery controller's own
+destination list, at apply. The host's SA-and-namespace check is the second
+layer. Both are worth having; neither is described as the only one.
+
+**Verification is OFFLINE, and there is no egress to a transparency log.** The
+delivered namespaces are default-deny egress, so an online Rekor or Fulcio lookup
+would **hang rather than fail fast** — the worst failure shape available, because
+it surfaces as a staging timeout instead of a permission error in a test. A
+bundle verifies offline because it carries its own evidence: the renderer signs
+with `sigstore-go` and the bundle carries **both** the signed entry timestamp
+(`inclusionPromise`) and the inclusion proof with its signed checkpoint
+(`inclusionProof`), media type
+`application/vnd.dev.sigstore.bundle.v0.3+json`. The host therefore verifies the
+SET and the inclusion proof against the Rekor key in a **mirrored trusted root**
+delivered from the config plane, with the transparency-log and observer-timestamp
+thresholds set and online verification deliberately off.
+
+The trusted root must carry the public-good Fulcio chain, the Rekor key and the
+CT log keys, because the signer is the public-good instance with no TSA — so the
+observer timestamp is the SET's integrated time, and a Rekor v2 log would
+additionally need its base URL on the log entry in that root.
+
+**A bundle with no transparency evidence is refused BY NAME**, distinct from a
+signature failure. The underlying library reports both as one error, and the
+distinction matters because the two have opposite causes: a signer configured
+without transparency logging is a misconfiguration to fix, and a bad signature is
+an attack to investigate. Collapsing them makes the first read as the second.
+
+**The authenticating container is derived, not declared.** The renderer names the
+container matching the service, or the sole container, and refuses at render a
+multi-container workload where neither holds — rather than guessing.
+`non_authenticating` is always a non-nil list of every other container, init
+containers included, so "there are none" and "nobody said" stay distinguishable.
+
+What neither the renderer nor this host can check is that the projected
+`accounts`-audience token is mounted by **exactly** the authenticating container:
+a pod-bound token is the pod's. That is closed by the deployment's
+execution-admission policy, not by a document field, and until it is in place this
+host's container designation is a **record** rather than attestation — stated that
+way deliberately, because "the host knows which container may authenticate" would
+be a claim the mechanism does not yet support.
+
 ### Why the mint is brokered by the gateway rather than called on accounts
 
 A solution runtime is an independently deployed workload, not a composed module
