@@ -1018,3 +1018,104 @@ func TestSolutionTarget_RereadingTheSameGenerationMintsNothing(t *testing.T) {
 		t.Fatalf("history = %d targets after two passes, want 1", got)
 	}
 }
+
+// testReconcilerAcceptingDomains is newTestReconciler with more than one
+// accepted ownership domain, and the signer allowed to speak for all of them.
+//
+// It exists for exactly one test, and the reason is that the default reconciler
+// would make that test pass for the wrong reason: with a single accepted domain,
+// a document under a second domain is refused by the host's own Domains list
+// before the applied record is ever consulted, so the assertion would hold while
+// proving nothing about the rule it names.
+func testReconcilerAcceptingDomains(
+	t *testing.T, source business.SolutionHostBindingSource, domains ...string,
+) *business.SolutionHostBindingReconciler {
+	t.Helper()
+	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
+		business.SolutionHostBindingReconcilerConfig{
+			Source:          source,
+			Verifier:        testBundleVerifier{signer: testSignerIdentity},
+			Coordinate:      testHostCoordinate,
+			Domains:         domains,
+			DomainsBySigner: map[string][]string{testSignerIdentity: domains},
+			Interval:        time.Minute,
+		})
+	if err != nil {
+		t.Fatalf("reconciler: %v", err)
+	}
+	return reconciler
+}
+
+// An applied binding is not taken over by a delivery under a different ownership
+// domain, even at a higher generation and from a signer the host lets speak for
+// that domain.
+//
+// This is the takeover case, and the host is the last thing standing in it.
+// cli#855 reports that the renderer cannot catch it: AdmitRendered carries no
+// applied state, so a publish folds presence generations without the one rule
+// that needs a record — core's `record.Domain != document.OwnershipDomain` — and
+// a presence-only module (no contract, so no authority gate either) reaches the
+// delivery Job with a domain change that only this host will refuse.
+//
+// Everything that could refuse it for a cheaper reason is deliberately removed:
+// the generation is HIGHER, so it is not stale; both domains are accepted by the
+// host, so Domains does not refuse it; and the signer may speak for both, so
+// DomainsBySigner does not either. What is left is the applied record, which is
+// the rule under test.
+func TestSolutionHostBinding_ADomainChangeDoesNotTakeOverAnAppliedBinding(t *testing.T) {
+	const otherDomain = "other"
+	solutionID := testDeclaredSolutionID(t)
+	mount := &deliveredSet{}
+
+	mount.put(t, declaredBinding(t, solutionID, 4))
+	if err := testReconcilerAcceptingDomains(t, mount, testOwnershipDomain, otherDomain).RunOnce(testCtx); err != nil {
+		t.Fatalf("apply generation 4: %v", err)
+	}
+	applied := registration(t, solutionID)
+
+	// The same binding ID, a newer generation, a different owner.
+	takeover := declaredBinding(t, solutionID, 5)
+	takeover.OwnershipDomain = otherDomain
+	mount.put(t, takeover)
+	if err := testReconcilerAcceptingDomains(t, mount, testOwnershipDomain, otherDomain).RunOnce(testCtx); err != nil {
+		t.Fatalf("a withheld document must not fail the pass: %v", err)
+	}
+
+	record := bindingState(t, takeover.Binding)
+	if record.Applied == nil || record.Applied.Generation != 4 {
+		t.Fatalf("applied = %+v, want generation 4 still running", record.Applied)
+	}
+	if record.Applied.Domain != testOwnershipDomain {
+		t.Fatalf("applied domain = %q, want %q: the takeover moved ownership",
+			record.Applied.Domain, testOwnershipDomain)
+	}
+	if !strings.Contains(record.PendingReason, solutionhost.ErrWrongDomain.Error()) {
+		t.Fatalf("pending reason = %q, want it to name the domain conflict", record.PendingReason)
+	}
+	// The APPLIED-RECORD rule specifically, by the only wording that is unique
+	// to it. core answers ErrWrongDomain for two different rules — "is delivered
+	// under domain X, which host Y does not accept" and "was applied under
+	// domain X and this document declares Y" — and asserting the sentinel alone
+	// cannot tell them apart. That is not hypothetical: an earlier version of
+	// this test asserted the sentinel plus "names both domains", and it passed
+	// with the second domain removed from the host's accepted list, because
+	// testHostCoordinate is "acme/test/eu-west-1" and so the host-accepts
+	// message contains "acme" and "other" as well. It proved nothing about the
+	// rule it is named for.
+	if !strings.Contains(record.PendingReason, "was applied under domain") {
+		t.Fatalf("pending reason = %q, want the APPLIED-RECORD refusal; a host-accepts refusal carries the same sentinel and would pass a weaker assertion",
+			record.PendingReason)
+	}
+	// And that it is actionable: a legitimate rename is indistinguishable from a
+	// takeover here, so the row must name which domain holds the binding and
+	// which one asked for it. This is past verification, so it carries core's
+	// wording rather than the coarse pre-verification reason.
+	if !strings.Contains(record.PendingReason, testOwnershipDomain) ||
+		!strings.Contains(record.PendingReason, otherDomain) {
+		t.Fatalf("pending reason = %q, want it to name both %q and %q",
+			record.PendingReason, testOwnershipDomain, otherDomain)
+	}
+	if after := registration(t, solutionID); after.Revision != applied.Revision {
+		t.Fatalf("a refused takeover moved the registry: revision %d then %d", applied.Revision, after.Revision)
+	}
+}
