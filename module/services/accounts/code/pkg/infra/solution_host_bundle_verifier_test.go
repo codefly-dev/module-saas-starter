@@ -18,7 +18,7 @@ import (
 // trusting delivery in production, refusing everything on a laptop — so the
 // absence is refused by name at boot.
 func TestUnsetTrustPolicyIsRefused(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier("", "acme/prod/eu-west-1")
+	verifier, err := infra.NewSolutionHostBundleVerifier("", "acme/prod/eu-west-1", "", []string{"acme"})
 	if err == nil {
 		t.Fatal("an unset trust policy must be refused, not defaulted")
 	}
@@ -32,7 +32,7 @@ func TestUnsetTrustPolicyIsRefused(t *testing.T) {
 
 // A policy nobody implements must not fall back to one that does.
 func TestUnknownTrustPolicyIsRefused(t *testing.T) {
-	if _, err := infra.NewSolutionHostBundleVerifier("trust-me", "acme/prod/eu-west-1"); err == nil {
+	if _, err := infra.NewSolutionHostBundleVerifier("trust-me", "acme/prod/eu-west-1", "", []string{"acme"}); err == nil {
 		t.Fatal("an unknown trust policy must be refused")
 	}
 }
@@ -52,7 +52,7 @@ func TestLocalTrustPolicyIsRefusedOnANonLocalCoordinate(t *testing.T) {
 		"",
 	} {
 		t.Run(coordinate, func(t *testing.T) {
-			verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustLocal, coordinate)
+			verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustLocal, coordinate, "", []string{"acme"})
 			if err == nil {
 				t.Fatalf("the local trust policy must be refused on coordinate %q", coordinate)
 			}
@@ -65,7 +65,7 @@ func TestLocalTrustPolicyIsRefusedOnANonLocalCoordinate(t *testing.T) {
 
 // And it is allowed where the mount and the host are the same person.
 func TestLocalTrustPolicyAttestsALocalIdentity(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustLocal, "local/dev/laptop")
+	verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustLocal, "local/dev/laptop", "", []string{"acme"})
 	if err != nil {
 		t.Fatalf("local coordinate: %v", err)
 	}
@@ -86,15 +86,21 @@ func TestLocalTrustPolicyAttestsALocalIdentity(t *testing.T) {
 // A host configured for a policy it cannot perform must not start and then
 // refuse every document as though delivery were broken: those are different
 // facts, and only one of them is the operator's to fix.
-func TestKeylessTrustPolicyRefusesAtBootWhileUnprovisioned(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustKeyless, "acme/prod/eu-west-1")
-	if !errors.Is(err, infra.ErrSolutionHostTrustUnavailable) {
-		t.Fatalf("error = %v, want ErrSolutionHostTrustUnavailable", err)
+//
+// This used to assert that keyless was UNIMPLEMENTED. It is implemented now, and
+// the boot refusal survives for the original reason: with no trust mount there
+// is no root to verify against. The error moved to
+// ErrSolutionHostTrustRootUnavailable, which names the missing thing rather than
+// the missing feature.
+func TestKeylessTrustPolicyRefusesAtBootWithoutAMount(t *testing.T) {
+	verifier, err := infra.NewSolutionHostBundleVerifier(infra.SolutionHostTrustKeyless, "acme/prod/eu-west-1", "", []string{"acme"})
+	if !errors.Is(err, infra.ErrSolutionHostTrustRootUnavailable) {
+		t.Fatalf("error = %v, want ErrSolutionHostTrustRootUnavailable", err)
 	}
 	if verifier != nil {
 		t.Fatal("an unavailable policy must yield no verifier")
 	}
-	if !strings.Contains(err.Error(), "trust root") {
+	if !strings.Contains(err.Error(), "no trust mount") {
 		t.Fatalf("error %q does not say what is missing", err)
 	}
 }
