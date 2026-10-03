@@ -211,7 +211,15 @@ func TestInstallationAuthorityCanonicalGolden(t *testing.T) {
 	got := verifiedAuthority(t, svc, caller, policy, req)
 	// Pinned independently from the documented canonical JSON, not from the
 	// production encoder. Changing the contract requires a version decision.
-	require.Equal(t, "sha256:55816f0b3346273e460d1745e4c46f6c74a63a0baf4ed755fe3dcc394f74e570", got.Digest)
+	//
+	// v2: `solution_identifier` became `target_id`. That is a field change, so
+	// the document says it needs a schema decision rather than a new digest, and
+	// this is that decision made — the version string moved with the field. The
+	// digest below was recomputed from MODULE_INSTALLATION.md's stated rules
+	// (one object, sorted keys, compact UTF-8, no trailing newline) and NOT by
+	// copying what the encoder produced, which is the only thing that makes this
+	// a pin rather than a mirror.
+	require.Equal(t, "sha256:d80a031de7ff432228adf51c84a5de39a9743b408a6cc42d6b26e974c4cc6b15", got.Digest)
 	require.False(t, strings.Contains(got.Digest, req.AgentIdentifier))
 }
 

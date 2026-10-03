@@ -52,6 +52,8 @@ pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: W
 pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).undeliveredFollowers: WithControlPlane
 pkg/business/gdpr.go: (*Service).PurgeExpiredPrivacyArtifacts: WithControlPlane
+pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
+pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
 pkg/business/invitations.go: (*Service).AcceptInvitation: As(System())
 pkg/business/invitations.go: (*Service).CreateInvitation: As(System())
 pkg/business/invitations.go: (*Service).InspectInvitationByID: As(System())

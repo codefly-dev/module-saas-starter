@@ -13,7 +13,7 @@ import (
 
 // ModuleInstallationAuthorityVersion identifies the installation contract being
 // fingerprinted, not a software release, credential or live authorization token.
-const ModuleInstallationAuthorityVersion = "accounts.module-installation-authority/v1"
+const ModuleInstallationAuthorityVersion = "accounts.module-installation-authority/v2"
 
 var ErrInstallationAuthorityVersion = errors.New("unsupported installation authority reference version")
 

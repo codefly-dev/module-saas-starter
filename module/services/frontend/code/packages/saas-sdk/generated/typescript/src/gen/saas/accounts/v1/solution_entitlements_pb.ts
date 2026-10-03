@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/solution_entitlements.proto.
  */
 export const file_saas_accounts_v1_solution_entitlements: GenFile = /*@__PURE__*/
-  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKMAQoTU29sdXRpb25FbnRpdGxlbWVudBIbChNzb2x1dGlvbl9pZGVudGlmaWVyGAEgASgJEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESJAoScm9vdF9zY29wZV9ub2RlX2lkGAMgASgJQgi6SAVyA7ABARIPCgdoZWFsdGh5GAQgASgIIowBCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkieAogTGlzdFNvbHV0aW9uRW50aXRsZW1lbnRzUmVzcG9uc2USOwoMZW50aXRsZW1lbnRzGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkVudGl0bGVtZW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIowBCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkieAogTGlzdFNvbHV0aW9uRW50aXRsZW1lbnRzUmVzcG9uc2USOwoMZW50aXRsZW1lbnRzGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkVudGl0bGVtZW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * SolutionEntitlement is one installed solution a subject may use. It is
@@ -22,15 +22,6 @@ export const file_saas_accounts_v1_solution_entitlements: GenFile = /*@__PURE__*
  * @generated from message saas.accounts.v1.SolutionEntitlement
  */
 export type SolutionEntitlement = Message<"saas.accounts.v1.SolutionEntitlement"> & {
-  /**
-   * The installed solution's identifier. This is the key a consumer joins
-   * against its own registered set — for the host's solution registry, the
-   * registered manifest `id`.
-   *
-   * @generated from field: string solution_identifier = 1;
-   */
-  solutionIdentifier: string;
-
   /**
    * @generated from field: string installation_id = 2;
    */
@@ -56,6 +47,23 @@ export type SolutionEntitlement = Message<"saas.accounts.v1.SolutionEntitlement"
    * reduces it instead, by the one rule that survives the enum growing: anything
    * that is not HEALTHY is not healthy.
    *
+   * @generated from field: bool healthy = 4;
+   */
+  healthy: boolean;
+
+  /**
+   * The immutable solution target this entitlement is for — the key a consumer
+   * joins against its own registered set.
+   *
+   * A consumer resolves a route alias to a target through the host's applied
+   * presence state and then compares THIS id. That is what makes the alias-reuse
+   * transfer inexpressible: a replacement binding claiming a withdrawn alias
+   * resolves to its own target, which no installation of the predecessor names.
+   *
+   * The alias is deliberately absent. Carrying it here would let a consumer go
+   * back to joining on it, and it would be a copy of a value the presence
+   * snapshot already owns and may move.
+   *
    * Deliberately no platform-administrator basis field. The scope union admits a
    * platform super_admin for the action `read` alone, and using a solution is not
    * a read, so that branch can never contribute an entitlement here — a field
@@ -63,9 +71,9 @@ export type SolutionEntitlement = Message<"saas.accounts.v1.SolutionEntitlement"
    * installations through GetInstallation / ListInstallations, not by appearing to
    * be entitled to them.
    *
-   * @generated from field: bool healthy = 4;
+   * @generated from field: string target_id = 5;
    */
-  healthy: boolean;
+  targetId: string;
 };
 
 /**

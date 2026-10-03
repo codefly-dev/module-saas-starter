@@ -212,6 +212,38 @@ ALTER TABLE public.solution_registrations
 -- installable by nobody" — indistinguishable from the fail-closed answer for an
 -- undeclared record, and therefore impossible to diagnose.
 --
+-- Existing declarations are completed, or cleared.
+--
+-- A record declared before this column existed has a binding, a generation and a
+-- release and no target, which the four-column invariant below refuses. The
+-- target is recoverable for most of them — a declared record's presence is the
+-- LIVE target of the binding that declared it — so those are completed in place.
+--
+-- A declaration whose binding has no live target cannot be completed: either the
+-- presence was withdrawn, or the target rows predate the binding. Such a record
+-- has its declaration CLEARED whole, which makes it undeclared — admissible to
+-- nobody, and visible as such — rather than carrying three quarters of a
+-- declaration past a constraint that exists to say a declaration is whole.
+--
+-- `solution_registrations` is control-plane only (no tenant column, no RLS), so
+-- unlike `installations` above this needs no RLS suspension; the migration owner
+-- reaches these rows directly.
+UPDATE public.solution_registrations AS r
+   SET declared_target_id = t.id
+  FROM public.solution_targets AS t
+ WHERE r.declared_binding_id IS NOT NULL
+   AND r.declared_target_id IS NULL
+   AND t.binding_id = r.declared_binding_id
+   AND t.closed_generation IS NULL;
+
+UPDATE public.solution_registrations
+   SET declared_binding_id = NULL,
+       declared_generation = NULL,
+       declared_release    = NULL,
+       declared_target_id  = NULL
+ WHERE declared_binding_id IS NOT NULL
+   AND declared_target_id IS NULL;
+
 -- Migration 17's three-column version is REPLACED rather than left beside this
 -- one. Two overlapping whole-or-absent checks are satisfiable only by their
 -- intersection, so keeping both would make the effective invariant something
