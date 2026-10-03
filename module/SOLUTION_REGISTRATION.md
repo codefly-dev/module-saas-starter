@@ -557,8 +557,8 @@ Every key is in the `federation` group.
 | `SOLUTION_HOST_BINDINGS_DIR` | the directory delivery places rendered documents in. Empty leaves the reconciler **off**, which is the default while runtimes migrate: nothing is declared and every solution is present because it heartbeats. |
 | `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. |
 | `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the mount and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
-| `SOLUTION_HOST_SIGNER_DOMAINS` | which ownership domains each **attested signer identity** may deliver under: `<identity>=<domain>[\|<domain>]` entries, comma-separated. Required with the mount. An entry naming a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
-| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked: `keyless` or `local`. Required with the mount, with **no default** — every default is wrong somewhere. |
+| `SOLUTION_HOST_TRUST_MOUNT` | where the verification policy and the mirrored trust root are read from. Required with the mount. It carries the signer-to-domain mapping too, which **replaced** an env var: a bare certificate SAN as the key baked a weaker allowlist shape into configuration — a SAN alone is accepted from any issuer, and the same workflow path exists in every fork — and it let a deployer who could set the environment widen what an accepted signer speaks for without touching the independently-delivered policy. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
+| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked. `keyless` is the only value. Required with the mount, with **no default** — every default is wrong somewhere. |
 | `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the mount is re-read. Empty uses 30s. |
 
 Declaring the mount without the coordinate, or either without the ownership
@@ -613,12 +613,13 @@ The host side of that:
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
-| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | production. **NOT YET AVAILABLE**: it refuses at boot, see below. |
-| `local` | **nothing.** It attests every carrier as the identity `local`. | a **local coordinate only** (`local/…`, `localhost/…`), enforced in code. A policy that trusts whatever is in the mount is sound exactly where the mount and the host are the same person. |
+| `keyless` | a Sigstore bundle against a trust root and an identity allowlist — repository, workflow path, ref pattern, issuer. **Never a key.** | everywhere, including a laptop. **The trust root is not yet pushed to the config plane, so it refuses at boot**, see below. |
 
-`local` still goes **through** the signer-to-domain check rather than around it:
-the operator grants the `local` identity the domains a developer may deliver
-under, using the same key a workflow identity uses.
+There is no second row. `local` was deleted — §8 argues why at length — and this
+table listed it until the code had already stopped accepting it. A configuration
+table is the one place a reader goes to find out what a value may be, so a
+deleted value left in it is not a stale sentence but an instruction to write a
+host that refuses to boot.
 
 **`keyless` refuses at boot, and that is deliberate.** Keyless verification needs
 a trust root and an identity allowlist provisioned **independently of both
@@ -872,9 +873,9 @@ adversarial reviews named the same concrete failure: the gate was a string
 comparison against an **operator-declared** value, so a deployed host configured
 with a local coordinate admitted any file any mount writer dropped — and because
 the coordinate is self-asserted on both sides, the misconfiguration was not
-self-defeating. §8 below had already argued at length that there should be no
-local trust *mechanism*; §7 shipped one anyway, because keyless was unavailable
-and a laptop had to run. Keyless exists now, so the argument and the code agree:
+self-defeating. The rest of this section had already argued at length
+that there should be no local trust *mechanism*; §7 shipped one anyway, because
+keyless was unavailable and a laptop had to run. Keyless exists now, so the argument and the code agree:
 one verifier, one policy shape, two sets of listed identities.
 
 ### Why the local path is not built, rather than built carefully
