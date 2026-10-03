@@ -179,7 +179,13 @@ func (s *Service) applySolutionHostBinding(
 	ctx context.Context, delivered *solutionhost.Delivered,
 	coordinate string, domains []string, domainsBySigner map[string][]string, now time.Time,
 ) error {
-	document := delivered.Document()
+	// Re-derived here rather than taken from the pass: apply owns its own
+	// read of the attested bytes, so there is no second value a caller could
+	// have adjusted between admission and the write.
+	document, err := delivered.Document()
+	if err != nil {
+		return err
+	}
 	digest, err := document.Digest()
 	if err != nil {
 		return err

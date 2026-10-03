@@ -62,14 +62,19 @@ type solutionHostBindingAdmission struct {
 // empty key and reported by the caller against the document it came from; it
 // cannot collide with a real binding, because core refuses "" as a binding ID.
 func admitSolutionHostBindings(
-	host solutionhost.Host, delivered []*solutionhost.Delivered,
+	host solutionhost.Host, delivered []deliveredSolutionHostBinding,
 ) solutionHostBindingAdmission {
 	result := solutionHostBindingAdmission{Withheld: map[string]string{}}
+	// The carriers are what core judges; the documents beside them are what
+	// this host reads to attribute the answer. Admit re-derives its own from
+	// each carrier's attested bytes, so the two cannot diverge — see
+	// deliveredSolutionHostBinding.
+	carriers := make([]*solutionhost.Delivered, len(delivered))
 	documents := make([]*solutionhost.SolutionHostBinding, len(delivered))
 	for index, one := range delivered {
-		documents[index] = one.Document()
+		carriers[index], documents[index] = one.Delivered, one.Document
 	}
-	admissions, err := host.Admit(delivered...)
+	admissions, err := host.Admit(carriers...)
 	if admissions == nil {
 		// core refused the call itself rather than any one document — applied
 		// state handed to it without a coordinate, or an applied record it
@@ -92,7 +97,7 @@ func admitSolutionHostBindings(
 			continue
 		}
 		result.Accepted = append(result.Accepted, SolutionHostBindingDecision{
-			Delivered: delivered[index],
+			Delivered: delivered[index].Delivered,
 			Document:  documents[index],
 			Decision:  admission.Decision,
 		})

@@ -586,3 +586,103 @@ func bindingsOf(decisions []SolutionHostBindingDecision) []string {
 	}
 	return names
 }
+
+// Admission must read the generation the attestation covered, not the one a
+// caller holding the document happens to have moved.
+//
+// This pins a property of the DEPENDENCY rather than of local logic, which is
+// why it is worth a test here: core's Delivered used to hand out the parsed
+// document it would itself admit, so `delivered.Document().Generation += 7`
+// changed what Admit consumed, with the attestation still covering the original
+// bytes. core 67ee7220 made Document() re-derive from the attested payload per
+// call. This host is what depends on that — it holds a derived document for the
+// whole pass to attribute refusals and record desired state with — so a future
+// pin that regressed to the shared pointer must come back red here rather than
+// as a generation nobody signed being written to a row.
+//
+// The assertion is deliberately two-sided: it proves the mutation really landed
+// on the caller's copy AND that the verdict ignored it, so it cannot pass by
+// the mutation having silently failed to apply.
+func TestSolutionHostBindingAdmissionReadsTheAttestedBytesNotTheCallersCopy(t *testing.T) {
+	host, err := solutionhost.FixtureHost()
+	if err != nil {
+		t.Fatalf("fixture host: %v", err)
+	}
+	// The generation FixtureHost has already applied, so a sound reading is
+	// DecisionCurrent and a mutated one would be DecisionApply.
+	document := mustFixtureDocument(t, "valid")
+	pairs := delivered(t, document)
+	if len(pairs) != 1 {
+		t.Fatalf("delivered %d carriers, want 1", len(pairs))
+	}
+	attested := pairs[0].Document.Generation
+	pairs[0].Document.Generation = attested + 7
+
+	admission := admitSolutionHostBindings(host, pairs)
+
+	if reason, withheld := admission.Withheld[document.Binding]; withheld {
+		t.Fatalf("the attested generation is the applied one and must be admitted, was withheld: %s", reason)
+	}
+	if len(admission.Accepted) != 1 {
+		t.Fatalf("accepted %d documents, want 1", len(admission.Accepted))
+	}
+	if got := admission.Accepted[0].Document.Generation; got != attested+7 {
+		t.Fatalf("the caller's copy reads generation %d, want %d: the mutation this test is about did not land, so the verdict below proves nothing",
+			got, attested+7)
+	}
+	if got := admission.Accepted[0].Decision; got != solutionhost.DecisionCurrent {
+		t.Fatalf("decision = %q, want %q: admission read generation %d from the caller's copy rather than %d from the attested bytes",
+			got, solutionhost.DecisionCurrent, attested+7, attested)
+	}
+}
+
+// A carrier whose bundle is absent, null or not an object is refused as
+// unsigned, and the host must never read the document out of it.
+//
+// The field is the one a renderer with no signing step yet can fill: writing
+// `null` costs nothing and produces a carrier that is structurally a carrier.
+// Core looks inside no bundle — it holds no trust root — so "there is one" is
+// the entire check available at this layer, and it is the difference between a
+// signed document and a document.
+func TestSolutionHostBindingRefusesACarrierWithNoBundle(t *testing.T) {
+	document := mustFixtureDocument(t, "valid")
+	canonical, err := document.CanonicalBytes()
+	if err != nil {
+		t.Fatalf("canonical bytes: %v", err)
+	}
+	for _, one := range []struct {
+		name   string
+		bundle string
+	}{
+		{"null", `null`},
+		{"absent", ``},
+		{"a string rather than an object", `"not-a-bundle"`},
+		{"an array rather than an object", `[]`},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			// Hand-written rather than built with MarshalSigned, which refuses
+			// these itself: the point is what the host does with bytes that
+			// reached its mount, not what its own writer would produce.
+			field := ""
+			if one.bundle != "" {
+				field = `,"bundle":` + one.bundle
+			}
+			raw := []byte(`{"schema":"` + solutionhost.SchemaSignedV1 +
+				`","document":` + string(canonical) + field + `}`)
+
+			verified, problems := verifySolutionHostBindingDocuments(
+				context.Background(), fixtureSigner(),
+				[]SolutionHostBindingDocument{{Source: "unsigned.json", Data: raw}},
+			)
+			if len(verified) != 0 {
+				t.Fatalf("admitted %d carriers with a %s bundle, want none", len(verified), one.name)
+			}
+			if len(problems) != 1 {
+				t.Fatalf("recorded %d problems, want 1", len(problems))
+			}
+			if !errors.Is(problems[0].err, solutionhost.ErrUnsigned) {
+				t.Fatalf("refusal %v is not ErrUnsigned, so the host refused it for some other reason", problems[0].err)
+			}
+		})
+	}
+}

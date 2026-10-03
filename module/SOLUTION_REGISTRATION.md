@@ -543,6 +543,11 @@ document was attested" is held by the compiler rather than by a naming
 convention, and a host that forgot to verify cannot compile rather than
 discovering it in production.
 
+Core `67ee7220` closed the gap that left: a `Delivered` used to hand out the
+parsed document it would itself admit, so a caller that adjusted a field changed
+what was admitted while the attestation still covered the original bytes. It now
+stores the attested payload and re-derives per read.
+
 The host side of that:
 
 - **The mount carries signed carriers**, `{schema, document, bundle}`, not bare
@@ -559,6 +564,17 @@ The host side of that:
   document states its own ownership domain: without the policy, any signer the
   host accepted at all could deliver under any domain it accepted and take over
   bindings in it.
+- **A bundle must be present and be a JSON object.** Core looks inside no
+  bundle, but "there is one" is checkable, and absent, empty or `null` is
+  refused as unsigned on the verify path — not only on the parse path, as it
+  was before `67ee7220`. A delivery that writes the field as `null` is refused
+  rather than admitted as a document nobody signed.
+- **What the host stores is derived from the attested bytes**, every time, and
+  never from a document the reconcile pass has been holding. The generation in a
+  row and the digest beside it are therefore over the bytes the signature
+  covered, which is the property that makes the digest worth storing at all. A
+  carrier whose attested payload will not re-read is refused like any other,
+  rather than admitted from a value read earlier.
 
 #### The two trust policies
 

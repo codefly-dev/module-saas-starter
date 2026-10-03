@@ -84,18 +84,23 @@ func carrierOver(t *testing.T, payload []byte) []byte {
 
 // delivered verifies documents through the real VerifyDelivered with the fixture
 // signer, producing the values admission takes.
-func delivered(t *testing.T, documents ...*solutionhost.SolutionHostBinding) []*solutionhost.Delivered {
+func delivered(t *testing.T, documents ...*solutionhost.SolutionHostBinding) []deliveredSolutionHostBinding {
 	t.Helper()
 	return deliveredBy(t, fixtureSigner(), documents...)
 }
 
 // deliveredBy is delivered with a named attestation check, for a test about who
 // signed rather than about what was signed.
+//
+// It pairs each carrier with the document re-derived from its attested bytes,
+// the way the reconcile pass does, rather than with the document it was handed:
+// a helper that returned the caller's own pointer would let a test assert
+// against a value admission never reads. See deliveredSolutionHostBinding.
 func deliveredBy(
 	t *testing.T, verifier solutionhost.BundleVerifier, documents ...*solutionhost.SolutionHostBinding,
-) []*solutionhost.Delivered {
+) []deliveredSolutionHostBinding {
 	t.Helper()
-	out := make([]*solutionhost.Delivered, 0, len(documents))
+	out := make([]deliveredSolutionHostBinding, 0, len(documents))
 	for _, document := range documents {
 		carrier, err := solutionhost.ParseSigned(signedCarrier(t, document))
 		if err != nil {
@@ -105,7 +110,11 @@ func deliveredBy(
 		if err != nil {
 			t.Fatalf("verify carrier for %q: %v", document.Binding, err)
 		}
-		out = append(out, one)
+		attested, err := one.Document()
+		if err != nil {
+			t.Fatalf("re-derive document for %q: %v", document.Binding, err)
+		}
+		out = append(out, deliveredSolutionHostBinding{Delivered: one, Document: attested})
 	}
 	return out
 }
