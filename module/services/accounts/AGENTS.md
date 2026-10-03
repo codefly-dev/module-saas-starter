@@ -179,14 +179,26 @@ once the capability exists. The response carries
   credentials never substitute for missing identity digests.
 - The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking.
-- The capability's effective authority is **`min(sealed, live)`** — blocker
-  decision **B1**, which *reverses* what this file said before it.
+- The capability's effective authority **is, in a running deployment today, the
+  LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
+  which *reverses* what this file said before it — and it is **not yet reached**.
 
-  **The live half is built. The sealed half is partly built, and which part is
-  named below** — this paragraph once asserted the whole thing in the present
-  tense while none of it existed, so what follows separates what the code does
-  from what it is still to do, and the separation is load-bearing rather than
-  cautious.
+  The distinction is not pedantic and the indicative is not available here. The
+  comparison against a sealed ceiling is written and tested, but **nothing
+  populates the seal**: the mint does not set the installation id, revision,
+  epoch or binding fields, so every credential arrives claiming nothing and the
+  intersection has one operand. Code that exists and a behaviour that holds are
+  different facts, and a rules file other agents read as a statement of what is
+  in place must lead with the second.
+
+  This bullet has now been wrong twice in opposite directions. It first asserted
+  the whole model in the present tense while none of it existed. It was then
+  corrected to "the live half is built, the sealed half is partly built" — true
+  of the code and still misleading about the deployment, because "partly built"
+  invites a reader to assume some sealing happens. None does.
+
+  What follows separates what the code does from what it is still to do, and the
+  separation is load-bearing rather than cautious.
 
   **Both halves bind, and neither alone is enough.** Re-reading alone means a
   widened grant, or a database restored to a broader state, retroactively widens
