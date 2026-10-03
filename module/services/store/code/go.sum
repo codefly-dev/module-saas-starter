@@ -32,6 +32,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/codefly-dev/core v0.7.2-0.20261003173032-735244e805bf h1:fvJJFtvYVDgXMI1BU1s//hqTAWCCouyzuO7A3PD4drA=
 github.com/codefly-dev/core v0.7.2-0.20261003173032-735244e805bf/go.mod h1:2wt5DdL+OnJbIQT0w4cc7dS2sAGVK3QjnwW43r5cQQg=
+github.com/codefly-dev/core v0.7.2-0.20261003222502-9d5f3fb7d5c3 h1:PSDuh+/pGQPLSPJ7DNVnE5dVypL7TkLvsYu1xbM4W6U=
+github.com/codefly-dev/core v0.7.2-0.20261003222502-9d5f3fb7d5c3/go.mod h1:2wt5DdL+OnJbIQT0w4cc7dS2sAGVK3QjnwW43r5cQQg=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/sdk-go v0.2.1-0.20260926212413-b91ce91eb23e h1:V8YSUvAm0QQgHY9V0QmHiHuvf+beHnI10D6cJLWB2eI=
