@@ -20,14 +20,26 @@ import (
 // releasing. Deleting the local version is the point. A host that re-derives its
 // dependency's rules owns a second copy of them, and the copy is what drifts.
 //
+// core cd443989 narrowed the door further: Admit takes *solutionhost.Delivered,
+// which only VerifyDelivered constructs from a signed carrier and this host's
+// own BundleVerifier. So "this document was attested" is held by the compiler
+// rather than by a naming convention, and there is no sequence of calls that
+// reaches a judgement on bytes nobody verified.
+//
 // What remains here is the part that is this host's: reading core's answer into
 // the shape the reconcile pass applies.
 
 // SolutionHostBindingDecision is one admitted document and what the host should
 // do with it.
 type SolutionHostBindingDecision struct {
-	Document *solutionhost.SolutionHostBinding
-	Decision solutionhost.Decision
+	// Delivered is the attested carrier this decision was made on. The apply
+	// re-admits inside its own transaction, and that re-admission is a HOST
+	// judgement, so it needs the verified value rather than the document read
+	// out of it — handing core the document again would be the second copy of
+	// "verified" that *Delivered exists to make impossible.
+	Delivered *solutionhost.Delivered
+	Document  *solutionhost.SolutionHostBinding
+	Decision  solutionhost.Decision
 }
 
 // solutionHostBindingAdmission is the outcome of one pass's admission: the
@@ -50,10 +62,14 @@ type solutionHostBindingAdmission struct {
 // empty key and reported by the caller against the document it came from; it
 // cannot collide with a real binding, because core refuses "" as a binding ID.
 func admitSolutionHostBindings(
-	host solutionhost.Host, documents []*solutionhost.SolutionHostBinding,
+	host solutionhost.Host, delivered []*solutionhost.Delivered,
 ) solutionHostBindingAdmission {
 	result := solutionHostBindingAdmission{Withheld: map[string]string{}}
-	admissions, err := host.Admit(documents...)
+	documents := make([]*solutionhost.SolutionHostBinding, len(delivered))
+	for index, one := range delivered {
+		documents[index] = one.Document()
+	}
+	admissions, err := host.Admit(delivered...)
 	if admissions == nil {
 		// core refused the call itself rather than any one document — applied
 		// state handed to it without a coordinate, or an applied record it
@@ -76,8 +92,9 @@ func admitSolutionHostBindings(
 			continue
 		}
 		result.Accepted = append(result.Accepted, SolutionHostBindingDecision{
-			Document: documents[index],
-			Decision: admission.Decision,
+			Delivered: delivered[index],
+			Document:  documents[index],
+			Decision:  admission.Decision,
 		})
 	}
 	return result

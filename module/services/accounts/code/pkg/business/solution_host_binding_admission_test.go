@@ -1,6 +1,8 @@
 package business
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -50,7 +52,7 @@ func TestSolutionHostBindingFixturesReachTheirRequiredOutcome(t *testing.T) {
 				}
 				return
 			}
-			admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{document})
+			admission := admitSolutionHostBindings(host, delivered(t, document))
 			switch fixture.Outcome {
 			case solutionhost.OutcomeAccepted:
 				if reason, withheld := admission.Withheld[document.Binding]; withheld {
@@ -86,7 +88,7 @@ func TestSolutionHostBindingCollisionWithAnAppliedAliasNamesTheCollision(t *test
 		t.Fatalf("fixture host: %v", err)
 	}
 	document := mustFixtureDocument(t, "duplicate-route-alias")
-	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{document})
+	admission := admitSolutionHostBindings(host, delivered(t, document))
 	reason, withheld := admission.Withheld[document.Binding]
 	if !withheld {
 		t.Fatal("a binding claiming an alias an applied binding holds must be withheld")
@@ -113,7 +115,7 @@ func TestSolutionHostBindingStaleDocumentDoesNotBlockASibling(t *testing.T) {
 	sibling.Binding = "pim-eu-west-1-01"
 	sibling.Routes[0].Alias = "pim"
 
-	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{stale, sibling})
+	admission := admitSolutionHostBindings(host, delivered(t, stale, sibling))
 
 	if _, withheld := admission.Withheld[stale.Binding]; !withheld {
 		t.Fatal("the stale document must be withheld")
@@ -137,14 +139,14 @@ func TestSolutionHostBindingStaleDocumentDoesNotBlockASibling(t *testing.T) {
 // admitting the deterministic winner keeps one serving. The host no longer owns
 // this policy, so the test pins core's.
 func TestSolutionHostBindingTwoClaimantsOfOneAliasYieldOneDeterministicWinner(t *testing.T) {
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate, Domains: []string{solutionhost.FixtureDomain}}
+	host := fixtureSignerHost(solutionhost.FixtureCoordinate)
 	first := mustFixtureDocument(t, "valid")
 	first.Binding = "crm-eu-west-1-aa"
 	second := mustFixtureDocument(t, "valid")
 	second.Binding = "crm-eu-west-1-bb"
 
-	forward := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{first, second})
-	reverse := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{second, first})
+	forward := admitSolutionHostBindings(host, delivered(t, first, second))
+	reverse := admitSolutionHostBindings(host, delivered(t, second, first))
 
 	for label, admission := range map[string]solutionHostBindingAdmission{"forward": forward, "reverse": reverse} {
 		if len(admission.Accepted) != 1 {
@@ -166,7 +168,7 @@ func TestSolutionHostBindingTwoClaimantsOfOneAliasYieldOneDeterministicWinner(t 
 // A collision must not take an unrelated binding down with it: the loser is
 // refused, the winner and every unrelated binding still apply.
 func TestSolutionHostBindingCollisionWithholdsOnlyTheLosingClaimant(t *testing.T) {
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate, Domains: []string{solutionhost.FixtureDomain}}
+	host := fixtureSignerHost(solutionhost.FixtureCoordinate)
 	first := mustFixtureDocument(t, "valid")
 	first.Binding = "crm-eu-west-1-aa"
 	second := mustFixtureDocument(t, "valid")
@@ -176,7 +178,7 @@ func TestSolutionHostBindingCollisionWithholdsOnlyTheLosingClaimant(t *testing.T
 	unrelated.Routes[0].Alias = "pim"
 
 	admission := admitSolutionHostBindings(host,
-		[]*solutionhost.SolutionHostBinding{first, second, unrelated})
+		delivered(t, first, second, unrelated))
 
 	admitted := bindingsOf(admission.Accepted)
 	sort.Strings(admitted)
@@ -196,11 +198,11 @@ func TestSolutionHostBindingCollisionWithholdsOnlyTheLosingClaimant(t *testing.T
 // still applies — core resolves it rather than freezing the binding, and it
 // reports which two documents collided.
 func TestSolutionHostBindingDeclaredTwiceRefusesTheSecondOccurrence(t *testing.T) {
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate, Domains: []string{solutionhost.FixtureDomain}}
+	host := fixtureSignerHost(solutionhost.FixtureCoordinate)
 	first := mustFixtureDocument(t, "valid")
 	second := mustFixtureDocument(t, "valid")
 
-	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{first, second})
+	admission := admitSolutionHostBindings(host, delivered(t, first, second))
 
 	if len(admission.Accepted) != 1 {
 		t.Fatalf("accepted %v, want exactly one of the two", bindingsOf(admission.Accepted))
@@ -220,10 +222,10 @@ func TestSolutionHostBindingDeclaredTwiceRefusesTheSecondOccurrence(t *testing.T
 func TestSolutionHostBindingForAnotherCoordinateIsWithheld(t *testing.T) {
 	// Derived from the fixtures' own coordinate rather than written out, so this
 	// test names no deployment of its own.
-	host := solutionhost.Host{Coordinate: solutionhost.FixtureCoordinate + "-elsewhere", Domains: []string{solutionhost.FixtureDomain}}
+	host := fixtureSignerHost(solutionhost.FixtureCoordinate + "-elsewhere")
 	document := mustFixtureDocument(t, "valid")
 
-	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{document})
+	admission := admitSolutionHostBindings(host, delivered(t, document))
 
 	if len(admission.Accepted) != 0 {
 		t.Fatalf("accepted %v, want nothing", bindingsOf(admission.Accepted))
@@ -247,7 +249,7 @@ func TestSolutionHostBindingRewrittenGenerationIsWithheld(t *testing.T) {
 		rewritten.Artifacts[index].Release = rewritten.Release.Identity()
 	}
 
-	admission := admitSolutionHostBindings(host, []*solutionhost.SolutionHostBinding{rewritten})
+	admission := admitSolutionHostBindings(host, delivered(t, rewritten))
 
 	if len(admission.Accepted) != 0 {
 		t.Fatalf("accepted %v, want nothing", bindingsOf(admission.Accepted))
@@ -270,17 +272,14 @@ func TestSolutionHostBindingAliasHandedOverInOneSetAdmitsBoth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("applied from the holder: %v", err)
 	}
-	host := solutionhost.Host{
-		Coordinate: solutionhost.FixtureCoordinate,
-		Domains:    []string{solutionhost.FixtureDomain},
-		Applied:    []solutionhost.Applied{applied},
-	}
+	host := fixtureSignerHost(solutionhost.FixtureCoordinate)
+	host.Applied = []solutionhost.Applied{applied}
 	releasing := mustFixtureDocument(t, "tombstone")
 	claiming := mustFixtureDocument(t, "valid")
 	claiming.Binding = "crm-eu-west-1-02"
 
 	admission := admitSolutionHostBindings(host,
-		[]*solutionhost.SolutionHostBinding{releasing, claiming})
+		delivered(t, releasing, claiming))
 
 	if len(admission.Withheld) != 0 {
 		t.Fatalf("withheld %v, want a clean hand-over", admission.Withheld)
@@ -298,11 +297,8 @@ func TestSolutionHostBindingClaimingAHeldAliasWithholdsOnlyTheClaimant(t *testin
 	if err != nil {
 		t.Fatalf("applied from the holder: %v", err)
 	}
-	host := solutionhost.Host{
-		Coordinate: solutionhost.FixtureCoordinate,
-		Domains:    []string{solutionhost.FixtureDomain},
-		Applied:    []solutionhost.Applied{applied},
-	}
+	host := fixtureSignerHost(solutionhost.FixtureCoordinate)
+	host.Applied = []solutionhost.Applied{applied}
 	claiming := mustFixtureDocument(t, "valid")
 	claiming.Binding = "crm-eu-west-1-02"
 	unrelated := mustFixtureDocument(t, "valid")
@@ -310,7 +306,7 @@ func TestSolutionHostBindingClaimingAHeldAliasWithholdsOnlyTheClaimant(t *testin
 	unrelated.Routes[0].Alias = "pim"
 
 	admission := admitSolutionHostBindings(host,
-		[]*solutionhost.SolutionHostBinding{claiming, unrelated})
+		delivered(t, claiming, unrelated))
 
 	if _, withheld := admission.Withheld[claiming.Binding]; !withheld {
 		t.Fatal("a candidate claiming a held alias must be withheld")
@@ -359,8 +355,24 @@ func TestSolutionHostBindingRegistryKeyResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid fixture: %v", err)
 	}
-	if key != "crm" {
-		t.Fatalf("registry key = %q, want the route alias %q", key, "crm")
+	// Read from the fixture rather than hardcoded: core moved this alias once
+	// already, and pinning its content here tests core's testdata rather than
+	// this host's resolution.
+	if key != present.Routes[0].Alias {
+		t.Fatalf("registry key = %q, want the route alias %q", key, present.Routes[0].Alias)
+	}
+	// The fixture's route alias and its ownership domain are currently the SAME
+	// string, so the assertion above cannot tell "the alias" from "the domain"
+	// — and the domain is the plausible wrong answer. Re-asking with a distinct
+	// alias is what actually pins which field is the registry key.
+	distinct := mustFixtureDocument(t, "valid")
+	distinct.Routes[0].Alias = "storefront"
+	if key, err = solutionHostBindingRegistryKey(distinct); err != nil {
+		t.Fatalf("distinct alias: %v", err)
+	}
+	if key != "storefront" {
+		t.Fatalf("registry key = %q, want the route alias %q and not the ownership domain %q",
+			key, "storefront", distinct.OwnershipDomain)
 	}
 
 	dotted := mustFixtureDocument(t, "valid")
@@ -382,17 +394,16 @@ func TestSolutionHostBindingRegistryKeyResolution(t *testing.T) {
 	}
 }
 
-// A document core refuses to parse still names the binding its refusal belongs
-// to, so an operator reads "delivery is shipping something unreadable" beside the
-// generation that is still running.
+// A verified payload core refuses to parse still names the binding its refusal
+// belongs to, so an operator reads "delivery is shipping something unreadable"
+// beside the generation that is still running.
 func TestSolutionHostBindingAttributionOfAnUnparseableDocument(t *testing.T) {
-	_, problems := parseSolutionHostBindingDocuments([]SolutionHostBindingDocument{{
-		Source: "mount/broken.codefly.yaml",
-		Data: []byte("schema: codefly/solution-host-binding/v1\n" +
-			"binding: crm-eu-west-1-01\n" +
-			"generation: 4\n" +
-			"whatIsThis: true\n"),
-	}})
+	_, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(),
+		[]SolutionHostBindingDocument{{
+			Source: "mount/broken.codefly.yaml",
+			Data: carrierOver(t, []byte(`{"schema":"codefly/solution-host-binding/v1",`+
+				`"binding":"crm-eu-west-1-01","generation":4,"whatIsThis":true}`)),
+		}})
 	if len(problems) != 1 {
 		t.Fatalf("problems = %d, want 1", len(problems))
 	}
@@ -404,18 +415,120 @@ func TestSolutionHostBindingAttributionOfAnUnparseableDocument(t *testing.T) {
 	}
 }
 
-// A document with no readable binding field is reported without a binding rather
+// A payload with no readable binding field is reported without a binding rather
 // than attributed to a guess.
 func TestSolutionHostBindingAttributionOfUnreadableBytes(t *testing.T) {
-	_, problems := parseSolutionHostBindingDocuments([]SolutionHostBindingDocument{{
-		Source: "mount/garbage.codefly.yaml",
-		Data:   []byte("\x00\x01not yaml at all: [:"),
-	}})
+	_, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(),
+		[]SolutionHostBindingDocument{{
+			Source: "mount/garbage.codefly.yaml",
+			// A JSON value that is not a document at all. The carrier itself is
+			// JSON, so bytes that are not even a JSON value are refused one
+			// layer earlier, by ParseSigned — which is what
+			// TestSolutionHostBindingRefusesAnUnsignedDocument covers.
+			Data: carrierOver(t, []byte(`"not a document"`)),
+		}})
 	if len(problems) != 1 {
 		t.Fatalf("problems = %d, want 1", len(problems))
 	}
 	if problems[0].binding != "" {
 		t.Fatalf("attributed to %q, want no attribution", problems[0].binding)
+	}
+}
+
+// The regression that matters most on this change: a BARE document — the shape
+// delivery shipped before signing existed, and the shape every fixture file on
+// disk still has — is refused rather than admitted. There is no path from
+// unattested bytes to a host judgement, and this is the test that says so.
+func TestSolutionHostBindingRefusesAnUnsignedDocument(t *testing.T) {
+	bare, err := solutionhost.Marshal(mustFixtureDocument(t, "valid"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	verified, problems := verifySolutionHostBindingDocuments(context.Background(), fixtureSigner(),
+		[]SolutionHostBindingDocument{{Source: "mount/unsigned.codefly.yaml", Data: bare}})
+	if len(verified) != 0 {
+		t.Fatalf("verified %d unsigned documents, want none admitted without an attestation", len(verified))
+	}
+	if len(problems) != 1 {
+		t.Fatalf("problems = %d, want 1", len(problems))
+	}
+	// A bare document is not a carrier, so there is nothing whose binding could
+	// be trusted enough to attribute: core refuses it before any field is read.
+	if problems[0].binding != "" {
+		t.Fatalf("attributed to %q, want no attribution for bytes that are not a carrier", problems[0].binding)
+	}
+	if !errors.Is(problems[0].err, solutionhost.ErrUnsigned) {
+		t.Fatalf("error = %v, want ErrUnsigned", problems[0].err)
+	}
+}
+
+// A carrier whose bundle does not verify is refused, and the refusal is still
+// attributed so an operator sees which binding delivery is failing for.
+func TestSolutionHostBindingRefusesACarrierWhoseBundleDoesNotVerify(t *testing.T) {
+	document := mustFixtureDocument(t, "valid")
+	refusing := &stubBundleVerifier{err: errors.New("no identity in the allowlist matched")}
+	verified, problems := verifySolutionHostBindingDocuments(context.Background(), refusing,
+		[]SolutionHostBindingDocument{{
+			Source: "mount/forged.codefly.yaml",
+			Data:   signedCarrier(t, document),
+		}})
+	if len(verified) != 0 {
+		t.Fatalf("verified %d documents, want none", len(verified))
+	}
+	if len(problems) != 1 {
+		t.Fatalf("problems = %d, want 1", len(problems))
+	}
+	if problems[0].binding != document.Binding {
+		t.Fatalf("attributed to %q, want %q", problems[0].binding, document.Binding)
+	}
+}
+
+// The verifier must be asked about the carrier's bytes VERBATIM. Re-encoding a
+// parsed document would produce bytes the signature does not cover, and then the
+// only honest answer is that nothing verified.
+func TestSolutionHostBindingVerifierSeesTheCarrierBytesVerbatim(t *testing.T) {
+	document := mustFixtureDocument(t, "valid")
+	canonical, err := document.CanonicalBytes()
+	if err != nil {
+		t.Fatalf("canonical bytes: %v", err)
+	}
+	verifier := fixtureSigner()
+	if _, problems := verifySolutionHostBindingDocuments(context.Background(), verifier,
+		[]SolutionHostBindingDocument{{Source: "mount/valid.codefly.yaml", Data: carrierOver(t, canonical)}},
+	); len(problems) != 0 {
+		t.Fatalf("problems = %v, want none", problems)
+	}
+	if len(verifier.payloads) != 1 {
+		t.Fatalf("verifier asked %d times, want 1", len(verifier.payloads))
+	}
+	if !bytes.Equal(verifier.payloads[0], canonical) {
+		t.Fatal("the verifier was asked about bytes other than the carrier's document")
+	}
+}
+
+// A signer the host accepts at all must still not be able to deliver under a
+// domain the host did not let it speak for. This is the self-asserted ownership
+// domain hole: the document states its own domain, so the signer policy is the
+// only thing standing between an accepted signer and every accepted domain.
+func TestSolutionHostBindingRefusesADomainTheSignerMayNotSpeakFor(t *testing.T) {
+	host, err := solutionhost.FixtureHost()
+	if err != nil {
+		t.Fatalf("fixture host: %v", err)
+	}
+	document := mustFixtureDocument(t, "valid")
+	// An identity the host's policy says nothing about, attesting a document
+	// whose domain the host does accept.
+	stranger := &stubBundleVerifier{signer: "https://signer.example/other-workflow@refs/heads/main"}
+	admission := admitSolutionHostBindings(host, deliveredBy(t, stranger, document))
+	if len(admission.Accepted) != 0 {
+		t.Fatalf("accepted %v, want nothing from a signer with no domain policy", bindingsOf(admission.Accepted))
+	}
+	reason, withheld := admission.Withheld[document.Binding]
+	if !withheld {
+		t.Fatal("a document delivered by a signer the host does not let speak for its domain must be withheld")
+	}
+	if !strings.Contains(reason, "speak for it") {
+		t.Fatalf("reason %q does not say the signer may not speak for the domain", reason)
 	}
 }
 

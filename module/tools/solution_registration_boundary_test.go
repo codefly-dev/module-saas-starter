@@ -188,6 +188,21 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// everything.
 		"a path is a contract, an origin is a resolution result",
 		"`/platform/` is **reserved for the host**",
+		// The trust model, pinned because each of these is a claim a reader
+		// would otherwise have to take on faith from a code comment.
+		//
+		// The carrier shape and the signing encoding: a consumer that signs the
+		// YAML this repository's Marshal writes produces a payload the host
+		// refuses even with a genuine attestation over it, and the document is
+		// the only place that is stated.
+		"The signing input is the canonical JSON",
+		// That the local policy is coordinate-bound. Without this line the
+		// table reads as "choose either", and the one that performs no
+		// cryptography is the convenient choice.
+		"a **local coordinate only**",
+		// And that the production policy is not available yet. A consumer
+		// planning against this document must not read `keyless` as live.
+		"**NOT YET AVAILABLE**",
 	} {
 		if !strings.Contains(document, strings.Join(strings.Fields(claim), " ")) {
 			t.Errorf("SOLUTION_REGISTRATION.md no longer states %q", claim)
