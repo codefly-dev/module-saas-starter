@@ -22,8 +22,11 @@ import (
 //   - APPROVED (`ApprovedDigest`) — what the authority document says may run.
 //     Signed, delivered out of band, and the only one the caller has no influence
 //     over.
-//   - DECLARED (`DeclaredDigest`) — what the pod's SPEC asks to run. Writable by
-//     whoever can create the pod, so it is evidence of intent and never of fact.
+//   - DECLARED — what the pod's SPEC asks to run. Writable by whoever can create
+//     the pod, so it is evidence of intent and never of fact. There is no Go type
+//     for it here BECAUSE nothing in this host reads it: a type with no referent
+//     is decoration, and the warning belongs in this comment, which is where a
+//     reader reaching for "the pod's image" will actually be.
 //   - RUNNING (`RunningDigest`) — what the container's STATUS reports it is
 //     actually running, as `imageID`.
 //
@@ -73,14 +76,6 @@ type ApprovedDigest string
 
 // RunningDigest is what a container's status reports it is running.
 type RunningDigest string
-
-// DeclaredDigest is what a pod spec asks to run.
-//
-// Present as a type with no comparison against it, deliberately. It exists so
-// that a future reader reaching for "the pod's image" has a name for the thing
-// they must NOT compare, rather than an untyped string that looks
-// interchangeable with the other two.
-type DeclaredDigest string
 
 // ExecutionIdentity is what the host established about a caller, independently.
 type ExecutionIdentity struct {
