@@ -1,0 +1,12 @@
+# Module capability paths that still decide on the DECLARED ceiling alone, by
+# calling moduleGrant directly instead of Service.AuthorizeModuleCapability.
+#
+# THIS FILE ONLY EVER SHRINKS. A new unrouted path fails
+# TestEveryModuleCapabilityPathReReadsLiveAuthority; routing one means deleting
+# its line. Adding a line is a decision a reviewer sees, which is the point — it
+# makes the remaining work finite and visible rather than a claim in a commit
+# message.
+#
+# Each of these re-reads nothing live, so a narrowing of the principal's envelope
+# or a revoked installation does not reach it until its credential expires.
+# Condition 1 of the Lane 3 cutover is the work of emptying this file.

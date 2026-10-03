@@ -166,6 +166,7 @@ func TestStory_HOST_AUD_001(t *testing.T) {
 	jobPool, err := infra.NewJobWorkerPool(ctx)
 	require.NoError(t, err)
 	t.Cleanup(jobPool.Close)
+	modules.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	modules.SetModuleCapabilities(testStore, infra.NewPostgresJobStore(jobPool), business.ModulePrincipalRegistry{
 		modulePrincipal: {Queues: []string{"documents"}},
 	})

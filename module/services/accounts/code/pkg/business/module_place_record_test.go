@@ -37,6 +37,7 @@ func newPlacementService(t *testing.T, store business.Store, grant business.Modu
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{modulePrincSvc: grant})
 	return svc
 }

@@ -103,6 +103,7 @@ func installModuleWorkContextService(t *testing.T, declaredSecrets, declaredPrin
 	svc.SetModuleIdentitySecrets(secrets)
 	registry, err := business.ParseModulePrincipalRegistry(declaredPrincipals)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	WithService(svc)
 	return store
@@ -149,6 +150,7 @@ func TestMintModuleWorkContextDeniesUnconfiguredIdentity(t *testing.T) {
 	installModuleRegistrar(t, "documents:"+registrationDigest("registration-secret"))
 	registry, err := business.ParseModulePrincipalRegistry(documentsPrincipals)
 	require.NoError(t, err)
+	service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	service.SetModuleCapabilities(nil, nil, registry)
 	installModuleWorkContextAuthority(t)
 

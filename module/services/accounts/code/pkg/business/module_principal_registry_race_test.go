@@ -27,6 +27,8 @@ func TestModulePrincipalRegistryIsReplacedWithoutRacingItsReaders(t *testing.T) 
 		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a", "b"}},
 		ModulePrincipalID("other"):   {Prefix: "other"},
 	}
+	withCurrentAuthority(service)
+	withCurrentAuthority(service)
 	service.SetModulePrincipals(narrow)
 
 	var wg sync.WaitGroup
@@ -36,9 +38,13 @@ func TestModulePrincipalRegistryIsReplacedWithoutRacingItsReaders(t *testing.T) 
 			defer wg.Done()
 			for i := range 500 {
 				if i%2 == 0 {
+					withCurrentAuthority(service)
+					withCurrentAuthority(service)
 					service.SetModulePrincipals(wide)
 					continue
 				}
+				withCurrentAuthority(service)
+				withCurrentAuthority(service)
 				service.SetModulePrincipals(narrow)
 			}
 		}()
@@ -92,6 +98,8 @@ func TestModulePrincipalRegistryIsNotMutableThroughTheMapItWasGiven(t *testing.T
 	caller := ModulePrincipalRegistry{
 		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a"}},
 	}
+	withCurrentAuthority(service)
+	withCurrentAuthority(service)
 	service.SetModulePrincipals(caller)
 
 	// The caller keeps its map and widens the grant it already handed over, and
@@ -113,6 +121,8 @@ func TestModulePrincipalRegistryIsNotMutableThroughTheMapItWasGiven(t *testing.T
 
 func TestModulePrincipalRegistryIsNotMutableThroughTheAccessor(t *testing.T) {
 	service := &Service{}
+	withCurrentAuthority(service)
+	withCurrentAuthority(service)
 	service.SetModulePrincipals(ModulePrincipalRegistry{
 		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a"}},
 	})
@@ -138,9 +148,13 @@ func TestModulePrincipalRegistryIsNotMutableThroughTheAccessor(t *testing.T) {
 // the clone that was added to make the registry unreachable from outside.
 func TestModulePrincipalRegistryClearedDeniesEveryCaller(t *testing.T) {
 	service := &Service{}
+	withCurrentAuthority(service)
+	withCurrentAuthority(service)
 	service.SetModulePrincipals(ModulePrincipalRegistry{
 		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a"}},
 	})
+	withCurrentAuthority(service)
+	withCurrentAuthority(service)
 	service.SetModulePrincipals(nil)
 	require.Empty(t, service.declaredModules(),
 		"a cleared registry must authorize nobody, never keep the previous declaration")

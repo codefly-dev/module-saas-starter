@@ -474,6 +474,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	// inconsistent and are not.
 	service.SetPolicyLog(infra.UnavailablePolicyLog{}, store)
 
+	// Enforcement at use. Every module capability path re-reads the live
+	// installation, producer epoch and binding revision through these, and
+	// AuthorizeModuleCapability refuses outright when they are absent — a host
+	// that cannot re-read cannot honour a narrowing, so it must not fall back to
+	// the declared ceiling alone.
+	service.SetModuleAuthorityReads(store, nil)
+
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
 	// the SAME one we use for JWT minting (saas-starter's cluster

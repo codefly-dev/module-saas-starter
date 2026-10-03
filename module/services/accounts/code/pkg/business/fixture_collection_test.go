@@ -58,6 +58,8 @@ collections:
 	// by; the host names none of its own, so without this the fixture's grants
 	// confer nothing and the read set is empty by design.
 	previous := testService.ModulePrincipals()
+	testService.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	testService.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {
 			Prefix:    "example",

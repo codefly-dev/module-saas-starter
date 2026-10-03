@@ -220,6 +220,7 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 			contractRuntimeModule + ":" + registrationDigest(input.Secrets[contractRuntimeModule]))
 	require.NoError(t, err)
 	svc.SetModuleIdentitySecrets(secrets)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	svc.SetAuditEmitter(&validatingAudit{})
 	WithService(svc)

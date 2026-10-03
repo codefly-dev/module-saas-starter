@@ -150,6 +150,25 @@ type Service struct {
 	policyLog      PolicyLog
 	policyLogStore PolicyLogStore
 	policyClock    func() time.Time
+
+	// The live-authority reads enforcement at use depends on. Nil means this
+	// host cannot re-read, and AuthorizeModuleCapability then refuses every
+	// capability rather than authorizing on the declared ceiling alone — which
+	// is the state enforcement-at-use exists to end.
+	moduleAuthority         ModuleAuthorityStore
+	moduleOperationBindings ModuleOperationBindingStore
+}
+
+// SetModuleAuthorityReads wires the live reads every capability decision makes.
+//
+// Boot wiring. Leaving it unset is fail-closed rather than permissive: a host
+// that cannot re-read live authority cannot honour a narrowing, so it declines
+// to exercise capabilities at all.
+func (s *Service) SetModuleAuthorityReads(
+	authority ModuleAuthorityStore, bindings ModuleOperationBindingStore,
+) {
+	s.moduleAuthority = authority
+	s.moduleOperationBindings = bindings
 }
 
 // SetPolicyLog wires the append-only authority record and its local half.

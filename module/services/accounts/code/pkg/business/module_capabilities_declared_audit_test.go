@@ -52,6 +52,7 @@ func newDeclaredEmitService(t *testing.T, namespaces ...string) (*business.Servi
 	emitter := &capturingAuditEmitter{}
 	svc.SetAuditEmitter(emitter)
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Namespaces: namespaces},
 	})

@@ -291,6 +291,8 @@ func externallyBound(t *testing.T, store *declaredAuditStore, solution string, n
 	if err != nil {
 		t.Fatal(err)
 	}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(ModulePrincipalRegistry{
 		ModulePrincipalID(solution): {Prefix: solution, Namespaces: namespaces, ExternalNamespaces: external},
 	})

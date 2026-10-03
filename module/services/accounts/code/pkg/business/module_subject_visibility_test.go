@@ -102,6 +102,7 @@ func newModuleVisibilityService(t *testing.T, tenant string) (*business.Service,
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	principal := business.ModulePrincipalID("records")
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		principal: {Prefix: "records", Tenant: tenant},
 	})
