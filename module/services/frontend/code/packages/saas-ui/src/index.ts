@@ -7,6 +7,31 @@ export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
+// The credential block, presentational and controlled, exported for the same
+// reason `matchDeclaredSources` is: a consumer that renders the three states
+// in its own shell must be able to ASK for the credential without copying
+// `ConnectGitHubForm`. `solutions/README.md` refuses a copied capability in a
+// shared card, so offering the matching rule while withholding the one control
+// a caller cannot write for itself would leave the only documented path out of
+// the whole card a path across that boundary.
+export {
+	AccessTokenField,
+	AppInstallPrompt,
+	type CredentialMethod,
+	CredentialMethodField,
+	credentialMethodFrom,
+	fieldErrorClass,
+	WebhookSecretField,
+} from "./datasources/credential-mode.js";
+export {
+	type DeclaredSource,
+	declaredCollectionLabel,
+	matchDeclaredSources,
+} from "./datasources/declared-source.js";
+export {
+	DeclaredSourceCard,
+	type DeclaredSourceCardProps,
+} from "./datasources/declared-source-card.js";
 export {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
