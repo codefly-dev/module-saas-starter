@@ -1050,12 +1050,29 @@ func testReconcilerAcceptingDomains(
 // domain, even at a higher generation and from a signer the host lets speak for
 // that domain.
 //
-// This is the takeover case, and the host is the last thing standing in it.
-// cli#855 reports that the renderer cannot catch it: AdmitRendered carries no
-// applied state, so a publish folds presence generations without the one rule
-// that needs a record — core's `record.Domain != document.OwnershipDomain` — and
-// a presence-only module (no contract, so no authority gate either) reaches the
-// delivery Job with a domain change that only this host will refuse.
+// This is the takeover case. The host was ONCE the last thing standing in it:
+// core's `AdmitRendered` carried no applied state, so a publish folded presence
+// generations without the one rule that needs a record — `record.Domain !=
+// document.OwnershipDomain` — and a presence-only module (no contract, so no
+// authority gate either) reached the delivery Job with a domain change only this
+// host would refuse.
+//
+// Core has since replaced it with `AdmitRenderedSets`, which takes each document
+// WITH its applied record and returns a refusal rather than only recording one,
+// and moved the applied-presence rules into one validator shared by
+// `appliedByBinding`, `Activate` and the rendered fold — core found a
+// blank-domain record had disabled the domain check on two of those three paths.
+//
+// So the renderer can now catch it, and this test is still the host's own
+// refusal rather than a duplicate of core's: a host must not depend on an
+// upstream check it does not run. Two independent refusals of a takeover is the
+// intended state, and the one that matters here is the one in this process.
+//
+// This repository was never exposed to the blank-domain hole core closed:
+// migration 17 carries `CHECK (applied_domain <> ”)`, so a record with a blank
+// domain cannot exist in this database — ” passes `num_nonnulls`, which is why
+// the whole-or-absent group alone was not enough and the non-empty rule is
+// named separately.
 //
 // Everything that could refuse it for a cheaper reason is deliberately removed:
 // the generation is HIGHER, so it is not stale; both domains are accepted by the
