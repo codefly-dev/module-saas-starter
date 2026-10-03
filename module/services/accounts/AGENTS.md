@@ -84,6 +84,60 @@ survives a restart and reaches every replica, and is only served when it is
   convergence after any write is bounded: the gateway reconciles about every 10s
   plus an on-demand refresh on a cache miss, the frontend holds a 5s snapshot TTL.
 
+## Declared solution presence reconciles into that same record
+
+`solution_host_bindings` (migration `17_solution_host_bindings`) is the host's
+durable record of the `SolutionHostBinding` documents delivery hands it (issue
+#952). It is **not** a second registry: an applied generation writes the same
+`solution_registrations` row a self-registering runtime writes, and the only thing
+it adds to that row is the declaration that produced it (`declared_binding_id`,
+`declared_generation`, `declared_release`).
+
+- **Core is the judge.** `github.com/codefly-dev/core/solutionhost` owns the
+  document, its validation and `Host.Admit`, which judges the whole desired set
+  because route-alias uniqueness and "declared once per set" are not properties of
+  one document. The reconciler runs it over the whole mount on every pass and
+  applies nothing it refused. Core's shipped `Fixtures()` are this side's
+  acceptance cases, so the renderer and the host cannot drift on the same bytes.
+- **One row per binding ID, three column groups.** `desired_*` is the newest
+  generation delivery has shown this host, admitted or not; `applied_*` is the
+  generation the host reconciled plus the registry key it reconciled into;
+  `pending_reason` is why they differ. Observed state is not there at all — it is
+  the lease and the endpoints on `solution_registrations`, reported by the runtime.
+  `ListSolutionHostBindings` serves all three, which is the only way to tell a
+  binding whose first generation was refused (no registration record exists) from
+  one that was never declared.
+- **The registry key is the route alias, not the binding ID.** A binding ID names
+  one deployment instance and may carry characters a path segment may not. A
+  present generation must declare exactly one single-segment lowercase alias or it
+  is refused with a reason naming the route; Core's alias vocabulary is wider. A
+  tombstone declares none, which is why the row keeps the key it last applied.
+- **A refusal is attributed, not fatal.** One stale render must not hold back every
+  other binding, because a stale render is the ordinary case — the renderer derives
+  a generation from the previously delivered document. A refusal Core raises that
+  cannot be attributed to a document withholds the whole set instead, failing
+  closed on a rule this host does not recognise.
+- **Convergence and restart are the row lock.** Each apply re-decides under
+  `GetSolutionHostBindingForUpdate`, so two replicas proposing the same generation
+  produce one apply and `DecisionCurrent` for the other, and a restart resumes from
+  the recorded generation rather than deriving it.
+- **The mixed window is enforced in `planSolutionRegistrationWrite`,** on the row
+  the heartbeat path already locks — never by a second table read, which would
+  leave a window in which a heartbeat decided it was undeclared and then wrote. A
+  heartbeat for a declared record may refresh the lease, the upstream and the
+  manifest; it may not repoint the route, revive a declared tombstone, or
+  deregister. A heartbeat for an **undeclared** record is unchanged, and a record
+  becomes declared only when a generation applies — so a document that has not
+  passed cannot take a working self-registered solution offline. Both halves are
+  tested (`solution_registry_declared_test.go`).
+- **Declaring an existing registration adopts it.** Its halves and leases are
+  observations; discarding them would take a working solution offline at the
+  instant it became declared. The publisher of record stays `solution:<id>`, the
+  subject the registrant's own credential proves.
+
+The full model, the field-ownership split and the configuration keys are in
+[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#6-declared-presence-delivery-says-what-runs-a-heartbeat-says-how-it-is).
+
 ## The composed-module service principal
 
 A module consuming the module-facing capability surface
@@ -125,9 +179,32 @@ once the capability exists. The response carries
   credentials never substitute for missing identity digests.
 - The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking.
-- The capability **seals identity and tenant only**: what the principal may do is
-  re-read from the declared grant on every call, so narrowing a grant takes
-  effect immediately rather than when the outstanding token expires.
+- The capability's effective authority is **`min(sealed, live)`** — blocker
+  decision **B1**, which *reverses* what this file said before. It used to seal
+  identity and tenant only and re-read what the principal may do from the declared
+  grant on every call. That is sound for narrowing and silent about widening: a
+  grant that widens, or a database restored to a broader state, retroactively
+  widens a credential already in flight.
+
+  So both halves now bind, and neither alone is enough. The credential **seals** a
+  ceiling — principal id and epoch, the one installation id and revision it is for,
+  the build incarnation, and for an operation context the binding id and revision —
+  and every capability decision **re-reads** the live envelope, authority document
+  and installation before acting. The effective authority is the intersection.
+
+  Read the two directions separately, because that is why it has to be both:
+  **narrowing still takes effect immediately**, through the live re-read, exactly as
+  it did before — uninstalling or narrowing bumps `installation.revision` and that
+  org's outstanding credentials fail at their next check. **Widening never reaches a
+  credential already issued**, through the sealed ceiling: a widened grant changes
+  the *replacement* credential, not the one in flight. Sealing alone would be weaker
+  than what this file described; re-reading alone is what it described; the
+  intersection is strictly stronger than either.
+
+  The intersection covers queues, resources, namespaces, external publication and
+  audiences — not only operation scopes — and verification is by **exact binding
+  lookup**, never by searching a principal's bindings for one that happens to
+  contain the presented scopes.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,

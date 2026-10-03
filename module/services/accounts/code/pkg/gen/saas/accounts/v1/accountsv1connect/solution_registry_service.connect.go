@@ -40,6 +40,9 @@ const (
 	// SolutionRegistryServiceDeleteSolutionRegistrationProcedure is the fully-qualified name of the
 	// SolutionRegistryService's DeleteSolutionRegistration RPC.
 	SolutionRegistryServiceDeleteSolutionRegistrationProcedure = "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration"
+	// SolutionRegistryServiceListSolutionHostBindingsProcedure is the fully-qualified name of the
+	// SolutionRegistryService's ListSolutionHostBindings RPC.
+	SolutionRegistryServiceListSolutionHostBindingsProcedure = "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings"
 	// SolutionRegistryServiceListSolutionRegistrationsProcedure is the fully-qualified name of the
 	// SolutionRegistryService's ListSolutionRegistrations RPC.
 	SolutionRegistryServiceListSolutionRegistrationsProcedure = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
@@ -54,6 +57,12 @@ type SolutionRegistryServiceClient interface {
 	// DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
 	// a later heartbeat from the retired deployment cannot resurrect.
 	DeleteSolutionRegistration(context.Context, *connect.Request[v1.DeleteSolutionRegistrationRequest]) (*connect.Response[v1.SolutionRegistration], error)
+	// ListSolutionHostBindings returns the declared bindings: what delivery has
+	// shown this host, what the host applied, and why a desired generation is not
+	// the applied one (issue #952). It is the answer to "is this solution missing,
+	// or declared and unhealthy?", which neither the registry snapshot nor a health
+	// probe can give on its own.
+	ListSolutionHostBindings(context.Context, *connect.Request[v1.ListSolutionHostBindingsRequest]) (*connect.Response[v1.ListSolutionHostBindingsResponse], error)
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error)
@@ -82,6 +91,12 @@ func NewSolutionRegistryServiceClient(httpClient connect.HTTPClient, baseURL str
 			connect.WithSchema(solutionRegistryServiceMethods.ByName("DeleteSolutionRegistration")),
 			connect.WithClientOptions(opts...),
 		),
+		listSolutionHostBindings: connect.NewClient[v1.ListSolutionHostBindingsRequest, v1.ListSolutionHostBindingsResponse](
+			httpClient,
+			baseURL+SolutionRegistryServiceListSolutionHostBindingsProcedure,
+			connect.WithSchema(solutionRegistryServiceMethods.ByName("ListSolutionHostBindings")),
+			connect.WithClientOptions(opts...),
+		),
 		listSolutionRegistrations: connect.NewClient[v1.ListSolutionRegistrationsRequest, v1.ListSolutionRegistrationsResponse](
 			httpClient,
 			baseURL+SolutionRegistryServiceListSolutionRegistrationsProcedure,
@@ -95,6 +110,7 @@ func NewSolutionRegistryServiceClient(httpClient connect.HTTPClient, baseURL str
 type solutionRegistryServiceClient struct {
 	putSolutionRegistration    *connect.Client[v1.PutSolutionRegistrationRequest, v1.SolutionRegistration]
 	deleteSolutionRegistration *connect.Client[v1.DeleteSolutionRegistrationRequest, v1.SolutionRegistration]
+	listSolutionHostBindings   *connect.Client[v1.ListSolutionHostBindingsRequest, v1.ListSolutionHostBindingsResponse]
 	listSolutionRegistrations  *connect.Client[v1.ListSolutionRegistrationsRequest, v1.ListSolutionRegistrationsResponse]
 }
 
@@ -107,6 +123,11 @@ func (c *solutionRegistryServiceClient) PutSolutionRegistration(ctx context.Cont
 // saas.accounts.v1.SolutionRegistryService.DeleteSolutionRegistration.
 func (c *solutionRegistryServiceClient) DeleteSolutionRegistration(ctx context.Context, req *connect.Request[v1.DeleteSolutionRegistrationRequest]) (*connect.Response[v1.SolutionRegistration], error) {
 	return c.deleteSolutionRegistration.CallUnary(ctx, req)
+}
+
+// ListSolutionHostBindings calls saas.accounts.v1.SolutionRegistryService.ListSolutionHostBindings.
+func (c *solutionRegistryServiceClient) ListSolutionHostBindings(ctx context.Context, req *connect.Request[v1.ListSolutionHostBindingsRequest]) (*connect.Response[v1.ListSolutionHostBindingsResponse], error) {
+	return c.listSolutionHostBindings.CallUnary(ctx, req)
 }
 
 // ListSolutionRegistrations calls
@@ -124,6 +145,12 @@ type SolutionRegistryServiceHandler interface {
 	// DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
 	// a later heartbeat from the retired deployment cannot resurrect.
 	DeleteSolutionRegistration(context.Context, *connect.Request[v1.DeleteSolutionRegistrationRequest]) (*connect.Response[v1.SolutionRegistration], error)
+	// ListSolutionHostBindings returns the declared bindings: what delivery has
+	// shown this host, what the host applied, and why a desired generation is not
+	// the applied one (issue #952). It is the answer to "is this solution missing,
+	// or declared and unhealthy?", which neither the registry snapshot nor a health
+	// probe can give on its own.
+	ListSolutionHostBindings(context.Context, *connect.Request[v1.ListSolutionHostBindingsRequest]) (*connect.Response[v1.ListSolutionHostBindingsResponse], error)
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error)
@@ -148,6 +175,12 @@ func NewSolutionRegistryServiceHandler(svc SolutionRegistryServiceHandler, opts 
 		connect.WithSchema(solutionRegistryServiceMethods.ByName("DeleteSolutionRegistration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	solutionRegistryServiceListSolutionHostBindingsHandler := connect.NewUnaryHandler(
+		SolutionRegistryServiceListSolutionHostBindingsProcedure,
+		svc.ListSolutionHostBindings,
+		connect.WithSchema(solutionRegistryServiceMethods.ByName("ListSolutionHostBindings")),
+		connect.WithHandlerOptions(opts...),
+	)
 	solutionRegistryServiceListSolutionRegistrationsHandler := connect.NewUnaryHandler(
 		SolutionRegistryServiceListSolutionRegistrationsProcedure,
 		svc.ListSolutionRegistrations,
@@ -160,6 +193,8 @@ func NewSolutionRegistryServiceHandler(svc SolutionRegistryServiceHandler, opts 
 			solutionRegistryServicePutSolutionRegistrationHandler.ServeHTTP(w, r)
 		case SolutionRegistryServiceDeleteSolutionRegistrationProcedure:
 			solutionRegistryServiceDeleteSolutionRegistrationHandler.ServeHTTP(w, r)
+		case SolutionRegistryServiceListSolutionHostBindingsProcedure:
+			solutionRegistryServiceListSolutionHostBindingsHandler.ServeHTTP(w, r)
 		case SolutionRegistryServiceListSolutionRegistrationsProcedure:
 			solutionRegistryServiceListSolutionRegistrationsHandler.ServeHTTP(w, r)
 		default:
@@ -177,6 +212,10 @@ func (UnimplementedSolutionRegistryServiceHandler) PutSolutionRegistration(conte
 
 func (UnimplementedSolutionRegistryServiceHandler) DeleteSolutionRegistration(context.Context, *connect.Request[v1.DeleteSolutionRegistrationRequest]) (*connect.Response[v1.SolutionRegistration], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.SolutionRegistryService.DeleteSolutionRegistration is not implemented"))
+}
+
+func (UnimplementedSolutionRegistryServiceHandler) ListSolutionHostBindings(context.Context, *connect.Request[v1.ListSolutionHostBindingsRequest]) (*connect.Response[v1.ListSolutionHostBindingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.SolutionRegistryService.ListSolutionHostBindings is not implemented"))
 }
 
 func (UnimplementedSolutionRegistryServiceHandler) ListSolutionRegistrations(context.Context, *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error) {

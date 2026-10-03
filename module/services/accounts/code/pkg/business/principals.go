@@ -624,7 +624,7 @@ func (s *Service) modulePrincipalsActingIn(orgID string) []*Principal {
 		orgID = parsed.String()
 	}
 	var out []*Principal
-	for id, grant := range s.modulePrincipals {
+	for id, grant := range s.declaredModules() {
 		if grant.Prefix == "" || (grant.Tenant != orgID && !grant.CrossTenant) {
 			continue
 		}

@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:91c5b2d9cc104f254ad5de886ebd1204323051d63e007c8992c64f97124f1086",
+      "digest": "sha256:6fa4f09e06ddf8877fe6b5d5ac3ac69a3c44cc33303d513c6855ae7f8ca46c11",
       "services": [
         {
           "name": "APIKeyService",
@@ -173,6 +173,8 @@
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
             "/saas.accounts.v1.InstallationService/InstallSolution",
+            "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+            "/saas.accounts.v1.InstallationService/ListInstallations",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"
           ]
@@ -371,10 +373,18 @@
           ]
         },
         {
+          "name": "SolutionEntitlementService",
+          "fullName": "saas.accounts.v1.SolutionEntitlementService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
+          ]
+        },
+        {
           "name": "SolutionRegistryService",
           "fullName": "saas.accounts.v1.SolutionRegistryService",
           "procedures": [
             "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+            "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
             "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
             "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
           ]

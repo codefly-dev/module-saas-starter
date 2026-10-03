@@ -293,7 +293,7 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 	if caller.PrincipalID == "" {
 		return ModulePrincipalGrant{}, status.Error(codes.Unauthenticated, "module caller identity required")
 	}
-	grant, ok := s.modulePrincipals[caller.PrincipalID]
+	grant, ok := s.declaredModules()[caller.PrincipalID]
 	if !ok {
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
@@ -315,7 +315,7 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 // This is the per-caller counterpart of ContentResources, which takes the union
 // because its caller is an org administrator rather than one module.
 func (s *Service) ModuleContentResources(prefix string) ([]string, error) {
-	grant, registered := s.modulePrincipals[ModulePrincipalID(prefix)]
+	grant, registered := s.declaredModules()[ModulePrincipalID(prefix)]
 	if !registered || len(grant.Resources) == 0 {
 		return nil, status.Error(codes.PermissionDenied, "capability audience declares no module content")
 	}

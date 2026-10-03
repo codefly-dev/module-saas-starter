@@ -13,8 +13,17 @@ import {
 	type RegistrationRefusal,
 } from "@/solutions/registration-log";
 import {
-	loadSolutions,
+	entitlementFailureResponse,
+	isEntitlementFailure,
+	viewerEntitlements,
+} from "@/solutions/entitlements";
+import {
+	cachedProjection,
+	entitledSolutions,
 	navProjection,
+} from "@/solutions/projections";
+import {
+	loadSolutionsWithRevision,
 	parseManifest,
 	registerSolution,
 	type SolutionWriteResult,
@@ -288,20 +297,44 @@ export async function DELETE(request: Request): Promise<Response> {
 	return Response.json({ ok: true, revision: result.revision });
 }
 
-// GET is the public navigation projection: the id and the nav entry the browser
-// polls to render the Solutions menu, and nothing else. It is deliberately not
-// gated on the internal token — every signed-in browser needs it — so it must
-// carry no field a browser does not render. Where a solution's code is served
-// from, which backend service fronts it, and its dashboard declaration are
-// deployment topology; they are served by the internal detail lookup
-// (app/api/internal/solutions) to callers holding the cluster-internal token.
-export async function GET(): Promise<Response> {
-	const registered = await loadSolutions();
+// GET is the navigation projection for ONE VIEWER: the id, the nav entry the
+// browser polls to render the Solutions menu, and whether it can be opened —
+// nothing else. It carries no field a browser does not render. Where a solution's
+// code is served from, which backend service fronts it, and its dashboard
+// declaration are deployment topology; they are served by the internal detail
+// lookup (app/api/internal/solutions) to callers holding the cluster-internal
+// token.
+//
+// It is authenticated (issue #949). It used to be ungated and answered every
+// caller the same deployment-wide set, so the menu showed what was *registered*
+// rather than what the viewer may *use*. The verified organization and viewer it
+// now narrows on exist only behind the gateway's ext_authz — see
+// solutions/entitlements.ts for why nothing in this handler may derive them — and
+// an unauthenticated caller gets 401 rather than an empty menu, which would be
+// indistinguishable from an organization that installed nothing.
+export async function GET(request: Request): Promise<Response> {
+	const entitlements = await viewerEntitlements(request);
+	if (isEntitlementFailure(entitlements)) {
+		return entitlementFailureResponse(entitlements);
+	}
+	const registered = await loadSolutionsWithRevision();
 	// An empty registry and an unreadable one must not render the same: the
 	// first correctly shows no solutions, the second would silently empty a
 	// working navigation.
 	if (registered === "unavailable") {
 		return Response.json({ error: "registry_unavailable" }, { status: 503 });
 	}
-	return Response.json({ solutions: registered.map(navProjection) });
+	// The nav projection has no client kind of its own — this host's own web app is
+	// the one consumer — so the kind component of the cache key is a constant
+	// naming it, kept distinct from any registered client kind.
+	const solutions = cachedProjection(
+		entitlements,
+		"\u0000host-nav",
+		registered.revision,
+		() =>
+			entitledSolutions(registered.solutions, entitlements).map(
+				({ manifest, entitlement }) => navProjection(manifest, entitlement),
+			),
+	);
+	return Response.json({ solutions });
 }

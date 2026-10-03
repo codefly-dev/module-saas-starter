@@ -26,31 +26,36 @@ var File_saas_accounts_v1_solution_registry_service_proto protoreflect.FileDescr
 
 const file_saas_accounts_v1_solution_registry_service_proto_rawDesc = "" +
 	"\n" +
-	"0saas/accounts/v1/solution_registry_service.proto\x12\x10saas.accounts.v1\x1a(saas/accounts/v1/solution_registry.proto\x1a\x1csaas/policy/v1/options.proto2\xa8\x04\n" +
+	"0saas/accounts/v1/solution_registry_service.proto\x12\x10saas.accounts.v1\x1a(saas/accounts/v1/solution_registry.proto\x1a\x1csaas/policy/v1/options.proto2\xc6\x05\n" +
 	"\x17SolutionRegistryService\x12\xb1\x01\n" +
 	"\x17PutSolutionRegistration\x120.saas.accounts.v1.PutSolutionRegistrationRequest\x1a&.saas.accounts.v1.SolutionRegistration\"<\xc2\xf3\x188\b\x03\x10\x010\x01:&\n" +
 	"\"saas.solution.registration_updated\x10\x02@\x01H\aP\x03X\x03`\x01\x12\xb7\x01\n" +
 	"\x1aDeleteSolutionRegistration\x123.saas.accounts.v1.DeleteSolutionRegistrationRequest\x1a&.saas.accounts.v1.SolutionRegistration\"<\xc2\xf3\x188\b\x03\x10\x010\x01:&\n" +
-	"\"saas.solution.registration_deleted\x10\x02@\x01H\aP\x03X\x03`\x01\x12\x9e\x01\n" +
+	"\"saas.solution.registration_deleted\x10\x02@\x01H\aP\x03X\x03`\x01\x12\x9b\x01\n" +
+	"\x18ListSolutionHostBindings\x121.saas.accounts.v1.ListSolutionHostBindingsRequest\x1a2.saas.accounts.v1.ListSolutionHostBindingsResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x9e\x01\n" +
 	"\x19ListSolutionRegistrations\x122.saas.accounts.v1.ListSolutionRegistrationsRequest\x1a3.saas.accounts.v1.ListSolutionRegistrationsResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01B\xc4\x01\n" +
 	"\x14com.saas.accounts.v1B\x1cSolutionRegistryServiceProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var file_saas_accounts_v1_solution_registry_service_proto_goTypes = []any{
 	(*PutSolutionRegistrationRequest)(nil),    // 0: saas.accounts.v1.PutSolutionRegistrationRequest
 	(*DeleteSolutionRegistrationRequest)(nil), // 1: saas.accounts.v1.DeleteSolutionRegistrationRequest
-	(*ListSolutionRegistrationsRequest)(nil),  // 2: saas.accounts.v1.ListSolutionRegistrationsRequest
-	(*SolutionRegistration)(nil),              // 3: saas.accounts.v1.SolutionRegistration
-	(*ListSolutionRegistrationsResponse)(nil), // 4: saas.accounts.v1.ListSolutionRegistrationsResponse
+	(*ListSolutionHostBindingsRequest)(nil),   // 2: saas.accounts.v1.ListSolutionHostBindingsRequest
+	(*ListSolutionRegistrationsRequest)(nil),  // 3: saas.accounts.v1.ListSolutionRegistrationsRequest
+	(*SolutionRegistration)(nil),              // 4: saas.accounts.v1.SolutionRegistration
+	(*ListSolutionHostBindingsResponse)(nil),  // 5: saas.accounts.v1.ListSolutionHostBindingsResponse
+	(*ListSolutionRegistrationsResponse)(nil), // 6: saas.accounts.v1.ListSolutionRegistrationsResponse
 }
 var file_saas_accounts_v1_solution_registry_service_proto_depIdxs = []int32{
 	0, // 0: saas.accounts.v1.SolutionRegistryService.PutSolutionRegistration:input_type -> saas.accounts.v1.PutSolutionRegistrationRequest
 	1, // 1: saas.accounts.v1.SolutionRegistryService.DeleteSolutionRegistration:input_type -> saas.accounts.v1.DeleteSolutionRegistrationRequest
-	2, // 2: saas.accounts.v1.SolutionRegistryService.ListSolutionRegistrations:input_type -> saas.accounts.v1.ListSolutionRegistrationsRequest
-	3, // 3: saas.accounts.v1.SolutionRegistryService.PutSolutionRegistration:output_type -> saas.accounts.v1.SolutionRegistration
-	3, // 4: saas.accounts.v1.SolutionRegistryService.DeleteSolutionRegistration:output_type -> saas.accounts.v1.SolutionRegistration
-	4, // 5: saas.accounts.v1.SolutionRegistryService.ListSolutionRegistrations:output_type -> saas.accounts.v1.ListSolutionRegistrationsResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
+	2, // 2: saas.accounts.v1.SolutionRegistryService.ListSolutionHostBindings:input_type -> saas.accounts.v1.ListSolutionHostBindingsRequest
+	3, // 3: saas.accounts.v1.SolutionRegistryService.ListSolutionRegistrations:input_type -> saas.accounts.v1.ListSolutionRegistrationsRequest
+	4, // 4: saas.accounts.v1.SolutionRegistryService.PutSolutionRegistration:output_type -> saas.accounts.v1.SolutionRegistration
+	4, // 5: saas.accounts.v1.SolutionRegistryService.DeleteSolutionRegistration:output_type -> saas.accounts.v1.SolutionRegistration
+	5, // 6: saas.accounts.v1.SolutionRegistryService.ListSolutionHostBindings:output_type -> saas.accounts.v1.ListSolutionHostBindingsResponse
+	6, // 7: saas.accounts.v1.SolutionRegistryService.ListSolutionRegistrations:output_type -> saas.accounts.v1.ListSolutionRegistrationsResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name

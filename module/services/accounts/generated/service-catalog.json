@@ -168,6 +168,8 @@
       "procedures": [
         "/saas.accounts.v1.InstallationService/GetInstallation",
         "/saas.accounts.v1.InstallationService/InstallSolution",
+        "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+        "/saas.accounts.v1.InstallationService/ListInstallations",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"
       ]
@@ -366,10 +368,18 @@
       ]
     },
     {
+      "name": "SolutionEntitlementService",
+      "full_name": "saas.accounts.v1.SolutionEntitlementService",
+      "procedures": [
+        "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements"
+      ]
+    },
+    {
       "name": "SolutionRegistryService",
       "full_name": "saas.accounts.v1.SolutionRegistryService",
       "procedures": [
         "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+        "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
         "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
       ]
@@ -4343,6 +4353,106 @@
       },
       "policy_tier": "org_admin",
       "description": "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "ListAvailableSolutions",
+      "input_type": "saas.accounts.v1.ListAvailableSolutionsRequest",
+      "output_type": "saas.accounts.v1.ListAvailableSolutionsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/installations:listAvailable",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "List the solution targets an administrator may install: accepted applied presence, never a refused desired generation.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.InstallationService/ListInstallations",
+      "service": "InstallationService",
+      "full_service": "saas.accounts.v1.InstallationService",
+      "method": "ListInstallations",
+      "input_type": "saas.accounts.v1.ListInstallationsRequest",
+      "output_type": "saas.accounts.v1.ListInstallationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/installations.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List one organization's installations with their live health.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -10606,6 +10716,49 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements",
+      "service": "SolutionEntitlementService",
+      "full_service": "saas.accounts.v1.SolutionEntitlementService",
+      "method": "ListSolutionEntitlements",
+      "input_type": "saas.accounts.v1.ListSolutionEntitlementsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionEntitlementsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_entitlements_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "List the installed solutions a subject may use in one organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
       "service": "SolutionRegistryService",
       "full_service": "saas.accounts.v1.SolutionRegistryService",
@@ -10645,6 +10798,49 @@
       },
       "policy_tier": "internal",
       "description": "Deregister a solution and leave a tombstone that blocks resurrection.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "ListSolutionHostBindings",
+      "input_type": "saas.accounts.v1.ListSolutionHostBindingsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionHostBindingsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read the declared solution bindings: desired, applied and why they differ.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

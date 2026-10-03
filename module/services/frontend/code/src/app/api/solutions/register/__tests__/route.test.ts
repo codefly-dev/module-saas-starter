@@ -15,11 +15,8 @@ const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
 vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
 
 import { DELETE, GET, POST } from "@/app/api/solutions/register/route";
-import {
-	findSolution,
-	navProjection,
-	type SolutionManifest,
-} from "@/solutions/registry";
+import { navProjection } from "@/solutions/projections";
+import { findSolution, type SolutionManifest } from "@/solutions/registry";
 
 const TOKEN = "internal-test-token";
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -63,6 +60,17 @@ function credential(solution = "audit", subject = `solution:${solution}`): strin
 }
 const GATEWAY = "http://gateway.internal:8080";
 
+/**
+ * The nav projection is authenticated (#949): it forwards the caller's credential
+ * to the gateway, which is what decides whose menu comes back. These tests are
+ * about registration, so they present one and assert the narrowing elsewhere.
+ */
+function navRequest(credential = "Bearer viewer-token"): Request {
+	const headers = new Headers();
+	if (credential) headers.set("authorization", credential);
+	return new Request("http://frontend/api/solutions/register", { headers });
+}
+
 // A stand-in for the durable registry behind the gateway: enough of the wire
 // contract for the route to be exercised end to end, with the revision counter
 // that makes a write observable.
@@ -95,9 +103,32 @@ function fakeGateway() {
 				revision,
 				leaseSeconds: 120,
 				solutions: [...stored].map(([id, manifest]) => ({
+					// The host stamps the target from the record's declaration;
+					// the fixture derives it from the alias so the entitlement
+					// answer below can agree with it, which is what the join
+					// needs. See projections.ts.
+					targetId: `target-${id}`,
 					id,
 					status: "active",
 					manifest,
+				})),
+			});
+		}
+		// The per-viewer entitlement read the nav projection now narrows on (#949).
+		// Every registered solution is entitled here: these tests are about
+		// registration, so the narrowing must be exercised (the route is
+		// authenticated) without becoming the subject.
+		if (url.pathname === "/solutions/_entitlements") {
+			if (!new Headers(init?.headers).get("authorization")) {
+				return respond({ error: "unauthenticated" }, 401);
+			}
+			return respond({
+				org: "org-acme",
+				viewer: "viewer-1",
+				solutions: [...stored.keys()].map((id) => ({
+					targetId: `target-${id}`,
+					healthy: true,
+					scopeNodeId: `node-${id}`,
 				})),
 			});
 		}
@@ -513,7 +544,7 @@ describe("solutions register route auth", () => {
 			}),
 		);
 		resetRegistryCache();
-		expect((await GET()).status).toBe(503);
+		expect((await GET(navRequest())).status).toBe(503);
 	});
 
 	it("rejects an authenticated POST carrying an unsafe manifest", async () => {
@@ -525,9 +556,12 @@ describe("solutions register route auth", () => {
 		expect(res.status).toBe(422);
 	});
 
-	it("lets the browser GET the nav list without a token", async () => {
+	it("lets a signed-in browser GET the nav list without the internal token", async () => {
+		// The cluster-internal token gates the DETAIL projection, not this one. What
+		// this one requires is the viewer's own credential, because the list it
+		// answers is that viewer's (#949).
 		getWorkspaceSecret.mockReturnValue(TOKEN);
-		const res = await GET();
+		const res = await GET(navRequest());
 		expect(res.status).toBe(200);
 		await expect(res.json()).resolves.toHaveProperty("solutions");
 	});
@@ -559,7 +593,7 @@ describe("solutions register route auth", () => {
 		};
 		expect((await POST(postRequest(body, TOKEN))).status).toBe(200);
 
-		const listed = (await GET().then((r) => r.json())) as {
+		const listed = (await GET(navRequest()).then((r) => r.json())) as {
 			solutions: Array<Record<string, unknown>>;
 		};
 		const audit = listed.solutions.find((s) => s.id === "audit");
@@ -569,7 +603,11 @@ describe("solutions register route auth", () => {
 		// topology: where the solution's code is served from, which backend
 		// fronts it, and its dashboard declaration. This response is readable by
 		// every signed-in browser, so it must carry none of it.
-		expect(Object.keys(audit ?? {}).sort()).toEqual(["id", "nav"]);
+		expect(Object.keys(audit ?? {}).sort()).toEqual([
+			"available",
+			"id",
+			"nav",
+		]);
 	});
 
 	it("keeps a mutated nav projection out of the stored manifest", async () => {
@@ -586,13 +624,17 @@ describe("solutions register route auth", () => {
 		const stored = await findSolution("audit");
 		expect(stored).not.toBeNull();
 		expect(stored).not.toBe("unavailable");
-		const projected = navProjection(stored as SolutionManifest);
+		const projected = navProjection(stored as SolutionManifest, {
+			targetId: (stored as SolutionManifest).targetId,
+			healthy: true,
+			scopeNodeId: "node-audit",
+		});
 		projected.nav.title = "Tampered";
 
 		expect((await findSolution("audit")) as SolutionManifest).toMatchObject({
 			nav: { title: "Audit" },
 		});
-		const listed = (await GET().then((r) => r.json())) as {
+		const listed = (await GET(navRequest()).then((r) => r.json())) as {
 			solutions: Array<{ id: string; nav: { title: string } }>;
 		};
 		expect(listed.solutions.find((s) => s.id === "audit")?.nav.title).toBe(

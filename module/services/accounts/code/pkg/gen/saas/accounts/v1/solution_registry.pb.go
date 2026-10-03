@@ -254,13 +254,16 @@ type SolutionRegistration struct {
 	SolutionId string                 `protobuf:"bytes,1,opt,name=solution_id,json=solutionId,proto3" json:"solution_id,omitempty"`
 	// Owner of record. First claim binds it; a registration naming a different
 	// publisher is refused rather than overwriting.
-	Publisher     string                     `protobuf:"bytes,2,opt,name=publisher,proto3" json:"publisher,omitempty"`
-	Revision      int64                      `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
-	Status        SolutionRegistrationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=saas.accounts.v1.SolutionRegistrationStatus" json:"status,omitempty"`
-	Frontend      *SolutionFrontendBinding   `protobuf:"bytes,5,opt,name=frontend,proto3,oneof" json:"frontend,omitempty"`
-	Backend       *SolutionBackendBinding    `protobuf:"bytes,6,opt,name=backend,proto3,oneof" json:"backend,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	TombstonedAt  *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
+	Publisher    string                     `protobuf:"bytes,2,opt,name=publisher,proto3" json:"publisher,omitempty"`
+	Revision     int64                      `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	Status       SolutionRegistrationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=saas.accounts.v1.SolutionRegistrationStatus" json:"status,omitempty"`
+	Frontend     *SolutionFrontendBinding   `protobuf:"bytes,5,opt,name=frontend,proto3,oneof" json:"frontend,omitempty"`
+	Backend      *SolutionBackendBinding    `protobuf:"bytes,6,opt,name=backend,proto3,oneof" json:"backend,omitempty"`
+	UpdatedAt    *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	TombstonedAt *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
+	// The binding that declared this record, absent when the record exists because
+	// a runtime registered itself (issue #952).
+	Declared      *SolutionDeclaredBinding `protobuf:"bytes,9,opt,name=declared,proto3,oneof" json:"declared,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -347,6 +350,13 @@ func (x *SolutionRegistration) GetUpdatedAt() *timestamppb.Timestamp {
 func (x *SolutionRegistration) GetTombstonedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.TombstonedAt
+	}
+	return nil
+}
+
+func (x *SolutionRegistration) GetDeclared() *SolutionDeclaredBinding {
+	if x != nil {
+		return x.Declared
 	}
 	return nil
 }
@@ -754,6 +764,465 @@ func (x *ListSolutionRegistrationsResponse) GetRegistryRevision() int64 {
 	return 0
 }
 
+// SolutionDeclaredBinding is the declaration that produced a registration
+// record. Its presence on a SolutionRegistration is what makes the record
+// declared, and a declared record answers a heartbeat differently: the heartbeat
+// may refresh the lease, the upstream address and the manifest, and may not
+// create presence, replace the release, repoint the route or erase a tombstone.
+type SolutionDeclaredBinding struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stable ID of the deployment instance that declared this record. It is not
+	// the solution id: a binding ID identifies one instance and may carry
+	// characters a path segment may not.
+	BindingId string `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	// The generation of that binding the host applied into this record.
+	Generation uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	// publisher/name@version of the applied generation: the release a heartbeat
+	// may not replace.
+	Release string `protobuf:"bytes,3,opt,name=release,proto3" json:"release,omitempty"`
+	// The immutable solution target this declaration opened — the identity an
+	// installation names. It is carried on the registration record so a consumer
+	// that was asked about a ROUTE ALIAS can resolve it to the target that
+	// currently serves it and compare identities.
+	//
+	// That resolution is the whole admission mechanism: a replacement binding
+	// which claimed a withdrawn alias resolves to its own target, which no
+	// installation of its predecessor names. A record with no declaration carries
+	// no target and is therefore admissible to nobody, which is the fail-closed
+	// answer and the direction of the cutover.
+	TargetId      string `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionDeclaredBinding) Reset() {
+	*x = SolutionDeclaredBinding{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionDeclaredBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionDeclaredBinding) ProtoMessage() {}
+
+func (x *SolutionDeclaredBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionDeclaredBinding.ProtoReflect.Descriptor instead.
+func (*SolutionDeclaredBinding) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SolutionDeclaredBinding) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *SolutionDeclaredBinding) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *SolutionDeclaredBinding) GetRelease() string {
+	if x != nil {
+		return x.Release
+	}
+	return ""
+}
+
+func (x *SolutionDeclaredBinding) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+// SolutionHostBindingGeneration is one generation of one document. The document
+// is carried whole, canonically encoded, because "what is this host running" and
+// "what has it been asked to run" are both answers an operator needs in full.
+type SolutionHostBindingGeneration struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Generation uint64                 `protobuf:"varint,1,opt,name=generation,proto3" json:"generation,omitempty"`
+	// The canonical digest of the document, which is how a rewritten generation is
+	// told from a re-read of the applied one.
+	Digest        string                 `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
+	Document      string                 `protobuf:"bytes,3,opt,name=document,proto3" json:"document,omitempty"`
+	At            *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionHostBindingGeneration) Reset() {
+	*x = SolutionHostBindingGeneration{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionHostBindingGeneration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionHostBindingGeneration) ProtoMessage() {}
+
+func (x *SolutionHostBindingGeneration) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionHostBindingGeneration.ProtoReflect.Descriptor instead.
+func (*SolutionHostBindingGeneration) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SolutionHostBindingGeneration) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *SolutionHostBindingGeneration) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingGeneration) GetDocument() string {
+	if x != nil {
+		return x.Document
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingGeneration) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+// SolutionHostBindingAppliedGeneration is the generation this host reconciled,
+// and what it reconciled it into.
+type SolutionHostBindingAppliedGeneration struct {
+	state      protoimpl.MessageState         `protogen:"open.v1"`
+	Generation *SolutionHostBindingGeneration `protobuf:"bytes,1,opt,name=generation,proto3" json:"generation,omitempty"`
+	// A tombstone generation: the binding is declared absent. It is not an
+	// absence — the generation stays on the record, so a late or replayed older
+	// generation is still refused after a removal.
+	Removed bool `protobuf:"varint,2,opt,name=removed,proto3" json:"removed,omitempty"`
+	// The route aliases the applied generation holds. A tombstone holds none.
+	Routes []string `protobuf:"bytes,3,rep,name=routes,proto3" json:"routes,omitempty"`
+	// The registration record this generation reconciled into. A tombstone keeps
+	// the key it withdrew, which is the only way it knows what to withdraw.
+	SolutionId    string `protobuf:"bytes,4,opt,name=solution_id,json=solutionId,proto3" json:"solution_id,omitempty"`
+	Release       string `protobuf:"bytes,5,opt,name=release,proto3" json:"release,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionHostBindingAppliedGeneration) Reset() {
+	*x = SolutionHostBindingAppliedGeneration{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionHostBindingAppliedGeneration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionHostBindingAppliedGeneration) ProtoMessage() {}
+
+func (x *SolutionHostBindingAppliedGeneration) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionHostBindingAppliedGeneration.ProtoReflect.Descriptor instead.
+func (*SolutionHostBindingAppliedGeneration) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SolutionHostBindingAppliedGeneration) GetGeneration() *SolutionHostBindingGeneration {
+	if x != nil {
+		return x.Generation
+	}
+	return nil
+}
+
+func (x *SolutionHostBindingAppliedGeneration) GetRemoved() bool {
+	if x != nil {
+		return x.Removed
+	}
+	return false
+}
+
+func (x *SolutionHostBindingAppliedGeneration) GetRoutes() []string {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
+func (x *SolutionHostBindingAppliedGeneration) GetSolutionId() string {
+	if x != nil {
+		return x.SolutionId
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingAppliedGeneration) GetRelease() string {
+	if x != nil {
+		return x.Release
+	}
+	return ""
+}
+
+// SolutionHostBindingState is one binding's whole state: desired, applied, and
+// why they differ. Observed state is deliberately not here — it is the lease and
+// the endpoints on SolutionRegistration, reported by the runtime — so that a
+// solution declared and unhealthy reads differently from one never declared.
+type SolutionHostBindingState struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BindingId      string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	HostCoordinate string                 `protobuf:"bytes,2,opt,name=host_coordinate,json=hostCoordinate,proto3" json:"host_coordinate,omitempty"`
+	HostComponent  string                 `protobuf:"bytes,3,opt,name=host_component,json=hostComponent,proto3" json:"host_component,omitempty"`
+	// The newest generation delivery has shown this host, whether or not it
+	// passed.
+	Desired *SolutionHostBindingGeneration `protobuf:"bytes,4,opt,name=desired,proto3,oneof" json:"desired,omitempty"`
+	// The generation this host applied. Absent means nothing has ever passed, so
+	// nothing about this binding is being served.
+	Applied *SolutionHostBindingAppliedGeneration `protobuf:"bytes,5,opt,name=applied,proto3,oneof" json:"applied,omitempty"`
+	// The generation delivery is showing that this host has not applied, or 0 when
+	// desired and applied agree.
+	PendingGeneration uint64 `protobuf:"varint,6,opt,name=pending_generation,json=pendingGeneration,proto3" json:"pending_generation,omitempty"`
+	// Why the pending generation was not applied. Empty when nothing is pending.
+	PendingReason string                 `protobuf:"bytes,7,opt,name=pending_reason,json=pendingReason,proto3" json:"pending_reason,omitempty"`
+	PendingSince  *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=pending_since,json=pendingSince,proto3,oneof" json:"pending_since,omitempty"`
+	// The registration record this binding declares, when it has applied one. It
+	// carries the observed half: which endpoints registered, whether their leases
+	// are live, and the derived status.
+	Registration  *SolutionRegistration  `protobuf:"bytes,9,opt,name=registration,proto3,oneof" json:"registration,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionHostBindingState) Reset() {
+	*x = SolutionHostBindingState{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionHostBindingState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionHostBindingState) ProtoMessage() {}
+
+func (x *SolutionHostBindingState) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionHostBindingState.ProtoReflect.Descriptor instead.
+func (*SolutionHostBindingState) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SolutionHostBindingState) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingState) GetHostCoordinate() string {
+	if x != nil {
+		return x.HostCoordinate
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingState) GetHostComponent() string {
+	if x != nil {
+		return x.HostComponent
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingState) GetDesired() *SolutionHostBindingGeneration {
+	if x != nil {
+		return x.Desired
+	}
+	return nil
+}
+
+func (x *SolutionHostBindingState) GetApplied() *SolutionHostBindingAppliedGeneration {
+	if x != nil {
+		return x.Applied
+	}
+	return nil
+}
+
+func (x *SolutionHostBindingState) GetPendingGeneration() uint64 {
+	if x != nil {
+		return x.PendingGeneration
+	}
+	return 0
+}
+
+func (x *SolutionHostBindingState) GetPendingReason() string {
+	if x != nil {
+		return x.PendingReason
+	}
+	return ""
+}
+
+func (x *SolutionHostBindingState) GetPendingSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PendingSince
+	}
+	return nil
+}
+
+func (x *SolutionHostBindingState) GetRegistration() *SolutionRegistration {
+	if x != nil {
+		return x.Registration
+	}
+	return nil
+}
+
+func (x *SolutionHostBindingState) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+// ListSolutionHostBindingsRequest reads every declared binding. There is one set
+// per deployment and it holds tens of bindings at most, so a consumer rebuilds
+// its view from a full snapshot.
+type ListSolutionHostBindingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSolutionHostBindingsRequest) Reset() {
+	*x = ListSolutionHostBindingsRequest{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSolutionHostBindingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSolutionHostBindingsRequest) ProtoMessage() {}
+
+func (x *ListSolutionHostBindingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSolutionHostBindingsRequest.ProtoReflect.Descriptor instead.
+func (*ListSolutionHostBindingsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{13}
+}
+
+type ListSolutionHostBindingsResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Bindings      []*SolutionHostBindingState `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSolutionHostBindingsResponse) Reset() {
+	*x = ListSolutionHostBindingsResponse{}
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSolutionHostBindingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSolutionHostBindingsResponse) ProtoMessage() {}
+
+func (x *ListSolutionHostBindingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_registry_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSolutionHostBindingsResponse.ProtoReflect.Descriptor instead.
+func (*ListSolutionHostBindingsResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_registry_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListSolutionHostBindingsResponse) GetBindings() []*SolutionHostBindingState {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_solution_registry_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
@@ -769,7 +1238,7 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\bupstream\x18\x02 \x01(\tR\bupstream\x12#\n" +
 	"\rservice_alias\x18\x03 \x01(\tR\fserviceAlias\x12)\n" +
 	"\x10contract_version\x18\x04 \x01(\tR\x0fcontractVersion\x12D\n" +
-	"\x10lease_expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xf8\x03\n" +
+	"\x10lease_expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xd1\x04\n" +
 	"\x14SolutionRegistration\x12\x1f\n" +
 	"\vsolution_id\x18\x01 \x01(\tR\n" +
 	"solutionId\x12\x1c\n" +
@@ -780,11 +1249,13 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\abackend\x18\x06 \x01(\v2(.saas.accounts.v1.SolutionBackendBindingH\x01R\abackend\x88\x01\x01\x129\n" +
 	"\n" +
 	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12D\n" +
-	"\rtombstoned_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\ftombstonedAt\x88\x01\x01B\v\n" +
+	"\rtombstoned_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\ftombstonedAt\x88\x01\x01\x12J\n" +
+	"\bdeclared\x18\t \x01(\v2).saas.accounts.v1.SolutionDeclaredBindingH\x03R\bdeclared\x88\x01\x01B\v\n" +
 	"\t_frontendB\n" +
 	"\n" +
 	"\b_backendB\x10\n" +
-	"\x0e_tombstoned_at\"|\n" +
+	"\x0e_tombstoned_atB\v\n" +
+	"\t_declared\"|\n" +
 	"\x1cSolutionFrontendRegistration\x12'\n" +
 	"\bmanifest\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x02\x18\x80\x80\x10R\bmanifest\x123\n" +
 	"\x10contract_version\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x01R\x0fcontractVersion\"\xae\x01\n" +
@@ -816,7 +1287,54 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\x9e\x01\n" +
 	"!ListSolutionRegistrationsResponse\x12L\n" +
 	"\rregistrations\x18\x01 \x03(\v2&.saas.accounts.v1.SolutionRegistrationR\rregistrations\x12+\n" +
-	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision*\xa3\x02\n" +
+	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision\"\x8f\x01\n" +
+	"\x17SolutionDeclaredBinding\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x01 \x01(\tR\tbindingId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12\x18\n" +
+	"\arelease\x18\x03 \x01(\tR\arelease\x12\x1b\n" +
+	"\ttarget_id\x18\x04 \x01(\tR\btargetId\"\x9f\x01\n" +
+	"\x1dSolutionHostBindingGeneration\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x01 \x01(\x04R\n" +
+	"generation\x12\x16\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x1a\n" +
+	"\bdocument\x18\x03 \x01(\tR\bdocument\x12*\n" +
+	"\x02at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\xe4\x01\n" +
+	"$SolutionHostBindingAppliedGeneration\x12O\n" +
+	"\n" +
+	"generation\x18\x01 \x01(\v2/.saas.accounts.v1.SolutionHostBindingGenerationR\n" +
+	"generation\x12\x18\n" +
+	"\aremoved\x18\x02 \x01(\bR\aremoved\x12\x16\n" +
+	"\x06routes\x18\x03 \x03(\tR\x06routes\x12\x1f\n" +
+	"\vsolution_id\x18\x04 \x01(\tR\n" +
+	"solutionId\x12\x18\n" +
+	"\arelease\x18\x05 \x01(\tR\arelease\"\x93\x05\n" +
+	"\x18SolutionHostBindingState\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x01 \x01(\tR\tbindingId\x12'\n" +
+	"\x0fhost_coordinate\x18\x02 \x01(\tR\x0ehostCoordinate\x12%\n" +
+	"\x0ehost_component\x18\x03 \x01(\tR\rhostComponent\x12N\n" +
+	"\adesired\x18\x04 \x01(\v2/.saas.accounts.v1.SolutionHostBindingGenerationH\x00R\adesired\x88\x01\x01\x12U\n" +
+	"\aapplied\x18\x05 \x01(\v26.saas.accounts.v1.SolutionHostBindingAppliedGenerationH\x01R\aapplied\x88\x01\x01\x12-\n" +
+	"\x12pending_generation\x18\x06 \x01(\x04R\x11pendingGeneration\x12%\n" +
+	"\x0epending_reason\x18\a \x01(\tR\rpendingReason\x12D\n" +
+	"\rpending_since\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\fpendingSince\x88\x01\x01\x12O\n" +
+	"\fregistration\x18\t \x01(\v2&.saas.accounts.v1.SolutionRegistrationH\x03R\fregistration\x88\x01\x01\x129\n" +
+	"\n" +
+	"updated_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtB\n" +
+	"\n" +
+	"\b_desiredB\n" +
+	"\n" +
+	"\b_appliedB\x10\n" +
+	"\x0e_pending_sinceB\x0f\n" +
+	"\r_registration\"!\n" +
+	"\x1fListSolutionHostBindingsRequest\"j\n" +
+	" ListSolutionHostBindingsResponse\x12F\n" +
+	"\bbindings\x18\x01 \x03(\v2*.saas.accounts.v1.SolutionHostBindingStateR\bbindings*\xa3\x02\n" +
 	"\x1aSolutionRegistrationStatus\x12,\n" +
 	"(SOLUTION_REGISTRATION_STATUS_UNSPECIFIED\x10\x00\x12'\n" +
 	"#SOLUTION_REGISTRATION_STATUS_ACTIVE\x10\x01\x12(\n" +
@@ -839,36 +1357,51 @@ func file_saas_accounts_v1_solution_registry_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_solution_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_accounts_v1_solution_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_saas_accounts_v1_solution_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_saas_accounts_v1_solution_registry_proto_goTypes = []any{
-	(SolutionRegistrationStatus)(0),           // 0: saas.accounts.v1.SolutionRegistrationStatus
-	(*SolutionFrontendBinding)(nil),           // 1: saas.accounts.v1.SolutionFrontendBinding
-	(*SolutionBackendBinding)(nil),            // 2: saas.accounts.v1.SolutionBackendBinding
-	(*SolutionRegistration)(nil),              // 3: saas.accounts.v1.SolutionRegistration
-	(*SolutionFrontendRegistration)(nil),      // 4: saas.accounts.v1.SolutionFrontendRegistration
-	(*SolutionBackendRegistration)(nil),       // 5: saas.accounts.v1.SolutionBackendRegistration
-	(*PutSolutionRegistrationRequest)(nil),    // 6: saas.accounts.v1.PutSolutionRegistrationRequest
-	(*DeleteSolutionRegistrationRequest)(nil), // 7: saas.accounts.v1.DeleteSolutionRegistrationRequest
-	(*ListSolutionRegistrationsRequest)(nil),  // 8: saas.accounts.v1.ListSolutionRegistrationsRequest
-	(*ListSolutionRegistrationsResponse)(nil), // 9: saas.accounts.v1.ListSolutionRegistrationsResponse
-	(*timestamppb.Timestamp)(nil),             // 10: google.protobuf.Timestamp
+	(SolutionRegistrationStatus)(0),              // 0: saas.accounts.v1.SolutionRegistrationStatus
+	(*SolutionFrontendBinding)(nil),              // 1: saas.accounts.v1.SolutionFrontendBinding
+	(*SolutionBackendBinding)(nil),               // 2: saas.accounts.v1.SolutionBackendBinding
+	(*SolutionRegistration)(nil),                 // 3: saas.accounts.v1.SolutionRegistration
+	(*SolutionFrontendRegistration)(nil),         // 4: saas.accounts.v1.SolutionFrontendRegistration
+	(*SolutionBackendRegistration)(nil),          // 5: saas.accounts.v1.SolutionBackendRegistration
+	(*PutSolutionRegistrationRequest)(nil),       // 6: saas.accounts.v1.PutSolutionRegistrationRequest
+	(*DeleteSolutionRegistrationRequest)(nil),    // 7: saas.accounts.v1.DeleteSolutionRegistrationRequest
+	(*ListSolutionRegistrationsRequest)(nil),     // 8: saas.accounts.v1.ListSolutionRegistrationsRequest
+	(*ListSolutionRegistrationsResponse)(nil),    // 9: saas.accounts.v1.ListSolutionRegistrationsResponse
+	(*SolutionDeclaredBinding)(nil),              // 10: saas.accounts.v1.SolutionDeclaredBinding
+	(*SolutionHostBindingGeneration)(nil),        // 11: saas.accounts.v1.SolutionHostBindingGeneration
+	(*SolutionHostBindingAppliedGeneration)(nil), // 12: saas.accounts.v1.SolutionHostBindingAppliedGeneration
+	(*SolutionHostBindingState)(nil),             // 13: saas.accounts.v1.SolutionHostBindingState
+	(*ListSolutionHostBindingsRequest)(nil),      // 14: saas.accounts.v1.ListSolutionHostBindingsRequest
+	(*ListSolutionHostBindingsResponse)(nil),     // 15: saas.accounts.v1.ListSolutionHostBindingsResponse
+	(*timestamppb.Timestamp)(nil),                // 16: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_solution_registry_proto_depIdxs = []int32{
-	10, // 0: saas.accounts.v1.SolutionFrontendBinding.lease_expires_at:type_name -> google.protobuf.Timestamp
-	10, // 1: saas.accounts.v1.SolutionBackendBinding.lease_expires_at:type_name -> google.protobuf.Timestamp
+	16, // 0: saas.accounts.v1.SolutionFrontendBinding.lease_expires_at:type_name -> google.protobuf.Timestamp
+	16, // 1: saas.accounts.v1.SolutionBackendBinding.lease_expires_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: saas.accounts.v1.SolutionRegistration.status:type_name -> saas.accounts.v1.SolutionRegistrationStatus
 	1,  // 3: saas.accounts.v1.SolutionRegistration.frontend:type_name -> saas.accounts.v1.SolutionFrontendBinding
 	2,  // 4: saas.accounts.v1.SolutionRegistration.backend:type_name -> saas.accounts.v1.SolutionBackendBinding
-	10, // 5: saas.accounts.v1.SolutionRegistration.updated_at:type_name -> google.protobuf.Timestamp
-	10, // 6: saas.accounts.v1.SolutionRegistration.tombstoned_at:type_name -> google.protobuf.Timestamp
-	4,  // 7: saas.accounts.v1.PutSolutionRegistrationRequest.frontend:type_name -> saas.accounts.v1.SolutionFrontendRegistration
-	5,  // 8: saas.accounts.v1.PutSolutionRegistrationRequest.backend:type_name -> saas.accounts.v1.SolutionBackendRegistration
-	3,  // 9: saas.accounts.v1.ListSolutionRegistrationsResponse.registrations:type_name -> saas.accounts.v1.SolutionRegistration
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	16, // 5: saas.accounts.v1.SolutionRegistration.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 6: saas.accounts.v1.SolutionRegistration.tombstoned_at:type_name -> google.protobuf.Timestamp
+	10, // 7: saas.accounts.v1.SolutionRegistration.declared:type_name -> saas.accounts.v1.SolutionDeclaredBinding
+	4,  // 8: saas.accounts.v1.PutSolutionRegistrationRequest.frontend:type_name -> saas.accounts.v1.SolutionFrontendRegistration
+	5,  // 9: saas.accounts.v1.PutSolutionRegistrationRequest.backend:type_name -> saas.accounts.v1.SolutionBackendRegistration
+	3,  // 10: saas.accounts.v1.ListSolutionRegistrationsResponse.registrations:type_name -> saas.accounts.v1.SolutionRegistration
+	16, // 11: saas.accounts.v1.SolutionHostBindingGeneration.at:type_name -> google.protobuf.Timestamp
+	11, // 12: saas.accounts.v1.SolutionHostBindingAppliedGeneration.generation:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
+	11, // 13: saas.accounts.v1.SolutionHostBindingState.desired:type_name -> saas.accounts.v1.SolutionHostBindingGeneration
+	12, // 14: saas.accounts.v1.SolutionHostBindingState.applied:type_name -> saas.accounts.v1.SolutionHostBindingAppliedGeneration
+	16, // 15: saas.accounts.v1.SolutionHostBindingState.pending_since:type_name -> google.protobuf.Timestamp
+	3,  // 16: saas.accounts.v1.SolutionHostBindingState.registration:type_name -> saas.accounts.v1.SolutionRegistration
+	16, // 17: saas.accounts.v1.SolutionHostBindingState.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 18: saas.accounts.v1.ListSolutionHostBindingsResponse.bindings:type_name -> saas.accounts.v1.SolutionHostBindingState
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_solution_registry_proto_init() }
@@ -882,13 +1415,14 @@ func file_saas_accounts_v1_solution_registry_proto_init() {
 		(*PutSolutionRegistrationRequest_Backend)(nil),
 	}
 	file_saas_accounts_v1_solution_registry_proto_msgTypes[6].OneofWrappers = []any{}
+	file_saas_accounts_v1_solution_registry_proto_msgTypes[12].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_solution_registry_proto_rawDesc), len(file_saas_accounts_v1_solution_registry_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -41,6 +41,44 @@ func newFakeSolutionRegistry() *fakeSolutionRegistry {
 	return &fakeSolutionRegistry{records: map[string]*accountsv1.SolutionRegistration{}}
 }
 
+// fakeSolutionTarget is the target id the fake derives for an alias's FIRST
+// declaration. It is a function of the alias so a test and the fake agree without
+// passing ids around; declareTarget below is how a test says "a different
+// binding now serves this alias", which no derivation can express.
+func fakeSolutionTarget(alias string) string { return "target-" + alias }
+
+// declareTarget replaces the declaration on an existing record, so a test can
+// model a REPLACEMENT presence: the same route alias, served by a different
+// binding, under a target that is not the one any earlier installation named.
+func (f *fakeSolutionRegistry) declareTarget(alias, bindingID, targetID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	record := f.records[alias]
+	if record == nil {
+		return
+	}
+	f.revision++
+	record.Revision = f.revision
+	record.Declared = &accountsv1.SolutionDeclaredBinding{
+		BindingId:  bindingID,
+		Generation: 1,
+		Release:    "acme/" + alias + "@2.0.0",
+		TargetId:   targetID,
+	}
+}
+
+// undeclare strips a record's declaration, modelling presence nothing declared.
+// Such a record resolves to no target and is admissible to nobody.
+func (f *fakeSolutionRegistry) undeclare(alias string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if record := f.records[alias]; record != nil {
+		f.revision++
+		record.Revision = f.revision
+		record.Declared = nil
+	}
+}
+
 func (f *fakeSolutionRegistry) Put(
 	_ context.Context, req *accountsv1.PutSolutionRegistrationRequest,
 ) (*accountsv1.SolutionRegistration, error) {
@@ -72,6 +110,20 @@ func (f *fakeSolutionRegistry) Put(
 		record = &accountsv1.SolutionRegistration{
 			SolutionId: req.GetSolutionId(),
 			Publisher:  req.GetPublisher(),
+			// Every record in the fake is DECLARED, with a target derived from
+			// the alias. The gateway admits on the target a route resolves to,
+			// so a fake whose records carried no declaration would resolve to no
+			// target and refuse every request — every routing test would then be
+			// asserting a 403. Deriving it keeps the common case faithful; a test
+			// that is about alias REUSE calls declareTarget to give the same
+			// alias a different target, which is what the real reconciler does
+			// when a replacement binding claims a withdrawn alias.
+			Declared: &accountsv1.SolutionDeclaredBinding{
+				BindingId:  "acme.test." + req.GetSolutionId(),
+				Generation: 1,
+				Release:    "acme/" + req.GetSolutionId() + "@1.0.0",
+				TargetId:   fakeSolutionTarget(req.GetSolutionId()),
+			},
 		}
 		f.records[req.GetSolutionId()] = record
 	}

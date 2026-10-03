@@ -47,9 +47,28 @@ function fakeGateway() {
 				revision,
 				leaseSeconds: 120,
 				solutions: [...stored].map(([id, manifest]) => ({
+					// The host stamps the target from the record's declaration;
+					// the fixture derives it from the alias so the entitlement
+					// answer below can agree with it, which is what the join
+					// needs. See projections.ts.
+					targetId: `target-${id}`,
 					id,
 					status: "active",
 					manifest,
+				})),
+			});
+		}
+		// The viewer projection beside this one is authenticated and narrowed per
+		// viewer (#949); this file compares the two projections' FIELDS, so every
+		// registered solution is entitled here.
+		if (url.pathname === "/solutions/_entitlements") {
+			return respond({
+				org: "org-acme",
+				viewer: "viewer-1",
+				solutions: [...stored.keys()].map((id) => ({
+					targetId: `target-${id}`,
+					healthy: true,
+					scopeNodeId: `node-${id}`,
 				})),
 			});
 		}
@@ -224,10 +243,15 @@ describe("internal solution detail lookup", () => {
 		expect(audit).not.toHaveProperty("dashboard");
 	});
 
-	it("serves detail the public navigation projection withholds", async () => {
+	it("serves detail the viewer navigation projection withholds", async () => {
 		await register();
 
-		const publicBody = (await publicGET().then((r) => r.json())) as {
+		const viewerRequest = new Request("http://frontend/api/solutions/register", {
+			headers: { authorization: "Bearer viewer-token" },
+		});
+		const publicBody = (await publicGET(viewerRequest).then((r) =>
+			r.json(),
+		)) as {
 			solutions: Array<Record<string, unknown>>;
 		};
 		const publicAudit = publicBody.solutions.find((s) => s.id === "audit");

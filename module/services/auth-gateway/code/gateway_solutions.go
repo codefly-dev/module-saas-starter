@@ -83,6 +83,16 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		return true
 	}
 
+	// The per-viewer control segments dispatch from their own file, so that what
+	// remains BELOW in this one is the proxy decision alone — registered, active,
+	// authenticated, routed — with no reference to any tenant's installations. That
+	// separation is load-bearing: route and page exposure stays deployment-wide
+	// while the projections do not, and module/tools' boundary test reads this file
+	// to hold the first half of that (SOLUTION_REGISTRATION.md §4).
+	if g.handleSolutionViewerSegment(w, r, rest) {
+		return true
+	}
+
 	id, path, _ := strings.Cut(rest, "/")
 	if id == "" {
 		httpError(w, http.StatusNotFound, "solution not specified")
@@ -162,6 +172,35 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	}
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
+	// AVAILABLE is not INSTALLED. Delivery (or, until the cutover, a
+	// registration) makes a solution available on this deployment; an
+	// organization installing it and a grant reaching the viewer are what make
+	// it usable. Those are three layers and none is inferred from another, so
+	// the proxy asks the authority before it forwards anything — including the
+	// caller's own bearer, which is the part that matters: without this check a
+	// viewer in any organization reached the data endpoints of every solution
+	// the deployment runs, and the solution received a real bearer for them.
+	//
+	// It is deliberately AFTER ext_authz. The identity this is decided on must
+	// be the verified one, and during an impersonation it must be the
+	// impersonated viewer — the subject accounts authorizes against — rather
+	// than the administrator acting. Both come from what the check just stamped.
+	//
+	// The public GET surface above is not gated and cannot be: it is fetched by
+	// the browser's module loader with no credential, so there is no viewer to
+	// ask about. What it serves is the solution's own static Module-Federation
+	// bytes, which carry no tenant data; the authenticated surface below is
+	// where an organization's admission is enforced.
+	org := r.Header.Get("X-Org-Id")
+	viewer := effectiveViewer(r)
+	if org == "" || viewer == "" {
+		// Authenticated, but the session names no organization. There is no
+		// org-scoped admission to read, so this is refused rather than routed —
+		// the same answer, for the same reason, as the entitlement listing.
+		w.Header().Set(solutionEntitlementRefusalHeader, refusalNoOrganization)
+		httpError(w, http.StatusForbidden, "no organization in this session")
+		return true
+	}
 	// Proxy to the solution. The caller's bearer is preserved so the solution
 	// can call accounts through the gateway on the user's behalf.
 	//
@@ -190,7 +229,35 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		Protected:      true,
 		RateLimitClass: class,
 	}
-	g.rateLimitThenProxy(w, r, upstream, entry)
+	// Metered FIRST, and the admission check runs inside the budget.
+	//
+	// The authority call is the expensive part of this path — up to one
+	// scope-tree read per entitlement page, per request — and it costs the same
+	// whether the request is forwarded, refused as not entitled, or abandoned
+	// because accounts is down. Admitting before metering therefore left an
+	// authenticated caller an unmetered way to spend that cost: ask about a
+	// solution it is not entitled to, as fast as it likes, and every refusal was
+	// free. The entitlement LISTING already wrapped its work this way; the proxy
+	// did not.
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch g.admitViewerSolution(r.Context(), org, viewer, id) {
+		case viewerSolutionNotEntitled:
+			// A verdict on this organization's admission, named so a client can
+			// tell it from an ext_authz denial on the credential: one is fixed by
+			// installing and granting, the other by signing in again.
+			w.Header().Set(solutionEntitlementRefusalHeader, refusalNotEntitled)
+			httpError(w, http.StatusForbidden, "solution is not installed for this organization")
+			return
+		case viewerSolutionUndecidable:
+			// The authority could not be asked. 503 and nothing forwarded:
+			// routing would serve a solution nobody has confirmed is installed,
+			// and 403 would tell an operator the grant is missing when accounts
+			// is simply down.
+			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
+			return
+		}
+		g.proxyTo(w, r, upstream, entry)
+	}))
 	return true
 }
 
@@ -475,10 +542,21 @@ type solutionRegistryProjection struct {
 }
 
 type solutionRegistrationProjection struct {
-	ID           string  `json:"id"`
-	Publisher    string  `json:"publisher"`
-	Revision     int64   `json:"revision"`
-	Status       string  `json:"status"`
+	ID        string `json:"id"`
+	Publisher string `json:"publisher"`
+	Revision  int64  `json:"revision"`
+	Status    string `json:"status"`
+	// TargetID is the immutable solution target this record is declared under —
+	// the identity an installation names, and therefore the key a consumer joins
+	// its entitlements against. Empty for a record nothing declared, which no
+	// entitlement can ever match.
+	//
+	// It is published because the alternative is what was here before: the
+	// consumer joined on `id`, the route alias, which a later binding may claim —
+	// so a replacement solution inherited the predecessor's menu entry and its
+	// team exposure. The alias stays in the projection because it is what a URL
+	// is built from; it is no longer what anything is authorised by.
+	TargetID     string  `json:"targetId,omitempty"`
 	ServiceAlias string  `json:"serviceAlias,omitempty"`
 	Manifest     *string `json:"manifest,omitempty"`
 }
@@ -514,6 +592,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 			Publisher:    record.GetPublisher(),
 			Revision:     record.GetRevision(),
 			Status:       solutionRegistryStatusLabel(record, now),
+			TargetID:     record.GetDeclared().GetTargetId(),
 			ServiceAlias: record.GetBackend().GetServiceAlias(),
 		}
 		if manifest := record.GetFrontend().GetManifest(); manifest != "" {

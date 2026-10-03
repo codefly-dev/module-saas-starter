@@ -52,6 +52,8 @@ pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: W
 pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).undeliveredFollowers: WithControlPlane
 pkg/business/gdpr.go: (*Service).PurgeExpiredPrivacyArtifacts: WithControlPlane
+pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
+pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
 pkg/business/invitations.go: (*Service).AcceptInvitation: As(System())
 pkg/business/invitations.go: (*Service).CreateInvitation: As(System())
 pkg/business/invitations.go: (*Service).InspectInvitationByID: As(System())
@@ -119,6 +121,12 @@ pkg/business/service.go: (*Service).VerifyEventWiring: WithControlPlane
 pkg/business/service.go: (*Service).createOrganization: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPlane
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).applySolutionHostBinding: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingDesired: WithControlPlane
+pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingRefusal: WithControlPlane
 pkg/business/solution_registry.go: (*Service).DeleteSolutionRegistration: WithControlPlane
 pkg/business/solution_registry.go: (*Service).ListSolutionRegistrations: WithControlPlane
 pkg/business/solution_registry.go: (*Service).PutSolutionRegistration: WithControlPlane

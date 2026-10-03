@@ -439,6 +439,24 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
 
+	// Declared solution presence (issue #952). Delivery renders one
+	// SolutionHostBinding per solution instance and places it in the mount below;
+	// this host reads the whole set on every pass, asks Core whether it may be
+	// applied, and reconciles what it admits into the same durable registry a
+	// self-registering runtime writes.
+	//
+	// Unset SOLUTION_HOST_BINDINGS_DIR leaves the reconciler off, and nothing on
+	// this host is declared: every solution is present because it registers
+	// itself, exactly as before. That is the deliberate default while the
+	// runtimes migrate. A mount WITHOUT a coordinate is a configuration error and
+	// refuses to boot: a host that does not know which coordinate it answers for
+	// cannot refuse a document delivered to the wrong place, and core's check is
+	// the only thing standing between this host and another host's desired state.
+	solutionHostBindingReconciler, err := configuredSolutionHostBindingReconciler(service)
+	if err != nil {
+		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
+	}
+
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
 	// the SAME one we use for JWT minting (saas-starter's cluster
@@ -1114,6 +1132,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if jobOperationsMonitor != nil {
 		jobOperationsMonitor.Start(ctx)
 	}
+	if solutionHostBindingReconciler != nil {
+		solutionHostBindingReconciler.Start(ctx)
+	}
 	if analyticsWorker != nil {
 		analyticsWorker.Start(ctx)
 	}
@@ -1162,6 +1183,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := jobOperationsMonitor.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("job metrics monitor shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if solutionHostBindingReconciler != nil {
+			sw.Info("stopping solution host binding reconciler")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := solutionHostBindingReconciler.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("solution host binding reconciler shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -1568,6 +1597,139 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // workspaceEnv reads a key from a named Codefly workspace configuration,
 // including its secret namespace, and falls back to a plain process variable
 // for deployments that do not use Codefly's configuration provider.
+// configuredSolutionHostBindingReconciler builds the declared-presence
+// reconciler from the deployment's configuration, or nil when no mount is
+// declared (issue #952).
+//
+// SOLUTION_HOST_BINDINGS_DIR is the directory delivery places the documents in.
+// SOLUTION_HOST_COORDINATE is the coordinate this host answers for, and it is
+// the string the operator declared on the environment the renderer read — it is
+// never derived here, because a coordinate this host invented would match
+// nothing delivery ever wrote.
+//
+// Declaring the mount without the coordinate refuses to boot rather than
+// reconciling every document it is handed. SOLUTION_HOST_BINDING_INTERVAL is
+// optional and exists for a deployment that wants a tighter convergence bound
+// than the default.
+//
+// SOLUTION_HOST_TRUST_POLICY is how a delivered carrier's bundle is checked and
+// SOLUTION_HOST_SIGNER_DOMAINS is which ownership domains each attested signer
+// identity may deliver under. Both are required with the mount, because core
+// cd443989 admits only a verified carrier: a host with no verifier cannot
+// produce the value Admit takes, and a host with no signer policy would let any
+// signer it accepted at all claim any domain it accepted.
+func configuredSolutionHostBindingReconciler(
+	service *business.Service,
+) (*business.SolutionHostBindingReconciler, error) {
+	mount := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDINGS_DIR"))
+	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
+	if mount == "" {
+		if coordinate != "" {
+			// A coordinate with no mount is a half-finished configuration, and
+			// the half that is missing is the one that would have made it do
+			// anything. Saying so beats silently reconciling nothing.
+			return nil, fmt.Errorf("SOLUTION_HOST_COORDINATE is declared without SOLUTION_HOST_BINDINGS_DIR, so no delivered binding would ever be read")
+		}
+		return nil, nil
+	}
+	if coordinate == "" {
+		return nil, fmt.Errorf("SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_COORDINATE, so this host could not refuse a binding delivered to another host")
+	}
+	// The ownership domains this host accepts delivery from. Required with the
+	// mount for the same reason the coordinate is: Core refuses a document from an
+	// unstated domain, and without the declaration any delivery could claim an
+	// unseen binding ID under a domain of its own choosing and own it from then on
+	// — the applied record cannot bound a binding's FIRST generation, because
+	// there is nothing yet to compare against.
+	var domains []string
+	for _, domain := range strings.Split(workspaceEnv("federation", "SOLUTION_HOST_OWNERSHIP_DOMAINS"), ",") {
+		if domain = strings.TrimSpace(domain); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_OWNERSHIP_DOMAINS, so this host would accept a binding claimed under any domain a writer chose")
+	}
+	// Which domains each attested signer may speak for. The document asserts its
+	// own ownership domain, so without this an accepted signer could deliver
+	// under any accepted domain and take over bindings in it — the hole core's
+	// DomainsBySigner exists to close, and the host's to fill because core cannot
+	// know which identity is entitled to which name.
+	domainsBySigner, err := parseSolutionHostSignerDomains(
+		workspaceEnv("federation", "SOLUTION_HOST_SIGNER_DOMAINS"), domains)
+	if err != nil {
+		return nil, err
+	}
+	verifier, err := infra.NewSolutionHostBundleVerifier(
+		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))),
+		coordinate)
+	if err != nil {
+		return nil, err
+	}
+	interval := business.SolutionHostBindingReconcileInterval
+	if raw := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_BINDING_INTERVAL")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return nil, fmt.Errorf("SOLUTION_HOST_BINDING_INTERVAL %q is not a positive duration", raw)
+		}
+		interval = parsed
+	}
+	return business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
+		Source:          infra.NewSolutionHostBindingMount(mount),
+		Verifier:        verifier,
+		Coordinate:      coordinate,
+		Domains:         domains,
+		DomainsBySigner: domainsBySigner,
+		Interval:        interval,
+	})
+}
+
+// parseSolutionHostSignerDomains reads SOLUTION_HOST_SIGNER_DOMAINS, which maps
+// an attested signer identity to the ownership domains it may deliver under:
+//
+//	<identity>=<domain>[|<domain>...][,<identity>=<domain>...]
+//
+// Identities are keyless certificate SANs, which contain `/`, `:` and `@` but
+// not `,` or `|`, so those separate entries and domains respectively. An entry
+// naming a domain this host does not accept at all is refused BY NAME rather
+// than ignored: a typo that silently grants nothing reads exactly like a policy
+// that works, right up until the binding it was meant to admit is withheld.
+func parseSolutionHostSignerDomains(raw string, accepted []string) (map[string][]string, error) {
+	acceptable := make(map[string]bool, len(accepted))
+	for _, domain := range accepted {
+		acceptable[domain] = true
+	}
+	policy := map[string][]string{}
+	for _, entry := range strings.Split(raw, ",") {
+		if entry = strings.TrimSpace(entry); entry == "" {
+			continue
+		}
+		identity, list, found := strings.Cut(entry, "=")
+		identity = strings.TrimSpace(identity)
+		if !found || identity == "" {
+			return nil, fmt.Errorf("SOLUTION_HOST_SIGNER_DOMAINS entry %q is not <identity>=<domain>[|<domain>...]", entry)
+		}
+		for _, domain := range strings.Split(list, "|") {
+			if domain = strings.TrimSpace(domain); domain != "" {
+				if !acceptable[domain] {
+					return nil, fmt.Errorf(
+						"SOLUTION_HOST_SIGNER_DOMAINS lets %q deliver under domain %q, which SOLUTION_HOST_OWNERSHIP_DOMAINS does not accept",
+						identity, domain)
+				}
+				policy[identity] = append(policy[identity], domain)
+			}
+		}
+		if len(policy[identity]) == 0 {
+			return nil, fmt.Errorf("SOLUTION_HOST_SIGNER_DOMAINS names identity %q with no domain", identity)
+		}
+	}
+	if len(policy) == 0 {
+		return nil, fmt.Errorf(
+			"SOLUTION_HOST_BINDINGS_DIR is declared without SOLUTION_HOST_SIGNER_DOMAINS, so any signer this host attested could deliver under any domain it accepts")
+	}
+	return policy, nil
+}
+
 func workspaceEnv(configuration, key string) string {
 	if value, err := codefly.For(codefly.Context()).WorkspaceValue(configuration, key); err == nil && value != "" {
 		return value

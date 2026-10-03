@@ -44,10 +44,10 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	t.Helper()
 	d := business.InstallerDelegation{
 		Prefix: "example-installer", ModuleID: "acme.example/" + module,
-		OrganizationID:     "11111111-1111-4111-8111-111111111111",
-		OwnerPrincipalID:   "22222222-2222-4222-8222-222222222222",
-		RoleID:             "33333333-3333-4333-8333-333333333333",
-		SolutionIdentifier: "example-solution", AgentIdentifiers: []string{"acme.example/" + module + ":1.0.0"},
+		OrganizationID:   "11111111-1111-4111-8111-111111111111",
+		OwnerPrincipalID: "22222222-2222-4222-8222-222222222222",
+		RoleID:           "33333333-3333-4333-8333-333333333333",
+		TargetID:         "44444444-4444-4444-8444-444444444444", AgentIdentifiers: []string{"acme.example/" + module + ":1.0.0"},
 		RolePermissions:  []string{"example:read", "example:write"},
 		AllowedAudiences: []string{"example.api", "example.worker"}, AllowedScopes: []string{"example", "example-subset"},
 		ExpiresAt: time.Now().Add(time.Hour),
@@ -55,7 +55,7 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(d.Prefix), BoundOrg: d.OrganizationID}
 	req := business.ModuleInstallationRequest{
 		AuthorityReferenceVersion: business.ModuleInstallationAuthorityVersion,
-		ModuleID:                  d.ModuleID, OrganizationSlug: "example-org", AgentIdentifier: d.AgentIdentifiers[0], SolutionIdentifier: d.SolutionIdentifier,
+		ModuleID:                  d.ModuleID, OrganizationSlug: "example-org", AgentIdentifier: d.AgentIdentifiers[0], TargetID: d.TargetID,
 		RoleID: d.RoleID, ExpectedRolePermissions: slices.Clone(d.RolePermissions), AllowedAudiences: slices.Clone(d.AllowedAudiences), AllowedScopes: slices.Clone(d.AllowedScopes),
 		DisplayName: "Example", RootScopeLabel: "Example",
 	}
@@ -123,8 +123,8 @@ func TestInstallationAuthorityChangesForEveryAuthorityDimension(t *testing.T) {
 				req.AgentIdentifier = req.ModuleID + ":2.0.0"
 				d.AgentIdentifiers = []string{req.AgentIdentifier}
 			case "solution":
-				req.SolutionIdentifier = "another-solution"
-				d.SolutionIdentifier = req.SolutionIdentifier
+				req.TargetID = "55555555-5555-4555-8555-555555555555"
+				d.TargetID = req.TargetID
 			case "role":
 				req.RoleID = id
 				d.RoleID = id
@@ -211,7 +211,15 @@ func TestInstallationAuthorityCanonicalGolden(t *testing.T) {
 	got := verifiedAuthority(t, svc, caller, policy, req)
 	// Pinned independently from the documented canonical JSON, not from the
 	// production encoder. Changing the contract requires a version decision.
-	require.Equal(t, "sha256:55816f0b3346273e460d1745e4c46f6c74a63a0baf4ed755fe3dcc394f74e570", got.Digest)
+	//
+	// v2: `solution_identifier` became `target_id`. That is a field change, so
+	// the document says it needs a schema decision rather than a new digest, and
+	// this is that decision made — the version string moved with the field. The
+	// digest below was recomputed from MODULE_INSTALLATION.md's stated rules
+	// (one object, sorted keys, compact UTF-8, no trailing newline) and NOT by
+	// copying what the encoder produced, which is the only thing that makes this
+	// a pin rather than a mirror.
+	require.Equal(t, "sha256:d80a031de7ff432228adf51c84a5de39a9743b408a6cc42d6b26e974c4cc6b15", got.Digest)
 	require.False(t, strings.Contains(got.Digest, req.AgentIdentifier))
 }
 

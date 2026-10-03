@@ -587,6 +587,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.solution.host_binding_applied
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.solution.registration_deleted
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external

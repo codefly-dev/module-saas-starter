@@ -115,14 +115,20 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		"frontend": frontendURL,
 	}
 
+	solutions := newFakeSolutionRegistry()
 	gateway := NewGateway(
 		authz,
 		matcher,
 		upstreams,
 		nil,
-		newFakeSolutionRegistry(),
+		solutions,
 		newFakeClientRegistry(),
 	)
+	// The solution proxy consults the entitlement authority before it forwards
+	// anything, so a harness with none would answer 503 to every solution test.
+	// This stands in for an organization that installed everything the registry
+	// holds; a test about admission substitutes a narrower one.
+	gateway.solutionEntitlements = &installedEverythingRegistered{registry: solutions}
 
 	return gateway, apiFake, frontendFake, priv
 }
