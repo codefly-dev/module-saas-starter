@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/installations.proto.
  */
 export const file_saas_accounts_v1_installations: GenFile = /*@__PURE__*/
-  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEilwMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEhsKE3NvbHV0aW9uX2lkZW50aWZpZXIYBCABKAkSJAoSb3duZXJfcHJpbmNpcGFsX2lkGAUgASgJQgi6SAVyA7ABARIeChZjb19vd25lcl9wcmluY2lwYWxfaWRzGAYgAygJEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgHIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAggASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoKcmV2b2tlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAIgBAUINCgtfcmV2b2tlZF9hdCKmAwoWSW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiQKEGFnZW50X2lkZW50aWZpZXIYAiABKAlCCrpIB3IFEAEYgAQSJwoTc29sdXRpb25faWRlbnRpZmllchgDIAEoCUIKukgHcgUQARiABBIeCgxkaXNwbGF5X25hbWUYBCABKAlCCLpIBXIDGIAEEiIKEHJvb3Rfc2NvcGVfbGFiZWwYBiABKAlCCLpIBXIDGIAEEhkKB3JvbGVfaWQYByABKAlCCLpIBXIDsAEBEicKEm93bmVyX3ByaW5jaXBhbF9pZBgIIAEoCUILukgI2AEBcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgJIAMoCUIPukgMkgEJECAiBXIDsAEBEioKEWFsbG93ZWRfYXVkaWVuY2VzGAogAygJQg+6SAySAQkQQCIFcgMYgAQSJwoOYWxsb3dlZF9zY29wZXMYCyADKAlCD7pIDJIBCRBAIgVyAxiAAUoECAUQBlIPcm9vdF9zY29wZV9wYXRoIlcKGFVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQEivgEKJFRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEiEKD2luc3RhbGxhdGlvbl9pZBgCIAEoCUIIukgFcgOwAQESKAoWbmV3X293bmVyX3ByaW5jaXBhbF9pZBgDIAEoCUIIukgFcgOwAQESLwoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgEIAMoCUIPukgMkgEJECAiBXIDsAEBIlUKFkdldEluc3RhbGxhdGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIoUBChdHZXRJbnN0YWxsYXRpb25SZXNwb25zZRI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhI0CgZoZWFsdGgYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbkhlYWx0aCKdAQoYTGlzdEluc3RhbGxhdGlvbnNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESNAoGc3RhdHVzGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdGF0dXMSHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkigQEKE0luc3RhbGxhdGlvblN1bW1hcnkSNAoMaW5zdGFsbGF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24SNAoGaGVhbHRoGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25IZWFsdGgicgoZTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZRI8Cg1pbnN0YWxsYXRpb25zGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25TdW1tYXJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSp6ChJJbnN0YWxsYXRpb25TdGF0dXMSIwofSU5TVEFMTEFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGklOU1RBTExBVElPTl9TVEFUVVNfQUNUSVZFEAESHwobSU5TVEFMTEFUSU9OX1NUQVRVU19SRVZPS0VEEAIqhAIKEkluc3RhbGxhdGlvbkhlYWx0aBIjCh9JTlNUQUxMQVRJT05fSEVBTFRIX1VOU1BFQ0lGSUVEEAASHwobSU5TVEFMTEFUSU9OX0hFQUxUSF9IRUFMVEhZEAESKQolSU5TVEFMTEFUSU9OX0hFQUxUSF9OT19FTElHSUJMRV9PV05FUhACEiUKIUlOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfUkVWT0tFRBADEiYKIklOU1RBTExBVElPTl9IRUFMVEhfQUdFTlRfRElTQUJMRUQQBBIuCipJTlNUQUxMQVRJT05fSEVBTFRIX1NUQU5ESU5HX0dSQU5UX01JU1NJTkcQBTL4BwoTSW5zdGFsbGF0aW9uU2VydmljZRK6AQoPSW5zdGFsbFNvbHV0aW9uEiguc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsU29sdXRpb25SZXF1ZXN0Gh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24iXcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5jcmVhdGVkEAJAAUgEUANYA2ABgtPkkwIWOgEqIhEvdjEvaW5zdGFsbGF0aW9ucxLSAQoRVW5pbnN0YWxsU29sdXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlVuaW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJ5wvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGXNhYXMuaW5zdGFsbGF0aW9uLnJldm9rZWQQAkABSARQA1gDYAGC0+STAjI6ASoiLS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnVuaW5zdGFsbBKJAgodVHJhbnNmZXJJbnN0YWxsYXRpb25Pd25lcnNoaXASNi5zYWFzLmFjY291bnRzLnYxLlRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIo8BwvMYSwgCEAQqDAoGb3JnX2lkEAIYATABOisKJ3NhYXMuaW5zdGFsbGF0aW9uLm93bmVyc2hpcF90cmFuc2ZlcnJlZBACQAFIBFADWANgAYLT5JMCOjoBKiI1L3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH06dHJhbnNmZXJPd25lcnNoaXASuQEKD0dldEluc3RhbGxhdGlvbhIoLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2UiUcLzGCIIAhADKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIlEiMvdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfRKGAQoRTGlzdEluc3RhbGxhdGlvbnMSKi5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnN0YWxsYXRpb25zUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuTGlzdEluc3RhbGxhdGlvbnNSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiRzYWFzL2FjY291bnRzL3YxL2luc3RhbGxhdGlvbnMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEi1wMKDEluc3RhbGxhdGlvbhIUCgJpZBgBIAEoCUIIukgFcgOwAQESGAoGb3JnX2lkGAIgASgJQgi6SAVyA7ABARIkChJhZ2VudF9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEiQKEm93bmVyX3ByaW5jaXBhbF9pZBgFIAEoCUIIukgFcgOwAQESHgoWY29fb3duZXJfcHJpbmNpcGFsX2lkcxgGIAMoCRIkChJyb290X3Njb3BlX25vZGVfaWQYByABKAlCCLpIBXIDsAEBEjQKBnN0YXR1cxgIIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uU3RhdHVzEi4KCmNyZWF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKCnJldm9rZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSACIAQESHgoJdGFyZ2V0X2lkGAsgASgJQgu6SAjYAQFyA7ABARIgCg5yZXZva2VkX3JlYXNvbhgMIAEoCUIIukgFcgMYgARCDQoLX3Jldm9rZWRfYXRKBAgEEAVSE3NvbHV0aW9uX2lkZW50aWZpZXIitQMKFkluc3RhbGxTb2x1dGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIkChBhZ2VudF9pZGVudGlmaWVyGAIgASgJQgq6SAdyBRABGIAEEh4KDGRpc3BsYXlfbmFtZRgEIAEoCUIIukgFcgMYgAQSIgoQcm9vdF9zY29wZV9sYWJlbBgGIAEoCUIIukgFcgMYgAQSGQoHcm9sZV9pZBgHIAEoCUIIukgFcgOwAQESJwoSb3duZXJfcHJpbmNpcGFsX2lkGAggASgJQgu6SAjYAQFyA7ABARIvChZjb19vd25lcl9wcmluY2lwYWxfaWRzGAkgAygJQg+6SAySAQkQICIFcgOwAQESKgoRYWxsb3dlZF9hdWRpZW5jZXMYCiADKAlCD7pIDJIBCRBAIgVyAxiABBInCg5hbGxvd2VkX3Njb3BlcxgLIAMoCUIPukgMkgEJEEAiBXIDGIABEhsKCXRhcmdldF9pZBgMIAEoCUIIukgFcgOwAQFKBAgDEARKBAgFEAZSE3NvbHV0aW9uX2lkZW50aWZpZXJSD3Jvb3Rfc2NvcGVfcGF0aCJXChhVbmluc3RhbGxTb2x1dGlvblJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBIr4BCiRUcmFuc2Zlckluc3RhbGxhdGlvbk93bmVyc2hpcFJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEigKFm5ld19vd25lcl9wcmluY2lwYWxfaWQYAyABKAlCCLpIBXIDsAEBEi8KFmNvX293bmVyX3ByaW5jaXBhbF9pZHMYBCADKAlCD7pIDJIBCRAgIgVyA7ABASJVChZHZXRJbnN0YWxsYXRpb25SZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABASKFAQoXR2V0SW5zdGFsbGF0aW9uUmVzcG9uc2USNAoMaW5zdGFsbGF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb24SNAoGaGVhbHRoGAIgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5JbnN0YWxsYXRpb25IZWFsdGginQEKGExpc3RJbnN0YWxsYXRpb25zUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEjQKBnN0YXR1cxgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uU3RhdHVzEh0KCXBhZ2Vfc2l6ZRgDIAEoBUIKukgHGgUY9AMoABISCgpwYWdlX3Rva2VuGAQgASgJIoEBChNJbnN0YWxsYXRpb25TdW1tYXJ5EjQKDGluc3RhbGxhdGlvbhgBIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uEjQKBmhlYWx0aBgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uSGVhbHRoInIKGUxpc3RJbnN0YWxsYXRpb25zUmVzcG9uc2USPAoNaW5zdGFsbGF0aW9ucxgBIAMoCzIlLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uU3VtbWFyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAki7QEKEUF2YWlsYWJsZVNvbHV0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESEgoKYmluZGluZ19pZBgCIAEoCRITCgtyb3V0ZV9hbGlhcxgDIAEoCRIZChFyZWxlYXNlX3B1Ymxpc2hlchgEIAEoCRIUCgxyZWxlYXNlX25hbWUYBSABKAkSFwoPcmVsZWFzZV92ZXJzaW9uGAYgASgJEhkKEW9wZW5lZF9nZW5lcmF0aW9uGAcgASgEEhoKEmFwcGxpZWRfZ2VuZXJhdGlvbhgIIAEoBBIRCglpbnN0YWxsZWQYCSABKAgibAodTGlzdEF2YWlsYWJsZVNvbHV0aW9uc1JlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARIdCglwYWdlX3NpemUYAiABKAVCCrpIBxoFGPQDKAASEgoKcGFnZV90b2tlbhgDIAEoCSJxCh5MaXN0QXZhaWxhYmxlU29sdXRpb25zUmVzcG9uc2USNgoJc29sdXRpb25zGAEgAygLMiMuc2Fhcy5hY2NvdW50cy52MS5BdmFpbGFibGVTb2x1dGlvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkqegoSSW5zdGFsbGF0aW9uU3RhdHVzEiMKH0lOU1RBTExBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIeChpJTlNUQUxMQVRJT05fU1RBVFVTX0FDVElWRRABEh8KG0lOU1RBTExBVElPTl9TVEFUVVNfUkVWT0tFRBACKoQCChJJbnN0YWxsYXRpb25IZWFsdGgSIwofSU5TVEFMTEFUSU9OX0hFQUxUSF9VTlNQRUNJRklFRBAAEh8KG0lOU1RBTExBVElPTl9IRUFMVEhfSEVBTFRIWRABEikKJUlOU1RBTExBVElPTl9IRUFMVEhfTk9fRUxJR0lCTEVfT1dORVIQAhIlCiFJTlNUQUxMQVRJT05fSEVBTFRIX0FHRU5UX1JFVk9LRUQQAxImCiJJTlNUQUxMQVRJT05fSEVBTFRIX0FHRU5UX0RJU0FCTEVEEAQSLgoqSU5TVEFMTEFUSU9OX0hFQUxUSF9TVEFORElOR19HUkFOVF9NSVNTSU5HEAUyxQkKE0luc3RhbGxhdGlvblNlcnZpY2USugEKD0luc3RhbGxTb2x1dGlvbhIoLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbFNvbHV0aW9uUmVxdWVzdBoeLnNhYXMuYWNjb3VudHMudjEuSW5zdGFsbGF0aW9uIl3C8xg9CAIQBCoMCgZvcmdfaWQQAhgBMAE6HQoZc2Fhcy5pbnN0YWxsYXRpb24uY3JlYXRlZBACQAFIBFADWANgAYLT5JMCFjoBKiIRL3YxL2luc3RhbGxhdGlvbnMS0gEKEVVuaW5zdGFsbFNvbHV0aW9uEiouc2Fhcy5hY2NvdW50cy52MS5Vbmluc3RhbGxTb2x1dGlvblJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiecLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlzYWFzLmluc3RhbGxhdGlvbi5yZXZva2VkEAJAAUgEUANYA2ABgtPkkwIyOgEqIi0vdjEvaW5zdGFsbGF0aW9ucy97aW5zdGFsbGF0aW9uX2lkfTp1bmluc3RhbGwSiQIKHVRyYW5zZmVySW5zdGFsbGF0aW9uT3duZXJzaGlwEjYuc2Fhcy5hY2NvdW50cy52MS5UcmFuc2Zlckluc3RhbGxhdGlvbk93bmVyc2hpcFJlcXVlc3QaHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbiKPAcLzGEsIAhAEKgwKBm9yZ19pZBACGAEwATorCidzYWFzLmluc3RhbGxhdGlvbi5vd25lcnNoaXBfdHJhbnNmZXJyZWQQAkABSARQA1gDYAGC0+STAjo6ASoiNS92MS9pbnN0YWxsYXRpb25zL3tpbnN0YWxsYXRpb25faWR9OnRyYW5zZmVyT3duZXJzaGlwErkBCg9HZXRJbnN0YWxsYXRpb24SKC5zYWFzLmFjY291bnRzLnYxLkdldEluc3RhbGxhdGlvblJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkdldEluc3RhbGxhdGlvblJlc3BvbnNlIlHC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCJRIjL3YxL2luc3RhbGxhdGlvbnMve2luc3RhbGxhdGlvbl9pZH0ShgEKEUxpc3RJbnN0YWxsYXRpb25zEiouc2Fhcy5hY2NvdW50cy52MS5MaXN0SW5zdGFsbGF0aW9uc1JlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLkxpc3RJbnN0YWxsYXRpb25zUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARLKAQoWTGlzdEF2YWlsYWJsZVNvbHV0aW9ucxIvLnNhYXMuYWNjb3VudHMudjEuTGlzdEF2YWlsYWJsZVNvbHV0aW9uc1JlcXVlc3QaMC5zYWFzLmFjY291bnRzLnYxLkxpc3RBdmFpbGFibGVTb2x1dGlvbnNSZXNwb25zZSJNwvMYIggCEAQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAiESHy92MS9pbnN0YWxsYXRpb25zOmxpc3RBdmFpbGFibGViBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * Installation is one solution's bound identity in an org. Server-assigned ids;
@@ -38,11 +38,6 @@ export type Installation = Message<"saas.accounts.v1.Installation"> & {
    * @generated from field: string agent_principal_id = 3;
    */
   agentPrincipalId: string;
-
-  /**
-   * @generated from field: string solution_identifier = 4;
-   */
-  solutionIdentifier: string;
 
   /**
    * @generated from field: string owner_principal_id = 5;
@@ -73,6 +68,36 @@ export type Installation = Message<"saas.accounts.v1.Installation"> & {
    * @generated from field: optional google.protobuf.Timestamp revoked_at = 10;
    */
   revokedAt?: Timestamp;
+
+  /**
+   * The immutable solution target this installation was consented to: one
+   * continuous period of one binding's presence on this host. It is never
+   * reused, so a replacement binding — even one claiming the same route alias —
+   * is a different target and inherits nothing.
+   *
+   * Deliberately NOT accompanied by the route alias. The alias is a property of
+   * the target that a later generation may move, and resolving it here would
+   * mean joining the host's presence state into a request-path listing — which
+   * would require granting request traffic read over every organisation's
+   * presence to answer about one. A consumer that needs the alias asks
+   * ListAvailableSolutions, which serves accepted applied state, and joins on
+   * this id.
+   *
+   * Empty only on a revoked historical row whose target could not be
+   * established at the cutover; an active installation always names one.
+   *
+   * @generated from field: string target_id = 11;
+   */
+  targetId: string;
+
+  /**
+   * Why a revoked installation was revoked, when it was not an administrator
+   * uninstalling: the installation-identity cutover, or a tenancy narrowing that
+   * withdrew this organisation. Empty on an active row.
+   *
+   * @generated from field: string revoked_reason = 12;
+   */
+  revokedReason: string;
 };
 
 /**
@@ -98,11 +123,6 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
    * @generated from field: string agent_identifier = 2;
    */
   agentIdentifier: string;
-
-  /**
-   * @generated from field: string solution_identifier = 3;
-   */
-  solutionIdentifier: string;
 
   /**
    * Human display name for the agent principal. Empty defaults to the identifier.
@@ -157,6 +177,19 @@ export type InstallSolutionRequest = Message<"saas.accounts.v1.InstallSolutionRe
    * @generated from field: repeated string allowed_scopes = 11;
    */
   allowedScopes: string[];
+
+  /**
+   * The solution target being installed, from ListAvailableSolutions. Required.
+   *
+   * An installer chooses an identity, never an address. The target must be LIVE
+   * and ACCEPTED when the install lands: installing a withdrawn target would
+   * record consent to a presence that already ended, and installing a target
+   * whose newest generation was refused would record consent to a release this
+   * host never admitted.
+   *
+   * @generated from field: string target_id = 12;
+   */
+  targetId: string;
 };
 
 /**
@@ -369,6 +402,137 @@ export const ListInstallationsResponseSchema: GenMessage<ListInstallationsRespon
   messageDesc(file_saas_accounts_v1_installations, 8);
 
 /**
+ * AvailableSolution is one installable solution target: its immutable identity,
+ * the release the host currently has applied for it, and where it is routed.
+ *
+ * @generated from message saas.accounts.v1.AvailableSolution
+ */
+export type AvailableSolution = Message<"saas.accounts.v1.AvailableSolution"> & {
+  /**
+   * The immutable target identity an install names. Never reused.
+   *
+   * @generated from field: string target_id = 1;
+   */
+  targetId: string;
+
+  /**
+   * The binding whose presence this target records. Carried so an operator can
+   * correlate a catalogue row with delivery; an installation does not join on it,
+   * because one binding may have several targets over time.
+   *
+   * @generated from field: string binding_id = 2;
+   */
+  bindingId: string;
+
+  /**
+   * The route alias the applied generation claims — `/solutions/<alias>/*`. A
+   * later generation may move it, so it is never an identity.
+   *
+   * @generated from field: string route_alias = 3;
+   */
+  routeAlias: string;
+
+  /**
+   * The applied release: publisher, name, version.
+   *
+   * @generated from field: string release_publisher = 4;
+   */
+  releasePublisher: string;
+
+  /**
+   * @generated from field: string release_name = 5;
+   */
+  releaseName: string;
+
+  /**
+   * @generated from field: string release_version = 6;
+   */
+  releaseVersion: string;
+
+  /**
+   * The generation that opened this target, and the newest applied generation.
+   * Equal until a later generation is applied for the same presence.
+   *
+   * @generated from field: uint64 opened_generation = 7;
+   */
+  openedGeneration: bigint;
+
+  /**
+   * @generated from field: uint64 applied_generation = 8;
+   */
+  appliedGeneration: bigint;
+
+  /**
+   * True when this organization already has an ACTIVE installation of this
+   * target. A catalogue shows it as installed rather than offering it twice; the
+   * unique index over (org_id, target_id) would refuse the second install anyway,
+   * and an administrator should not have to discover that by being refused.
+   *
+   * @generated from field: bool installed = 9;
+   */
+  installed: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AvailableSolution.
+ * Use `create(AvailableSolutionSchema)` to create a new message.
+ */
+export const AvailableSolutionSchema: GenMessage<AvailableSolution> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 9);
+
+/**
+ * @generated from message saas.accounts.v1.ListAvailableSolutionsRequest
+ */
+export type ListAvailableSolutionsRequest = Message<"saas.accounts.v1.ListAvailableSolutionsRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * Page bound. 0 -> server default; capped for the same reason the installation
+   * listing is capped.
+   *
+   * @generated from field: int32 page_size = 2;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAvailableSolutionsRequest.
+ * Use `create(ListAvailableSolutionsRequestSchema)` to create a new message.
+ */
+export const ListAvailableSolutionsRequestSchema: GenMessage<ListAvailableSolutionsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 10);
+
+/**
+ * @generated from message saas.accounts.v1.ListAvailableSolutionsResponse
+ */
+export type ListAvailableSolutionsResponse = Message<"saas.accounts.v1.ListAvailableSolutionsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.AvailableSolution solutions = 1;
+   */
+  solutions: AvailableSolution[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListAvailableSolutionsResponse.
+ * Use `create(ListAvailableSolutionsResponseSchema)` to create a new message.
+ */
+export const ListAvailableSolutionsResponseSchema: GenMessage<ListAvailableSolutionsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_installations, 11);
+
+/**
  * InstallationStatus is the lifecycle of an installation row. An uninstall is a
  * soft delete (status=revoked, revoked_at set) so the agent, grants, and audit
  * trail remain resolvable.
@@ -521,6 +685,29 @@ export const InstallationService: GenService<{
     methodKind: "unary";
     input: typeof ListInstallationsRequestSchema;
     output: typeof ListInstallationsResponseSchema;
+  },
+  /**
+   * ListAvailableSolutions is the catalogue: the solution targets an
+   * administrator may install right now.
+   *
+   * It answers from ACCEPTED applied state — a live target whose binding's
+   * newest APPLIED generation is a present one — and deliberately not from the
+   * diagnostic ListSolutionHostBindings, which also reports desired generations
+   * that were refused. The distinction is the point: a refused generation is
+   * something an operator must see and something an administrator must not be
+   * able to consent to, because consenting to a release this host never admitted
+   * records authority over a presence that does not exist.
+   *
+   * It carries the route alias, which the installation record deliberately does
+   * not: here the alias is a display and routing fact read from the target in
+   * the same statement, not an identity anything joins on.
+   *
+   * @generated from rpc saas.accounts.v1.InstallationService.ListAvailableSolutions
+   */
+  listAvailableSolutions: {
+    methodKind: "unary";
+    input: typeof ListAvailableSolutionsRequestSchema;
+    output: typeof ListAvailableSolutionsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_installations, 0);

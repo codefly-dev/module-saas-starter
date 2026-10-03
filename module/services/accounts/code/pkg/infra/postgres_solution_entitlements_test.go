@@ -163,8 +163,8 @@ func TestListSolutionEntitlements_TwoTeamsReadDifferentSolutions(t *testing.T) {
 	grantAtNode(t, orgID, reviewers, roleID, audit)
 	grantAtNode(t, orgID, clerks, roleID, ledger)
 
-	require.Equal(t, []string{"audit"}, entitledIdentifiers(t, orgID, reviewer))
-	require.Equal(t, []string{"ledger"}, entitledIdentifiers(t, orgID, clerk))
+	require.Equal(t, []string{audit.GetTargetId()}, entitledIdentifiers(t, orgID, reviewer))
+	require.Equal(t, []string{ledger.GetTargetId()}, entitledIdentifiers(t, orgID, clerk))
 }
 
 // Installing reaches no team. The install writes a standing grant for the AGENT
@@ -196,10 +196,12 @@ func TestListSolutionEntitlements_NarrowsAfterRevocation(t *testing.T) {
 	team := seedTeamWith(t, orgID, member)
 	grantAtNode(t, orgID, team, roleID, audit)
 	grantAtNode(t, orgID, team, roleID, ledger)
-	require.ElementsMatch(t, []string{"audit", "ledger"}, entitledIdentifiers(t, orgID, member))
+	require.ElementsMatch(t,
+		[]string{audit.GetTargetId(), ledger.GetTargetId()},
+		entitledIdentifiers(t, orgID, member))
 
 	revokeAtNode(t, orgID, team, roleID, ledger)
-	require.Equal(t, []string{"audit"}, entitledIdentifiers(t, orgID, member),
+	require.Equal(t, []string{audit.GetTargetId()}, entitledIdentifiers(t, orgID, member),
 		"a revoked grant must remove the solution from the projection")
 }
 
@@ -239,7 +241,7 @@ func TestListSolutionEntitlements_UninstalledIsInvisibleDespiteALingeringGrant(t
 	seedOrgMember(t, orgID, member)
 	team := seedTeamWith(t, orgID, member)
 	grantAtNode(t, orgID, team, roleID, audit)
-	require.Equal(t, []string{"audit"}, entitledIdentifiers(t, orgID, member))
+	require.Equal(t, []string{audit.GetTargetId()}, entitledIdentifiers(t, orgID, member))
 
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		_, _, err := testStore.UninstallSolution(ctx, orgID, audit.GetId())
@@ -300,7 +302,7 @@ func TestListSolutionEntitlements_IsTenantIsolated(t *testing.T) {
 	orgB, ownerB, roleB := entitlementOrg(t)
 	installSolution(t, orgB, ownerB, roleB, "ledger")
 
-	require.Equal(t, []string{"audit"}, entitledIdentifiers(t, orgA, memberA))
+	require.Equal(t, []string{installedA.GetTargetId()}, entitledIdentifiers(t, orgA, memberA))
 	// Asked about org B, the SAME viewer is entitled to nothing: they hold no
 	// grant there and are not a member.
 	require.Empty(t, entitledIdentifiers(t, orgB, memberA))
@@ -551,7 +553,7 @@ func TestListSolutionEntitlements_NarrowsWhenAGrantExpiresWithoutAnyWrite(t *tes
 	seedOrgMember(t, orgID, member)
 	team := seedTeamWith(t, orgID, member)
 	grantAtNode(t, orgID, team, roleID, audit)
-	require.Equal(t, []string{"audit"}, entitledIdentifiers(t, orgID, member))
+	require.Equal(t, []string{audit.GetTargetId()}, entitledIdentifiers(t, orgID, member))
 
 	// Time passes past the grant's expiry. No application write occurs.
 	controlPlaneExec(t, `UPDATE scope_grants SET expires_at = now() - interval '1 second' WHERE org_id = $1 AND subject_id = $2`,

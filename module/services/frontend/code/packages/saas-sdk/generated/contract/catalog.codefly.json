@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:6755870e1c6729c8846d8be15e8e101ca95f4c2cf67d87ddc1d10013b1fcf813",
+      "digest": "sha256:6fa4f09e06ddf8877fe6b5d5ac3ac69a3c44cc33303d513c6855ae7f8ca46c11",
       "services": [
         {
           "name": "APIKeyService",
@@ -173,6 +173,7 @@
           "procedures": [
             "/saas.accounts.v1.InstallationService/GetInstallation",
             "/saas.accounts.v1.InstallationService/InstallSolution",
+            "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
             "/saas.accounts.v1.InstallationService/ListInstallations",
             "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
             "/saas.accounts.v1.InstallationService/UninstallSolution"

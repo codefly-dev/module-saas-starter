@@ -4,6 +4,8 @@ package business_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +37,15 @@ func uniqueAlias(label string) string {
 	return label + "-" + strings.ToLower(strings.ReplaceAll(business.NewIDString(), "-", ""))[:12]
 }
 
+// fixtureDigest is a well-formed digest for a fixture: the schema requires
+// `sha256:` plus exactly 64 hex characters, so a readable stand-in like
+// "sha256:<binding id>" is refused by a CHECK constraint rather than quietly
+// stored — which is the constraint doing its job and a helper not doing its own.
+func fixtureDigest(seed string) string {
+	sum := sha256.Sum256([]byte(seed))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
 // declarePresence opens a live target for a fresh alias and records the applied
 // generation that makes it ACCEPTED, returning (targetID, alias).
 func declarePresence(t *testing.T, label string) (string, string) {
@@ -44,7 +55,7 @@ func declarePresence(t *testing.T, label string) (string, string) {
 	now := time.Now().UTC()
 	entry := business.SolutionHostBindingGeneration{
 		Generation: 1,
-		Digest:     "sha256:" + bindingID,
+		Digest:     fixtureDigest(bindingID),
 		Document:   "{}",
 		At:         now,
 	}
