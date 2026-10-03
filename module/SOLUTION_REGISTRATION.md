@@ -750,10 +750,27 @@ observer timestamp is the SET's integrated time, and a Rekor v2 log would
 additionally need its base URL on the log entry in that root.
 
 **A bundle with no transparency evidence is refused BY NAME**, distinct from a
-signature failure. The underlying library reports both as one error, and the
-distinction matters because the two have opposite causes: a signer configured
-without transparency logging is a misconfiguration to fix, and a bad signature is
-an attack to investigate. Collapsing them makes the first read as the second.
+signature failure. The two have opposite causes — a signer configured without
+transparency logging is a misconfiguration to fix, and a bad signature is an
+attack to investigate — so collapsing them makes the first read as the second.
+Both this host and the renderer refuse it by name, so a refusal means the same
+thing wherever it is seen.
+
+**Check it BEFORE the verifier runs, on the decoded bundle, not by classifying
+the verifier's error.** This ordering is the whole of it, and the obvious
+implementation is the wrong one: the verifier reports a bundle with no log entry
+as *"not enough verified log entries from transparency log: 0 < 1"* — **the same
+words** it reports for a bundle whose log key the trusted root does not hold.
+One is a signer that never logged; the other is a root that cannot check the log
+it did. A classifier reading that string cannot tell them apart, so the test is
+`HasInclusionPromise() || HasInclusionProof()` on the decoded bundle, ahead of
+verification.
+
+**An RFC 3161 signed timestamp does not stand in for transparency evidence.** It
+attests *when* something was signed, not *that it was logged*, and a bundle
+carrying one still has nothing a mirrored root can check an inclusion against.
+The refusal must hold with a timestamp present, which is the case a "has it got
+any evidence at all?" check quietly admits.
 
 **The authenticating container is derived, not declared.** The renderer names the
 container matching the service, or the sole container, and refuses at render a
