@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -108,6 +109,16 @@ type Service struct {
 	// what the envelope record makes possible. Closing it before the writer
 	// exists is the cheap order.
 	//
+	// The pointed-to registry is the SERVICE'S OWN COPY, and that is the half
+	// that makes "replaced, not mutated" an enforced property rather than a
+	// convention. The pointer alone guards the map HEADER: a writer that stored
+	// its caller's map left the backing map reachable from outside, so the
+	// caller could keep writing into the registry live readers were indexing —
+	// a data race the pointer cannot see, because no pointer was swapped. Every
+	// writer below therefore clones on store, and the exported accessor clones
+	// on read, so no map the service authorizes against is addressable by
+	// anything else.
+	//
 	// What this does NOT yet give is one immutable snapshot per REQUEST. Each
 	// read takes the registry as it is at that moment, so a request that
 	// consults it twice could still straddle a replacement. Threading a
@@ -123,6 +134,10 @@ type Service struct {
 // An unset registry reads as empty, which denies every module caller — the same
 // fail-closed answer a nil map gave, kept deliberately: a deployment that has
 // not declared its modules must authorize none of them, never all of them.
+// It does NOT clone: this is the hot authorization path, read at eighteen sites
+// per the comment on the field, and the map it returns is the service's own —
+// unreachable from outside, and mutated by nothing. Callers index it and must
+// not write to it.
 func (s *Service) declaredModules() ModulePrincipalRegistry {
 	if registry := s.modulePrincipals.Load(); registry != nil {
 		return *registry
@@ -136,10 +151,17 @@ func (s *Service) declaredModules() ModulePrincipalRegistry {
 // and the per-principal registry declaring which queues each module service
 // principal may use and whether it may act across tenants. Leaving the registry
 // nil denies every caller (fail-closed).
+//
+// This is BOOT wiring and the only caller is work.go, which runs it once before
+// the service listens. The producer and the job store are therefore plain fields
+// written before any request can read them; they are deliberately not behind
+// atomics, because nothing replaces them at runtime and an atomic that is only
+// ever written once reads as a claim that something might. The registry is the
+// one thing a later writer replaces, which is why it alone is a pointer.
 func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store, registry ModulePrincipalRegistry) {
 	s.moduleProducer = producer
 	s.moduleJobStore = store
-	s.modulePrincipals.Store(&registry)
+	s.storeModulePrincipals(registry)
 }
 
 // ModulePrincipals returns the declared registry, and SetModulePrincipals
@@ -147,12 +169,33 @@ func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store
 // The composition declares a module's vocabulary — including the permission
 // resources its content is governed by — so a caller that needs to read or
 // stand in for that declaration goes through here rather than re-deriving it.
+//
+// It returns a COPY. A caller that received the live registry could mutate the
+// map every authorization site is indexing, which would bypass the atomic
+// pointer entirely — nothing swaps, so nothing synchronizes. Copying here costs
+// nothing on any real path: the authorization sites read the registry through
+// the unexported declaredModules, and this accessor exists for callers that need
+// to inspect or stand in for the declaration.
 func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
-	return s.declaredModules()
+	return maps.Clone(s.declaredModules())
 }
 
+// SetModulePrincipals replaces the registry at runtime. It clones, for the same
+// reason the accessor does: storing the caller's own map would leave the backing
+// map addressable by whoever passed it.
 func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
-	s.modulePrincipals.Store(&registry)
+	s.storeModulePrincipals(registry)
+}
+
+// storeModulePrincipals publishes a registry the service alone can reach.
+//
+// maps.Clone of a nil map is nil, and an unset pointer and a nil registry both
+// read as empty through declaredModules — the same fail-closed answer — so a
+// writer clearing the registry denies every module caller rather than leaving
+// the previous one serving.
+func (s *Service) storeModulePrincipals(registry ModulePrincipalRegistry) {
+	owned := maps.Clone(registry)
+	s.modulePrincipals.Store(&owned)
 }
 
 // SetModuleEventTransport wires the domain-event pub/sub transport backing
