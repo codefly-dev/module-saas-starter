@@ -1251,6 +1251,19 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/credential-mode.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "The three credential modes a GitHub source can be connected with, and the fields each needs. Shared so the full connect form and the declared-source card ask the same question in the same words; a second copy would teach two products.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Exercised today only through its two consumers' stories (ConnectionValidation, DeclaredSourceSetUp). Add a story per mode once the explorer can drive a controlled select, then verify under external skins."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/datasources-panel.tsx",
       "imports": [
         "@codefly-dev/ui/layout",
@@ -1295,6 +1308,42 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/declared-source-card.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-query",
+        "react",
+        "../solution/viewer.js",
+        "./credential-mode.js",
+        "./declared-source.js",
+        "./errors.js",
+        "./gateway.js",
+        "./github-app-setup.js",
+        "./queries.js",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "One source a solution declares it is built on, in one of three states: Set up, Connected, Error. The repository is the solution's statement, never a question put to the person, so the card renders it and submits it and offers no control that could change it.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "DeclaredSourceSetUp"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "DeclaredSourceConnected"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "DeclaredSourceError"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Verify explorer rendering and the three states under external skins, and the GitHub App return leg against a real installation."
     },
     {
       "source": "packages/saas-ui/src/datasources/directory.tsx",

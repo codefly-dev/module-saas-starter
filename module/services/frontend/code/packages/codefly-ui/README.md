@@ -51,6 +51,33 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `allowImages`, and no `innerHTML` anywhere; colour only through the host's
   token utilities.
 
+### Status, headers and empty states
+
+Three props exist because a consuming solution reported reaching past the kit
+for them (the same report that asked for a standalone stylesheet, a `Chip` and
+list primitives — those are **not** here yet):
+
+- `<Badge dot>` prefixes a small filled circle in the variant's own colour.
+  It is `aria-hidden` and decorative: the badge's text is what a reader and a
+  screen reader get, so the dot adds a glanceable mark without making colour
+  the only channel carrying the meaning. Use it when several badges sit in one
+  row and have to be told apart at a glance. **There is no `success` or
+  `warning` variant**, because the appearance layer defines no such token —
+  `destructive` is the only semantic colour the skin ladder carries. A healthy
+  state therefore uses `default` (solid) against `outline` for "not started";
+  giving status its own tones means adding appearance tokens, which is a design
+  decision for the skin's owner, not something a component may invent.
+- `<Card description>` puts a line under the title, matching `Section`'s prop
+  of the same name. Without it a caller needing one either mixes `CardRoot` +
+  `CardDescription` into a page of plain `Card`s, which is how a page stops
+  looking like one page, or drops the sentence into the body where it reads as
+  content and loses the `card-description` slot.
+- `<EmptyState description>` takes nodes, not just a string, so an empty state
+  whose explanation lives elsewhere on the page can **point at it** — "the card
+  above says where this stands", with a link if there is one. `children` is the
+  action slot; a cross-reference is not an action, so prose there (or
+  hand-written outside the block) loses the slot and its width bound.
+
 ## Entry points
 
 | Import                        | Contents                                            |

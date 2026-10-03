@@ -1,3 +1,4 @@
+export type { DeclaredSource } from "../datasources/declared-source.js";
 export {
 	requestBinding,
 	type SolutionBinding,

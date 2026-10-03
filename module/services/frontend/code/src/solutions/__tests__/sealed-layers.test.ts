@@ -38,13 +38,13 @@ describe("every sealed layer package is a singleton", () => {
 	}
 });
 
-// React (+ react-dom + jsx-runtime) and the kit + module UI packages are all
+// React (+ react-dom, react-dom/client and jsx-runtime) and the kit + module UI packages are all
 // sealed. This pins the membership so a new layer package cannot ship shared
 // without the singleton flag above simply by being left out of the set.
 describe("the sealed set covers React, the kit, and each module UI package", () => {
 	it("includes React and its runtime subpaths", () => {
 		expect(SEALED_PACKAGES).toEqual(
-			expect.arrayContaining(["react", "react-dom", "react/jsx-runtime"]),
+			expect.arrayContaining(["react", "react-dom", "react-dom/client", "react/jsx-runtime"]),
 		);
 	});
 

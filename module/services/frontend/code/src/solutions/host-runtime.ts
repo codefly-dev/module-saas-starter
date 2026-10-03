@@ -55,6 +55,7 @@ export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
 	react: reactVersion,
 	"react-dom": reactVersion,
 	"react/jsx-runtime": reactVersion,
+	"react-dom/client": reactVersion,
 	"@codefly-dev/ui": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/layout": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/dashboard": CODEFLY_KIT_VERSION,
