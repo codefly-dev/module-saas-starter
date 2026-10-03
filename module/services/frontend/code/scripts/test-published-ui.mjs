@@ -115,6 +115,26 @@ console.log("Packed UI declarations and generic consumer rendering passed");
 		cwd: temporary,
 		stdio: "inherit",
 	});
+	// A solution previews itself from the published package alone, so the
+	// stylesheets must resolve through its exports and arrive compiled.
+	writeFileSync(
+		join(temporary, "styles.mjs"),
+		`
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const read = (specifier) => readFileSync(fileURLToPath(import.meta.resolve(specifier)), "utf8");
+const preview = read("@codefly-dev/ui/preview.css");
+for (const needle of [".text-success", "--appearance-light-success:", ".type-chip"])
+	if (!preview.includes(needle)) throw new Error(\`published preview.css lacks \${needle}\`);
+if (preview.includes("@tailwind") || preview.includes("@utility ")) throw new Error("published preview.css is not compiled");
+if (!read("@codefly-dev/ui/theme.css").includes("--color-success: var(--success)")) throw new Error("published theme.css lacks the status tokens");
+console.log("Packed kit stylesheets resolve and are complete");
+`,
+	);
+	execFileSync(process.execPath, ["styles.mjs"], {
+		cwd: temporary,
+		stdio: "inherit",
+	});
 } finally {
 	rmSync(temporary, { recursive: true, force: true });
 }

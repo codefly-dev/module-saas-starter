@@ -5,6 +5,9 @@ import {
 	Banner,
 	Button,
 	Card,
+	DescriptionList,
+	List,
+	ListItem,
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 import {
@@ -229,7 +232,10 @@ function DeclaredSourceCardView({
 			    reads as "not an administrator", and a failed list proves nothing
 			    and already shows its own error. */}
 			{appSetup.unredeemable && list.isSuccess && (
-				<Banner title="The installation finished, but it is not yours to connect">
+				<Banner
+					tone="warning"
+					title="The installation finished, but it is not yours to connect"
+				>
 					The GitHub App is installed. Only an organization administrator can
 					connect this source with it; ask one to open this page. The
 					installation itself is already in place.
@@ -406,32 +412,38 @@ function StateBadge({
 	source: DatasourceView | undefined;
 }) {
 	// Every state carries a dot, so the three are told apart at a glance by
-	// shape as well as by colour. Connected does NOT use `secondary`: it reads
-	// as neutral beside an outline "Set up", which leaves a reader unable to
-	// tell a source that is working from one nobody has connected yet — the
-	// opposite of what this card exists to say. (The kit has no `success`
-	// token to tint it with; see the note in the PR.)
+	// shape as well as by tone. Two sources serving one declaration is a
+	// warning, not an error: both keep ingesting, and nothing on this card is
+	// broken — it cannot say which one is the solution's.
 	if (state === "connected")
 		return (
-			<Badge variant="default" dot>
+			<Badge tone="success" dot>
 				Connected
 			</Badge>
 		);
 	if (state === "setup")
 		return (
-			<Badge variant="outline" dot>
+			<Badge tone="neutral" dot>
 				Set up
 			</Badge>
 		);
 	if (state === "ambiguous")
 		return (
-			<Badge variant="destructive" dot>
+			<Badge tone="warning" dot>
 				More than one source
 			</Badge>
 		);
+	// Paused waits on someone and is not a fault, as DatasourcesPanel says of
+	// the same source; it still offers Reconnect below, as an error does.
+	if (source?.status === "paused")
+		return (
+			<Badge tone="warning" dot>
+				Paused
+			</Badge>
+		);
 	return (
-		<Badge variant="destructive" dot>
-			Error{source?.status === "paused" ? " · paused" : ""}
+		<Badge tone="danger" dot>
+			Error
 		</Badge>
 	);
 }
@@ -440,18 +452,30 @@ function StateBadge({
 function Declaration({ declared }: { declared: DeclaredSource }) {
 	const paths = declared.paths ?? [];
 	return (
-		<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 type-body">
-			<dt className="text-muted-foreground">Repository</dt>
-			<dd className="font-mono">{declared.repo}</dd>
-			<dt className="text-muted-foreground">Paths</dt>
-			<dd className={paths.length ? "font-mono" : undefined}>
-				{paths.length ? paths.join(", ") : "The whole repository"}
-			</dd>
-			<dt className="text-muted-foreground">Branch</dt>
-			<dd className={declared.ref ? "font-mono" : undefined}>
-				{declared.ref || "The repository default"}
-			</dd>
-		</dl>
+		<DescriptionList
+			items={[
+				{
+					term: "Repository",
+					value: <span className="font-mono">{declared.repo}</span>,
+				},
+				{
+					term: "Paths",
+					value: paths.length ? (
+						<span className="font-mono">{paths.join(", ")}</span>
+					) : (
+						"The whole repository"
+					),
+				},
+				{
+					term: "Branch",
+					value: declared.ref ? (
+						<span className="font-mono">{declared.ref}</span>
+					) : (
+						"The repository default"
+					),
+				},
+			]}
+		/>
 	);
 }
 
@@ -469,7 +493,10 @@ function AmbiguousMatches({
 	matches: DatasourceView[];
 }) {
 	return (
-		<Banner title="More than one source matches this declaration">
+		<Banner
+			tone="warning"
+			title="More than one source matches this declaration"
+		>
 			<p>
 				{`${matches.length} connected sources read `}
 				<span className="font-mono">{declared.repo}</span>
@@ -477,17 +504,17 @@ function AmbiguousMatches({
 			</p>
 			{/* Each one by its id: every other column can be identical, and the
 			    id is what names the row to remove in Admin → Data sources. */}
-			<ul>
+			<List label="Matching sources">
 				{matches.map((match) => (
-					<li key={match.id} className="font-mono">
+					<ListItem key={match.id} className="font-mono">
 						{`${match.id} · ${match.branch || "default branch"} · ${
 							match.paths.length
 								? match.paths.join(", ")
 								: "whole repository"
 						} · ${match.status}`}
-					</li>
+					</ListItem>
 				))}
-			</ul>
+			</List>
 		</Banner>
 	);
 }

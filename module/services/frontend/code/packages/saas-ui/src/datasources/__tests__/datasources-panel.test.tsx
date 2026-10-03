@@ -204,6 +204,24 @@ describe("DatasourcesPanel", () => {
 		expect(screen.getByText(/pulls have stopped/i)).toBeTruthy();
 	});
 
+	// Paused waits on someone; degraded is a fault; unknown is neither. They
+	// used to be secondary, destructive and outline, and secondary read as idle.
+	it.each([
+		["paused", "Paused", "warning"],
+		["degraded", "Degraded", "danger"],
+		["unknown", "Unknown", "neutral"],
+	] as const)("paints a %s source in its status tone", async (status, label, tone) => {
+		const source: DatasourceView = { ...sampleSource, status };
+		const client = fakeClient({ listSources: vi.fn(async () => [source]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const badge = (await screen.findByText(label)).closest(
+			"[data-slot=badge]",
+		);
+		expect(badge?.getAttribute("data-tone")).toBe(tone);
+		expect(badge?.querySelector("[data-slot=badge-dot]")).toBeTruthy();
+	});
+
 	it("leaves the status cell quiet for an active source", async () => {
 		// Nearly every row is active, so badging it too buries the states that
 		// need a reader — and it would sit one label away from `unknown`.
@@ -477,6 +495,10 @@ describe("DatasourcesPanel", () => {
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("Couldn't sync");
 		expect(alert.textContent).toContain("gateway timeout");
+		expect(alert.getAttribute("data-tone")).toBe("danger");
+
+		fireEvent.click(screen.getByRole("button", { name: "Dismiss the error" }));
+		expect(screen.queryByRole("alert")).toBeNull();
 	});
 
 	it("tracks sync state per row and blocks a double-enqueue", async () => {

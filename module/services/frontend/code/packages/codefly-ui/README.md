@@ -31,8 +31,9 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   data-in presentation. `layout` carries the page containers (`Card`, `Section`,
   `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
   home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
-  `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Avatar`, `Table`,
-  `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
+  `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Chip`, `List`,
+  `DescriptionList`, `Avatar`, `Table`, `Skeleton`, `Separator`), feedback
+  (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
@@ -51,32 +52,42 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `allowImages`, and no `innerHTML` anywhere; colour only through the host's
   token utilities.
 
-### Status, headers and empty states
+### Status, card headers, lists and empty states
 
-Three props exist because a consuming solution reported reaching past the kit
-for them (the same report that asked for a standalone stylesheet, a `Chip` and
-list primitives — those are **not** here yet):
+A solution page is built from kit components, never from hand-laid utilities:
+the kit is what makes such a page small. These exist because a consuming
+solution measured where it had to reach past the kit.
 
-- `<Badge dot>` prefixes a small filled circle in the variant's own colour.
-  It is `aria-hidden` and decorative: the badge's text is what a reader and a
-  screen reader get, so the dot adds a glanceable mark without making colour
-  the only channel carrying the meaning. Use it when several badges sit in one
-  row and have to be told apart at a glance. **There is no `success` or
-  `warning` variant**, because the appearance layer defines no such token —
-  `destructive` is the only semantic colour the skin ladder carries. A healthy
-  state therefore uses `default` (solid) against `outline` for "not started";
-  giving status its own tones means adding appearance tokens, which is a design
-  decision for the skin's owner, not something a component may invent.
-- `<Card description>` puts a line under the title, matching `Section`'s prop
-  of the same name. Without it a caller needing one either mixes `CardRoot` +
-  `CardDescription` into a page of plain `Card`s, which is how a page stops
-  looking like one page, or drops the sentence into the body where it reads as
-  content and loses the `card-description` slot.
-- `<EmptyState description>` takes nodes, not just a string, so an empty state
-  whose explanation lives elsewhere on the page can **point at it** — "the card
-  above says where this stands", with a link if there is one. `children` is the
-  action slot; a cross-reference is not an action, so prose there (or
-  hand-written outside the block) loses the slot and its width bound.
+- **Status tones.** `StatusTone` is `neutral | success | warning | danger |
+  info`, shared by `Badge`, `Chip` and `Banner` so a page's statuses agree.
+  `success`, `warning` and `info` are appearance tokens a skin may override
+  ([TOKENS.md](./TOKENS.md)); `danger` reads `destructive`. A tone is a tint of
+  its colour under text in it, and replaces a `variant`'s colours rather than
+  stacking on them. Set up / Connected / Error is `neutral` / `success` /
+  `danger`.
+- **`<Badge tone dot size>`.** `dot` prefixes a decorative, `aria-hidden` circle
+  in the badge's own colour, so a row of statuses is told apart by shape and
+  not by colour alone; the text is still what a screen reader gets. `size` is
+  `sm | default | lg`.
+- **`<Chip>` / `<ChipGroup>`.** A badge a person can act on: `href` makes it a
+  link, `onClick` a button, `render` swaps in a router link. `icon` leads,
+  `meta` trails after a separator (`meta="unread"` reads "· unread"),
+  `onRemove` + `removeLabel` add a remove control. The remove control sits
+  beside the link, never inside it: a button in a link is two targets announced
+  as one. `ChipGroup` is a named, wrapping list of them.
+- **`<Card description>`** puts the card's one-line purpose under its title in
+  the `card-description` slot, matching `Section`'s prop — not a muted
+  paragraph in the body, and not `CardRoot` mixed into a page of `Card`s.
+- **`<List>` / `<ListItem>` and `<DescriptionList>`** for the places a `Table` is
+  too heavy: a few rows with an icon, a description, quiet `meta` and
+  `actions` (`variant="divided"` rules lines between them), and term/value
+  pairs, `inline` in two aligned columns or `stacked`.
+- **`<Banner tone>`.** `neutral` (the default) is the product speaking and keeps
+  the original look; the status tones add a glyph each. `danger` is
+  `role="alert"`, the rest `role="status"`.
+- **`<EmptyState reference>`.** "The source card above says where this stands"
+  is a pointer, not an explanation (`description`) and not something to press
+  (`children`).
 
 ## Entry points
 
@@ -92,6 +103,8 @@ list primitives — those are **not** here yet):
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
 | `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
+| `@codefly-dev/ui/theme.css`       | The token layer: token → utility, light/dark binding, custom variants (Tailwind source) |
+| `@codefly-dev/ui/preview.css`     | The kit compiled with the default skin, for previews only — see below |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
@@ -127,10 +140,12 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 **Styling.** The kit's components name their type slots and control rungs as
 classes (`type-card-title`, `control-sm`) that the kit defines, not Tailwind. A
 consumer that compiles the kit's source with its own Tailwind build imports the
-generated stylesheet into its entry alongside its `@source` for the kit:
+token layer and the generated utilities into its entry alongside its `@source`
+for the kit, as the host's own `globals.css` does:
 
 ```css
 @import "tailwindcss";
+@import "@codefly-dev/ui/theme.css";
 @import "@codefly-dev/ui/type-slots.css";
 @source "../node_modules/@codefly-dev/ui/src";
 ```
@@ -201,8 +216,63 @@ const skin = await resolveSkin({
 The first source returning a valid descriptor wins; an invalid one is logged
 and skipped so the compiled default always renders.
 
-`Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
-optional actions and dismissal. The caller owns data, authorization and read state.
+`Banner` from `@codefly-dev/ui/layout` renders persistent feedback with optional
+actions and dismissal. The caller owns data, authorization and read state.
+
+## Previewing a solution without a host
+
+Every class a kit component writes is defined only where something compiled the
+kit with its token layer, and every variable those classes read is set only
+where a host projected a skin onto `<html>`. A solution authors no CSS, so on
+its own it could not render its page at all. `@codefly-dev/ui/preview.css` is
+that compile done once, in this package: plain CSS, the kit's own source only,
+with the default skin's values at `:root`.
+
+It is generated (`npm run generate:preview-stylesheet`) and committed, not built
+at publish. Its bytes depend on inputs outside this folder — the contract's
+default skin and the Tailwind, Lightning CSS and tw-animate-css versions in the
+lockfile — which the kit-version gate cannot see. Committed, a change to any of
+them shows up as a changed file here, and the host's `preview-stylesheet` test
+fails until it is regenerated.
+
+```ts
+// The preview harness's entry — never a module the remote exposes.
+import "@codefly-dev/ui/preview.css";
+```
+
+**A preview build may use it** to render, review and screenshot a solution's
+pages and stories locally, and to run visual tests against them. Dark mode is
+`class="dark"` on an ancestor, as in the host.
+
+**A preview build may not use it for:**
+
+- **Anything a host loads.** Import it only from the preview harness's own
+  entry, never from a module the remote exposes or anything that module
+  imports. A remote renders inside the host's document, under the host's one
+  compiled stylesheet and the deployment's skin; bundled, this would ship a
+  second Tailwind preflight and the default skin's values into that document.
+- **Evidence of how a deployment looks.** It is the default skin. A
+  deployment's skin changes colour, type, radius and density, so a preview
+  screenshot shows structure and states, not the product's appearance.
+- **Styling anything but kit components.** Only classes the kit's own source
+  writes are compiled in. A utility a solution writes itself renders unstyled
+  in preview, and that is deliberate: it is the hand-laid markup the kit exists
+  to replace. `@codefly-dev/saas-ui`'s components are not covered either; they
+  render inside the host's stylesheet.
+
+The host's `src/lib/__tests__/preview-stylesheet.test.tsx` renders every story
+here and fails if any class one of them carries is missing from the file, so
+"built from kit components" and "painted in preview" stay the same claim.
+
+**Structure travels inline when the host does not compile you.** The host's
+stylesheet is compiled over this kit and `@codefly-dev/saas-ui` only (its
+`@source` lines); it compiles nothing a solution remote or another module's kit
+ships. A utility that exists only because one file wrote it — an arbitrary value
+such as `grid-cols-[…]` or `h-[var(--x)]` — is therefore defined for this kit
+and missing everywhere else. `DescriptionList`'s
+`grid-cols-[minmax(0,max-content)_minmax(0,1fr)]` is fine here for that reason. A
+kit element meant to render from a remote carries its structure inline (a
+`style` for layout) and takes only colour and type from the tokens.
 
 ## A loading indicator never flashes
 

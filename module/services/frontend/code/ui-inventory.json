@@ -435,6 +435,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "BadgesAndAvatars"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "StatusBadges"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -445,6 +449,7 @@
       "imports": [
         "lucide-react",
         "react",
+        "./badge.js",
         "./button.js",
         "./cn.js"
       ],
@@ -455,6 +460,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "NotificationBanner"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "StatusBanners"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -519,6 +528,10 @@
         {
           "file": "packages/codefly-ui/stories/controls.stories.tsx",
           "export": "CompactCard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CardWithDescription"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -538,6 +551,27 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/chip.tsx",
+      "imports": [
+        "@base-ui/react/use-render",
+        "lucide-react",
+        "react",
+        "./badge.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "An actionable badge (link, button, removable) for relation, scope, status and owner rows in solution pages.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Chips"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -659,6 +693,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Empty"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "EmptyWithReference"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -783,6 +821,28 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/list.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Light list and term/value primitives for rows where a Table is too heavy.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Lists"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "DescriptionLists"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",

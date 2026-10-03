@@ -319,6 +319,29 @@
 	}
 }
 
+@utility type-badge-lg {
+	:where(&) {
+		font-size: var(--type-badge-lg-size);
+		font-weight: var(--type-badge-lg-weight);
+		line-height: var(--type-badge-lg-leading);
+	}
+}
+
+@utility type-chip {
+	:where(&) {
+		font-size: var(--type-chip-size);
+		font-weight: var(--type-chip-weight);
+		line-height: var(--type-chip-leading);
+	}
+}
+
+@utility type-chip-meta {
+	:where(&) {
+		font-size: var(--type-chip-meta-size);
+		line-height: var(--type-chip-meta-leading);
+	}
+}
+
 @utility type-banner {
 	:where(&) {
 		font-size: var(--type-banner-size);
@@ -329,6 +352,34 @@
 @utility type-banner-title {
 	:where(&) {
 		font-weight: var(--type-banner-title-weight);
+	}
+}
+
+@utility type-list-item {
+	:where(&) {
+		font-size: var(--type-list-item-size);
+		line-height: var(--type-list-item-leading);
+	}
+}
+
+@utility type-list-item-description {
+	:where(&) {
+		font-size: var(--type-list-item-description-size);
+		line-height: var(--type-list-item-description-leading);
+	}
+}
+
+@utility type-description-term {
+	:where(&) {
+		font-size: var(--type-description-term-size);
+		line-height: var(--type-description-term-leading);
+	}
+}
+
+@utility type-description-details {
+	:where(&) {
+		font-size: var(--type-description-details-size);
+		line-height: var(--type-description-details-leading);
 	}
 }
 
@@ -580,6 +631,13 @@
 	:where(&) {
 		font-size: var(--type-empty-state-description-size);
 		line-height: var(--type-empty-state-description-leading);
+	}
+}
+
+@utility type-empty-state-reference {
+	:where(&) {
+		font-size: var(--type-empty-state-reference-size);
+		line-height: var(--type-empty-state-reference-leading);
 	}
 }
 
