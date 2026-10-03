@@ -5,7 +5,6 @@ import type {
 	ViewerEntitlements,
 } from "@/solutions/entitlements";
 import {
-	isSolutionId,
 	type SolutionClientSurfaces,
 	type SolutionManifest,
 	type SolutionNav,
@@ -29,10 +28,15 @@ import {
  * The registered solutions this viewer may use, each paired with the entitlement
  * that admitted it, in the order the registry ordered them.
  *
- * The join key is the solution id: `installations.solution_identifier` on the
- * authority side and the registered manifest `id` here. It is the only identifier
- * both sides hold — an installation carries no reference to a registration record
- * — and SOLUTION_REGISTRATION.md §4 states the correspondence.
+ * The join key is the immutable solution TARGET: `installations.target_id` on the
+ * authority side and `manifest.targetId` here, which the registry projection
+ * carries from the declaration that produced the record.
+ *
+ * It used to be the solution id — the route alias — on both sides. An alias is
+ * deliberately reusable by a later binding, so that join made a REPLACEMENT
+ * solution inherit the predecessor's menu entry and its team exposure, with no
+ * administrator having acted. The target is one continuous period of one
+ * binding's presence and is never reused, so the replacement joins to nothing.
  *
  * A registered solution with no entitlement is absent: deployed but uninstalled,
  * or installed but not granted to this viewer, are both invisible. An entitlement
@@ -49,13 +53,19 @@ export function entitledSolutions(
 		manifest: SolutionManifest;
 		entitlement: SolutionEntitlement;
 	}> = [];
+	const joined = new Set<string>();
 	for (const manifest of registered) {
-		const entitlement = entitlements.byId.get(manifest.id);
+		// A registered record that nothing declared carries no target. It is
+		// joinable to no entitlement, which is the fail-closed answer: presence
+		// nobody declared is presence nobody could have consented to.
+		if (manifest.targetId === "") continue;
+		const entitlement = entitlements.byTarget.get(manifest.targetId);
 		if (entitlement === undefined) continue;
+		joined.add(manifest.targetId);
 		pairs.push({ manifest, entitlement });
 	}
-	for (const id of entitlements.byId.keys()) {
-		if (!isSolutionId(id)) reportUnjoinableEntitlement(id);
+	for (const target of entitlements.byTarget.keys()) {
+		if (!joined.has(target)) reportUnjoinableEntitlement(target);
 	}
 	return pairs;
 }
@@ -71,14 +81,18 @@ const globalForUnjoinable = globalThis as typeof globalThis & {
  * Say, once per identifier, that an organization holds an installation that no
  * registration can ever match.
  *
- * The join key is the installation's solution_identifier against the registered
- * manifest id, and nothing at install time requires the two to agree: an
- * installation also governs agent authority, for which any identifier works, so
- * refusing a non-slug one there would break installs that are valid for that
- * purpose. What goes wrong is only this projection — the solution is installed and
- * granted and still never appears, with no error anywhere. An identifier that is
- * slug-shaped but unregistered is NOT reported: that is a solution this deployment
- * does not serve right now, which is ordinary.
+ * Under the alias join this reported a shape mismatch — an installation naming
+ * something that was not a slug could never match a registered id. The target
+ * join has no shape to mismatch: both sides are uuids assigned by the host. What
+ * remains worth saying is narrower and still real: the viewer holds an
+ * entitlement for a target the registry does not currently serve.
+ *
+ * That is ORDINARY and so it is reported at debug volume, not as an error. An
+ * organisation keeps an installation while the solution is restarting, being
+ * redeployed, or temporarily withdrawn; the host withdrawing presence revokes the
+ * installation in the same transaction, so a lasting mismatch means the two have
+ * genuinely diverged and an operator should be able to see it without it crying
+ * wolf on every rollout.
  */
 function reportUnjoinableEntitlement(id: string): void {
 	if (!globalForUnjoinable.__unjoinableSolutionIdentifiers) {
@@ -87,8 +101,8 @@ function reportUnjoinableEntitlement(id: string): void {
 	const reported = globalForUnjoinable.__unjoinableSolutionIdentifiers;
 	if (reported.has(id)) return;
 	reported.add(id);
-	console.error(
-		`solution projections: an installation's solution_identifier ${JSON.stringify(id)} is not a registered-solution id shape, so it can never appear in any projection. Install it under the solution's registered id.`,
+	console.debug(
+		`solution projections: this viewer is entitled to solution target ${JSON.stringify(id)}, which the registry does not currently serve, so it appears in no projection. Ordinary during a redeploy; lasting means presence and installation have diverged.`,
 	);
 }
 

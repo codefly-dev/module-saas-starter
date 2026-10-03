@@ -141,9 +141,14 @@ type solutionEntitlementProjection struct {
 }
 
 type solutionEntitlementEntry struct {
-	// The installed solution's identifier, which for this host's registry is the
-	// registered manifest id a consumer joins its own set against.
-	ID string `json:"id"`
+	// The immutable solution TARGET this entitlement is for — the key a consumer
+	// joins its own registered set against, after resolving whatever alias it
+	// holds to the target currently serving it.
+	//
+	// It replaced a free-text identifier that was the route alias. An alias is
+	// reusable, so joining on it let a replacement binding inherit the
+	// predecessor's entitlement; the identity cannot be reused, so it cannot.
+	TargetID string `json:"targetId"`
 	// False when the installation is not healthy right now. A consumer shows such
 	// a solution as unavailable rather than dropping it: the organization did
 	// install it and the viewer was granted it, so hiding it would send someone
@@ -289,7 +294,7 @@ func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer s
 		}
 		for _, entitlement := range resp.GetEntitlements() {
 			entries = append(entries, solutionEntitlementEntry{
-				ID:          entitlement.GetSolutionIdentifier(),
+				TargetID:    entitlement.GetTargetId(),
 				Healthy:     entitlement.GetHealthy(),
 				ScopeNodeID: entitlement.GetRootScopeNodeId(),
 			})
@@ -321,8 +326,22 @@ const (
 	viewerSolutionUndecidable
 )
 
-// admitViewerSolution asks the authority whether one solution is in the viewer's
-// entitled set.
+// admitViewerSolution asks the authority whether the solution TARGET currently
+// serving one route alias is in the viewer's entitled set.
+//
+// The alias is resolved to a target first, and the comparison is between
+// identities. That ordering is the mechanism, not a detail: an alias is
+// deliberately reusable — a withdrawn one may be claimed by another binding — so
+// comparing the alias an installation named against the alias being requested
+// admitted a REPLACEMENT binding to its predecessor's installation, forwarded
+// the viewer's bearer to it, and exposed it to whoever had been granted the
+// predecessor. A target is one continuous period of one binding's presence and
+// is never reused, so the replacement resolves to its own target, which no
+// installation of the predecessor names.
+//
+// A registration with no declaration resolves to no target and is admissible to
+// NOBODY. That is deliberate: presence that nothing declared cannot be installed,
+// so there is no organisation whose consent could admit it.
 //
 // It stops at the first match rather than reading every page: finding the id is
 // a positive answer on its own, while NOT finding it is only sound after the
@@ -339,6 +358,20 @@ const (
 func (g *Gateway) admitViewerSolution(
 	ctx context.Context, org, viewer, solutionID string,
 ) viewerSolutionAdmission {
+	targetID, resolution := g.solutions.resolveTarget(ctx, solutionID)
+	switch resolution {
+	case solutionRegistryUnavailable:
+		// No snapshot has ever loaded, so this replica cannot tell a declared
+		// solution from an undeclared one. Undecidable, never a verdict.
+		return viewerSolutionUndecidable
+	case solutionRoutable:
+	default:
+		// Unregistered, withdrawn, or declared by nothing. There is no identity
+		// to be entitled to, so this is a verdict rather than an outage — and it
+		// is the same verdict for all three, because none of them is a presence
+		// an administrator could have consented to.
+		return viewerSolutionNotEntitled
+	}
 	if g.solutionEntitlements == nil {
 		// No authority client wired. Undecidable, never admitted: a deployment
 		// that forgot to wire this must fail closed rather than serve every
@@ -365,7 +398,7 @@ func (g *Gateway) admitViewerSolution(
 			// reading Healthy here would turn one condition into two answers
 			// and make "nobody granted you this" indistinguishable from "it is
 			// restarting".
-			if entitlement.GetSolutionIdentifier() == solutionID {
+			if entitlement.GetTargetId() == targetID {
 				return viewerSolutionAdmitted
 			}
 		}

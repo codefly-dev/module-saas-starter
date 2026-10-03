@@ -31,6 +31,17 @@ import { isStandingConditionMilestone } from "@/solutions/registration-log";
 export interface SolutionManifest {
 	id: string;
 	/**
+	 * The immutable solution target the host declared this record under — the
+	 * key a per-viewer projection joins entitlements against.
+	 *
+	 * Stamped from the registry snapshot, NOT parsed from the solution's own
+	 * manifest: the manifest is a document the solution wrote, and a solution
+	 * naming its own target could claim the identity an organisation consented
+	 * to for something else. Empty for a record nothing declared, which joins to
+	 * no entitlement.
+	 */
+	targetId: string;
+	/**
 	 * Major of the registration manifest wire shape this solution was built
 	 * against. Defaulted rather than required, so an existing registrant keeps
 	 * working; see `checkRuntimeCompatibility`.
@@ -387,6 +398,14 @@ interface GatewayRegistryEntry {
 	id?: unknown;
 	status?: unknown;
 	manifest?: unknown;
+	/**
+	 * The immutable solution target this record is declared under, from the
+	 * gateway's projection. It is the HOST's fact, never the solution's: it is
+	 * read from the record's declaration here and deliberately not from the
+	 * manifest the solution itself registered, because a solution must not be
+	 * able to name the identity an organisation consented to.
+	 */
+	targetId?: unknown;
 }
 
 /**
@@ -452,7 +471,15 @@ function manifestsFromSnapshot(payload: unknown): {
 			);
 			continue;
 		}
-		manifests.push(parsed);
+		// The target is stamped from the record, overwriting anything the
+		// solution's own manifest carried in that field. parseManifest already
+		// rejects unknown keys it does not model, but stamping unconditionally
+		// means a future parser that let the field through could not be used to
+		// claim a target either.
+		manifests.push({
+			...parsed,
+			targetId: typeof entry.targetId === "string" ? entry.targetId : "",
+		});
 	}
 	manifests.sort((a, b) => (a.nav.order ?? 0) - (b.nav.order ?? 0));
 	return {
@@ -777,6 +804,7 @@ export async function findSolution(
 export function detailProjection(manifest: SolutionManifest): SolutionDetail {
 	return {
 		id: manifest.id,
+		targetId: manifest.targetId,
 		schemaVersion: manifest.schemaVersion,
 		nav: { ...manifest.nav },
 		frontend: { ...manifest.frontend },
@@ -1110,6 +1138,12 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 	}
 	return {
 		id: candidate.id,
+		// parseManifest reads a document the SOLUTION wrote, so it never carries
+		// a target: the host stamps it from the registry record in
+		// manifestsFromSnapshot. Empty here is therefore correct and not a
+		// missing field — a manifest that reached a projection without being
+		// stamped joins to no entitlement, which is the fail-closed answer.
+		targetId: "",
 		schemaVersion: schemaVersion as number,
 		nav: {
 			title: nav.title,

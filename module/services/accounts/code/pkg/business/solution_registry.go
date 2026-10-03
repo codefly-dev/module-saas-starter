@@ -117,6 +117,11 @@ type SolutionDeclaredBinding struct {
 	// Release is publisher/name@version of the applied generation. It is the
 	// release a heartbeat may not replace.
 	Release string
+	// TargetID is the immutable solution target this declaration opened — the
+	// identity an installation names, carried here so a consumer asked about a
+	// route alias can resolve it to a target and compare identities rather than
+	// strings.
+	TargetID string
 }
 
 // SolutionRegistration is the canonical record for one solution.

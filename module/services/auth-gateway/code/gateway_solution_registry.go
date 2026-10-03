@@ -262,6 +262,40 @@ func (c *solutionRegistryCache) resolve(ctx context.Context, id string) (*url.UR
 	return &url.URL{Scheme: upstream.Scheme, Host: upstream.Host}, solutionRoutable
 }
 
+// resolveTarget answers which immutable solution target currently serves a route
+// alias, through the same snapshot and the same freshness rules as resolve.
+//
+// It is a separate entry point rather than a second return value on resolve
+// because the two answer different questions and are asked at different points:
+// admission needs the identity BEFORE any upstream is chosen or any bearer is
+// forwarded, and routing needs the address only after admission has passed. A
+// combined call would invite a caller to route on an address it obtained while
+// ignoring the identity beside it.
+//
+// A record with no declaration yields solutionUnregistered, not an empty target:
+// "declared by nothing" and "no such alias" are the same answer to the question
+// admission asks, because neither is a presence an administrator could install.
+func (c *solutionRegistryCache) resolveTarget(ctx context.Context, id string) (string, solutionResolution) {
+	record, found, loaded := c.lookup(id)
+	if !found || !solutionRecordActive(record, c.now()) {
+		if err := c.refreshIfStale(ctx); err != nil {
+			log.Printf("solution registry: on-demand refresh for %q failed: %v", id, err)
+		}
+		record, found, loaded = c.lookup(id)
+	}
+	if !loaded {
+		return "", solutionRegistryUnavailable
+	}
+	if !found || record.GetTombstonedAt() != nil {
+		return "", solutionUnregistered
+	}
+	target := record.GetDeclared().GetTargetId()
+	if target == "" {
+		return "", solutionUnregistered
+	}
+	return target, solutionRoutable
+}
+
 // solutionRecordActive re-derives activity here rather than trusting the status
 // accounts stamped: the status was computed when the snapshot was read, and a
 // lease can lapse while the snapshot is still cached.

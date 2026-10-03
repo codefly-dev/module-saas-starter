@@ -379,6 +379,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
 func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.proxyTo(w, r, upstream, entry)
+	}))
+}
+
+// rateLimitThenServe meters a request against its route's budget and then runs
+// next.
+//
+// It exists so that work done BEFORE forwarding can also sit behind the budget.
+// The solution proxy needs that: its admission check is an authority call to
+// accounts, which costs a scope-tree read per entitlement page, and a request
+// that ends in 403 or 503 costs exactly the same as one that is forwarded. With
+// the limiter only in front of proxyTo, an authenticated caller could drive that
+// cost without limit by asking about solutions it is not entitled to — the
+// refusal was free, so there was nothing to exhaust.
+func (g *Gateway) rateLimitThenServe(w http.ResponseWriter, r *http.Request, entry *RouteEntry, next http.Handler) {
 	// Every forwarded request passes through here, whichever route matched it,
 	// so this is where a request is bound to the origins its client registered.
 	// Ahead of the limiter, not inside proxyTo: a refusal must not spend the
@@ -389,12 +405,10 @@ func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, ups
 		return
 	}
 	if g.rateLimiter != nil {
-		g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			g.proxyTo(w, r, upstream, entry)
-		})).ServeHTTP(w, r)
+		g.rateLimiter.Middleware(limiterFailureModeFor(entry), rateLimitClassFor(entry), entry.AuthenticationFactorAttempt, next).ServeHTTP(w, r)
 		return
 	}
-	g.proxyTo(w, r, upstream, entry)
+	next.ServeHTTP(w, r)
 }
 
 // rateLimitClassFor reads the route's declared edge budget class. A nil entry

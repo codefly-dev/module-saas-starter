@@ -779,7 +779,18 @@ type SolutionDeclaredBinding struct {
 	Generation uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
 	// publisher/name@version of the applied generation: the release a heartbeat
 	// may not replace.
-	Release       string `protobuf:"bytes,3,opt,name=release,proto3" json:"release,omitempty"`
+	Release string `protobuf:"bytes,3,opt,name=release,proto3" json:"release,omitempty"`
+	// The immutable solution target this declaration opened — the identity an
+	// installation names. It is carried on the registration record so a consumer
+	// that was asked about a ROUTE ALIAS can resolve it to the target that
+	// currently serves it and compare identities.
+	//
+	// That resolution is the whole admission mechanism: a replacement binding
+	// which claimed a withdrawn alias resolves to its own target, which no
+	// installation of its predecessor names. A record with no declaration carries
+	// no target and is therefore admissible to nobody, which is the fail-closed
+	// answer and the direction of the cutover.
+	TargetId      string `protobuf:"bytes,4,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -831,6 +842,13 @@ func (x *SolutionDeclaredBinding) GetGeneration() uint64 {
 func (x *SolutionDeclaredBinding) GetRelease() string {
 	if x != nil {
 		return x.Release
+	}
+	return ""
+}
+
+func (x *SolutionDeclaredBinding) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
 	}
 	return ""
 }
@@ -1269,14 +1287,15 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\"\x9e\x01\n" +
 	"!ListSolutionRegistrationsResponse\x12L\n" +
 	"\rregistrations\x18\x01 \x03(\v2&.saas.accounts.v1.SolutionRegistrationR\rregistrations\x12+\n" +
-	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision\"r\n" +
+	"\x11registry_revision\x18\x02 \x01(\x03R\x10registryRevision\"\x8f\x01\n" +
 	"\x17SolutionDeclaredBinding\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tR\tbindingId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
 	"generation\x12\x18\n" +
-	"\arelease\x18\x03 \x01(\tR\arelease\"\x9f\x01\n" +
+	"\arelease\x18\x03 \x01(\tR\arelease\x12\x1b\n" +
+	"\ttarget_id\x18\x04 \x01(\tR\btargetId\"\x9f\x01\n" +
 	"\x1dSolutionHostBindingGeneration\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +

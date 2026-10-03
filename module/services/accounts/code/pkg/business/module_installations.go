@@ -23,7 +23,11 @@ type ModuleInstallationRequest struct {
 	ModuleID                  string   `json:"moduleId"`
 	OrganizationSlug          string   `json:"organizationSlug"`
 	AgentIdentifier           string   `json:"agentIdentifier"`
-	SolutionIdentifier        string   `json:"solutionIdentifier"`
+	// TargetID is the immutable solution target this installation is for, from
+	// the catalogue of accepted applied presence. It replaced a free-text
+	// solution identifier: a declaration naming an alias installed whatever held
+	// that alias when the declaration was applied, and whatever took it later.
+	TargetID string `json:"targetId"`
 	RoleID                    string   `json:"roleId"`
 	ExpectedRolePermissions   []string `json:"expectedRolePermissions"`
 	AllowedAudiences          []string `json:"allowedAudiences"`
@@ -51,7 +55,8 @@ type InstallerDelegation struct {
 	OrganizationID     string    `json:"organizationId"`
 	ModuleID           string    `json:"moduleId"`
 	AgentIdentifiers   []string  `json:"agentIdentifiers"`
-	SolutionIdentifier string    `json:"solutionIdentifier"`
+	// TargetID is the one solution target this delegation authorises installing.
+	TargetID           string    `json:"targetId"`
 	RoleID             string    `json:"roleId"`
 	RolePermissions    []string  `json:"rolePermissions"`
 	AllowedAudiences   []string  `json:"allowedAudiences"`
@@ -115,7 +120,7 @@ func ParseInstallerPolicy(reader io.Reader) (*InstallerPolicy, error) {
 			return nil, errors.New("duplicate installer delegation")
 		}
 		seen[key] = true
-		if !registrationIdentityPattern.MatchString(d.Prefix) || len(d.Prefix) > 63 || !looksLikeAgentIdentifier(d.ModuleID+":1") || d.SolutionIdentifier == "" || len(d.SolutionIdentifier) > 200 || d.ExpiresAt.IsZero() {
+		if !registrationIdentityPattern.MatchString(d.Prefix) || len(d.Prefix) > 63 || !looksLikeAgentIdentifier(d.ModuleID+":1") || d.TargetID == "" || len(d.TargetID) > 200 || d.ExpiresAt.IsZero() {
 			return nil, errors.New("invalid installer delegation identity or expiry")
 		}
 		for _, id := range []string{d.OrganizationID, d.OwnerPrincipalID, d.RoleID} {
@@ -151,7 +156,7 @@ func (p *InstallerPolicy) AllowsIdentity(caller ModuleCaller, now time.Time) boo
 func (p *InstallerPolicy) Authorize(caller ModuleCaller, req ModuleInstallationRequest, now time.Time) (InstallerDelegation, error) {
 	if p != nil {
 		for _, d := range p.Delegations {
-			if ModulePrincipalID(d.Prefix) == caller.PrincipalID && d.OrganizationID == caller.BoundOrg && d.ModuleID == req.ModuleID && now.Before(d.ExpiresAt) && slices.Contains(d.AgentIdentifiers, req.AgentIdentifier) && d.SolutionIdentifier == req.SolutionIdentifier && d.RoleID == req.RoleID && exactSet(d.RolePermissions, req.ExpectedRolePermissions) && exactSet(d.AllowedAudiences, req.AllowedAudiences) && exactSet(d.AllowedScopes, req.AllowedScopes) {
+			if ModulePrincipalID(d.Prefix) == caller.PrincipalID && d.OrganizationID == caller.BoundOrg && d.ModuleID == req.ModuleID && now.Before(d.ExpiresAt) && slices.Contains(d.AgentIdentifiers, req.AgentIdentifier) && d.TargetID == req.TargetID && d.RoleID == req.RoleID && exactSet(d.RolePermissions, req.ExpectedRolePermissions) && exactSet(d.AllowedAudiences, req.AllowedAudiences) && exactSet(d.AllowedScopes, req.AllowedScopes) {
 				return d, nil
 			}
 		}
@@ -191,7 +196,7 @@ func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller Module
 	err = s.store.WithOrgTx(ctx, org.Id, func(ctx context.Context) error {
 		var err error
 		result, err = store.ReconcileModuleInstallation(ctx, &InstallSolutionParams{
-			OrgID: org.Id, AgentIdentifier: req.AgentIdentifier, SolutionIdentifier: req.SolutionIdentifier,
+			OrgID: org.Id, AgentIdentifier: req.AgentIdentifier, TargetID: req.TargetID,
 			RoleID: req.RoleID, AllowedAudiences: req.AllowedAudiences, AllowedScopes: req.AllowedScopes,
 			DisplayName: req.DisplayName, RootScopeLabel: req.RootScopeLabel,
 			OwnerPrincipalID: delegation.OwnerPrincipalID, GrantedBy: delegation.OwnerPrincipalID,
@@ -209,10 +214,10 @@ func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller Module
 		if !result.Changed {
 			return nil
 		}
-		if err = s.publishLifecycleEvent(ctx, EventInstallationCreated, org.Id, result.ScopeNodeID, caller.PrincipalID, map[string]any{"installation_id": result.InstallationID, "agent_principal_id": result.PrincipalID, "solution_identifier": req.SolutionIdentifier}); err != nil {
+		if err = s.publishLifecycleEvent(ctx, EventInstallationCreated, org.Id, result.ScopeNodeID, caller.PrincipalID, map[string]any{"installation_id": result.InstallationID, "agent_principal_id": result.PrincipalID, "target_id": req.TargetID}); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, caller.PrincipalID, ActorTypeSystem, EventInstallationCreated, "installation", result.InstallationID, org.Id, map[string]any{"agent_principal_id": result.PrincipalID, "solution_identifier": req.SolutionIdentifier, "role_id": req.RoleID, "owner_principal_id": delegation.OwnerPrincipalID})
+		return s.emitTx(ctx, caller.PrincipalID, ActorTypeSystem, EventInstallationCreated, "installation", result.InstallationID, org.Id, map[string]any{"agent_principal_id": result.PrincipalID, "target_id": req.TargetID, "role_id": req.RoleID, "owner_principal_id": delegation.OwnerPrincipalID})
 	})
 	if err != nil {
 		// Never expose a verified authority reference from a transaction whose

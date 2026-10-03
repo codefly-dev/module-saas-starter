@@ -253,16 +253,27 @@ func (s *Service) applySolutionHostBinding(
 			})
 		}
 
+		// The registry revision this apply produced. It is recorded on the
+		// generation-history row so the trail says which registry state the
+		// generation became, rather than carrying a zero that reads like a
+		// revision nobody issued. A tombstone's withdrawal produces one too.
+		var appliedRegistryRevision *int64
+
 		previous := record.Applied
 		// The identity an organisation installs moves with this transaction, so a
 		// reused alias cannot carry an installation across to another binding
 		// (solution_targets.go).
-		if err := s.reconcileSolutionTarget(ctx, document, solutionID, now); err != nil {
+		targetID, err := s.reconcileSolutionTarget(ctx, document, solutionID, now)
+		if err != nil {
 			return err
 		}
 		if document.Removed {
-			if err := s.withdrawDeclaredSolutionRegistration(ctx, record, document, now); err != nil {
+			withdrawn, err := s.withdrawDeclaredSolutionRegistration(ctx, record, document, targetID, now)
+			if err != nil {
 				return err
+			}
+			if withdrawn > 0 {
+				appliedRegistryRevision = &withdrawn
 			}
 		} else {
 			if previous != nil && !previous.Removed &&
@@ -270,13 +281,15 @@ func (s *Service) applySolutionHostBinding(
 				// The generation moved this binding's route. The alias it held
 				// is withdrawn in the same transaction that claims the new one,
 				// so there is no instant at which both are served.
-				if err := s.withdrawDeclaredSolutionRegistration(ctx, record, document, now); err != nil {
+				if _, err := s.withdrawDeclaredSolutionRegistration(ctx, record, document, targetID, now); err != nil {
 					return err
 				}
 			}
-			if err := s.declareSolutionRegistration(ctx, document, solutionID, now); err != nil {
+			produced, err := s.declareSolutionRegistration(ctx, document, solutionID, targetID, now)
+			if err != nil {
 				return err
 			}
+			appliedRegistryRevision = &produced
 		}
 
 		record.HostCoordinate = document.Host.Coordinate
@@ -333,18 +346,20 @@ func (s *Service) applySolutionHostBinding(
 		if document.Removed {
 			decided = SolutionGenerationTombstoned
 		}
-		historyTarget := ""
-		if live, err := s.store.GetLiveSolutionTargetForUpdate(ctx, document.Binding); err == nil && live != nil {
-			historyTarget = live.ID
-		}
+		// The target reconciliation above returns the identity it decided on,
+		// INCLUDING a tombstone's closed one. Re-reading the live target here
+		// is what dropped it: by this point the close has already committed in
+		// this transaction, so the read finds nothing and the row that records
+		// a withdrawal loses the identity it withdrew.
 		if err := s.store.RecordSolutionGenerationDecision(ctx, &SolutionGenerationDecision{
-			BindingID:  document.Binding,
-			TargetID:   historyTarget,
-			Generation: document.Generation,
-			Digest:     digest,
-			Decision:   decided,
-			Release:    record.Applied.Release,
-			DecidedAt:  now,
+			BindingID:        document.Binding,
+			TargetID:         targetID,
+			Generation:       document.Generation,
+			Digest:           digest,
+			Decision:         decided,
+			Release:          record.Applied.Release,
+			RegistryRevision: appliedRegistryRevision,
+			DecidedAt:        now,
 		}); err != nil {
 			return err
 		}
@@ -371,11 +386,11 @@ func (s *Service) applySolutionHostBinding(
 // That adoption is the migration path — a solution that self-registers today
 // becomes declared without a gap.
 func (s *Service) declareSolutionRegistration(
-	ctx context.Context, document *solutionhost.SolutionHostBinding, solutionID string, now time.Time,
-) error {
+	ctx context.Context, document *solutionhost.SolutionHostBinding, solutionID, targetID string, now time.Time,
+) (int64, error) {
 	current, err := s.store.GetSolutionRegistrationForUpdate(ctx, solutionID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if current != nil && current.Declared != nil &&
 		current.Declared.BindingID != document.Binding && current.TombstonedAt == nil {
@@ -385,17 +400,18 @@ func (s *Service) declareSolutionRegistration(
 		// the route. A TOMBSTONED declared record may be taken over: its
 		// declaration withdrew the alias, and the binding that held it keeps
 		// its own tombstone generation.
-		return fmt.Errorf("%w: %q is declared by binding %q",
+		return 0, fmt.Errorf("%w: %q is declared by binding %q",
 			ErrSolutionHostBindingRouteHeld, solutionID, current.Declared.BindingID)
 	}
 	revision, err := s.store.NextSolutionRegistryRevision(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	declared := &SolutionDeclaredBinding{
 		BindingID:  document.Binding,
 		Generation: document.Generation,
 		Release:    document.Release.Identity(),
+		TargetID:   targetID,
 	}
 	next := &SolutionRegistration{
 		SolutionID: solutionID,
@@ -415,7 +431,10 @@ func (s *Service) declareSolutionRegistration(
 		next.Frontend = current.Frontend
 		next.Backend = current.Backend
 	}
-	return s.store.SaveSolutionRegistration(ctx, next)
+	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
+		return 0, err
+	}
+	return revision, nil
 }
 
 // withdrawDeclaredSolutionRegistration tombstones the registry record a binding
@@ -425,35 +444,38 @@ func (s *Service) declareSolutionRegistration(
 // a heartbeat from the retiring runtime finds a declared tombstone and is
 // refused, where an undeclared tombstone can be re-registered by a caller that
 // names its revision.
+// It returns the registry revision the withdrawal produced, or 0 when there was
+// nothing to withdraw, so the generation history records the registry state this
+// generation actually became.
 func (s *Service) withdrawDeclaredSolutionRegistration(
 	ctx context.Context, record *SolutionHostBindingRecord,
-	document *solutionhost.SolutionHostBinding, now time.Time,
-) error {
+	document *solutionhost.SolutionHostBinding, closedTargetID string, now time.Time,
+) (int64, error) {
 	if record.Applied == nil || record.Applied.SolutionID == "" {
 		// A removal for a binding this host never applied. The generation is
 		// still recorded, so a later document at a lower generation is refused;
 		// there is simply no registry record to withdraw.
-		return nil
+		return 0, nil
 	}
 	solutionID := record.Applied.SolutionID
 	current, err := s.store.GetSolutionRegistrationForUpdate(ctx, solutionID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if current == nil {
-		return nil
+		return 0, nil
 	}
 	if current.Declared != nil && current.Declared.BindingID != document.Binding {
 		// Another binding has taken the alias over since. Withdrawing it here
 		// would remove presence this binding no longer owns.
-		return nil
+		return 0, nil
 	}
 	if current.TombstonedAt != nil {
-		return nil
+		return 0, nil
 	}
 	revision, err := s.store.NextSolutionRegistryRevision(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	tombstoned := now
 	next := &SolutionRegistration{
@@ -466,18 +488,24 @@ func (s *Service) withdrawDeclaredSolutionRegistration(
 			BindingID:  document.Binding,
 			Generation: document.Generation,
 			Release:    document.Release.Identity(),
+			// The target the withdrawal closed, kept on the tombstone: the
+			// record stays attributable to the identity whose consent ended.
+			TargetID: closedTargetID,
 		},
 	}
 	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
-		return err
+		return 0, err
 	}
-	return s.emitTx(ctx, "solution:"+solutionID, "system",
+	if err := s.emitTx(ctx, "solution:"+solutionID, "system",
 		EventSolutionRegistrationDeleted, "solution", solutionID, "",
 		map[string]any{
 			"solution_id": solutionID,
 			"publisher":   current.Publisher,
 			"revision":    revision,
-		})
+		}); err != nil {
+		return 0, err
+	}
+	return revision, nil
 }
 
 // solutionRegistrationPublisher is the owner of record for a solution id: the
@@ -512,27 +540,89 @@ func solutionHostBindingResource(record *SolutionHostBindingRecord) string {
 //
 // A tombstone for a binding with no live target is a no-op, like the registry
 // withdrawal beside it: there is no period to end.
+//
+// Closing a target REVOKES every active installation naming it, in this same
+// transaction. The target identity makes inheritance inexpressible — a
+// replacement binding has its own target, so it cannot be reached through a
+// predecessor's installation — but an installation left ACTIVE on a closed
+// target is still a record of consent to a presence that has ended, and every
+// reader would have to remember to ask about the target's liveness to avoid
+// honouring it. Revoking here means only one place knows the rule.
+//
+// It returns the closed target so the caller can attribute the generation
+// history and the audit event to the identity that ended. Reading it back after
+// the close would find nothing, which is how the tombstone's history row lost
+// its target.
 func (s *Service) reconcileSolutionTarget(
 	ctx context.Context, document *solutionhost.SolutionHostBinding, solutionID string, now time.Time,
-) error {
+) (string, error) {
 	live, err := s.store.GetLiveSolutionTargetForUpdate(ctx, document.Binding)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if document.Removed {
 		if live == nil {
-			return nil
+			return "", nil
 		}
-		return s.store.CloseSolutionTarget(ctx, live.ID, document.Generation, now)
+		if err := s.store.CloseSolutionTarget(ctx, live.ID, document.Generation, now); err != nil {
+			return "", err
+		}
+		if err := s.revokeInstallationsOfClosedTarget(ctx, live, document.Generation, now); err != nil {
+			return "", err
+		}
+		return live.ID, nil
 	}
 	if live == nil {
-		_, err := s.store.OpenSolutionTarget(ctx, document.Binding, solutionID, document.Generation, now)
-		return err
+		opened, err := s.store.OpenSolutionTarget(ctx, document.Binding, solutionID, document.Generation, now)
+		if err != nil {
+			return "", err
+		}
+		return opened.ID, nil
 	}
 	if live.SolutionID == solutionID {
-		return nil
+		return live.ID, nil
 	}
-	return s.store.RetargetSolutionTarget(ctx, live.ID, solutionID, now)
+	if err := s.store.RetargetSolutionTarget(ctx, live.ID, solutionID, now); err != nil {
+		return "", err
+	}
+	return live.ID, nil
+}
+
+// revokeInstallationsOfClosedTarget ends the consent a withdrawn presence was
+// granted, and records why.
+//
+// The reason is stored on the row because a revoked installation that reads like
+// an administrator's uninstall is a different fact from one the platform ended:
+// the first is somebody's decision and the second is something they must be told
+// about, and re-installing is only available for one of them.
+//
+// Each revocation emits the installation-revoked event with the target it named,
+// so the trail says which presence ended rather than only that an installation
+// stopped.
+func (s *Service) revokeInstallationsOfClosedTarget(
+	ctx context.Context, target *SolutionTarget, generation uint64, now time.Time,
+) error {
+	reason := fmt.Sprintf(
+		"solution target %s was withdrawn by generation %d of binding %s",
+		target.ID, generation, target.BindingID)
+	revoked, err := s.store.RevokeInstallationsOfTarget(ctx, target.ID, reason, now)
+	if err != nil {
+		return err
+	}
+	for _, installation := range revoked {
+		if err := s.emitTx(ctx, "system", "system", EventInstallationRevoked,
+			"installation", installation.InstallationID, installation.OrgID,
+			map[string]any{
+				"installation_id": installation.InstallationID,
+				"target_id":       target.ID,
+				"binding_id":      target.BindingID,
+				"generation":      int64(generation),
+				"revoked_reason":  reason,
+			}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ListSolutionTargets returns every installable identity, open and closed. An

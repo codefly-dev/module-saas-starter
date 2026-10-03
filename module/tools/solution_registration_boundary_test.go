@@ -161,7 +161,13 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// The half that moved with #949. Without these the doc would still read as
 		// though every caller saw every registered solution.
 		"the **projections** answer per organization and per viewer",
-		"`installations.solution_identifier` is the registered manifest `id`",
+		// The join key, pinned because it is the one the §9 consent-transfer
+		// attack turned on: an alias is reusable, an identity is not. A change
+		// that moves this line back to the alias is the regression.
+		"`installations.target_id` is the target a",
+		"**never reused**",
+		"Closing a target revokes every active installation of it, in the same",
+		"Presence nothing declared is admissible to nobody.",
 		// The half that moved with #952. The first sentence is the one a reader
 		// needs in order to know that registration alone no longer reaches a
 		// solution; the second and third are the two answers that must not be

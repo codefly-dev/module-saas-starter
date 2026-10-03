@@ -37,7 +37,7 @@ func moduleInstallationAuthority(caller ModuleCaller, delegation InstallerDelega
 		"schema_version":      ModuleInstallationAuthorityVersion,
 		"module_id":           req.ModuleID,
 		"agent_identifier":    req.AgentIdentifier,
-		"solution_identifier": req.SolutionIdentifier,
+		"target_id":           req.TargetID,
 	}
 	for key, value := range map[string]string{
 		"organization_id":        result.OrganizationID,

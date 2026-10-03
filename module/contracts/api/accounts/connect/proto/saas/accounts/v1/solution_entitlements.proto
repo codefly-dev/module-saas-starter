@@ -30,10 +30,12 @@ import "buf/validate/validate.proto";
 // consumer of this message renders a menu, and the owner of record, the
 // succession set and the agent principal are no part of that.
 message SolutionEntitlement {
-  // The installed solution's identifier. This is the key a consumer joins
-  // against its own registered set — for the host's solution registry, the
-  // registered manifest `id`.
-  string solution_identifier = 1;
+  // Was `solution_identifier`: the route alias, which consumers joined against
+  // their registered set. An alias is reusable by a later binding, so that join
+  // admitted a replacement to the predecessor's entitlement. Replaced by
+  // target_id below.
+  reserved 1;
+  reserved "solution_identifier";
   string installation_id = 2 [(buf.validate.field).string.uuid = true];
   // The installation's authority-root scope node — the node the viewer's grant
   // had to reach for this entitlement to exist. Carried so a consumer can say
@@ -49,6 +51,18 @@ message SolutionEntitlement {
   // reduces it instead, by the one rule that survives the enum growing: anything
   // that is not HEALTHY is not healthy.
   bool healthy = 4;
+  // The immutable solution target this entitlement is for — the key a consumer
+  // joins against its own registered set.
+  //
+  // A consumer resolves a route alias to a target through the host's applied
+  // presence state and then compares THIS id. That is what makes the alias-reuse
+  // transfer inexpressible: a replacement binding claiming a withdrawn alias
+  // resolves to its own target, which no installation of the predecessor names.
+  //
+  // The alias is deliberately absent. Carrying it here would let a consumer go
+  // back to joining on it, and it would be a copy of a value the presence
+  // snapshot already owns and may move.
+  string target_id = 5 [(buf.validate.field).string.uuid = true];
   // Deliberately no platform-administrator basis field. The scope union admits a
   // platform super_admin for the action `read` alone, and using a solution is not
   // a read, so that branch can never contribute an entitlement here — a field

@@ -33,14 +33,15 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 		})
 	}))
 
+	targetID, _ := declarePresence(t, "acme-solution")
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
-		OrgID:              orgID,
-		AgentIdentifier:    "acme.example/solution:1.0.0",
-		SolutionIdentifier: "acme.example/solution",
-		RootScopeLabel:     "Acme Solution",
-		RoleID:             roleID,
-		AllowedAudiences:   []string{"acme.collection"},
-		AllowedScopes:      []string{"doc"},
+		OrgID:            orgID,
+		AgentIdentifier:  "acme.example/solution:1.0.0",
+		TargetID:         targetID,
+		RootScopeLabel:   "Acme Solution",
+		RoleID:           roleID,
+		AllowedAudiences: []string{"acme.collection"},
+		AllowedScopes:    []string{"doc"},
 	})
 	require.NoError(t, err)
 	require.Equal(t, adminID, installation.OwnerPrincipalId, "owner of record defaults to the installing admin")
@@ -57,6 +58,8 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 	require.Equal(t, adminID, entry.ActorID, "the grantor is on the audit event")
 	require.Equal(t, installation.AgentPrincipalId, entry.Payload["agent_principal_id"])
 	require.Equal(t, roleID, entry.Payload["role_id"])
+	require.Equal(t, targetID, entry.Payload["target_id"],
+		"the audit trail names the immutable target, not a reusable route alias")
 }
 
 // A malformed agent identifier is a boundary input: it must be rejected as a
@@ -68,11 +71,12 @@ func TestInstallSolutionRejectsMalformedAgentIdentifier(t *testing.T) {
 	ctx := testCtx
 	adminID, orgID := mustUserAndOrg(t, ctx, "badagent@example.com", "badagent", "Bad Agent Co")
 
+	targetID, _ := declarePresence(t, "acme-solution")
 	_, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
-		OrgID:              orgID,
-		AgentIdentifier:    "notacanonicalidentifier", // no '/' or ':'
-		SolutionIdentifier: "acme.example/solution",
-		RoleID:             business.NewIDString(),
+		OrgID:           orgID,
+		AgentIdentifier: "notacanonicalidentifier", // no '/' or ':'
+		TargetID:        targetID,
+		RoleID:          business.NewIDString(),
 	})
 	require.Error(t, err)
 	var se *business.StoreError

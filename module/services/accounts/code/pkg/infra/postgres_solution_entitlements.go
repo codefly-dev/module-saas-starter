@@ -84,9 +84,13 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	for _, summary := range summaries {
 		installation := summary.GetInstallation()
 		out = append(out, &gen.SolutionEntitlement{
-			SolutionIdentifier: installation.GetSolutionIdentifier(),
-			InstallationId:     installation.GetId(),
-			RootScopeNodeId:    installation.GetRootScopeNodeId(),
+			// The immutable target, never the route alias: a consumer resolves
+			// the alias it was asked about through applied presence state and
+			// compares this id, so a replacement binding that claimed a
+			// withdrawn alias cannot match an installation of its predecessor.
+			TargetId:        installation.GetTargetId(),
+			InstallationId:  installation.GetId(),
+			RootScopeNodeId: installation.GetRootScopeNodeId(),
 			// Anything that is not HEALTHY is not healthy: the reduction survives
 			// the health enum growing, which a copy of its value set would not.
 			Healthy: summary.GetHealth() == gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY,

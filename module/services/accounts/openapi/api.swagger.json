@@ -777,6 +777,47 @@
       },
       "type": "object"
     },
+    "v1AvailableSolution": {
+      "description": "AvailableSolution is one installable solution target: its immutable identity,\nthe release the host currently has applied for it, and where it is routed.",
+      "properties": {
+        "appliedGeneration": {
+          "format": "uint64",
+          "type": "string"
+        },
+        "bindingId": {
+          "description": "The binding whose presence this target records. Carried so an operator can\ncorrelate a catalogue row with delivery; an installation does not join on it,\nbecause one binding may have several targets over time.",
+          "type": "string"
+        },
+        "installed": {
+          "description": "True when this organization already has an ACTIVE installation of this\ntarget. A catalogue shows it as installed rather than offering it twice; the\nunique index over (org_id, target_id) would refuse the second install anyway,\nand an administrator should not have to discover that by being refused.",
+          "type": "boolean"
+        },
+        "openedGeneration": {
+          "description": "The generation that opened this target, and the newest applied generation.\nEqual until a later generation is applied for the same presence.",
+          "format": "uint64",
+          "type": "string"
+        },
+        "releaseName": {
+          "type": "string"
+        },
+        "releasePublisher": {
+          "description": "The applied release: publisher, name, version.",
+          "type": "string"
+        },
+        "releaseVersion": {
+          "type": "string"
+        },
+        "routeAlias": {
+          "description": "The route alias the applied generation claims — `/solutions/<alias>/*`. A\nlater generation may move it, so it is never an identity.",
+          "type": "string"
+        },
+        "targetId": {
+          "description": "The immutable target identity an install names. Never reused.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1BeginOAuthRequest": {
       "description": "BeginOAuthRequest is the FE's first hop on the authorization-code\nflow. Server returns a server-signed `state` token bound to\n(provider, redirect_uri); the FE embeds it in the provider's\nauthorize URL alongside its own PKCE code_challenge. Authenticate\nlater verifies the state before exchanging the code.",
       "properties": {
@@ -1950,7 +1991,8 @@
           "description": "Human-readable display label for the solution's authority-root scope node\n(kind='solution'). The node's ltree path is derived server-side, not this.",
           "type": "string"
         },
-        "solutionIdentifier": {
+        "targetId": {
+          "description": "The solution target being installed, from ListAvailableSolutions. Required.\n\nAn installer chooses an identity, never an address. The target must be LIVE\nand ACCEPTED when the install lands: installing a withdrawn target would\nrecord consent to a presence that already ended, and installing a target\nwhose newest generation was refused would record consent to a release this\nhost never admitted.",
           "type": "string"
         }
       },
@@ -1985,14 +2027,19 @@
           "format": "date-time",
           "type": "string"
         },
-        "rootScopeNodeId": {
+        "revokedReason": {
+          "description": "Why a revoked installation was revoked, when it was not an administrator\nuninstalling: the installation-identity cutover, or a tenancy narrowing that\nwithdrew this organisation. Empty on an active row.",
           "type": "string"
         },
-        "solutionIdentifier": {
+        "rootScopeNodeId": {
           "type": "string"
         },
         "status": {
           "$ref": "#/definitions/v1InstallationStatus"
+        },
+        "targetId": {
+          "description": "The immutable solution target this installation was consented to: one\ncontinuous period of one binding's presence on this host. It is never\nreused, so a replacement binding — even one claiming the same route alias —\nis a different target and inherits nothing.\n\nDeliberately NOT accompanied by the route alias. The alias is a property of\nthe target that a later generation may move, and resolving it here would\nmean joining the host's presence state into a request-path listing — which\nwould require granting request traffic read over every organisation's\npresence to answer about one. A consumer that needs the alias asks\nListAvailableSolutions, which serves accepted applied state, and joins on\nthis id.\n\nEmpty only on a revoked historical row whose target could not be\nestablished at the cutover; an active installation always names one.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -2659,6 +2706,21 @@
         "types": {
           "items": {
             "$ref": "#/definitions/v1AuditEventType",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListAvailableSolutionsResponse": {
+      "properties": {
+        "nextPageToken": {
+          "type": "string"
+        },
+        "solutions": {
+          "items": {
+            "$ref": "#/definitions/v1AvailableSolution",
             "type": "object"
           },
           "type": "array"
@@ -6853,6 +6915,52 @@
           }
         },
         "summary": "UninstallSolution reverses an install: it revokes the agent principal, removes\nits standing grant, and marks the installation revoked. The solution scope node\nis left in place (inert without a grant or a live agent) so a reinstall reuses\nit. Idempotent on an already-revoked installation.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations:listAvailable": {
+      "get": {
+        "description": "It answers from ACCEPTED applied state — a live target whose binding's\nnewest APPLIED generation is a present one — and deliberately not from the\ndiagnostic ListSolutionHostBindings, which also reports desired generations\nthat were refused. The distinction is the point: a refused generation is\nsomething an operator must see and something an administrator must not be\nable to consent to, because consenting to a release this host never admitted\nrecords authority over a presence that does not exist.\n\nIt carries the route alias, which the installation record deliberately does\nnot: here the alias is a display and routing fact read from the target in\nthe same statement, not an identity anything joins on.",
+        "operationId": "InstallationService_ListAvailableSolutions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "Page bound. 0 -> server default; capped for the same reason the installation\nlisting is capped.",
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAvailableSolutionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListAvailableSolutions is the catalogue: the solution targets an\nadministrator may install right now.",
         "tags": [
           "InstallationService"
         ]

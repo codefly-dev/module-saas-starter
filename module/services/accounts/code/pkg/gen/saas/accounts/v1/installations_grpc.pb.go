@@ -26,6 +26,7 @@ const (
 	InstallationService_TransferInstallationOwnership_FullMethodName = "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"
 	InstallationService_GetInstallation_FullMethodName               = "/saas.accounts.v1.InstallationService/GetInstallation"
 	InstallationService_ListInstallations_FullMethodName             = "/saas.accounts.v1.InstallationService/ListInstallations"
+	InstallationService_ListAvailableSolutions_FullMethodName        = "/saas.accounts.v1.InstallationService/ListAvailableSolutions"
 )
 
 // InstallationServiceClient is the client API for InstallationService service.
@@ -64,6 +65,21 @@ type InstallationServiceClient interface {
 	// together to answer what a viewer's organization installed and what that viewer
 	// was granted.
 	ListInstallations(ctx context.Context, in *ListInstallationsRequest, opts ...grpc.CallOption) (*ListInstallationsResponse, error)
+	// ListAvailableSolutions is the catalogue: the solution targets an
+	// administrator may install right now.
+	//
+	// It answers from ACCEPTED applied state — a live target whose binding's
+	// newest APPLIED generation is a present one — and deliberately not from the
+	// diagnostic ListSolutionHostBindings, which also reports desired generations
+	// that were refused. The distinction is the point: a refused generation is
+	// something an operator must see and something an administrator must not be
+	// able to consent to, because consenting to a release this host never admitted
+	// records authority over a presence that does not exist.
+	//
+	// It carries the route alias, which the installation record deliberately does
+	// not: here the alias is a display and routing fact read from the target in
+	// the same statement, not an identity anything joins on.
+	ListAvailableSolutions(ctx context.Context, in *ListAvailableSolutionsRequest, opts ...grpc.CallOption) (*ListAvailableSolutionsResponse, error)
 }
 
 type installationServiceClient struct {
@@ -124,6 +140,16 @@ func (c *installationServiceClient) ListInstallations(ctx context.Context, in *L
 	return out, nil
 }
 
+func (c *installationServiceClient) ListAvailableSolutions(ctx context.Context, in *ListAvailableSolutionsRequest, opts ...grpc.CallOption) (*ListAvailableSolutionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAvailableSolutionsResponse)
+	err := c.cc.Invoke(ctx, InstallationService_ListAvailableSolutions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InstallationServiceServer is the server API for InstallationService service.
 // All implementations must embed UnimplementedInstallationServiceServer
 // for forward compatibility.
@@ -160,6 +186,21 @@ type InstallationServiceServer interface {
 	// together to answer what a viewer's organization installed and what that viewer
 	// was granted.
 	ListInstallations(context.Context, *ListInstallationsRequest) (*ListInstallationsResponse, error)
+	// ListAvailableSolutions is the catalogue: the solution targets an
+	// administrator may install right now.
+	//
+	// It answers from ACCEPTED applied state — a live target whose binding's
+	// newest APPLIED generation is a present one — and deliberately not from the
+	// diagnostic ListSolutionHostBindings, which also reports desired generations
+	// that were refused. The distinction is the point: a refused generation is
+	// something an operator must see and something an administrator must not be
+	// able to consent to, because consenting to a release this host never admitted
+	// records authority over a presence that does not exist.
+	//
+	// It carries the route alias, which the installation record deliberately does
+	// not: here the alias is a display and routing fact read from the target in
+	// the same statement, not an identity anything joins on.
+	ListAvailableSolutions(context.Context, *ListAvailableSolutionsRequest) (*ListAvailableSolutionsResponse, error)
 	mustEmbedUnimplementedInstallationServiceServer()
 }
 
@@ -184,6 +225,9 @@ func (UnimplementedInstallationServiceServer) GetInstallation(context.Context, *
 }
 func (UnimplementedInstallationServiceServer) ListInstallations(context.Context, *ListInstallationsRequest) (*ListInstallationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListInstallations not implemented")
+}
+func (UnimplementedInstallationServiceServer) ListAvailableSolutions(context.Context, *ListAvailableSolutionsRequest) (*ListAvailableSolutionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAvailableSolutions not implemented")
 }
 func (UnimplementedInstallationServiceServer) mustEmbedUnimplementedInstallationServiceServer() {}
 func (UnimplementedInstallationServiceServer) testEmbeddedByValue()                             {}
@@ -296,6 +340,24 @@ func _InstallationService_ListInstallations_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InstallationService_ListAvailableSolutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAvailableSolutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).ListAvailableSolutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_ListAvailableSolutions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).ListAvailableSolutions(ctx, req.(*ListAvailableSolutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InstallationService_ServiceDesc is the grpc.ServiceDesc for InstallationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -322,6 +384,10 @@ var InstallationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListInstallations",
 			Handler:    _InstallationService_ListInstallations_Handler,
+		},
+		{
+			MethodName: "ListAvailableSolutions",
+			Handler:    _InstallationService_ListAvailableSolutions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

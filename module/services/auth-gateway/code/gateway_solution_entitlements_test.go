@@ -79,7 +79,7 @@ func TestGatewaySolutionEntitlements_AsksAboutTheVerifiedIdentity(t *testing.T) 
 	token := signValidToken(t, priv)
 	authority.pages = []*accountsv1.ListSolutionEntitlementsResponse{{
 		Entitlements: []*accountsv1.SolutionEntitlement{
-			{SolutionIdentifier: "audit", InstallationId: "install-1", RootScopeNodeId: "node-1", Healthy: true},
+			{TargetId: fakeSolutionTarget("audit"), InstallationId: "install-1", RootScopeNodeId: "node-1", Healthy: true},
 		},
 	}}
 
@@ -94,7 +94,7 @@ func TestGatewaySolutionEntitlements_AsksAboutTheVerifiedIdentity(t *testing.T) 
 	require.Equal(t, body.Viewer, authority.calls[0].GetSubjectId())
 	require.NotEmpty(t, body.Org)
 	require.Equal(t, []solutionEntitlementEntry{
-		{ID: "audit", Healthy: true, ScopeNodeID: "node-1"},
+		{TargetID: fakeSolutionTarget("audit"), Healthy: true, ScopeNodeID: "node-1"},
 	}, body.Usable)
 }
 
@@ -182,13 +182,13 @@ func TestGatewaySolutionEntitlements_FollowsEveryPage(t *testing.T) {
 	authority.pages = []*accountsv1.ListSolutionEntitlementsResponse{
 		{
 			Entitlements: []*accountsv1.SolutionEntitlement{
-				{SolutionIdentifier: "audit", RootScopeNodeId: "node-1", Healthy: true},
+				{TargetId: fakeSolutionTarget("audit"), RootScopeNodeId: "node-1", Healthy: true},
 			},
 			NextPageToken: "cursor-1",
 		},
 		{
 			Entitlements: []*accountsv1.SolutionEntitlement{
-				{SolutionIdentifier: "ledger", RootScopeNodeId: "node-2", Healthy: false},
+				{TargetId: fakeSolutionTarget("ledger"), RootScopeNodeId: "node-2", Healthy: false},
 			},
 		},
 	}
@@ -199,10 +199,10 @@ func TestGatewaySolutionEntitlements_FollowsEveryPage(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	body := decodeEntitlements(t, w.Body.Bytes())
 	require.Equal(t, []solutionEntitlementEntry{
-		{ID: "audit", Healthy: true, ScopeNodeID: "node-1"},
+		{TargetID: fakeSolutionTarget("audit"), Healthy: true, ScopeNodeID: "node-1"},
 		// Carried, not dropped: an unhealthy installation stays visible and is
 		// marked unavailable by the consumer.
-		{ID: "ledger", Healthy: false, ScopeNodeID: "node-2"},
+		{TargetID: fakeSolutionTarget("ledger"), Healthy: false, ScopeNodeID: "node-2"},
 	}, body.Usable)
 	require.Len(t, authority.calls, 2)
 	require.Equal(t, "cursor-1", authority.calls[1].GetPageToken())
@@ -213,7 +213,7 @@ func TestGatewaySolutionEntitlements_NonTerminatingCursorIs503(t *testing.T) {
 	gw, authority, priv := entitlementGateway(t)
 	authority.pages = []*accountsv1.ListSolutionEntitlementsResponse{{
 		Entitlements: []*accountsv1.SolutionEntitlement{
-			{SolutionIdentifier: "audit", RootScopeNodeId: "node-1", Healthy: true},
+			{TargetId: fakeSolutionTarget("audit"), RootScopeNodeId: "node-1", Healthy: true},
 		},
 		NextPageToken: "forever",
 	}}
