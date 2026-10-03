@@ -457,6 +457,23 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
 	}
 
+	// The policy log: append → receipt → commit, before authority is narrowed.
+	//
+	// `UnavailablePolicyLog` is what a deployment gets until the warehouse
+	// client lands, and it is deliberately NOT a no-op that fabricates a
+	// receipt. A fabricated receipt is the tautology the whole protocol exists
+	// to prevent — the host would record that the log witnessed a narrowing,
+	// nothing would have, and a restore would silently undo it with the receipt
+	// still sitting there as evidence that it had not. So it refuses every
+	// append, and a host wired with it cannot narrow authority rather than
+	// narrowing it unwitnessed.
+	//
+	// It does NOT stop the host serving. Nothing has been narrowed through the
+	// protocol, so there is nothing unreconciled to honour; what is refused is
+	// reducing authority, not answering requests. Those two answers look
+	// inconsistent and are not.
+	service.SetPolicyLog(infra.UnavailablePolicyLog{}, store)
+
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is
 	// the SAME one we use for JWT minting (saas-starter's cluster

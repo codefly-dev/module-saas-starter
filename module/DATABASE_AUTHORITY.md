@@ -525,7 +525,7 @@ executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
+| `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `policy_log_commits`, `policy_log_cursor`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
@@ -889,6 +889,62 @@ resolves current tenant/platform/MFA authorization, and updates only `org_id`,
 creation/activity timestamps, idle expiry, and absolute expiry are unchanged.
 This lock order serializes switch-versus-refresh races without treating a stale
 access-token session id as refresh replay.
+
+## The policy log, and why it is not in this database
+
+Every narrowing of authority — a revocation, a tenancy change, a tightened
+envelope — and every **authorised regrant** is appended to an **external**
+append-only log before it takes effect here, and the host keeps only the
+receipt.
+
+The reason it cannot live in this database is the whole point. A transactional
+audit event plus an append-only table beside the state they describe are
+**backed up with that state**, so restoring the database restores revoked
+authority together with the history that was supposed to witness against it. A
+history that is restored alongside what it witnesses cannot witness.
+
+**The protocol is append → receipt → commit-with-receipt**, and the ordering is
+load-bearing in one direction:
+
+| failure | state afterwards | why it is safe |
+| --- | --- | --- |
+| the append fails | nothing narrowed, caller refused | authority was not reduced and nobody was told it was |
+| the append lands, the commit fails | **the host stops serving** | the log says the narrowing happened; serving the wider authority still held locally would be serving authority that was revoked |
+| the commit lands without an append | **impossible** | the append comes first and its receipt is required by the commit |
+
+Two relations hold the local half. `policy_log_commits` is one row per
+operation — the operation id is the **caller's** idempotency key, because only
+the caller knows two attempts are the same revocation — carrying the receipt and
+a `committed_at` that is NULL exactly while the gap is open. `policy_log_cursor`
+is a single row recording how far this host has reconciled the log and when it
+last reached it. Neither is deletable: a receipt is the evidence that an append
+happened, so deleting one would make an unreconciled gap **disappear** rather
+than be closed, which is the one way the fail-closed asymmetry could be defeated
+locally.
+
+**Serving is gated on two conditions, checked on the serving path and not only at
+startup.** A gap opens at runtime — a commit that failed after its append landed
+— so a startup-only check would serve through exactly the window the protocol
+exists for. The host refuses when it holds an unapplied logged operation, and
+when it has not reached the log within a bounded staleness window: a host that
+cannot read the log does not know whether its authority is current, and serving
+what it last believed is serving authority that may have been revoked since.
+
+The staleness window is deliberately not zero. A log round trip per request
+would make the log's availability the host's own, and a momentary blip would
+become an outage. It is deliberately not unbounded either, because then "I
+cannot reach the log" would never become "I must stop serving".
+
+**The append is bounded, and the bound is about locks rather than latency.** It
+happens before the narrowing's transaction opens, so a slow log cannot hold
+database locks — but a caller blocked indefinitely still holds its request and
+everything above it. The bound converts that into a refusal the caller can act
+on, and a narrowing that cannot be logged must not proceed.
+
+**Reconciliation reports gaps; it does not decide authority from the log.**
+Applying an entry means re-running the narrowing it describes, which is domain
+logic — a reconciler that re-derived authority from log payloads would be a
+second implementation of every narrowing, and the copy is what drifts.
 
 ## Control-plane boundary
 

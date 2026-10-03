@@ -57,7 +57,12 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// traffic has no access, and the control plane holds SELECT and INSERT only
 	// — no UPDATE and no DELETE, because an inbox that can be edited is not a
 	// record of what was received.
-	"solution_delivery_documents":   {},
+	"solution_delivery_documents": {},
+	// The policy log's local half. Request traffic has no access at all: a
+	// receipt is evidence about authority, and the request path neither reads
+	// nor writes it.
+	"policy_log_commits":            {},
+	"policy_log_cursor":             {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"job_attempts":                  {},
 	"job_messages":                  {},
@@ -395,6 +400,14 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// A correction is a new generation.
 			if relation == "solution_delivery_documents" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// policy_log_commits and policy_log_cursor are read, inserted and
+			// updated, never deleted. The commit row is completed by the commit
+			// and the cursor advances — but deleting either would make an
+			// unreconciled gap DISAPPEAR rather than be closed, which is the one
+			// way the fail-closed asymmetry could be defeated locally.
+			if relation == "policy_log_commits" || relation == "policy_log_cursor" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// solution_targets is never row-deleted either: a CLOSED target is the
 			// evidence that an installation's consent ended, and deleting it
