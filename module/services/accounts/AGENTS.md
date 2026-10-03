@@ -262,13 +262,103 @@ once the capability exists. The response carries
   revision, epoch or binding fields, so in a running deployment every
   `Sealed` is nil and the intersection is the live half alone. That is sound for
   narrowing and silent about widening, which is strictly better than before and
-  strictly weaker than the target. The build incarnation is absent entirely — the
-  mint authenticates with a shared secret and so cannot answer what the caller is
-  running. The intersection also does not yet cover queues, resources,
-  namespaces, external publication and audiences; only the three authority terms
-  above. Those are gated on the Work Context cutover to core's `workcontext` and
-  on an execution-bound mint, tracked on #952 / PR #953 as Lane 3 conditions 1
-  and 2.
+  strictly weaker than the target. The intersection also does not yet cover
+  queues, resources, namespaces, external publication and audiences; only the
+  three authority terms above. Those are gated on the Work Context cutover to
+  core's `workcontext`, tracked on #952 / PR #953 as Lane 3 condition 1.
+
+## Establishing what a caller is running
+
+`Service.BindExecution` answers what a caller IS RUNNING, from sources the
+caller does not control. The mint authenticated with a **shared secret**, which
+is a bearer token — whoever holds it is the module — so it could not answer this
+at all. A secret cannot be execution-bound in principle: it says "I know the
+secret", never "I am this pod running this image".
+
+**Three digest types, and conflating any two defeats the check.** They are
+separate Go types rather than three strings for exactly that reason:
+
+| | what it says | who can write it |
+| --- | --- | --- |
+| `ApprovedDigest` | what the authority document approves | signed, out of band — the caller has no influence |
+| `DeclaredDigest` | what the pod **spec** asks to run | whoever can create the pod |
+| `RunningDigest` | what the container **status** reports, as `imageID` | the kubelet |
+
+The check is **approved == running**. Comparing approved against declared is the
+classic defeat: a pod spec can name an approved image and run something else if
+the tag moved, and the comparison passes while the workload is unapproved.
+Comparing declared against running proves only that the pod got what it asked
+for, which says nothing about whether it was allowed to ask. `DeclaredDigest`
+exists with nothing compared against it so that a reader reaching for "the pod's
+image" has a name for the thing they must not use.
+
+**Three independent sources, so no one of them can satisfy the check.** Filling
+both sides from the same place — approved digest and running digest both out of
+the authority document — compares a value to itself and passes for every caller.
+Here the approved digest comes from the signed document, the running digest from
+the Kubernetes API, keyed by a pod UID that came from a TokenReview of a token
+the caller could not forge.
+
+**The order is load-bearing:** authenticate, then read the pod *the token named*,
+then compare. Reading the pod first would mean reading a pod the **caller**
+named, which is a caller-supplied input; the token is what makes the pod
+reference trustworthy. The audience is `accounts`, so a token minted for the API
+server's own audience authenticates the same service account while having been
+issued for something else.
+
+**The UID is what is compared, not the name.** A pod name is reused across
+generations of a workload and the UID is not, so a replacement pod at the same
+name is refused.
+
+**Two answers that must not be confused.** `ErrExecutionNotApproved` is a verdict
+about the caller. `ErrExecutionUnbound` means the host could not *tell* — an
+unreachable API, a container still pulling, no reviewer wired — and **nothing is
+issued**, because a mint that proceeded would issue an unbound capability exactly
+when binding was impossible. A legacy non-bound token is **refused**, not
+skipped: skipping would make the check opt-out by presenting an older token,
+which is the easiest possible bypass.
+
+**A tag is never an approval.** The comparison is on the digest portion and is an
+exact match on it — not a suffix test (`HasSuffix` passes when the approved
+digest is a suffix of a longer hex string) and not a `sha256:` prefix check
+(which would let any repository satisfy an approval granted for one image). A
+value with no digest never matches, because an approval is only ever a statement
+about immutable content.
+
+### The monotonicity contract, which is this host's to keep
+
+Core's `SealSource.ApprovedBuild` states the rule and says plainly that it
+compares values for **equality** and cannot detect a source that moves
+backwards. `MonotonicApprovedBuilds` enforces both clauses:
+
+1. for one principal, the incarnation never **decreases**;
+2. a change of **digest** comes with an **increase** in the incarnation.
+
+Clause 2 is the one core's own `MemorySealSource` missed: approve B at
+incarnation 5, then approve A again at 5, and every capability sealed to A at 5 —
+which the move to B revoked — verifies again. A swap-back at a fixed counter is
+the rewind the rule exists to prevent, reached through the field clause 1 does
+not cover. A violating write is **refused**, not clamped: clamping would serve a
+value the writer did not intend and the writer would never learn. A source that
+genuinely must rewind is reconstructing state rather than recording it, and
+belongs behind a fresh instance.
+
+**Three states, and collapsing two of them is the dangerous direction:** a record
+→ the approved pair; known but no record → `ErrNoApprovedBuild`, and the caller
+may act unbound; unknown → `ErrUnknownExecutionPrincipal`, refused. Collapsing
+unknown into "bears none" would mint an unbound capability for an identity the
+host has never heard of, so an **empty** authority refuses everyone rather than
+minting unbound capabilities for everyone.
+
+A principal bearing no approved build binds with **neither** field set, because
+core's seal makes `build_incarnation` and `image_digest` optional *and paired* —
+a digest without an incarnation is refused by its schema.
+
+**Not wired yet:** no mint calls `BindExecution`, and the approved digests are
+not populated from the delivered authority documents, so this is exercised by
+tests rather than by a running deployment. `module_operation_context.go`'s
+binding search is unblocked by the sealed binding id, which the Work Context
+cutover carries and which is still outstanding.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,

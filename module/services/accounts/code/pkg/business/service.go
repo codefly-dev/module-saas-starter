@@ -157,6 +157,12 @@ type Service struct {
 	// is the state enforcement-at-use exists to end.
 	moduleAuthority         ModuleAuthorityStore
 	moduleOperationBindings ModuleOperationBindingStore
+
+	// The independent sources execution-bound minting needs. Unset means
+	// BindExecution answers ErrExecutionUnbound — never a mint that skips the
+	// check.
+	executionReviewer  ExecutionReviewer
+	executionAuthority ExecutionAuthority
 }
 
 // SetModuleAuthorityReads wires the live reads every capability decision makes.
