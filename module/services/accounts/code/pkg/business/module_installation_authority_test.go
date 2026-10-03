@@ -44,10 +44,10 @@ func authorityInstallationFixture(t *testing.T, module string) (*business.Servic
 	t.Helper()
 	d := business.InstallerDelegation{
 		Prefix: "example-installer", ModuleID: "acme.example/" + module,
-		OrganizationID:     "11111111-1111-4111-8111-111111111111",
-		OwnerPrincipalID:   "22222222-2222-4222-8222-222222222222",
-		RoleID:             "33333333-3333-4333-8333-333333333333",
-		TargetID: "44444444-4444-4444-8444-444444444444", AgentIdentifiers: []string{"acme.example/" + module + ":1.0.0"},
+		OrganizationID:   "11111111-1111-4111-8111-111111111111",
+		OwnerPrincipalID: "22222222-2222-4222-8222-222222222222",
+		RoleID:           "33333333-3333-4333-8333-333333333333",
+		TargetID:         "44444444-4444-4444-8444-444444444444", AgentIdentifiers: []string{"acme.example/" + module + ":1.0.0"},
 		RolePermissions:  []string{"example:read", "example:write"},
 		AllowedAudiences: []string{"example.api", "example.worker"}, AllowedScopes: []string{"example", "example-subset"},
 		ExpiresAt: time.Now().Add(time.Hour),

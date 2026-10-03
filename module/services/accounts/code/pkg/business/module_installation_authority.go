@@ -34,10 +34,10 @@ func moduleInstallationAuthority(caller ModuleCaller, delegation InstallerDelega
 	// Only Accounts chooses these durable identities. Display labels, installer
 	// credential/expiry, software/image versions and deployment receipts are absent.
 	payload := map[string]any{
-		"schema_version":      ModuleInstallationAuthorityVersion,
-		"module_id":           req.ModuleID,
-		"agent_identifier":    req.AgentIdentifier,
-		"target_id":           req.TargetID,
+		"schema_version":   ModuleInstallationAuthorityVersion,
+		"module_id":        req.ModuleID,
+		"agent_identifier": req.AgentIdentifier,
+		"target_id":        req.TargetID,
 	}
 	for key, value := range map[string]string{
 		"organization_id":        result.OrganizationID,
