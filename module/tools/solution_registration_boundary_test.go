@@ -221,6 +221,14 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// The named refusal. The library collapses these two; the distinction
 		// is the difference between "fix your signer" and "investigate".
 		"refused BY NAME",
+		// WHERE the check goes, which is the load-bearing half. The obvious
+		// implementation — classify the verifier's error — cannot work: the
+		// verifier emits the same words for "the signer never logged" and "the
+		// root cannot check the log it did".
+		"Check it BEFORE the verifier runs",
+		// And that a signed timestamp is not evidence of logging. This is the
+		// case a looser "has it got anything?" check admits silently.
+		"does not stand in for transparency evidence",
 		// That the local policy is coordinate-bound. Without this line the
 		// table reads as "choose either", and the one that performs no
 		// cryptography is the convenient choice.
