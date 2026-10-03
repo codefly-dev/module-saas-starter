@@ -1,6 +1,7 @@
 # ADR 0003: Typed audit-event registry — single-table STI, a code-owned catalog, and in-Postgres analytics
 
 - Status: Proposed
+- Refined by: [ADR 0009](./0009-audit-store-swap.md) — a deployment may select a warehouse as its audit store, so "analytics stays in Postgres" holds for the `postgres` default only
 - Date: 2026-08-18
 - Task: closes the review-and-planning deliverable of #170. Implementation is
   deferred to follow-up tickets that this ADR authorizes but does not open.
