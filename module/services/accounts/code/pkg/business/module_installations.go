@@ -19,21 +19,21 @@ import (
 // ModuleInstallationRequest describes one immutable organization installation.
 // The accountable owner and delegation are never accepted from this request.
 type ModuleInstallationRequest struct {
-	AuthorityReferenceVersion string   `json:"authorityReferenceVersion,omitempty"`
-	ModuleID                  string   `json:"moduleId"`
-	OrganizationSlug          string   `json:"organizationSlug"`
-	AgentIdentifier           string   `json:"agentIdentifier"`
+	AuthorityReferenceVersion string `json:"authorityReferenceVersion,omitempty"`
+	ModuleID                  string `json:"moduleId"`
+	OrganizationSlug          string `json:"organizationSlug"`
+	AgentIdentifier           string `json:"agentIdentifier"`
 	// TargetID is the immutable solution target this installation is for, from
 	// the catalogue of accepted applied presence. It replaced a free-text
 	// solution identifier: a declaration naming an alias installed whatever held
 	// that alias when the declaration was applied, and whatever took it later.
-	TargetID string `json:"targetId"`
-	RoleID                    string   `json:"roleId"`
-	ExpectedRolePermissions   []string `json:"expectedRolePermissions"`
-	AllowedAudiences          []string `json:"allowedAudiences"`
-	AllowedScopes             []string `json:"allowedScopes"`
-	DisplayName               string   `json:"displayName"`
-	RootScopeLabel            string   `json:"rootScopeLabel"`
+	TargetID                string   `json:"targetId"`
+	RoleID                  string   `json:"roleId"`
+	ExpectedRolePermissions []string `json:"expectedRolePermissions"`
+	AllowedAudiences        []string `json:"allowedAudiences"`
+	AllowedScopes           []string `json:"allowedScopes"`
+	DisplayName             string   `json:"displayName"`
+	RootScopeLabel          string   `json:"rootScopeLabel"`
 }
 
 type ModuleInstallationResult struct {
@@ -51,18 +51,18 @@ type ModuleInstallationResult struct {
 // owner. Deployment possession alone grants nothing. The policy projection is
 // read on EVERY request; deleting a delegation revokes outstanding capabilities.
 type InstallerDelegation struct {
-	Prefix             string    `json:"prefix"`
-	OrganizationID     string    `json:"organizationId"`
-	ModuleID           string    `json:"moduleId"`
-	AgentIdentifiers   []string  `json:"agentIdentifiers"`
+	Prefix           string   `json:"prefix"`
+	OrganizationID   string   `json:"organizationId"`
+	ModuleID         string   `json:"moduleId"`
+	AgentIdentifiers []string `json:"agentIdentifiers"`
 	// TargetID is the one solution target this delegation authorises installing.
-	TargetID           string    `json:"targetId"`
-	RoleID             string    `json:"roleId"`
-	RolePermissions    []string  `json:"rolePermissions"`
-	AllowedAudiences   []string  `json:"allowedAudiences"`
-	AllowedScopes      []string  `json:"allowedScopes"`
-	OwnerPrincipalID   string    `json:"ownerPrincipalId"`
-	ExpiresAt          time.Time `json:"expiresAt"`
+	TargetID         string    `json:"targetId"`
+	RoleID           string    `json:"roleId"`
+	RolePermissions  []string  `json:"rolePermissions"`
+	AllowedAudiences []string  `json:"allowedAudiences"`
+	AllowedScopes    []string  `json:"allowedScopes"`
+	OwnerPrincipalID string    `json:"ownerPrincipalId"`
+	ExpiresAt        time.Time `json:"expiresAt"`
 }
 
 type InstallerPolicy struct {
