@@ -144,6 +144,7 @@ func installSourceDelegationService(t *testing.T) (*sourceDelegationMemoryStore,
 		",reports:" + registrationDigest("reports-secret"))
 	require.NoError(t, err)
 	svc.SetModuleIdentitySecrets(secrets)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	audit := &validatingAudit{}
 	svc.SetAuditEmitter(audit)
@@ -389,6 +390,7 @@ func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *t
 		grant := registry[business.ModulePrincipalID("example")]
 		grant.Tenant, grant.CrossTenant = moduleWorkContextTenant, crossTenant
 		registry[business.ModulePrincipalID("example")] = grant
+		service.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 		service.SetModuleCapabilities(nil, nil, registry)
 		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: moduleWorkContextTenant})
 		require.NoError(t, err)

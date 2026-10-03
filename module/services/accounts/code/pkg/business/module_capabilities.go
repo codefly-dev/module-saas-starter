@@ -285,6 +285,16 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 type ModuleCaller struct {
 	PrincipalID string // the acting service principal (subject) id
 	BoundOrg    string // the tenant the principal is bound to
+
+	// Sealed is what the credential CLAIMED at mint, when it claims anything.
+	//
+	// Nil, and every field within it nil, means "this credential makes no claim
+	// about that term" — which is every credential until the Work Context
+	// cutover. Pointers rather than values precisely so absence and zero stay
+	// distinguishable: a zero installation revision is a real revision, so
+	// defaulting absence to zero would make the check PASS for exactly the
+	// credentials that claim nothing.
+	Sealed *SealedModuleAuthority
 }
 
 // grant resolves the caller's declared authority. An unknown principal is
@@ -298,6 +308,26 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil
+}
+
+// moduleCapability is moduleGrant WITH the live re-read, and it deliberately has
+// moduleGrant's exact shape.
+//
+// Same returns, one extra parameter. That makes routing a capability path a
+// one-token edit rather than a restructuring of its error handling — and the
+// first attempt at this change did restructure 25 call sites with a script,
+// which broke return arities and duplicated error returns in four files. A
+// mechanical migration is only safe when it is actually mechanical.
+//
+// A path needing the live installation id or producer epoch — a deferred
+// producer stamping work, say — calls AuthorizeModuleCapability directly and
+// keeps the whole authority.
+func (s *Service) moduleCapability(ctx context.Context, caller ModuleCaller) (ModulePrincipalGrant, error) {
+	authority, err := s.AuthorizeModuleCapability(ctx, caller)
+	if err != nil {
+		return ModulePrincipalGrant{}, err
+	}
+	return authority.Grant, nil
 }
 
 // ModuleContentResources reports the permission resource types the content of
@@ -369,7 +399,7 @@ func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string
 // worker producer.
 func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, tenant string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
 	w := wool.Get(ctx).In("ModuleEnqueueJob")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +474,7 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, ten
 // queue (e.g. datasource, which carries every tenant's ingest jobs).
 func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
 	w := wool.Get(ctx).In("ModuleClaimJobs")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +495,7 @@ func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req 
 // caller without the current, unexpired token cannot renew.
 func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, req *jobsv1.HeartbeatJobRequest) (*jobsv1.HeartbeatJobResponse, error) {
 	w := wool.Get(ctx).In("ModuleHeartbeatJob")
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, err
 	}
 	resp, err := s.moduleJobStore.Heartbeat(ctx, req)
@@ -478,7 +508,7 @@ func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, r
 // ModuleAckJob completes a leased job successfully.
 func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, executionKind, executionID string) error {
 	w := wool.Get(ctx).In("ModuleAckJob")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -500,7 +530,7 @@ func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *
 // the attempt budget is exhausted); otherwise it dead-letters immediately.
 func (s *Service) ModuleNackJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, failure *jobsv1.JobFailure, retryable bool, retryAt *timestamppb.Timestamp) error {
 	w := wool.Get(ctx).In("ModuleNackJob")
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return err
 	}
 	if retryable {
@@ -565,7 +595,7 @@ type ModuleNotifyUserResult struct {
 // notifications are user-scoped, so the tenant guard alone does not stop a
 // module bound to tenant A from notifying a user in tenant B.
 func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in ModuleNotifyUserInput) (ModuleNotifyUserResult, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return ModuleNotifyUserResult{}, err
 	}
@@ -628,7 +658,7 @@ type ModuleNotifyOrgAdminsInput struct {
 // key and the recipient, so a redelivered call converges on the rows it already
 // wrote. The send is audited with the recipient and delivery counts.
 func (s *Service) ModuleNotifyOrgAdmins(ctx context.Context, caller ModuleCaller, in ModuleNotifyOrgAdminsInput) (bool, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return false, err
 	}
@@ -733,7 +763,7 @@ type ModuleRequestApprovalInput struct {
 // resume queue must be one the principal may claim, so a decision cannot direct
 // work onto a queue the module does not own.
 func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller, in ModuleRequestApprovalInput) (string, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
 	}
@@ -763,7 +793,7 @@ func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller
 
 // ModuleGetApproval returns one approval request on the caller's tenant.
 func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, tenant, id string) (*ApprovalRequest, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +809,7 @@ func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, te
 
 // ModuleCancelApproval withdraws a still-open approval request.
 func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller, tenant, id, reason string) error {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -892,7 +922,7 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // entryID must be an opaque identifier; one that is a locator is dropped rather
 // than stored, for the reasons opaqueAuditEntryID gives.
 func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return err
 	}
@@ -1179,7 +1209,7 @@ type ModuleSubjectVisibilityGrant struct {
 // bound to one tenant could name a subject in another and learn whether that
 // subject has colleagues.
 func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller ModuleCaller, tenant, viewer string) ([]ModuleSubjectVisibilityGrant, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -1227,7 +1257,7 @@ func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller Module
 // grant names, so it can neither introduce a type it holds no grant for nor
 // re-point a record another module owns.
 func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, tenant, scopePath, kind, label, resourceType, resourceID string) (string, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
 	}
@@ -1294,7 +1324,7 @@ func (s *Service) ModulePlaceRecord(ctx context.Context, caller ModuleCaller, te
 // anything over maxContentTicketBytes is refused rather than buffered.
 func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
 	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1388,7 +1418,7 @@ func mapPublishError(err error) error {
 // of record is itself the trail — so only subscription changes and replays emit
 // audit events.
 func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, tenant string, envelope *events.EventEnvelope) (string, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return "", err
 	}
@@ -1487,7 +1517,7 @@ func missingFollowableSubject(envelope *events.EventEnvelope) (string, bool) {
 // ones taken against the module itself. A re-subscribe of the same (principal,
 // pattern, queue) returns the existing live row and emits no second audit event.
 func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -1552,7 +1582,7 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 // revoking an unknown or already-revoked subscription is NotFound and emits no
 // audit event.
 func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, subscriptionID string) error {
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return err
 	}
 	var revoked bool
@@ -1579,7 +1609,7 @@ func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, su
 
 // ModuleListSubscriptions returns the calling principal's live subscriptions.
 func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCaller) ([]*EventSubscription, error) {
-	if _, err := s.moduleGrant(caller); err != nil {
+	if _, err := s.moduleCapability(ctx, caller); err != nil {
 		return nil, err
 	}
 	var subscriptions []*EventSubscription
@@ -1599,7 +1629,7 @@ func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCall
 // acknowledged the event still receives the replay. The replay itself is
 // audited (a control-plane action) but the individual redeliveries are not.
 func (s *Service) ModuleReplayEvents(ctx context.Context, caller ModuleCaller, tenant, eventType string, since time.Time) (int, error) {
-	grant, err := s.moduleGrant(caller)
+	grant, err := s.moduleCapability(ctx, caller)
 	if err != nil {
 		return 0, err
 	}

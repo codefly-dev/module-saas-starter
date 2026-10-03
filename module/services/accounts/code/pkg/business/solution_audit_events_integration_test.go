@@ -49,6 +49,8 @@ func declaringService(t *testing.T, bound map[string][]string) *business.Service
 	for solution, namespaces := range bound {
 		registry[business.ModulePrincipalID(solution)] = business.ModulePrincipalGrant{Prefix: solution, Namespaces: namespaces}
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModulePrincipals(registry)
 	return svc
 }
@@ -118,6 +120,7 @@ func TestSolutionAuditEvents_AdmittedAtRegistrationAndEmitted(t *testing.T) {
 	require.NoError(t, err)
 	svc.SetAuditEmitter(emitter)
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Namespaces: []string{namespace}},
 	})

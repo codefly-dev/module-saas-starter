@@ -61,6 +61,7 @@ func TestDelegatedRecordAccessIsolatesCollidingPlacementsAcrossTenants(t *testin
 	const resource, collided = "example.record", "shared-record-id"
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{resource}},
 	})

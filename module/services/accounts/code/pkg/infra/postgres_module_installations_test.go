@@ -149,6 +149,7 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.NoError(t, err)
 	svc := auditedService(t, emitter)
 	svc.SetModuleIdentitySecrets(map[string][sha256.Size]byte{"example-installer": sha256.Sum256([]byte("local-fixture-secret"))})
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID}})
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)

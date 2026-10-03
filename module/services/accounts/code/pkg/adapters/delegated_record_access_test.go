@@ -48,6 +48,7 @@ func TestExactRecordOracleRequiresSignedCurrentAttenuatedAuthority(t *testing.T)
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	token := mint("rows", "rows", "read")
@@ -103,6 +104,7 @@ func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	module := business.ModulePrincipalID("rows")
@@ -137,6 +139,7 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	// The sealed revision must equal what the oracle re-resolves, or the mint would
@@ -186,6 +189,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, Resources: []string{"rows"},
 			ReadAudiences: map[string]business.ModuleReadAudience{
@@ -277,6 +281,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
 	service = svc
 	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}

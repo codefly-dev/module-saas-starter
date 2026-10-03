@@ -49,9 +49,21 @@ func TestSealedAuthorityClaimMatchesWhatTheCodeEnforces(t *testing.T) {
 	prose := strings.Join(strings.Fields(string(document)), " ")
 
 	const (
-		model     = "min(sealed, live)"
-		notBuilt  = "NOT BUILT YET"
-		exactOnly = "verification must be by **exact binding lookup**"
+		model = "min(sealed, live)"
+		// The disclosure the searching call site requires.
+		//
+		// This replaced a blunt "NOT BUILT YET" marker over the whole claim. That
+		// marker was right while nothing was built, and became WRONG when the
+		// live half landed: it would have forced the document to disclaim an
+		// enforcement that now exists, and a reader told the whole thing is
+		// absent stops checking which part is.
+		//
+		// So the gate now keys on the specific site. The live re-read is built;
+		// moduleOperationContextStale still searches; the document must say so in
+		// those words while it does.
+		stillSearches = "still searches"
+		searchSite    = "moduleOperationContextStale"
+		exactOnly     = "exact binding lookup"
 	)
 
 	if !strings.Contains(prose, model) {
@@ -61,23 +73,28 @@ func TestSealedAuthorityClaimMatchesWhatTheCodeEnforces(t *testing.T) {
 	}
 
 	if searchesForAScopeSuperset {
-		if !strings.Contains(prose, notBuilt) {
-			t.Fatalf("accounts/AGENTS.md describes %q without the %q marker, "+
+		for _, required := range []string{stillSearches, searchSite} {
+			if strings.Contains(prose, required) {
+				continue
+			}
+			t.Fatalf("accounts/AGENTS.md describes %q but is missing the phrase %q, which the disclosure about %s needs, "+
 				"while module_operation_context.go still calls operationScopesSubset.\n\n"+
-				"The code searches a principal's bindings for one whose scopes contain the "+
-				"presented set. The sealed model forbids exactly that and requires an exact "+
-				"binding lookup. So the document is describing an enforcement that is absent, "+
-				"in a file other agents read as a statement of what is already in place.\n\n"+
-				"Either state it as the target with the gap named, or build it.",
-				model, notBuilt)
+				"That call site iterates a principal's bindings and accepts if ANY of them "+
+				"contains the presented scopes, so a context minted against a narrow binding "+
+				"is satisfied by any wider binding the principal also holds — narrowing one "+
+				"achieves nothing while a broader one survives.\n\n"+
+				"The live re-read IS built, so a blanket disclaimer over the whole model would "+
+				"now be wrong in the other direction. Name this site and what it still does, "+
+				"or route it through ExactOperationBinding.",
+				model, required, searchSite)
 		}
-		// The target wording must survive too, so "not built" cannot be used to
-		// quietly drop the requirement it is deferring.
+		// The requirement must survive the disclosure, so naming a gap cannot be
+		// used to quietly drop the rule it defers.
 		if !strings.Contains(prose, exactOnly) {
-			t.Fatalf("accounts/AGENTS.md carries the %q marker but no longer states the "+
-				"requirement it defers (%q).\n"+
+			t.Fatalf("accounts/AGENTS.md discloses that %s still searches but no longer states the "+
+				"requirement that replaces it (%q).\n"+
 				"Naming a gap is not the same as dropping the rule: whoever builds this "+
-				"has to be able to read what it must do.", notBuilt, exactOnly)
+				"has to be able to read what it must do.", searchSite, exactOnly)
 		}
 		return
 	}
@@ -85,12 +102,12 @@ func TestSealedAuthorityClaimMatchesWhatTheCodeEnforces(t *testing.T) {
 	// The search is gone. If the document still says the model is unbuilt, it is
 	// now wrong in the OTHER direction — understating an enforcement, which makes
 	// the next agent add a redundant check or distrust a real one.
-	if strings.Contains(prose, notBuilt) {
+	if strings.Contains(prose, stillSearches) && strings.Contains(prose, searchSite) {
 		t.Fatalf("module_operation_context.go no longer calls operationScopesSubset, "+
-			"but accounts/AGENTS.md still marks %q as %q.\n\n"+
+			"but accounts/AGENTS.md still says %q about %s.\n\n"+
 			"The forbidden scope search is gone, so the paragraph needs re-reading against "+
 			"what is now enforced: if the sealed ceiling and the exact binding lookup are in "+
 			"place, state the model in the present tense and delete the gap; if only part of "+
-			"it landed, say which part.", model, notBuilt)
+			"it landed, say which part.", model, searchSite)
 	}
 }

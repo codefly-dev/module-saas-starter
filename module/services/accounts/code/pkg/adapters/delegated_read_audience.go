@@ -317,7 +317,7 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedReadAudience(ctx context.Con
 	// A source delegation authorizes operation bindings only; a read exchange
 	// keeps the caller's own tenant check whatever the parent carries.
 	return s.exchangeDelegatedAudience(ctx, req.GetParentWorkContextToken(), delegatedAudienceRequest{bindingID: req.GetBindingId(), kind: "read"}, func(caller business.ModuleCaller, tenant, parentAudience string, _ *business.SourceDelegation) (delegatedAudienceBinding, error) {
-		binding, err := service.ModuleReadAudience(caller, tenant, parentAudience, req.BindingId)
+		binding, err := service.ModuleReadAudience(ctx, caller, tenant, parentAudience, req.BindingId)
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(), policy: binding}, err
 	})
 }
@@ -339,9 +339,9 @@ func (s *ModuleCapabilitiesServer) ExchangeDelegatedOperationAudience(ctx contex
 		var binding business.ModuleOperationAudience
 		var err error
 		if delegation != nil {
-			binding, err = service.ModuleOperationAudienceForDelegation(caller, delegation, parentAudience, req.BindingId)
+			binding, err = service.ModuleOperationAudienceForDelegation(ctx, caller, delegation, parentAudience, req.BindingId)
 		} else {
-			binding, err = service.ModuleOperationAudience(caller, tenant, parentAudience, req.BindingId)
+			binding, err = service.ModuleOperationAudience(ctx, caller, tenant, parentAudience, req.BindingId)
 		}
 		return delegatedAudienceBinding{audience: binding.Audience, scopes: binding.WireScopes(req.Lookup), policy: binding}, err
 	})

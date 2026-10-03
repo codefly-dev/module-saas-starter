@@ -129,6 +129,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
 	})
@@ -141,6 +142,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
@@ -810,6 +812,7 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Queues: []string{"documents"}},
 	})
@@ -863,6 +866,7 @@ func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Queues: []string{"documents"}},
 	})
@@ -1050,6 +1054,7 @@ func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) 
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
 		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
 	})

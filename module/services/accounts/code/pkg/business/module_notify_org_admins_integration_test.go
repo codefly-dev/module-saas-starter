@@ -30,6 +30,7 @@ func TestModuleNotifyOrgAdmins_ReachesOnlyTheTenantsAdministrators(t *testing.T)
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	backend := &fakeJobBackend{}
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{modulePrincSvc: {}})
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: org}
 

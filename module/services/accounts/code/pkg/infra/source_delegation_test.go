@@ -172,6 +172,7 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 		"," + otherModule + ":" + delegationDigest(otherModuleSecret))
 	require.NoError(t, err)
 	svc.SetModuleIdentitySecrets(secrets)
+	svc.SetModuleAuthorityReads(currentModuleAuthority{}, nil)
 	svc.SetModuleCapabilities(nil, nil, registry)
 	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
 	svc.SetDatasourceConnector(delegationCipher{}, delegationProducer{}, "")

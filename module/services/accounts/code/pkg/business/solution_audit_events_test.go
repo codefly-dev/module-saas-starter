@@ -365,6 +365,8 @@ func newDeclaringService(t *testing.T, store *declaredAuditStore, bound bindings
 	if err != nil {
 		t.Fatal(err)
 	}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(bound.registry())
 	return svc
 }
@@ -581,6 +583,8 @@ func TestPutSolutionRegistration_TakesOverAReleasedNamespace(t *testing.T) {
 		}
 		emitter := &recordingEmitter{}
 		svc.SetAuditEmitter(emitter)
+		withCurrentAuthority(svc)
+		withCurrentAuthority(svc)
 		svc.SetModulePrincipals(bound.registry())
 		// The successor re-declares the type (still additive) and adds one.
 		if _, err := registerDeclaring(t, svc, "successor", nil, exampleDeclaredEvent+
@@ -605,6 +609,8 @@ func TestPutSolutionRegistration_TakesOverAReleasedNamespace(t *testing.T) {
 
 	// While the holder is still bound, a second binding does not release it:
 	// that is a misconfiguration, refused rather than raced.
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(bindings{"acme": {"acme"}, "successor": {"acme"}}.registry())
 	if _, err := registerDeclaring(t, svc, "successor", nil, exampleDeclaredEvent); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
 		t.Fatalf("holder still bound: err = %v, want refused", err)
@@ -612,6 +618,8 @@ func TestPutSolutionRegistration_TakesOverAReleasedNamespace(t *testing.T) {
 
 	// A code-owned namespace is never taken over.
 	store.rows["legacy.item.created"] = declaredAuditRow{owner: "accounts", namespace: "legacy"}
+	withCurrentAuthority(svc)
+	withCurrentAuthority(svc)
 	svc.SetModulePrincipals(bindings{"successor": {"legacy"}}.registry())
 	if _, err := registerDeclaring(t, svc, "successor", nil, `{"name":"e","type":"legacy.item.other","fields":[]}`); !errors.Is(err, ErrSolutionAuditNamespaceOwned) {
 		t.Fatalf("code-owned namespace: err = %v, want refused", err)

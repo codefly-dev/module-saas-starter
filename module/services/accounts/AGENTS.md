@@ -179,47 +179,96 @@ once the capability exists. The response carries
   credentials never substitute for missing identity digests.
 - The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking.
-- The capability's effective authority **is to become `min(sealed, live)`** —
-  blocker decision **B1**, which *reverses* what this file said before it.
-  **NOT BUILT YET. Read the gap below before you rely on any of it.**
+- The capability's effective authority is **`min(sealed, live)`** — blocker
+  decision **B1**, which *reverses* what this file said before it.
 
-  This paragraph said all of the following in the present tense while none of it
-  existed, which is worse than silence: a rules file other agents read as fact had
-  them believing an enforcement the code lacks. It is stated as the target, with
-  what actually happens today named, until it is built.
+  **The live half is built. The sealed half is partly built, and which part is
+  named below** — this paragraph once asserted the whole thing in the present
+  tense while none of it existed, so what follows separates what the code does
+  from what it is still to do, and the separation is load-bearing rather than
+  cautious.
 
-  **What the code does today:** the capability seals identity and tenant only, and
-  what the principal may do is re-read from the declared grant on every call. There
-  is no sealed ceiling, no installation revision, no producer epoch, and no build
-  incarnation — the credential carries none of those fields. Verification of an
-  operation context **searches** the principal's bindings for one whose scopes
-  contain the presented set (`module_operation_context.go`), which is exactly the
-  lookup the target forbids. The mint authenticates with a shared secret, so it
-  cannot answer what the caller is running at all.
+  **Both halves bind, and neither alone is enough.** Re-reading alone means a
+  widened grant, or a database restored to a broader state, retroactively widens
+  a credential already in flight. Sealing alone means a narrowing does not take
+  effect until the outstanding credential expires. So the effective authority is
+  the intersection, which is strictly stronger than either.
 
-  That is sound for narrowing and silent about widening: a grant that widens, or a
-  database restored to a broader state, retroactively widens a credential already
-  in flight. Narrowing does take effect immediately today, through the live
-  re-read.
+  **What is built.** Every module capability path resolves its authority through
+  `Service.AuthorizeModuleCapability`, which re-reads the live installation, its
+  revision and the principal's producer epoch in **one** statement — three
+  separate reads would let a revoke land between two of them and produce a
+  decision describing a state that never existed. The revocation predicate is a
+  conjunction and each term closes a different hole:
 
-  **The target**, for whoever builds it: both halves bind and neither alone is
-  enough. The credential **seals** a ceiling — principal id and epoch, the one
-  installation id and revision it is for, the build incarnation, and for an
-  operation context the binding id and revision — and every capability decision
-  **re-reads** the live envelope, authority document and installation before
-  acting. The effective authority is the intersection, which is strictly stronger
-  than either half: narrowing keeps taking effect immediately through the live
-  re-read, and **widening never reaches a credential already issued**, because a
-  widened grant changes the *replacement* credential and not the one in flight.
+  - **installation freshness**, without which an uninstall-and-reinstall produces
+    a new installation an old credential would satisfy;
+  - **producer epoch**, without which a narrowing revokes only the credential
+    being held and the replacement is reminted with the old authority — so the
+    narrowing undoes itself after one credential lifetime;
+  - **binding revision**, for an operation context, resolved by
+    `Service.ExactOperationBinding`.
 
-  The intersection must cover queues, resources, namespaces, external publication
-  and audiences — not only operation scopes — and verification must be by **exact
-  binding lookup**, never by searching a principal's bindings for one that happens
-  to contain the presented scopes. It is gated on the Work Context cutover to
-  core's `workcontext`, which is where the sealed fields come from, and on an
-  execution-bound mint, which is the only thing that can answer the build
-  incarnation from an independent source. Both are tracked on #952 / PR #953 as
-  Lane 3 conditions 1 and 2.
+  A host that *cannot* re-read refuses every capability (`FailedPrecondition`)
+  rather than falling back to the declared ceiling. A read that *fails* is
+  `Unavailable` — neither a denial nor an allow, because a database blip is not
+  mass revocation and an allow would be the check not running.
+
+  **The exact binding lookup exists; one call site still searches, and it is
+  named here rather than glossed.** `Service.ExactOperationBinding` resolves the
+  one binding a credential named, by id, and refuses a capability that names none
+  rather than falling back — an optional exact lookup is a search with extra
+  steps, so the fallback is the whole defect.
+
+  But `moduleOperationContextStale` (`module_operation_context.go`) **still
+  searches**: it iterates `grant.OperationAudiences` and accepts if **any**
+  binding's `headless_scopes` contain the presented set. So a context minted
+  against a narrow binding is satisfied by any **wider** binding the principal
+  also holds, and narrowing one binding achieves nothing while a broader one
+  survives. That is the defect both reviews named.
+
+  It cannot be routed through the exact lookup yet, and the reason is structural
+  rather than effort: the staleness check has no binding id to look up, because
+  the credential does not carry one. Sealing the binding id is the Work Context
+  cutover, so this site is **gated on condition 2**, not pending on condition 1.
+  Until then, `operationScopesSubset` there is bounding-by-search and the
+  narrowing it misses is real.
+
+  **Deferred work is re-checked when it runs**, not when it is enqueued, because
+  "at use" has to mean at the moment of use. A producer stamps
+  `DeferredWorkAuthority`; a worker re-checks it and revoked work fails
+  **terminally** (`ErrDeferredWorkRevoked`) rather than retrying — the authority
+  will not come back by waiting. An unreadable authority stays retryable, because
+  nothing was decided.
+
+  **Absence is not zero, and this is the trap.** `SealedModuleAuthority`'s fields
+  are pointers, so a credential carrying no claim about a term is skipped rather
+  than compared against zero. "Treat missing as zero" is the shorter
+  implementation, it looks exactly like a check, and it admits every unsealed
+  credential — which is all of them until the Work Context cutover. Core's own
+  seal made the same change for the same reason: `build_incarnation` and
+  `image_digest` became optional so "bears no execution" and "bears execution
+  zero" stopped being the same bytes.
+
+  `TestEveryModuleCapabilityPathReReadsLiveAuthority` in `module/tools` is what
+  makes "every path" true rather than aspirational: it walks the AST for any
+  function calling `moduleGrant` directly and holds the set against a
+  **shrink-only** baseline, now empty. Its non-vacuity check is anchored on the
+  enforcement rather than on the violations — zero direct callers is the goal, so
+  deleting the wrapper must not satisfy it.
+
+  **What is NOT built, and so must not be relied on.** The credential seals
+  identity and tenant only: the mint does not yet populate the installation id,
+  revision, epoch or binding fields, so in a running deployment every
+  `Sealed` is nil and the intersection is the live half alone. That is sound for
+  narrowing and silent about widening, which is strictly better than before and
+  strictly weaker than the target. The build incarnation is absent entirely — the
+  mint authenticates with a shared secret and so cannot answer what the caller is
+  running. The intersection also does not yet cover queues, resources,
+  namespaces, external publication and audiences; only the three authority terms
+  above. Those are gated on the Work Context cutover to core's `workcontext` and
+  on an execution-bound mint, tracked on #952 / PR #953 as Lane 3 conditions 1
+  and 2.
 - The module presents that token in `x-codefly-work-context` on every capability
   call; accounts takes the calling principal and its bound tenant **from the
   verified token, never from request metadata**. Work Contexts cap at 15 minutes,

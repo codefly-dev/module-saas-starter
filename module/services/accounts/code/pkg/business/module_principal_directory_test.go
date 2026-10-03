@@ -66,6 +66,8 @@ func TestListPrincipals_NamesTheModulesActingInTheOrg(t *testing.T) {
 		t.Helper()
 		svc, err := NewService(&pagedPrincipalStore{rows: []*Principal{human}, next: next})
 		require.NoError(t, err)
+		withCurrentAuthority(svc)
+		withCurrentAuthority(svc)
 		svc.SetModulePrincipals(registry)
 		out, token, err := svc.ListPrincipals(context.Background(), orgID, kind, 50, pageToken)
 		require.NoError(t, err)
@@ -141,6 +143,8 @@ func TestListPrincipals_ModulesComeOutOfThePageBudget(t *testing.T) {
 		store := &pagedPrincipalStore{rows: []*Principal{human}, next: next}
 		svc, err := NewService(store)
 		require.NoError(t, err)
+		withCurrentAuthority(svc)
+		withCurrentAuthority(svc)
 		svc.SetModulePrincipals(registry)
 		out, _, err := svc.ListPrincipals(context.Background(), org, "", 50, pageToken)
 		require.NoError(t, err)
