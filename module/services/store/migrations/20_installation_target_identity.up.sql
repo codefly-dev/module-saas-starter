@@ -50,11 +50,31 @@ ALTER TABLE public.installations NO FORCE ROW LEVEL SECURITY;
 -- is carried over to that target. "Exactly one" is a property of the schema
 -- rather than a hope: `solution_targets_live_solution` is a unique index over
 -- `solution_id` where the target is open, so this join can match at most one row.
+-- The alias alone is NOT enough to carry consent over, and matching on it alone
+-- performs exactly the transfer the next statement's comment says this migration
+-- exists to prevent.
+--
+-- A route alias is a REUSABLE property of a target, never its identity. If a
+-- binding was withdrawn and a different one later took the same alias, the "one
+-- live target serving this alias" at migration time belongs to the SECOND
+-- binding — and an installation consented to the first would silently become an
+-- installation of the second. Same alias, different solution, consent moved
+-- without anyone acting.
+--
+-- `i.created_at >= t.opened_at` is what closes it: the installation must have
+-- been created during the period this target has been open. An installation that
+-- predates the target cannot have consented to it, so it falls through to the
+-- revocation below rather than being carried across a period boundary.
+--
+-- This is strictly narrower than the alias match, so it can only ever revoke
+-- more — which is the right direction for a disposition that cannot be reviewed
+-- case by case.
 UPDATE public.installations AS i
    SET target_id = t.id
   FROM public.solution_targets AS t
  WHERE t.closed_generation IS NULL
    AND t.solution_id = i.solution_identifier
+   AND i.created_at >= t.opened_at
    AND i.status = 'active';
 
 -- Everything else is REVOKED, with the reason recorded.
@@ -169,9 +189,21 @@ BEGIN
     IF NEW.status <> 'active' OR NEW.target_id IS NULL THEN
         RETURN NEW;
     END IF;
+    -- FOR UPDATE, because reading the target without locking it lets this
+    -- insert race a withdrawal: the trigger reads "open", a concurrent
+    -- transaction closes the target, and both commit — leaving an ACTIVE
+    -- installation of a withdrawn target, which is the state the trigger exists
+    -- to make unreachable.
+    --
+    -- Withdrawal closes a target with an UPDATE, which takes the same row lock,
+    -- so the two serialize: whichever reaches the row first wins and the other
+    -- sees its committed result. Locking the target rather than the
+    -- installation is what makes this work — the two transactions touch
+    -- different installation rows and would never contend there.
     SELECT t.closed_generation, TRUE INTO closed, found
       FROM public.solution_targets t
-     WHERE t.id = NEW.target_id;
+     WHERE t.id = NEW.target_id
+       FOR UPDATE;
     IF NOT COALESCE(found, FALSE) THEN
         RAISE EXCEPTION 'solution target % does not exist', NEW.target_id
             USING ERRCODE = 'foreign_key_violation';
