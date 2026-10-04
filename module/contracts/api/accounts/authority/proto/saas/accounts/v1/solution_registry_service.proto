@@ -5,55 +5,9 @@ package saas.accounts.v1;
 import "saas/accounts/v1/solution_registry.proto";
 import "saas/policy/v1/options.proto";
 
-// The durable solution registry's service surface (issue #534). It is split
-// from the messages in solution_registry.proto so the auth-gateway — the only
-// client — can generate those messages without also vendoring the policy
-// options this file needs.
-//
-// Every method is EXPOSURE_INTERNAL: the gateway reaches them over the accounts
-// internal listener, and it brokers the frontend's half as well as its own, so
-// the frontend holds no second connection to accounts.
-
-// SolutionRegistryService is the durable authority behind both self-registration
-// surfaces. Every method is internal: the gateway is the only client, and it
-// brokers the frontend's half as well as its own.
+// Internal read service for declared solution state. The gateway is the client
+// and brokers the registry projection to the frontend.
 service SolutionRegistryService {
-  // PutSolutionRegistration writes or renews one half of a solution's
-  // registration under compare-and-swap revision semantics.
-  rpc PutSolutionRegistration(PutSolutionRegistrationRequest) returns (SolutionRegistration) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_INTERNAL
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.solution.registration_updated"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_INTERNAL
-      request_sensitivity: SENSITIVITY_CONFIDENTIAL
-      response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-  }
-  // DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
-  // a later heartbeat from the retired deployment cannot resurrect.
-  rpc DeleteSolutionRegistration(DeleteSolutionRegistrationRequest) returns (SolutionRegistration) {
-    option (saas.policy.v1.method_policy) = {
-      exposure: EXPOSURE_INTERNAL
-      tenant: TENANT_REQUIREMENT_NONE
-      mfa: MFA_REQUIREMENT_NONE
-      audit: {
-        events: "saas.solution.registration_deleted"
-        emission: AUDIT_EMISSION_SUCCESS
-      }
-      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
-      rate_limit: RATE_LIMIT_CLASS_INTERNAL
-      request_sensitivity: SENSITIVITY_CONFIDENTIAL
-      response_sensitivity: SENSITIVITY_CONFIDENTIAL
-      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
-    };
-  }
   // ListSolutionHostBindings returns the declared bindings: what delivery has
   // shown this host, what the host applied, and why a desired generation is not
   // the applied one (issue #952). It is the answer to "is this solution missing,

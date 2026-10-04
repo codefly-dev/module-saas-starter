@@ -37,7 +37,6 @@ export type SolutionFrontendBinding = Message<"saas.accounts.v1.SolutionFrontend
    * @generated from field: string contract_version = 3;
    */
   contractVersion: string;
-
 };
 
 /**
@@ -73,7 +72,6 @@ export type SolutionBackendBinding = Message<"saas.accounts.v1.SolutionBackendBi
    * @generated from field: string contract_version = 4;
    */
   contractVersion: string;
-
 };
 
 /**
@@ -97,8 +95,7 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
   solutionId: string;
 
   /**
-   * Owner of record. First claim binds it; a registration naming a different
-   * publisher is refused rather than overwriting.
+   * Canonical publisher attribution of the declared record.
    *
    * @generated from field: string publisher = 2;
    */
@@ -135,8 +132,7 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
   tombstonedAt?: Timestamp;
 
   /**
-   * The binding that declared this record, absent when the record exists because
-   * a runtime registered itself (issue #952).
+   * The binding and immutable target that declared this record.
    *
    * @generated from field: optional saas.accounts.v1.SolutionDeclaredBinding declared = 9;
    */
@@ -149,14 +145,6 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
  */
 export const SolutionRegistrationSchema: GenMessage<SolutionRegistration> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_solution_registry, 2);
-
-
-
-
-
-
-
-
 
 /**
  * ListSolutionRegistrationsRequest reads the whole registry. There is one
@@ -209,6 +197,7 @@ export const ListSolutionRegistrationsResponseSchema: GenMessage<ListSolutionReg
 
 /**
  * SolutionDeclaredBinding identifies the applied declaration and target.
+ *
  * @generated from message saas.accounts.v1.SolutionDeclaredBinding
  */
 export type SolutionDeclaredBinding = Message<"saas.accounts.v1.SolutionDeclaredBinding"> & {
@@ -462,10 +451,8 @@ export const ListSolutionHostBindingsResponseSchema: GenMessage<ListSolutionHost
   messageDesc(file_saas_accounts_v1_solution_registry, 10);
 
 /**
- * SolutionRegistrationStatus is derived at read time from the stored record; it
- * is never a stored column. It is what lets an operator tell a registration
- * that was never completed from one whose publisher stopped renewing, and both
- * from one that was deliberately removed.
+ * SolutionRegistrationStatus is derived from declared state and complete,
+ * compatible frontend/backend observations, never from an expiring lease.
  *
  * @generated from enum saas.accounts.v1.SolutionRegistrationStatus
  */
@@ -490,7 +477,6 @@ export enum SolutionRegistrationStatus {
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_PENDING = 2;
    */
   PENDING = 2,
-
 
   /**
    * The two halves declare different contract versions, so activating them
