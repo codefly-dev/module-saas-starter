@@ -6,14 +6,21 @@ global sequence, owns the signing key, and records the committed prefix in its
 own object store. A warehouse insert is only a mirror of that evidence.
 
 **Implementation status:** the witness, GCS adapter, fixed-path key loader,
-warehouse writer, and transport-independent service are implemented and tested.
-There is no runnable binary or protobuf/OpenAPI projection yet. The service is
-declared in the module inventory and has its own private endpoint, service
-account, and deployment declaration, but cannot be deployed until its transport
-is built. The repository's required no-change Codefly proto-generation
-check could not run because the Docker socket was inaccessible. No generated
-code was hand-written. The host's client is separate work; no host Go
-code is changed here. This directory is not evidence of a deployed transport.
+warehouse writer, transport-independent service, protobuf projection, gRPC
+server and runnable binary are implemented and tested. The service is declared
+in the module inventory and has its own private endpoint, service account, and
+deployment declaration.
+
+What is still missing is **delivery**, not code: the `policy-log` configuration
+group ships no local default, so no environment here can boot this service, and
+the signing key's fixed path exists on no development machine. Both refusals are
+deliberate — see [Transport](#transport) for what that means for `codefly run`.
+No generated code was hand-written: the required no-change Codefly
+proto-generation check ran and came back byte-identical on two sibling services,
+and this service's own tree regenerates reproducibly. The host's client is
+separate work; no host Go code is changed here. Nothing in this directory has
+been deployed or booted, and the OpenAPI projection does not exist because the
+endpoint is private gRPC and reaches no gateway.
 
 ## Trust domain
 
@@ -37,12 +44,14 @@ path, insecure warehouse transport, or emulator option. The GCS constructor
 refuses a storage emulator setting. The warehouse uses its own mandatory bearer
 credential over HTTPS and refuses redirects.
 
-The future listener must remain private. Composition must admit only the host's
-declared client through workload-authenticated mesh policy, resolve its endpoint
-through Codefly, and deliver credentials exclusively to that client and this
-service. A shared credential available to arbitrary composed workloads is not
-sufficient authority to append. No caller supplies sequence numbers or receipt
-timestamps.
+The listener is private and must stay private. Composition must admit only the
+host's declared client through workload-authenticated mesh policy, resolve its
+endpoint through Codefly, and deliver credentials exclusively to that client and
+this service. A shared credential available to arbitrary composed workloads is
+not sufficient authority to append. No caller supplies sequence numbers or
+receipt timestamps. `TestTheWitnessListenerStaysPrivate` holds the manifest to
+that: a second endpoint, a declared `visibility`, a Connect listener, a REST api
+or any service dependency fails it.
 
 [service.codefly.yaml](service.codefly.yaml) uses the same `go-grpc` agent and
 Codefly-allocated endpoint convention as the other Go services. Its `policy-log`
@@ -54,7 +63,7 @@ store dependency and is not a public or module-visible interface export.
 ## Contract
 
 The authored Go contract is [code/witness/contract.go](code/witness/contract.go).
-The transport adapter must expose these four unary operations through
+The transport adapter exposes these four unary operations through
 [code/service/service.go](code/service/service.go):
 
 | Operation | Request | Response |
@@ -150,6 +159,67 @@ write the host's trust anchor. The schema matches `Keys`:
 trust-anchor replacement. Key rotation is deliberately not implemented: boot
 with a different key refuses when the existing history fails verification.
 
+## Transport
+
+[proto/saas/policylog/v1/witness.proto](proto/saas/policylog/v1/witness.proto)
+is the only wire projection of the Go contract, and
+[code/server/server.go](code/server/server.go) is the only adapter. The server
+owns the wire shape and the error translation and no policy of its own:
+validation, sequencing, signing and the five-second budget stay behind the
+service boundary. Regenerate with the command in
+[proto/README.md](proto/README.md); never by hand and never with `buf generate`.
+
+The proto carries every contract field losslessly, which is a requirement rather
+than a convenience: the digests travel as raw bytes and the timestamps as
+seconds and nanoseconds, so a reader can recompute `entry_hash` from the entry
+it received, and a retry of one operation reproduces the same hash. The one
+thing the projection has to add is a **refusal of an absent `requested_at`**:
+`AsTime` of a missing Timestamp is 1970-01-01, which `Entry.Validate` accepts,
+so without that check the witness would sign a hash over a timestamp the caller
+never sent and no retry could reproduce it.
+
+The five taxonomy errors are not interchangeable and each gets its own code. A
+caller told the wrong one either gives up on a state that was about to clear or
+retries one that never will:
+
+| Contract error | Code | What the caller must do |
+| --- | --- | --- |
+| `ErrInvalid` | `InvalidArgument` | Never retry these bytes; they cannot be made to succeed |
+| `ErrConflict` | `AlreadyExists` | Permanent: the operation id names different bytes. Do not retry, and do not rename the operation to get past it |
+| `ErrPending` | `FailedPrecondition` | Do not retry this operation. Only an explicit retry of the operation holding the next sequence can clear it — and it does clear, which is why this is not `AlreadyExists` |
+| `ErrRollback` | `Aborted` | A sequencer check failed: the head regressed, changed a known hash, or the caller is ahead of the log. Stop serving the authority still held locally |
+| `ErrIntegrity` | `DataLoss` | The log's own stored evidence does not verify. Unrecoverable, and distinct from a regression |
+| cancellation / deadline | `Canceled` / `DeadlineExceeded` | Genuinely ambiguous: a storage request in flight can have committed. Retry the identical operation and let the head answer |
+| anything else | `Unavailable` | No sequence was assigned and no receipt exists; retry the identical operation |
+
+`Unavailable` deliberately carries a fixed message. A store error can name a
+bucket and an endpoint, the caller's correct behaviour does not depend on it,
+and the detail goes to this service's own failure reporter instead.
+
+[code/main.go](code/main.go) is the binary. Every construction happens **before**
+`net.Listen`, in this order, and any failure is fatal: resolve the whole
+configuration group, read the Codefly-allocated port, load the fixed-path
+signing key, open the bucket, build the warehouse writer, start the mirror
+worker, then `witness.Open`, which verifies the entire committed chain under
+that key. A witness that accepted an append it could not sign, store, or verify
+the history of would be worse than one that is down, because the caller would
+commit against it.
+
+`POLICY_LOG_BUCKET`, `POLICY_LOG_WAREHOUSE_ENDPOINT` and
+`POLICY_LOG_WAREHOUSE_TOKEN` come from the `policy-log` configuration group and
+from nowhere else. There is no process-environment fallback, no default bucket
+and no development bypass, so an ambient value cannot make this service witness
+somewhere nobody provisioned — and the refusal names the missing keys, never the
+delivered values, because one of the three is a credential. The consequence is
+that **`codefly run` cannot start this service on a workstation**: the group
+ships no local default and the fixed key path exists on no development machine.
+That is the posture the trust domain requires, not an oversight; a local harness
+for it would be a development bypass by another name.
+
+The listener registers the four witness operations and nothing else — no
+reflection service and no health service — because its surface is the whole of
+what a composed workload could reach if mesh policy ever leaked.
+
 ## Storage and failures
 
 [objectstore.Store](code/objectstore/store.go) has two operations: a strongly
@@ -237,7 +307,14 @@ From `code/`:
 ```sh
 go build ./...
 go vet ./...
+gofmt -l .
 go test -race -v ./...
+```
+
+From `module/services/policy-log`, after any proto change and before it:
+
+```sh
+codefly generate proto --proto ./proto --output .. --template policy-log/proto/buf.gen.yaml
 ```
 
 The witness tests independently encode the hashes and signatures and exercise
@@ -248,8 +325,25 @@ They do not contact GCS. Key tests refuse absent and invalid fixed-path keys;
 service tests prove that a failed head write never offers an entry to the mirror
 and a failed mirror cannot decide whether a receipt exists.
 
-Real GCS, deployed IAM/retention policy, container startup, the Codefly service
-graph, generated wire artifacts, and a running host client have not been
-exercised. The fixed key-path literal also requires an explicit repository
-naming-policy decision: the existing exemption for the host trust anchor does
-not cover this new file. No gate or allowlist was weakened here.
+The transport is tested twice over. `code/server/server_test.go` drives each arm
+of the error taxonomy directly, which is the only way to reach all of them, and
+asserts that two arms never share a code and that no sentinel is left unmapped.
+`code/server/transport_test.go` then runs the whole shipped stack — witness,
+service, projection, generated client — over a real loopback gRPC connection, so
+the arms are the ones the shipped code actually raises: a receipt that verifies
+under the key `Keys` publishes, a retry returning the original receipt, a reused
+operation id with different bytes as `AlreadyExists`, an interrupted append as
+`FailedPrecondition` until its own retry finishes it, and a read at `head + 1`
+empty while `head + 2` refuses.
+
+Not exercised, by name: real GCS, deployed IAM and retention policy, the
+container build, `codefly ci run`, `codefly run` and the Codefly service graph,
+a deployed mesh policy, and a running host client. **Nothing here has been
+deployed or booted** — the binary's own startup path (`codefly.Init`, the
+injected port, the fixed-path key, the GCS client, `witness.Open` against a real
+bucket) is covered by no test and has never executed. The signature of
+`resolveSettings` is tested; its one caller's use of `WorkspaceValue` is not.
+
+The fixed key-path literal still requires an explicit repository naming-policy
+decision: the existing exemption for the host trust anchor does not cover this
+new file. No gate or allowlist was weakened here.

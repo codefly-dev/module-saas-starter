@@ -14,9 +14,11 @@ endpoints:
     - name: grpc
 spec:
     hot-reload: true
+    # Only the Go and gRPC bindings. There is no OpenAPI document because the
+    # endpoint is private gRPC and reaches no gateway, and a declared generated
+    # directory nothing writes is a claim no regeneration can reproduce.
     protocol-output-dirs:
         - code/pkg/gen
-        - generated/openapi-raw
     service-account:
         name: policy-log
     deployment:

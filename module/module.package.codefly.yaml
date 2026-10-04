@@ -38,6 +38,8 @@ services:
     endpoints: [http]
   - name: marketing
     endpoints: [http]
+  - name: policy-log
+    endpoints: [grpc]
   - name: store
     endpoints: [tcp]
   - name: telemetry

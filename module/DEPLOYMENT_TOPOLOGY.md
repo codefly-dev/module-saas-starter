@@ -21,11 +21,22 @@ anywhere else.
 | `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + the internal-authority and internal-HTTP AuthorizationPolicies + waypoint); mirrors those resources from the per-environment GitOps mesh baseline, not the whole of it — the namespace `default-deny` and the L4 internal policies are rendered there only. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
-The normalized inventory currently contains eight services, twelve endpoints,
-eight dependency edges, four module-interface endpoints, and four explicit
-public-egress grants (`deployment_topology_test.go` pins the counts). The accounts descriptor catalog is an input: if its RPCs
-use gRPC, Connect, or REST without a corresponding accounts endpoint,
-generation fails.
+`deployment_topology_test.go` pins the normalized inventory's shape — how many
+services, endpoints, dependency edges, module-interface endpoints and explicit
+public-egress grants it contains — and that test is the authority. The numbers
+are deliberately NOT repeated here: this paragraph stated five of them and every
+one was stale, because a count in prose is enforced by nothing and a service
+added elsewhere does not touch it. Read them from the assertions.
+
+The accounts descriptor catalog is an input: if its RPCs use gRPC, Connect, or
+REST without a corresponding accounts endpoint, generation fails.
+
+`policy-log` is in the inventory with one private `grpc` endpoint and appears in
+NO row of the service graph below, which is correct rather than an omission: it
+declares no dependency on anything, and the host's client for it is not built
+yet, so there is no edge to draw. When that client lands it adds an
+`accounts` → `policy-log/grpc` row and nothing else — the witness must never
+depend on the database whose authority it witnesses.
 
 ## Service graph
 
