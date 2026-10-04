@@ -137,11 +137,11 @@ func (a *SolutionAuthorityActivation) Activate(
 	if err != nil {
 		return solutionhost.Activation{}, err
 	}
-	appliedPresence, hasApplied, err := a.appliedPresence(ctx, binding)
-	if err != nil {
-		return solutionhost.Activation{}, err
-	}
-
+	// The applied-presence read is gone with the fields it fed. It is NOT
+	// replaced by something weaker: core v0.9.0 judges the delivered tuple, and
+	// the one thing this host still owes — finding a tombstone delivered under a
+	// different authority id — is done by deliveredAuthority reading every
+	// authority document over the binding, not by reporting applied state.
 	host := a.reconciler.host
 	return solutionhost.Activate(solutionhost.ActivationRequest{
 		Authority:       authority,
@@ -150,17 +150,23 @@ func (a *SolutionAuthorityActivation) Activate(
 		Build:           build,
 		Envelope:        a.envelope,
 		DomainsBySigner: host.DomainsBySigner,
-		// This host applies authority to nothing, so it holds no record and
-		// says so. See the file comment for where the replay protection the
-		// fold would give comes from instead, and for the withdrawal check that
-		// stands in for the part the inbox cannot do by itself.
-		Applied:              solutionhost.AppliedAuthority{},
-		FirstAuthorityRecord: true,
-		AppliedPresence:      appliedPresence,
-		FirstPresenceRecord:  !hasApplied,
 	})
 }
 
+// Core v0.9.0 removed `Applied`, `FirstAuthorityRecord`, `AppliedPresence` and
+// `FirstPresenceRecord` from ActivationRequest: activation no longer takes the
+// host's applied state at all. The request is now the tuple plus the questions
+// only the caller can answer — the coordinate and the build — which core
+// documents as deliberate, because "reading the host out of the halves that
+// claim it would make the question answer itself".
+//
+// That does NOT retire the withdrawal check below. Core's activation judges the
+// documents it is handed; it does not know that a tombstone for this binding was
+// delivered under a different authority id, because nothing in the request
+// carries the inbox. Reading every authority document over the binding is still
+// this host's job, and it is the one part of the old applied-record argument that
+// survives the field removal.
+//
 // deliveredAuthority reads the live authority document over one binding.
 //
 // EVERY delivered authority document is read, not just the one that matches.
@@ -238,26 +244,6 @@ func (a *SolutionAuthorityActivation) deliveredPresence(
 	}
 	return nil, fmt.Errorf("%w: no presence document is delivered for binding %q",
 		ErrSolutionAuthorityNotDelivered, binding)
-}
-
-// appliedPresence is the host's own record for the binding, which core folds the
-// delivered presence generation against: a tombstoned binding at generation 5
-// must not activate a genuinely signed generation 4.
-func (a *SolutionAuthorityActivation) appliedPresence(
-	ctx context.Context, binding string,
-) (solutionhost.Applied, bool, error) {
-	records, err := a.reconciler.service.ListSolutionHostBindings(ctx)
-	if err != nil {
-		return solutionhost.Applied{}, false, err
-	}
-	for _, record := range records {
-		if record.BindingID != binding {
-			continue
-		}
-		applied, ok := record.AppliedState()
-		return applied, ok, nil
-	}
-	return solutionhost.Applied{}, false, nil
 }
 
 func (a *SolutionAuthorityActivation) newestDelivered(
