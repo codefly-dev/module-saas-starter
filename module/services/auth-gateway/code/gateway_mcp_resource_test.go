@@ -284,7 +284,7 @@ func TestGateway_ProtectedResourceMetadata_DescribesAnyWellFormedSolutionID(t *t
 		"/.well-known/oauth-protected-resource/solutions/example",
 		"/.well-known/oauth-protected-resource/solutions/example/mcp/tools",
 		"/.well-known/oauth-protected-resource/v1/users",
-		"/.well-known/oauth-protected-resource/solutions/Wiki/mcp",
+		"/.well-known/oauth-protected-resource/solutions/Example/mcp",
 	} {
 		req = httptest.NewRequest(http.MethodGet, path, nil)
 		w = httptest.NewRecorder()

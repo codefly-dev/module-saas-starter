@@ -53,7 +53,7 @@ func TestEveryOtherResourceShapeIsRefused(t *testing.T) {
 		// decoded path while the audience string carries the escaped form.
 		"https://host.example.com/solutions/a%2Fb/mcp",
 		// Solution ids are one lowercase segment.
-		"https://host.example.com/solutions/Wiki/mcp",
+		"https://host.example.com/solutions/Example/mcp",
 		"https://host.example.com/solutions/-example/mcp",
 		"https://host.example.com/solutions/example-/mcp",
 	} {
