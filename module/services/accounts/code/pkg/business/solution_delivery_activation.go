@@ -179,37 +179,20 @@ func (a *SolutionAuthorityActivation) Activate(
 func (a *SolutionAuthorityActivation) deliveredAuthority(
 	ctx context.Context, binding string,
 ) (*solutionhost.DeliveredAuthority, error) {
-	records, err := a.newestDelivered(ctx, SolutionDeliveryAuthority)
+	delivered, err := a.verifiedAuthority(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var live []*solutionhost.DeliveredAuthority
-	for _, record := range records {
-		delivered, err := solutionhost.VerifyDeliveredAuthority(ctx, carrierOf(record), a.reconciler.verifier)
-		if err != nil {
-			// FAIL CLOSED OVER THE WHOLE READ rather than skipping the row.
-			// The binding a row is over is only knowable by reading it, so a
-			// row this host can no longer verify leaves the authority state for
-			// EVERY binding unestablished — including whether a withdrawal is
-			// among them. Skipping it would make an unverifiable tombstone
-			// disappear, which is the one row whose disappearance grants
-			// something.
-			return nil, fmt.Errorf("re-verify delivered authority %s generation %d: %w",
-				record.DocumentID, record.Generation, err)
-		}
-		document, err := delivered.Document()
-		if err != nil {
-			return nil, fmt.Errorf("read delivered authority %s generation %d: %w",
-				record.DocumentID, record.Generation, err)
-		}
-		if document.PresenceBinding != binding {
+	for _, one := range delivered {
+		if one.document.PresenceBinding != binding {
 			continue
 		}
-		if document.Removed {
+		if one.document.Removed {
 			return nil, fmt.Errorf("%w: authority %q was withdrawn at generation %d, and a withdrawal is terminal for binding %q — re-signing under a new authority id does not reinstate it",
-				ErrSolutionAuthorityWithdrawn, document.Authority, document.Generation, binding)
+				ErrSolutionAuthorityWithdrawn, one.document.Authority, one.document.Generation, binding)
 		}
-		live = append(live, delivered)
+		live = append(live, one.delivered)
 	}
 	switch len(live) {
 	case 0:
@@ -219,6 +202,81 @@ func (a *SolutionAuthorityActivation) deliveredAuthority(
 		return live[0], nil
 	}
 	return nil, fmt.Errorf("%w: %d over binding %q", ErrSolutionAuthorityAmbiguous, len(live), binding)
+}
+
+// verifiedAuthorityDocument pairs a re-verified carrier with the document it
+// carries, so a caller that needs both does not verify twice — and, more to the
+// point, so there is exactly one place where a stored row is turned back into a
+// document this host accepts.
+type verifiedAuthorityDocument struct {
+	delivered *solutionhost.DeliveredAuthority
+	document  *solutionhost.AuthorityDocument
+}
+
+// verifiedAuthority re-verifies EVERY newest-generation authority row and
+// returns what it read, tombstones included.
+//
+// FAIL CLOSED OVER THE WHOLE READ rather than skipping the row. The binding a
+// row is over is only knowable by reading it, so a row this host can no longer
+// verify leaves the authority state for EVERY binding unestablished — including
+// whether a withdrawal is among them. Skipping it would make an unverifiable
+// tombstone disappear, which is the one row whose disappearance grants
+// something.
+//
+// Tombstones are RETURNED rather than filtered here, because the two callers
+// need opposite things from them and neither reading is the general one:
+// activation treats a tombstone over its binding as terminal, while the
+// approved-build view treats it as the removal of a principal's entry. A helper
+// that dropped them would silently give the second caller the first caller's
+// answer.
+func (a *SolutionAuthorityActivation) verifiedAuthority(
+	ctx context.Context,
+) ([]verifiedAuthorityDocument, error) {
+	records, err := a.newestDelivered(ctx, SolutionDeliveryAuthority)
+	if err != nil {
+		return nil, err
+	}
+	read := make([]verifiedAuthorityDocument, 0, len(records))
+	for _, record := range records {
+		delivered, err := solutionhost.VerifyDeliveredAuthority(ctx, carrierOf(record), a.reconciler.verifier)
+		if err != nil {
+			return nil, fmt.Errorf("re-verify delivered authority %s generation %d: %w",
+				record.DocumentID, record.Generation, err)
+		}
+		document, err := delivered.Document()
+		if err != nil {
+			return nil, fmt.Errorf("read delivered authority %s generation %d: %w",
+				record.DocumentID, record.Generation, err)
+		}
+		read = append(read, verifiedAuthorityDocument{delivered: delivered, document: document})
+	}
+	return read, nil
+}
+
+// liveAuthorityDocuments returns the authority documents that are in force:
+// every re-verified document that is not a tombstone.
+//
+// A tombstone is DROPPED rather than reported, and that is the removal the
+// approved-build view needs — a withdrawn authority leaves its principals with
+// no entry, so they go back to being unknown and are refused. Reporting it as
+// an error instead would make one withdrawal stop the whole view from being
+// rebuilt, which keeps the withdrawn build serving: the opposite of what the
+// withdrawal asked for.
+func (a *SolutionAuthorityActivation) liveAuthorityDocuments(
+	ctx context.Context,
+) ([]*solutionhost.AuthorityDocument, error) {
+	read, err := a.verifiedAuthority(ctx)
+	if err != nil {
+		return nil, err
+	}
+	live := make([]*solutionhost.AuthorityDocument, 0, len(read))
+	for _, one := range read {
+		if one.document.Removed {
+			continue
+		}
+		live = append(live, one.document)
+	}
+	return live, nil
 }
 
 // deliveredPresence reads the newest delivered presence document for one
