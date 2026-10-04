@@ -297,6 +297,9 @@ func (s *Service) WithPolicyLoggedNarrowing(
 		_, recordErr := s.policyLogStore.RecordPolicyLogAppend(ctx, receipt, entry)
 		return recordErr
 	}); err != nil {
+		// The gate's cached answer is dropped either way: the append landed,
+		// so a gap exists whether or not this host recorded it.
+		s.policyServing.invalidate()
 		// The append landed and this host could not even record that it did.
 		// The gap exists in the LOG, which reconciliation reads — so this is
 		// reported rather than swallowed, and the next reconciliation pass finds
@@ -304,6 +307,14 @@ func (s *Service) WithPolicyLoggedNarrowing(
 		return fmt.Errorf("record policy log append for operation %q (the append LANDED; reconciliation will find it): %w",
 			entry.OperationID, err)
 	}
+
+	// From here the operation is a GAP, and every replica reading this
+	// host's commit relation sees it. Drop the gate's cached answer so this
+	// host's own next request re-reads rather than serving the decision it
+	// made before the gap existed — and drop it again after the commit, so a
+	// gap that just closed does not keep the host shut for the TTL.
+	s.policyServing.invalidate()
+	defer s.policyServing.invalidate()
 
 	// The narrowing and its receipt in one transaction.
 	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
