@@ -1,12 +1,43 @@
-# Module capability paths that still decide on the DECLARED ceiling alone, by
-# calling moduleGrant directly instead of Service.AuthorizeModuleCapability.
+# Functions that resolve the DECLARED module registry — via moduleGrant or
+# declaredModules — without re-reading live authority.
 #
-# THIS FILE ONLY EVER SHRINKS. A new unrouted path fails
+# THIS FILE ONLY EVER SHRINKS. A new entry fails
 # TestEveryModuleCapabilityPathReReadsLiveAuthority; routing one means deleting
-# its line. Adding a line is a decision a reviewer sees, which is the point — it
-# makes the remaining work finite and visible rather than a claim in a commit
-# message.
+# its line.
 #
-# Each of these re-reads nothing live, so a narrowing of the principal's envelope
-# or a revoked installation does not reach it until its credential expires.
-# Condition 1 of the Lane 3 cutover is the work of emptying this file.
+# An earlier version of that gate watched only `moduleGrant`, so a function
+# reading `declaredModules()` directly bypassed it and the gate was, in a
+# reviewer's words, green about a NAME. Widening it to the registry read itself
+# surfaced these thirteen. They are NOT all the same problem, and the file says
+# which is which rather than implying one disposition:
+#
+# A. CAPABILITY DECISIONS that must be routed through
+#    Service.AuthorizeModuleCapability. These are the real outstanding work.
+module_operation_context.go:ModuleAuthorizeOperationContext
+module_operation_context.go:CheckModuleOperationContextRevision
+module_registration.go:ModuleAuthorizeWorkContext
+source_delegation.go:AuthorizeSourceOperationContext
+source_delegation.go:AuthorizeDelegationReferenceExchange
+#
+# B. WRITES made under a capability already authorised upstream. They re-read the
+#    registry to resolve a declared value rather than to decide authority, so
+#    routing them would re-run a decision their caller already made — but they
+#    are listed because "my caller checked" is exactly the assumption that rots
+#    when a new caller appears.
+solution_audit_events.go:admitDeclaredAuditEventTypesWritten
+solution_audit_events.go:releasedAuditNamespace
+source_delegation.go:recordSourceDelegationsTx
+# A classification helper: it asks only WHETHER a principal is a declared module,
+# to pick the delegation's shape. Its answer is used by callers in group A, which
+# is where the authority decision belongs.
+source_delegation.go:sourceDelegationShape
+#
+# C. NOT capability decisions at all: accessors and listings over the registry,
+#    reached by paths with their own authorisation. They need a disposition other
+#    than routing — most likely an explicit marker — and until that exists they
+#    are here rather than silently excluded by name inside the gate, because
+#    excluding them there would be the gate's author deciding what counts.
+service.go:ModulePrincipals
+principals.go:modulePrincipalsActingIn
+layered_access.go:ListCollectionAccess
+module_capabilities.go:ModuleContentResources
