@@ -272,12 +272,31 @@ a default, reproduces a failure this kind exists to prevent:
   kinds. The credential here is the pod's own projected ServiceAccount token read
   off disk, so there is no workload-identity token to fetch over the network.
 
-What the cell must supply alongside it, through the `vault` configuration group,
-is in [../configurations/local/vault.env](../configurations/local/vault.env):
-an https `VAULT_ADDR`, a `VAULT_CA_FILE` path, `VAULT_AUTH_METHOD=kubernetes` and
-a `VAULT_K8S_ROLE`. accounts refuses every other binding outside the local
-environment, naming the key that is missing or wrong. The projected token's
-audience must be `vault`, not the API server.
+What the cell supplies alongside it, through the `vault` configuration group, is
+only what nobody else has: `VAULT_ADDR` (https), `VAULT_AUTH_METHOD=kubernetes`,
+`VAULT_K8S_MOUNT` and `VAULT_K8S_ROLE`. accounts refuses every other binding
+outside the local environment, naming the key that is missing or wrong.
+
+The two **in-pod** paths are this module's own, so they default rather than being
+restated in a cell's contract — see
+[../configurations/local/vault.env](../configurations/local/vault.env):
+
+| | Path | Rendered by |
+| --- | --- | --- |
+| `VAULT_CA_FILE` | `/etc/vault/ca/ca.crt` | accounts' `spec.config-mounts` entry for the `vault-ca` ConfigMap, whose `ca.crt` the cell's workload-CA stage writes into the product namespace |
+| `VAULT_K8S_TOKEN_PATH` | `/var/run/secrets/vault/token` | accounts' projected ServiceAccount token, audience `vault` |
+
+The token's audience must be `vault`, **not** the API server: accounts will not
+replay the pod's default token against Vault, so `automountServiceAccountToken`
+stays false and the Vault role binds the product namespace's `accounts`
+ServiceAccount at that audience. A cell that mounts the CA elsewhere sets
+`VAULT_CA_FILE` and that wins.
+
+Both mounts are rendered by the `go-grpc` service agent from accounts'
+`spec`, which needs the mount support owed in
+**codefly-dev/service-go-grpc#156**; the agent pin here moves when that
+releases. Until then the declaration is staged and a hosted accounts fails
+closed by name rather than starting without a CA.
 
 **A cell that would rather run this module's Vault** keeps it in its in-cluster
 inventory and declares nothing here. The vault agent then renders the durable

@@ -26,6 +26,19 @@ const DefaultKubernetesMount = "kubernetes"
 // is audience-bound to the API server and must not be replayable against Vault.
 const DefaultKubernetesTokenPath = "/var/run/secrets/vault/token"
 
+// DefaultCAFile is where the deployment mounts the PEM the Vault's certificate
+// chains to — the `vault-ca` ConfigMap's `ca.crt`, under the mount path
+// accounts' own service manifest declares.
+//
+// It has a default for the same reason the token path does: both are in-pod
+// paths the host's own render creates, so the module knows them and the
+// composition does not have to restate them. A cell's coordinate contract
+// emits the facts only it knows — the address, the auth method, the mount and
+// the role — and nothing it would have to copy out of this repository.
+// An overriding value in the `vault` group still wins, for a cell that mounts
+// the CA somewhere else.
+const DefaultCAFile = "/etc/vault/ca/ca.crt"
+
 // KubernetesAuth configures the Kubernetes auth login.
 type KubernetesAuth struct {
 	// Role is the Vault role bound to this service's ServiceAccount. Required.

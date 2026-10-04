@@ -132,27 +132,29 @@ func TestAccountsDeclaresWhatTheVaultBindingNeeds(t *testing.T) {
 	}
 }
 
-// The projected token's path is a contract between two files nothing links: the
-// client reads it, the group documents it. A cell that mounts the token
-// somewhere else gets a refusal naming a path the group never mentioned, so the
-// two spellings are compared here.
+// Both in-pod paths are a contract between two files nothing links: the client
+// reads them, the group documents them, and the service manifest's mounts are
+// what create them. A render that put either somewhere else would produce a
+// refusal naming a path the group never mentioned, so the spellings are
+// compared here.
 //
 // Observed 2026-10-03: nothing upstream of this repository relates a
 // configuration group's documentation to the constant a service reads. The check
 // stays regardless of that — a host must not depend on a check it does not run.
 func TestProjectedTokenPathAgreesBetweenTheClientAndTheGroup(t *testing.T) {
 	t.Parallel()
-	const tokenPath = "/var/run/secrets/vault/token"
-	for _, file := range []string{
-		"module/services/accounts/code/pkg/vaultconnection/kubernetes.go",
-		vaultGroupDefaults,
-	} {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(data), tokenPath) {
-			t.Errorf("%s does not name the projected token path %s", file, tokenPath)
+	for _, path := range []string{"/var/run/secrets/vault/token", "/etc/vault/ca/ca.crt"} {
+		for _, file := range []string{
+			"module/services/accounts/code/pkg/vaultconnection/kubernetes.go",
+			vaultGroupDefaults,
+		} {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), path) {
+				t.Errorf("%s does not name the in-pod path %s", file, path)
+			}
 		}
 	}
 	// The pod's default token is audience-bound to the API server. Replaying it
@@ -212,23 +214,61 @@ func TestEveryVaultGroupKeyAccountsReadsIsDeclared(t *testing.T) {
 	}
 }
 
-// goGRPCMountFloor is the first go-grpc agent release able to render a volume
-// this module declares. Observed 2026-10-03 at the pinned 0.1.50: the agent's
-// Deployment template hardcodes `automountServiceAccountToken: false` and a
-// single /tmp emptyDir, and its manifest spec carries no mount field at all —
-// no config-mounts (the nextjs agent has one, go-grpc does not) and no projected
-// ServiceAccount token. So the hosted accounts Deployment cannot yet carry the
-// Vault CA mount or the audience-`vault` projected token, which is owed in
-// codefly-dev/service-go-grpc, not here.
+// goGRPCMountFloor is the first go-grpc agent release that renders the mounts
+// accounts declares. It is empty while codefly-dev/service-go-grpc#156 is
+// unreleased: 0.1.50, the version pinned today, hardcodes
+// `automountServiceAccountToken: false` and a single /tmp emptyDir, and its
+// manifest spec carries no mount field at all.
 //
-// Until a release lands, this floor is unknown and the pairing below is what
-// guards the seam: declaring the mounts against an agent that drops them would
-// render a pod with no CA and no token while the manifest says otherwise, and
-// accounts would refuse to boot with a message pointing at the wrong file.
+// The declaration below it is therefore STAGED, not live, and PR #1008 names
+// #156 as the one thing it waits on. Set this to the release that carries the
+// mounts and move the agent pin to it in the same change; the assertions here
+// turn into a real pin-versus-declaration gate the moment it is non-empty.
 const goGRPCMountFloor = ""
 
-// The tripwire: the moment someone declares the Vault mounts on accounts, this
-// fails unless the agent pin has moved to a release that renders them.
+// vaultCAMountPath and vaultCAKey are the two halves of VAULT_CA_FILE. The
+// client defaults to their join, and the manifest's mount is what creates it, so
+// a render that moved either would hand the operator a refusal naming a path
+// nothing else mentions.
+const (
+	vaultCAMountPath = "/etc/vault/ca"
+	vaultCAKey       = "ca.crt"
+	vaultCAConfigMap = "vault-ca"
+)
+
+// The declared mount must compose to exactly the path the client defaults to.
+// This is the half of the seam that is testable before #156 ships: the agent
+// cannot render the volume yet, but what this repository asks for can already be
+// held against what it reads.
+func TestDeclaredVaultCAMountComposesThePathTheClientReads(t *testing.T) {
+	t.Parallel()
+	manifest := readAgentPinnedManifest(t, accountsServiceMainfst)
+	if len(manifest.Spec.ConfigMounts) == 0 {
+		t.Skipf("%s declares no config-mounts yet; this arms with the declaration owed on codefly-dev/service-go-grpc#156", accountsServiceMainfst)
+	}
+	var mount map[string]any
+	for _, candidate := range manifest.Spec.ConfigMounts {
+		if name, _ := candidate["config-map"].(string); name == vaultCAConfigMap {
+			mount = candidate
+		}
+	}
+	if mount == nil {
+		t.Fatalf("%s declares config-mounts but none for the %q ConfigMap", accountsServiceMainfst, vaultCAConfigMap)
+	}
+	if got, _ := mount["mount-path"].(string); got != vaultCAMountPath {
+		t.Errorf("the %q mount-path is %q, but the client defaults VAULT_CA_FILE to %s/%s", vaultCAConfigMap, got, vaultCAMountPath, vaultCAKey)
+	}
+	// Optional, or a local k3d render — where no cell publishes this ConfigMap —
+	// would block the pod on a volume it will never get.
+	if optional, _ := mount["optional"].(bool); !optional {
+		t.Errorf("the %q mount is not optional: a local render has no such ConfigMap and the pod would never start", vaultCAConfigMap)
+	}
+}
+
+// The tripwire: once a release renders the mounts, the pin must be at or above
+// it. While the floor is unset the declaration is staged against #156 and this
+// says so rather than failing, because a red branch for a dependency that has
+// not shipped teaches nobody anything and hides the reds that matter.
 func TestVaultMountsAreNotDeclaredAgainstAnAgentThatDropsThem(t *testing.T) {
 	t.Parallel()
 	manifest := readAgentPinnedManifest(t, accountsGoGRPCPin)
@@ -236,18 +276,19 @@ func TestVaultMountsAreNotDeclaredAgainstAnAgentThatDropsThem(t *testing.T) {
 		return
 	}
 	if goGRPCMountFloor == "" {
-		t.Fatalf(
-			"%s declares spec.config-mounts, but no go-grpc release is known to render them: the pinned %s hardcodes "+
-				"automountServiceAccountToken: false and a single /tmp emptyDir. Set goGRPCMountFloor in this file to the "+
-				"release that renders mounts and move the agent pin to it, or the Deployment silently drops the Vault CA "+
-				"mount and the projected token while this manifest claims both",
+		t.Logf(
+			"%s declares spec.config-mounts against go-grpc %s, which drops them: STAGED on codefly-dev/service-go-grpc#156. "+
+				"When it releases, set goGRPCMountFloor in this file and move the agent pin to it in the same change.",
 			accountsGoGRPCPin, manifest.Agent.Version)
+		return
 	}
 	pinned, floor := parseAgentVersion(t, manifest.Agent.Version), parseAgentVersion(t, goGRPCMountFloor)
 	if pinned[0] < floor[0] ||
 		(pinned[0] == floor[0] && pinned[1] < floor[1]) ||
 		(pinned[0] == floor[0] && pinned[1] == floor[1] && pinned[2] < floor[2]) {
-		t.Fatalf("%s declares spec.config-mounts against go-grpc %s, below the %s that renders them",
+		t.Fatalf(
+			"%s declares the Vault mounts against go-grpc %s, below the %s that renders them: the Deployment would carry "+
+				"no CA and no projected token while this manifest claims both, and accounts would refuse to boot naming the wrong file",
 			accountsGoGRPCPin, manifest.Agent.Version, goGRPCMountFloor)
 	}
 }

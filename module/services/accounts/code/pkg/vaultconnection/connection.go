@@ -89,6 +89,12 @@ func Load(ctx context.Context) (*Connection, error) {
 	if ca == "" && runtime == RuntimeLocal {
 		ca, _ = codefly.For(ctx).Service("vault").Configuration("vault", "ca-file")
 	}
+	if ca == "" && runtime == RuntimeDeployed {
+		// The host's own render mounts the CA at this path, so the module knows
+		// it and a cell does not have to restate it. A cell that mounts it
+		// elsewhere sets VAULT_CA_FILE and that wins.
+		ca = DefaultCAFile
+	}
 	switch method := groupValue(ctx, "VAULT_AUTH_METHOD"); method {
 	case "", "token":
 		if runtime == RuntimeDeployed {
