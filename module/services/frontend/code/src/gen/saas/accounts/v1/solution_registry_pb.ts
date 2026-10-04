@@ -13,13 +13,12 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/solution_registry.proto.
  */
 export const file_saas_accounts_v1_solution_registry: GenFile = /*@__PURE__*/
-  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIo0BChdTb2x1dGlvbkZyb250ZW5kQmluZGluZxIQCghyZXZpc2lvbhgBIAEoAxIQCghtYW5pZmVzdBgCIAEoCRIYChBjb250cmFjdF92ZXJzaW9uGAMgASgJEjQKEGxlYXNlX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIqMBChZTb2x1dGlvbkJhY2tlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCHVwc3RyZWFtGAIgASgJEhUKDXNlcnZpY2VfYWxpYXMYAyABKAkSGAoQY29udHJhY3RfdmVyc2lvbhgEIAEoCRI0ChBsZWFzZV9leHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLyAwoUU29sdXRpb25SZWdpc3RyYXRpb24SEwoLc29sdXRpb25faWQYASABKAkSEQoJcHVibGlzaGVyGAIgASgJEhAKCHJldmlzaW9uGAMgASgDEjwKBnN0YXR1cxgEIAEoDjIsLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25SZWdpc3RyYXRpb25TdGF0dXMSQAoIZnJvbnRlbmQYBSABKAsyKS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRnJvbnRlbmRCaW5kaW5nSACIAQESPgoHYmFja2VuZBgGIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25CYWNrZW5kQmluZGluZ0gBiAEBEi4KCnVwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKDXRvbWJzdG9uZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAKIAQESQAoIZGVjbGFyZWQYCSABKAsyKS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRGVjbGFyZWRCaW5kaW5nSAOIAQFCCwoJX2Zyb250ZW5kQgoKCF9iYWNrZW5kQhAKDl90b21ic3RvbmVkX2F0QgsKCV9kZWNsYXJlZCJhChxTb2x1dGlvbkZyb250ZW5kUmVnaXN0cmF0aW9uEh0KCG1hbmlmZXN0GAEgASgJQgu6SAhyBhACGICAEBIiChBjb250cmFjdF92ZXJzaW9uGAIgASgJQgi6SAVyAxiAASKFAQobU29sdXRpb25CYWNrZW5kUmVnaXN0cmF0aW9uEh8KCHVwc3RyZWFtGAEgASgJQg26SApyCBABGIAQiAEBEiEKDXNlcnZpY2VfYWxpYXMYAiABKAlCCrpIB3IFEAEYgAESIgoQY29udHJhY3RfdmVyc2lvbhgDIAEoCUIIukgFcgMYgAEi+wIKHlB1dFNvbHV0aW9uUmVnaXN0cmF0aW9uUmVxdWVzdBJDCgtzb2x1dGlvbl9pZBgBIAEoCUIuukgrcikQARiAATIiXlthLXowLTldKD86W2EtejAtOV8tXSpbYS16MC05XSk/JBIdCglwdWJsaXNoZXIYAiABKAlCCrpIB3IFEAEYgAISJwoRZXhwZWN0ZWRfcmV2aXNpb24YAyABKANCB7pIBCICIABIAYgBARIhCg1sZWFzZV9zZWNvbmRzGAQgASgNQgq6SAcqBRiQHCgeEkIKCGZyb250ZW5kGAUgASgLMi4uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkZyb250ZW5kUmVnaXN0cmF0aW9uSAASQAoHYmFja2VuZBgGIAEoCzItLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25CYWNrZW5kUmVnaXN0cmF0aW9uSABCDQoEaGFsZhIFukgCCAFCFAoSX2V4cGVjdGVkX3JldmlzaW9uIoMBCiFEZWxldGVTb2x1dGlvblJlZ2lzdHJhdGlvblJlcXVlc3QSHwoLc29sdXRpb25faWQYASABKAlCCrpIB3IFEAEYgAESJwoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKANCB7pIBCICIABIAIgBAUIUChJfZXhwZWN0ZWRfcmV2aXNpb24iPgogTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1JlcXVlc3QSGgoSaW5jbHVkZV90b21ic3RvbmVkGAEgASgIIn0KIUxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXNwb25zZRI9Cg1yZWdpc3RyYXRpb25zGAEgAygLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbhIZChFyZWdpc3RyeV9yZXZpc2lvbhgCIAEoAyJlChdTb2x1dGlvbkRlY2xhcmVkQmluZGluZxISCgpiaW5kaW5nX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSDwoHcmVsZWFzZRgDIAEoCRIRCgl0YXJnZXRfaWQYBCABKAkifQodU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SEgoKZ2VuZXJhdGlvbhgBIAEoBBIOCgZkaWdlc3QYAiABKAkSEAoIZG9jdW1lbnQYAyABKAkSJgoCYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrIBCiRTb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb24SQwoKZ2VuZXJhdGlvbhgBIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SDwoHcmVtb3ZlZBgCIAEoCBIOCgZyb3V0ZXMYAyADKAkSEwoLc29sdXRpb25faWQYBCABKAkSDwoHcmVsZWFzZRgFIAEoCSKOBAoYU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlEhIKCmJpbmRpbmdfaWQYASABKAkSFwoPaG9zdF9jb29yZGluYXRlGAIgASgJEhYKDmhvc3RfY29tcG9uZW50GAMgASgJEkUKB2Rlc2lyZWQYBCABKAsyLy5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uSACIAQESTAoHYXBwbGllZBgFIAEoCzI2LnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0FwcGxpZWRHZW5lcmF0aW9uSAGIAQESGgoScGVuZGluZ19nZW5lcmF0aW9uGAYgASgEEhYKDnBlbmRpbmdfcmVhc29uGAcgASgJEjYKDXBlbmRpbmdfc2luY2UYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAKIAQESQQoMcmVnaXN0cmF0aW9uGAkgASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbkgDiAEBEi4KCnVwZGF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQgoKCF9kZXNpcmVkQgoKCF9hcHBsaWVkQhAKDl9wZW5kaW5nX3NpbmNlQg8KDV9yZWdpc3RyYXRpb24iIQofTGlzdFNvbHV0aW9uSG9zdEJpbmRpbmdzUmVxdWVzdCJgCiBMaXN0U29sdXRpb25Ib3N0QmluZGluZ3NSZXNwb25zZRI8CghiaW5kaW5ncxgBIAMoCzIqLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlKqMCChpTb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxIsCihTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASJwojU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19BQ1RJVkUQARIoCiRTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1BFTkRJTkcQAhIoCiRTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX0VYUElSRUQQAxItCilTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX0lOQ09NUEFUSUJMRRAEEisKJ1NPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfVE9NQlNUT05FRBAFQr0BChRjb20uc2Fhcy5hY2NvdW50cy52MUIVU29sdXRpb25SZWdpc3RyeVByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIlcKF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJEhgKEGNvbnRyYWN0X3ZlcnNpb24YAyABKAkibQoWU29sdXRpb25CYWNrZW5kQmluZGluZxIQCghyZXZpc2lvbhgBIAEoAxIQCgh1cHN0cmVhbRgCIAEoCRIVCg1zZXJ2aWNlX2FsaWFzGAMgASgJEhgKEGNvbnRyYWN0X3ZlcnNpb24YBCABKAki8gMKFFNvbHV0aW9uUmVnaXN0cmF0aW9uEhMKC3NvbHV0aW9uX2lkGAEgASgJEhEKCXB1Ymxpc2hlchgCIAEoCRIQCghyZXZpc2lvbhgDIAEoAxI8CgZzdGF0dXMYBCABKA4yLC5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uUmVnaXN0cmF0aW9uU3RhdHVzEkAKCGZyb250ZW5kGAUgASgLMikuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkZyb250ZW5kQmluZGluZ0gAiAEBEj4KB2JhY2tlbmQYBiABKAsyKC5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uQmFja2VuZEJpbmRpbmdIAYgBARIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2Cg10b21ic3RvbmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgCiAEBEkAKCGRlY2xhcmVkGAkgASgLMikuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkQmluZGluZ0gDiAEBQgsKCV9mcm9udGVuZEIKCghfYmFja2VuZEIQCg5fdG9tYnN0b25lZF9hdEILCglfZGVjbGFyZWQiPgogTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1JlcXVlc3QSGgoSaW5jbHVkZV90b21ic3RvbmVkGAEgASgIIn0KIUxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXNwb25zZRI9Cg1yZWdpc3RyYXRpb25zGAEgAygLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbhIZChFyZWdpc3RyeV9yZXZpc2lvbhgCIAEoAyJlChdTb2x1dGlvbkRlY2xhcmVkQmluZGluZxISCgpiaW5kaW5nX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSDwoHcmVsZWFzZRgDIAEoCRIRCgl0YXJnZXRfaWQYBCABKAkifQodU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SEgoKZ2VuZXJhdGlvbhgBIAEoBBIOCgZkaWdlc3QYAiABKAkSEAoIZG9jdW1lbnQYAyABKAkSJgoCYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrIBCiRTb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb24SQwoKZ2VuZXJhdGlvbhgBIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SDwoHcmVtb3ZlZBgCIAEoCBIOCgZyb3V0ZXMYAyADKAkSEwoLc29sdXRpb25faWQYBCABKAkSDwoHcmVsZWFzZRgFIAEoCSKOBAoYU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlEhIKCmJpbmRpbmdfaWQYASABKAkSFwoPaG9zdF9jb29yZGluYXRlGAIgASgJEhYKDmhvc3RfY29tcG9uZW50GAMgASgJEkUKB2Rlc2lyZWQYBCABKAsyLy5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uSACIAQESTAoHYXBwbGllZBgFIAEoCzI2LnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0FwcGxpZWRHZW5lcmF0aW9uSAGIAQESGgoScGVuZGluZ19nZW5lcmF0aW9uGAYgASgEEhYKDnBlbmRpbmdfcmVhc29uGAcgASgJEjYKDXBlbmRpbmdfc2luY2UYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAKIAQESQQoMcmVnaXN0cmF0aW9uGAkgASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbkgDiAEBEi4KCnVwZGF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQgoKCF9kZXNpcmVkQgoKCF9hcHBsaWVkQhAKDl9wZW5kaW5nX3NpbmNlQg8KDV9yZWdpc3RyYXRpb24iIQofTGlzdFNvbHV0aW9uSG9zdEJpbmRpbmdzUmVxdWVzdCJgCiBMaXN0U29sdXRpb25Ib3N0QmluZGluZ3NSZXNwb25zZRI8CghiaW5kaW5ncxgBIAMoCzIqLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlKvkBChpTb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxIsCihTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASJwojU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19BQ1RJVkUQARIoCiRTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX1BFTkRJTkcQAhItCilTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX0lOQ09NUEFUSUJMRRAEEisKJ1NPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfVE9NQlNUT05FRBAFQr0BChRjb20uc2Fhcy5hY2NvdW50cy52MUIVU29sdXRpb25SZWdpc3RyeVByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * SolutionFrontendBinding is the stored frontend half. manifest is the document
- * the frontend validated before handing it over; this service persists it
- * verbatim and never reinterprets it, so the host keeps sole ownership of what
- * a manifest may contain.
+ * the frontend validates while reading the projection; accounts stores it
+ * verbatim and keeps presence authority separate from runtime compatibility.
  *
  * @generated from message saas.accounts.v1.SolutionFrontendBinding
  */
@@ -39,10 +38,6 @@ export type SolutionFrontendBinding = Message<"saas.accounts.v1.SolutionFrontend
    */
   contractVersion: string;
 
-  /**
-   * @generated from field: google.protobuf.Timestamp lease_expires_at = 4;
-   */
-  leaseExpiresAt?: Timestamp;
 };
 
 /**
@@ -79,10 +74,6 @@ export type SolutionBackendBinding = Message<"saas.accounts.v1.SolutionBackendBi
    */
   contractVersion: string;
 
-  /**
-   * @generated from field: google.protobuf.Timestamp lease_expires_at = 5;
-   */
-  leaseExpiresAt?: Timestamp;
 };
 
 /**
@@ -159,153 +150,13 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
 export const SolutionRegistrationSchema: GenMessage<SolutionRegistration> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_solution_registry, 2);
 
-/**
- * SolutionFrontendRegistration is the caller-supplied frontend half. Revision
- * and lease are assigned by the server, never proposed by the registrant.
- *
- * @generated from message saas.accounts.v1.SolutionFrontendRegistration
- */
-export type SolutionFrontendRegistration = Message<"saas.accounts.v1.SolutionFrontendRegistration"> & {
-  /**
-   * @generated from field: string manifest = 1;
-   */
-  manifest: string;
 
-  /**
-   * @generated from field: string contract_version = 2;
-   */
-  contractVersion: string;
-};
 
-/**
- * Describes the message saas.accounts.v1.SolutionFrontendRegistration.
- * Use `create(SolutionFrontendRegistrationSchema)` to create a new message.
- */
-export const SolutionFrontendRegistrationSchema: GenMessage<SolutionFrontendRegistration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 3);
 
-/**
- * SolutionBackendRegistration is the caller-supplied backend half. The gateway
- * has already constrained the upstream to a permitted host before it gets here;
- * this service stores what it is told and does not re-derive routing policy.
- *
- * @generated from message saas.accounts.v1.SolutionBackendRegistration
- */
-export type SolutionBackendRegistration = Message<"saas.accounts.v1.SolutionBackendRegistration"> & {
-  /**
-   * @generated from field: string upstream = 1;
-   */
-  upstream: string;
 
-  /**
-   * @generated from field: string service_alias = 2;
-   */
-  serviceAlias: string;
 
-  /**
-   * @generated from field: string contract_version = 3;
-   */
-  contractVersion: string;
-};
 
-/**
- * Describes the message saas.accounts.v1.SolutionBackendRegistration.
- * Use `create(SolutionBackendRegistrationSchema)` to create a new message.
- */
-export const SolutionBackendRegistrationSchema: GenMessage<SolutionBackendRegistration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 4);
 
-/**
- * PutSolutionRegistrationRequest writes exactly one half of one record.
- *
- * Writing a half whose content is byte-identical to what is stored is a lease
- * renewal: it refreshes liveness and deliberately does not advance the
- * revision, so a heartbeat never looks like a change to a consumer. Writing
- * different content to a half that already exists requires expected_revision,
- * which must equal the record's current revision — that is how a publisher
- * still holding an older view is stopped from overwriting newer state, and how
- * two concurrent updates serialize instead of racing.
- *
- * @generated from message saas.accounts.v1.PutSolutionRegistrationRequest
- */
-export type PutSolutionRegistrationRequest = Message<"saas.accounts.v1.PutSolutionRegistrationRequest"> & {
-  /**
-   * @generated from field: string solution_id = 1;
-   */
-  solutionId: string;
-
-  /**
-   * @generated from field: string publisher = 2;
-   */
-  publisher: string;
-
-  /**
-   * Compare-and-swap guard against the record's current revision. Required to
-   * change an existing half, and the only way to re-register a tombstoned
-   * record: the caller must name the tombstone's own revision, which a delayed
-   * retry from a retired deployment does not hold.
-   *
-   * @generated from field: optional int64 expected_revision = 3;
-   */
-  expectedRevision?: bigint;
-
-  /**
-   * Requested liveness window for this half. The registrant renews within it.
-   *
-   * @generated from field: uint32 lease_seconds = 4;
-   */
-  leaseSeconds: number;
-
-  /**
-   * @generated from oneof saas.accounts.v1.PutSolutionRegistrationRequest.half
-   */
-  half: {
-    /**
-     * @generated from field: saas.accounts.v1.SolutionFrontendRegistration frontend = 5;
-     */
-    value: SolutionFrontendRegistration;
-    case: "frontend";
-  } | {
-    /**
-     * @generated from field: saas.accounts.v1.SolutionBackendRegistration backend = 6;
-     */
-    value: SolutionBackendRegistration;
-    case: "backend";
-  } | { case: undefined; value?: undefined };
-};
-
-/**
- * Describes the message saas.accounts.v1.PutSolutionRegistrationRequest.
- * Use `create(PutSolutionRegistrationRequestSchema)` to create a new message.
- */
-export const PutSolutionRegistrationRequestSchema: GenMessage<PutSolutionRegistrationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 5);
-
-/**
- * DeleteSolutionRegistrationRequest tombstones a record: both halves are
- * cleared in the same statement that marks it deleted, so a reader that somehow
- * ignored the tombstone still has no endpoint to route to.
- *
- * @generated from message saas.accounts.v1.DeleteSolutionRegistrationRequest
- */
-export type DeleteSolutionRegistrationRequest = Message<"saas.accounts.v1.DeleteSolutionRegistrationRequest"> & {
-  /**
-   * @generated from field: string solution_id = 1;
-   */
-  solutionId: string;
-
-  /**
-   * @generated from field: optional int64 expected_revision = 2;
-   */
-  expectedRevision?: bigint;
-};
-
-/**
- * Describes the message saas.accounts.v1.DeleteSolutionRegistrationRequest.
- * Use `create(DeleteSolutionRegistrationRequestSchema)` to create a new message.
- */
-export const DeleteSolutionRegistrationRequestSchema: GenMessage<DeleteSolutionRegistrationRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 6);
 
 /**
  * ListSolutionRegistrationsRequest reads the whole registry. There is one
@@ -329,7 +180,7 @@ export type ListSolutionRegistrationsRequest = Message<"saas.accounts.v1.ListSol
  * Use `create(ListSolutionRegistrationsRequestSchema)` to create a new message.
  */
 export const ListSolutionRegistrationsRequestSchema: GenMessage<ListSolutionRegistrationsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 7);
+  messageDesc(file_saas_accounts_v1_solution_registry, 3);
 
 /**
  * @generated from message saas.accounts.v1.ListSolutionRegistrationsResponse
@@ -354,15 +205,10 @@ export type ListSolutionRegistrationsResponse = Message<"saas.accounts.v1.ListSo
  * Use `create(ListSolutionRegistrationsResponseSchema)` to create a new message.
  */
 export const ListSolutionRegistrationsResponseSchema: GenMessage<ListSolutionRegistrationsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 8);
+  messageDesc(file_saas_accounts_v1_solution_registry, 4);
 
 /**
- * SolutionDeclaredBinding is the declaration that produced a registration
- * record. Its presence on a SolutionRegistration is what makes the record
- * declared, and a declared record answers a heartbeat differently: the heartbeat
- * may refresh the lease, the upstream address and the manifest, and may not
- * create presence, replace the release, repoint the route or erase a tombstone.
- *
+ * SolutionDeclaredBinding identifies the applied declaration and target.
  * @generated from message saas.accounts.v1.SolutionDeclaredBinding
  */
 export type SolutionDeclaredBinding = Message<"saas.accounts.v1.SolutionDeclaredBinding"> & {
@@ -383,8 +229,7 @@ export type SolutionDeclaredBinding = Message<"saas.accounts.v1.SolutionDeclared
   generation: bigint;
 
   /**
-   * publisher/name@version of the applied generation: the release a heartbeat
-   * may not replace.
+   * publisher/name@version of the applied generation.
    *
    * @generated from field: string release = 3;
    */
@@ -412,7 +257,7 @@ export type SolutionDeclaredBinding = Message<"saas.accounts.v1.SolutionDeclared
  * Use `create(SolutionDeclaredBindingSchema)` to create a new message.
  */
 export const SolutionDeclaredBindingSchema: GenMessage<SolutionDeclaredBinding> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 9);
+  messageDesc(file_saas_accounts_v1_solution_registry, 5);
 
 /**
  * SolutionHostBindingGeneration is one generation of one document. The document
@@ -451,7 +296,7 @@ export type SolutionHostBindingGeneration = Message<"saas.accounts.v1.SolutionHo
  * Use `create(SolutionHostBindingGenerationSchema)` to create a new message.
  */
 export const SolutionHostBindingGenerationSchema: GenMessage<SolutionHostBindingGeneration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 10);
+  messageDesc(file_saas_accounts_v1_solution_registry, 6);
 
 /**
  * SolutionHostBindingAppliedGeneration is the generation this host reconciled,
@@ -500,13 +345,12 @@ export type SolutionHostBindingAppliedGeneration = Message<"saas.accounts.v1.Sol
  * Use `create(SolutionHostBindingAppliedGenerationSchema)` to create a new message.
  */
 export const SolutionHostBindingAppliedGenerationSchema: GenMessage<SolutionHostBindingAppliedGeneration> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 11);
+  messageDesc(file_saas_accounts_v1_solution_registry, 7);
 
 /**
  * SolutionHostBindingState is one binding's whole state: desired, applied, and
- * why they differ. Observed state is deliberately not here — it is the lease and
- * the endpoints on SolutionRegistration, reported by the runtime — so that a
- * solution declared and unhealthy reads differently from one never declared.
+ * why they differ. Endpoint and manifest observations live on
+ * SolutionRegistration, separate from the declaration that grants presence.
  *
  * @generated from message saas.accounts.v1.SolutionHostBindingState
  */
@@ -564,8 +408,7 @@ export type SolutionHostBindingState = Message<"saas.accounts.v1.SolutionHostBin
 
   /**
    * The registration record this binding declares, when it has applied one. It
-   * carries the observed half: which endpoints registered, whether their leases
-   * are live, and the derived status.
+   * carries endpoint and manifest observations and their derived status.
    *
    * @generated from field: optional saas.accounts.v1.SolutionRegistration registration = 9;
    */
@@ -582,7 +425,7 @@ export type SolutionHostBindingState = Message<"saas.accounts.v1.SolutionHostBin
  * Use `create(SolutionHostBindingStateSchema)` to create a new message.
  */
 export const SolutionHostBindingStateSchema: GenMessage<SolutionHostBindingState> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 12);
+  messageDesc(file_saas_accounts_v1_solution_registry, 8);
 
 /**
  * ListSolutionHostBindingsRequest reads every declared binding. There is one set
@@ -599,7 +442,7 @@ export type ListSolutionHostBindingsRequest = Message<"saas.accounts.v1.ListSolu
  * Use `create(ListSolutionHostBindingsRequestSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsRequestSchema: GenMessage<ListSolutionHostBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 13);
+  messageDesc(file_saas_accounts_v1_solution_registry, 9);
 
 /**
  * @generated from message saas.accounts.v1.ListSolutionHostBindingsResponse
@@ -616,7 +459,7 @@ export type ListSolutionHostBindingsResponse = Message<"saas.accounts.v1.ListSol
  * Use `create(ListSolutionHostBindingsResponseSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsResponseSchema: GenMessage<ListSolutionHostBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 14);
+  messageDesc(file_saas_accounts_v1_solution_registry, 10);
 
 /**
  * SolutionRegistrationStatus is derived at read time from the stored record; it
@@ -633,7 +476,7 @@ export enum SolutionRegistrationStatus {
   UNSPECIFIED = 0,
 
   /**
-   * Both halves are present, their leases are live, and their declared contract
+   * Both halves are present and their declared contract
    * versions agree. This is the only status either surface serves.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
@@ -641,20 +484,13 @@ export enum SolutionRegistrationStatus {
   ACTIVE = 1,
 
   /**
-   * A half has never registered. The record is durable but incomplete, so no
+   * A half has not been observed. The record is durable but incomplete, so no
    * page advertises it and the gateway has nothing to route to.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_PENDING = 2;
    */
   PENDING = 2,
 
-  /**
-   * Both halves registered, but at least one lease lapsed: the deployment that
-   * owns it stopped renewing. The intent survives; the endpoint is not live.
-   *
-   * @generated from enum value: SOLUTION_REGISTRATION_STATUS_EXPIRED = 3;
-   */
-  EXPIRED = 3,
 
   /**
    * The two halves declare different contract versions, so activating them
@@ -665,8 +501,7 @@ export enum SolutionRegistrationStatus {
   INCOMPATIBLE = 4,
 
   /**
-   * The registration was deregistered. The row survives as a tombstone so a
-   * delayed heartbeat from a retiring deployment cannot recreate it.
+   * An applied removal keeps the declaration as a tombstone.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_TOMBSTONED = 5;
    */

@@ -16,127 +16,49 @@ spelling that older docs and the `generated-pins-gate` message still show no
 longer works. The full procedure and why are in
 [../../REST_SURFACE.md](../../REST_SURFACE.md#regeneration).
 
-Who registers a composed module's REST prefix is in
-[../auth-gateway/AGENTS.md](../auth-gateway/AGENTS.md#composed-module-rest-federation):
-the consuming backend, holding the prefix's registration secret. The consumed
-module holds only its identity secret, which is what the Work Context
-exchanges below authenticate.
+A composed module's REST routes belong to the gateway's generated and explicit
+catalogs. Its identity secret authenticates the Work Context exchanges below.
 
-## The solution registry is one durable record
+The principal directory lists stored identities only. Declared module authority
+is read by the capability checks and does not create synthetic directory rows.
 
-Both halves of a solution registration — frontend remote and gateway upstream —
-are **one durable record**, not two process-local maps.
-`solution_registrations` (migration `126_solution_registrations`) holds the
-solution identity, its publisher, the frontend and backend halves, a
-registry-wide `revision`, and a per-half lease. A registration therefore
-survives a restart and reaches every replica, and is only served when it is
-**whole**: a solution that registered its page but not its backend is a durable
-`pending` record, deliberately absent from the navigation.
+## Declared solution presence and the registry
 
-- Writes are **compare-and-swap on the revision**, so a stale publisher cannot
-  overwrite newer state.
-- A frontend-half write that changes the manifest also **admits the audit event
-  types its dashboard graph declares** (events carrying `fields`), in the same
-  transaction (`pkg/business/solution_audit_events.go`). An admitted type is an
-  `audit_event_types` row owned by `solution:<id>`. A solution admits types
-  only into the namespaces its own `MODULE_PRINCIPALS` entry (keyed by its
-  solution id) binds — no entry, no admission — so the registration credential
-  alone claims nothing. A namespace belongs to one producer (one the composed
-  event catalog publishes domain events under is already held), a
-  re-declaration may only add fields, and a refusal rolls the whole write back.
-  Ownership follows the binding: the operator releases a namespace by removing
-  it from the holder's entry and binding it to another solution, whose next
-  admission takes every type in it over, recorded as
-  `audit_namespaces_taken_over` on `saas.solution.registration_updated`.
-  Every path that reads a type's schema — the version stamp, payload checks,
-  the category label, and PII redaction on webhooks, the export feed and
-  downloads — resolves it through one lookup (`business.AuditEventResolver`),
-  which reads a declared type's row, so a declared field marked `pii` is
-  stripped like a catalog one and a declared type is never dead-lettered as
-  unregistered. `ModuleEmitAuditEvent` accepts a declared type only when the
-  `solution` scope names its owner and the caller's `MODULE_PRINCIPALS` grant
-  lists its namespace. A declared type also carries a **visibility** — `tenant`
-  by default, or `external` — and only an `external` one is ever delivered to a
-  tenant's outbound webhook endpoint. It takes two keys: the producer declares
-  it (manifest `dashboard.events[].visibility`, or
-  `ModuleAuditEventTypeDeclaration.visibility`) and the operator grants the
-  namespace external delivery (`external_namespaces`, a subset of `namespaces`,
-  refused at boot if it is not). Visibility is fixed at admission — a
-  re-declaration that changes it is refused — because narrowing would silently
-  stop deliveries to endpoints already subscribed and widening would start
-  sending out facts under a name a tenant subscribed to when it meant something
-  else.
-- A composed **module** with no frontend half declares its own audit event
-  types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
-  (`pkg/business/module_audit_declarations.go`): the same validator
-  (`ValidateAuditEventTypeDeclarations`) and the same admission, under the
-  same binding. `prefix` must be the caller's own (the principal derived from
-  it), the types are owned as `solution:<prefix>`, and its emissions name that
-  prefix as `solution`. Re-declaring what is admitted writes and records
-  nothing, so a module may declare on every start; a change is recorded as
-  `saas.module.audit_types_declared`.
-- A deregistration leaves a **tombstone**, so a retiring deployment's delayed
-  heartbeat cannot resurrect it.
-- accounts serves this as `SolutionRegistryService` on the **internal listener**;
-  the auth-gateway is its **only** client and brokers the frontend's half,
-  exactly as it brokers module registration.
-- Both surfaces hold a short-lived cache rebuilt from that snapshot, so
-  convergence after any write is bounded: the gateway reconciles about every 10s
-  plus an on-demand refresh on a cache miss, the frontend holds a 5s snapshot TTL.
+`solution_host_bindings` stores desired and applied `SolutionHostBinding`
+generations and pending reasons. Core owns document admission; each apply
+re-decides under the binding row lock. A refused or unreadable delivery does not
+withdraw the last applied generation. Withdrawal requires a tombstone generation.
 
-## Declared solution presence reconciles into that same record
+`solution_registrations` is the durable read projection, keyed by the route alias.
+Every row names its declared binding, generation, release and immutable target.
+A binding ID identifies a deployment instance, while an alias identifies a route;
+consent names the target and cannot follow an alias to a replacement instance.
+Only observations for the same declared target may survive a re-declaration.
 
-`solution_host_bindings` (migration `17_solution_host_bindings`) is the host's
-durable record of the `SolutionHostBinding` documents delivery hands it (issue
-#952). It is **not** a second registry: an applied generation writes the same
-`solution_registrations` row a self-registering runtime writes, and the only thing
-it adds to that row is the declaration that produced it (`declared_binding_id`,
-`declared_generation`, `declared_release`).
+The internal `SolutionRegistryService` exposes the registry and host-binding
+reads. The gateway reads the snapshot and brokers it to the frontend. Both cache
+briefly: gateway reconciliation is approximately 10 seconds with a refresh on
+cache miss; frontend snapshots expire after 5 seconds and a failed refresh
+reports unavailable. An incomplete record stays pending and is not served.
 
-- **Core is the judge.** `github.com/codefly-dev/core/solutionhost` owns the
-  document, its validation and `Host.Admit`, which judges the whole desired set
-  because route-alias uniqueness and "declared once per set" are not properties of
-  one document. The reconciler runs it over the whole mount on every pass and
-  applies nothing it refused. Core's shipped `Fixtures()` are this side's
-  acceptance cases, so the renderer and the host cannot drift on the same bytes.
-- **One row per binding ID, three column groups.** `desired_*` is the newest
-  generation delivery has shown this host, admitted or not; `applied_*` is the
-  generation the host reconciled plus the registry key it reconciled into;
-  `pending_reason` is why they differ. Observed state is not there at all — it is
-  the lease and the endpoints on `solution_registrations`, reported by the runtime.
-  `ListSolutionHostBindings` serves all three, which is the only way to tell a
-  binding whose first generation was refused (no registration record exists) from
-  one that was never declared.
-- **The registry key is the route alias, not the binding ID.** A binding ID names
-  one deployment instance and may carry characters a path segment may not. A
-  present generation must declare exactly one single-segment lowercase alias or it
-  is refused with a reason naming the route; Core's alias vocabulary is wider. A
-  tombstone declares none, which is why the row keeps the key it last applied.
-- **A refusal is attributed, not fatal.** One stale render must not hold back every
-  other binding, because a stale render is the ordinary case — the renderer derives
-  a generation from the previously delivered document. A refusal Core raises that
-  cannot be attributed to a document withholds the whole set instead, failing
-  closed on a rule this host does not recognise.
-- **Convergence and restart are the row lock.** Each apply re-decides under
-  `GetSolutionHostBindingForUpdate`, so two replicas proposing the same generation
-  produce one apply and `DecisionCurrent` for the other, and a restart resumes from
-  the recorded generation rather than deriving it.
-- **The mixed window is enforced in `planSolutionRegistrationWrite`,** on the row
-  the heartbeat path already locks — never by a second table read, which would
-  leave a window in which a heartbeat decided it was undeclared and then wrote. A
-  heartbeat for a declared record may refresh the lease, the upstream and the
-  manifest; it may not repoint the route, revive a declared tombstone, or
-  deregister. A heartbeat for an **undeclared** record is unchanged, and a record
-  becomes declared only when a generation applies — so a document that has not
-  passed cannot take a working self-registered solution offline. Both halves are
-  tested (`solution_registry_declared_test.go`).
-- **Declaring an existing registration adopts it.** Its halves and leases are
-  observations; discarding them would take a working solution offline at the
-  instant it became declared. The publisher of record stays `solution:<id>`, the
-  subject the registrant's own credential proves.
+Migration 23 destructively removes runtime-only state and makes declaration
+ownership mandatory. Its from-zero proof is `TestMigration23FromZero` in the
+store module; `TestMigration20FromZero` separately proves immutable installation
+targets and withdrawal serialization using a freshly created package database.
 
-The full model, the field-ownership split and the configuration keys are in
-[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#6-declared-presence-delivery-says-what-runs-a-heartbeat-says-how-it-is).
+Audit type admission remains available through
+`ModuleCapabilitiesService.DeclareAuditEventTypes`. Its validator and namespace
+admission use declared module authority. Namespace ownership, additive schema
+changes, immutable visibility and the operator's `external_namespaces` grant
+remain enforced. `ModuleEmitAuditEvent` can emit only a type owned by the caller's
+solution scope and an authorized namespace. `business.AuditEventResolver` resolves
+stored schemas for payload validation and PII redaction.
+
+The principal directory lists stored identities. The `MODULE_PRINCIPALS` map
+below supplies declared authority to capability checks only.
+
+See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
+for the trust model, field ownership and delivery configuration.
 
 ## The composed-module service principal
 
@@ -144,7 +66,7 @@ A module consuming the module-facing capability surface
 (`ModuleCapabilitiesService`: job enqueue/claim, notify, approvals, audit,
 events, subject visibility) calls it as its own **service principal**, whose id
 is derived from the
-same registration prefix (`business.ModulePrincipalID`) — nothing is
+declared module prefix (`business.ModulePrincipalID`) — nothing is
 hand-authored as an opaque id.
 
 Its authority is declared in the `module-capabilities` group's

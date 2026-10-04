@@ -136,9 +136,7 @@ pkg/business/solution_host_bindings_apply.go: (*Service).applySolutionHostBindin
 pkg/business/solution_host_bindings_apply.go: (*Service).liveSolutionTargetForBinding: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingDesired: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingRefusal: WithControlPlane
-pkg/business/solution_registry.go: (*Service).DeleteSolutionRegistration: WithControlPlane
 pkg/business/solution_registry.go: (*Service).ListSolutionRegistrations: WithControlPlane
-pkg/business/solution_registry.go: (*Service).PutSolutionRegistration: WithControlPlane
 pkg/business/source_delegation.go: (*Service).AuthorizeDelegationReferenceExchange: WithControlPlane
 pkg/business/source_delegation.go: (*Service).CheckSourceDelegationContextRevision: WithControlPlane
 pkg/business/source_delegation.go: (*Service).ConfirmSourceDelegationParent: WithControlPlane

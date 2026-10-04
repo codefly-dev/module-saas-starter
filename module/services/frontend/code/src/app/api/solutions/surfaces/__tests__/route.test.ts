@@ -99,7 +99,6 @@ function gatewayServing(
 		return new Response(
 			JSON.stringify({
 				revision: 3,
-				leaseSeconds: 120,
 				// The host stamps each record's target from its declaration, and
 				// the entitlement answer above derives the same value from the
 				// alias — which is what lets the projection join them. A fixture

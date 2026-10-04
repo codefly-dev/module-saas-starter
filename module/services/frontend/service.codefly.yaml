@@ -43,16 +43,9 @@ spec:
             http: 3000
         public-egress-ports:
             - 443
-        # Solution self-registration mutates what the nav renders and what the
-        # solution page loads as a Module-Federation remote, on the same port that
-        # serves every browser-facing page. Only a path match separates the two,
-        # and only in the mesh's L7 layer; /api/internal/solutions is read by the
-        # proxy over pod-local loopback, which the mesh never captures.
+        # Internal topology reads share the public HTTP port and require a
+        # path-scoped mesh policy in addition to the application credential.
         internal-http-routes:
             - path: /api/internal/solutions
               methods:
                 - GET
-            - path: /api/solutions/register
-              methods:
-                - DELETE
-                - POST

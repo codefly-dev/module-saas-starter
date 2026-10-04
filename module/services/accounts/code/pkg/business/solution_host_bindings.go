@@ -16,38 +16,14 @@ import (
 
 // Declared solution presence (issue #952).
 //
-// A solution used to become present on this host by registering itself: a
-// runtime heartbeats, and the host learns of it as a side effect of a process
-// being up. A SolutionHostBinding is the opposite record — delivery declares
-// which solution runs on this host at which generation, and the host reconciles
-// towards it. Nothing here renders or signs a document; core owns the document
-// and its admission rules (github.com/codefly-dev/core/solutionhost), and this
-// file is the host half: read the mount, ask core about the whole desired set,
-// and reconcile what core admits into the durable registry that already exists.
+// Delivery declares which solution runs on this host at which generation. Core
+// owns the document and its admission rules; the host reconciles admitted
+// declarations into the durable registry.
 //
-// Three facts are kept apart, because an operator's first question is which of
-// them is wrong:
-//
-//   - DESIRED is the newest generation delivery has shown this host, admitted or
-//     not, with the reason it was not.
-//   - APPLIED is the generation this host reconciled, and the registry record it
-//     reconciled into. It is durable, so a restart resumes instead of deriving
-//     the answer again, and two replicas reading the same mount converge on it
-//     without applying it twice.
-//   - OBSERVED is not here. It is the lease and the endpoints on
-//     solution_registrations, reported by the runtime, and it is what tells a
-//     declared-but-unhealthy solution from one that was never declared.
-//
-// # The mixed window
-//
-// Self-registration is not removed here — that is the next step. Until it is,
-// both paths write the same registry, so the rule that makes this safe to land
-// is asymmetric and is enforced in solution_registry.go, on the row a heartbeat
-// already locks: a heartbeat for a DECLARED record may only refresh what the
-// declaration does not own, and a heartbeat for an UNDECLARED one behaves
-// exactly as it did before. A record becomes declared when a generation APPLIES,
-// never when a document merely arrives, so a document that has not passed every
-// check cannot take a working self-registered solution offline.
+// DESIRED records the newest generation delivery supplied and any refusal.
+// APPLIED records the generation reconciled into durable state. Endpoint and
+// manifest observations remain separate from that declaration and never grant
+// presence or installation authority.
 
 const (
 	// SolutionHostBindingReconcileInterval is how often the host re-reads its
@@ -84,7 +60,7 @@ var (
 
 // solutionIDPattern is the registry's own identity rule, restated here because
 // the host resolves a registry key from a route alias and must refuse an alias
-// that could not be one. It matches PutSolutionRegistrationRequest.solution_id.
+// that could not be one. It is the single-segment gateway route identity.
 var solutionIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`)
 
 // maxSolutionIDLength matches the registry's own bound on solution_id.
