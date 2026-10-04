@@ -121,16 +121,36 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   changing a consumer. A member the directory gives no label (a deleted
   account) is unknown, never `""`. `you` is an exact match with
   `viewerPrincipal`: a near match (another case, the same email) is never "You".
+  `you` is set only on a listed principal, so the viewer is `undefined` from
+  `usePrincipalNames` whenever the directory does not list them (while it loads,
+  when it was refused, or when an administrator views as someone outside it). A
+  caller deciding "You" compares against `viewerPrincipal` itself, as
+  `<PrincipalName>` does.
 - **States are said once.** A name is `undefined` while loading, when the read
   was refused, or when the principal is not listed. Which of those it is,
-  `usePrincipalDirectory()` says once for the page: `refused` (the host answered
-  unauthenticated or permission denied, or the credential names no
-  organization) is kept for the viewer; `failed` (anything else) is tried again
-  by the next component that asks.
+  `usePrincipalDirectory()` says once for the page:
+  - `refused` is kept for the viewer. It means the host answered permission
+    denied, the credential names no organization, or there is no credential at
+    all (a signed-out viewer).
+  - `failed` is anything else, and it stays `failed` while a retry is in flight.
+    A page never goes back to `loading` once the read has settled, so a page that
+    renders names only after it settles cannot remount itself into a request
+    loop. When a later read happens depends on the failure:
+    - unauthenticated: on the next token the host hands over;
+    - a gateway or network failure: by the next component that asks after a
+      backoff (1 s, doubling, at most a minute);
+    - invalid argument, not found, unimplemented, or failed precondition: not
+      again for this viewer, because the request itself is wrong.
+- **Late answers are dropped.** An answer is stored only if the host's current
+  token still names the viewer who asked, so a switch the page has not noticed
+  yet (a host without `subscribeToken` is polled every 250 ms) never shows the
+  previous viewer's names.
 - **`<PrincipalName principal>`** renders "You" on an exact match, the
   directory's label once known, and otherwise the id shortened to its ends
   (`0000…00a1`). The full id is always its `title`, and `data-state` (`you`,
-  `named`, `loading`, `unknown`, `refused`, `failed`) says which it is.
+  `named`, `loading`, `unknown`, `refused`, `failed`) says which it is. An empty
+  principal reads "someone", with `data-state="none"` and a title saying no
+  principal is recorded.
 - **`useNameOf()`** is the function form a module kit takes as a prop. It
   answers the directory's label or `undefined`, never "You" — a kit decides that
   from the viewer it is given — and never `""`.

@@ -52,9 +52,10 @@ export type NameOf = (principal: string) => string | undefined;
 /**
  * Where the directory read stands, said once for the whole page rather than
  * once per name. `refused` is a viewer who may not read the directory (the
- * host answered unauthenticated or permission denied, or the credential names
- * no organization); `failed` is anything else, and is retried by the next
- * component that asks.
+ * host answered permission denied, the credential names no organization, or
+ * there is no credential at all) and is kept for that viewer. `failed` is
+ * anything else; it stays `failed` while a retry is in flight, and when one is
+ * made follows `Retry` below.
  */
 export type PrincipalDirectoryState =
 	| { status: "loading" }
@@ -67,15 +68,39 @@ interface Listed {
 	email: string;
 }
 
+/**
+ * When a failed read may be tried again: after a backoff (a gateway or network
+ * failure that can heal by itself), only once the host hands over a new token
+ * (the credential was not accepted), or not for this viewer at all (the
+ * request itself is wrong — a malformed organization, a missing route).
+ */
+type Retry = "backoff" | "token" | "never";
+
 /** The directory as the store holds it: the public state plus, when ready, the members. */
 type Held =
 	| { status: "loading" }
 	| { status: "ready"; members: ReadonlyMap<string, Listed> }
 	| { status: "refused"; reason: string }
-	| { status: "failed"; reason: string };
+	| { status: "failed"; reason: string; retry: Retry };
 
 const LOADING: Held = { status: "loading" };
 const READY: PrincipalDirectoryState = { status: "ready" };
+const NO_CREDENTIAL: Held = { status: "refused", reason: "no credential" };
+
+/** How long a transient failure is kept before a read is tried again. */
+const BACKOFF_MS = 1_000;
+const MAX_BACKOFF_MS = 60_000;
+
+/** The state of one viewer's read: what it holds and when it may be read again. */
+interface Entry {
+	viewer: string;
+	held: Held;
+	inFlight: boolean;
+	failures: number;
+	retryAt: number;
+	/** The token a "token" failure was answered for. */
+	token: string | null;
+}
 
 /**
  * One viewer's directory, read at most once for as long as that viewer is the
@@ -84,7 +109,7 @@ const READY: PrincipalDirectoryState = { status: "ready" };
  * a viewer who is no longer current is dropped instead of stored.
  */
 class DirectoryStore {
-	private entry: { viewer: string; held: Held } | null = null;
+	private entry: Entry | null = null;
 	private readonly listeners = new Set<() => void>();
 
 	subscribe = (listener: () => void): (() => void) => {
@@ -95,32 +120,91 @@ class DirectoryStore {
 	};
 
 	held(viewer: string | null): Held {
-		return viewer !== null && this.entry?.viewer === viewer
-			? this.entry.held
-			: LOADING;
+		if (viewer === null) return NO_CREDENTIAL;
+		return this.entry?.viewer === viewer ? this.entry.held : LOADING;
 	}
 
 	/**
 	 * Starts the read for `viewer` unless one is already held or in flight for
 	 * them. Every component on the page asks; the first one's request is the
-	 * only one sent, and the rest share its answer. A failure is the one answer
-	 * not kept: the next component to ask tries again.
+	 * only one sent, and the rest share its answer.
+	 *
+	 * A failure is kept, and shown, until its retry rule allows another read:
+	 * a retry never turns the page back to loading, so a page that renders
+	 * names only once the directory settled cannot unmount and remount its way
+	 * into a request loop. `current` re-reads who the viewer is when the answer
+	 * arrives; an answer for a viewer who is no longer current is dropped, even
+	 * before the page has noticed the change.
 	 */
-	load(viewer: string, read: () => Promise<Held>): void {
-		const current = this.entry;
-		if (current?.viewer === viewer && current.held.status !== "failed") return;
-		const started = { viewer, held: LOADING };
-		this.entry = started;
-		if (current?.held !== LOADING) this.emit();
+	load(
+		viewer: string,
+		token: string,
+		read: () => Promise<Held>,
+		current: () => string | null,
+	): void {
+		let entry = this.entry;
+		if (entry?.viewer !== viewer) {
+			const replaced = entry;
+			entry = {
+				viewer,
+				held: LOADING,
+				inFlight: false,
+				failures: 0,
+				retryAt: 0,
+				token: null,
+			};
+			this.entry = entry;
+			if (replaced && replaced.held !== LOADING) this.emit();
+		}
+		if (entry.inFlight || !this.mayRead(entry, token)) return;
+		const started = entry;
+		started.inFlight = true;
 		void read().then((held) => {
 			if (this.entry !== started) return;
-			this.entry = { viewer, held };
+			started.inFlight = false;
+			if (current() !== viewer) return;
+			if (held.status === "failed") {
+				started.failures += 1;
+				started.token = token;
+				started.retryAt =
+					held.retry === "backoff"
+						? Date.now() +
+							Math.min(BACKOFF_MS * 2 ** (started.failures - 1), MAX_BACKOFF_MS)
+						: Number.POSITIVE_INFINITY;
+			} else started.failures = 0;
+			started.held = held;
 			this.emit();
 		});
 	}
 
+	private mayRead(entry: Entry, token: string): boolean {
+		const { held } = entry;
+		if (held.status === "loading") return true;
+		if (held.status !== "failed") return false;
+		if (held.retry === "token") return token !== entry.token;
+		return Date.now() >= entry.retryAt;
+	}
+
 	private emit(): void {
 		for (const listener of this.listeners) listener();
+	}
+}
+
+/**
+ * How a failed read may be retried, by its code. A refused authority
+ * (permission denied) is not a failure at all; it is returned as `refused`.
+ */
+function retryOf(code: Code): Retry {
+	switch (code) {
+		case Code.Unauthenticated:
+			return "token";
+		case Code.InvalidArgument:
+		case Code.NotFound:
+		case Code.Unimplemented:
+		case Code.FailedPrecondition:
+			return "never";
+		default:
+			return "backoff";
 	}
 }
 
@@ -155,10 +239,9 @@ async function readDirectory(
 		return { status: "ready", members: listed };
 	} catch (failure) {
 		const error = ConnectError.from(failure);
-		return error.code === Code.PermissionDenied ||
-			error.code === Code.Unauthenticated
+		return error.code === Code.PermissionDenied
 			? { status: "refused", reason: error.rawMessage || error.message }
-			: { status: "failed", reason: error.message };
+			: { status: "failed", reason: error.message, retry: retryOf(error.code) };
 	}
 }
 
@@ -202,14 +285,18 @@ export function PrincipalNamesProvider({
 	const org = viewerOrganization(token);
 	const [store] = useState(() => new DirectoryStore());
 	const load = useCallback(() => {
-		if (viewer === null) return;
-		store.load(viewer, () =>
-			readDirectory(
-				() => requestBinding(apiBase, getAccessToken, authedFetch),
-				org,
-			),
+		if (viewer === null || token === null) return;
+		store.load(
+			viewer,
+			token,
+			() =>
+				readDirectory(
+					() => requestBinding(apiBase, getAccessToken, authedFetch),
+					org,
+				),
+			() => viewerIdentity(getAccessToken()),
 		);
-	}, [store, viewer, org, apiBase, getAccessToken, authedFetch]);
+	}, [store, viewer, token, org, apiBase, getAccessToken, authedFetch]);
 	const value = useMemo(
 		() => ({ store, viewer, principal, load }),
 		[store, viewer, principal, load],
@@ -256,6 +343,12 @@ function nameIn(
  * refused, or when it does not list that principal. Whether it is loading or
  * refused is `usePrincipalDirectory`'s to say, once for the page.
  *
+ * `you` is set only on a listed principal. The viewer is `undefined` here
+ * whenever the directory does not list them — while it loads, when it was
+ * refused, or when an administrator views as someone outside it — so a caller
+ * deciding "You" compares against `viewerPrincipal` itself, as
+ * `<PrincipalName>` does.
+ *
  * Any number of callers on a page share one directory read; asking again
  * after a re-render, or from another component, asks nobody.
  */
@@ -290,7 +383,12 @@ export function useNameOf(): NameOf {
 /** Where the page's one directory read stands. */
 export function usePrincipalDirectory(): PrincipalDirectoryState {
 	const { held } = useDirectory();
-	return held.status === "ready" ? READY : held;
+	return useMemo(() => {
+		if (held.status === "ready") return READY;
+		if (held.status === "failed")
+			return { status: "failed", reason: held.reason };
+		return held;
+	}, [held]);
 }
 
 /** The id, shortened to its ends, for a principal no name is known for. */
@@ -309,13 +407,23 @@ export interface PrincipalNameProps {
  * One principal on screen. "You" on an exact match with the principal
  * reading; the directory's label once it is known; otherwise — loading,
  * refused, or not listed — the id shortened to its ends. The full id is always
- * the `title`, and `data-state` says which of those it is, so a reader can
+ * the `title`, and `data-state` says which of those it is (`none` when no
+ * principal was recorded at all), so a reader can
  * always get from the words back to the id and never sees only the raw id
  * once a name is known.
  */
 export function PrincipalName({ principal, className }: PrincipalNameProps) {
 	const { held, principal: viewer } = useDirectory();
-	if (!principal) return <span className={className}>someone</span>;
+	if (!principal)
+		return (
+			<span
+				className={className}
+				title="No principal is recorded"
+				data-state="none"
+			>
+				someone
+			</span>
+		);
 	if (viewer !== "" && principal === viewer)
 		return (
 			<span

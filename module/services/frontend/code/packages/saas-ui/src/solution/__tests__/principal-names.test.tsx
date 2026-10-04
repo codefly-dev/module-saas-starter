@@ -261,7 +261,7 @@ describe("usePrincipalNames", () => {
 		expect(authedFetch).not.toHaveBeenCalled();
 	});
 
-	it("tries a failed read again for the next component that asks", async () => {
+	it("keeps a transient failure through its backoff, however many components ask", async () => {
 		let reply = () =>
 			Response.json({ code: "unavailable", message: "down" }, { status: 503 });
 		const authedFetch = vi.fn<typeof fetch>(async () => reply());
@@ -276,8 +276,9 @@ describe("usePrincipalNames", () => {
 		await screen.findByText(/^failed: /);
 		reply = () => Response.json({ members: orgA });
 		rerender(page(true));
-		await screen.findByText("carol@example.com");
-		expect(authedFetch).toHaveBeenCalledTimes(2);
+		await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+		expect(screen.getByTitle(CAROL).getAttribute("data-state")).toBe("failed");
+		expect(authedFetch).toHaveBeenCalledTimes(1);
 	});
 
 	it("keeps a refusal for the viewer rather than asking again", async () => {
@@ -388,6 +389,194 @@ describe("usePrincipalNames", () => {
 		);
 		expect(screen.getByTestId("name-of").textContent).toBe("- bob@example.com");
 		expect(screen.getByTitle(CAROL).getAttribute("data-state")).toBe("unknown");
+	});
+
+	describe("a page that renders names only once the directory settled", () => {
+		function Settled() {
+			const directory = usePrincipalDirectory();
+			return directory.status === "loading" ? (
+				<p>spinner</p>
+			) : (
+				<PrincipalName principal={CAROL} />
+			);
+		}
+
+		/** A directory that fails after `latency`, refusing to be called past 50 times. */
+		function failing(reply: () => Response, latency = 10) {
+			return vi.fn<typeof fetch>(async () => {
+				if (authedFetchCalls() > 50) throw new Error("runaway retry");
+				await new Promise((resolve) => setTimeout(resolve, latency));
+				return reply();
+			});
+		}
+		let authedFetchCalls = () => 0;
+
+		it.each([
+			["a gateway that keeps answering 502", 502, "unavailable", 2],
+			["a malformed organization claim", 400, "invalid_argument", 1],
+			["a missing proxy route", 404, "not_found", 1],
+			["an unimplemented procedure", 501, "unimplemented", 1],
+			["a failed precondition", 400, "failed_precondition", 1],
+		])(
+			"makes a bounded number of reads against %s",
+			async (_, status, code, afterBackoff) => {
+				const authedFetch = failing(() =>
+					Response.json({ code, message: "no" }, { status }),
+				);
+				authedFetchCalls = () => authedFetch.mock.calls.length;
+				const binding = host(authedFetch);
+				const page = (extra: boolean) => (
+					<PrincipalNamesProvider binding={binding}>
+						<Settled />
+						{extra && <PrincipalName principal={ALICE} />}
+					</PrincipalNamesProvider>
+				);
+				const { rerender } = render(page(false));
+				await waitFor(() =>
+					expect(screen.getByTitle(CAROL).getAttribute("data-state")).toBe(
+						"failed",
+					),
+				);
+				await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+				expect(authedFetch).toHaveBeenCalledTimes(1);
+				expect(screen.queryByText("spinner")).toBeNull();
+
+				// Past the longest backoff, a newly mounted name asks again only
+				// when the failure could have healed by itself.
+				const clock = vi
+					.spyOn(Date, "now")
+					.mockReturnValue(Date.now() + 120_000);
+				try {
+					rerender(page(true));
+					await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+					expect(authedFetch).toHaveBeenCalledTimes(afterBackoff);
+					expect(screen.queryByText("spinner")).toBeNull();
+				} finally {
+					clock.mockRestore();
+				}
+			},
+		);
+
+		it("retries a transient failure after a backoff without going back to loading", async () => {
+			let reply = () =>
+				Response.json(
+					{ code: "unavailable", message: "down" },
+					{ status: 503 },
+				);
+			const authedFetch = vi.fn<typeof fetch>(async () => reply());
+			const binding = host(authedFetch);
+			const page = (extra: boolean) => (
+				<PrincipalNamesProvider binding={binding}>
+					<Settled />
+					{extra && <PrincipalName principal={ALICE} />}
+				</PrincipalNamesProvider>
+			);
+			const { rerender } = render(page(false));
+			await screen.findByTitle(CAROL);
+			const now = Date.now();
+			const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+			try {
+				reply = () => Response.json({ members: orgA });
+				rerender(page(true));
+				// The retry is in flight: the page keeps what it showed.
+				expect(screen.queryByText("spinner")).toBeNull();
+				await screen.findByText("carol@example.com");
+				expect(authedFetch).toHaveBeenCalledTimes(2);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+	});
+
+	it("drops an answer that arrives after the token changed but before the kit noticed", async () => {
+		let current = aliceToken;
+		const pending: ((reply: Response) => void)[] = [];
+		const authedFetch = vi.fn<typeof fetch>(
+			() => new Promise<Response>((resolve) => pending.push(resolve)),
+		);
+		const seen: { viewer: string; carol?: string }[] = [];
+		function Names() {
+			const names = usePrincipalNames([CAROL]);
+			seen.push({ viewer: current, carol: names[CAROL]?.display });
+			return null;
+		}
+		// No subscribeToken and no event: the kit learns of the switch only on
+		// its next poll.
+		render(
+			<PrincipalNamesProvider binding={host(authedFetch, () => current)}>
+				<Names />
+			</PrincipalNamesProvider>,
+		);
+		await waitFor(() => expect(pending).toHaveLength(1));
+		current = bobToken;
+		await act(async () => {
+			pending[0]!(Response.json({ members: orgA }));
+		});
+		expect(seen.filter((render) => render.carol)).toEqual([]);
+	});
+
+	it("treats an unauthenticated answer as recoverable on the next token", async () => {
+		let current = aliceToken;
+		let reply = () =>
+			Response.json(
+				{ code: "unauthenticated", message: "expired" },
+				{ status: 401 },
+			);
+		const authedFetch = vi.fn<typeof fetch>(async () => reply());
+		const binding = host(authedFetch, () => current);
+		const page = (extra: boolean) => (
+			<PrincipalNamesProvider binding={binding}>
+				<Status />
+				<PrincipalName principal={CAROL} />
+				{extra && <PrincipalName principal={BOB} />}
+			</PrincipalNamesProvider>
+		);
+		const { rerender } = render(page(false));
+		await screen.findByText(/^failed: /);
+		rerender(page(true));
+		expect(authedFetch).toHaveBeenCalledTimes(1);
+
+		// The host refreshes: same viewer (auth_time kept), a new token.
+		current = token({
+			iss: "host",
+			sub: ALICE,
+			org: ORG_A,
+			auth_time: 1,
+			sid: "s2",
+		});
+		reply = () => Response.json({ members: orgA });
+		await act(async () => {
+			window.dispatchEvent(new Event("codefly:auth-changed"));
+		});
+		await screen.findByText("carol@example.com");
+		expect(screen.getByText("ready")).toBeTruthy();
+		expect(authedFetch).toHaveBeenCalledTimes(2);
+	});
+
+	it("says a signed-out viewer has no credential instead of loading forever", () => {
+		const authedFetch = directory(orgA);
+		render(
+			<PrincipalNamesProvider binding={host(authedFetch, () => null)}>
+				<Status />
+				<PrincipalName principal={CAROL} />
+			</PrincipalNamesProvider>,
+		);
+		expect(screen.getByText("refused: no credential")).toBeTruthy();
+		const name = screen.getByTitle(CAROL);
+		expect(name.getAttribute("data-state")).toBe("refused");
+		expect(name.getAttribute("aria-busy")).toBeNull();
+		expect(authedFetch).not.toHaveBeenCalled();
+	});
+
+	it("gives an empty principal a state and a title", () => {
+		render(
+			<PrincipalNamesProvider binding={host(directory(orgA))}>
+				<PrincipalName principal="" />
+			</PrincipalNamesProvider>,
+		);
+		const none = screen.getByText("someone");
+		expect(none.getAttribute("data-state")).toBe("none");
+		expect(none.getAttribute("title")).toBe("No principal is recorded");
 	});
 
 	it("needs a provider", () => {
