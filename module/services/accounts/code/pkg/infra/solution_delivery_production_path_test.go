@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -96,6 +97,14 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// A WITHDRAWAL IS A NARROWING OF AUTHORITY, so the apply that closes an
+	// installable target must be witnessed by the external policy log before it
+	// takes effect. A service with no log cannot withdraw at all — which is the
+	// correct production behaviour and not a configuration a test should assert
+	// against, so the double below stands in for the warehouse. It is the LOG
+	// that is doubled, not the protocol: the receipts and the cursor go to the
+	// real Postgres store.
+	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
 	service.SetSolutionDelivery(
 		productionPathVerifier{signer: productionPathSigner},
 		testStore,
@@ -445,4 +454,61 @@ func productionPathCarrier(t *testing.T, document *solutionhost.SolutionHostBind
 	})
 	require.NoError(t, err)
 	return carrier
+}
+
+// productionPathPolicyLog witnesses a narrowing, so a withdrawal can take
+// effect.
+//
+// It is deliberately a RECORDING double rather than a no-op that fabricates a
+// receipt out of nothing: the operation id is what the host's idempotency rests
+// on, so a log that answered the same receipt for every entry would let the
+// protocol pass while recording nothing distinguishable.
+type productionPathPolicyLog struct {
+	mu       sync.Mutex
+	sequence uint64
+	records  []*business.PolicyLogRecord
+}
+
+func (l *productionPathPolicyLog) Append(
+	_ context.Context, entry *business.PolicyLogEntry,
+) (*business.PolicyLogReceipt, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// Idempotent on the operation id, which the interface requires of a real
+	// log: a retry returns the original receipt rather than appending again.
+	for _, record := range l.records {
+		if record.OperationID == entry.OperationID {
+			return &business.PolicyLogReceipt{
+				Receipt: record.Receipt, Sequence: record.Sequence, AppendedAt: record.LoggedAt,
+			}, nil
+		}
+	}
+	l.sequence++
+	receipt := &business.PolicyLogReceipt{
+		Receipt:    "delivery-test-receipt-" + entry.OperationID,
+		Sequence:   l.sequence,
+		AppendedAt: time.Now().UTC(),
+	}
+	copied := *entry
+	l.records = append(l.records, &business.PolicyLogRecord{
+		PolicyLogEntry: copied,
+		Receipt:        receipt.Receipt,
+		Sequence:       receipt.Sequence,
+		LoggedAt:       receipt.AppendedAt,
+	})
+	return receipt, nil
+}
+
+func (l *productionPathPolicyLog) Entries(
+	_ context.Context, after uint64, _ int,
+) ([]*business.PolicyLogRecord, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []*business.PolicyLogRecord
+	for _, record := range l.records {
+		if record.Sequence > after {
+			out = append(out, record)
+		}
+	}
+	return out, nil
 }
