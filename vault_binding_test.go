@@ -167,6 +167,51 @@ func TestProjectedTokenPathAgreesBetweenTheClientAndTheGroup(t *testing.T) {
 	}
 }
 
+// Every key accounts reads from the `vault` group must be declared in the
+// group's own defaults. A key a service reads but the group never declares is
+// inert: an environment can supply a value for a declared key, never declare
+// one, so the feature silently does nothing on every deployment.
+func TestEveryVaultGroupKeyAccountsReadsIsDeclared(t *testing.T) {
+	t.Parallel()
+	defaults, err := os.ReadFile(vaultGroupDefaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for line := range strings.SplitSeq(string(defaults), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if key, _, found := strings.Cut(line, "="); found {
+			declared[strings.TrimSpace(key)] = true
+		}
+	}
+	for _, key := range []string{
+		"VAULT_ADDR",
+		"VAULT_CA_FILE",
+		"VAULT_AUTH_METHOD",
+		"VAULT_K8S_ROLE",
+		"VAULT_K8S_MOUNT",
+		"VAULT_K8S_TOKEN_PATH",
+		"VAULT_ALLOW_INSECURE_HTTP",
+		"VAULT_KEY_CUSTODY",
+	} {
+		if !declared[key] {
+			t.Errorf("%s does not declare %s, which accounts reads: a key the group never declares cannot be supplied by an environment, so it is inert everywhere", vaultGroupDefaults, key)
+		}
+	}
+	// The group's repo-root entry is a symlink onto this file, so the two never
+	// drift; a copy would let a consumer's base sync carry stale keys.
+	info, err := os.Lstat("configurations/local/vault.env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("configurations/local/vault.env is not a symlink onto %s", vaultGroupDefaults)
+	}
+}
+
 // goGRPCMountFloor is the first go-grpc agent release able to render a volume
 // this module declares. Observed 2026-10-03 at the pinned 0.1.50: the agent's
 // Deployment template hardcodes `automountServiceAccountToken: false` and a
