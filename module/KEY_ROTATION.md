@@ -54,11 +54,18 @@ platform's identity-seeding command's job, not this module's:
 | If it is missing | accounts refuses to boot, naming the path and the custody contract. It does **not** generate one |
 
 **This module never names that command.** A module names nothing above it, so
-the exact verb belongs to the cell's own runbook. Put it in the operator's hands
-anyway by setting `VAULT_KEY_CUSTODY` in the `vault` configuration group to the
-command the cell uses: accounts quotes it verbatim in the refusal, bounded and
-collapsed to one line, so whoever reads the crash loop sees the command to run
-rather than a sentence about one. Left unset, the refusal points here.
+the exact verb belongs to the cell's own runbook. The composition puts it in the
+operator's hands by setting `VAULT_KEY_CUSTODY` in the `vault` configuration
+group to the command the cell uses: accounts quotes it verbatim in the refusal,
+bounded and collapsed to one line, so whoever reads the crash loop sees the
+command to run rather than a sentence about one.
+
+**Outside the local environment it is required**, and accounts refuses to start
+without it, by name. A diagnostic that exists only when somebody remembered to
+configure it is missing exactly when the incident happens, so the check runs at
+boot — while a deployment can still be fixed — rather than during a crash loop.
+A local run has no cell and no seeding command, so it is optional there and the
+refusal points at this section instead.
 
 The incident this exists for: an operator met `load signing key from Vault:
 ed25519minter: vault http 404` with nothing on the failure path saying where the

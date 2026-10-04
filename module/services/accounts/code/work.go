@@ -378,6 +378,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
 		return nil, err
 	}
+	if err := requireKeyCustody(codefly.IsLocal()); err != nil {
+		return nil, err
+	}
 	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider), codefly.IsLocal())
 	if err != nil {
 		return nil, err
@@ -2132,11 +2135,37 @@ func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519c
 	return priv, err
 }
 
+// requireKeyCustody refuses to start outside the local environment without the
+// cell's seeding command.
+//
+// It is required rather than optional because of how the October 2026 incident
+// actually went: an operator met `load signing key from Vault: vault http 404`,
+// nothing on the failure path said where the key was supposed to come from, and
+// they generated a fresh keypair by hand — which invalidated every live session
+// and left the durable seed and Vault disagreeing. A diagnostic that is present
+// only when somebody remembered to configure it is absent exactly when the
+// incident happens, so the configuration is checked at boot, when a deployment
+// can still be fixed, rather than discovered during one.
+//
+// This module cannot name the command itself: it names nothing above it, and
+// the verb belongs to the cell. So the composition supplies it and this only
+// insists that it did.
+func requireKeyCustody(isLocal bool) error {
+	if isLocal || strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY")) != "" {
+		return nil
+	}
+	return fmt.Errorf("vault: VAULT_KEY_CUSTODY is required outside the local environment: set it in the `vault` configuration group to the command this cell uses to seed secret/data/jwt-signing-key, so an operator meeting a missing-key refusal is told what to run rather than left to mint a key by hand (module/KEY_ROTATION.md, \"Custody of the signing key\")")
+}
+
 // keyCustodyHint renders the cell's own seeding command into the refusal, from
 // VAULT_KEY_CUSTODY in the `vault` configuration group. It is a free-text
 // operator note, so it is bounded and stripped of newlines before it reaches a
 // log line: an unbounded value from configuration would otherwise let whoever
 // writes the group forge log entries around the refusal.
+//
+// The empty branch is reachable only in the local environment, where
+// requireKeyCustody does not insist on the key: a local run has no cell and no
+// seeding command.
 func keyCustodyHint() string {
 	custody := strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY"))
 	if custody == "" {

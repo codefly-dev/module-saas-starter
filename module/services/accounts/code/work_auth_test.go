@@ -373,6 +373,23 @@ func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	require.NotEmpty(t, priv)
 }
 
+// A diagnostic that is present only when somebody remembered to configure it is
+// absent exactly when the incident happens, so a hosted profile refuses to boot
+// without it — at a moment the deployment can still be fixed, rather than during
+// a crash loop.
+func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
+	t.Setenv("VAULT_KEY_CUSTODY", "")
+	err := requireKeyCustody(false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "VAULT_KEY_CUSTODY is required outside the local environment")
+	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
+
+	require.NoError(t, requireKeyCustody(true), "a local run has no cell and no seeding command")
+
+	t.Setenv("VAULT_KEY_CUSTODY", "platform-cli seed-identity example-cell")
+	require.NoError(t, requireKeyCustody(false))
+}
+
 // The cell's own seeding command reaches the operator through the `vault`
 // group, because this module names nothing above it. The value is operator free
 // text that lands in a log line, so it is collapsed to one line and bounded —

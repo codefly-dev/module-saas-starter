@@ -292,6 +292,16 @@ stays false and the Vault role binds the product namespace's `accounts`
 ServiceAccount at that audience. A cell that mounts the CA elsewhere sets
 `VAULT_CA_FILE` and that wins.
 
+The Vault policy that role needs is `read` on `secret/data/jwt-signing-key` and
+`update` on each of `transit/encrypt/api-keys`, `transit/decrypt/api-keys` and
+`transit/hmac/api-keys`. Granting `transit/keys/api-keys` instead is the trap:
+that path manages key metadata, so the signing-key read succeeds while every
+encrypt call answers 403. Creating the key belongs to the Vault service's own
+provisioning, not to this role.
+
+A hosted profile also requires `VAULT_KEY_CUSTODY` — the command the cell uses
+to seed the signing key — and accounts refuses to start without it.
+
 Both mounts are rendered by the `go-grpc` service agent from accounts'
 `spec`, which needs the mount support owed in
 **codefly-dev/service-go-grpc#156**; the agent pin here moves when that
