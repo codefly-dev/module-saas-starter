@@ -1762,6 +1762,18 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/(dashboard)/oauth2/consent/page.tsx",
+      "imports": [
+        "@/features/auth/ui/consent-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/(dashboard)/onboarding/page.tsx",
       "imports": [
         "@/features/onboarding/ui/onboarding-wizard"
@@ -3308,6 +3320,23 @@
         "@/lib/auth",
         "@/lib/auth-errors",
         "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the auth workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/auth/ui/consent-page.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/components/brand-mark",
+        "@/features/auth/model/client-authorization",
+        "@/lib/appearance-provider",
+        "@/lib/auth"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",

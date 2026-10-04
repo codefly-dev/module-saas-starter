@@ -287,6 +287,29 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		}
 	}
 
+	// RFC 8707 resource binding. A token carrying a resource audience is
+	// admitted only at the solution that audience names — refusing one minted
+	// for another resource is the whole reason the audience is there. A token
+	// carrying none is an ordinary session credential and is admitted exactly
+	// as it is today: the browser's own session, and the first registered
+	// client, predate resource indicators and must keep working.
+	//
+	// Only solution paths are constrained. A resource-bound token still reaches
+	// the host's own API, because the host is where a solution's runtime
+	// resolves the caller's authority, and the token names the host audience
+	// too for precisely that reason (see the minter's two-audience comment).
+	if resource := resourceAudience(claims.Audience, s.audience); resource != "" {
+		if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath &&
+			!resourceAudienceAdmits(resource, solutionID, publicBaseURL()) {
+			recordJWTRejection(ctx, jwtRejectionWrongResource)
+			// 401, not 403: RFC 6750 §3.1 classes a token that is not valid for
+			// this resource as `invalid_token`, and an MCP client answers a 401
+			// by re-running discovery and authorizing for the right resource.
+			// A 403 would read as "you may not", which is not what happened.
+			return deny(401, "token audience does not name this resource"), nil
+		}
+	}
+
 	hdrs := []*corev3.HeaderValueOption{
 		hdr("x-user-id", claims.Subject),
 		hdr("x-org-id", claims.OrgID),
@@ -341,6 +364,25 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		hdrs = append(hdrs, hdr("x-scoped-roles-truncated", "true"))
 	}
 	return s.allow(hdrs), nil
+}
+
+// resourceAudience returns the one audience value that is not this host's own —
+// the RFC 8707 resource the token is bound to — or empty when the token names
+// only the host. More than one such value is read as none, matching the
+// minter: a token this host produced carries at most one resource, so a second
+// is a token it did not produce and must not be treated as a binding.
+func resourceAudience(audience jwt.ClaimStrings, hostAudience string) string {
+	var resource string
+	for _, value := range audience {
+		if value == hostAudience {
+			continue
+		}
+		if resource != "" {
+			return ""
+		}
+		resource = value
+	}
+	return resource
 }
 
 // checkAPIKey delegates to the backend for api-key validation.

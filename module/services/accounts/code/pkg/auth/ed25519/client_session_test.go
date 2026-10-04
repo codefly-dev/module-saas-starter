@@ -27,7 +27,7 @@ func TestMintForClientIssuesAnIndependentSessionCarryingAzp(t *testing.T) {
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
 
-	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin")
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.NoError(t, err)
 	require.NotEmpty(t, pair.AccessToken)
 	require.NotEmpty(t, pair.RefreshToken, "a client session is refreshable on its own")
@@ -62,7 +62,7 @@ func TestHostSessionOmitsAzpEntirely(t *testing.T) {
 func TestMintForClientRefusesWithoutAClient(t *testing.T) {
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
-	_, err := m.MintForClient(context.Background(), host.UserID, host.ID, "")
+	_, err := m.MintForClient(context.Background(), host.UserID, host.ID, "", "")
 	require.Error(t, err)
 }
 
@@ -70,10 +70,10 @@ func TestMintForClientRefusesAnUnknownOrForeignSession(t *testing.T) {
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
 
-	_, err := m.MintForClient(context.Background(), host.UserID, uuid.Must(uuid.NewV7()), "example-addin")
+	_, err := m.MintForClient(context.Background(), host.UserID, uuid.Must(uuid.NewV7()), "example-addin", "")
 	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
 
-	_, err = m.MintForClient(context.Background(), uuid.Must(uuid.NewV7()), host.ID, "example-addin")
+	_, err = m.MintForClient(context.Background(), uuid.Must(uuid.NewV7()), host.ID, "example-addin", "")
 	require.ErrorIs(t, err, auth.ErrSessionUnavailable, "a session id may not cross principals")
 }
 
@@ -84,11 +84,11 @@ func TestAClientSessionCannotAuthorizeASecondClient(t *testing.T) {
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
 
-	_, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin")
+	_, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.NoError(t, err)
 	client := store.records[len(store.records)-1]
 
-	_, err = m.MintForClient(ctx, client.UserID, client.ID, "example-cli")
+	_, err = m.MintForClient(ctx, client.UserID, client.ID, "example-cli", "")
 	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
 }
 
@@ -97,7 +97,7 @@ func TestClientRefreshRotationPreservesAzp(t *testing.T) {
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
 
-	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin")
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.NoError(t, err)
 
 	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-addin")
@@ -117,7 +117,7 @@ func TestClientRefreshRefusesAnotherClientsToken(t *testing.T) {
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
 
-	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin")
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.NoError(t, err)
 
 	_, err = m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-cli")
@@ -160,7 +160,7 @@ func TestClientAuthorizationRefusesStaleMFAEvidenceWithoutRevokingTheHost(t *tes
 		MFAEnrolled: true,
 	}
 
-	_, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin")
+	_, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
 
 	for i := range store.records {
@@ -169,4 +169,70 @@ func TestClientAuthorizationRefusesStaleMFAEvidenceWithoutRevokingTheHost(t *tes
 				"authorizing a client must not sign the person out of their browser")
 		}
 	}
+}
+
+// RFC 8707: a client session minted for a resource carries that resource as a
+// SECOND audience beside the host's own.
+//
+// Both, not one. The resource is what the gateway checks to refuse this token
+// at another solution; the host audience is what every existing verifier
+// validates, including this minter's own VerifyAccess, which the redemption
+// path calls to build its audit row. Dropping either breaks something real.
+func TestMintForClientBindsTheResourceAsASecondAudience(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+	const resource = "https://host.example.com/solutions/example/mcp"
+
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
+	require.NoError(t, err)
+
+	payload := decodeJWTPayload(t, pair.AccessToken)
+	require.Contains(t, payload, `"aud":["test-audience","`+resource+`"]`)
+
+	identity, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err, "the host audience must still verify")
+	require.Equal(t, resource, identity.Resource)
+
+	// Persisted on the session row, which is what a rotation reads.
+	client := store.records[len(store.records)-1]
+	require.Equal(t, resource, client.Resource)
+}
+
+// A session that named no resource carries only the host audience, so nothing
+// about the browser's own session or the first registered client changes.
+func TestASessionWithNoResourceCarriesOnlyTheHostAudience(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
+	require.NoError(t, err)
+	require.Contains(t, decodeJWTPayload(t, pair.AccessToken), `"aud":["test-audience"]`)
+
+	identity, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+	require.Empty(t, identity.Resource)
+}
+
+// The binding is fixed when the person consented to it. A rotation reissues the
+// resource from the locked session row, never from the request — otherwise a
+// client could move its own audience by asking at refresh time.
+func TestARotationReissuesTheBoundResource(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+	const resource = "https://host.example.com/solutions/example/mcp"
+
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
+	require.NoError(t, err)
+
+	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp")
+	require.NoError(t, err)
+	require.Contains(t, decodeJWTPayload(t, rotated.AccessToken),
+		`"aud":["test-audience","`+resource+`"]`)
+
+	identity, err := m.VerifyAccess(rotated.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, resource, identity.Resource)
 }

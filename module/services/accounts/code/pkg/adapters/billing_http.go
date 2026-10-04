@@ -185,8 +185,30 @@ var errAPIKeyNotAccepted = errors.New("this route does not accept API keys")
 // (enforceAPIKeyScopePolicy). A route opened to keys must first declare its
 // scope here.
 func authenticateHTTPRequest(svc *business.Service, r *http.Request) (context.Context, string, string, error) {
+	ctx, err := authenticateHTTPSession(svc, r)
+	if err != nil {
+		return ctx, "", "", err
+	}
+	tenantID, userID, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok {
+		return ctx, "", "", auth.ErrVerifiedDatabaseIdentityRequired
+	}
+	return ctx, userID, tenantID, nil
+}
+
+// authenticateHTTPSession is authenticateHTTPRequest without the tenant: it
+// establishes the same private identity and refuses an API key the same way,
+// but does not require the caller to be acting in an organization.
+//
+// Split out for the routes whose RPC equivalents declare
+// TENANT_REQUIREMENT_NONE. Authorizing a client is one: the code names the
+// person, their current authorization is resolved through their session at
+// redemption, and an orgless person signing in to a client is an ordinary
+// state the RPC has always allowed. Requiring a tenant here would refuse them
+// on the HTTP spelling of a flow the proto spelling serves.
+func authenticateHTTPSession(svc *business.Service, r *http.Request) (context.Context, error) {
 	if svc == nil || r == nil {
-		return nil, "", "", errors.New("authentication is unavailable")
+		return nil, errors.New("authentication is unavailable")
 	}
 	ctx := r.Context()
 	// The same trust test as the Connect and gRPC interceptors: exactly one
@@ -194,22 +216,22 @@ func authenticateHTTPRequest(svc *business.Service, r *http.Request) (context.Co
 	// twice is refused rather than read by index.
 	trustedForwarded := singleValidGatewayToken(r.Header.Values("X-Codefly-Gateway-Token"))
 	if trustedForwarded && forwardedIdentityAmbiguous(r.Header.Values) {
-		return ctx, "", "", errors.New("forwarded identity is ambiguous")
+		return ctx, errors.New("forwarded identity is ambiguous")
 	}
 	if trustedForwarded && r.Header.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, r.Header)
 		if err != nil {
-			return ctx, "", "", err
+			return ctx, err
 		}
 		ctx = forwarded
 	} else {
 		minter := svc.JWTMinter()
 		if minter == nil {
-			return ctx, "", "", errors.New("access-token verifier is unavailable")
+			return ctx, errors.New("access-token verifier is unavailable")
 		}
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || token == "" {
-			return ctx, "", "", errors.New("bearer token is required")
+			return ctx, errors.New("bearer token is required")
 		}
 		identity, err := minter.VerifyAccess(token)
 		if err != nil {
@@ -217,23 +239,19 @@ func authenticateHTTPRequest(svc *business.Service, r *http.Request) (context.Co
 			// answer 503 (retryable) instead of collapsing it into a 401; every
 			// other verify failure stays a generic invalid-credentials answer.
 			if errors.Is(err, auth.ErrRevocationUnavailable) {
-				return ctx, "", "", err
+				return ctx, err
 			}
-			return ctx, "", "", errors.New("access token is invalid")
+			return ctx, errors.New("access token is invalid")
 		}
 		if identity == nil {
-			return ctx, "", "", errors.New("access token is invalid")
+			return ctx, errors.New("access token is invalid")
 		}
 		ctx = stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
 	}
 	if credentialKindFromContext(ctx) == credentialKindAPIKey {
-		return ctx, "", "", errAPIKeyNotAccepted
+		return ctx, errAPIKeyNotAccepted
 	}
-	tenantID, userID, ok := auth.VerifiedDatabaseIdentity(ctx)
-	if !ok {
-		return ctx, "", "", auth.ErrVerifiedDatabaseIdentityRequired
-	}
-	return ctx, userID, tenantID, nil
+	return ctx, nil
 }
 
 // writeBillingAuthnError answers a billing authentication failure. A revocation

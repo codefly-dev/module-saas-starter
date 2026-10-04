@@ -44,6 +44,7 @@ type Service struct {
 	solutionRegistrar         *registrationAuthority
 	oauthPolicy               *auth.OAuthRequestPolicy
 	clientRegistry            *auth.ClientRegistry
+	clientMetadata            *auth.ClientMetadataResolver
 	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
 	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
 	webhookCipher             SecretCipher  // required for outbound-webhook signing keys

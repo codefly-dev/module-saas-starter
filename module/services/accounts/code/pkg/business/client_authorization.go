@@ -22,10 +22,6 @@ import (
 // already waiting for it.
 const clientAuthorizationCodeTTL = time.Minute
 
-// challengeMethodS256 is the only PKCE method accepted. "plain" puts the
-// verifier itself in the authorization request, which defeats the point.
-const challengeMethodS256 = "S256"
-
 // ClientAuthorizationCode is a one-time credential binding a signed-in person
 // to the client they authorized. It carries no authority of its own: what it
 // names is the host session, and redemption resolves the person's current
@@ -37,11 +33,18 @@ type ClientAuthorizationCode struct {
 	ClientID      string
 	RedirectURI   string
 	CodeChallenge string
-	UserID        string
-	SessionID     string
-	ExpiresAt     time.Time
-	ConsumedAt    *time.Time
-	CreatedAt     time.Time
+	// Resource is the RFC 8707 indicator the person approved, or empty. It is
+	// recorded on the code and read back at redemption, so the audience the
+	// client ends up holding is the one the authorization bound — never one the
+	// client names for the first time at the token endpoint.
+	Resource string
+	// Scope is what was granted, echoed on the token response.
+	Scope      string
+	UserID     string
+	SessionID  string
+	ExpiresAt  time.Time
+	ConsumedAt *time.Time
+	CreatedAt  time.Time
 }
 
 // ClientAuthorizationCodeStore persists authorization codes. Consume must lock
@@ -86,56 +89,26 @@ func (s *Service) IssueClientAuthorizationCode(
 	ctx context.Context,
 	req *gen.IssueClientAuthorizationCodeRequest,
 ) (*gen.IssueClientAuthorizationCodeResponse, error) {
-	w := wool.Get(ctx).In("IssueClientAuthorizationCode")
-	store, hasStore := s.store.(ClientAuthorizationCodeStore)
-	if !hasStore {
-		return nil, w.NewError("store does not implement ClientAuthorizationCodeStore")
-	}
 	authorization := req.GetAuthorization()
 	client, err := s.resolveClientAuthorization(authorization)
 	if err != nil {
 		return nil, err
 	}
-
-	caller, ok := auth.VerifiedRequestIdentity(ctx)
-	if !ok || caller.EffectiveSubject == uuid.Nil || caller.SessionID == uuid.Nil {
-		return nil, auth.ErrClientAuthorizationRejected
-	}
-	// An impersonated session may not hand a client a credential: the client
-	// would hold a rotatable token for a person who never authorized it.
-	if caller.Impersonated() {
-		return nil, auth.ErrClientAuthorizationRejected
-	}
-
-	plaintext, hash, err := newClientAuthorizationCode()
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot generate client authorization code")
-	}
-	now := time.Now()
-	record := &ClientAuthorizationCode{
-		ID:            NewIDString(),
-		CodeHash:      hash,
-		ClientID:      client.ClientID,
+	// This RPC predates resource indicators and carries none, so the session it
+	// authorizes is audience-unbound: exactly the credential the first
+	// registered client was built against. A client that wants a resource-bound
+	// token uses the standard authorize endpoint, which carries one.
+	issued, err := s.issueAuthorizationCode(ctx, authorizationCodeGrant{
+		Client:        client,
 		RedirectURI:   authorization.GetRedirectUri(),
 		CodeChallenge: authorization.GetCodeChallenge(),
-		UserID:        caller.EffectiveSubjectID(),
-		SessionID:     caller.SessionID.String(),
-		ExpiresAt:     now.Add(clientAuthorizationCodeTTL),
-		CreatedAt:     now,
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := s.store.WithUserTx(ctx, record.UserID, func(ctx context.Context) error {
-		return store.CreateClientAuthorizationCode(ctx, record)
-	}); err != nil {
-		return nil, w.Wrapf(err, "persist client authorization code")
-	}
-
-	s.emit(ctx, record.UserID, "user", EventAuthClientAuthorized,
-		"session", record.SessionID, renderOrgID(caller.OrgID),
-		map[string]any{"client_id": client.ClientID})
-
 	return &gen.IssueClientAuthorizationCodeResponse{
-		Code:      plaintext,
-		ExpiresIn: expiresInSeconds(record.ExpiresAt),
+		Code:      issued.Code,
+		ExpiresIn: issued.ExpiresIn,
 	}, nil
 }
 
@@ -150,8 +123,8 @@ func (s *Service) ExchangeClientToken(
 	if s.minter == nil {
 		return nil, auth.ErrClientAuthorizationRejected
 	}
-	client, ok := s.clientRegistry.Lookup(req.GetClientId())
-	if !ok {
+	client, err := s.resolveOAuthClient(ctx, req.GetClientId())
+	if err != nil {
 		return nil, auth.ErrClientAuthorizationRejected
 	}
 
@@ -170,71 +143,23 @@ func (s *Service) redeemClientAuthorizationCode(
 	client auth.RegisteredClient,
 	grant *gen.AuthorizationCodeGrant,
 ) (*gen.ExchangeClientTokenResponse, error) {
-	w := wool.Get(ctx).In("redeemClientAuthorizationCode")
-	store, ok := s.store.(ClientAuthorizationCodeStore)
-	if !ok {
-		return nil, w.NewError("store does not implement ClientAuthorizationCodeStore")
-	}
-
-	var pair *auth.TokenPair
-	var redeemed *ClientAuthorizationCode
-	err := store.ConsumeClientAuthorizationCode(
-		ctx,
-		hashClientAuthorizationCode(grant.GetCode()),
-		time.Now(),
-		func(txCtx context.Context, code *ClientAuthorizationCode) error {
-			// The code is consumed before any of this is checked, so a mismatch
-			// burns it rather than leaving it to be guessed at again.
-			if code.ClientID != client.ClientID ||
-				code.RedirectURI != grant.GetRedirectUri() ||
-				!verifyCodeChallenge(code.CodeChallenge, grant.GetCodeVerifier()) {
-				return auth.ErrClientAuthorizationRejected
-			}
-			userID, err := uuid.Parse(code.UserID)
-			if err != nil {
-				return auth.ErrClientAuthorizationRejected
-			}
-			sessionID, err := uuid.Parse(code.SessionID)
-			if err != nil {
-				return auth.ErrClientAuthorizationRejected
-			}
-			// The code's consumption and the client's session must commit
-			// together: the marker is what lets the session store reuse this
-			// transaction instead of opening its own, which would commit the
-			// session while the code stayed redeemable.
-			pair, err = s.minter.MintForClient(
-				auth.WithAtomicSessionTransaction(txCtx), userID, sessionID, client.ClientID)
-			if err != nil {
-				return err
-			}
-			redeemed = code
-			return nil
-		},
-	)
+	// One code consumption path, shared with the standard token endpoint. This
+	// RPC's response shape is the older one (no token_type, no scope), so the
+	// standard fields are projected away rather than a second redemption being
+	// written beside the first.
+	redeemed, err := s.redeemAuthorizationCode(ctx, client, authorizationCodeRedemption{
+		Code:         grant.GetCode(),
+		RedirectURI:  grant.GetRedirectUri(),
+		CodeVerifier: grant.GetCodeVerifier(),
+	})
 	if err != nil {
-		if errors.Is(err, auth.ErrClientAuthorizationRejected) || errors.Is(err, auth.ErrSessionUnavailable) {
-			return nil, auth.ErrClientAuthorizationRejected
-		}
-		return nil, w.Wrapf(err, "redeem client authorization code")
-	}
-	if pair == nil || redeemed == nil {
 		return nil, auth.ErrClientAuthorizationRejected
 	}
-
-	// The audit row describes the session this exchange created, not the host
-	// session that authorized it, and it must carry that session's organization:
-	// audit_events' tenant policy matches on a non-null org_id, so a row emitted
-	// without one is readable by no tenant at all. The minted token is the
-	// authoritative record of both.
-	minted, err := s.minter.VerifyAccess(pair.AccessToken)
-	if err != nil {
-		return nil, w.Wrapf(err, "verify freshly minted client access token")
-	}
-	s.emit(ctx, redeemed.UserID, "user", EventAuthLogin,
-		"session", minted.SessionID.String(), renderOrgID(minted.OrgID),
-		map[string]any{"client_id": client.ClientID})
-
-	return clientTokenResponse(pair), nil
+	return &gen.ExchangeClientTokenResponse{
+		AccessToken:  redeemed.AccessToken,
+		RefreshToken: redeemed.RefreshToken,
+		ExpiresIn:    redeemed.ExpiresIn,
+	}, nil
 }
 
 func (s *Service) rotateClientRefreshToken(
@@ -281,7 +206,7 @@ func (s *Service) resolveClientAuthorization(
 	if !client.AllowsRedirect(request.GetRedirectUri()) {
 		return auth.RegisteredClient{}, auth.ErrClientAuthorizationRejected
 	}
-	if request.GetCodeChallengeMethod() != challengeMethodS256 {
+	if request.GetCodeChallengeMethod() != auth.ChallengeMethodS256 {
 		return auth.RegisteredClient{}, auth.ErrClientAuthorizationRejected
 	}
 	if request.GetCodeChallenge() == "" {

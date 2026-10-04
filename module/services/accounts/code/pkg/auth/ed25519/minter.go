@@ -427,6 +427,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		IPAddress:             identity.IPAddress,
 		FamilyID:              familyID,
 		ClientID:              identity.ClientID,
+		Resource:              identity.Resource,
 		ActingAsUserID:        identity.ActingAsUserID,
 		RefreshHash:           hash,
 		IssuedAt:              now,
@@ -614,6 +615,7 @@ func identityFromCurrentAuthorization(
 		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ClientID:              rec.ClientID,
+		Resource:              rec.Resource,
 		Email:                 rec.Email,
 		DisplayName:           rec.DisplayName,
 		MFASatisfied:          mfaSatisfied,
@@ -766,6 +768,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ClientID:              claims.AuthorizedParty,
+		Resource:              resourceAudience(claims.Audience, m.cfg.Audience),
 		Email:                 claims.Email,
 		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
@@ -860,11 +863,25 @@ func (m *Minter) signAccess(
 		return "", time.Time{}, err
 	}
 	expiresAt := now.Add(m.accessTTL(identity))
+	// The host's own audience is always present, and a resource-bound token
+	// carries the RFC 8707 indicator beside it. Both, not one: the token is
+	// genuinely for two audiences — the named resource, and the host's own API
+	// that the resource resolves the caller's authority against — and dropping
+	// the host audience would make a verifier that validates it (the gateway's
+	// parser, this minter's own VerifyAccess) refuse a token it minted.
+	//
+	// What makes the indicator load-bearing is the gateway's check: a request
+	// to a solution's surface whose token carries a resource must carry THIS
+	// solution's resource. So the extra audience narrows rather than widens.
+	audience := jwt.ClaimStrings{m.cfg.Audience}
+	if identity.Resource != "" {
+		audience = append(audience, identity.Resource)
+	}
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.cfg.Issuer,
 			Subject:   identity.UserID.String(),
-			Audience:  jwt.ClaimStrings{m.cfg.Audience},
+			Audience:  audience,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -908,6 +925,25 @@ func (m *Minter) signAccess(
 		return "", time.Time{}, err
 	}
 	return signed, expiresAt, nil
+}
+
+// resourceAudience returns the one audience value that is not the host's own —
+// the RFC 8707 resource this token is bound to — or empty when the token names
+// only the host. More than one such value is read as none: a token the host
+// minted carries at most one resource, so a second is a token this code did not
+// produce and must not be reported as a binding anything could enforce.
+func resourceAudience(audience jwt.ClaimStrings, hostAudience string) string {
+	var resource string
+	for _, value := range audience {
+		if value == hostAudience {
+			continue
+		}
+		if resource != "" {
+			return ""
+		}
+		resource = value
+	}
+	return resource
 }
 
 func numericDateTime(value *jwt.NumericDate) time.Time {
@@ -1009,7 +1045,7 @@ func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time,
 func (m *Minter) MintForClient(
 	ctx context.Context,
 	userID, authorizingSessionID uuid.UUID,
-	clientID string,
+	clientID, resource string,
 ) (*auth.TokenPair, error) {
 	if m.configErr != nil {
 		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
@@ -1027,6 +1063,7 @@ func (m *Minter) MintForClient(
 			return nil, err
 		}
 		identity.ClientID = clientID
+		identity.Resource = resource
 		// The browser's device description belongs to the browser. A client runs
 		// somewhere else entirely, so carrying it over would label the new
 		// session with a device that is not the one holding its token.

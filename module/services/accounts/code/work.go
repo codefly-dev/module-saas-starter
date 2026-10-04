@@ -474,6 +474,35 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetClientRegistry(clientRegistry)
 
+	// Client ID Metadata Document clients (issue #1003). A client whose
+	// client_id is an https URL publishes its own registration there; the host
+	// fetches and validates it, and writes nothing durable. Whether this host
+	// trusts that mechanism is a DEPLOYMENT decision, not a per-tenant one —
+	// see the handbook's decisions/registered-clients.md — and an unset
+	// declaration refuses every such client, exactly as an unset registry
+	// registers none.
+	clientMetadataPolicy, err := auth.NewClientMetadataPolicy(
+		identityEnv("IDENTITY_CLIENT_METADATA_DOCUMENTS"))
+	if err != nil {
+		return nil, fmt.Errorf("configure client metadata documents: %w", err)
+	}
+	service.SetClientMetadataResolver(auth.NewClientMetadataResolver(clientMetadataPolicy))
+
+	// The OAuth 2.1 / MCP authorization-server surface. Raw HTTP rather than
+	// transcoded RPCs because the token endpoint's form encoding and error
+	// bodies are the contract a standards-written client reads; see
+	// pkg/adapters/oauth_http.go.
+	// Each path on its own, spelled out rather than looped: RegisterHTTPRoute
+	// matches by prefix, so registering the `/v1/oauth2/` namespace would claim
+	// every path under it and promise the gateway routes something below it —
+	// and the correspondence gate in module/tools can only check a call site it
+	// can resolve statically, which a loop over a slice is not.
+	oauthHandler := adapters.NewOAuthHTTPHandler(service)
+	adapters.RegisterHTTPRoute(adapters.OAuthMetadataPath, oauthHandler)
+	adapters.RegisterHTTPRoute(adapters.OAuthAuthorizeValidatePath, oauthHandler)
+	adapters.RegisterHTTPRoute(adapters.OAuthAuthorizeGrantPath, oauthHandler)
+	adapters.RegisterHTTPRoute(adapters.OAuthTokenPath, oauthHandler)
+
 	// Authentication mode is explicit in the Codefly identity configuration.
 	// A selected fixture is an optional data seed and cannot replace the
 	// configured provider. Fixture authentication must itself be selected and

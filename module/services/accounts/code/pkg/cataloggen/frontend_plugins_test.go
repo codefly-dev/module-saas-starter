@@ -40,7 +40,7 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 54)
+	require.Len(t, routes, 55)
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route
@@ -49,6 +49,10 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	// Public so a user stuck behind a blocking surface can always end the session.
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_PUBLIC, byPath["/auth/logout"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/settings/mfa"].GetAccess())
+	// Approving a client is an act of the person, so the consent page is
+	// authenticated — not public like the login page it follows. The route group
+	// is what the generator reads, which is why the page lives in (dashboard).
+	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/oauth2/consent"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_ADMIN, byPath["/admin/users"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams/{teamId}"].GetAccess())

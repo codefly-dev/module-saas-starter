@@ -59,6 +59,13 @@ var solutionIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`)
 // it has handled the request (the caller must then return). Any other path is
 // left to the static route matcher.
 func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) bool {
+	// A solution's MCP endpoint is an OAuth protected resource, and RFC 9728
+	// puts its metadata under a well-known prefix rather than under the
+	// resource's own path, so that document is served here beside the surface
+	// it describes. See gateway_mcp_resource.go.
+	if g.handleProtectedResourceMetadata(w, r) {
+		return true
+	}
 	if !strings.HasPrefix(r.URL.Path, solutionPrefix) {
 		return false
 	}
@@ -143,6 +150,18 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// Same identity discipline as every protected route: drop caller-supplied
 	// identity, run ext_authz, and require a valid credential.
 	stripAllIdentityHeaders(r)
+	// An MCP client discovers how to authenticate from the 401 itself: the
+	// challenge names where the resource describes itself, the document names
+	// this host as its authorization server, and the client then runs the
+	// authorization-code flow. A 401 without the challenge is a dead end — the
+	// client has nothing to go on and reports only "unauthorized" — so it is
+	// stamped before the check runs rather than at each refusal site, which is
+	// also why a 503 from an unavailable revocation store carries it too
+	// (harmless: a client reads it only on 401).
+	isMCP := isSolutionMCPPath(path)
+	if isMCP {
+		stampResourceChallenge(w, id)
+	}
 	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
@@ -159,6 +178,12 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	if int(checkResp.GetStatus().GetCode()) != int(codes.OK) {
 		httpError(w, http.StatusForbidden, "forbidden")
 		return true
+	}
+	// The request was authenticated, so the challenge is not part of the
+	// answer. Leaving it on a 200 would tell a conforming client its token was
+	// refused on a response that served its data.
+	if isMCP {
+		w.Header().Del("WWW-Authenticate")
 	}
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 

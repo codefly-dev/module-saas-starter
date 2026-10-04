@@ -126,7 +126,7 @@ func (*fixedAccessMinter) VerifyClientRefresh(context.Context, string, string) (
 }
 
 func (*fixedAccessMinter) MintForClient(
-	context.Context, uuid.UUID, uuid.UUID, string,
+	context.Context, uuid.UUID, uuid.UUID, string, string,
 ) (*auth.TokenPair, error) {
 	return nil, nil
 }

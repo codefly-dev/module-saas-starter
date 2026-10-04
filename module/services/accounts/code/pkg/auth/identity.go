@@ -94,6 +94,15 @@ type Identity struct {
 	// authorization still resolves from the subject and their roles.
 	ClientID string
 
+	// Resource is the RFC 8707 resource indicator this session's tokens are
+	// bound to — a solution's MCP endpoint at this host. It becomes a second
+	// `aud` value beside the host's own audience, so a token minted for one
+	// resource is refused at another while still reaching the host's own API
+	// (which is what the resource delegates its authorization to). Empty for
+	// every session that named no resource, which is every session the host
+	// minted before resource indicators existed.
+	Resource string
+
 	// Email and DisplayName are purely presentational identity, carried into
 	// the access token's `email`/`name` claims so a client can render the
 	// signed-in person by name or address instead of the raw user id. Neither

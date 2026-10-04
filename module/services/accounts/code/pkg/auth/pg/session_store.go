@@ -310,16 +310,17 @@ func insertSession(ctx context.Context, tx pgx.Tx, rec *auth.SessionRecord) erro
 				created_at, last_active_at, idle_expires_at, expires_at,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id
+				email, display_name, acting_as_user_id, client_id, resource
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-				$14, $15, $16, $17, $18, $19, $20, $21, $22
+				$14, $15, $16, $17, $18, $19, $20, $21, $22, $23
 			)`,
 		rec.ID, rec.UserID, hashArg, rec.FamilyID, deviceInfo, nilIfEmpty(rec.IPAddress),
 		rec.IssuedAt, rec.LastActiveAt, rec.IdleExpiresAt, rec.ExpiresAt,
 		orgIDArg, rec.OrgRole, rec.PlatformRole, rec.MFASatisfied,
 		authenticationMethods, authenticatedAtArg, rec.AssuranceLevel, mfaVerifiedAtArg,
 		nilIfEmpty(rec.Email), nilIfEmpty(rec.DisplayName), actingAsArg, nilIfEmpty(rec.ClientID),
+		nilIfEmpty(rec.Resource),
 	)
 	return err
 }
@@ -348,7 +349,7 @@ func (s *SessionStore) FindByRefreshHash(ctx context.Context, hash []byte) (*aut
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id
+				email, display_name, acting_as_user_id, client_id, resource
 			FROM sessions
 			WHERE refresh_token_hash = $1
 			LIMIT 1`, hashHex), hash)
@@ -381,13 +382,14 @@ func scanSession(row rowScanner, hash []byte) (*auth.SessionRecord, error) {
 	var displayName *string
 	var actingAsUserID *uuid.UUID
 	var clientID *string
+	var resource *string
 	if err := row.Scan(
 		&rec.ID, &rec.UserID, &rec.FamilyID,
 		&rec.IssuedAt, &rec.LastActiveAt, &rec.IdleExpiresAt, &rec.ExpiresAt, &revokedAt, &revokedReason,
 		&deviceInfo, &ipAddress,
 		&orgID, &rec.OrgRole, &rec.PlatformRole, &rec.MFASatisfied,
 		&rec.AuthenticationMethods, &authenticatedAt, &rec.AssuranceLevel, &mfaVerifiedAt,
-		&email, &displayName, &actingAsUserID, &clientID,
+		&email, &displayName, &actingAsUserID, &clientID, &resource,
 	); err != nil {
 		return nil, err
 	}
@@ -425,6 +427,9 @@ func scanSession(row rowScanner, hash []byte) (*auth.SessionRecord, error) {
 	if clientID != nil {
 		rec.ClientID = *clientID
 	}
+	if resource != nil {
+		rec.Resource = *resource
+	}
 	return &rec, nil
 }
 
@@ -457,7 +462,7 @@ func (s *SessionStore) RotateRefresh(
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id
+				email, display_name, acting_as_user_id, client_id, resource
 			FROM sessions
 			WHERE refresh_token_hash = $1
 			LIMIT 1
@@ -570,7 +575,7 @@ func (s *SessionStore) ExchangeOrganization(
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id
+				email, display_name, acting_as_user_id, client_id, resource
 			FROM sessions
 			WHERE id = $1 AND user_id = $2
 			LIMIT 1

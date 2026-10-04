@@ -24,6 +24,10 @@ const (
 	jwtRejectionRevoked               = "revoked"
 	jwtRejectionSessionRevoked        = "session_revoked"
 	jwtRejectionRevocationUnavailable = "revocation_unavailable"
+	// jwtRejectionWrongResource is a token whose RFC 8707 resource audience
+	// names a different resource than the one being requested — an MCP token
+	// for one solution presented at another.
+	jwtRejectionWrongResource = "wrong_resource"
 )
 
 // Instruments are created once against the global meter provider. main installs

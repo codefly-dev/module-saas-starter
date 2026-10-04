@@ -114,6 +114,87 @@ describe("proxy product API forwarding", () => {
 		);
 	});
 
+	// The OAuth 2.1 / MCP surface at the paths the specifications put it (issue
+	// #1003). This app is the module's public entry, so the standard paths have
+	// to exist here; the behaviour behind each one stays with the service that
+	// owns it, which is what these rewrites carry.
+	it("serves the standard OAuth paths from the services that own them", async () => {
+		const cases: Array<[string, string]> = [
+			// The RFC 8414 document, published by accounts — the server whose
+			// behaviour it describes.
+			[
+				"/.well-known/oauth-authorization-server",
+				"/v1/oauth2/authorization-server",
+			],
+			// The RFC 6749 token endpoint, also accounts.
+			["/oauth2/token", "/v1/oauth2/token"],
+			// The RFC 9728 document for a solution's MCP endpoint, served by the
+			// gateway — the component that enforces what it says — at the same
+			// path the client asked for.
+			[
+				"/.well-known/oauth-protected-resource/solutions/example/mcp",
+				"/.well-known/oauth-protected-resource/solutions/example/mcp",
+			],
+			// The resource itself.
+			["/solutions/example/mcp", "/solutions/example/mcp"],
+		];
+		for (const [publicPath, upstreamPath] of cases) {
+			const response = await proxy(
+				productRequest(`https://app.example${publicPath}`),
+			);
+			expect(rewrittenTo(response)).toBe(`${GATEWAY}${upstreamPath}`);
+		}
+	});
+
+	// /oauth2/authorize is this app's own page: it shows a login page and a
+	// consent screen, neither of which is a response body. Forwarding it to the
+	// gateway would 404 the whole flow.
+	it("keeps the authorization endpoint in this app", async () => {
+		const response = await proxy(
+			productRequest("https://app.example/oauth2/authorize?client_id=x"),
+		);
+		expect(rewrittenTo(response)).toBeNull();
+	});
+
+	// The gateway's /solutions/* surface also carries the cluster-internal
+	// registration endpoints, which decide where authenticated traffic is
+	// forwarded and what the host loads as an in-origin remote. The mapping is
+	// per-path precisely so widening it cannot expose them from the edge.
+	it("forwards no solution path other than the MCP endpoint", async () => {
+		for (const path of [
+			"/solutions/_register",
+			"/solutions/_frontend",
+			"/solutions/_registry",
+			"/solutions/example/mcp/tools",
+			"/solutions/example/detail",
+			"/solutions/Example/mcp",
+			"/.well-known/oauth-protected-resource/solutions/example",
+		]) {
+			const response = await proxy(
+				productRequest(`https://app.example${path}`),
+			);
+			expect(rewrittenTo(response), path).toBeNull();
+		}
+	});
+
+	// An MCP client POSTing its token request must reach the backend, not a 307
+	// to a login page. These paths carry their own credential (a bearer, a PKCE
+	// verifier) or none at all by specification.
+	it("does not send the OAuth surface through the login redirect", async () => {
+		for (const path of [
+			"/.well-known/oauth-authorization-server",
+			"/oauth2/token",
+			"/oauth2/authorize",
+			"/solutions/example/mcp",
+		]) {
+			const request = new NextRequest(`https://app.example${path}`, {
+				headers: { "sec-fetch-dest": "empty", accept: "*/*" },
+			});
+			const response = await proxy(request);
+			expect(response.headers.get("location"), path).toBeNull();
+		}
+	});
+
 	it("follows the running composition when the gateway address changes", async () => {
 		// The regression guard for the real defect: a next.config rewrite compiles
 		// its destination into the build manifest, so an image built outside the

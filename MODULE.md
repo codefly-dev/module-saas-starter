@@ -47,6 +47,8 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Generated REST inventory: `module/services/accounts/generated/rest-surface.json`
 - REST/OpenAPI contract and extension boundary: `module/REST_SURFACE.md`
 - Resource follow subscriptions over events and notifications: `module/FOLLOWS.md`
+- The host as an OAuth 2.1 authorization server, its two client sources, and
+  resource indicators: [The host as an OAuth 2.1 authorization server](#the-host-as-an-oauth-21-authorization-server)
 
 ## Architecture
 
@@ -153,6 +155,60 @@ an organization bought or is allowed a product capability; Unleash answers
 which runtime behavior is rolled out. A flag may disable entitled behavior but
 must never grant an entitlement, raise a quota, or replace authorization. Each
 product path checks its entitlement independently from its flag evaluation.
+
+## The host as an OAuth 2.1 authorization server
+
+The host signs people in for its own public clients — an add-in, a CLI, a mobile
+app, an MCP client — and it is the **only** sign-in UI: a client never talks to
+an identity provider. Two spellings of the same authorization server exist, over
+one registry, one authorization-code table, one minter and one session kind.
+
+| Surface | Path | Owner |
+|---|---|---|
+| RFC 8414 authorization-server metadata | `GET /.well-known/oauth-authorization-server` | accounts (`pkg/business/oauth_authorization_server.go`), presented at the edge by the frontend proxy |
+| Authorization endpoint | `GET /oauth2/authorize` | frontend (`src/app/(auth)/oauth2/authorize/route.ts`) → the login page → the consent page |
+| Token endpoint (RFC 6749 form-encoded) | `POST /oauth2/token` | accounts (`pkg/adapters/oauth_http.go`) |
+| The first registered client's own RPCs | `/v1/auth/clients/validate`, `/v1/auth/clients/authorize`, `/v1/auth/token` | accounts (`pkg/business/client_authorization.go`) |
+| RFC 9728 protected-resource metadata for a solution's MCP endpoint | `GET /.well-known/oauth-protected-resource/solutions/<id>/mcp` | auth-gateway (`gateway_mcp_resource.go`) |
+
+The OAuth surface is **raw HTTP, not transcoded RPCs**, because its shape is the
+contract: RFC 6749 §3.2 requires a form-encoded token request and §5.2 a
+specific JSON error object, neither of which grpc-gateway produces. A client
+written against a standard OAuth library could not use a transcoded RPC.
+
+Two client sources, which cannot collide — a registry slug can never spell
+`https://`:
+
+- **Operator-registered.** `IDENTITY_REGISTERED_CLIENTS`, a JSON array in the
+  `identity` configuration group. Unset registers none, which refuses the flow.
+- **Client ID Metadata Documents.** A `client_id` that is an https URL is
+  fetched (bounded size and time, no redirect off its own origin, SSRF-guarded
+  at the dial), validated, and used as a public client for that one flow.
+  **Nothing durable is written.** Gated by
+  `IDENTITY_CLIENT_METADATA_DOCUMENTS`, unset meaning refused. There is **no**
+  dynamic client registration (RFC 7591) and no `registration_endpoint` in the
+  published metadata.
+
+**Resource indicators (RFC 8707).** An authorization request may name one
+resource: a solution's MCP endpoint at this host's own public origin,
+`https://<host>/solutions/<id>/mcp`. The resource is recorded on the
+authorization code, persisted on the session, and carried as a second `aud`
+value beside the host's own — so every existing verifier still accepts the
+token, while the gateway refuses it at any **other** solution's surface. A
+rotation reissues the binding from the locked session row, never from the
+request. A token naming no resource is the ordinary session credential and is
+unaffected.
+
+**Consent.** The host asks the person to approve a client by name when the
+client registered itself by publishing a document (nobody but the person can
+vouch for it) or when the request narrows the credential to a named resource.
+An operator-declared client asking for nothing in particular keeps the silent
+handoff it has today.
+
+An MCP token is a **session** credential: the gateway stamps
+`x-credential-kind: session` with a session id, so a solution's SDK mints the
+viewer's Work Context from it exactly as from a browser session. Lifetime,
+refresh rotation and revocation are the registered-client tokens'.
 
 ## Three layers of authorization
 
