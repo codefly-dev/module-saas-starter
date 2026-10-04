@@ -1790,6 +1790,21 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
+	// The AUTHORITY CEILING, from the same platform-owned anchor as the trust
+	// root and for the same two reasons: a document must never carry its own
+	// ceiling, and a ceiling the composition could point at is a ceiling the
+	// composition chose.
+	//
+	// Absence and damage are different answers. No envelope delivered is a
+	// complete deployment that answers no authority question — presence
+	// reconciles and every activation refuses by name — while an envelope that
+	// IS delivered and cannot be read refuses the boot, because reading a
+	// damaged ceiling as "no ceiling" turns a corrupted file into a silently
+	// narrower system and reading it permissively turns it into a wider one.
+	envelope, _, err := infra.ReadSolutionAuthorityEnvelope()
+	if err != nil {
+		return nil, err
+	}
 	return business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:          business.NewDeliveredSolutionHostBindings(service),
 		Verifier:        verifier,
@@ -1797,6 +1812,7 @@ func configuredSolutionHostBindingReconciler(
 		Domains:         domains,
 		DomainsBySigner: domainsBySigner,
 		Interval:        interval,
+		Envelope:        envelope,
 	})
 }
 
