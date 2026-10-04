@@ -58,13 +58,16 @@ Postgres transaction.
 
    A deployment that selects a swap value sets, beside `AUDIT_SINK`: the
    warehouse (`AUDIT_BIGQUERY_PROJECT` and `AUDIT_BIGQUERY_DATASET` for
-   `bigquery`), `AUDIT_ARCHIVE_URL` — the locked archive as a URL whose scheme
-   picks the archive writer, `gs://<bucket>` for GCS, any scheme without a
-   writer refused at startup — `AUDIT_CONTENT_RETENTION_DAYS` (the details
-   window of item 5) and `AUDIT_DEPLOYMENT_ID`, stamped on every record. A
-   missing setting fails startup. Credentials are the platform's ambient
-   identity (on Kubernetes, the pod's workload identity), never a key in
-   configuration.
+   `bigquery`; `AUDIT_CLICKHOUSE_DSN` and `AUDIT_EVENTS_RETENTION_DAYS` for
+   `clickhouse`), `AUDIT_ARCHIVE_URL` — the locked archive as a URL whose scheme
+   picks the archive writer (`gs://<bucket>` for GCS or `s3://<bucket>` for S3;
+   any scheme without a writer is refused at startup) —
+   `AUDIT_CONTENT_RETENTION_DAYS` (the details window of item 5) and
+   `AUDIT_DEPLOYMENT_ID`, stamped on every record. ClickHouse may additionally
+   set `AUDIT_CLICKHOUSE_CLUSTER` for replicated tables. The events retention
+   must be at least the content-detail window. A missing required setting
+   fails startup. Credentials are the platform's ambient identity (on
+   Kubernetes, the pod's workload identity), never a key in configuration.
 
 2. **Postgres keeps only the transactional queue.** `EmitTx` still writes inside
    the caller's transaction (and `Emit` inside its own, for the observational
@@ -171,8 +174,9 @@ Postgres transaction.
    A **locked object-storage archive** holds the compliance copy, one object
    per relay batch: full for security-class events, content-free (envelope plus
    hash) for content-class events. Locked means write-once under a retention
-   lock the operator cannot shorten: GCS Bucket Lock, S3 Object Lock, Azure Blob
-   immutability policies, or an object-lock-capable store on-premises.
+   lock the operator cannot shorten. The first two writers target GCS Bucket
+   Lock and S3 Object Lock. Azure Blob immutability policies still need a
+   writer; an on-premises S3-compatible lock must be qualified before use.
 
    Archive objects are named per batch. A retried batch writes a new object, so
    the archive may hold an event more than once. Every archive reader —
@@ -186,8 +190,9 @@ Postgres transaction.
    - Inserts are batched — the relay's batches, `async_insert`, or both. A
      single-row insert creates a data part per insert and ends in
      too-many-parts errors.
-   - Tables are replicated (`Replicated*MergeTree`), coordinated by ClickHouse
-     Keeper.
+   - A single-node deployment uses MergeTree. When
+     `AUDIT_CLICKHOUSE_CLUSTER` is set, tables use `ReplicatedMergeTree` with
+     ClickHouse Keeper; the cluster must exist before the adapter starts.
    - Tables are partitioned by month, and table TTL expires each tier at its
      window.
    - Growing past one shard is a planned operation, not an automatic one — or
