@@ -51,7 +51,16 @@ func TestEveryModuleCapabilityPathReReadsLiveAuthority(t *testing.T) {
 	// few direct callers remain.
 	requireEnforcementWrapperIntact(t, businessDir)
 
-	callers := directModuleGrantCallers(t, businessDir)
+	// A reviewer found this gate "green about a NAME": it watched calls to
+	// moduleGrant, and a function reading `declaredModules()` directly skips
+	// moduleGrant entirely — so it resolved a module principal's declared
+	// ceiling with no live re-read and the gate said nothing.
+	//
+	// That is the difference between gating the enforcement and gating one
+	// spelling of it. The registry read is the underlying fact; moduleGrant is
+	// one wrapper over it, and AuthorizeModuleCapability is the one that also
+	// re-reads. So both are watched now, against the same shrink-only baseline.
+	callers := directRegistryReaders(t, businessDir)
 	baseline := unroutedCapabilityPaths(t, moduleDir)
 
 	var added []string
@@ -62,7 +71,8 @@ func TestEveryModuleCapabilityPathReReadsLiveAuthority(t *testing.T) {
 	}
 	sort.Strings(added)
 	if len(added) > 0 {
-		t.Fatalf("these capability paths call moduleGrant directly and so decide on the DECLARED ceiling alone, "+
+		t.Fatalf("these capability paths reach the declared registry directly (moduleGrant or declaredModules) "+
+			"and so decide on the DECLARED ceiling alone, "+
 			"without re-reading the live installation, producer epoch or binding revision:\n    %s\n\n"+
 			"Route each through Service.AuthorizeModuleCapability. A path that cannot be routed yet must be added to "+
 			"%s WITH a reason — and that file only ever shrinks, so adding to it is a decision a reviewer sees.",
@@ -85,7 +95,7 @@ func TestEveryModuleCapabilityPathReReadsLiveAuthority(t *testing.T) {
 	}
 	sort.Strings(stale)
 	if len(stale) > 0 {
-		t.Fatalf("%s lists capability paths that no longer call moduleGrant directly:\n    %s\n\n"+
+		t.Fatalf("%s lists capability paths that no longer reach the declared registry directly:\n    %s\n\n"+
 			"Delete these lines. A baseline that keeps entries for routed or deleted paths stops measuring anything, "+
 			"and would let a future regression re-add one of them silently.",
 			unroutedCapabilityPathsFile, strings.Join(stale, "\n    "))
@@ -102,13 +112,13 @@ var enforcementFiles = map[string]bool{
 	"module_capabilities.go":           false, // holds moduleGrant's definition, checked by name below
 }
 
-// directModuleGrantCallers finds every function that calls moduleGrant outside
-// the enforcement wrapper.
+// directRegistryReaders finds every function that resolves the declared
+// registry outside the enforcement wrapper.
 //
 // It walks the AST rather than grepping, because a grep cannot tell which
 // FUNCTION a call sits in — and the function name is what a baseline line has to
 // be, or the baseline would be line numbers that churn on every edit.
-func directModuleGrantCallers(t *testing.T, dir string) []string {
+func directRegistryReaders(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -135,10 +145,12 @@ func directModuleGrantCallers(t *testing.T, dir string) []string {
 			}
 			// moduleGrant itself, and the one wrapper that is SUPPOSED to call
 			// it, are where a direct call is correct.
-			if function.Name.Name == "moduleGrant" || function.Name.Name == "moduleCapability" {
+			// The reads themselves, and the one wrapper that is SUPPOSED to
+			// perform them, are where a direct read is correct.
+			if registryReads[function.Name.Name] || function.Name.Name == "moduleCapability" {
 				continue
 			}
-			if !callsModuleGrant(function) {
+			if !readsDeclaredRegistry(function) {
 				continue
 			}
 			callers = append(callers, name+":"+function.Name.Name)
@@ -216,15 +228,30 @@ func callsNamed(function *ast.FuncDecl, name string) bool {
 	return found
 }
 
-func callsModuleGrant(function *ast.FuncDecl) bool {
+// registryReads are the two ways a function can resolve a module principal's
+// declared ceiling without re-reading live authority.
+//
+// `declaredModules` is the registry read itself; `moduleGrant` is a wrapper over
+// it that adds a fail-closed unknown-principal check and nothing live. Watching
+// only the wrapper is what let four paths bypass this gate.
+var registryReads = map[string]bool{
+	"moduleGrant":     true,
+	"declaredModules": true,
+}
+
+func readsDeclaredRegistry(function *ast.FuncDecl) bool {
 	found := false
 	ast.Inspect(function, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if ok && selector.Sel != nil && selector.Sel.Name == "moduleGrant" {
+		if selector, ok := call.Fun.(*ast.SelectorExpr); ok &&
+			selector.Sel != nil && registryReads[selector.Sel.Name] {
+			found = true
+			return false
+		}
+		if ident, ok := call.Fun.(*ast.Ident); ok && registryReads[ident.Name] {
 			found = true
 			return false
 		}
