@@ -19,10 +19,9 @@ import (
 // deployed render, and what accounts is told about the Vault it binds.
 
 const (
-	vaultServiceManifest   = "module/services/vault/service.codefly.yaml"
-	accountsServiceMainfst = "module/services/accounts/service.codefly.yaml"
-	vaultGroupDefaults     = "module/configurations/local/vault.env"
-	accountsGoGRPCPin      = "module/services/accounts/service.codefly.yaml"
+	vaultServiceManifest    = "module/services/vault/service.codefly.yaml"
+	accountsServiceManifest = "module/services/accounts/service.codefly.yaml"
+	vaultGroupDefaults      = "module/configurations/local/vault.env"
 )
 
 // vaultDurableRenderFloor is the first vault agent release whose deployed render
@@ -127,7 +126,7 @@ func TestVaultAgentPinCannotRenderAnInMemoryVaultOnACell(t *testing.T) {
 // Vault Kubernetes role to bind.
 func TestAccountsDeclaresWhatTheVaultBindingNeeds(t *testing.T) {
 	t.Parallel()
-	manifest := readAgentPinnedManifest(t, accountsServiceMainfst)
+	manifest := readAgentPinnedManifest(t, accountsServiceManifest)
 	found := false
 	for _, group := range manifest.WorkspaceConfigurationDependencies {
 		if group == "vault" {
@@ -135,10 +134,10 @@ func TestAccountsDeclaresWhatTheVaultBindingNeeds(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("%s does not depend on the `vault` configuration group, so VAULT_ADDR, VAULT_CA_FILE, VAULT_AUTH_METHOD and VAULT_K8S_ROLE never reach the process", accountsServiceMainfst)
+		t.Errorf("%s does not depend on the `vault` configuration group, so VAULT_ADDR, VAULT_CA_FILE, VAULT_AUTH_METHOD and VAULT_K8S_ROLE never reach the process", accountsServiceManifest)
 	}
 	if manifest.Spec.ServiceAccount == nil || manifest.Spec.ServiceAccount.Name == "" {
-		t.Errorf("%s declares no spec.service-account: Vault Kubernetes auth binds a role to accounts' own ServiceAccount, and the namespace default is shared with every other workload", accountsServiceMainfst)
+		t.Errorf("%s declares no spec.service-account: Vault Kubernetes auth binds a role to accounts' own ServiceAccount, and the namespace default is shared with every other workload", accountsServiceManifest)
 	}
 }
 
@@ -269,7 +268,7 @@ const (
 // name, so whatever #156 calls the spec key, this test keeps its meaning.
 func TestHostedAccountsDeploymentCarriesTheVaultBinding(t *testing.T) {
 	t.Parallel()
-	data, err := os.ReadFile(accountsServiceMainfst)
+	data, err := os.ReadFile(accountsServiceManifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +285,7 @@ func TestHostedAccountsDeploymentCarriesTheVaultBinding(t *testing.T) {
 			"hardcodes automountServiceAccountToken: false and one /tmp emptyDir, and its manifest spec has no mount field. "+
 			"When #156 releases: declare it, set goGRPCMountFloor in this file, move the agent pin to that release, and add "+
 			"the rendered-Deployment assertion this test still owes.",
-			accountsServiceMainfst, what, readAgentPinnedManifest(t, accountsGoGRPCPin).Agent.Version)
+			accountsServiceManifest, what, readAgentPinnedManifest(t, accountsServiceManifest).Agent.Version)
 	}
 
 	// The CA the Vault's certificate chains to, at the path the client defaults
@@ -316,10 +315,10 @@ func TestHostedAccountsDeploymentCarriesTheVaultBinding(t *testing.T) {
 	if goGRPCMountFloor == "" {
 		t.Errorf("goGRPCMountFloor is unset: no go-grpc release is known to render these mounts, so the declaration above is "+
 			"staged and the hosted Deployment carries neither. Set it to the release that carries codefly-dev/service-go-grpc#156 "+
-			"and move %s's agent pin to it in the same change.", accountsGoGRPCPin)
+			"and move %s's agent pin to it in the same change.", accountsServiceManifest)
 		return
 	}
-	manifest := readAgentPinnedManifest(t, accountsGoGRPCPin)
+	manifest := readAgentPinnedManifest(t, accountsServiceManifest)
 	pinned, floor := parseAgentVersion(t, manifest.Agent.Version), parseAgentVersion(t, goGRPCMountFloor)
 	if pinned[0] < floor[0] ||
 		(pinned[0] == floor[0] && pinned[1] < floor[1]) ||
@@ -327,7 +326,7 @@ func TestHostedAccountsDeploymentCarriesTheVaultBinding(t *testing.T) {
 		t.Fatalf(
 			"%s declares the Vault mounts against go-grpc %s, below the %s that renders them: the Deployment would carry "+
 				"no CA and no projected token while this manifest claims both, and accounts would refuse to boot naming the wrong file",
-			accountsGoGRPCPin, manifest.Agent.Version, goGRPCMountFloor)
+			accountsServiceManifest, manifest.Agent.Version, goGRPCMountFloor)
 	}
 }
 
