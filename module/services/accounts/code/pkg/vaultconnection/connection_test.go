@@ -227,15 +227,25 @@ func secretGroup(t *testing.T, key, value string) {
 func hosted(t *testing.T) {
 	t.Helper()
 	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+	// Both carriers of every key this binding reads are blanked, not just one.
+	//
 	// Load falls back to a plain process variable when a group carries nothing,
-	// so a stray value from the environment running the test would silently
-	// satisfy the very branch under test.
+	// so a stray value would silently satisfy the very branch under test — and
+	// under `codefly ci run` the group carriers are not stray at all: the
+	// runtime injects this module's own local defaults, including the
+	// placeholder AppRole credential from vault.secret.env. That is how the
+	// first version of this test passed locally and failed in CI: it blanked the
+	// plain variables and inherited a real credential from the injected group.
 	for _, key := range []string{
 		"VAULT_ADDR", "VAULT_AUTH_METHOD", "VAULT_APPROLE_MOUNT",
-		"VAULT_APPROLE_ROLE_ID", "VAULT_APPROLE_SECRET_ID",
+		"VAULT_APPROLE_ROLE_ID", "VAULT_APPROLE_SECRET_ID", "VAULT_KEY_CUSTODY",
 	} {
 		t.Setenv(key, "")
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__"+key, "")
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__VAULT__"+key, "")
 	}
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL_TRANSPORT__MESH_PROTECTED", "")
+	t.Setenv("MESH_PROTECTED", "")
 }
 
 // Load's own refusals, each on the real carrier and each asserted on its own
