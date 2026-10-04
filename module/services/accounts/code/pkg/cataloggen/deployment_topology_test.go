@@ -71,15 +71,15 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
-	require.Len(t, first.Catalog.GetServices(), 8)
+	require.Len(t, first.Catalog.GetServices(), 9)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
-	require.Len(t, first.Catalog.GetPublicEgress(), 4)
+	require.Len(t, first.Catalog.GetPublicEgress(), 5)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 13, endpointCount)
+	require.Equal(t, 14, endpointCount)
 	require.Equal(t, 8, dependencyCount)
 	// The accounts REST surface is reachable only through the gateway; the
 	// gateway's REST surface is module-visible because composed modules and
@@ -131,7 +131,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.True(t, accountsConnectExposed)
 	require.True(t, accountsAuthorityExposed)
 	require.True(t, gatewayRESTExposed)
-	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 21, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	for _, name := range []string{
 		"allow-accounts-from-dependents", "allow-auth-gateway-from-dependents", "allow-auth-gateway-to-dependencies",
@@ -184,7 +184,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, loadedModule.ValidateInterface(ctx))
 	loadedServices, err := loadedModule.LoadServices(ctx)
 	require.NoError(t, err)
-	require.Len(t, loadedServices, 8)
+	require.Len(t, loadedServices, 9)
 
 	moduleDocument := readFixture(t, "../../../../../module.codefly.yaml")
 	var moduleEntry struct {
@@ -196,7 +196,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(moduleDocument, &module))
 	_, err = module.Proto(ctx)
 	require.NoError(t, err)
-	require.Len(t, module.ServiceReferences, 8)
+	require.Len(t, module.ServiceReferences, 9)
 
 	for _, reference := range module.ServiceReferences {
 		document := readFixture(t, filepath.Join("../../../../../services", reference.Name, "service.codefly.yaml"))
@@ -238,7 +238,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 20)
+	require.Len(t, names, 21)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-gateway"])

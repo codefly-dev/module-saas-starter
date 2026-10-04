@@ -4,7 +4,7 @@
 
 import type { GenFile, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { ListSolutionHostBindingsRequestSchema, ListSolutionHostBindingsResponseSchema, ListSolutionRegistrationsRequestSchema, ListSolutionRegistrationsResponseSchema, SolutionRegistrationSchema } from "./solution_registry_pb";
+import type { ListSolutionHostBindingsRequestSchema, ListSolutionHostBindingsResponseSchema, ListSolutionRegistrationsRequestSchema, ListSolutionRegistrationsResponseSchema } from "./solution_registry_pb";
 import { file_saas_accounts_v1_solution_registry } from "./solution_registry_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 
