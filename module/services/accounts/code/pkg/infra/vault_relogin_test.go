@@ -4,12 +4,9 @@ import (
 	"accounts/pkg/vaultconnection"
 	"context"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -22,12 +19,14 @@ import (
 func TestVaultClientLogsInAgainWhenVaultRefusesItsToken(t *testing.T) {
 	var mu sync.Mutex
 	logins, transit := 0, []string{}
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Plain http on loopback: the binding has no CA to pin anywhere any more,
+	// so a TLS fixture would exercise a transport the contract does not have.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.URL.Path == "/v1/auth/kubernetes/login":
+		case r.URL.Path == "/v1/auth/approle/login":
 			logins++
 			_ = json.NewEncoder(w).Encode(map[string]any{"auth": map[string]any{
 				"client_token": fmt.Sprintf("token-%d", logins), "lease_duration": 3600, "renewable": true,
@@ -45,16 +44,10 @@ func TestVaultClientLogsInAgainWhenVaultRefusesItsToken(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	dir := t.TempDir()
-	ca := filepath.Join(dir, "ca.pem")
-	require.NoError(t, os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0o400))
-	jwt := filepath.Join(dir, "jwt")
-	require.NoError(t, os.WriteFile(jwt, []byte("projected-sa-jwt"), 0o400))
-
 	connection, err := vaultconnection.New(vaultconnection.Config{
-		Address: server.URL, CAFile: ca,
-		Kubernetes: &vaultconnection.KubernetesAuth{Role: "accounts", JWTPath: jwt},
-		Runtime:    vaultconnection.RuntimeLocal,
+		Address: server.URL,
+		AppRole: &vaultconnection.AppRoleAuth{RoleID: "role-fixture", SecretID: "secret-fixture"},
+		Runtime: vaultconnection.RuntimeLocal,
 	})
 	require.NoError(t, err)
 	client := &VaultClient{address: connection.Address, transitKey: "api-keys", connection: connection}

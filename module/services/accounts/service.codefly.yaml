@@ -34,6 +34,7 @@ workspace-configuration-dependencies:
     - github-app
     - identity
     - internal-auth
+    - internal-transport
     - module-capabilities
     - observability
     - product-analytics
@@ -52,24 +53,6 @@ endpoints:
     - name: grpc
     - name: rest
 spec:
-    # The PEM the cell's Vault certificate chains to. The cell's workload-CA
-    # stage publishes `vault-ca` into the product namespace; accounts defaults
-    # VAULT_CA_FILE to this mount path joined with the ConfigMap's `ca.crt`
-    # (pkg/vaultconnection.DefaultCAFile), so a cell's coordinate contract does
-    # not have to restate a path that belongs to this render.
-    #
-    # Optional because a local k3d render has no such ConfigMap and the pod must
-    # still start — local runs reach the composed `vault` service over loopback
-    # and need no CA at all.
-    #
-    # STAGED: the pinned go-grpc agent drops this field. The mount support is
-    # owed on codefly-dev/service-go-grpc#156, and the agent pin here moves when
-    # it releases — `goGRPCMountFloor` in vault_binding_test.go names both steps.
-    config-mounts:
-        - config-map: vault-ca
-          mount-path: /etc/vault/ca
-          name: vault-ca
-          optional: true
     connect-endpoint: true
     hot-reload: true
     # The datasource fetch reads a repository over git's smart-HTTP transport by

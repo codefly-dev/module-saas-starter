@@ -13,41 +13,31 @@ import (
 	"time"
 )
 
-// AuthMethodKubernetes makes accounts log in to Vault itself with its projected
-// ServiceAccount token, so no long-lived Vault token — and never a root token —
-// is ever handed to the pod.
-const AuthMethodKubernetes = "kubernetes"
-
-// DefaultKubernetesMount is Vault's default path for the Kubernetes auth method.
-const DefaultKubernetesMount = "kubernetes"
-
-// DefaultKubernetesTokenPath is where the deployment projects a ServiceAccount
-// token whose audience is `vault`. It is not the pod's default token: that one
-// is audience-bound to the API server and must not be replayable against Vault.
-const DefaultKubernetesTokenPath = "/var/run/secrets/vault/token"
-
-// DefaultCAFile is where the deployment mounts the PEM the Vault's certificate
-// chains to — the `vault-ca` ConfigMap's `ca.crt`, under the mount path
-// accounts' own service manifest declares.
+// AuthMethodAppRole makes accounts log in to Vault itself with an AppRole
+// credential the configuration plane delivers as a secret, exactly the way
+// every other accounts secret arrives. The Vault token it receives is held in
+// memory only, renewed before its lease runs out, and re-minted by logging in
+// again when renewal fails or Vault refuses it — so no long-lived Vault token,
+// and never a root token, is provisioned to the pod.
 //
-// It has a default for the same reason the token path does: both are in-pod
-// paths the host's own render creates, so the module knows them and the
-// composition does not have to restate them. A cell's coordinate contract
-// emits the facts only it knows — the address, the auth method, the mount and
-// the role — and nothing it would have to copy out of this repository.
-// An overriding value in the `vault` group still wins, for a cell that mounts
-// the CA somewhere else.
-const DefaultCAFile = "/etc/vault/ca/ca.crt"
+// Nothing here reads a file. In-cluster transport security belongs to the mesh,
+// so there is no CA to pin and no projected token to mount: the whole binding
+// is values plus one secret.
+const AuthMethodAppRole = "approle"
 
-// KubernetesAuth configures the Kubernetes auth login.
-type KubernetesAuth struct {
-	// Role is the Vault role bound to this service's ServiceAccount. Required.
-	Role string
-	// Mount is the auth method's mount path; DefaultKubernetesMount when empty.
+// DefaultAppRoleMount is Vault's default path for the AppRole auth method.
+const DefaultAppRoleMount = "approle"
+
+// AppRoleAuth configures the AppRole login. RoleID and SecretID come from the
+// `vault` workspace SECRET group; Mount comes from the non-secret group.
+type AppRoleAuth struct {
+	// RoleID identifies the Vault role. Required.
+	RoleID string
+	// SecretID is the credential proving the holder may assume that role.
+	// Required.
+	SecretID string
+	// Mount is the auth method's mount path; DefaultAppRoleMount when empty.
 	Mount string
-	// JWTPath is the projected ServiceAccount token, re-read on every login so a
-	// rotated projection is used; DefaultKubernetesTokenPath when empty.
-	JWTPath string
 }
 
 // renewWhenRemaining is the fraction of a lease below which the token is
@@ -58,10 +48,10 @@ const renewWhenRemaining = 3 // renew once less than 1/3 of the lease is left
 // does not turn every Transit call into a login against the same outage.
 const loginRetryAfter = 2 * time.Second
 
-type kubernetesLogin struct {
+type appRoleLogin struct {
 	address string
 	client  *http.Client
-	config  KubernetesAuth
+	config  AppRoleAuth
 	now     func() time.Time
 
 	mu          sync.Mutex
@@ -84,7 +74,7 @@ type vaultAuthResponse struct {
 // current returns a usable token: the cached one while it has most of its lease
 // left, a renewed one when it is running low, and a fresh login when there is
 // none, renewal failed, or the cache was invalidated by a refusal.
-func (k *kubernetesLogin) current() (string, error) {
+func (k *appRoleLogin) current() (string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	now := k.now()
@@ -112,31 +102,29 @@ func (k *kubernetesLogin) current() (string, error) {
 
 // invalidate drops the cached token after Vault refused it, so the next call
 // logs in again instead of presenting a revoked token until its lease ends.
-func (k *kubernetesLogin) invalidate() {
+func (k *appRoleLogin) invalidate() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.token = ""
 	k.lastFailure, k.lastErr = time.Time{}, nil
 }
 
-func (k *kubernetesLogin) loginLocked() error {
-	jwt, err := ReadProjection(k.config.JWTPath)
-	if err != nil {
-		return err
-	}
+func (k *appRoleLogin) loginLocked() error {
 	body, _ := json.Marshal(map[string]string{
-		"role": k.config.Role,
-		"jwt":  strings.TrimSpace(string(jwt)),
+		"role_id":   k.config.RoleID,
+		"secret_id": k.config.SecretID,
 	})
 	auth, err := k.post("/v1/auth/"+k.config.Mount+"/login", "", body)
 	if err != nil {
-		return fmt.Errorf("Vault kubernetes login: %w", err)
+		// The body is never echoed: a login request carries the credential and a
+		// refusal is diagnosed by its status.
+		return fmt.Errorf("Vault approle login: %w", err)
 	}
 	k.store(auth)
 	return nil
 }
 
-func (k *kubernetesLogin) renewLocked() error {
+func (k *appRoleLogin) renewLocked() error {
 	auth, err := k.post("/v1/auth/token/renew-self", k.token, []byte("{}"))
 	if err != nil {
 		return err
@@ -145,7 +133,7 @@ func (k *kubernetesLogin) renewLocked() error {
 	return nil
 }
 
-func (k *kubernetesLogin) store(auth *vaultAuthResponse) {
+func (k *appRoleLogin) store(auth *vaultAuthResponse) {
 	k.token = auth.Auth.ClientToken
 	k.obtained = k.now()
 	k.lease = time.Duration(auth.Auth.LeaseDuration) * time.Second
@@ -154,7 +142,7 @@ func (k *kubernetesLogin) store(auth *vaultAuthResponse) {
 
 // post sends one auth request. Vault's body is never echoed into the error: a
 // login response carries a token, and a refusal is diagnosed by its status.
-func (k *kubernetesLogin) post(path, token string, body []byte) (*vaultAuthResponse, error) {
+func (k *appRoleLogin) post(path, token string, body []byte) (*vaultAuthResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), k.client.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, k.address+path, bytes.NewReader(body))

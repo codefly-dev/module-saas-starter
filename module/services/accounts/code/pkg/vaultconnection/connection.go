@@ -4,7 +4,6 @@ package vaultconnection
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"accounts/pkg/meshtransport"
 
 	codefly "github.com/codefly-dev/sdk-go"
 )
@@ -31,91 +32,97 @@ const (
 	// `vault` service, a provisioned token and a loopback address are all fine.
 	RuntimeLocal Runtime = "local"
 	// RuntimeDeployed is any deployed runtime context. Only a Vault the
-	// composition names, over https, with Kubernetes auth, is accepted there.
+	// composition names, reached with an AppRole credential, is accepted there —
+	// over https, or over plaintext http exactly when the mesh assertion covers
+	// the address.
 	RuntimeDeployed Runtime = "deployed"
 )
 
 type Config struct {
-	Address, Token, CAFile, TokenFile string
+	Address, Token, TokenFile string
 	// Runtime selects which bindings are permissible. Required.
 	Runtime Runtime
-	// Kubernetes, when set, makes the connection log in with the projected
-	// ServiceAccount token and never read Token or TokenFile.
-	Kubernetes *KubernetesAuth
-	// AllowInsecureHTTP is the operator's assertion that a cleartext hop to a
-	// non-loopback Vault is protected out of band (an mTLS mesh). Without it
-	// every Vault request — the Transit calls carrying the token as much as the
-	// signing-key fetch — refuses http to anything but loopback. It is a local
-	// assertion only: a deployed runtime refuses cleartext whatever it says.
-	AllowInsecureHTTP bool
-}
-type Connection struct {
-	Address          string
-	Client           *http.Client
-	token, tokenFile string
-	kubernetes       *kubernetesLogin
+	// AppRole, when set, makes the connection log in with the AppRole
+	// credential and never read Token or TokenFile.
+	AppRole *AppRoleAuth
+	// MeshProtected is the composition's assertion that every in-cluster hop is
+	// carried by a mutually authenticated mesh. It admits a plaintext address,
+	// and only an in-cluster Service address: see package meshtransport, whose
+	// rule this carries. Nothing else admits plaintext off loopback.
+	MeshProtected bool
 }
 
-// Load consumes the existing primitive's Codefly projection. Mounted token
-// mode never requires or falls back to a static token, including on rotation.
+type Connection struct {
+	Address string
+	Client  *http.Client
+	// MeshProtected is the assertion this connection was admitted under, so a
+	// caller that validates the same address again — the signing-key loader
+	// does — applies the decision that let the connection exist rather than
+	// re-reading configuration and possibly disagreeing with it.
+	MeshProtected    bool
+	token, tokenFile string
+	appRole          *appRoleLogin
+}
+
+// Load builds the connection from the `vault` workspace group.
 //
-// The `vault` workspace group names the Vault the deployment reaches
-// (VAULT_ADDR, VAULT_CA_FILE) and selects Kubernetes auth
-// (VAULT_AUTH_METHOD=kubernetes, VAULT_K8S_ROLE, VAULT_K8S_MOUNT,
-// VAULT_K8S_TOKEN_PATH), in which case accounts logs in itself and no Vault
-// token is provisioned to it at all.
+// Locally it uses the composed `vault` service's own projection: its address
+// and a token (or token file) the platform provisions.
 //
-// Outside the local environment that group is the only source: the composed
-// `vault` service's address and token projections are the local-development
-// shape, and a deployed product that inherited them by omission is the failure
-// this refuses. Each refusal names the key that is missing or wrong.
+// Outside the local environment that projection is never inherited. The
+// composition names the cell's Vault and supplies an AppRole credential, and
+// nothing in the binding is a file:
+//
+//	VAULT_ADDR              the cell Vault's address
+//	VAULT_AUTH_METHOD       approle
+//	VAULT_APPROLE_MOUNT     the auth mount; `approle` when empty
+//	VAULT_APPROLE_ROLE_ID   from the `vault` SECRET group
+//	VAULT_APPROLE_SECRET_ID from the `vault` SECRET group
+//
+// In-cluster transport security belongs to the mesh, so a cell Vault listens
+// without TLS of its own and the address is plaintext http. That is admitted
+// only by the mesh assertion, and only for an in-cluster Service address — see
+// package meshtransport. Every refusal names the key that is missing or wrong.
 func Load(ctx context.Context) (*Connection, error) {
 	runtime := RuntimeDeployed
 	if codefly.IsLocal() {
 		runtime = RuntimeLocal
 	}
+	// A malformed assertion fails startup rather than being read as either
+	// answer, so it is resolved before anything depends on it.
+	protected, err := meshtransport.Protected(codefly.For(ctx))
+	if err != nil {
+		return nil, err
+	}
 	address := groupValue(ctx, "VAULT_ADDR")
 	if address == "" {
 		if runtime == RuntimeDeployed {
-			return nil, errors.New("VAULT_ADDR is required outside the local environment: name the cell's Vault in the `vault` configuration group (an https address, VAULT_CA_FILE, VAULT_AUTH_METHOD=kubernetes and VAULT_K8S_ROLE). The composed `vault` service's own projection is the local-development shape and is never inherited by a deployed product")
+			return nil, errors.New("VAULT_ADDR is required outside the local environment: name the cell's Vault in the `vault` configuration group, with VAULT_AUTH_METHOD=approle and the AppRole credential in the `vault` secret group. The composed `vault` service's own projection is the local-development shape and is never inherited by a deployed product")
 		}
-		var err error
 		address, err = codefly.For(ctx).Service("vault").Configuration("vault", "address")
 		if err != nil {
 			return nil, errors.New("Vault address projection unavailable")
 		}
 	}
-	ca := groupValue(ctx, "VAULT_CA_FILE")
-	if ca == "" && runtime == RuntimeLocal {
-		ca, _ = codefly.For(ctx).Service("vault").Configuration("vault", "ca-file")
-	}
-	if ca == "" && runtime == RuntimeDeployed {
-		// The host's own render mounts the CA at this path, so the module knows
-		// it and a cell does not have to restate it. A cell that mounts it
-		// elsewhere sets VAULT_CA_FILE and that wins.
-		ca = DefaultCAFile
-	}
 	switch method := groupValue(ctx, "VAULT_AUTH_METHOD"); method {
 	case "", "token":
 		if runtime == RuntimeDeployed {
-			return nil, errors.New("refusing a Vault token binding outside the local environment: set VAULT_AUTH_METHOD=kubernetes with VAULT_K8S_ROLE in the `vault` configuration group so accounts logs in as its own ServiceAccount. A long-lived Vault token provisioned to the pod is the local-development shape")
+			return nil, errors.New("refusing a Vault token binding outside the local environment: set VAULT_AUTH_METHOD=approle in the `vault` configuration group, with VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group, so accounts logs in and holds its own short-lived token. A long-lived Vault token provisioned to the pod is the local-development shape")
 		}
-	case AuthMethodKubernetes:
+	case AuthMethodAppRole:
 		return New(Config{
-			Address: address, CAFile: ca, Runtime: runtime,
-			Kubernetes: &KubernetesAuth{
-				Role:    groupValue(ctx, "VAULT_K8S_ROLE"),
-				Mount:   groupValue(ctx, "VAULT_K8S_MOUNT"),
-				JWTPath: groupValue(ctx, "VAULT_K8S_TOKEN_PATH"),
+			Address: address, Runtime: runtime, MeshProtected: protected,
+			AppRole: &AppRoleAuth{
+				RoleID:   secretGroupValue(ctx, "VAULT_APPROLE_ROLE_ID"),
+				SecretID: secretGroupValue(ctx, "VAULT_APPROLE_SECRET_ID"),
+				Mount:    groupValue(ctx, "VAULT_APPROLE_MOUNT"),
 			},
-			AllowInsecureHTTP: allowInsecureHTTP(ctx),
 		})
 	default:
-		return nil, fmt.Errorf("unsupported VAULT_AUTH_METHOD %q: use token or kubernetes", method)
+		return nil, fmt.Errorf("unsupported VAULT_AUTH_METHOD %q: use approle, or token in the local environment", method)
 	}
 	tokenFile, _ := codefly.For(ctx).Service("vault").Configuration("vault", "token-file")
 	token := ""
-	var err error
 	if tokenFile == "" {
 		token, err = codefly.For(ctx).Service("vault").Secret("vault", "token")
 		if err != nil {
@@ -123,8 +130,8 @@ func Load(ctx context.Context) (*Connection, error) {
 		}
 	}
 	return New(Config{
-		Address: address, Token: token, CAFile: ca, TokenFile: tokenFile, Runtime: runtime,
-		AllowInsecureHTTP: allowInsecureHTTP(ctx),
+		Address: address, Token: token, TokenFile: tokenFile,
+		Runtime: runtime, MeshProtected: protected,
 	})
 }
 
@@ -138,8 +145,15 @@ func groupValue(ctx context.Context, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func allowInsecureHTTP(ctx context.Context) bool {
-	return groupValue(ctx, "VAULT_ALLOW_INSECURE_HTTP") == "true"
+// secretGroupValue reads one key of the `vault` workspace SECRET group. The
+// AppRole credential arrives this way — as a secret, like every other secret
+// accounts holds — rather than as a mounted file.
+func secretGroupValue(ctx context.Context, key string) string {
+	value, err := codefly.For(ctx).WorkspaceSecret("vault", key)
+	if err != nil || value == "" {
+		value = os.Getenv(key)
+	}
+	return strings.TrimSpace(value)
 }
 
 func New(config Config) (*Connection, error) {
@@ -153,77 +167,55 @@ func New(config Config) (*Connection, error) {
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return nil, errors.New("invalid Vault endpoint")
 	}
-	if (config.CAFile != "" || config.TokenFile != "") && u.Scheme != "https" {
-		return nil, errors.New("projected Vault identity requires HTTPS")
+	if config.TokenFile != "" && u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
+		return nil, errors.New("a Vault token file off loopback requires HTTPS")
 	}
 	loopback := isLoopbackHost(u.Hostname())
 	// A deployed runtime accepts exactly one shape: the Vault the composition
-	// names, over TLS anchored to a pinned CA, reached as accounts' own
-	// ServiceAccount. Every other binding is the local-development shape, and a
-	// product that reached a secrets store that way is the incident this
-	// refuses — so it is refused here too, not only where Load reads the group,
-	// because New is the one door every caller passes through.
+	// names, reached with an AppRole credential it delivered as a secret. Every
+	// other binding is the local-development shape, and a product that reached a
+	// secrets store that way is the incident this refuses — so it is refused
+	// here too, not only where Load reads the group, because New is the one door
+	// every caller passes through.
 	if deployed {
-		if config.Kubernetes == nil {
-			return nil, errors.New("refusing a Vault token binding outside the local environment: set VAULT_AUTH_METHOD=kubernetes with VAULT_K8S_ROLE so accounts logs in as its own ServiceAccount")
-		}
-		if u.Scheme != "https" {
-			return nil, errors.New("refusing a cleartext Vault address outside the local environment: VAULT_ADDR must be an https URL, whatever VAULT_ALLOW_INSECURE_HTTP asserts")
-		}
-		if config.AllowInsecureHTTP {
-			return nil, errors.New("refusing VAULT_ALLOW_INSECURE_HTTP=true outside the local environment: the signing key and every Transit call would cross the wire in the clear, and a mesh assertion nothing can verify is not a substitute for TLS to the Vault")
+		if config.AppRole == nil {
+			return nil, errors.New("refusing a Vault token binding outside the local environment: set VAULT_AUTH_METHOD=approle so accounts logs in and holds its own short-lived token")
 		}
 		if config.Token != "" || config.TokenFile != "" {
-			return nil, errors.New("refusing a provisioned Vault token outside the local environment: Kubernetes auth mints accounts' own token and no static or file token may be projected to the pod")
+			return nil, errors.New("refusing a provisioned Vault token outside the local environment: the AppRole login mints accounts' own token and no static or file token may be delivered to the pod")
 		}
 	}
-	if config.Kubernetes != nil {
-		if config.Kubernetes.Role == "" {
-			return nil, errors.New("Vault kubernetes auth requires VAULT_K8S_ROLE")
-		}
-		// The login presents the pod's identity and receives a token, so off
-		// loopback it only ever travels over TLS anchored to a pinned CA — the
-		// insecure-http assertion does not extend to handing out an identity.
-		if !loopback && (u.Scheme != "https" || config.CAFile == "") {
-			return nil, errors.New("Vault kubernetes auth requires https and VAULT_CA_FILE outside loopback")
+	if config.AppRole != nil {
+		if config.AppRole.RoleID == "" || config.AppRole.SecretID == "" {
+			return nil, errors.New("Vault approle auth requires VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group")
 		}
 	}
-	// The token rides every request, and Transit carries the secrets it seals,
-	// so cleartext is refused for the whole connection, not only for the
-	// signing-key fetch that used to be the one place it was checked.
-	if u.Scheme == "http" && !loopback && !config.AllowInsecureHTTP {
-		return nil, errors.New("refusing cleartext http to a non-loopback Vault: use https, or set VAULT_ALLOW_INSECURE_HTTP=true only when the hop is protected out of band")
+	// The token rides every request, the login carries the AppRole credential,
+	// and Transit carries the secrets it seals — so plaintext is refused for the
+	// whole connection unless the mesh covers it. Loopback is always allowed, so
+	// a local run against the composed service needs no assertion.
+	if u.Scheme == "http" && !loopback && !meshtransport.Admits(config.MeshProtected, config.Address) {
+		return nil, fmt.Errorf("refusing cleartext http to a non-loopback Vault at %q: %s", u.Host, meshtransport.Remedy)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil // credentials stay on the declared private dependency
+	// No CA pinning: in-cluster transport security is the mesh's, so a cell
+	// Vault has no certificate of its own to anchor. An https address is
+	// verified against the system roots like any other.
 	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	if config.CAFile != "" {
-		pem, err := ReadProjection(config.CAFile)
-		if err != nil {
-			return nil, err
-		}
-		roots := x509.NewCertPool()
-		if !roots.AppendCertsFromPEM(pem) {
-			return nil, errors.New("invalid Vault CA projection")
-		}
-		transport.TLSClientConfig.RootCAs = roots
-	}
-	c := &Connection{Address: strings.TrimSuffix(config.Address, "/"), token: config.Token, tokenFile: config.TokenFile, Client: &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("Vault redirect denied") }}}
-	if config.Kubernetes != nil {
-		auth := *config.Kubernetes
+	c := &Connection{Address: strings.TrimSuffix(config.Address, "/"), MeshProtected: config.MeshProtected, token: config.Token, tokenFile: config.TokenFile, Client: &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("Vault redirect denied") }}}
+	if config.AppRole != nil {
+		auth := *config.AppRole
 		if auth.Mount == "" {
-			auth.Mount = DefaultKubernetesMount
-		}
-		if auth.JWTPath == "" {
-			auth.JWTPath = DefaultKubernetesTokenPath
+			auth.Mount = DefaultAppRoleMount
 		}
 		if strings.Trim(auth.Mount, "/") == "" || strings.Contains(auth.Mount, "..") {
-			return nil, errors.New("invalid VAULT_K8S_MOUNT")
+			return nil, errors.New("invalid VAULT_APPROLE_MOUNT")
 		}
 		auth.Mount = strings.Trim(auth.Mount, "/")
 		// No static token and no token file in this mode, ever.
 		c.token, c.tokenFile = "", ""
-		c.kubernetes = &kubernetesLogin{address: c.Address, client: c.Client, config: auth, now: time.Now}
+		c.appRole = &appRoleLogin{address: c.Address, client: c.Client, config: auth, now: time.Now}
 	}
 	if _, err := c.Token(); err != nil {
 		return nil, err
@@ -239,18 +231,18 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// Invalidate tells the connection Vault refused the token it presented, so a
-// Kubernetes-auth connection logs in again on the next call. A static or file
-// token has nothing to drop: the file is re-read on every call anyway.
+// Invalidate tells the connection Vault refused the token it presented, so an
+// AppRole connection logs in again on the next call. A static or file token has
+// nothing to drop: the file is re-read on every call anyway.
 func (c *Connection) Invalidate() {
-	if c.kubernetes != nil {
-		c.kubernetes.invalidate()
+	if c.appRole != nil {
+		c.appRole.invalidate()
 	}
 }
 
 func (c *Connection) Token() (string, error) {
-	if c.kubernetes != nil {
-		return c.kubernetes.current()
+	if c.appRole != nil {
+		return c.appRole.current()
 	}
 	token := c.token
 	if c.tokenFile != "" {

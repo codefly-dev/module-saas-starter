@@ -260,53 +260,82 @@ Three constraints are enforced rather than defaulted, because each one, left to
 a default, reproduces a failure this kind exists to prevent:
 
 - **`auth-mode: external-identity` is required**, and `password` is refused by
-  name. The caller logs in to the Vault as its own ServiceAccount and no Vault
-  token is projected to the pod; a token in a Secret is long-lived, identical
-  across replicas, and outlives the pod that read it. `secret-references`
-  alongside it is rejected, as for every passwordless kind.
+  name. The handoff itself projects no connection secret: the caller
+  authenticates with a credential the configuration plane delivers into its own
+  secret group, not with one this handoff renders beside the Service. A password
+  default would have the promotion driver project a secret nothing issued.
+  `secret-references` alongside it is rejected, as for every kind in this mode.
 - **`egress-namespace` is required and `egress-cidrs` is refused.** A pod's
   address is not stable across reschedules, and the pod CIDR that would cover it
   authorizes every workload in the cluster. The destination is selected by
   `kubernetes.io/metadata.name` instead.
 - **No metadata-endpoint egress is rendered**, unlike the cloud passwordless
-  kinds. The credential here is the pod's own projected ServiceAccount token read
-  off disk, so there is no workload-identity token to fetch over the network.
+  kinds. There is no workload-identity token to fetch over the network: the
+  credential arrives as a secret.
 
-What the cell supplies alongside it, through the `vault` configuration group, is
-only what nobody else has: `VAULT_ADDR` (https), `VAULT_AUTH_METHOD=kubernetes`,
-`VAULT_K8S_MOUNT` and `VAULT_K8S_ROLE`. accounts refuses every other binding
-outside the local environment, naming the key that is missing or wrong.
+#### What the cell supplies
 
-The two **in-pod** paths are this module's own, so they default rather than being
-restated in a cell's contract — see
-[../configurations/local/vault.env](../configurations/local/vault.env):
+**Nothing in this binding is a file, and nothing mounts anything.** In-cluster
+transport security belongs to the mesh, so a cell's Vault listens in-mesh
+without TLS of its own: there is no certificate to anchor, no CA bundle, no
+projected token, and no Vault-agent sidecar. Codefly delivers values and
+secrets. Through the `vault` configuration group:
 
-| | Path | Rendered by |
-| --- | --- | --- |
-| `VAULT_CA_FILE` | `/etc/vault/ca/ca.crt` | accounts' `spec.config-mounts` entry for the `vault-ca` ConfigMap, whose `ca.crt` the cell's workload-CA stage writes into the product namespace |
-| `VAULT_K8S_TOKEN_PATH` | `/var/run/secrets/vault/token` | accounts' projected ServiceAccount token, audience `vault` |
+| Key | Hosted value |
+| --- | --- |
+| `VAULT_ADDR` | `http://<vault>.<namespace>.svc.cluster.local:8200` |
+| `VAULT_AUTH_METHOD` | `approle` |
+| `VAULT_APPROLE_MOUNT` | the auth mount; `approle` when empty |
+| `VAULT_KEY_CUSTODY` | the command the cell uses to seed the signing key; **required** outside local |
 
-The token's audience must be `vault`, **not** the API server: accounts will not
-replay the pod's default token against Vault, so `automountServiceAccountToken`
-stays false and the Vault role binds the product namespace's `accounts`
-ServiceAccount at that audience. A cell that mounts the CA elsewhere sets
-`VAULT_CA_FILE` and that wins.
+and through the `vault` **secret** group, delivered like every other accounts
+secret:
 
-The Vault policy that role needs is `read` on `secret/data/jwt-signing-key` and
-`update` on each of `transit/encrypt/api-keys`, `transit/decrypt/api-keys` and
+| Key | Hosted value |
+| --- | --- |
+| `VAULT_APPROLE_ROLE_ID` | identifies the Vault role |
+| `VAULT_APPROLE_SECRET_ID` | proves the holder may assume it |
+
+accounts logs in with that credential, holds the Vault token it receives in
+memory only, renews it before its lease runs out, and logs in again when renewal
+fails or Vault refuses it. No long-lived Vault token, and never a root token, is
+delivered to the pod. accounts refuses every other binding outside the local
+environment, naming the key that is missing or wrong.
+
+#### Why the address is plaintext, and what admits it
+
+A cell Vault has no https URL to give, so the address is `http://`. Cleartext off
+loopback is admitted by exactly one thing — the composition's assertion in the
+`internal-transport` group that every in-cluster hop is carried by a mutually
+authenticated mesh:
+
+```dotenv
+# configurations/<profile>/internal-transport.env
+mesh-protected=true
+```
+
+and then only for an in-cluster Kubernetes Service address
+(`<service>.<namespace>.svc`, optionally with the cluster domain). Neither half
+is enough alone, which is the whole point: a hostname says nothing about whether
+a mesh wraps the wire — `vault.svc.example.com` is externally routable despite
+the label — and the assertion covers only what a mesh can cover, so an external
+name, a bare IP or a short name stays refused with it set. Only the exact value
+`true` asserts it; unset, empty and `false` keep plaintext refused, and any other
+value fails startup rather than being read as either answer. This is the same
+group, key, value handling and remedy sentence the composed modules apply to
+their own in-cluster hops, so a cell asserts it once.
+
+`VAULT_ALLOW_INSECURE_HTTP` is gone. It was a blanket per-service opt-in that no
+address could qualify; this replaces it with a rule that names what it covers.
+
+#### The Vault policy the role needs
+
+`read` on `secret/data/jwt-signing-key` and `update` on each of
+`transit/encrypt/api-keys`, `transit/decrypt/api-keys` and
 `transit/hmac/api-keys`. Granting `transit/keys/api-keys` instead is the trap:
 that path manages key metadata, so the signing-key read succeeds while every
 encrypt call answers 403. Creating the key belongs to the Vault service's own
 provisioning, not to this role.
-
-A hosted profile also requires `VAULT_KEY_CUSTODY` — the command the cell uses
-to seed the signing key — and accounts refuses to start without it.
-
-Both mounts are rendered by the `go-grpc` service agent from accounts'
-`spec`, which needs the mount support owed in
-**codefly-dev/service-go-grpc#156**; the agent pin here moves when that
-releases. Until then the declaration is staged and a hosted accounts fails
-closed by name rather than starting without a CA.
 
 **A cell that would rather run this module's Vault** keeps it in its in-cluster
 inventory and declares nothing here. The vault agent then renders the durable
@@ -317,9 +346,7 @@ from the ephemeral local-apply render. That durable server refuses to start
 without an auto-unseal seal, so the seal must be supplied as the vault service's
 own per-service configuration
 ([../services/vault/configurations/aws/vault.env](../services/vault/configurations/aws/vault.env)).
-Note that its listener is plaintext, with transport protection left to the mesh,
-while accounts requires https outside the local environment — so such a cell must
-front it with TLS. Binding the cell's own TLS-terminating Vault avoids that.
+Its listener is plaintext too, so the same mesh assertion admits it.
 
 The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's

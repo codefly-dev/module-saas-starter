@@ -2117,9 +2117,13 @@ func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519c
 		if tokenErr != nil {
 			return nil, tokenErr
 		}
+		// The connection already resolved and enforced the mesh assertion for
+		// this address; passing it on keeps the loader's own check consistent
+		// with the one that admitted the connection rather than re-deriving it
+		// from configuration a second time.
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
 			Address: connection.Address, Token: vaultToken, HTTPClient: connection.Client,
-			AllowInsecureHTTP: workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") == "true",
+			MeshProtected: connection.MeshProtected,
 		})
 		if err == nil {
 			return priv, nil

@@ -91,6 +91,17 @@ In the local environment the composed `vault` service seeds this path itself on
 first boot, and its store is in-memory: a restart mints a new key there, which
 is why that shape is refused anywhere else.
 
+**How accounts reaches the Vault that holds it.** Outside the local environment
+the composition names the cell's Vault in the `vault` configuration group and
+delivers an AppRole credential through the `vault` secret group; accounts logs
+in for a short-lived token of its own. Nothing in that binding is a file — the
+cell's Vault listens in-mesh without TLS of its own, because in-cluster
+transport security is the mesh's, so there is no CA to pin and no token to
+mount. The plaintext in-cluster address is admitted by the composition's
+`internal-transport/mesh-protected=true` assertion and only for an in-cluster
+Service address. See
+[deployment/README.md](./deployment/README.md), "The cell's Vault".
+
 ## Rotation
 
 Each step is safe to hold indefinitely; only move on once the previous step has

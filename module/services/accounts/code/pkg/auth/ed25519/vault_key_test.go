@@ -46,27 +46,49 @@ func (errRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("dialed")
 }
 
-// With the operator opt-in, a non-loopback cleartext http host is admitted — the
-// operator has asserted the hop is protected out of band (e.g. an mTLS mesh).
-// Validation runs before the request, so an admitted host reaches the HTTP
-// transport (here a stub that always errors) and fails at the fetch step, never
-// with the cleartext refusal. This holds for an arbitrary host, not just a
-// ".svc" name, because the opt-in — not the address — is what grants it.
-func TestLoadKeyFromVault_AllowsInsecureHTTPWhenOptedIn(t *testing.T) {
+// With the composition's mesh assertion, a cleartext in-cluster Service address
+// is admitted — the cell's Vault listens in-mesh without TLS of its own, so
+// there is no https URL to give. Validation runs before the request, so an
+// admitted host reaches the HTTP transport (here a stub that always errors) and
+// fails at the fetch step, never with the cleartext refusal.
+func TestLoadKeyFromVault_AdmitsAnInClusterServiceWhenTheMeshIsAsserted(t *testing.T) {
 	for _, addr := range []string{
+		"http://vault.vault.svc:8200",
+		"http://vault.vault.svc.cluster.local:8200",
 		"http://vault.example.svc:8200",
-		"http://vault.example.svc.cluster.local:8200",
-		"http://vault.internal:8200",
 	} {
 		_, err := ed25519minter.LoadKeyFromVault(context.Background(), ed25519minter.VaultKeyLoaderConfig{
-			Address:           addr,
-			Token:             "s.token",
-			AllowInsecureHTTP: true,
-			HTTPClient:        &http.Client{Transport: errRoundTripper{}},
+			Address:       addr,
+			Token:         "s.token",
+			MeshProtected: true,
+			HTTPClient:    &http.Client{Transport: errRoundTripper{}},
 		})
 		require.Error(t, err, addr)
 		require.NotContains(t, err.Error(), "cleartext http", addr)
 		require.Contains(t, err.Error(), "fetch vault key", addr)
+	}
+}
+
+// The assertion covers only what a mesh can cover. It is not a blanket opt-in:
+// an external name, a bare IP or a short name stays refused with it in place,
+// because nothing the composition said covers the wire to those — and
+// "vault.svc.example.com" is externally routable despite its label.
+func TestLoadKeyFromVault_MeshAssertionIsNotABlanketOptIn(t *testing.T) {
+	for _, addr := range []string{
+		"http://vault.internal:8200",
+		"http://10.0.0.5:8200",
+		"http://vault.example.com:8200",
+		"http://vault.svc.example.com:8200",
+		"http://vault:8200",
+	} {
+		_, err := ed25519minter.LoadKeyFromVault(context.Background(), ed25519minter.VaultKeyLoaderConfig{
+			Address:       addr,
+			Token:         "s.token",
+			MeshProtected: true,
+			HTTPClient:    &http.Client{Transport: errRoundTripper{}},
+		})
+		require.Error(t, err, addr)
+		require.Contains(t, err.Error(), "cleartext http", addr)
 	}
 }
 

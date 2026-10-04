@@ -88,10 +88,12 @@ either — it is in another namespace — and nor can a CIDR, because a pod addr
 is not stable and the pod CIDR covers every workload in the cluster. It renders a
 namespace-selected egress policy instead
 (`allow-<caller>-to-<target>`, matching `kubernetes.io/metadata.name`), and no
-metadata-endpoint egress: the credential is the caller's own projected
-ServiceAccount token read off disk, not a workload-identity token fetched over
-the network. See [deployment/README.md](./deployment/README.md), "The cell's
-Vault".
+metadata-endpoint egress: the credential is delivered as a secret, not fetched
+over the network. The hop is plaintext http — in-cluster transport security is
+the mesh's, so the Vault listens in-mesh without TLS of its own — which the
+composition admits through `internal-transport/mesh-protected=true`, and only
+for an in-cluster Service address. See
+[deployment/README.md](./deployment/README.md), "The cell's Vault".
 
 ## Mesh security baseline
 

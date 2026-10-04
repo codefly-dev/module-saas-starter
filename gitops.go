@@ -874,14 +874,17 @@ func validateManagedServices(
 // managedKindCellVault names a Vault the cell runs beside this module rather
 // than one this module composes. It exists because the module's own `vault`
 // service is a development convenience whose state is the product's secrets: a
-// cell that holds the signing key and the Transit key wants its own durable,
-// TLS-terminating Vault, and the product must reach that one by name rather than
-// inherit whatever the composition happened to render.
+// cell that holds the signing key and the Transit key wants its own durable
+// Vault, and the product must reach that one by name rather than inherit
+// whatever the composition happened to render.
 //
-// Everything about the kind follows from being in-cluster and identity-based:
-// the caller authenticates as its own ServiceAccount (so no connection secret
-// exists to project), and the destination is selected by namespace (so no
-// egress CIDR can describe it).
+// Everything about the kind follows from being in-cluster. The destination is
+// selected by namespace, because no egress CIDR can describe a pod whose
+// address moves. And this handoff projects no connection secret of its own: the
+// caller authenticates with a credential the configuration plane delivers into
+// its own secret group, which is why the mode must be stated rather than
+// inherited from the password default — a default would have the promotion
+// driver project a secret nothing issued.
 const managedKindCellVault = "cell-vault"
 
 // validateManagedEgress resolves how a caller is granted reach to a managed
@@ -917,13 +920,14 @@ func validateManagedAuth(environment, service string, config managedServiceConfi
 	instance = strings.TrimSpace(config.InstanceConnectionName)
 	mode = strings.TrimSpace(config.AuthMode)
 	if config.Kind == managedKindCellVault {
-		// A Vault token projected into the pod is the shape this kind exists to
-		// replace: it is long-lived, it is the same credential for every replica,
-		// and it survives in a Secret long after the pod that read it. The caller
-		// logs in as its own ServiceAccount instead, so the mode is stated, never
-		// inherited from the password default.
+		// A long-lived Vault token rendered beside the Service is the shape this
+		// kind exists to replace: it is the same credential for every replica and
+		// it outlives the pod that read it. The caller logs in for a short-lived
+		// token of its own instead, with a credential delivered through its own
+		// secret group, so this handoff renders none and the mode is stated
+		// rather than inherited from the password default.
 		if mode != "external-identity" {
-			return "", "", fmt.Errorf("environment %q managed service %q kind %q requires auth-mode: external-identity — the caller logs in to the Vault as its own ServiceAccount and no Vault token is projected to it", environment, service, config.Kind)
+			return "", "", fmt.Errorf("environment %q managed service %q kind %q requires auth-mode: external-identity — this handoff projects no connection secret, because the caller logs in with a credential the configuration plane delivers into its own secret group", environment, service, config.Kind)
 		}
 	}
 	if config.Kind == "cloud-sql-postgres" {
@@ -2112,9 +2116,9 @@ func topologyNetworkPolicies(
 		}
 		if config.EgressNamespace != "" {
 			// An in-cluster dependency the cell owns: the caller reaches the
-			// namespace that holds it. Its credential is the pod's own projected
-			// ServiceAccount token, read off disk, so no metadata-endpoint reach
-			// is involved and none is granted.
+			// namespace that holds it. Its credential is delivered as a secret,
+			// so there is no workload-identity token to fetch and no
+			// metadata-endpoint reach is granted.
 			policies = append(policies, managedNamespaceEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressNamespace))
 			continue
 		}
