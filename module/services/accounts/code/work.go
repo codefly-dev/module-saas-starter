@@ -544,9 +544,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	var auditEmitterOpts []business.DurableAuditEmitterOption
 	switch {
-	case auditSink.mode == business.AuditSinkBoth:
+	case auditSink.Mode == business.AuditSinkBoth:
 		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
-	case auditSink.mode.Swaps():
+	case auditSink.Mode.Swaps():
 		auditEmitterOpts = append(auditEmitterOpts, business.WithQueuedRecords())
 	}
 	// Every org-scoped audit record publishes its external domain event in the
@@ -572,12 +572,13 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	var auditRelay *business.AuditRelay
 	closeAuditRelay := func() {}
-	if auditSink.bigQuery != nil {
-		// Under the swap BigQuery is the store of record for writes and reads
-		// alike: the activity list, aggregates, exports and the readable-source
-		// query read it, scoped to the caller's organization and this deployment.
+	if auditSink.Swap != nil {
+		// Under a swap value the warehouse is the store of record for writes and
+		// reads alike: the activity list, aggregates, exports and the
+		// readable-source query read it, scoped to the caller's organization and
+		// this deployment.
 		var auditStore business.AuditStore
-		auditRelay, auditStore, closeAuditRelay, err = newBigQueryAuditSwap(ctx, store, auditSink.bigQuery)
+		auditRelay, auditStore, closeAuditRelay, err = newAuditSwap(ctx, store, auditSink.Swap)
 		if err != nil {
 			return nil, err
 		}
@@ -585,14 +586,14 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	var auditExportWorker *jobs.Worker
-	if auditSink.mode == business.AuditSinkBoth {
+	if auditSink.Mode == business.AuditSinkBoth {
 		// The tee carries org-scoped events only. Control-plane / platform-admin
 		// audit events (NULL org) are Postgres-only: the job platform reserves
 		// global-scope enqueue for the privileged worker pool, which opens its own
 		// transaction and so cannot commit atomically with the audit row. Surface
 		// this so operators don't assume the warehouse holds platform events.
 		w.Warn("AUDIT_SINK=both tees only org-scoped audit events to the external sink; control-plane/platform-admin (NULL-org) events remain Postgres-only")
-		auditExportHandler, err := business.NewAuditExportJobHandler(auditSink.external, store)
+		auditExportHandler, err := business.NewAuditExportJobHandler(auditSink.External, store)
 		if err != nil {
 			return nil, err
 		}

@@ -1,6 +1,7 @@
-package main
+package auditsink
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -11,36 +12,36 @@ import (
 
 func TestConfiguredAuditSinkDefaultsToPostgres(t *testing.T) {
 	t.Setenv("AUDIT_SINK", "")
-	sink, err := configuredAuditSink()
+	sink, err := Load(os.Getenv)
 	require.NoError(t, err)
-	require.Equal(t, business.AuditSinkPostgres, sink.mode)
-	require.Nil(t, sink.external)
-	require.Nil(t, sink.bigQuery)
+	require.Equal(t, business.AuditSinkPostgres, sink.Mode)
+	require.Nil(t, sink.External)
+	require.Nil(t, sink.Swap)
 
 	t.Setenv("AUDIT_SINK", "postgres")
-	sink, err = configuredAuditSink()
+	sink, err = Load(os.Getenv)
 	require.NoError(t, err)
-	require.Equal(t, business.AuditSinkPostgres, sink.mode)
-	require.False(t, sink.mode.Swaps())
+	require.Equal(t, business.AuditSinkPostgres, sink.Mode)
+	require.False(t, sink.Mode.Swaps())
 }
 
 func TestConfiguredAuditSinkBothRequiresExternalURL(t *testing.T) {
 	t.Setenv("AUDIT_SINK", "both")
 	t.Setenv("AUDIT_EXTERNAL_URL", "")
-	_, err := configuredAuditSink()
+	_, err := Load(os.Getenv)
 	require.ErrorContains(t, err, "AUDIT_EXTERNAL_URL")
 
 	t.Setenv("AUDIT_EXTERNAL_URL", "https://warehouse.example/audit")
-	sink, err := configuredAuditSink()
+	sink, err := Load(os.Getenv)
 	require.NoError(t, err)
-	require.Equal(t, business.AuditSinkBoth, sink.mode)
-	require.False(t, sink.mode.Swaps())
-	require.IsType(t, &business.HTTPAuditSink{}, sink.external)
+	require.Equal(t, business.AuditSinkBoth, sink.Mode)
+	require.False(t, sink.Mode.Swaps())
+	require.IsType(t, &business.HTTPAuditSink{}, sink.External)
 }
 
 func TestConfiguredAuditSinkRejectsExternalOnly(t *testing.T) {
 	t.Setenv("AUDIT_SINK", "external")
-	_, err := configuredAuditSink()
+	_, err := Load(os.Getenv)
 	require.ErrorContains(t, err, "not permitted")
 	require.ErrorContains(t, err, "bigquery", "the refusal names the swap value that does what external cannot")
 }
@@ -48,7 +49,7 @@ func TestConfiguredAuditSinkRejectsExternalOnly(t *testing.T) {
 func TestConfiguredAuditSinkRejectsUnknownMode(t *testing.T) {
 	for _, value := range []string{"kafka", "clickhouse"} {
 		t.Setenv("AUDIT_SINK", value)
-		_, err := configuredAuditSink()
+		_, err := Load(os.Getenv)
 		require.ErrorContains(t, err, "must be postgres, both or bigquery", value)
 	}
 }
@@ -68,32 +69,32 @@ func setBigQuerySwap(t *testing.T) {
 
 func TestConfiguredAuditSinkBigQuery(t *testing.T) {
 	setBigQuerySwap(t)
-	sink, err := configuredAuditSink()
+	sink, err := Load(os.Getenv)
 	require.NoError(t, err)
-	require.Equal(t, business.AuditSinkBigQuery, sink.mode)
-	require.True(t, sink.mode.Swaps())
-	require.Nil(t, sink.external)
-	require.Equal(t, &bigQueryAuditSwap{
-		project:                "example-project",
-		dataset:                "audit",
-		archive:                auditArchiveLocation{scheme: "gs", bucket: "example-audit-archive"},
-		deploymentID:           "acme-prod-1",
-		contentDetailRetention: 90 * 24 * time.Hour,
-		batchSize:              business.DefaultAuditRelayBatchSize,
-		maxWait:                business.DefaultAuditRelayMaxWait,
-	}, sink.bigQuery)
+	require.Equal(t, business.AuditSinkBigQuery, sink.Mode)
+	require.True(t, sink.Mode.Swaps())
+	require.Nil(t, sink.External)
+	require.Equal(t, &Swap{
+		Mode:             business.AuditSinkBigQuery,
+		BigQuery:         &BigQuery{Project: "example-project", Dataset: "audit"},
+		Archive:          ArchiveLocation{Scheme: "gs", Bucket: "example-audit-archive"},
+		DeploymentID:     "acme-prod-1",
+		ContentRetention: 90 * 24 * time.Hour,
+		RelayBatchSize:   business.DefaultAuditRelayBatchSize,
+		RelayMaxWait:     business.DefaultAuditRelayMaxWait,
+	}, sink.Swap)
 
 	t.Setenv("AUDIT_ARCHIVE_URL", "gs://example-audit-archive/")
-	sink, err = configuredAuditSink()
+	sink, err = Load(os.Getenv)
 	require.NoError(t, err, "a trailing slash still names only the bucket")
-	require.Equal(t, "example-audit-archive", sink.bigQuery.archive.bucket)
+	require.Equal(t, "example-audit-archive", sink.Swap.Archive.Bucket)
 
 	t.Setenv("AUDIT_RELAY_BATCH_SIZE", "200")
 	t.Setenv("AUDIT_RELAY_MAX_WAIT", "750ms")
-	sink, err = configuredAuditSink()
+	sink, err = Load(os.Getenv)
 	require.NoError(t, err)
-	require.Equal(t, 200, sink.bigQuery.batchSize)
-	require.Equal(t, 750*time.Millisecond, sink.bigQuery.maxWait)
+	require.Equal(t, 200, sink.Swap.RelayBatchSize)
+	require.Equal(t, 750*time.Millisecond, sink.Swap.RelayMaxWait)
 }
 
 func TestConfiguredAuditSinkBigQueryNamesEveryMissingSetting(t *testing.T) {
@@ -104,13 +105,13 @@ func TestConfiguredAuditSinkBigQueryNamesEveryMissingSetting(t *testing.T) {
 	} {
 		t.Setenv(name, "")
 	}
-	_, err := configuredAuditSink()
+	_, err := Load(os.Getenv)
 	require.EqualError(t, err, "AUDIT_SINK=bigquery requires AUDIT_BIGQUERY_PROJECT, AUDIT_BIGQUERY_DATASET, "+
 		"AUDIT_ARCHIVE_URL, AUDIT_DEPLOYMENT_ID, AUDIT_CONTENT_RETENTION_DAYS")
 
 	setBigQuerySwap(t)
 	t.Setenv("AUDIT_ARCHIVE_URL", "  ")
-	_, err = configuredAuditSink()
+	_, err = Load(os.Getenv)
 	require.EqualError(t, err, "AUDIT_SINK=bigquery requires AUDIT_ARCHIVE_URL", "a blank value is a missing one")
 }
 
@@ -138,7 +139,7 @@ func TestConfiguredAuditSinkBigQueryRejectsInvalidSettings(t *testing.T) {
 		t.Run(tc.name+"="+tc.value, func(t *testing.T) {
 			setBigQuerySwap(t)
 			t.Setenv(tc.name, tc.value)
-			_, err := configuredAuditSink()
+			_, err := Load(os.Getenv)
 			require.ErrorContains(t, err, tc.want)
 		})
 	}

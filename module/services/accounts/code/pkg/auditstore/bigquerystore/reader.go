@@ -515,6 +515,68 @@ func (r *Reader) LatestSourceSyncEvents(ctx context.Context, scope business.Audi
 	return out, nil
 }
 
+// ReadStoredAuditEvents implements business.AuditHistoryReader: one session
+// over each table for the window, every copy of every event of this
+// deployment, with the details each copy has. A content-class event's details
+// come from the details table; when the copies there disagree, a copy whose
+// hash does not match the event's is the one reported, so the disagreement is
+// what verification sees.
+func (r *Reader) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, visit func(business.StoredAuditEvent) error) error {
+	w := window{lo: &from, hi: &to, hiExclusive: true}
+	detailsWhere := r.scope(business.PlatformAuditScope())
+	w.restrict(detailsWhere)
+	copies := map[string][]storedDetail{}
+	err := r.scan(ctx, DetailsTable, detailFields, detailsWhere, func(row arrowRow) error {
+		var detail storedDetail
+		var eventID, deploymentID string
+		for name, into := range map[string]*string{
+			"event_id": &eventID, "deployment_id": &deploymentID, "details_sha256": &detail.sha256, "details": &detail.details,
+		} {
+			value, err := row.str(name)
+			if err != nil {
+				return err
+			}
+			*into = value
+		}
+		if deploymentID == r.deploymentID {
+			copies[eventID] = append(copies[eventID], detail)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	where := r.scope(business.PlatformAuditScope())
+	w.restrict(where)
+	return r.scan(ctx, EventsTable, eventFields, where, func(row arrowRow) error {
+		stored, err := decodeEventRow(row)
+		if err != nil {
+			return err
+		}
+		if stored.deploymentID != r.deploymentID {
+			return nil
+		}
+		event := business.StoredAuditEvent{
+			DeploymentID:  stored.deploymentID,
+			Entry:         stored.entry,
+			Retention:     business.AuditRetentionClass(stored.retentionClass),
+			DetailsSHA256: stored.detailsSHA256,
+			Details:       stored.details,
+			HasDetails:    stored.hasDetails,
+		}
+		if event.Retention != business.RetentionSecurity {
+			event.Details, event.HasDetails = "", false
+			for _, detail := range copies[stored.entry.ID] {
+				event.Details, event.HasDetails = detail.details, true
+				if detail.sha256 != stored.detailsSHA256 {
+					break
+				}
+			}
+		}
+		return visit(event)
+	})
+}
+
 // scan creates one read session over table and hands every row it returns to
 // visit, serially. The session's streams are read in parallel; a stream broken
 // by a transient error is reopened at the row it reached.

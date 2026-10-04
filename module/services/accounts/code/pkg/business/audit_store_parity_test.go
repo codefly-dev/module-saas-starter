@@ -23,15 +23,16 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Read parity of the audit store swap (ADR 0009): one fixture, written once
-// through the emitter as a postgres deployment writes it (audit_events) and
-// once as a bigquery deployment does (the queue, drained by the relay into the
-// warehouse), must read back identically through the service — the activity
-// list page by page, every aggregation, both export formats and the
-// readable-source query. The warehouse is the fake Storage Read API, which
-// evaluates the reader's row restrictions; it also holds what Postgres does
-// not: events delivered twice, and another deployment's and another
-// organization's events, none of which may change an answer.
+// Read parity of the audit store swap (ADR 0009) — the conformance suite every
+// store of record passes. One fixture, written once through the emitter as a
+// postgres deployment writes it (audit_events) and once as a swap deployment
+// does (the queue, drained by the relay into each store under test), must read
+// back identically through the service: the activity list page by page, every
+// aggregation, both export formats and the readable-source query. Each store
+// also holds what Postgres does not: events delivered twice, and another
+// deployment's and another organization's events, none of which may change an
+// answer. A read without a scope is refused, and a refused resource read never
+// reaches the store.
 
 const (
 	parityProject    = "parity-project"
@@ -39,27 +40,112 @@ const (
 	parityDeployment = "deployment-parity"
 )
 
-// parityWarehouse is the relay's store of record: each batch's rows appended
-// to the fake, as the BigQuery writer appends them.
-type parityWarehouse struct {
-	fake    *bigqueryfake.Server
-	batches []business.AuditBatch
+// parityStore is one store of record under test.
+type parityStore struct {
+	// writer is what the relay appends to.
+	writer business.AuditStoreWriter
+	// store is what the service reads.
+	store business.AuditStore
+	// eventIDs lists every event id the store holds, once per copy.
+	eventIDs func(t *testing.T) []string
 }
 
-func (w *parityWarehouse) AppendAuditBatch(_ context.Context, batch business.AuditBatch) error {
+// parityStores builds every store of record the suite runs against. A store
+// that needs a server the environment does not provide returns nil, after
+// logging how to provide one.
+var parityStores = map[string]func(t *testing.T) *parityStore{
+	"bigquery": newBigQueryParityStore,
+}
+
+// bigQueryAppender appends a batch's rows to the fake, as the BigQuery writer
+// streams them.
+type bigQueryAppender struct{ fake *bigqueryfake.Server }
+
+func (a bigQueryAppender) AppendAuditBatch(_ context.Context, batch business.AuditBatch) error {
 	events, details := bigquerystore.BatchRows(batch)
 	for _, row := range events {
-		if err := w.fake.Insert(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.EventsTable), row.Values); err != nil {
+		if err := a.fake.Insert(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.EventsTable), row.Values); err != nil {
 			return err
 		}
 	}
 	for _, row := range details {
-		if err := w.fake.Insert(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.DetailsTable), row.Values); err != nil {
+		if err := a.fake.Insert(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.DetailsTable), row.Values); err != nil {
 			return err
 		}
 	}
-	w.batches = append(w.batches, batch)
 	return nil
+}
+
+// newBigQueryParityStore is the BigQuery store over the fake Storage Read API,
+// which evaluates the reader's row restrictions and serves Arrow batches over
+// several streams.
+func newBigQueryParityStore(t *testing.T) *parityStore {
+	fake := bigqueryfake.New()
+	eventsPath := bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.EventsTable)
+	fake.CreateTable(eventsPath, bigquerystore.EventsSchema())
+	fake.CreateTable(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.DetailsTable), bigquerystore.DetailsSchema())
+	client, err := bigquery.NewClient(testCtx, parityProject, option.WithoutAuthentication(), option.WithEndpoint("http://127.0.0.1:1"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+	reader, err := bigquerystore.NewReader(bigquerystore.ReadConfig{
+		Client: fake, Project: parityProject, Dataset: parityDataset, DeploymentID: parityDeployment,
+	})
+	require.NoError(t, err)
+	store, err := bigquerystore.New(client, bigquerystore.Config{Dataset: parityDataset, ContentDetailRetention: 30 * 24 * time.Hour, Reader: reader})
+	require.NoError(t, err)
+	return &parityStore{
+		writer: bigQueryAppender{fake: fake},
+		store:  store,
+		eventIDs: func(*testing.T) []string {
+			var ids []string
+			for _, row := range fake.Rows(eventsPath) {
+				ids = append(ids, row["event_id"].(string))
+			}
+			return ids
+		},
+	}
+}
+
+// fanOut appends every batch to every store under test, and remembers it.
+type fanOut struct {
+	writers []business.AuditStoreWriter
+	batches []business.AuditBatch
+}
+
+func (f *fanOut) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
+	for _, writer := range f.writers {
+		if err := writer.AppendAuditBatch(ctx, batch); err != nil {
+			return err
+		}
+	}
+	f.batches = append(f.batches, batch)
+	return nil
+}
+
+// countingStore counts the reads that reach a store.
+type countingStore struct {
+	business.AuditStore
+	reads int
+}
+
+func (c *countingStore) ListAuditEvents(ctx context.Context, read business.AuditRead) ([]business.AuditEntry, string, error) {
+	c.reads++
+	return c.AuditStore.ListAuditEvents(ctx, read)
+}
+
+func (c *countingStore) AggregateAuditEvents(ctx context.Context, read business.AuditRead, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
+	c.reads++
+	return c.AuditStore.AggregateAuditEvents(ctx, read, spec)
+}
+
+func (c *countingStore) ExportAuditEvents(ctx context.Context, read business.AuditRead) ([]business.AuditEntry, error) {
+	c.reads++
+	return c.AuditStore.ExportAuditEvents(ctx, read)
+}
+
+func (c *countingStore) LatestSourceSyncEvents(ctx context.Context, scope business.AuditReadScope, sources []string) (map[string]business.AuditSourceSyncEvent, error) {
+	c.reads++
+	return c.AuditStore.LatestSourceSyncEvents(ctx, scope, sources)
 }
 
 type discardArchive struct{}
@@ -67,10 +153,8 @@ type discardArchive struct{}
 func (discardArchive) WriteAuditBatch(context.Context, business.AuditBatch) error { return nil }
 
 type parityFixture struct {
-	warehouse      *parityWarehouse
+	stores         map[string]*parityStore
 	postgres       *business.Service
-	swapped        *business.Service
-	store          *bigquerystore.Store
 	org, otherOrg  string
 	actor, other   string
 	sourceOrg      string
@@ -201,17 +285,22 @@ func newParityFixture(t *testing.T) *parityFixture {
 		}
 	}
 
-	fake := bigqueryfake.New()
-	fake.CreateTable(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.EventsTable), bigquerystore.EventsSchema())
-	fake.CreateTable(bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.DetailsTable), bigquerystore.DetailsSchema())
-	f.warehouse = &parityWarehouse{fake: fake}
+	f.stores = map[string]*parityStore{}
+	delivery := &fanOut{}
+	for name, open := range parityStores {
+		if store := open(t); store != nil {
+			f.stores[name] = store
+			delivery.writers = append(delivery.writers, store.writer)
+		}
+	}
+	require.NotEmpty(t, f.stores)
 	pool, err := infra.NewAuditRelayPool(ctx)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	queue, err := infra.NewPostgresAuditQueue(pool)
 	require.NoError(t, err)
 	relay, err := business.NewAuditRelay(business.AuditRelayConfig{
-		Queue: queue, Store: f.warehouse, Archive: discardArchive{}, Types: testStore,
+		Queue: queue, Store: delivery, Archive: discardArchive{}, Types: testStore,
 		DeploymentID: parityDeployment, BatchSize: 4, MaxWait: time.Nanosecond,
 	})
 	require.NoError(t, err)
@@ -220,51 +309,49 @@ func newParityFixture(t *testing.T) *parityFixture {
 	require.GreaterOrEqual(t, delivered, len(entries))
 
 	// A relay that restarted between its writes and its queue delete delivers a
-	// batch again; the warehouse then holds those events twice.
-	require.GreaterOrEqual(t, len(f.warehouse.batches), 3)
-	for _, again := range []business.AuditBatch{f.warehouse.batches[0], f.warehouse.batches[len(f.warehouse.batches)/2]} {
+	// batch again; the store then holds those events twice.
+	batches := delivery.batches
+	require.GreaterOrEqual(t, len(batches), 3)
+	for _, again := range []business.AuditBatch{batches[0], batches[len(batches)/2]} {
 		again.ID = uuid.NewString()
-		require.NoError(t, f.warehouse.AppendAuditBatch(ctx, again))
+		require.NoError(t, delivery.AppendAuditBatch(ctx, again))
 	}
 	// Another deployment writing the same organization's events into the same
 	// tables is outside every read of this one.
-	foreign := f.warehouse.batches[1]
+	foreign := batches[1]
 	foreign.ID, foreign.DeploymentID = uuid.NewString(), "deployment-other"
-	require.NoError(t, f.warehouse.AppendAuditBatch(ctx, foreign))
-
-	client, err := bigquery.NewClient(ctx, parityProject, option.WithoutAuthentication(), option.WithEndpoint("http://127.0.0.1:1"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = client.Close() })
-	reader, err := bigquerystore.NewReader(bigquerystore.ReadConfig{
-		Client: fake, Project: parityProject, Dataset: parityDataset, DeploymentID: parityDeployment,
-	})
-	require.NoError(t, err)
-	f.store, err = bigquerystore.New(client, bigquerystore.Config{Dataset: parityDataset, ContentDetailRetention: 30 * 24 * time.Hour, Reader: reader})
-	require.NoError(t, err)
+	require.NoError(t, delivery.AppendAuditBatch(ctx, foreign))
 
 	f.postgres, err = business.NewService(testStore)
 	require.NoError(t, err)
-	f.swapped, err = business.NewService(testStore)
-	require.NoError(t, err)
-	f.swapped.SetAuditStore(f.store)
 	return f
 }
 
-func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
+func TestAuditStoreParity(t *testing.T) {
 	f := newParityFixture(t)
+	for name, store := range f.stores {
+		t.Run(name, func(t *testing.T) { runAuditStoreParity(t, f, store) })
+	}
+}
+
+func runAuditStoreParity(t *testing.T, f *parityFixture, under *parityStore) {
 	ctx := testCtx
-	eventsPath := bigqueryfake.TablePath(parityProject, parityDataset, bigquerystore.EventsTable)
-	stored := map[string]int{}
-	for _, row := range f.warehouse.fake.Rows(eventsPath) {
-		stored[row["event_id"].(string)]++
+	counted := &countingStore{AuditStore: under.store}
+	swapped, err := business.NewService(testStore)
+	require.NoError(t, err)
+	swapped.SetAuditStore(counted)
+
+	copies := map[string]int{}
+	for _, id := range under.eventIDs(t) {
+		copies[id]++
 	}
 	duplicated := 0
-	for _, n := range stored {
+	for _, n := range copies {
 		if n > 1 {
 			duplicated++
 		}
 	}
-	require.Positive(t, duplicated, "the warehouse holds events more than once")
+	require.Positive(t, duplicated, "the store holds events more than once")
 
 	week := time.Now().Add(-7 * 24 * time.Hour)
 	recent := time.Now().Add(-3 * time.Hour)
@@ -288,7 +375,7 @@ func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
 
 	t.Run("list", func(t *testing.T) {
 		// The fixture is what the comparisons compare: not two empty answers.
-		all, _, _, err := f.swapped.QueryAuditLog(ctx, business.AuditQuery{OrgID: f.org, PageSize: 100})
+		all, _, _, err := swapped.QueryAuditLog(ctx, business.AuditQuery{OrgID: f.org, PageSize: 100})
 		require.NoError(t, err)
 		require.Len(t, all, 12)
 		for name, q := range queries {
@@ -299,7 +386,7 @@ func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
 				for {
 					want, wantNext, wantTotal, err := f.postgres.QueryAuditLog(ctx, q)
 					require.NoError(t, err, name)
-					got, gotNext, gotTotal, err := f.swapped.QueryAuditLog(ctx, q)
+					got, gotNext, gotTotal, err := swapped.QueryAuditLog(ctx, q)
 					require.NoError(t, err, name)
 					require.Equal(t, want, got, "%s, page size %d, page %d", name, size, pages)
 					require.Equal(t, wantNext, gotNext, name)
@@ -351,7 +438,7 @@ func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
 				if queryName == "organization" {
 					require.NotEmpty(t, want, specName)
 				}
-				got, err := f.swapped.AggregateAuditLog(ctx, q, spec)
+				got, err := swapped.AggregateAuditLog(ctx, q, spec)
 				require.NoError(t, err, "%s / %s", queryName, specName)
 				require.Equal(t, want, got, "%s / %s", queryName, specName)
 			}
@@ -371,7 +458,7 @@ func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
 			} {
 				want, wantType, _, err := f.postgres.ExportAuditLog(ctx, export.org, format, export.actor, export.eventType, export.eventTypes)
 				require.NoError(t, err)
-				got, gotType, _, err := f.swapped.ExportAuditLog(ctx, export.org, format, export.actor, export.eventType, export.eventTypes)
+				got, gotType, _, err := swapped.ExportAuditLog(ctx, export.org, format, export.actor, export.eventType, export.eventTypes)
 				require.NoError(t, err)
 				require.Equal(t, wantType, gotType)
 				require.Greater(t, len(want), 200, "%s export of %+v holds events", format, export)
@@ -386,7 +473,7 @@ func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
 		require.NoError(t, testStore.WithSourceReadSnapshot(verified, f.sourceOrg, func(snapshot context.Context) error {
 			want, err := f.postgres.LatestSourceSyncRequests(snapshot, f.sourceOrg, asked)
 			require.NoError(t, err)
-			got, err := f.swapped.LatestSourceSyncRequests(snapshot, f.sourceOrg, asked)
+			got, err := swapped.LatestSourceSyncRequests(snapshot, f.sourceOrg, asked)
 			require.NoError(t, err)
 			require.Equal(t, want, got)
 			require.Len(t, got, len(f.sources), "a source never synced has no request")
@@ -399,26 +486,27 @@ func TestAuditStoreParityPostgresAndBigQuery(t *testing.T) {
 	})
 
 	t.Run("scope", func(t *testing.T) {
-		_, _, err := f.store.ListAuditEvents(ctx, business.AuditRead{Query: business.AuditQuery{OrgID: f.org}})
+		store := under.store
+		_, _, err := store.ListAuditEvents(ctx, business.AuditRead{Query: business.AuditQuery{OrgID: f.org}})
 		require.ErrorIs(t, err, business.ErrAuditReadUnscoped)
-		_, err = f.store.AggregateAuditEvents(ctx, business.AuditRead{}, business.AuditAggregationSpec{})
+		_, err = store.AggregateAuditEvents(ctx, business.AuditRead{}, business.AuditAggregationSpec{})
 		require.ErrorIs(t, err, business.ErrAuditReadUnscoped)
-		_, err = f.store.ExportAuditEvents(ctx, business.AuditRead{})
+		_, err = store.ExportAuditEvents(ctx, business.AuditRead{})
 		require.ErrorIs(t, err, business.ErrAuditReadUnscoped)
-		_, err = f.store.LatestSourceSyncEvents(ctx, business.AuditReadScope{}, f.sources)
+		_, err = store.LatestSourceSyncEvents(ctx, business.AuditReadScope{}, f.sources)
 		require.ErrorIs(t, err, business.ErrAuditReadUnscoped)
-		_, _, err = f.store.ListAuditEvents(ctx, business.AuditRead{
+		_, _, err = store.ListAuditEvents(ctx, business.AuditRead{
 			Scope: business.OrganizationAuditScope(f.org), Query: business.AuditQuery{OrgID: f.otherOrg},
 		})
 		require.Error(t, err, "a query naming another organization than its scope is refused")
 
-		// A resource read is authorized in Postgres before the warehouse is read;
-		// a reader without the grant reads nothing from it.
-		before := len(f.warehouse.fake.Sessions())
-		_, err = f.swapped.AggregateAuditLogForReader(ctx, f.actor, business.AuditQuery{
+		// A resource read is authorized in Postgres before the store is read; a
+		// reader without the grant reads nothing from it.
+		before := counted.reads
+		_, err = swapped.AggregateAuditLogForReader(ctx, f.actor, business.AuditQuery{
 			OrgID: f.org, Resource: "datasource", ResourceID: uuid.NewString(), EventType: string(business.EventDatasourceSourceSynced),
 		}, business.AuditAggregationSpec{})
 		require.Equal(t, codes.PermissionDenied, status.Code(err), fmt.Sprint(err))
-		require.Len(t, f.warehouse.fake.Sessions(), before, "a refused read never reaches the warehouse")
+		require.Equal(t, before, counted.reads, "a refused read never reaches the store")
 	})
 }

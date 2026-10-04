@@ -132,7 +132,18 @@ func (s *Store) LatestSourceSyncEvents(ctx context.Context, scope business.Audit
 	return s.reader.LatestSourceSyncEvents(ctx, scope, sources)
 }
 
-var _ business.AuditStore = (*Store)(nil)
+// ReadStoredAuditEvents implements business.AuditHistoryReader.
+func (s *Store) ReadStoredAuditEvents(ctx context.Context, from, to time.Time, visit func(business.StoredAuditEvent) error) error {
+	if s.reader == nil {
+		return errWriteOnly
+	}
+	return s.reader.ReadStoredAuditEvents(ctx, from, to, visit)
+}
+
+var (
+	_ business.AuditStore         = (*Store)(nil)
+	_ business.AuditHistoryReader = (*Store)(nil)
+)
 
 // EventsSchema is the events table: every event's envelope, the SHA-256 of its
 // canonical details, and the details themselves for security-class events.
