@@ -170,7 +170,7 @@ const (
 // a token minted for another service — a token its holder was legitimately
 // given, for a different purpose — authenticate here. Passing the audience is
 // what makes this an authentication of a caller rather than of a bearer.
-func (c *KubernetesClient) ReviewToken(ctx context.Context, token, audience string) (*ReviewedToken, error) {
+func (c *KubernetesClient) reviewToken(ctx context.Context, token, audience string) (*ReviewedToken, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("%w: no token was presented", ErrTokenRejected)
 	}
@@ -229,6 +229,12 @@ type RunningContainerImage struct {
 	// container's STATUS — what it is running — never the spec's image, which
 	// is what it was asked to run.
 	ImageID string
+	// DeclaredImage is the SPEC's image: what the pod asked to run. Reported,
+	// never compared against an approved digest. Whoever can create the pod
+	// writes it, so it is evidence of intent and never of fact — and a pod spec
+	// naming an approved image while running something else is exactly what a
+	// moved tag produces.
+	DeclaredImage string
 	// Found reports whether the named container exists in the pod's statuses at
 	// all. A missing container is distinct from a container running the wrong
 	// thing, and an execution-bound decision must refuse both rather than treat
@@ -240,6 +246,20 @@ type podResponse struct {
 	Metadata struct {
 		UID string `json:"uid"`
 	} `json:"metadata"`
+	// Spec carries what the pod ASKED to run. Read so the declared image is a
+	// real value this host holds rather than a type with no referent — and so a
+	// test can prove the approved digest is compared against the RUNNING image
+	// and never against this one.
+	Spec struct {
+		Containers []struct {
+			Name  string `json:"name"`
+			Image string `json:"image"`
+		} `json:"containers"`
+		InitContainers []struct {
+			Name  string `json:"name"`
+			Image string `json:"image"`
+		} `json:"initContainers"`
+	} `json:"spec"`
 	Status struct {
 		ContainerStatuses []struct {
 			Name    string `json:"name"`
@@ -265,7 +285,7 @@ type podResponse struct {
 // container as its authenticating one is answered rather than silently reported
 // as absent. Whether an init container MAY authenticate is a policy question the
 // caller decides from the document's `non_authenticating` list; this is a read.
-func (c *KubernetesClient) RunningContainer(
+func (c *KubernetesClient) runningContainer(
 	ctx context.Context, namespace, pod, container string,
 ) (*RunningContainerImage, error) {
 	if namespace == "" || pod == "" || container == "" {
@@ -276,6 +296,24 @@ func (c *KubernetesClient) RunningContainer(
 		return nil, err
 	}
 	image := &RunningContainerImage{UID: body.Metadata.UID}
+	// The spec's image is read FIRST and kept separately. It is never compared
+	// against the approved digest — it is reported so a mismatch between what a
+	// pod asked for and what it runs is visible in a refusal, which is the
+	// signature of a moved tag.
+	for _, declared := range body.Spec.Containers {
+		if declared.Name == container {
+			image.DeclaredImage = declared.Image
+			break
+		}
+	}
+	if image.DeclaredImage == "" {
+		for _, declared := range body.Spec.InitContainers {
+			if declared.Name == container {
+				image.DeclaredImage = declared.Image
+				break
+			}
+		}
+	}
 	for _, status := range body.Status.ContainerStatuses {
 		if status.Name == container {
 			image.ImageID, image.Found = status.ImageID, true

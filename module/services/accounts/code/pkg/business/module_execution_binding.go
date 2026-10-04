@@ -22,11 +22,8 @@ import (
 //   - APPROVED (`ApprovedDigest`) — what the authority document says may run.
 //     Signed, delivered out of band, and the only one the caller has no influence
 //     over.
-//   - DECLARED — what the pod's SPEC asks to run. Writable by whoever can create
-//     the pod, so it is evidence of intent and never of fact. There is no Go type
-//     for it here BECAUSE nothing in this host reads it: a type with no referent
-//     is decoration, and the warning belongs in this comment, which is where a
-//     reader reaching for "the pod's image" will actually be.
+//   - DECLARED (`DeclaredDigest`) — what the pod's SPEC asks to run. Writable by
+//     whoever can create the pod, so it is evidence of intent and never of fact.
 //   - RUNNING (`RunningDigest`) — what the container's STATUS reports it is
 //     actually running, as `imageID`.
 //
@@ -77,6 +74,21 @@ type ApprovedDigest string
 // RunningDigest is what a container's status reports it is running.
 type RunningDigest string
 
+// DeclaredDigest is what a pod's spec asks to run.
+//
+// It is READ and REPORTED, never compared against an approved digest. Three
+// distinct types rather than three strings is what makes the wrong comparison a
+// compile error instead of a code-review question.
+//
+// A previous commit on this branch deleted this type as dead code, because
+// nothing read a pod's spec and a type with no referent is decoration. That was
+// right about the type and wrong about the gap: the fix is to read the value, not
+// to drop the name. It is now populated from the pod's spec, so a refusal can
+// report that a pod ASKED for the approved image and is RUNNING something else —
+// which is the signature of a moved tag, and the exact defeat that comparing
+// approved against declared would wave through.
+type DeclaredDigest string
+
 // ExecutionIdentity is what the host established about a caller, independently.
 type ExecutionIdentity struct {
 	PrincipalID string
@@ -91,6 +103,10 @@ type ExecutionIdentity struct {
 	// Running is what the container's status reports. The authority document's
 	// approved digest is compared against THIS.
 	Running RunningDigest
+	// Declared is what the pod's spec asked for. Carried for diagnosis only;
+	// comparing the approved digest against it is the defeat this separation
+	// exists to prevent, and the types make that comparison not compile.
+	Declared DeclaredDigest
 	// Incarnation is the approved build's counter, carried so a seal can name
 	// it. It comes from the authority document, never from the pod: a pod
 	// cannot be asked which generation of approval it belongs to.
@@ -122,9 +138,12 @@ type ReviewedExecutionToken struct {
 
 // RunningContainerStatus is a pod read's answer.
 type RunningContainerStatus struct {
-	UID     string
+	UID string
+	// ImageID is from the container's STATUS: what it runs.
 	ImageID string
-	Found   bool
+	// DeclaredImage is from the pod's SPEC: what it asked to run.
+	DeclaredImage string
+	Found         bool
 }
 
 // ExecutionAuthority answers what a principal's approved build is.
@@ -253,15 +272,22 @@ func (s *Service) BindExecution(
 			PodName:        reviewed.PodName,
 			PodUID:         reviewed.PodUID,
 			ContainerName:  containerName,
+			Declared:       DeclaredDigest(running.DeclaredImage),
 		}, nil
 	case err != nil:
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}
 
 	if !digestsEqual(string(approved), running.ImageID) {
-		return nil, fmt.Errorf("%w: principal %s is approved for %s and pod %s/%s is running %s",
+		// The declared image is named in the refusal precisely because the
+		// interesting case is when it MATCHES the approval and the running image
+		// does not: that is a moved tag, and an operator reading only "not
+		// approved" would go looking at the authority document instead of the
+		// registry.
+		return nil, fmt.Errorf(
+			"%w: principal %s is approved for %s, pod %s/%s asked for %s and is running %s",
 			ErrExecutionNotApproved, principalID, approved,
-			reviewed.Namespace, reviewed.PodName, running.ImageID)
+			reviewed.Namespace, reviewed.PodName, running.DeclaredImage, running.ImageID)
 	}
 
 	return &ExecutionIdentity{
@@ -272,6 +298,7 @@ func (s *Service) BindExecution(
 		PodUID:         reviewed.PodUID,
 		ContainerName:  containerName,
 		Running:        RunningDigest(running.ImageID),
+		Declared:       DeclaredDigest(running.DeclaredImage),
 		Incarnation:    incarnation,
 	}, nil
 }
