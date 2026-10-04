@@ -183,13 +183,33 @@ once the capability exists. The response carries
   LIVE half alone.** `min(sealed, live)` is the target — blocker decision **B1**,
   which *reverses* what this file said before it — and it is **not yet reached**.
 
-  The distinction is not pedantic and the indicative is not available here. The
-  comparison against a sealed ceiling is written and tested, but **nothing
-  populates the seal**: the mint does not set the installation id, revision,
-  epoch or binding fields, so every credential arrives claiming nothing and the
-  intersection has one operand. Code that exists and a behaviour that holds are
-  different facts, and a rules file other agents read as a statement of what is
-  in place must lead with the second.
+  **In a running deployment this mechanism enforces NOTHING on a module
+  capability, and that has to be said in those words.** The comparison against a
+  sealed ceiling is written and tested, but nothing populates the seal — the
+  module Work Context mint (`StartModuleTask`) passes only audience, tenant,
+  owner principal, task, session, actor chain and TTL, and `sdk-go`'s token
+  carries no installation id, producer epoch, binding revision, build
+  incarnation or image digest to put there.
+
+  `checkAgainstSealed` returns on its first line when the seal is nil. So for
+  every real module credential the live read runs, fetches the epoch, and the
+  result is **discarded**: `AuthorizeModuleCapability` is `moduleGrant` plus a
+  database round trip whose answer nothing compares. The declared grant alone
+  binds, which is the behaviour that preceded this work.
+
+  The consequences, stated rather than left to be derived:
+
+  - **Uninstalling a solution does not revoke a module capability in flight.**
+  - **Advancing an organisation's or a principal's authority epoch does not
+    revoke one.**
+  - An earlier version of this paragraph said "the intersection has one operand".
+    That was still too generous: an intersection of one operand would at least be
+    bounded by the live read. Nothing is.
+
+  Code that exists and a behaviour that holds are different facts, and a rules
+  file other agents read as a statement of what is in place must lead with the
+  second. This bullet has now been corrected three times, each time in the
+  direction of claiming less, which is itself the thing to notice about it.
 
   This bullet has now been wrong twice in opposite directions. It first asserted
   the whole model in the present tense while none of it existed. It was then
