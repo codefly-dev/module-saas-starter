@@ -137,12 +137,11 @@ func (a *SolutionAuthorityActivation) Activate(
 	if err != nil {
 		return solutionhost.Activation{}, err
 	}
-	// The applied-presence read is gone with the fields it fed. It is NOT
-	// replaced by something weaker: core v0.9.0 judges the delivered tuple, and
-	// the one thing this host still owes — finding a tombstone delivered under a
-	// different authority id — is done by deliveredAuthority reading every
-	// authority document over the binding, not by reporting applied state.
 	host := a.reconciler.host
+	records, err := a.appliedState(ctx)
+	if err != nil {
+		return solutionhost.Activation{}, err
+	}
 	return solutionhost.Activate(solutionhost.ActivationRequest{
 		Authority:       authority,
 		Presence:        presence,
@@ -150,22 +149,99 @@ func (a *SolutionAuthorityActivation) Activate(
 		Build:           build,
 		Envelope:        a.envelope,
 		DomainsBySigner: host.DomainsBySigner,
+		// The ownership domains this host ACCEPTS, which is a different
+		// question from which signer may speak for one. Core requires it for
+		// the reason it requires it of Admit: activation checked who may speak
+		// for a domain and never whether the host accepts the domain at all,
+		// so an activation succeeded for a domain the host does not list while
+		// Admit refused the very same documents.
+		Domains: host.Domains,
+		// The applied state, which CORE READS ITSELF through this reader.
+		Records: records,
 	})
 }
 
-// Core v0.9.0 removed `Applied`, `FirstAuthorityRecord`, `AppliedPresence` and
-// `FirstPresenceRecord` from ActivationRequest: activation no longer takes the
-// host's applied state at all. The request is now the tuple plus the questions
-// only the caller can answer — the coordinate and the build — which core
-// documents as deliberate, because "reading the host out of the halves that
-// claim it would make the question answer itself".
+// appliedState builds the reader core reads the host's applied state through.
 //
-// That does NOT retire the withdrawal check below. Core's activation judges the
-// documents it is handed; it does not know that a tombstone for this binding was
-// delivered under a different authority id, because nothing in the request
-// carries the inbox. Reading every authority document over the binding is still
-// this host's job, and it is the one part of the old applied-record argument that
-// survives the field removal.
+// It pre-loads the records because the interface takes no context: a reader that
+// closed over one and queried per call would run a database read inside core's
+// judgement, where a failure has nowhere to go but a bool.
+func (a *SolutionAuthorityActivation) appliedState(
+	ctx context.Context,
+) (*appliedSolutionState, error) {
+	records, err := a.reconciler.service.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read applied solution host bindings: %w", err)
+	}
+	byBinding := make(map[string]*SolutionHostBindingRecord, len(records))
+	for _, record := range records {
+		byBinding[record.BindingID] = record
+	}
+	return &appliedSolutionState{byBinding: byBinding}, nil
+}
+
+// appliedSolutionState answers core's two applied-state questions.
+//
+// WHY THIS EXISTS AT ALL, since an earlier version of this file said it did not.
+// That comment read core v0.9.0's removal of `Applied`, `FirstAuthorityRecord`,
+// `AppliedPresence` and `FirstPresenceRecord` and concluded activation no longer
+// takes the host's applied state. It does: core replaced four caller-SUPPLIED
+// fields with one reader it calls ITSELF, having derived the binding from the
+// attested presence bytes — so the key cannot be the caller's choice and "no
+// record" cannot be the caller's assertion. Passing neither it nor Domains made
+// core refuse every tuple by name, which is how this was found.
+type appliedSolutionState struct {
+	byBinding map[string]*SolutionHostBindingRecord
+}
+
+// PresenceRecord answers from the durable applied generation.
+func (s *appliedSolutionState) PresenceRecord(binding string) (solutionhost.Applied, bool, error) {
+	record, ok := s.byBinding[binding]
+	if !ok {
+		return solutionhost.Applied{}, false, nil
+	}
+	applied, ok := record.AppliedState()
+	return applied, ok, nil
+}
+
+// AuthorityRecord reports that there is none, for every binding.
+//
+// THIS HOST HOLDS NO APPLIED AUTHORITY STATE. There is no durable
+// AppliedAuthority relation and nothing to reconcile one into, so "no record" is
+// the truth here rather than a marker — and it is the truth UNIFORMLY, which is
+// what makes it safe. Core's reason for taking the reader was that a host keyed
+// by AUTHORITY ID truthfully found no record for a RENAMED authority and
+// activated it over a withdrawn binding: the bypass needed a lookup that could
+// miss. A reader that answers "none" for every binding cannot miss selectively.
+//
+// The replay protection core's fold would otherwise give comes from the inbox
+// instead, and that is not a weaker substitute for the renaming case
+// specifically: deliveredAuthority reads EVERY delivered authority document over
+// the binding and a tombstone among them refuses activation permanently,
+// whatever id it was signed under. Nothing deletes from the inbox, so a
+// withdrawal stays visible forever.
+//
+// If this host ever grows durable applied authority state, this must answer from
+// it, keyed on the BINDING and never on the authority id.
+func (s *appliedSolutionState) AuthorityRecord(string) (solutionhost.AppliedAuthority, bool, error) {
+	return solutionhost.AppliedAuthority{}, false, nil
+}
+
+var _ solutionhost.AppliedStateReader = (*appliedSolutionState)(nil)
+
+// Core v0.9.0 replaced `Applied`, `FirstAuthorityRecord`, `AppliedPresence` and
+// `FirstPresenceRecord` with ONE `Records AppliedStateReader` that core calls
+// itself, keyed on a binding it derives from the attested presence bytes. An
+// earlier version of this comment read the removal and missed the replacement,
+// concluding activation no longer takes applied state; it does, and passing
+// neither it nor `Domains` made core refuse every tuple.
+//
+// None of that retires the withdrawal check below. Core's activation judges the
+// documents it is handed and the records it reads; it does not know that a
+// tombstone for this binding was delivered under a different authority id,
+// because nothing in the request carries the inbox — and this host's
+// AuthorityRecord has none to give. Reading every authority document over the
+// binding is still this host's job.
 //
 // deliveredAuthority reads the live authority document over one binding.
 //

@@ -144,8 +144,38 @@ func (r *ApprovedBuildReconciler) ApprovedBuild(
 // A principal the inbox describes INCOHERENTLY is a narrower failure, and it is
 // handled per principal rather than per pass: see the comment at the install.
 func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
+	// A HOST THAT ANSWERS NO AUTHORITY QUESTION HAS NOTHING TO REFRESH, and
+	// that is a no-op rather than a failure.
+	//
+	// This returned the ceiling-unavailable error as a pass failure, and a test
+	// found it: every presence reconcile on a host with no envelope — or with no
+	// delivery inbox wired — started failing. That is precisely the coupling
+	// this design forbids. `newSolutionAuthorityActivation` says it outright: a
+	// host that reconciles presence with no ceiling delivered is a CORRECT,
+	// COMPLETE deployment, and making the presence half depend on the authority
+	// half being configured is the wrong direction.
+	//
+	// Nothing is hidden by returning early. The view stays empty, so every
+	// principal is UNKNOWN and every module mint is refused; and the operator
+	// learns by name at the point of use, where activation already refuses with
+	// ErrSolutionAuthorityCeilingUnavailable. The envelope is read once at boot
+	// and cannot change under a running process, so there is no case where a
+	// host had a ceiling and this skipped a refresh it owed.
+	if r.activation.envelope.Revision == 0 {
+		return nil
+	}
+
 	documents, err := r.activation.liveAuthorityDocuments(ctx)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
+		// No delivery inbox wired: the same "answers nothing" posture as no
+		// envelope, reached through the other half of the configuration.
+		return nil
+	case err != nil:
+		// An inbox that EXISTS and could not be read is a real failure, and the
+		// distinction is the whole point: a row this host can no longer verify
+		// leaves the approved state for every principal unestablished, and the
+		// one row whose disappearance grants something is a tombstone.
 		return fmt.Errorf("%w: %w", ErrApprovedBuildInboxUnreadable, err)
 	}
 
@@ -158,14 +188,6 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	// call a delivery writer could approve any image at all by signing a
 	// document that names it, which is the entire check this view feeds.
 	//
-	// A HOST WITH NO CEILING APPROVES NOTHING, which is the same posture
-	// activation takes and for the same reason: it has decided nothing about
-	// authority, and "no ceiling" must not read as "every build". Every
-	// principal stays unknown and every mint is refused.
-	if r.activation.envelope.Revision == 0 {
-		return fmt.Errorf("%w: this host has no authority envelope, so it approves no build",
-			ErrApprovedBuildInboxUnreadable)
-	}
 	inside := make([]*solutionhost.AuthorityDocument, 0, len(documents))
 	var outside []error
 	for _, document := range documents {
