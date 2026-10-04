@@ -1489,6 +1489,36 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/solution/principal-names.tsx",
+      "imports": [
+        "@codefly-dev/saas-sdk",
+        "@connectrpc/connect",
+        "react",
+        "./binding.js",
+        "./transport.js",
+        "./viewer.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Who did something, named from the viewer's own organization directory: one read per page, kept per viewer, so a solution or module kit showing a principal does not list the directory itself or show a bare id.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Named"
+        },
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Loading"
+        },
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Refused"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
       "source": "src/app/(auth)/auth/callback/page.tsx",
       "imports": [
         "@/features/auth/ui/callback-page"
