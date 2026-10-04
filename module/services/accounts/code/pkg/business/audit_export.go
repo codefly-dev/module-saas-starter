@@ -25,26 +25,19 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 		return nil, "", "", w.NewError("unsupported format: %s (use csv or json)", format)
 	}
 
-	// Fetch all matching events (paginate internally to avoid huge single queries)
-	var all []AuditEntry
-	pageToken := ""
-	for {
-		// Service.QueryAuditLog wraps in WithOrgTx (or WithControlPlane when
-		// orgID is empty for platform-admin export) so RLS lets the
-		// rows through. Don't use s.store.QueryAuditLog directly here
-		// — that bypasses the wrap and returns zero rows.
-		entries, nextToken, _, err := s.QueryAuditLog(ctx, AuditQuery{
-			OrgID: orgID, ActorID: actorID, EventType: eventType, EventTypes: eventTypes,
-			PageSize: 100, PageToken: pageToken,
-		})
-		if err != nil {
-			return nil, "", "", w.Wrapf(err, "query audit log for export")
-		}
-		all = append(all, entries...)
-		if nextToken == "" || len(entries) == 0 {
-			break
-		}
-		pageToken = nextToken
+	// Every matching event, newest first, from the audit store of record. In
+	// Postgres the export pages the list 100 rows at a time, each page under
+	// WithOrgTx (or WithControlPlane when orgID is empty for platform-admin
+	// export) so RLS lets the rows through.
+	read, err := s.auditRead(ctx, AuditQuery{
+		OrgID: orgID, ActorID: actorID, EventType: eventType, EventTypes: eventTypes,
+	}, nil)
+	if err != nil {
+		return nil, "", "", w.Wrapf(err, "query audit log for export")
+	}
+	all, err := s.auditReads().ExportAuditEvents(ctx, read)
+	if err != nil {
+		return nil, "", "", w.Wrapf(err, "query audit log for export")
 	}
 
 	timestamp := time.Now().UTC().Format("20060102-150405")

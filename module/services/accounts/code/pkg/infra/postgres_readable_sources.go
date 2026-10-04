@@ -285,3 +285,42 @@ func (s *PostgresStore) LatestSourceSyncRequests(ctx context.Context, org string
 	}
 	return out, rows.Err()
 }
+
+// SourceSyncRequesterLabels implements business.Store: the display name of each
+// actor id whose principal this snapshot can see. It is the principals half of
+// LatestSourceSyncRequests' join, for a store of record outside Postgres.
+func (s *PostgresStore) SourceSyncRequesterLabels(ctx context.Context, org string, actorIDs []string) (map[string]string, error) {
+	snapshot, ok := ctx.Value(sourceReadSnapshotKey{}).(sourceReadSnapshot)
+	if !ok {
+		return nil, fmt.Errorf("source read snapshot required")
+	}
+	if snapshot.orgID != org {
+		return nil, fmt.Errorf("source read snapshot is bound to another organization")
+	}
+	tx := snapshot.tx
+	// The ids come from the store of record, which keeps them as text; one that
+	// is not a uuid names no principal, and is labelled by itself.
+	var ids []string
+	for _, id := range actorIDs {
+		if nilIfNotUUID(id) != nil {
+			ids = append(ids, id)
+		}
+	}
+	labels := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return labels, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text, display_name FROM principals WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, label string
+		if err := rows.Scan(&id, &label); err != nil {
+			return nil, err
+		}
+		labels[id] = label
+	}
+	return labels, rows.Err()
+}

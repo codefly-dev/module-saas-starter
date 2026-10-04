@@ -104,6 +104,12 @@ type Store interface {
 	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
 	ReadableCollectionGrants(context.Context, string, []string, []string) (map[string][]*gen.ReadableCollectionGrant, error)
 	LatestSourceSyncRequests(context.Context, string, []string) (map[string]SourceSyncRequest, error)
+	// SourceSyncRequesterLabels names, inside the same source-read snapshot, the
+	// actors a swap value's store of record returned for LatestSourceSyncEvents:
+	// each visible principal's display name by id. An id without a visible
+	// principal is absent, and the caller labels it by the id itself, exactly as
+	// LatestSourceSyncRequests does.
+	SourceSyncRequesterLabels(ctx context.Context, org string, actorIDs []string) (map[string]string, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	// DeleteDatasourceSource removes the Source and returns what it removed,

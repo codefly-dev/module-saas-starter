@@ -79,12 +79,15 @@ type AuditStoreWriter interface {
 }
 
 // AuditStore is the audit store of record under a swap value (ADR 0009): one
-// interface carrying the write half, which the relay uses, and — once reads
-// move — the read half (list, aggregate, export and the readable-source
-// queries), embedded here beside AuditStoreWriter. The relay depends on
-// AuditStoreWriter alone, so adding the read half changes no caller of it.
+// interface carrying the write half, which the relay uses, and the read half —
+// the activity list, aggregation and export (AuditReader) and the
+// readable-source query (AuditSourceSyncReader) — which the service uses. The
+// relay depends on AuditStoreWriter alone and the service on the read halves
+// alone.
 type AuditStore interface {
 	AuditStoreWriter
+	AuditReader
+	AuditSourceSyncReader
 }
 
 // AuditArchive writes a relay batch to the locked object-storage archive as one

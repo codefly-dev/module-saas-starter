@@ -398,7 +398,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Export (JSON/CSV)      | ✅    | `audit_export.go`                                                  |
 | Impersonation tracking | ✅    | Records both real actor + viewed-as user                           |
 | Replay / event sourcing| ❌    | Audit log is read-only history; not used to reconstruct state      |
-| Warehouse store of record | 🟡 | `AUDIT_SINK=bigquery` (ADR 0009): each record commits to a Postgres queue on the mutation's transaction and a relay delivers it to BigQuery and a locked GCS archive. Writes only — the activity list, aggregates and exports still read Postgres until reads move; ClickHouse is not built |
+| Warehouse store of record | 🟡 | `AUDIT_SINK=bigquery` (ADR 0009): each record commits to a Postgres queue on the mutation's transaction and a relay delivers it to BigQuery and a locked GCS archive. The activity list, aggregates, exports and the readable-source query read BigQuery through the Storage Read API — no query jobs — scoped to the caller's organization and the deployment, with each event returned once; Postgres history is not yet copied over; ClickHouse is not built |
 
 ### Admin panel
 
@@ -655,7 +655,7 @@ Environment variables consumed by the api:
 | `POSTHOG_HOST`                 | Explicit HTTPS or local capture origin                       |
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `AUDIT_SINK`                   | `postgres` (default), `both` (tee to `AUDIT_EXTERNAL_URL`, optional `AUDIT_EXTERNAL_TOKEN`), or `bigquery` (swap the audit store of record, ADR 0009); `external` is refused |
-| `AUDIT_BIGQUERY_PROJECT`, `AUDIT_BIGQUERY_DATASET` | Required under `bigquery`: the store of record. The dataset must exist; the `audit_events` and `audit_event_details` tables are created if missing. Credentials are Application Default Credentials only |
+| `AUDIT_BIGQUERY_PROJECT`, `AUDIT_BIGQUERY_DATASET` | Required under `bigquery`: the store of record. The dataset must exist; the `audit_events` and `audit_event_details` tables are created if missing. Credentials are Application Default Credentials only. The service's identity holds no `bigquery.jobs.create`: it writes with streaming inserts and reads through the Storage Read API (`bigquery.tables.getData`, `bigquery.readsessions.create`/`getData`/`update`), because append plus job creation would permit DML |
 | `AUDIT_ARCHIVE_URL`            | Required under `bigquery`: the locked archive, as `gs://<bucket>` (the scheme picks the writer; GCS is the one built). The bucket carries a retention lock the deployment sets and receives one object per relay batch |
 | `AUDIT_DEPLOYMENT_ID`          | Required under `bigquery`: stamped on every record and the archive path |
 | `AUDIT_CONTENT_RETENTION_DAYS` | Required under `bigquery`: days a content-class event's full details are kept (the details table's partition expiration) |

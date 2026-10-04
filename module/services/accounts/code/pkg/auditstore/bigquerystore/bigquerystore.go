@@ -1,13 +1,15 @@
 // Package bigquerystore is the BigQuery adapter of the audit store swap
-// (ADR 0009): the write half of business.AuditStore.
+// (ADR 0009): both halves of business.AuditStore.
 //
-// The writer's authority is deliberately minimal — bigquery.datasets.get,
-// bigquery.tables.create, bigquery.tables.get and bigquery.tables.updateData,
-// and never bigquery.jobs.create — so it runs no load, query or DML job. Rows
-// are appended with streaming inserts (tabledata.insertAll) and tables are
-// created, never altered, at startup. Credentials are Application Default
-// Credentials only: the caller builds the client, and on Kubernetes that is the
-// pod's workload identity.
+// The service's authority is deliberately minimal and never includes
+// bigquery.jobs.create, so it runs no load, query or DML job. The write half
+// holds bigquery.datasets.get, bigquery.tables.create, bigquery.tables.get and
+// bigquery.tables.updateData: rows are appended with streaming inserts
+// (tabledata.insertAll) and tables are created, never altered, at startup. The
+// read half (reader.go) holds bigquery.tables.getData, bigquery.tables.list and
+// the read-session permissions, and reads through the Storage Read API.
+// Credentials are Application Default Credentials only: the caller builds the
+// clients, and on Kubernetes that is the pod's workload identity.
 package bigquerystore
 
 import (
@@ -46,6 +48,9 @@ type Config struct {
 	// ContentDetailRetention is the details table's partition expiration: how
 	// long a content-class event's full details are kept.
 	ContentDetailRetention time.Duration
+	// Reader is the read half. Without one the store is write-only, as the
+	// relay needs it, and every read is refused.
+	Reader *Reader
 }
 
 // rowInserter is the streaming-insert seam; *bigquery.Inserter satisfies it.
@@ -60,6 +65,7 @@ type Store struct {
 	retention time.Duration
 	events    rowInserter
 	details   rowInserter
+	reader    *Reader
 }
 
 // New builds a store over client, which the caller constructs with
@@ -87,8 +93,46 @@ func New(client *bigquery.Client, cfg Config) (*Store, error) {
 		retention: cfg.ContentDetailRetention,
 		events:    events,
 		details:   details,
+		reader:    cfg.Reader,
 	}, nil
 }
+
+// errWriteOnly refuses a read of a store built without a reader.
+var errWriteOnly = errors.New("bigquery audit store: built without a reader")
+
+// ListAuditEvents implements business.AuditReader.
+func (s *Store) ListAuditEvents(ctx context.Context, read business.AuditRead) ([]business.AuditEntry, string, error) {
+	if s.reader == nil {
+		return nil, "", errWriteOnly
+	}
+	return s.reader.ListAuditEvents(ctx, read)
+}
+
+// AggregateAuditEvents implements business.AuditReader.
+func (s *Store) AggregateAuditEvents(ctx context.Context, read business.AuditRead, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
+	if s.reader == nil {
+		return nil, errWriteOnly
+	}
+	return s.reader.AggregateAuditEvents(ctx, read, spec)
+}
+
+// ExportAuditEvents implements business.AuditReader.
+func (s *Store) ExportAuditEvents(ctx context.Context, read business.AuditRead) ([]business.AuditEntry, error) {
+	if s.reader == nil {
+		return nil, errWriteOnly
+	}
+	return s.reader.ExportAuditEvents(ctx, read)
+}
+
+// LatestSourceSyncEvents implements business.AuditSourceSyncReader.
+func (s *Store) LatestSourceSyncEvents(ctx context.Context, scope business.AuditReadScope, sources []string) (map[string]business.AuditSourceSyncEvent, error) {
+	if s.reader == nil {
+		return nil, errWriteOnly
+	}
+	return s.reader.LatestSourceSyncEvents(ctx, scope, sources)
+}
+
+var _ business.AuditStore = (*Store)(nil)
 
 // EventsSchema is the events table: every event's envelope, the SHA-256 of its
 // canonical details, and the details themselves for security-class events.
@@ -228,16 +272,30 @@ func conforms(spec tableSpec, existing *bigquery.TableMetadata) error {
 	return nil
 }
 
-// AppendAuditBatch implements business.AuditStoreWriter. Every record goes to
-// the events table; a content-class record's details go to the details table
-// instead of the events row.
-func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
-	var events, details []bigquery.ValueSaver
+// BatchRows is the rows a batch appends: one events-table row per record, and
+// a details-table row for each content-class record, whose details go there
+// instead of its events row.
+func BatchRows(batch business.AuditBatch) (events, details []Row) {
 	for _, record := range batch.Records {
 		events = append(events, EventRow(batch.DeploymentID, record))
 		if record.Retention != business.RetentionSecurity {
 			details = append(details, DetailRow(batch.DeploymentID, record))
 		}
+	}
+	return events, details
+}
+
+// AppendAuditBatch implements business.AuditStoreWriter: the batch's rows
+// (BatchRows) streamed to the events and details tables.
+func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
+	eventRows, detailRows := BatchRows(batch)
+	events := make([]bigquery.ValueSaver, len(eventRows))
+	for i, row := range eventRows {
+		events[i] = row
+	}
+	details := make([]bigquery.ValueSaver, len(detailRows))
+	for i, row := range detailRows {
+		details[i] = row
 	}
 	if err := putInChunks(ctx, s.events, events); err != nil {
 		return fmt.Errorf("bigquery audit store: append to %s: %w", EventsTable, err)

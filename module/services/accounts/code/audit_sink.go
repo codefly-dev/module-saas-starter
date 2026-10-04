@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	bqstorage "cloud.google.com/go/bigquery/storage/apiv1"
 	"cloud.google.com/go/storage"
 )
 
@@ -193,20 +194,21 @@ func configuredBigQueryAuditSwap() (*bigQueryAuditSwap, error) {
 	return swap, nil
 }
 
-// newBigQueryAuditRelay builds the relay of the bigquery swap value: the
-// BigQuery store of record (its tables created if missing), the GCS archive,
-// and the queue on the relay's own pool. Both clients use Application Default
-// Credentials. The returned close releases them all.
-func newBigQueryAuditRelay(ctx context.Context, types business.DeclaredAuditEventTypeReader, swap *bigQueryAuditSwap) (*business.AuditRelay, func(), error) {
+// newBigQueryAuditSwap builds the bigquery swap value: the BigQuery store of
+// record (its tables created if missing) with its read half on the Storage
+// Read API, the GCS archive, and the relay that drains the queue on the
+// relay's own pool. Every client uses Application Default Credentials. The
+// service reads the returned store; the returned close releases them all.
+func newBigQueryAuditSwap(ctx context.Context, types business.DeclaredAuditEventTypeReader, swap *bigQueryAuditSwap) (*business.AuditRelay, business.AuditStore, func(), error) {
 	var closers []func()
 	closeAll := func() {
 		for i := len(closers) - 1; i >= 0; i-- {
 			closers[i]()
 		}
 	}
-	fail := func(err error) (*business.AuditRelay, func(), error) {
+	fail := func(err error) (*business.AuditRelay, business.AuditStore, func(), error) {
 		closeAll()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	bigQueryClient, err := bigquery.NewClient(ctx, swap.project)
@@ -214,9 +216,26 @@ func newBigQueryAuditRelay(ctx context.Context, types business.DeclaredAuditEven
 		return fail(fmt.Errorf("audit store: bigquery client: %w", err))
 	}
 	closers = append(closers, func() { _ = bigQueryClient.Close() })
+	// Reads run no query job: the service holds the append grant, and append
+	// plus job creation would let it run DML against the store of record.
+	readClient, err := bqstorage.NewBigQueryReadClient(ctx)
+	if err != nil {
+		return fail(fmt.Errorf("audit store: bigquery storage read client: %w", err))
+	}
+	closers = append(closers, func() { _ = readClient.Close() })
+	reader, err := bigquerystore.NewReader(bigquerystore.ReadConfig{
+		Client:       readClient,
+		Project:      swap.project,
+		Dataset:      swap.dataset,
+		DeploymentID: swap.deploymentID,
+	})
+	if err != nil {
+		return fail(err)
+	}
 	warehouse, err := bigquerystore.New(bigQueryClient, bigquerystore.Config{
 		Dataset:                swap.dataset,
 		ContentDetailRetention: swap.contentDetailRetention,
+		Reader:                 reader,
 	})
 	if err != nil {
 		return fail(err)
@@ -263,5 +282,5 @@ func newBigQueryAuditRelay(ctx context.Context, types business.DeclaredAuditEven
 	if err != nil {
 		return fail(err)
 	}
-	return relay, closeAll, nil
+	return relay, warehouse, closeAll, nil
 }

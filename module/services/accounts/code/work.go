@@ -573,12 +573,15 @@ func doWork(ctx context.Context) (Clean, error) {
 	var auditRelay *business.AuditRelay
 	closeAuditRelay := func() {}
 	if auditSink.bigQuery != nil {
-		w.Warn("AUDIT_SINK=bigquery: audit events are queued in Postgres and relayed to BigQuery and the archive; " +
-			"the activity list, aggregates, exports and readable-source queries still read audit_events, which receives no new rows, until reads move to the store (ADR 0009)")
-		auditRelay, closeAuditRelay, err = newBigQueryAuditRelay(ctx, store, auditSink.bigQuery)
+		// Under the swap BigQuery is the store of record for writes and reads
+		// alike: the activity list, aggregates, exports and the readable-source
+		// query read it, scoped to the caller's organization and this deployment.
+		var auditStore business.AuditStore
+		auditRelay, auditStore, closeAuditRelay, err = newBigQueryAuditSwap(ctx, store, auditSink.bigQuery)
 		if err != nil {
 			return nil, err
 		}
+		service.SetAuditStore(auditStore)
 	}
 
 	var auditExportWorker *jobs.Worker

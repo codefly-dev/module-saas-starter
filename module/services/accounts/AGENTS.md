@@ -71,6 +71,18 @@ survives a restart and reaches every replica, and is only served when it is
   warehouse store of record keeps its full details. The class only grows, like
   `pii`: a re-declaration may raise it to `security` and is refused if it would
   lower it, omission included.
+- **Audit reads go through the Service**, never straight to `audit_events`:
+  `QueryAuditLog`, `AggregateAuditLog(ForReader)`, `ExportAuditLog` and
+  `LatestSourceSyncRequests` read the audit store of record — `audit_events`
+  under `postgres`/`both`, the warehouse under a swap value (ADR 0009), where
+  `audit_events` receives no new rows. Each read names its scope
+  (`AuditReadScope`: one organization, or the explicit platform read) and the
+  store refuses one without it. The BigQuery reads run no query job — the
+  service also holds the append grant, and append plus job creation would
+  allow DML — so they use the Storage Read API with row restrictions and are
+  evaluated in the service (`pkg/auditstore/auditeval`) with the Postgres
+  reads' semantics; `pkg/business/audit_store_parity_test.go` holds the two to
+  one fixture.
 - A composed **module** with no frontend half declares its own audit event
   types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
   (`pkg/business/module_audit_declarations.go`): the same validator

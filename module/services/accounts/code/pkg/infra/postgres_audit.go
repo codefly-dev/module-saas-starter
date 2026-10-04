@@ -2,7 +2,6 @@ package infra
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -106,29 +105,6 @@ func auditEventColumns(entry business.AuditEntry) []any {
 	}
 }
 
-// encodeAuditCursor / decodeAuditCursor carry the keyset position for audit
-// pagination. The token is opaque to callers: base64 of "<RFC3339Nano>|<id>".
-func encodeAuditCursor(ct time.Time, id string) string {
-	raw := ct.UTC().Format(time.RFC3339Nano) + "|" + id
-	return base64.RawURLEncoding.EncodeToString([]byte(raw))
-}
-
-func decodeAuditCursor(token string) (time.Time, string, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return time.Time{}, "", err
-	}
-	parts := strings.SplitN(string(raw), "|", 2)
-	if len(parts) != 2 {
-		return time.Time{}, "", fmt.Errorf("malformed cursor")
-	}
-	ct, err := time.Parse(time.RFC3339Nano, parts[0])
-	if err != nil {
-		return time.Time{}, "", err
-	}
-	return ct, parts[1], nil
-}
-
 // auditWhere builds the shared WHERE clause for the search and aggregate paths
 // from an AuditQuery, returning the SQL fragment and its ordered args.
 func auditWhere(q business.AuditQuery, startArg int) (string, []any, error) {
@@ -218,7 +194,7 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 	// (created_at, id); the compound comparison is stable under the DESC
 	// ordering even when many rows share a created_at.
 	if q.PageToken != "" {
-		ct, id, err := decodeAuditCursor(q.PageToken)
+		ct, id, err := business.DecodeAuditPageToken(q.PageToken)
 		if err != nil {
 			return nil, "", 0, fmt.Errorf("invalid page token: %w", err)
 		}
@@ -291,7 +267,7 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 	if len(events) > int(pageSize) {
 		events = events[:pageSize]
 		last := events[len(events)-1]
-		nextToken = encodeAuditCursor(last.CreatedAt, last.ID)
+		nextToken = business.EncodeAuditPageToken(last.CreatedAt, last.ID)
 	}
 
 	return events, nextToken, int32(len(events)), nil

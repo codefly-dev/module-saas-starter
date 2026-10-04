@@ -164,7 +164,7 @@ func (s *Service) discloseCollectionMetadata(ctx context.Context, org string, re
 		}
 	}
 	if disclosure.SyncRequester {
-		requests, err := s.store.LatestSourceSyncRequests(ctx, org, sources)
+		requests, err := s.LatestSourceSyncRequests(ctx, org, sources)
 		if err != nil {
 			return err
 		}
@@ -178,4 +178,44 @@ func (s *Service) discloseCollectionMetadata(ctx context.Context, org string, re
 		}
 	}
 	return nil
+}
+
+// LatestSourceSyncRequests returns, per source, when a sync was last requested
+// and by whom — read from the audit store of record, inside the caller's
+// source-read snapshot. Under postgres and both it is one query over
+// audit_events joined to principals within the snapshot. Under a swap value
+// (ADR 0009) the store of record returns each source's newest request and its
+// actor id, then the actors' display names are joined from principals within
+// the snapshot — the audit read itself is outside it. Either way an actor with
+// no visible principal is labelled by its id, and an event with no actor by "".
+func (s *Service) LatestSourceSyncRequests(ctx context.Context, org string, sources []string) (map[string]SourceSyncRequest, error) {
+	if s.auditStore == nil {
+		return s.store.LatestSourceSyncRequests(ctx, org, sources)
+	}
+	events, err := s.auditStore.LatestSourceSyncEvents(ctx, OrganizationAuditScope(org), sources)
+	if err != nil {
+		return nil, err
+	}
+	var actors []string
+	for _, event := range events {
+		if event.ActorID != "" && !slices.Contains(actors, event.ActorID) {
+			actors = append(actors, event.ActorID)
+		}
+	}
+	slices.Sort(actors)
+	labels := map[string]string{}
+	if len(actors) > 0 {
+		if labels, err = s.store.SourceSyncRequesterLabels(ctx, org, actors); err != nil {
+			return nil, err
+		}
+	}
+	out := make(map[string]SourceSyncRequest, len(events))
+	for source, event := range events {
+		label, ok := labels[event.ActorID]
+		if !ok {
+			label = event.ActorID
+		}
+		out[source] = SourceSyncRequest{RequestedAt: event.RequestedAt, RequestedBy: label}
+	}
+	return out, nil
 }

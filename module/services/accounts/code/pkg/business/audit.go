@@ -472,35 +472,54 @@ type AuditAggregateBucket struct {
 	Metrics map[string]float64
 }
 
-// QueryAuditLog delegates to the store, scoping the read to the
-// requested org under WithOrgTx so RLS lets the rows through. When
-// OrgID is empty the caller is platform-admin (handler authz
-// already enforced this in adapters/rpcs.go AuditServer.QueryAuditLog)
-// and we use WithControlPlane to span tenants.
+// QueryAuditLog reads one page of the activity list from the audit store of
+// record. Under postgres and both that is audit_events, read under WithOrgTx
+// for the requested org so RLS lets its rows through — or, when OrgID is
+// empty, under WithControlPlane to span tenants: the caller is then a platform
+// admin (handler authz already enforced this in adapters/rpcs.go
+// AuditServer.QueryAuditLog). Under a swap value it is the store the swap
+// selected, read under the same scope, named explicitly (AuditReadScope).
 func (s *Service) QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error) {
 	if q.CollectionID != "" {
 		return nil, "", 0, status.Error(codes.InvalidArgument, "collection analytics requires reader authorization")
 	}
-	var entries []AuditEntry
-	var nextToken string
-	var total int32
-	wrap := func(ctx context.Context) error {
-		ev, nt, tot, err := s.store.QueryAuditLog(ctx, q)
-		entries, nextToken, total = ev, nt, tot
-		return err
+	read, err := s.auditRead(ctx, q, nil)
+	if err != nil {
+		return nil, "", 0, err
 	}
-	var err error
-	if q.OrgID == "" {
-		err = s.store.WithControlPlane(ctx, wrap)
-	} else {
-		err = s.store.WithOrgTx(ctx, q.OrgID, wrap)
+	entries, nextToken, err := s.auditReads().ListAuditEvents(ctx, read)
+	return entries, nextToken, int32(len(entries)), err
+}
+
+// auditRead is the read of q in its scope (auditReadScopeFor). Under a swap
+// value it also carries the event-type facts the query or the aggregation
+// needs, read from audit_event_types under that same scope — the rows the
+// Postgres reads would have joined in SQL.
+func (s *Service) auditRead(ctx context.Context, q AuditQuery, spec *AuditAggregationSpec) (AuditRead, error) {
+	read := AuditRead{Scope: auditReadScopeFor(q), Query: q}
+	if s.auditStore == nil || !auditReadNeedsTypes(q, spec) {
+		return read, nil
 	}
-	return entries, nextToken, total, err
+	err := postgresAuditReader{store: s.store}.within(ctx, read.Scope, func(ctx context.Context) error {
+		rows, err := s.store.ListAuditEventTypes(ctx)
+		if err != nil {
+			return err
+		}
+		read.Types = NewAuditEventTypeIndex(rows)
+		return nil
+	})
+	if err != nil {
+		return AuditRead{}, fmt.Errorf("audit read: event types: %w", err)
+	}
+	return read, nil
 }
 
 // AggregateAuditLogForReader additionally gates exact-resource analytics on the
-// reader's current resource grant. The check and query share the tenant tx.
-// Organization-wide audit reads retain their existing audit authority contract.
+// reader's current resource grant. Under postgres and both the check and query
+// share the tenant tx. Under a swap value the check runs in that tenant tx and
+// the aggregate is then read from the store of record — two steps, no shared
+// snapshot. Organization-wide audit reads retain their existing audit
+// authority contract.
 func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error) {
 	if q.From != nil && q.To != nil && q.From.After(*q.To) {
 		return nil, status.Error(codes.InvalidArgument, "audit window is reversed")
@@ -537,44 +556,65 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 		payload["boundary"] = q.CollectionID
 		q.PayloadContains = payload
 	}
+	compiled := q
+	compiled.CollectionID = "" // Authorized and compiled into the boundary predicate above.
+	if s.auditStore != nil {
+		if err := s.store.WithOrgTx(ctx, q.OrgID, func(ctx context.Context) error {
+			return s.authorizeAuditResourceRead(ctx, reader, q)
+		}); err != nil {
+			return nil, err
+		}
+		read, err := s.auditRead(ctx, compiled, &spec)
+		if err != nil {
+			return nil, err
+		}
+		return s.auditStore.AggregateAuditEvents(ctx, read, spec)
+	}
 	var out []AuditAggregateBucket
 	err := s.store.WithOrgTx(ctx, q.OrgID, func(ctx context.Context) error {
-		// Each scope proves itself; there is no permissive default to fall
-		// through to. `proven` records that at least one check actually ran, so
-		// a future caller reaching here with neither scope set is denied rather
-		// than served on the strength of an untested assumption.
-		denied := status.Error(codes.PermissionDenied, "resource read access required")
-		proven := false
-		if q.CollectionID != "" {
-			allowed, err := s.canReadAuditCollection(ctx, reader, q.OrgID, q.CollectionID)
-			if err != nil {
-				return err
-			}
-			if !allowed {
-				return denied
-			}
-			proven = true
-		}
-		if q.ResourceID != "" {
-			allowed, err := s.canReadAuditResource(ctx, reader, q)
-			if err != nil {
-				return err
-			}
-			if !allowed {
-				return denied
-			}
-			proven = true
-		}
-		if !proven {
-			return denied
+		if err := s.authorizeAuditResourceRead(ctx, reader, q); err != nil {
+			return err
 		}
 		var err error
-		compiled := q
-		compiled.CollectionID = "" // Authorized and compiled into the boundary predicate above.
 		out, err = s.store.AggregateAuditLog(ctx, compiled, spec)
 		return err
 	})
 	return out, err
+}
+
+// authorizeAuditResourceRead proves the reader may read the resource or
+// collection q names, inside the caller's tenant transaction. Each scope proves
+// itself; there is no permissive default to fall through to. `proven` records
+// that at least one check actually ran, so a future caller reaching here with
+// neither scope set is denied rather than served on the strength of an
+// untested assumption.
+func (s *Service) authorizeAuditResourceRead(ctx context.Context, reader string, q AuditQuery) error {
+	denied := status.Error(codes.PermissionDenied, "resource read access required")
+	proven := false
+	if q.CollectionID != "" {
+		allowed, err := s.canReadAuditCollection(ctx, reader, q.OrgID, q.CollectionID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return denied
+		}
+		proven = true
+	}
+	if q.ResourceID != "" {
+		allowed, err := s.canReadAuditResource(ctx, reader, q)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return denied
+		}
+		proven = true
+	}
+	if !proven {
+		return denied
+	}
+	return nil
 }
 
 // isCollectionBoundaryEvent reports whether eventType is a registered event
@@ -632,24 +672,16 @@ func (s *Service) canReadAuditCollection(ctx context.Context, reader, orgID, bou
 // The spec selects the group dimensions (event type, category, actor, time
 // bucket, or a payload field), the aggregations (count, distinct-count, sum,
 // avg, min, max, percentile over payload fields), and any derived ratios,
-// filtered by the same predicates as QueryAuditLog.
+// filtered by the same predicates as QueryAuditLog, and read in the same scope.
 func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error) {
 	if q.CollectionID != "" {
 		return nil, status.Error(codes.InvalidArgument, "collection analytics requires reader authorization")
 	}
-	var out []AuditAggregateBucket
-	wrap := func(ctx context.Context) error {
-		var err error
-		out, err = s.store.AggregateAuditLog(ctx, q, spec)
-		return err
+	read, err := s.auditRead(ctx, q, &spec)
+	if err != nil {
+		return nil, err
 	}
-	var err error
-	if q.OrgID == "" {
-		err = s.store.WithControlPlane(ctx, wrap)
-	} else {
-		err = s.store.WithOrgTx(ctx, q.OrgID, wrap)
-	}
-	return out, err
+	return s.auditReads().AggregateAuditEvents(ctx, read, spec)
 }
 
 // buildAuditEntry assembles an AuditEntry. actorID is the effective subject the

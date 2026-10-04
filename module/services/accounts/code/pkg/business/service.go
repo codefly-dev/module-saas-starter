@@ -35,6 +35,7 @@ type Service struct {
 	orgCreationPolicy         OrganizationCreationPolicy
 	audit                     AuditEmitter
 	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
+	auditStore                AuditStore     // the store of record's reads under a swap value (ADR 0009); nil reads audit_events
 	entitlements              EntitlementChecker
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
@@ -385,6 +386,23 @@ func (s *Service) publicBaseURL(ctx context.Context) string {
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
 	s.audit = a
 	s.auditTx, _ = a.(TxAuditEmitter)
+}
+
+// SetAuditStore routes every audit read — the activity list, aggregation,
+// export and the readable-source query — to the store of record of a swap value
+// (ADR 0009). Without it, reads go to audit_events, as they do under postgres
+// and both.
+func (s *Service) SetAuditStore(store AuditStore) {
+	s.auditStore = store
+}
+
+// auditReads is the reader of the audit store of record: the swap value's
+// store when one is wired, Postgres otherwise.
+func (s *Service) auditReads() AuditReader {
+	if s.auditStore != nil {
+		return s.auditStore
+	}
+	return postgresAuditReader{store: s.store}
 }
 
 // VerifyAuditWiring fails startup when the wired audit emitter cannot write on
