@@ -442,7 +442,7 @@ applied: it is the only way a removal knows what to withdraw.
 
 ### Prepare, then activate
 
-Every pass reads the mount, then asks Core about the **whole** desired set —
+Every pass reads the durable inbox, then asks Core about the **whole** desired set —
 route-alias uniqueness and "declared once per set" are properties of the set, not
 of a document. Only then is anything written, and desired state is recorded for
 every delivered binding before any generation is applied, so what delivery wants
@@ -463,10 +463,11 @@ under the binding row's lock, and `DecisionCurrent` — this generation is alrea
 applied — writes nothing. A restart resumes from the recorded applied generation
 rather than deriving it again.
 
-An unreadable mount is an **error**, never an empty desired set, and an empty
-mount removes nothing. Removal is a tombstone generation precisely so that a
-volume that failed to mount, or a delivery tree that synced empty, can never be
-reconciled as "withdraw every solution".
+An unreadable inbox is an **error**, never an empty desired set, and an empty
+one removes nothing. Removal is a tombstone generation precisely so that a store
+this host cannot read can never be reconciled as "withdraw every solution".
+Nothing deletes from the inbox either, which is what keeps "delivery stopped
+talking" and "delivery said remove it" different facts.
 
 ### The mixed window
 
@@ -554,18 +555,30 @@ Every key is in the `federation` group.
 
 | Key | Meaning |
 | --- | --- |
-| `SOLUTION_HOST_BINDINGS_DIR` | the directory delivery places rendered documents in. Empty leaves the reconciler **off**, which is the default while runtimes migrate: nothing is declared and every solution is present because it heartbeats. |
-| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. |
-| `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the mount and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
+| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. It is also the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint, which is the default while runtimes migrate, and every solution is present because it heartbeats. |
+| `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the coordinate and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
 | *(no setting)* | WHERE the trust root and verification policy are read from is **not configurable**: it is a constant, `infra.SolutionHostTrustAnchorPath`. There is no environment value, no flag and no overridable default. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy and root it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, which **replaced** an env var: a bare certificate SAN as the key is accepted from any issuer and the same workflow path exists in every fork, and the env var let whoever set it widen what an accepted signer speaks for without touching the independently-delivered policy. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
-| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked. `keyless` is the only value. Required with the mount, with **no default** — every default is wrong somewhere. |
-| `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the mount is re-read. Empty uses 30s. |
+| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked. `keyless` is the only value. Required with the coordinate, with **no default** — every default is wrong somewhere. The trust anchor's **absence** is checked first and refuses the boot naming the anchor, so an unmounted anchor is never reported as a missing setting. |
+| `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the inbox is re-read. Empty uses 30s. |
 
-Declaring the mount without the coordinate, or either without the ownership
-domains, refuses to boot. A mount with no coordinate would leave this host unable
-to refuse a document delivered to another host, and Core's target check is the
-only thing standing between the two; a mount with no domains would leave it
-unable to refuse a document claiming a binding it has never seen.
+Declaring the coordinate without the ownership domains refuses to boot: this
+host would be unable to refuse a document claiming a binding it has never seen.
+So does declaring it with no trust anchor mounted at
+`infra.SolutionHostTrustAnchorPath`, and so does declaring it where no
+TokenReview can be performed — a delivered carrier is authorised by TokenReview,
+so a host that cannot reach its API server has no input at all and starting
+would leave it polling an inbox nothing can write to.
+
+**There is no mount setting.** It was `SOLUTION_HOST_BINDINGS_DIR`, a projected
+ConfigMap volume, and both it and the directory reader are deleted. A mount is
+the CURRENT desired set and nothing more, so a document that arrived, was
+recorded as desired, failed to apply and then disappeared from the mount was
+never retried — the host had recorded that delivery wanted something and had no
+way to want it again — and the mount dropped the carrier, so a restore could not
+re-verify what it had accepted. While the setting existed the durable inbox was
+dead in every configuration: unset meant no reconciler at all, and set meant the
+source was the directory, so the table the delivery endpoint writes was read by
+nothing.
 
 ### What the host admits, and why it is now a signed carrier
 
