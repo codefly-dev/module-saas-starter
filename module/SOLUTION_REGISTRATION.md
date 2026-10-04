@@ -1,10 +1,11 @@
 # Solution registration: trust model, authority, and compatibility
 
 A **solution** is an independently deployed module this host has no build-time
-knowledge of. It registers itself at runtime in two places — a gateway upstream
-for `/solutions/{id}/…`, and a Module-Federation remote the frontend loads on
-`/s/{id}`. This document states what registering a solution is *permitted to
-mean*, who may do it, and what the host checks before any of it takes effect.
+knowledge of. Delivery declares its presence through a signed
+`SolutionHostBinding`; the host reconciles that declaration into durable state.
+The gateway reads that state for `/solutions/{id}/…`, and the frontend reads it
+for `/s/{id}`. This document states who may declare presence, what the host
+checks, and how presence differs from a tenant's authority to use a solution.
 
 ## 1. The supported trust model
 
@@ -34,136 +35,30 @@ Three mechanisms are routinely mistaken for a sandbox. None of them is one:
   tenant and role. It cannot constrain in-origin code acting with the current
   user's own credentials, because that code is indistinguishable from the user.
 
-## 2. One owner-bound authority contract
+## 2. Declared authority
 
-Registration is authorized by a short-lived credential bound to the publisher and
-to the single solution id it may act on. The gateway and the frontend accept the
-**same** credential and verify it independently; neither holds a secret every
-registrant shares, and neither trusts the other's decision.
+Only an admitted delivery declaration creates or removes solution presence.
+The signed carrier, trust anchor, ownership domains and generation rules are
+specified in §7. Runtime credentials confer no authority to change presence.
 
-The handshake mirrors the composed-module one
-(`services/auth-gateway/AGENTS.md`, "Composed-module REST federation") and
-reuses its issuer rather than adding a second one:
+The internal `SolutionRegistryService` exposes reads. The gateway reads its
+snapshot; the frontend obtains the projection through `GET /solutions/_registry`
+using the cluster-internal credential. Registry identity and the immutable target
+are host facts, never assertions accepted from a browser or remote component.
 
-1. `POST /solutions/_registration-token` on the auth-gateway, carrying the
-   cluster-internal token in `X-Codefly-Internal-Token` (a perimeter check, not
-   the authorization) **and** the solution's own registration secret in
-   `X-Codefly-Solution-Secret`, body `{"id": "<solution-id>"}`.
-2. The gateway brokers to accounts over the internal listener
-   (`ModuleCapabilitiesService/MintSolutionRegistration`, `EXPOSURE_INTERNAL`, so
-   the generated mesh policy admits the gateway's service account and denies
-   everyone else). accounts compares the presented secret against the digest
-   declared for **that id** in the `federation` group's
-   `SOLUTION_REGISTRATION_SECRETS`, and on a match mints a 5-minute Ed25519
-   token — `aud=solution-registration`, `sub=solution:<id>`, `solution=<id>`,
-   with a `jti` — emitting a `saas.solution.registration_minted` audit event.
-   Unset means **no solution may register**.
+An upstream receives forwarded viewer credentials. The transport therefore checks
+resolved addresses at dial time, refusing public, link-local and metadata
+addresses. Composition-local addresses and the explicit loopback development
+case remain supported. A changed DNS answer cannot bypass the transport check.
 
-   That declaration is read **on every exchange**, not held from startup, so
-   accounts never has to restart to see an edit: authorizing a publisher takes
-   effect on its next exchange, and withdrawing one stops its next renewal —
-   after which the gateway's 120-second lease runs out and the registration
-   stops serving. A declaration that stops parsing denies every solution, with
-   the same refusal a wrong secret gets and the reason in the operator's log.
-   `MODULE_REGISTRATION_SECRETS` beside it is deliberately not treated this way:
-   a module is composed into this host's build, so its declaration cannot change
-   without a new deployment anyway.
+## 3. Runtime compatibility
 
-   **What that does not yet give you, stated plainly because a revocation
-   depends on it.** accounts reads the declaration through the Codefly SDK,
-   which resolves it from the process environment and the runtime's injected
-   carrier. Both are live reads — an edit is observed the moment it reaches
-   them — but **no runtime component updates either one under a running
-   process** (`codefly-dev/cli#740`). So in a deployment that delivers this key
-   as a container environment variable, an edit does not reach accounts at all,
-   and withdrawing a publisher still requires restarting the service. Until that
-   issue closes, treat a revocation as taking effect on restart, not on edit,
-   and do not rely on removing a digest to lock out a publisher whose secret you
-   believe is compromised — delete its registration and restart accounts.
-3. The solution presents that token in `X-Codefly-Solution-Registration` to both
-   `POST /solutions/_register` (gateway, `{id, upstream}`) and
-   `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
-   withdraws it.
-
-The exchange keeps three outcomes apart, because a registrant acts differently
-on each: `401` means accounts refused the secret — the only answer that means
-"check `SOLUTION_REGISTRATION_SECRETS` and the provisioned secret"; `503` with
-`Retry-After` means accounts could not be reached or did not answer in time (a
-rollout, a restart) and the next attempt may succeed; `502` means accounts
-answered with an error that is neither. The frontend likewise answers `503`, not
-`401`, when it cannot reach the key set it verifies the token against. A
-registrant must not read any 5xx — including a `502` from an ingress or mesh in
-front of a restarting gateway — as a provisioning fault.
-
-`SOLUTION_REGISTRATION_SECRETS` is declared **separately** from
-`MODULE_REGISTRATION_SECRETS`, and the two credentials carry different
-audiences. A module credential federates a REST prefix; a solution credential
-additionally publishes host-origin code. Holding one must never confer the
-other, so neither the configuration nor the token is shared.
-
-### What each half enforces
-
-| Check | Gateway | Frontend |
-| --- | --- | --- |
-| Ed25519 signature against the published JWKS, alg-locked to EdDSA | yes | yes |
-| Issuer, `solution-registration` audience, expiry (with skew leeway) | yes | yes |
-| `solution` claim equals the id in the request | yes (403) | yes (403) |
-| First registration binds the id to `sub`; a different `sub` is refused | yes (409) | yes (409) |
-| Same publisher may move its own endpoint | yes | yes |
-| Delete is owner-bound, and a non-owner's delete is indistinguishable from an unknown id | yes | yes |
-| `jti` burned on use, so a captured credential cannot be replayed | yes | yes |
-| Request body bounded before parsing | yes (256 KiB; the separate token exchange bounds at 4 KiB) | no bound of its own — the manifest is bounded where the gateway accepts it |
-| Id is one catalog-identity segment, so reserved `_…` sub-paths cannot be shadowed | yes | n/a (id comes from the manifest and must equal the claim) |
-| Upstream host must be composition-local; resolved address re-checked at dial time | yes | n/a |
-
-The gateway deliberately allows a solution to **move** its upstream, which
-module federation does not. That is safe only because the publisher is proven on
-every call: an endpoint legitimately changes on a redeploy or a new dev port,
-while a credential holder for one solution can neither claim another's id nor
-redirect it.
-
-### Upstream constraints and the development exception
-
-A solution upstream receives forwarded user bearers, so it is held to the same
-rule as a federated module upstream: loopback and private ranges (the dev and
-in-cluster cases), mesh short names and cluster suffixes — and nothing globally
-routable, no link-local, no cloud-metadata address. The register-time host string
-is only half of it: the **resolved address is re-checked at dial time**, so a
-mesh-looking name whose DNS answer later points off-mesh never receives a
-forwarded bearer. Loopback is an explicit development exception and is tested as
-such.
-
-## 3. Runtime compatibility is enforced, not stored
-
-A declared requirement the host does not check is not a compatibility contract.
-Every requirement is checked **before activation**, so an incompatible remote is
-never handed to a browser. An undeclared major defaults to `1` — the major in
-force when the field was introduced, which is what silence actually asserts — and
-never to the host's current major, which would make every silent manifest
-compatible by definition at exactly the upgrade this check exists for:
-
-| Manifest field | Checked against | Default when absent |
-| --- | --- | --- |
-| `schemaVersion` | `SOLUTION_MANIFEST_SCHEMA_MAJOR` | `1` |
-| `frontend.hostContract` | `SOLUTION_HOST_CONTRACT_MAJOR` (the `SolutionPageProps` the host injects and the `./Page` default it expects) | `1` |
-| `frontend.reactRange` | the host's real React version | unconstrained |
-| `frontend.shared` (per package) | the versions the host publishes into the sealed scope | unconstrained |
-| `frontend.exposedModule` | must be a `./Name` key | — |
-
-Ranges use a deliberately small semver subset (`||` alternatives of
-space-separated `^ ~ >= > <= < =`, a bare version, or `*`). A range outside the
-grammar is **refused**, never approximated: a requirement the host cannot
-evaluate is not one it can honour. The host values live in
-`services/frontend/code/src/solutions/host-runtime.ts`, which the register route
-and the Module-Federation host both read, so the numbers cannot diverge.
-
-A refused registration is refused **whole**. If the id already had a valid
-registration, that registration keeps serving — the last known valid one is never
-replaced by a rejected update. The reasons are returned to the registrant (HTTP
-409, `{"error":"incompatible_runtime","reasons":[…]}`) and logged for the
-operator. If the id has no valid registration to fall back on, its page renders a
-plain "temporarily unavailable" panel instead of a 404, and the technical cause
-stays in the server log.
+The Module-Federation host checks compatibility before activating a remote.
+The manifest parser validates the snapshot's shape. Runtime requirements include
+`schemaVersion`, `frontend.hostContract`, `frontend.reactRange`,
+`frontend.shared` and `frontend.exposedModule`; host versions live in
+`services/frontend/code/src/solutions/host-runtime.ts`. A failed check leaves the
+remote unavailable and reports the cause in the server log.
 
 ## 4. Registration, installation, and entitlement are three different things
 
@@ -203,7 +98,7 @@ tenants are unaffected either way, because installation state is per-org.
 ### What the projections answer (issue #949)
 
 Registration stays deployment-wide, but the **projections** answer per organization
-and per viewer. `GET /api/solutions/register` (the navigation menu) and
+and per viewer. `GET /api/solutions` (the navigation menu) and
 `GET /api/solutions/surfaces?client=<kind>` (the per-client surface listing) return
 only the solutions the caller's organization has installed **and** the caller's
 teams were granted. They used to answer the same registered set to everyone, so a
@@ -325,79 +220,27 @@ impossible to load same-origin.
 a stale menu, or reaching a solution through some path not listed here, still has
 every call denied by the authority it calls.
 
-## 5. Rollout
+## 5. Database cutover
 
-The shared cluster-internal token is no longer accepted for either half of
-solution registration; there is no permanent bypass. A deployment upgrading to
-this contract must declare `SOLUTION_REGISTRATION_SECRETS` for every solution it
-expects to register and provision each plaintext to its solution, exactly as
-`MODULE_REGISTRATION_SECRETS` is provisioned today. Until it does, registration
-fails closed and no solution is served — which is the intended direction of
-failure for a surface that decides what executes in the host origin. Adding an
-entry afterwards is enough on this side; what remains is for the deployment's
-own configuration carrier to deliver the new value to the running process (see
-§2, and `codefly-dev/cli#740`).
+Migration `23_delete_runtime_registration` requires declared target ownership on
+all registry rows. It discards undeclared rows and previously reported runtime
+observations. Delivery must supply the declared state that the host can reconcile;
+no row is implicitly adopted into a new target. The migration is destructive and
+cannot recover discarded data. Its down migration fails with that explanation.
 
-Registrations that already exist at upgrade time are carried over, not locked
-out. Before this contract the gateway stored a registration's publisher as the
-bare solution id (the caller named none); the verified subject is
-`solution:<id>`, and a write from a different publisher is refused. Store
-migration `130_solution_registrations_verified_publisher` rewrites that
-pre-contract default to the verified form, so the solution's own credential
-keeps renewing its record after the upgrade. A pre-contract row whose publisher
-was self-asserted as anything else was never authenticated; it stays as it is,
-and who owns it is an operator's decision — delete the row (or `DELETE` the
-registration) and let the credentialed publisher register it afresh.
+## 6. Per-viewer access
 
-## 6. Upgrading to per-viewer projections (issue #949)
+An organization administrator installs the immutable target through
+`InstallationService/InstallSolution`, then grants `solution:use` at the
+installation's authority-root scope node to the intended people or teams.
+Deployment presence supplies neither consent nor a scope grant. No migration
+creates those grants implicitly. See §4 for projections and traffic admission.
 
-**Every Solutions menu and every client's surface list is empty immediately
-after this upgrade, for every user, admins included.** That is the consequence of
-§4's rules, not a fault: before this contract a *registered* solution was listed
-for everyone, and now a solution is listed only when the viewer's organization has
-an active installation of it **and** one of the viewer's teams (or the viewer) holds
-a grant that permits `(solution, use)` at or above that installation's scope node.
-Registration never created installations, `(solution, use)` is a permission no role
-carried before, and there are no implicit grants — so at upgrade no viewer
-satisfies both. Registration, pages and the solution proxy are unchanged: a solution
-still renders at `/s/{id}` for anyone the gateway authenticates.
+## 7. Declared presence
 
-To restore a solution for an organization, an org admin:
-
-1. installs it with `InstallationService/InstallSolution`, passing the solution's
-   **registered id** as `solution_identifier` (see below);
-2. creates a role permitting `solution:use` (or grants a role that already carries
-   `*:*`) with `PermissionService/CreateRole`;
-3. grants that role with `PermissionService/GrantScope` to each team that should
-   see it, at the installation's authority-root scope node — or at the
-   organization root to give it to every team at once, which the scope tree's
-   ancestor rule then carries down to every solution node.
-
-The host ships no migration that writes these grants: the owner's decision is that
-a solution reaches no team until a grant is written, and a backfill that granted
-every registered solution to every organization would be exactly the implicit
-grant that decision rules out.
-
-**The solution identifier must be the registered id.** An installation's
-`solution_identifier` is free text, because an installation also governs agent
-authority and any identifier serves that purpose; the projections, though, match it
-against the registered manifest `id`, a lowercase slug. An installation under any
-other identifier (`acme.example/solution`, say) is valid for agent authority and can
-never appear in a menu. The frontend reports each such identifier once, in its log
-(`solution projections: an installation's solution_identifier … is not a
-registered-solution id shape`), so the mismatch is visible rather than silent.
-
-## 7. Declared presence: delivery says what runs, a heartbeat says how it is
-
-Everything above describes presence that a solution **announces**. A solution
-becomes present because a process is up and heartbeating, which means the host
-cannot tell "this solution was never deployed" from "it was deployed and is not
-answering" — it has the same nothing in both cases. Issue #952 adds the opposite
-record: a `SolutionHostBinding` document that delivery **declares** and the host
-reconciles.
-
-Self-registration is **not** removed here. Both paths write the same durable
-registry, and the rule that makes that safe is stated in the mixed window below.
+A `SolutionHostBinding` records which solution delivery intends to run on this
+host. The host records desired and applied generations separately, including the
+reason an unaccepted generation remains pending.
 
 ### The document, and who owns which field
 
@@ -413,14 +256,12 @@ credential. The split is the point.
 | Which release runs | the declaration | `release`, recorded as `applied_release` |
 | Which route alias it answers on | the declaration | `routes[].alias` |
 | The workload identity to expect | the declaration | `workload` |
-| Whether the workload is alive | the heartbeat | the per-half lease |
-| Where it answers | the heartbeat | `backend_upstream` |
-| Which page it serves | the heartbeat | `frontend_manifest` |
+| Resolved upstream and frontend | host reconciliation | `backend_upstream`, `frontend_manifest` |
 
 The document deliberately carries no upstream address and no manifest. An
 address written into a delivery document is a resolution result that was true on
 one cluster until something moved; a manifest is what the running build actually
-published. Both are observations, and observations are the runtime's to report.
+published. Both are observations that the host resolves under declared authority.
 
 ### The registry key is the route alias
 
@@ -468,43 +309,6 @@ one removes nothing. Removal is a tombstone generation precisely so that a store
 this host cannot read can never be reconciled as "withdraw every solution".
 Nothing deletes from the inbox either, which is what keeps "delivery stopped
 talking" and "delivery said remove it" different facts.
-
-### The mixed window
-
-Until the runtimes stop self-registering, both paths write
-`solution_registrations`, and the rule is asymmetric.
-
-A heartbeat for a **declared** record may refresh the lease, the upstream address
-and the manifest. It may not create presence, replace the release, repoint the
-route, or erase a tombstone:
-
-- Naming a service alias other than the declared one is refused
-  (`ErrSolutionRegistrationDeclaredRoute`).
-- A declared removal refuses every heartbeat, including one naming the
-  tombstone's own revision — the path an **undeclared** tombstone deliberately
-  allows (`ErrSolutionRegistrationDeclaredWithdrawn`). Honouring it would serve a
-  solution delivery declared absent for exactly one reconcile interval.
-- Deregistering a declared solution is refused
-  (`ErrSolutionRegistrationDeclared`): removal is a tombstone generation from
-  delivery, not a `DELETE`.
-
-All three reach the gateway as `FailedPrecondition` and are relayed as `409`,
-which is the answer a registrant must not retry. The gateway needs no knowledge
-of declarations to relay them.
-
-A heartbeat for an **undeclared** record behaves exactly as it did before. Every
-record in every existing deployment is undeclared, so nothing changes for a
-solution until an operator declares one.
-
-A record becomes declared when a generation **applies**, never when a document
-merely arrives. That is what stops a document which has not passed every check
-from taking a working self-registered solution offline — and it is what makes the
-migration seamless in the other direction: declaring a solution that already
-self-registered **adopts** its halves and leases rather than replacing them, so it
-keeps serving across the instant its presence becomes declared. The publisher of
-record stays `solution:<id>`, the subject its own credential proves, because
-writing the release publisher there instead would make every subsequent heartbeat
-fail the publisher check and the record would sit pending forever.
 
 ### Reading the three states apart
 
@@ -555,7 +359,7 @@ Every key is in the `federation` group.
 
 | Key | Meaning |
 | --- | --- |
-| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. It is also the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint, which is the default while runtimes migrate, and every solution is present because it heartbeats. |
+| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. It is also the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint, and no new declared presence can be reconciled. |
 | `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the coordinate and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
 | *(no setting)* | WHERE the trust root and verification policy are read from is **not configurable**: it is a constant, `infra.SolutionHostTrustAnchorPath`. There is no environment value, no flag and no overridable default. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy and root it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, which **replaced** an env var: a bare certificate SAN as the key is accepted from any issuer and the same workflow path exists in every fork, and the env var let whoever set it widen what an accepted signer speaks for without touching the independently-delivered policy. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
 | `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's bundle is checked. `keyless` is the only value. Required with the coordinate, with **no default** — every default is wrong somewhere. The trust anchor's **absence** is checked first and refuses the boot naming the anchor, so an unmounted anchor is never reported as a missing setting. |
@@ -733,8 +537,7 @@ So a consumer:
 - **may hardcode the path**, because it is published here and pinned by test.
   What it must not do is *invent* one.
 
-This is the existing precedent, not a new rule: `POST /solutions/_register` and
-`GET /solutions/_entitlements` are gateway code constants published in this
+`GET /solutions/_registry` and `GET /solutions/_entitlements` are gateway code constants published in this
 document, and every registrant hardcodes those paths today.
 
 ### `/platform/*` is the host's own control namespace, and it is reserved

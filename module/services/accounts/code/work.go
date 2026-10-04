@@ -408,9 +408,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		"/v1/auth/.well-known/jwks.json",
 		adapters.NewJWKSHTTPHandler(service),
 	)
-	// Composed-module REST federation: the gateway admits a registration only
-	// against a token signed here, so a module exchanges its composition-declared
-	// registration secret for one. Unset means no module may federate.
+	// TODO(#952, Unit D): remove the registration-secret configuration together
+	// with the mint handlers in pkg/adapters/module_capabilities_server.go, which
+	// is protected from edits in this unit. Gateway token exchanges are deleted.
+	// The remaining mint RPC still consumes this declaration. Its credential has
+	// no gateway registration endpoint to admit it after the cold cutover.
 	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
 		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
 	if err != nil {
@@ -421,16 +423,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// Solution registration: the same issuer, a separate declaration. A solution
-	// remote executes in the host origin with the viewer's credentials, so who
-	// may publish one is stated on its own key rather than inherited from the
-	// module list. Unset means no solution may register.
-	//
-	// The declaration is handed over as a reader, not as a parsed map: unlike a
-	// module, a solution mounts against a host that is already serving, so
-	// authorizing or withdrawing one must not wait for this service to restart.
-	// It is still parsed once here, so a malformed declaration refuses to boot
-	// rather than silently denying every registration at runtime.
+	// Keep the remaining solution mint's reader until its protected handler is
+	// removed in the same change. Validate configuration before serving it.
 	solutionRegistrationSecrets := func() string {
 		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
 	}
@@ -444,13 +438,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	// endpoint; this host verifies it on receipt and persists it, and the
 	// reconciler reads its desired set from that durable inbox on every pass,
 	// asks Core whether each document may be applied, and reconciles what it
-	// admits into the same durable registry a self-registering runtime writes.
+	// admits into the durable declaration registry.
 	//
 	// Unset SOLUTION_HOST_COORDINATE leaves the whole surface off — no
 	// reconciler and no delivery endpoint — and nothing on this host is
-	// declared: every solution is present because it registers itself, exactly
-	// as before. That is the deliberate default while the runtimes migrate. A
-	// coordinate is what lets this host refuse a document delivered to the wrong
+	// declared. A coordinate lets this host refuse a document delivered to the wrong
 	// place, and core's check is the only thing standing between this host and
 	// another host's desired state.
 	solutionHostBindingReconciler, err := configuredSolutionHostBindingReconciler(service, store)
@@ -1654,7 +1646,7 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // read. It is never derived here, because a coordinate this host invented would
 // match nothing delivery ever wrote. With no coordinate there is no
 // declared-presence surface at all: no reconciler, no delivery endpoint, and
-// every solution is present because it heartbeats.
+// no new solution presence can be reconciled.
 //
 // THE SOURCE IS THE DURABLE INBOX AND NOTHING ELSE. It was a directory — a
 // projected ConfigMap volume named by a workspace setting — and both that gate

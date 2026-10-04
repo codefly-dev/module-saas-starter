@@ -182,7 +182,7 @@ export function cachedProjection<T>(
  *
  * Exposed for tests. A registry write does NOT need it: the registry revision is
  * part of every key, so a write that changes the registered set changes the key,
- * and a write that changes nothing (a heartbeat renewal) leaves a projection that
+ * and a reconciliation that changes nothing leaves a projection that
  * is still correct.
  */
 export function invalidateProjections(): void {

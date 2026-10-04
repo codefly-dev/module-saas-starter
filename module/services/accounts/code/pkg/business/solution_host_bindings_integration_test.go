@@ -250,7 +250,7 @@ func TestSolutionHostBinding_DeliveredGenerationDeclaresAPendingRegistration(t *
 	if declared.Declared.BindingID != document.Binding || declared.Declared.Generation != 1 {
 		t.Fatalf("declaration = %+v", declared.Declared)
 	}
-	if got := declared.Status(time.Now().UTC()); got != business.SolutionRegistrationPending {
+	if got := declared.Status(); got != business.SolutionRegistrationPending {
 		t.Fatalf("status = %q, want pending: declared presence is not an observation", got)
 	}
 }
@@ -447,119 +447,6 @@ func TestSolutionHostBinding_RemovalIsATombstoneGeneration(t *testing.T) {
 	}
 	if withdrawn.Declared == nil || withdrawn.Declared.Generation != 5 {
 		t.Fatalf("the tombstone must keep its declaration: %+v", withdrawn.Declared)
-	}
-}
-
-// After a declared removal, a heartbeat from the retiring runtime is refused —
-// including one naming the tombstone's own revision, which is the path an
-// UNDECLARED tombstone deliberately allows.
-func TestSolutionHostBinding_AHeartbeatCannotEraseADeclaredTombstone(t *testing.T) {
-	solutionID := testDeclaredSolutionID(t)
-	present := declaredBinding(t, solutionID, 4)
-	mount := &deliveredSet{}
-	mount.put(t, present)
-	reconciler := newTestReconciler(t, mount)
-	if err := reconciler.RunOnce(testCtx); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	mount.put(t, tombstoneOf(t, present, 5))
-	if err := reconciler.RunOnce(testCtx); err != nil {
-		t.Fatalf("withdraw: %v", err)
-	}
-	tombstone := registration(t, solutionID)
-
-	revive := business.SolutionRegistrationWrite{
-		SolutionID:       solutionID,
-		Publisher:        tombstone.Publisher,
-		ExpectedRevision: &tombstone.Revision,
-		Lease:            time.Minute,
-		Backend: &business.SolutionBackendRegistration{
-			Upstream:     "http://retiring:8080",
-			ServiceAlias: solutionID,
-		},
-	}
-	_, err := testService.PutSolutionRegistration(testCtx, revive)
-	if !errors.Is(err, business.ErrSolutionRegistrationDeclaredWithdrawn) {
-		t.Fatalf("err = %v, want ErrSolutionRegistrationDeclaredWithdrawn", err)
-	}
-}
-
-// The migration path: a solution that self-registered before it was declared keeps
-// serving through the instant its presence becomes declared. Its halves and leases
-// are observations, and discarding them would take a working solution offline at
-// exactly the moment the operator declared it.
-func TestSolutionHostBinding_DeclaringAnExistingRegistrationAdoptsItsObservations(t *testing.T) {
-	solutionID := testDeclaredSolutionID(t)
-	publisher := "solution:" + solutionID
-
-	if _, err := testService.PutSolutionRegistration(testCtx, business.SolutionRegistrationWrite{
-		SolutionID: solutionID, Publisher: publisher, Lease: time.Minute,
-		Frontend: &business.SolutionFrontendRegistration{Manifest: `{"id":"` + solutionID + `"}`},
-	}); err != nil {
-		t.Fatalf("self-registered frontend half: %v", err)
-	}
-	if _, err := testService.PutSolutionRegistration(testCtx, business.SolutionRegistrationWrite{
-		SolutionID: solutionID, Publisher: publisher, Lease: time.Minute,
-		Backend: &business.SolutionBackendRegistration{
-			Upstream: "http://self-registered:8080", ServiceAlias: solutionID,
-		},
-	}); err != nil {
-		t.Fatalf("self-registered backend half: %v", err)
-	}
-	before := registration(t, solutionID)
-	if got := before.Status(time.Now().UTC()); got != business.SolutionRegistrationActive {
-		t.Fatalf("status before declaring = %q, want active", got)
-	}
-
-	mount := &deliveredSet{}
-	mount.put(t, declaredBinding(t, solutionID, 1))
-	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
-		t.Fatalf("declare it: %v", err)
-	}
-
-	after := registration(t, solutionID)
-	if after.Declared == nil {
-		t.Fatal("the record was not declared")
-	}
-	if got := after.Status(time.Now().UTC()); got != business.SolutionRegistrationActive {
-		t.Fatalf("status after declaring = %q, want it still active", got)
-	}
-	if after.Backend == nil || after.Backend.Upstream != "http://self-registered:8080" {
-		t.Fatalf("the observed upstream was discarded: %+v", after.Backend)
-	}
-	if after.Frontend == nil {
-		t.Fatal("the observed manifest was discarded")
-	}
-	if after.Publisher != before.Publisher {
-		t.Fatalf("publisher moved from %q to %q; a heartbeat would then fail its own publisher check",
-			before.Publisher, after.Publisher)
-	}
-
-	// And the heartbeat keeps working against the now-declared record.
-	if _, err := testService.PutSolutionRegistration(testCtx, business.SolutionRegistrationWrite{
-		SolutionID: solutionID, Publisher: publisher, Lease: time.Minute,
-		Backend: &business.SolutionBackendRegistration{
-			Upstream: "http://self-registered:8080", ServiceAlias: solutionID,
-		},
-	}); err != nil {
-		t.Fatalf("heartbeat after declaring: %v", err)
-	}
-}
-
-// Deregistering a declared solution is refused: removal is a tombstone generation
-// from delivery, and honouring the DELETE would remove the record for exactly as
-// long as it takes the next pass to re-apply the declaration.
-func TestSolutionHostBinding_DeregisteringADeclaredSolutionIsRefused(t *testing.T) {
-	solutionID := testDeclaredSolutionID(t)
-	mount := &deliveredSet{}
-	mount.put(t, declaredBinding(t, solutionID, 1))
-	if err := newTestReconciler(t, mount).RunOnce(testCtx); err != nil {
-		t.Fatalf("declare: %v", err)
-	}
-
-	_, err := testService.DeleteSolutionRegistration(testCtx, solutionID, nil)
-	if !errors.Is(err, business.ErrSolutionRegistrationDeclared) {
-		t.Fatalf("err = %v, want ErrSolutionRegistrationDeclared", err)
 	}
 }
 

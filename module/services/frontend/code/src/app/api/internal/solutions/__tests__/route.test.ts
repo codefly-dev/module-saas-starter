@@ -1,4 +1,3 @@
-import { generateKeyPairSync, sign } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,7 +18,7 @@ const GATEWAY = "http://gateway.internal:8080";
 // Registrations live in the durable registry behind the gateway rather than in
 // this process, so the suite stands one in for it.
 function fakeGateway() {
-	const stored = new Map<string, string>();
+	const stored = new Map([[MANIFEST.id, JSON.stringify(MANIFEST)]]);
 	let revision = 0;
 	const respond = (body: unknown, status = 200) =>
 		new Response(JSON.stringify(body), {
@@ -28,24 +27,9 @@ function fakeGateway() {
 		});
 	return vi.fn(async (input: string | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
-		if (url.pathname === "/v1/auth/.well-known/jwks.json") {
-			return new Response(CRED_JWKS, { status: 200 });
-		}
-		if (url.pathname === "/solutions/_frontend") {
-			const body = JSON.parse(String(init?.body ?? "{}"));
-			stored.set(body.id, body.manifest);
-			revision += 1;
-			return respond({ ok: true, id: body.id, revision, status: "active" });
-		}
-		if (url.pathname === "/solutions/_register" && init?.method === "DELETE") {
-			stored.delete(url.searchParams.get("id") ?? "");
-			revision += 1;
-			return respond({ ok: true, revision });
-		}
 		if (url.pathname === "/solutions/_registry") {
 			return respond({
 				revision,
-				leaseSeconds: 120,
 				solutions: [...stored].map(([id, manifest]) => ({
 					// The host stamps the target from the record's declaration;
 					// the fixture derives it from the alias so the entitlement
@@ -83,11 +67,7 @@ function resetRegistryCache() {
 }
 
 import { GET } from "@/app/api/internal/solutions/route";
-import {
-	DELETE,
-	POST,
-	GET as publicGET,
-} from "@/app/api/solutions/register/route";
+import { GET as publicGET } from "@/app/api/solutions/route";
 
 const TOKEN = "internal-test-token";
 
@@ -131,78 +111,16 @@ function internalRequest(token?: string): Request {
 }
 
 
-const { publicKey: credPublicKey, privateKey: credPrivateKey } =
-	generateKeyPairSync("ed25519");
-const CRED_KEY_ID = "test-key";
-const CRED_JWKS = JSON.stringify({
-	keys: [
-		{
-			...credPublicKey.export({ format: "jwk" }),
-			alg: "EdDSA",
-			use: "sig",
-			kid: CRED_KEY_ID,
-		},
-	],
-});
-let credCounter = 0;
-
-/** Registration is credential-bound now; this file only needs a valid one. */
-function solutionCredential(solution = "audit"): string {
-	const b64 = (v: object) =>
-		Buffer.from(JSON.stringify(v), "utf8").toString("base64url");
-	const now = Math.floor(Date.now() / 1000);
-	const head = b64({ alg: "EdDSA", typ: "JWT", kid: CRED_KEY_ID });
-	const payload = b64({
-		iss: "saas-starter",
-		sub: `solution:${solution}`,
-		aud: ["solution-registration"],
-		solution,
-		iat: now,
-		exp: now + 300,
-		jti: `internal-jti-${credCounter++}`,
-	});
-	return `${head}.${payload}.${sign(null, Buffer.from(`${head}.${payload}`, "utf8"), credPrivateKey).toString("base64url")}`;
-}
-
-async function register(): Promise<void> {
-	getWorkspaceSecret.mockReturnValue(TOKEN);
-	const response = await POST(
-		new Request("http://frontend/api/solutions/register", {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				"x-codefly-internal-token": TOKEN,
-				"x-codefly-solution-registration": solutionCredential(),
-			},
-			body: JSON.stringify(MANIFEST),
-		}),
-	);
-	expect(response.status).toBe(200);
-}
-
 describe("internal solution detail lookup", () => {
 	beforeEach(() => {
 		resetRegistryCache();
 		getEndpoints.mockReturnValue([
 			{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
 		]);
-		const g = globalThis as Record<string, unknown>;
-		g.__solutionRegistrationJwks = undefined;
-		g.__solutionRegistrationJtis = undefined;
 		vi.stubGlobal("fetch", fakeGateway());
 	});
 
-	afterEach(async () => {
-		getWorkspaceSecret.mockReturnValue(TOKEN);
-		await DELETE(
-			new Request("http://frontend/api/solutions/register?id=audit", {
-				method: "DELETE",
-				headers: {
-					"x-codefly-internal-token": TOKEN,
-					"x-codefly-solution-registration": solutionCredential(),
-				},
-			}),
-		);
+	afterEach(() => {
 		getWorkspaceSecret.mockReset();
 		vi.unstubAllGlobals();
 		resetRegistryCache();
@@ -224,7 +142,7 @@ describe("internal solution detail lookup", () => {
 	});
 
 	it("serves the remote and backend detail to a trusted caller", async () => {
-		await register();
+		getWorkspaceSecret.mockReturnValue(TOKEN);
 
 		const response = await GET(internalRequest(TOKEN));
 		expect(response.status).toBe(200);
@@ -244,9 +162,9 @@ describe("internal solution detail lookup", () => {
 	});
 
 	it("serves detail the viewer navigation projection withholds", async () => {
-		await register();
+		getWorkspaceSecret.mockReturnValue(TOKEN);
 
-		const viewerRequest = new Request("http://frontend/api/solutions/register", {
+		const viewerRequest = new Request("http://frontend/api/solutions", {
 			headers: { authorization: "Bearer viewer-token" },
 		});
 		const publicBody = (await publicGET(viewerRequest).then((r) =>

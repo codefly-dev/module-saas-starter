@@ -10,11 +10,8 @@ import (
 
 // Reconciling an admitted generation into the durable registry (issue #952).
 //
-// The registry is already durable, with a registry-wide revision sequence,
-// leases, tombstones and compare-and-swap. This is not a second store: an
-// applied generation writes the same solution_registrations record a
-// self-registering runtime writes, and the only thing it adds to that record is
-// the declaration that produced it.
+// The registry is a projection of admitted declarations, with a registry-wide
+// revision sequence and tombstones. Runtime processes cannot write presence.
 //
 // Every apply is one transaction over one binding, and it re-decides under the
 // row lock rather than trusting the verdict the pass computed from a snapshot.
@@ -337,9 +334,8 @@ func (s *Service) applySolutionHostBinding(
 			Removed:                       owned.Removed,
 			Routes:                        owned.Routes,
 			Domain:                        owned.Domain,
-			// Release is the host's own column: core's Applied does not carry it,
-			// because it is what a heartbeat for a declared record is refused
-			// against rather than anything core decides.
+			// Release is the host's own column: core's Applied does not carry it.
+			// It identifies the release whose presence this generation declares.
 			Release: document.Release.Identity(),
 		}
 		if document.Removed {
@@ -437,14 +433,8 @@ func (s *Service) liveSolutionTargetForBinding(ctx context.Context, bindingID st
 	return live, nil
 }
 
-// declareSolutionRegistration writes declared presence into the registry record
-// the alias addresses, creating it when nothing has registered under it yet.
-//
-// An existing UNDECLARED record is adopted rather than replaced: its halves and
-// leases are observations a running solution reported, and discarding them would
-// take a working solution offline at the instant its presence became declared.
-// That adoption is the migration path — a solution that self-registers today
-// becomes declared without a gap.
+// declareSolutionRegistration records the binding and immutable target that own
+// this alias. Only observations for that same declared target may survive.
 func (s *Service) declareSolutionRegistration(
 	ctx context.Context, document *solutionhost.SolutionHostBinding, solutionID, targetID string, now time.Time,
 ) (int64, error) {
@@ -475,17 +465,12 @@ func (s *Service) declareSolutionRegistration(
 	}
 	next := &SolutionRegistration{
 		SolutionID: solutionID,
-		// The publisher of record stays the identity this host mints for that
-		// solution id, because it is the identity a heartbeat proves. Writing
-		// the release publisher here instead would make every heartbeat for a
-		// declared solution fail the publisher check, so declared presence
-		// would never be observed and the record would sit pending forever.
-		Publisher: solutionRegistrationPublisher(solutionID),
-		Revision:  revision,
-		UpdatedAt: now,
-		Declared:  declared,
+		Publisher:  solutionRegistrationPublisher(solutionID),
+		Revision:   revision,
+		UpdatedAt:  now,
+		Declared:   declared,
 	}
-	if current != nil {
+	if current != nil && current.Declared != nil && current.Declared.TargetID == targetID {
 		next.Publisher = current.Publisher
 		// A tombstone cleared the halves; a live record keeps the ones it has.
 		next.Frontend = current.Frontend
@@ -500,10 +485,7 @@ func (s *Service) declareSolutionRegistration(
 // withdrawDeclaredSolutionRegistration tombstones the registry record a binding
 // holds, in the transaction that applies the generation withdrawing it.
 //
-// The declaration is KEPT on the tombstone. That is what makes the removal hold:
-// a heartbeat from the retiring runtime finds a declared tombstone and is
-// refused, where an undeclared tombstone can be re-registered by a caller that
-// names its revision.
+// The tombstone retains the declaration that withdrew the alias.
 // It returns the registry revision the withdrawal produced, or 0 when there was
 // nothing to withdraw, so the generation history records the registry state this
 // generation actually became.
@@ -569,7 +551,7 @@ func (s *Service) withdrawDeclaredSolutionRegistration(
 }
 
 // solutionRegistrationPublisher is the owner of record for a solution id: the
-// subject this host's own registration credential proves (`sub=solution:<id>`).
+// canonical identity used to attribute its declared presence.
 func solutionRegistrationPublisher(solutionID string) string { return "solution:" + solutionID }
 
 // solutionHostBindingActor and solutionHostBindingResource name a declared

@@ -116,7 +116,7 @@ async function refresh(): Promise<void> {
 		// and, on a lapsed access token, exchanges it once and retries — the same
 		// recovery every other authenticated call gets. A bare fetch would 401 on
 		// every poll after the access token aged out and empty a working menu.
-		const response = await authedFetch("/api/solutions/register", {
+		const response = await authedFetch("/api/solutions", {
 			cache: "no-store",
 		});
 		// Answered for a viewer who is no longer here: a poll started before a

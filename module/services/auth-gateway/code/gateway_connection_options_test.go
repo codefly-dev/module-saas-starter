@@ -88,20 +88,17 @@ func TestGateway_ConnectionHeaderCannotRemoveStampedHeaders_Session(t *testing.T
 	require.Equal(t, "https://app.example.com", apiFake.lastHeaders.Get("X-Codefly-Public-Origin"))
 }
 
-// Solution and module upstreams receive the identity the gateway stamps under
+// Solution upstreams receive the identity the gateway stamps under
 // the same guarantee: every proxy path goes through proxyTo.
-func TestGateway_ConnectionHeaderCannotRemoveStampedHeaders_SolutionAndModule(t *testing.T) {
+func TestGateway_ConnectionHeaderCannotRemoveStampedHeaders_Solution(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	solution := registerSolutionUpstream(t, gw, "audit")
-	module, moduleURL := newModuleUpstream(t)
-	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", moduleURL).Code)
 
 	for name, tc := range map[string]struct {
 		path     string
 		upstream *fakeUpstream
 	}{
 		"solution": {path: "/solutions/audit/v1/audit/logs", upstream: solution},
-		"module":   {path: "/v1/documents/collection", upstream: module},
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)

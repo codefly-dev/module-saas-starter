@@ -16,8 +16,8 @@ import (
 // getQueryExecutor picks up from ctx.
 
 const solutionRegistrationColumns = `solution_id, publisher, revision, tombstoned_at,
-	frontend_revision, frontend_manifest, frontend_contract_version, frontend_lease_expires_at,
-	backend_revision, backend_upstream, backend_service_alias, backend_contract_version, backend_lease_expires_at,
+	frontend_revision, frontend_manifest, frontend_contract_version,
+	backend_revision, backend_upstream, backend_service_alias, backend_contract_version,
 	declared_binding_id, declared_generation, declared_release, declared_target_id::text,
 	updated_at`
 
@@ -28,12 +28,10 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 		frontRevision   *int64
 		frontManifest   *string
 		frontContract   *string
-		frontLease      *time.Time
 		backendRevision *int64
 		backendUpstream *string
 		backendAlias    *string
 		backendContract *string
-		backendLease    *time.Time
 		declaredBinding *string
 		declaredTarget  *string
 		declaredGen     *int64
@@ -41,8 +39,8 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 	)
 	if err := row.Scan(
 		&record.SolutionID, &record.Publisher, &record.Revision, &tombstonedAt,
-		&frontRevision, &frontManifest, &frontContract, &frontLease,
-		&backendRevision, &backendUpstream, &backendAlias, &backendContract, &backendLease,
+		&frontRevision, &frontManifest, &frontContract,
+		&backendRevision, &backendUpstream, &backendAlias, &backendContract,
 		&declaredBinding, &declaredGen, &declaredRelease, &declaredTarget,
 		&record.UpdatedAt,
 	); err != nil {
@@ -56,7 +54,6 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 			Revision:        *frontRevision,
 			Manifest:        *frontManifest,
 			ContractVersion: derefString(frontContract),
-			LeaseExpiresAt:  *frontLease,
 		}
 	}
 	if backendRevision != nil {
@@ -65,11 +62,10 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 			Upstream:        *backendUpstream,
 			ServiceAlias:    *backendAlias,
 			ContractVersion: derefString(backendContract),
-			LeaseExpiresAt:  *backendLease,
 		}
 	}
-	// The declared trio is whole or absent by CHECK, so the binding id alone
-	// decides whether this record was declared (issue #952).
+	// The cold-cutover schema requires the declared binding, generation, release
+	// and target as one complete declaration.
 	if declaredBinding != nil {
 		record.Declared = &business.SolutionDeclaredBinding{
 			BindingID:  *declaredBinding,
@@ -128,12 +124,10 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 		frontRevision   *int64
 		frontManifest   *string
 		frontContract   *string
-		frontLease      *time.Time
 		backendRevision *int64
 		backendUpstream *string
 		backendAlias    *string
 		backendContract *string
-		backendLease    *time.Time
 		declaredBinding *string
 		declaredTarget  string
 		declaredGen     *int64
@@ -146,20 +140,20 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 	}
 	if half := record.Frontend; half != nil {
 		frontRevision, frontManifest = &half.Revision, &half.Manifest
-		frontContract, frontLease = &half.ContractVersion, &half.LeaseExpiresAt
+		frontContract = &half.ContractVersion
 	}
 	if half := record.Backend; half != nil {
 		backendRevision, backendUpstream = &half.Revision, &half.Upstream
-		backendAlias, backendContract, backendLease = &half.ServiceAlias, &half.ContractVersion, &half.LeaseExpiresAt
+		backendAlias, backendContract = &half.ServiceAlias, &half.ContractVersion
 	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO public.solution_registrations (
 			solution_id, publisher, revision, tombstoned_at,
-			frontend_revision, frontend_manifest, frontend_contract_version, frontend_lease_expires_at,
-			backend_revision, backend_upstream, backend_service_alias, backend_contract_version, backend_lease_expires_at,
+			frontend_revision, frontend_manifest, frontend_contract_version,
+			backend_revision, backend_upstream, backend_service_alias, backend_contract_version,
 			declared_binding_id, declared_generation, declared_release, declared_target_id,
 			updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NULLIF($17, '')::uuid, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULLIF($15, '')::uuid, $16)
 		ON CONFLICT (solution_id) DO UPDATE SET
 			publisher = EXCLUDED.publisher,
 			revision = EXCLUDED.revision,
@@ -167,20 +161,18 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			frontend_revision = EXCLUDED.frontend_revision,
 			frontend_manifest = EXCLUDED.frontend_manifest,
 			frontend_contract_version = EXCLUDED.frontend_contract_version,
-			frontend_lease_expires_at = EXCLUDED.frontend_lease_expires_at,
 			backend_revision = EXCLUDED.backend_revision,
 			backend_upstream = EXCLUDED.backend_upstream,
 			backend_service_alias = EXCLUDED.backend_service_alias,
 			backend_contract_version = EXCLUDED.backend_contract_version,
-			backend_lease_expires_at = EXCLUDED.backend_lease_expires_at,
 			declared_binding_id = EXCLUDED.declared_binding_id,
 			declared_generation = EXCLUDED.declared_generation,
 			declared_release = EXCLUDED.declared_release,
 			declared_target_id = EXCLUDED.declared_target_id,
 			updated_at = EXCLUDED.updated_at`,
 		record.SolutionID, record.Publisher, record.Revision, record.TombstonedAt,
-		frontRevision, frontManifest, frontContract, frontLease,
-		backendRevision, backendUpstream, backendAlias, backendContract, backendLease,
+		frontRevision, frontManifest, frontContract,
+		backendRevision, backendUpstream, backendAlias, backendContract,
 		declaredBinding, declaredGen, declaredRelease, declaredTarget,
 		record.UpdatedAt)
 	return err
