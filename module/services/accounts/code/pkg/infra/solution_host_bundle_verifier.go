@@ -92,7 +92,7 @@ type solutionHostBundleVerifierWithPolicy interface {
 //
 // The anchor is therefore reachable only by whoever can mount into this pod.
 // That is the property, and the constant is what makes it one.
-const SolutionHostTrustAnchorPath = "/etc/codefly/delivery-trust"
+const SolutionHostTrustAnchorPath = "/etc/obin/delivery-trust"
 
 // NewSolutionHostBundleVerifier builds the one verifier, reading its anchor from
 // the fixed path.
