@@ -50,13 +50,30 @@ const (
 	PolicyLogInstallation   PolicyLogSubjectKind = "installation"
 	PolicyLogTeamMembership PolicyLogSubjectKind = "team_membership"
 	PolicyLogScopeGrant     PolicyLogSubjectKind = "scope_grant"
+
+	// PolicyLogOrganization is the organization itself, for the one narrowing
+	// whose subject is not a grant hanging off it: archiving it, which ends
+	// every standing authority into it at once.
+	//
+	// It is its own kind because both alternatives were wrong in the same
+	// direction. Reporting the archive as a `binding` whose id is an
+	// organization's sends a reconciliation looking for a binding that does
+	// not exist; one entry per revoked grant records the same fact many times
+	// and leaves a reader to work out which archive they belonged to — which
+	// is exactly the argument closedSolutionTargetPolicyLogEntry already makes
+	// for naming the target rather than each installation it revokes.
+	//
+	// The set is closed, so adding a kind is how a new SHAPE of narrowing is
+	// admitted. That is what the closure is for: it forces "what can a replay
+	// act on" to be answered once, here, instead of per call site.
+	PolicyLogOrganization PolicyLogSubjectKind = "organization"
 )
 
 // Valid reports whether a kind is one a reconciliation can act on.
 func (kind PolicyLogSubjectKind) Valid() bool {
 	switch kind {
 	case PolicyLogPrincipal, PolicyLogBinding, PolicyLogInstallation,
-		PolicyLogTeamMembership, PolicyLogScopeGrant:
+		PolicyLogTeamMembership, PolicyLogScopeGrant, PolicyLogOrganization:
 		return true
 	}
 	return false

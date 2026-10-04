@@ -512,3 +512,23 @@ func (l *productionPathPolicyLog) Entries(
 	}
 	return out, nil
 }
+
+// wireNarrowingPolicyLog gives a test service the protocol's two halves, so a
+// narrowing can actually happen.
+//
+// WHY EVERY SERVICE IN THIS PACKAGE THAT NARROWS NEEDS THIS. A narrowing of
+// authority must be appended to the witness and receipted before it takes
+// effect, and `WithPolicyLoggedNarrowing` REFUSES on a host with no log — which
+// is the settled fail-closed decision, not an oversight. So a test service built
+// without one cannot revoke a principal, remove a member, revoke a delegation or
+// archive an organisation at all, and a test that performs one is exercising a
+// configuration production is deliberately not meant to have.
+//
+// The REAL postgres store is the local half, so the receipt still has to commit
+// in the same transaction as the narrowing; only the external log is a double.
+// That keeps the atomicity these tests are mostly about under test rather than
+// stubbing it away.
+func wireNarrowingPolicyLog(service *business.Service) *business.Service {
+	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
+	return service
+}

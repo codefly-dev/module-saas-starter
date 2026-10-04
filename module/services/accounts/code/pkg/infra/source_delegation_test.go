@@ -168,6 +168,9 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 	t.Helper()
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	secrets, err := business.ParseRegistrationSecrets(delegationModule + ":" + delegationDigest(delegationModuleSecret) +
 		"," + otherModule + ":" + delegationDigest(otherModuleSecret))
 	require.NoError(t, err)

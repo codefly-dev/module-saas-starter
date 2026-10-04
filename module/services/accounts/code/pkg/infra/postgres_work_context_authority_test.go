@@ -253,6 +253,9 @@ func TestRevokingAgentPrincipalStalesOutstandingWorkContext(t *testing.T) {
 
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
+	// Revoking a principal or a delegation is a witnessed narrowing, so a
+	// service with no policy log refuses it outright; see wireNarrowingPolicyLog.
+	wireNarrowingPolicyLog(svc)
 	require.NoError(t, svc.RevokePrincipal(testCtx, agent.ID, "delegation disabled"))
 
 	after, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, "", nil)

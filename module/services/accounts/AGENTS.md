@@ -133,6 +133,33 @@ once the capability exists. The response carries
   second. This bullet has now been corrected three times, each time in the
   direction of claiming less, which is itself the thing to notice about it.
 
+  **What moved, and what the move does NOT yet reach.** Two of the pieces this
+  bullet described as absent now exist and run:
+
+  - `ApprovedBuildReconciler` populates the approved-build view from the
+    delivered authority inbox, in the same reconcile pass as presence. Before
+    it, `MonotonicApprovedBuilds` was never written to, so every principal was
+    UNKNOWN and `ApprovedBuild` refused every one.
+  - `SetExecutionBinding` is called from `work.go`, with the Kubernetes client
+    that reviews a delivery carrier and that approved-build view. Before it, the
+    execution reviewer was nil on every running host and `BindExecution`
+    answered ErrExecutionUnbound for every caller — the mechanism was built,
+    guarded, unit-tested and unreachable.
+
+  **The mint still does not call it, so the sentence above this one still
+  holds.** `StartModuleTask` passes audience, tenant, owner principal, task,
+  session, actor chain and TTL, and nothing else; the capability still carries
+  no seal, and `checkAgainstSealed` still returns on its first line for every
+  real module credential. `BindExecution` is now REACHABLE and is not REACHED.
+
+  The reason is a contract, not an oversight: the mint authenticates with
+  `req.GetSecret()`, a shared secret, and a secret cannot be execution-bound in
+  principle — it says "I know the secret", never "I am this pod running this
+  image". Reaching the check means replacing that credential with a projected
+  service-account token on the request message, which is a proto change and a
+  consumer-visible break. Until that lands, every consequence listed above is
+  still a consequence.
+
   This bullet has now been wrong twice in opposite directions. It first asserted
   the whole model in the present tense while none of it existed. It was then
   corrected to "the live half is built, the sealed half is partly built" — true

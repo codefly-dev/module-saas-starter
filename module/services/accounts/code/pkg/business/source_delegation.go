@@ -386,6 +386,26 @@ func (s *Service) ListSourceDelegations(ctx context.Context, orgID, sourceID str
 // returns it as stored. Revoking one already revoked changes and records
 // nothing. A delegation that is not in the organization is
 // ErrSourceDelegationNotFound, whether or not it exists elsewhere.
+//
+// A NARROWING — the module binding stops holding the owner's authority over
+// that source — so it runs under the policy log: appended and receipted before
+// the row is marked, with the revocation and the receipt's commit in one
+// transaction, and a refusal rather than an unwitnessed revocation when the log
+// cannot be reached.
+//
+// That transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The
+// organisation's own scoping is not lost: both statements below carry orgID in
+// their filter — the revoke through SourceDelegationFilter, the fallback read
+// through GetSourceDelegation — so a delegation of another organisation is
+// still ErrSourceDelegationNotFound rather than revocable by id.
+//
+// Revoking an already-revoked delegation appends an entry and commits nothing
+// else, which is the correct trade and not an oversight: the alternative is
+// reading the row before the append to find out, and a read then cannot bind
+// what the transaction will find. An over-recorded entry replays to the same
+// answer (see newPolicyLogOperationID); a narrowing that skipped the log
+// because a pre-read said it would be a no-op would not.
 func (s *Service) RevokeSourceDelegation(ctx context.Context, actorID, orgID, id string) (*SourceDelegation, error) {
 	orgID = strings.TrimSpace(orgID)
 	id = strings.TrimSpace(id)
@@ -393,25 +413,27 @@ func (s *Service) RevokeSourceDelegation(ctx context.Context, actorID, orgID, id
 		return nil, errors.New("org id and delegation id are required")
 	}
 	var out *SourceDelegation
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: orgID, ID: id}, SourceDelegationRevokedByAdmin, actorID)
-		if err != nil {
-			return err
-		}
-		if len(revoked) == 1 {
-			out = revoked[0]
-			return s.emitSourceDelegationRevokedTx(ctx, actorID, out, SourceDelegationRevokedByAdmin)
-		}
-		existing, err := s.store.GetSourceDelegation(ctx, orgID, id)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return ErrSourceDelegationNotFound
-		}
-		out = existing
-		return nil
-	}); err != nil {
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		revokeSourceDelegationPolicyLogEntry(actorID, orgID, id),
+		func(ctx context.Context) error {
+			revoked, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{OrgID: orgID, ID: id}, SourceDelegationRevokedByAdmin, actorID)
+			if err != nil {
+				return err
+			}
+			if len(revoked) == 1 {
+				out = revoked[0]
+				return s.emitSourceDelegationRevokedTx(ctx, actorID, out, SourceDelegationRevokedByAdmin)
+			}
+			existing, err := s.store.GetSourceDelegation(ctx, orgID, id)
+			if err != nil {
+				return err
+			}
+			if existing == nil {
+				return ErrSourceDelegationNotFound
+			}
+			out = existing
+			return nil
+		}); err != nil {
 		return nil, err
 	}
 	return out, nil

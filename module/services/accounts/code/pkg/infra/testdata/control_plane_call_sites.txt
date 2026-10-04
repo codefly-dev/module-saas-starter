@@ -86,14 +86,12 @@ pkg/business/organizations.go: (*Service).ConvergeFixtureOrgMember: As(System())
 pkg/business/organizations.go: (*Service).ListOrganizations: WithControlPlane
 pkg/business/permissions.go: (*Service).DeleteRole: WithControlPlane
 pkg/business/permissions.go: (*Service).ListRoles: WithControlPlane
-pkg/business/permissions.go: (*Service).RevokeRole: WithControlPlane
 pkg/business/permissions.go: (*Service).UpdateRole: WithControlPlane
 pkg/business/platform_admin.go: (*Service).GrantPlatformRole: WithControlPlane
 pkg/business/platform_admin.go: (*Service).ImpersonateUser: WithControlPlane
 pkg/business/platform_admin.go: (*Service).ImpersonateUser: WithControlPlane
 pkg/business/platform_admin.go: (*Service).ImpersonateUser: WithControlPlane
 pkg/business/platform_admin.go: (*Service).ListActiveSessions: WithControlPlane
-pkg/business/platform_admin.go: (*Service).RevokePlatformRole: WithControlPlane
 pkg/business/platform_admin.go: (*Service).RevokeSession: WithControlPlane
 pkg/business/platform_admin.go: (*Service).SearchUsers: WithControlPlane
 pkg/business/platform_admin.go: (*Service).StopImpersonation: WithControlPlane
@@ -105,6 +103,7 @@ pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
 pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/principals.go: (*Service).GetPrincipal: As(System())
+pkg/business/principals.go: (*Service).principalOrgID: As(System())
 pkg/business/principals.go: (*Service).withPrincipalScope: As(System())
 pkg/business/principals.go: (*Service).withPrincipalScope: As(System())
 pkg/business/privacy_jobs.go: (*Service).finishPrivacyWorkflow: System()

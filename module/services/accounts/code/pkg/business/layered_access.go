@@ -223,9 +223,22 @@ func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.Shar
 }
 
 // RevokeShare removes a per-record share.
+//
+// A NARROWING, so it runs under the policy log, exactly as RevokeScope above
+// does: appended and receipted before the share goes, with the delete and the
+// receipt's commit in one transaction, and a refusal rather than an unwitnessed
+// revocation when the log cannot be reached.
+//
+// That transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The delete
+// names req.OrgId in its WHERE, so it stays confined to the organisation the
+// tenant policy would have confined it to.
 func (s *Service) RevokeShare(ctx context.Context, actorID string, req *gen.RevokeShareRequest) error {
 	w := wool.Get(ctx).In("RevokeShare")
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+	if err := s.WithPolicyLoggedNarrowing(ctx, revokeSharePolicyLogEntry(
+		actorID, req.OrgId, req.ResourceType, req.ResourceId,
+		req.SubjectId, req.SubjectKind.String(), req.RoleId,
+	), func(ctx context.Context) error {
 		if err := s.store.RevokeShare(ctx, req.OrgId, req.ResourceType, req.ResourceId, req.SubjectId, req.SubjectKind, req.RoleId); err != nil {
 			return err
 		}
