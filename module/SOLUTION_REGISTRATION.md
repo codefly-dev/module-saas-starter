@@ -580,6 +580,59 @@ dead in every configuration: unset meant no reconciler at all, and set meant the
 source was the directory, so the table the delivery endpoint writes was read by
 nothing.
 
+### The authority half, and the one shape in which it is active
+
+Delivery has two kinds and the host serves both on their own paths:
+`POST /platform/_delivery/presence` and `POST /platform/_delivery/authority`.
+Each is verified with the reader for **its** kind, and the kind in the path is
+checked against the schema inside the attested bytes — which is a check rather
+than a convention, because the schema is part of the canonical encoding the
+signature covers, so a document's type is attested rather than asserted by the
+carrier. A document sent to the other kind's path is **400**: the bytes are
+wrong, not the signer, and a 403 would send an operator to look at a signing
+identity that signed the document perfectly well.
+
+An authority row is keyed by its **own** authority id, never by the presence
+binding it is granted over. One binding may be granted authority under successive
+authority ids, and the withdrawal fold is keyed on the binding precisely so that
+re-signing under a new id cannot reinstate a withdrawal — which only works if the
+inbox keeps the id each document was delivered as.
+
+**Neither half activates alone.** Authority is active only as a matched
+(authority, presence, build) tuple, which is what makes "approved for one exact
+build" a property of the system rather than of a field: an authority document for
+a build the host is not running activates nothing, and a presence document with
+no authority behind it activates nothing. The build is asked **about** rather
+than read out of either document — reading it out of the document that approves
+it would make the question answer itself.
+
+The **ceiling** is Core's `Envelope`: who may hold which binding, and which
+builds are approved, at one revision. It is read from the same platform-owned
+trust anchor as the trust root (`authority_envelope.json`), and never out of a
+delivered document — "an envelope a document carried would be a document
+declaring its own ceiling", and containment is tested against the envelope's own
+grants, so an envelope assembled from the delivery tree answers itself. Absence
+and damage are different answers: no envelope delivered is a complete deployment
+that answers no authority question, while an envelope that is delivered and
+cannot be read refuses the boot, because reading a damaged ceiling as "no
+ceiling" turns a corrupted file into a silently narrower system and reading it
+permissively turns it into a wider one.
+
+**This host applies authority to nothing**, and that is stated rather than
+defaulted. Core requires either the applied authority record or an explicit
+marker that none exists, because "nothing applied" is the most permissive input
+the call takes; this host holds no such record, so the marker is the truth. The
+replay protection the fold would otherwise give comes from the inbox instead —
+the desired set is the **newest** generation per document, so a genuinely signed
+older generation re-delivered never becomes the answer. The one part the inbox
+cannot do by itself is refuse an authority withdrawn under one id and re-signed
+under another, so the host reads **every** delivered authority document over the
+binding and refuses when a tombstone is among them. Nothing deletes from the
+inbox, so a withdrawal stays visible forever.
+
+Two live authority documents over one binding are refused by name rather than
+resolved: whichever one a host picked would be a choice nobody reviewed.
+
 ### What the host admits, and why it is now a signed carrier
 
 Core `cd443989` removed every path from unattested bytes to a host judgement.
@@ -786,10 +839,35 @@ presence document whose workloads declare two namespaces is refused by name: the
 renderer uses one namespace per render and cannot emit such a document, so one
 that exists was hand-built.
 
+A presence generation that declares **no** workload declares no namespace, and
+there are two of those: a tombstone, which declares absence and carries nothing,
+and a present generation that renders only a frontend surface. Such a carrier is
+authorised against the namespace this host **last applied** for that binding —
+its own recorded state, from a generation it already verified and admitted,
+rather than anything the arriving document asserts. Refusing the empty case
+outright made **removal through this endpoint impossible**: removal is a
+generation, so the one document delivery must be able to hand over to withdraw a
+binding was the one document the check could never authorise. It is still refused
+when neither answers — a first generation for a binding nothing has applied,
+declaring no workload — because then there is nothing to authorise it against at
+all.
+
 Authority is the **only** half with a hardcoded pair, which is why it is written
 down rather than derived: get it wrong and the `TokenReview` *succeeds*, the
 identity is *genuine*, and the host refuses the real carrier for a name — which
 reads as an attack rather than a typo.
+
+**The projected token's audience is `accounts`, exactly that literal.** It is
+published here because the renderer renders whatever this document publishes, and
+an audience the two sides guess at separately is a `TokenReview` that succeeds for
+a token minted for something else. It is the same audience the credential mint
+reviews against, deliberately: accounts is the service performing the review in
+both cases, and a second audience would be another projected token to mis-mount.
+
+It is a constant in this host rather than a setting, and that is the point. A
+configurable audience is another composition-supplied input to a trust decision —
+whoever could set it could have a token minted for a service of their choosing
+reviewed here as if it had been minted for this one.
 
 **The perimeter is not this check.** A manifest claiming a namespace other than
 the one its delivery tree declares is refused by the delivery controller's own

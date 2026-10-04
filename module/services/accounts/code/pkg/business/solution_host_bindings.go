@@ -211,6 +211,14 @@ type SolutionHostBindingReconciler struct {
 	interval time.Duration
 	now      func() time.Time
 
+	// activation answers whether delivered authority is active for a binding at
+	// a build. It lives on the reconciler because the reconciler already holds
+	// every policy input activation needs — this host's coordinate, the
+	// ownership domains it accepts, which signer may speak for which, and the
+	// bundle verifier — and a second copy of any of them would be a second
+	// answer to "what does this host accept".
+	activation *SolutionAuthorityActivation
+
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -245,6 +253,25 @@ type SolutionHostBindingReconcilerConfig struct {
 
 	// Interval between passes. Zero takes the default.
 	Interval time.Duration
+
+	// Envelope is the AUTHORITY CEILING delivered to this host: who may hold
+	// which binding, and which builds are approved, at one revision.
+	//
+	// Optional, and its absence is not a weaker ceiling. A zero revision means
+	// no ceiling is delivered, and every activation then refuses with
+	// ErrSolutionAuthorityCeilingUnavailable — the host has decided nothing
+	// rather than decided that a grant is absent. A host that reconciles
+	// presence with no ceiling delivered is a correct, complete deployment:
+	// authority is simply not a question it can answer, and making the presence
+	// half depend on the authority half being configured would be the wrong
+	// coupling.
+	//
+	// It is never read out of a delivered document. core: "an envelope a
+	// document carried would be a document declaring its own ceiling", and
+	// ValidateAgainst tests a document's grants and approved build against the
+	// envelope's — so an envelope assembled from the delivery tree answers
+	// itself for every document in it.
+	Envelope solutionhost.Envelope
 }
 
 // NewSolutionHostBindingReconciler builds the reconciler for one host
@@ -283,7 +310,7 @@ func NewSolutionHostBindingReconciler(
 	if interval <= 0 {
 		interval = SolutionHostBindingReconcileInterval
 	}
-	return &SolutionHostBindingReconciler{
+	reconciler := &SolutionHostBindingReconciler{
 		service:  service,
 		source:   source,
 		verifier: config.Verifier,
@@ -295,7 +322,29 @@ func NewSolutionHostBindingReconciler(
 		},
 		interval: interval,
 		now:      func() time.Time { return time.Now().UTC() },
-	}, nil
+	}
+	activation, err := newSolutionAuthorityActivation(reconciler, config.Envelope)
+	if err != nil {
+		return nil, err
+	}
+	reconciler.activation = activation
+	return reconciler, nil
+}
+
+// AuthorityActivation is the seam a capability-minting path asks "is the
+// delivered authority over this binding active for the build I have established
+// this caller is running".
+//
+// It is exposed rather than consumed here because the host does not APPLY
+// authority to anything: there is no durable state an activation reconciles
+// into, and a reconcile pass that logged the answer every interval would be
+// noise rather than an effect. The answer is a read, and the caller that needs
+// it is the one that has independently established a running build.
+func (r *SolutionHostBindingReconciler) AuthorityActivation() *SolutionAuthorityActivation {
+	if r == nil {
+		return nil
+	}
+	return r.activation
 }
 
 // RunOnce reads the mount and reconciles one pass.
