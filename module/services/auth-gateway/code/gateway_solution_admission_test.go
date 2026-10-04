@@ -396,3 +396,65 @@ func TestGatewaySolutionProxy_RefusedRequestsAreMeteredBeforeTheAuthorityIsAsked
 		"the authority must be asked only for requests the budget admitted: got %d calls for 8 requests",
 		len(authority.calls))
 }
+
+// An outage is not a verdict about a solution, and the registry read is part of
+// the admission decision.
+//
+// The on-demand registry read was issued and its error LOGGED AND DROPPED, after
+// which the empty lookup that followed it was reported as a fact: "no such
+// solution" (502 to the proxy) and, through the admission entry point, "your
+// organization did not install this" (403, named `not-entitled`). Both are
+// absence of evidence reported as evidence of absence, and the 403 is the worse
+// of the two — it sends an operator to the installation and the grants over an
+// accounts outage.
+func TestGatewaySolutionProxy_RegistryOutageOnAnUnknownAliasIsNotAVerdict(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	// A snapshot HAS loaded — this is not a cold replica — and it does not hold
+	// `reports`.
+	registerSolutionUpstream(t, gw, "audit")
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
+	// The read that would settle whether `reports` exists now fails.
+	solutionRegistryFake(t, gw).listErr = errors.New("accounts down")
+	// Past the on-demand refresh floor, so the miss really does issue a read.
+	gw.solutions.now = func() time.Time { return time.Now().Add(time.Second) }
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/reports/v1/reports/data", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code,
+		"a registry read that failed must answer 'cannot tell', never 'no such solution'")
+	require.NotEqual(t, refusalNotEntitled, w.Header().Get(solutionEntitlementRefusalHeader))
+}
+
+// The SECOND request of a burst must answer the same thing as the first.
+//
+// A miss issues at most one registry read per refresh floor, so the requests
+// that arrive inside that window decide on a read they did not issue. Reporting
+// "nothing to do" for a suppressed read drew a clean bill of health from the
+// failed one before it: the first request in a burst answered 503 and every
+// other one answered 502, for the same alias, in the same outage.
+func TestGatewaySolutionProxy_RegistryOutageStaysUndecidableInsideTheRefreshFloor(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "audit")
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("audit")}}
+	registry := solutionRegistryFake(t, gw)
+	registry.listErr = errors.New("accounts down")
+	// A frozen clock: the first miss is past the floor, and every request after
+	// it is inside it — the burst, with no sleeping.
+	frozen := time.Now().Add(time.Second)
+	gw.solutions.now = func() time.Time { return frozen }
+
+	token := signValidToken(t, priv)
+	for attempt := 0; attempt < 3; attempt++ {
+		req := httptest.NewRequest(http.MethodGet, "/solutions/reports/v1/reports/data", nil)
+		req.Header.Set("authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code,
+			"attempt %d: a suppressed read must report the outage it suppressed", attempt)
+	}
+	require.Equal(t, 1, registry.listCalls-1,
+		"the floor must still hold the reads down to one: this is about the ANSWER, not the rate")
+}
