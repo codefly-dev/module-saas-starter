@@ -98,7 +98,13 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusNotFound, "solution not specified")
 		return true
 	}
-	upstream, resolution := g.solutions.resolve(r.Context(), id)
+	// ONE resolution, carried from here to the forward. Admission is decided on
+	// routing.TargetID and traffic goes to routing.Upstream, and both are read
+	// from the same record in the same lookup — see solutionRouting. A second
+	// read further down this handler is what let a replacement binding be
+	// admitted on its own installation while the bearer went to its
+	// predecessor's address.
+	routing, resolution := g.solutions.resolveRouting(r.Context(), id)
 	switch resolution {
 	case solutionUnregistered:
 		httpError(w, http.StatusBadGateway, "solution not registered")
@@ -146,7 +152,7 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 			UpstreamPath:   publicPath,
 			RateLimitClass: edgeRateLimitClassPublic,
 		}
-		g.rateLimitThenProxy(w, r, upstream, entry)
+		g.rateLimitThenProxy(w, r, routing.Upstream, entry)
 		return true
 	}
 
@@ -240,7 +246,7 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// free. The entitlement LISTING already wrapped its work this way; the proxy
 	// did not.
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch g.admitViewerSolution(r.Context(), org, viewer, id) {
+		switch g.admitViewerSolution(r.Context(), org, viewer, routing) {
 		case viewerSolutionNotEntitled:
 			// A verdict on this organization's admission, named so a client can
 			// tell it from an ext_authz denial on the credential: one is fixed by
@@ -256,7 +262,9 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 			httpError(w, http.StatusServiceUnavailable, "solution entitlement authority unavailable")
 			return
 		}
-		g.proxyTo(w, r, upstream, entry)
+		// The destination is the one this request's single resolution named, and
+		// the one whose identity the authority just admitted.
+		g.proxyTo(w, r, routing.Upstream, entry)
 	}))
 	return true
 }

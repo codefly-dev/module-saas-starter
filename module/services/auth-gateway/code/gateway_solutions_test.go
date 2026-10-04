@@ -583,10 +583,10 @@ func TestGateway_Solution_RestartRebuildsFromRegistry(t *testing.T) {
 	registry := solutionRegistryFake(t, gw)
 
 	restarted := newSolutionRegistryCache(registry)
-	upstream, resolution := restarted.resolve(context.Background(), "audit")
+	routing, resolution := restarted.resolveRouting(context.Background(), "audit")
 
 	require.Equal(t, solutionRoutable, resolution)
-	require.Equal(t, "10.0.0.7:8080", upstream.Host)
+	require.Equal(t, "10.0.0.7:8080", routing.Upstream.Host)
 }
 
 // A registration made through one replica reaches the others: the second
@@ -608,7 +608,7 @@ func TestGateway_Solution_ReplicasConvergeOnSameRevision(t *testing.T) {
 	require.True(t, loaded)
 	require.Equal(t, writerRevision, otherRevision, "both replicas converge on one registry revision")
 
-	_, resolution := other.resolve(context.Background(), "audit")
+	_, resolution := other.resolveRouting(context.Background(), "audit")
 	require.Equal(t, solutionRoutable, resolution)
 }
 
@@ -626,14 +626,14 @@ func TestGateway_Solution_CacheMissRefreshesOnceWithinFloor(t *testing.T) {
 	// Past the refresh floor, so the miss is allowed to consult the registry.
 	lagging.now = func() time.Time { return time.Now().Add(solutionRefreshFloor) }
 	before := registry.listCalls
-	_, resolution := lagging.resolve(context.Background(), "audit")
+	_, resolution := lagging.resolveRouting(context.Background(), "audit")
 	require.Equal(t, solutionRoutable, resolution)
 	require.Equal(t, before+1, registry.listCalls)
 
 	// A second miss inside the floor does not read the registry again.
 	lagging.now = time.Now
 	before = registry.listCalls
-	_, resolution = lagging.resolve(context.Background(), "ghost")
+	_, resolution = lagging.resolveRouting(context.Background(), "ghost")
 	require.Equal(t, solutionUnregistered, resolution)
 	require.Equal(t, before, registry.listCalls)
 }
@@ -649,7 +649,7 @@ func TestGateway_Solution_ExpiredLease_NotRoutable(t *testing.T) {
 	registry.records["audit"].Backend.LeaseExpiresAt = timestamppb.New(time.Now().Add(-time.Minute))
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
-	_, resolution := gw.solutions.resolve(context.Background(), "audit")
+	_, resolution := gw.solutions.resolveRouting(context.Background(), "audit")
 	require.Equal(t, solutionNotActive, resolution)
 }
 
@@ -679,7 +679,7 @@ func TestGateway_Solution_RegistryOutageKeepsLastSnapshot(t *testing.T) {
 	registry.listErr = grpcstatus.Error(codes.Unavailable, "registry down")
 	require.Error(t, gw.solutions.refresh(context.Background()))
 
-	_, resolution := gw.solutions.resolve(context.Background(), "audit")
+	_, resolution := gw.solutions.resolveRouting(context.Background(), "audit")
 	require.Equal(t, solutionRoutable, resolution)
 	require.NotNil(t, fake)
 }

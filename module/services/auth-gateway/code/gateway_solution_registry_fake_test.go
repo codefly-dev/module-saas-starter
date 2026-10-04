@@ -67,6 +67,25 @@ func (f *fakeSolutionRegistry) declareTarget(alias, bindingID, targetID string) 
 	}
 }
 
+// repointUpstream moves an existing record's backend address, modelling the
+// heartbeat a declared record is allowed to make: a declared presence may
+// refresh its upstream, so the address the proxy forwards to can change under a
+// request that is already being served. It writes the state directly rather
+// than through Put, because Put's compare-and-swap is accounts' rule and what is
+// being modelled here is the state AFTER an admitted write.
+func (f *fakeSolutionRegistry) repointUpstream(alias, upstream string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	record := f.records[alias]
+	if record == nil || record.GetBackend() == nil {
+		return
+	}
+	f.revision++
+	record.Revision = f.revision
+	record.Backend.Revision = f.revision
+	record.Backend.Upstream = upstream
+}
+
 // undeclare strips a record's declaration, modelling presence nothing declared.
 // Such a record resolves to no target and is admissible to nobody.
 func (f *fakeSolutionRegistry) undeclare(alias string) {

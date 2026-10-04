@@ -458,3 +458,89 @@ func TestGatewaySolutionProxy_RegistryOutageStaysUndecidableInsideTheRefreshFloo
 	require.Equal(t, 1, registry.listCalls-1,
 		"the floor must still hold the reads down to one: this is about the ANSWER, not the rate")
 }
+
+// replacementArrivesMidRequest wires a solution whose alias is taken over by a
+// REPLACEMENT binding — new target, new address — part-way through one request.
+//
+// The takeover runs inside ext_authz's revocation lookup, which is a real step
+// on the production request path between the proxy's resolution of the upstream
+// and its admission decision. That is the window the two reads straddled: a
+// reconcile tick, a lease lapse or a declared record's heartbeat lands there in
+// production, and nothing about the request is faked to put it there.
+//
+// It returns the two upstreams: the one the record named when the request
+// arrived, and the one it names by the time admission runs.
+func replacementArrivesMidRequest(
+	t *testing.T, gw *Gateway, alias, replacementTarget string,
+) (predecessor, replacement *fakeUpstream) {
+	t.Helper()
+	predecessor = registerSolutionUpstream(t, gw, alias)
+	replacement = &fakeUpstream{body: "replacement-response"}
+	replacementSrv := httptest.NewServer(replacement)
+	t.Cleanup(replacementSrv.Close)
+
+	registry := solutionRegistryFake(t, gw)
+	gw.authz.revoker = revokerDuring(func() {
+		registry.repointUpstream(alias, replacementSrv.URL)
+		registry.declareTarget(alias, "acme.test.replacement", replacementTarget)
+		require.NoError(t, gw.solutions.refresh(context.Background()))
+	})
+	return predecessor, replacement
+}
+
+// The identity admitted and the address reached must come from ONE resolution.
+//
+// The proxy took the upstream from one read of the registry snapshot and the
+// target from another, further down the same request. A replacement binding
+// claiming the alias in between was then admitted on ITS installation — the
+// second read saw its target, and the requesting organisation holds it — while
+// the bearer was forwarded to the address the FIRST read returned, which is the
+// predecessor's. An organisation reached a binding it had not installed, and the
+// predecessor received a real bearer for a viewer nobody had granted it to.
+//
+// Against the two-read gateway this answers 200 and the predecessor's capture is
+// populated.
+func TestGatewaySolutionProxy_OneResolutionDecidesAdmissionAndDestination(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	const replacementTarget = "target-replacement-binding"
+	predecessor, replacement := replacementArrivesMidRequest(t, gw, "reports", replacementTarget)
+	// The caller's organisation installed the REPLACEMENT and nothing else.
+	gw.solutionEntitlements = &entitledTo{ids: []string{replacementTarget}}
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/reports/v1/reports/data", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code,
+		"the resolution this request was admitted against is the predecessor's, which this organisation did not install")
+	require.Nil(t, predecessor.lastHeaders,
+		"the predecessor must never receive a request admitted on the replacement's installation, and never the bearer")
+	require.Nil(t, replacement.lastHeaders,
+		"nor the replacement, which this request never resolved")
+}
+
+// The other direction of the same rule, so the test above cannot pass by
+// refusing whatever changes under it: with the SAME takeover landing in the same
+// window, the organisation that installed the solution this request RESOLVED is
+// admitted, and the request reaches that one's address.
+//
+// Against the two-read gateway this answers 403: the second read had already
+// moved on to the replacement's target, which this organisation does not hold.
+func TestGatewaySolutionProxy_TheResolvedBindingIsTheOneReachedWhenTheAliasMovesMidRequest(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	predecessor, replacement := replacementArrivesMidRequest(t, gw, "reports", "target-replacement-binding")
+	// The caller's organisation installed the binding this request resolved.
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("reports")}}
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/reports/v1/reports/data", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, predecessor.lastHeaders,
+		"the address reached must be the one whose identity was admitted")
+	require.Nil(t, replacement.lastHeaders,
+		"and never the binding that took the alias after this request had resolved it")
+}

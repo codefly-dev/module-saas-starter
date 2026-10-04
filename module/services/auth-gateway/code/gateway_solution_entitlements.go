@@ -326,11 +326,10 @@ const (
 	viewerSolutionUndecidable
 )
 
-// admitViewerSolution asks the authority whether the solution TARGET currently
-// serving one route alias is in the viewer's entitled set.
+// admitViewerSolution asks the authority whether the solution TARGET the
+// request's resolution named is in the viewer's entitled set.
 //
-// The alias is resolved to a target first, and the comparison is between
-// identities. That ordering is the mechanism, not a detail: an alias is
+// The comparison is between identities, never between aliases. An alias is
 // deliberately reusable — a withdrawn one may be claimed by another binding — so
 // comparing the alias an installation named against the alias being requested
 // admitted a REPLACEMENT binding to its predecessor's installation, forwarded
@@ -338,6 +337,12 @@ const (
 // predecessor. A target is one continuous period of one binding's presence and
 // is never reused, so the replacement resolves to its own target, which no
 // installation of the predecessor names.
+//
+// The target is taken from the routing the CALLER resolved, not re-resolved
+// here. That is the whole of it: this function used to call resolveTarget
+// itself, so the identity it admitted came from a different read of a mutable
+// snapshot than the address its caller then forwarded to, and the two could
+// name different bindings. One resolution, passed in, cannot.
 //
 // A registration with no declaration resolves to no target and is admissible to
 // NOBODY. That is deliberate: presence that nothing declared cannot be installed,
@@ -356,20 +361,14 @@ const (
 // leaves a team, a role loses a permission, an owner is demoted — so a cache
 // keyed on any revision a write advances would route on an expired grant.
 func (g *Gateway) admitViewerSolution(
-	ctx context.Context, org, viewer, solutionID string,
+	ctx context.Context, org, viewer string, routing *solutionRouting,
 ) viewerSolutionAdmission {
-	targetID, resolution := g.solutions.resolveTarget(ctx, solutionID)
-	switch resolution {
-	case solutionRegistryUnavailable:
-		// No snapshot has ever loaded, so this replica cannot tell a declared
-		// solution from an undeclared one. Undecidable, never a verdict.
-		return viewerSolutionUndecidable
-	case solutionRoutable:
-	default:
-		// Unregistered, withdrawn, or declared by nothing. There is no identity
-		// to be entitled to, so this is a verdict rather than an outage — and it
-		// is the same verdict for all three, because none of them is a presence
-		// an administrator could have consented to.
+	targetID := routing.GetTargetID()
+	if targetID == "" {
+		// Declared by nothing: a self-registration no delivery opened a target
+		// for. There is no identity to be entitled to, so this is a verdict
+		// rather than an outage — it is not a presence an administrator could
+		// have consented to, and no later read will make it one.
 		return viewerSolutionNotEntitled
 	}
 	if g.solutionEntitlements == nil {
