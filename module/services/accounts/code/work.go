@@ -535,9 +535,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	// AUDIT_SINK=both additionally tees each org-scoped audit row to an external
 	// warehouse, fed asynchronously from the durable outbox — Postgres stays the
 	// atomic source of truth (an external destination cannot join its tx).
-	// AUDIT_SINK=bigquery swaps the store of record (ADR 0009): the record is a
-	// queue row on that same transaction, and the audit relay delivers it to
-	// BigQuery and the archive afterwards.
+	// AUDIT_SINK=bigquery or clickhouse swaps the store of record (ADR 0009):
+	// the record is a queue row on that same transaction, and the audit relay
+	// delivers it to the warehouse and the archive afterwards.
 	auditSink, err := configuredAuditSink()
 	if err != nil {
 		return nil, err

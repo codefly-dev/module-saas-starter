@@ -278,7 +278,7 @@ func (a *Aggregator) Buckets() []business.AuditAggregateBucket {
 			case "max":
 				bucket.Metrics[alias] = acc.max
 			case "percentile":
-				bucket.Metrics[alias] = percentileCont(acc.values, metric.Percentile)
+				bucket.Metrics[alias] = PercentileCont(acc.values, metric.Percentile)
 			}
 		}
 		for _, derived := range a.spec.Derived {
@@ -293,15 +293,18 @@ func (a *Aggregator) Buckets() []business.AuditAggregateBucket {
 	return out
 }
 
-// percentileCont is Postgres's percentile_cont: the value at fraction p of the
-// sorted inputs, interpolated linearly between the two nearest.
+// PercentileCont is Postgres's percentile_cont: the value at fraction p of the
+// sorted inputs, interpolated linearly between the two nearest. values need
+// not be sorted and is not modified; it must not be empty. A store that
+// aggregates in its own engine collects a group's values there and computes
+// the percentile here, so the interpolation rounds as Postgres's does.
 //
 // The interpolation is written as Postgres's float8_lerp writes it, lo + pct
 // * (hi - lo), and left for the compiler to treat as C compilers treat it: Go
 // and GCC both fuse that multiply-add into one rounding on arm64 and neither
 // does on baseline amd64, so the result matches the Postgres of the same
 // architecture to the last bit. Forcing either rounding would match only one.
-func percentileCont(values []float64, p float64) float64 {
+func PercentileCont(values []float64, p float64) float64 {
 	sorted := append([]float64(nil), values...)
 	sort.Float64s(sorted)
 	position := p * float64(len(sorted)-1)

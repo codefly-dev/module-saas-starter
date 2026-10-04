@@ -31,6 +31,9 @@ const (
 	// AuditSinkBigQuery is a swap value: BigQuery is the store of record and
 	// Postgres keeps only the transactional queue.
 	AuditSinkBigQuery AuditSinkMode = "bigquery"
+	// AuditSinkClickHouse is a swap value: ClickHouse is the store of record and
+	// Postgres keeps only the transactional queue.
+	AuditSinkClickHouse AuditSinkMode = "clickhouse"
 )
 
 // ParseAuditSinkMode reads an AUDIT_SINK value. Empty is the default.
@@ -42,19 +45,21 @@ func ParseAuditSinkMode(raw string) (AuditSinkMode, error) {
 		return AuditSinkBoth, nil
 	case string(AuditSinkBigQuery):
 		return AuditSinkBigQuery, nil
+	case string(AuditSinkClickHouse):
+		return AuditSinkClickHouse, nil
 	case "external":
 		return "", errors.New("AUDIT_SINK=external is not permitted: no external destination can join the transaction " +
 			"a change commits in, so it cannot receive the change's record atomically; use AUDIT_SINK=both to copy " +
-			"records to an HTTP endpoint, or a swap value (bigquery), which commits each record to a Postgres queue first")
+			"records to an HTTP endpoint, or a swap value (bigquery or clickhouse), which commits each record to a Postgres queue first")
 	default:
-		return "", fmt.Errorf("AUDIT_SINK must be %s, %s or %s", AuditSinkPostgres, AuditSinkBoth, AuditSinkBigQuery)
+		return "", fmt.Errorf("AUDIT_SINK must be %s, %s, %s or %s", AuditSinkPostgres, AuditSinkBoth, AuditSinkBigQuery, AuditSinkClickHouse)
 	}
 }
 
 // Swaps reports whether the mode makes a warehouse the audit store of record,
 // so the emitter writes the queue instead of audit_events.
 func (m AuditSinkMode) Swaps() bool {
-	return m == AuditSinkBigQuery
+	return m == AuditSinkBigQuery || m == AuditSinkClickHouse
 }
 
 // AuditRecorder writes the record of one event on the caller's transaction and

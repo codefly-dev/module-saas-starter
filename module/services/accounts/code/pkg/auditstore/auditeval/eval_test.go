@@ -99,11 +99,11 @@ func TestTimeBucket(t *testing.T) {
 }
 
 func TestPercentileCont(t *testing.T) {
-	require.Equal(t, 5.0, percentileCont([]float64{5}, 0.9))
-	require.Equal(t, 2.5, percentileCont([]float64{4, 1, 3, 2}, 0.5))
-	require.Equal(t, 4.0, percentileCont([]float64{4, 1, 3, 2}, 1))
-	require.Equal(t, 5.0, percentileCont([]float64{20, 0, 10}, 0.25))
-	require.Equal(t, 0.5+1.75/512, percentileCont([]float64{100, 0.5, 2.25}, 1.0/1024))
+	require.Equal(t, 5.0, PercentileCont([]float64{5}, 0.9))
+	require.Equal(t, 2.5, PercentileCont([]float64{4, 1, 3, 2}, 0.5))
+	require.Equal(t, 4.0, PercentileCont([]float64{4, 1, 3, 2}, 1))
+	require.Equal(t, 5.0, PercentileCont([]float64{20, 0, 10}, 0.25))
+	require.Equal(t, 0.5+1.75/512, PercentileCont([]float64{100, 0.5, 2.25}, 1.0/1024))
 }
 
 func entryAt(id int, at time.Time) business.AuditEntry {

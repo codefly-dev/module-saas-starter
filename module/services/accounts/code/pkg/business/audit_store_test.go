@@ -17,19 +17,21 @@ func TestParseAuditSinkMode(t *testing.T) {
 		" Postgres ": AuditSinkPostgres,
 		"both":       AuditSinkBoth,
 		"BigQuery":   AuditSinkBigQuery,
+		"clickhouse": AuditSinkClickHouse,
 	} {
 		got, err := ParseAuditSinkMode(raw)
 		require.NoError(t, err, raw)
 		require.Equal(t, want, got, raw)
 	}
 	require.True(t, AuditSinkBigQuery.Swaps())
+	require.True(t, AuditSinkClickHouse.Swaps())
 	require.False(t, AuditSinkPostgres.Swaps())
 	require.False(t, AuditSinkBoth.Swaps(), "the tee keeps audit_events as the store of record")
 
 	_, err := ParseAuditSinkMode("external")
 	require.ErrorContains(t, err, "not permitted")
-	_, err = ParseAuditSinkMode("clickhouse")
-	require.ErrorContains(t, err, "must be postgres, both or bigquery", "a swap value with no adapter yet is refused, not ignored")
+	_, err = ParseAuditSinkMode("kafka")
+	require.ErrorContains(t, err, "must be postgres, both, bigquery or clickhouse", "an unknown value is refused, not ignored")
 }
 
 func TestCanonicalAuditDetails(t *testing.T) {

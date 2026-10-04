@@ -13,6 +13,7 @@ import (
 
 	"accounts/pkg/auditstore/bigqueryfake"
 	"accounts/pkg/auditstore/bigquerystore"
+	"accounts/pkg/auditstore/clickhousestore"
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -20,6 +21,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	bqstorage "cloud.google.com/go/bigquery/storage/apiv1"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/iterator"
@@ -63,6 +65,7 @@ type parityStore struct {
 var parityStores = map[string]func(t *testing.T) *parityStore{
 	"bigquery":          newBigQueryParityStore,
 	"bigquery-emulator": newBigQueryEmulatorParityStore,
+	"clickhouse":        newClickHouseParityStore,
 }
 
 // bigQueryAppender appends a batch's rows to the fake, as the BigQuery writer
@@ -166,6 +169,58 @@ func newBigQueryEmulatorParityStore(t *testing.T) *parityStore {
 				require.NoError(t, err)
 				ids = append(ids, row.EventID)
 			}
+		},
+	}
+}
+
+// newClickHouseParityStore is the ClickHouse store on a server named by
+// AUDIT_CLICKHOUSE_TEST_DSN, in a database created for this run (the store
+// never creates one; the deployment does), written through the store's own
+// batched inserts.
+func newClickHouseParityStore(t *testing.T) *parityStore {
+	dsn := strings.TrimSpace(os.Getenv("AUDIT_CLICKHOUSE_TEST_DSN"))
+	if dsn == "" {
+		t.Log("clickhouse: skipped; set AUDIT_CLICKHOUSE_TEST_DSN=clickhouse://<user>:<password>@<host>:9000/default " +
+			"to run the suite against a ClickHouse server, e.g. docker run -p 9000:9000 clickhouse/clickhouse-server")
+		return nil
+	}
+	options, err := clickhouse.ParseDSN(dsn)
+	require.NoError(t, err)
+	admin, err := clickhouse.Open(options)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = admin.Close() })
+	database := "audit_parity_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	require.NoError(t, admin.Exec(testCtx, "CREATE DATABASE "+database))
+	t.Cleanup(func() { _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+database) })
+
+	scoped := *options
+	scoped.Auth.Database = database
+	conn, err := clickhouse.Open(&scoped)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	store, err := clickhousestore.New(conn, clickhousestore.Config{
+		Database:               database,
+		DeploymentID:           parityDeployment,
+		EventsRetention:        2555 * 24 * time.Hour,
+		ContentDetailRetention: 30 * 24 * time.Hour,
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.Ensure(testCtx))
+	return &parityStore{
+		writer: store,
+		store:  store,
+		eventIDs: func(t *testing.T) []string {
+			rows, err := conn.Query(testCtx, "SELECT event_id FROM "+clickhousestore.EventsTable)
+			require.NoError(t, err)
+			defer func() { _ = rows.Close() }()
+			var ids []string
+			for rows.Next() {
+				var id string
+				require.NoError(t, rows.Scan(&id))
+				ids = append(ids, id)
+			}
+			require.NoError(t, rows.Err())
+			return ids
 		},
 	}
 }
@@ -432,6 +487,8 @@ func runAuditStoreParity(t *testing.T, f *parityFixture, under *parityStore) {
 		"payload":            {OrgID: f.org, PayloadContains: map[string]any{"boundary": "b-1"}},
 		"payload number":     {OrgID: f.org, PayloadContains: map[string]any{"result_count": 3.0}},
 		"payload nested":     {OrgID: f.org, PayloadContains: map[string]any{"nested": map[string]any{"a": "q"}, "tags": []any{"x"}}},
+		"payload pair":       {OrgID: f.org, PayloadContains: map[string]any{"boundary": "b-2", "outcome": "denied"}},
+		"payload absent":     {OrgID: f.org, PayloadContains: map[string]any{"outcome": nil}},
 		"window":             {OrgID: f.org, From: &week, To: &recent},
 		"platform for actor": {ActorID: f.actor},
 		"other organization": {OrgID: f.otherOrg},
@@ -480,6 +537,26 @@ func runAuditStoreParity(t *testing.T, f *parityFixture, under *parityStore) {
 				{Op: "count_distinct", Field: "resource"},
 			}},
 			"nested payload dimension": {GroupBy: []string{"payload:tags", "payload:nested", "payload:label"}},
+			"numeric payload dimension": {GroupBy: []string{"payload:result_count"}, Metrics: []business.AuditMetric{
+				{Op: "count_distinct", Field: "payload:result_count"},
+			}},
+			"fractional payload dimension": {GroupBy: []string{"payload:duration_ms"}},
+			"metrics by type": {GroupBy: []string{"event_type"}, Metrics: []business.AuditMetric{
+				{Op: "count", Alias: "events"},
+				{Op: "sum", Field: "payload:duration_ms"},
+				{Op: "avg", Field: "payload:result_count"},
+				{Op: "min", Field: "payload:duration_ms"},
+				{Op: "max", Field: "payload:result_count"},
+				{Op: "percentile", Field: "payload:duration_ms", Percentile: 0.25, Alias: "p25"},
+				{Op: "count_distinct", Field: "payload:outcome"},
+				{Op: "count_distinct", Field: "category"},
+				{Op: "count_distinct", Field: "actor_id"},
+			}, Derived: []business.AuditDerivedMetric{
+				{Alias: "duration_per_event", Numerator: "sum_duration_ms", Denominator: "events"},
+			}},
+			"category by month": {GroupBy: []string{"category", "time"}, Bucket: "month", Metrics: []business.AuditMetric{
+				{Op: "count_distinct", Field: "resource_id"},
+			}},
 			"metrics": {GroupBy: []string{"payload:boundary"}, Metrics: []business.AuditMetric{
 				{Op: "count", Alias: "reads"},
 				{Op: "sum", Field: "payload:duration_ms"},

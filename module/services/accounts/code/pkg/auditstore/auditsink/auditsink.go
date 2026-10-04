@@ -15,12 +15,15 @@ import (
 	"time"
 
 	"accounts/pkg/auditstore/bigquerystore"
+	"accounts/pkg/auditstore/clickhousestore"
 	"accounts/pkg/auditstore/gcsarchive"
+	"accounts/pkg/auditstore/s3archive"
 	"accounts/pkg/business"
 
 	"cloud.google.com/go/bigquery"
 	bqstorage "cloud.google.com/go/bigquery/storage/apiv1"
 	"cloud.google.com/go/storage"
+	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
 // The audit sink settings. AUDIT_SINK selects the mode (business.AuditSinkMode);
@@ -36,8 +39,20 @@ const (
 	// AUDIT_SINK=bigquery (ADR 0009). Credentials are Application Default
 	// Credentials only — on Kubernetes, the pod's workload identity — so there
 	// is deliberately no key-file or token setting.
-	EnvBigQueryProject      = "AUDIT_BIGQUERY_PROJECT"
-	EnvBigQueryDataset      = "AUDIT_BIGQUERY_DATASET"
+	EnvBigQueryProject = "AUDIT_BIGQUERY_PROJECT"
+	EnvBigQueryDataset = "AUDIT_BIGQUERY_DATASET"
+
+	// AUDIT_SINK=clickhouse (ADR 0009). The DSN names the server, the database
+	// and the credentials, and comes from the deployment's secret: it has no
+	// default and is never logged or echoed in an error. The cluster, when set,
+	// makes the tables replicated across it. The events retention is the
+	// compliance window, the events table's TTL; BigQuery's events table does
+	// not expire, so AUDIT_SINK=bigquery does not read it.
+	EnvClickHouseDSN       = "AUDIT_CLICKHOUSE_DSN"
+	EnvClickHouseCluster   = "AUDIT_CLICKHOUSE_CLUSTER"
+	EnvEventsRetentionDays = "AUDIT_EVENTS_RETENTION_DAYS"
+
+	// Every swap value.
 	EnvArchiveURL           = "AUDIT_ARCHIVE_URL"
 	EnvDeploymentID         = "AUDIT_DEPLOYMENT_ID"
 	EnvContentRetentionDays = "AUDIT_CONTENT_RETENTION_DAYS"
@@ -61,7 +76,9 @@ type Swap struct {
 	Mode business.AuditSinkMode
 	// BigQuery names the store of record under AUDIT_SINK=bigquery.
 	BigQuery *BigQuery
-	Archive  ArchiveLocation
+	// ClickHouse names the store of record under AUDIT_SINK=clickhouse.
+	ClickHouse *ClickHouse
+	Archive    ArchiveLocation
 	// DeploymentID stamps every record and confines every read.
 	DeploymentID string
 	// ContentRetention is how long a content-class event's details are kept.
@@ -76,23 +93,48 @@ type BigQuery struct {
 	Dataset string
 }
 
+// ClickHouse is where the ClickHouse store of record lives.
+type ClickHouse struct {
+	// DSN carries the credentials: it is passed to the driver and nowhere else.
+	DSN string
+	// Database is the database the DSN names.
+	Database string
+	// Cluster, when set, creates the tables ON CLUSTER, replicated.
+	Cluster string
+	// EventsRetention is the events table's TTL: the compliance window.
+	EventsRetention time.Duration
+}
+
+// String names the store without its DSN, so a ClickHouse printed by mistake
+// never shows the credentials.
+func (c ClickHouse) String() string {
+	return fmt.Sprintf("clickhouse database %q (cluster %q)", c.Database, c.Cluster)
+}
+
+// GoString is String: %#v of a Swap prints its fields this way.
+func (c ClickHouse) GoString() string { return c.String() }
+
 // ArchiveLocation is a parsed AUDIT_ARCHIVE_URL. The scheme picks the archive
-// writer; gs (Google Cloud Storage) is the one built.
+// writer: gs (Google Cloud Storage) or s3 (Amazon S3, or an S3-compatible
+// store). Any warehouse pairs with any archive.
 type ArchiveLocation struct {
 	Scheme string
 	Bucket string
 }
 
-// ArchiveSchemeGCS is the AUDIT_ARCHIVE_URL scheme of a GCS bucket.
-const ArchiveSchemeGCS = "gs"
+// The AUDIT_ARCHIVE_URL schemes with a writer.
+const (
+	ArchiveSchemeGCS = "gs"
+	ArchiveSchemeS3  = "s3"
+)
 
 // Load reads AUDIT_SINK and the settings its mode requires through getenv
 // (os.Getenv in production). "postgres" (the default) keeps the durable
 // emitter alone. "both" adds an asynchronous tee to an HTTP endpoint while
-// audit_events stays the store of record. "bigquery" swaps the store of record
-// to BigQuery, with Postgres keeping only the transactional queue. "external"
-// is refused: no destination outside Postgres can join the transaction a
-// change commits in.
+// audit_events stays the store of record. "bigquery" and "clickhouse" swap the
+// store of record to that warehouse, with Postgres keeping only the
+// transactional queue. "external" is refused: no destination outside Postgres
+// can join the transaction a change commits in.
 func Load(getenv func(string) string) (Config, error) {
 	mode, err := business.ParseAuditSinkMode(getenv(EnvSink))
 	if err != nil {
@@ -122,26 +164,32 @@ func loadExternal(getenv func(string) string) (business.ExternalAuditSink, error
 	})
 }
 
-// gcsBucketNamePattern is GCS's bucket naming rule, loosely: lowercase
-// letters, digits, '-', '_' and '.', starting and ending alphanumeric.
-var gcsBucketNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
+// Bucket naming rules, loosely. GCS: lowercase letters, digits, '-', '_' and
+// '.', starting and ending alphanumeric. S3: lowercase letters, digits, '-'
+// and '.', 3 to 63 of them, starting and ending alphanumeric.
+var bucketNamePatterns = map[string]*regexp.Regexp{
+	ArchiveSchemeGCS: regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`),
+	ArchiveSchemeS3:  regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`),
+}
 
-// ParseArchiveURL reads AUDIT_ARCHIVE_URL: gs://<bucket>, nothing more.
-// Another scheme names an archive no writer exists for yet, which is refused
-// at startup rather than left to fail at the first delivery.
+// ParseArchiveURL reads AUDIT_ARCHIVE_URL: gs://<bucket> or s3://<bucket>,
+// nothing more. Another scheme (an Azure container, say) names an archive no
+// writer exists for yet, which is refused at startup rather than left to fail
+// at the first delivery.
 func ParseArchiveURL(raw string) (ArchiveLocation, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme == "" {
-		return ArchiveLocation{}, fmt.Errorf("%s must be a URL like gs://<bucket>; got %q", EnvArchiveURL, raw)
+		return ArchiveLocation{}, fmt.Errorf("%s must be a URL like gs://<bucket> or s3://<bucket>; got %q", EnvArchiveURL, raw)
 	}
-	if parsed.Scheme != ArchiveSchemeGCS {
-		return ArchiveLocation{}, fmt.Errorf("%s scheme %q has no archive writer; the supported scheme is %s:// (got %q)",
-			EnvArchiveURL, parsed.Scheme, ArchiveSchemeGCS, raw)
+	pattern, supported := bucketNamePatterns[parsed.Scheme]
+	if !supported {
+		return ArchiveLocation{}, fmt.Errorf("%s scheme %q has no archive writer; the supported schemes are %s:// and %s:// (got %q)",
+			EnvArchiveURL, parsed.Scheme, ArchiveSchemeGCS, ArchiveSchemeS3, raw)
 	}
 	if parsed.User != nil || parsed.Port() != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return ArchiveLocation{}, fmt.Errorf("%s names a bucket and nothing else, like gs://<bucket>; got %q", EnvArchiveURL, raw)
+		return ArchiveLocation{}, fmt.Errorf("%s names a bucket and nothing else, like %s://<bucket>; got %q", EnvArchiveURL, parsed.Scheme, raw)
 	}
-	if !gcsBucketNamePattern.MatchString(parsed.Host) {
+	if !pattern.MatchString(parsed.Host) {
 		return ArchiveLocation{}, fmt.Errorf("%s bucket %q is not a valid bucket name", EnvArchiveURL, parsed.Host)
 	}
 	return ArchiveLocation{Scheme: parsed.Scheme, Bucket: parsed.Host}, nil
@@ -151,26 +199,45 @@ func ParseArchiveURL(raw string) (ArchiveLocation, error) {
 // and a warehouse value without escaping.
 var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
+// setting is one required setting of a swap value and what it was set to.
+type setting struct{ name, value string }
+
 // loadSwap reads and validates every setting of a swap value, reporting all
 // the missing ones at once.
 func loadSwap(mode business.AuditSinkMode, getenv func(string) string) (*Swap, error) {
 	swap := &Swap{
 		Mode:           mode,
-		BigQuery:       &BigQuery{Project: strings.TrimSpace(getenv(EnvBigQueryProject)), Dataset: strings.TrimSpace(getenv(EnvBigQueryDataset))},
 		DeploymentID:   strings.TrimSpace(getenv(EnvDeploymentID)),
 		RelayBatchSize: business.DefaultAuditRelayBatchSize,
 		RelayMaxWait:   business.DefaultAuditRelayMaxWait,
 	}
 	archiveURL := strings.TrimSpace(getenv(EnvArchiveURL))
 	retentionDays := strings.TrimSpace(getenv(EnvContentRetentionDays))
-	var missing []string
-	for _, setting := range []struct{ name, value string }{
-		{EnvBigQueryProject, swap.BigQuery.Project},
-		{EnvBigQueryDataset, swap.BigQuery.Dataset},
+	shared := []setting{
 		{EnvArchiveURL, archiveURL},
 		{EnvDeploymentID, swap.DeploymentID},
 		{EnvContentRetentionDays, retentionDays},
-	} {
+	}
+	var required []setting
+	var eventsRetentionDays string
+	switch mode {
+	case business.AuditSinkBigQuery:
+		swap.BigQuery = &BigQuery{Project: strings.TrimSpace(getenv(EnvBigQueryProject)), Dataset: strings.TrimSpace(getenv(EnvBigQueryDataset))}
+		required = append([]setting{
+			{EnvBigQueryProject, swap.BigQuery.Project},
+			{EnvBigQueryDataset, swap.BigQuery.Dataset},
+		}, shared...)
+	case business.AuditSinkClickHouse:
+		swap.ClickHouse = &ClickHouse{DSN: strings.TrimSpace(getenv(EnvClickHouseDSN)), Cluster: strings.TrimSpace(getenv(EnvClickHouseCluster))}
+		eventsRetentionDays = strings.TrimSpace(getenv(EnvEventsRetentionDays))
+		required = append(append([]setting{
+			{EnvClickHouseDSN, swap.ClickHouse.DSN},
+		}, shared...), setting{EnvEventsRetentionDays, eventsRetentionDays})
+	default:
+		return nil, fmt.Errorf("audit sink: %s is not a swap value", mode)
+	}
+	var missing []string
+	for _, setting := range required {
 		if setting.value == "" {
 			missing = append(missing, setting.name)
 		}
@@ -184,6 +251,11 @@ func loadSwap(mode business.AuditSinkMode, getenv func(string) string) (*Swap, e
 		return nil, fmt.Errorf("%s must be a whole number of days, at least 1; got %q", EnvContentRetentionDays, retentionDays)
 	}
 	swap.ContentRetention = time.Duration(days) * 24 * time.Hour
+	if swap.ClickHouse != nil {
+		if err := loadClickHouse(swap, eventsRetentionDays); err != nil {
+			return nil, err
+		}
+	}
 	if !deploymentIDPattern.MatchString(swap.DeploymentID) {
 		return nil, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 128, starting with a letter or digit); got %q",
 			EnvDeploymentID, swap.DeploymentID)
@@ -208,6 +280,38 @@ func loadSwap(mode business.AuditSinkMode, getenv func(string) string) (*Swap, e
 	return swap, nil
 }
 
+// loadClickHouse validates the ClickHouse settings: a DSN the driver parses
+// and that names its database, a cluster name ON CLUSTER can take, and an
+// events window at least as long as the content window — content details
+// outliving their event would be details of an event the store no longer has.
+func loadClickHouse(swap *Swap, eventsRetentionDays string) error {
+	settings := swap.ClickHouse
+	days, err := strconv.Atoi(eventsRetentionDays)
+	if err != nil || days < 1 {
+		return fmt.Errorf("%s must be a whole number of days, at least 1; got %q", EnvEventsRetentionDays, eventsRetentionDays)
+	}
+	settings.EventsRetention = time.Duration(days) * 24 * time.Hour
+	if settings.EventsRetention < swap.ContentRetention {
+		return fmt.Errorf("%s (%d) must be at least %s (%d): content details are kept no longer than their events",
+			EnvEventsRetentionDays, days, EnvContentRetentionDays, int(swap.ContentRetention/(24*time.Hour)))
+	}
+	options, err := clickhouse.ParseDSN(settings.DSN)
+	if err != nil {
+		// The parse error can quote the DSN, credentials included, so none of
+		// it is reported.
+		return fmt.Errorf("%s is not a valid ClickHouse DSN; it looks like clickhouse://<user>:<password>@<host>:9000/<database>", EnvClickHouseDSN)
+	}
+	if options.Auth.Database == "" {
+		return fmt.Errorf("%s must name the database, like clickhouse://<host>:9000/<database>", EnvClickHouseDSN)
+	}
+	settings.Database = options.Auth.Database
+	if settings.Cluster != "" && !clickhousestore.ValidCluster(settings.Cluster) {
+		return fmt.Errorf("%s must be a cluster name (letters, digits, '_', '.', '-') or a macro like {cluster}; got %q",
+			EnvClickHouseCluster, settings.Cluster)
+	}
+	return nil
+}
+
 // Opened is a swap value's store of record and archive, built and checked.
 type Opened struct {
 	// Store is the store of record: the relay appends to it and the service
@@ -230,8 +334,9 @@ func (o *Opened) Close() {
 }
 
 // Open builds the store of record of a swap value — its tables created if
-// missing, its read half on the Storage Read API — and the archive. Every
-// client uses Application Default Credentials.
+// missing — and the archive its URL's scheme names. BigQuery and GCS clients
+// use Application Default Credentials; ClickHouse connects with the DSN; the
+// S3 client takes the AWS SDK's default chain.
 func Open(ctx context.Context, swap *Swap) (*Opened, error) {
 	if swap == nil {
 		return nil, errors.New("audit sink: no swap value to open")
@@ -241,20 +346,40 @@ func Open(ctx context.Context, swap *Swap) (*Opened, error) {
 		opened.Close()
 		return nil, err
 	}
-	if swap.Mode != business.AuditSinkBigQuery || swap.BigQuery == nil {
-		return fail(fmt.Errorf("audit sink: no store of record for AUDIT_SINK=%s", swap.Mode))
+	var err error
+	switch {
+	case swap.Mode == business.AuditSinkBigQuery && swap.BigQuery != nil:
+		err = opened.openBigQuery(ctx, swap)
+	case swap.Mode == business.AuditSinkClickHouse && swap.ClickHouse != nil:
+		err = opened.openClickHouse(ctx, swap)
+	default:
+		err = fmt.Errorf("audit sink: no store of record for AUDIT_SINK=%s", swap.Mode)
 	}
+	if err != nil {
+		return fail(err)
+	}
+	if err := opened.openArchive(ctx, swap.Archive); err != nil {
+		return fail(err)
+	}
+	return opened, nil
+}
 
+// ensureTimeout bounds creating and checking the store's tables at startup.
+const ensureTimeout = time.Minute
+
+// openBigQuery builds the BigQuery store: streaming inserts for the relay, and
+// reads on the Storage Read API.
+func (opened *Opened) openBigQuery(ctx context.Context, swap *Swap) error {
 	bigQueryClient, err := bigquery.NewClient(ctx, swap.BigQuery.Project)
 	if err != nil {
-		return fail(fmt.Errorf("audit store: bigquery client: %w", err))
+		return fmt.Errorf("audit store: bigquery client: %w", err)
 	}
 	opened.closers = append(opened.closers, func() { _ = bigQueryClient.Close() })
 	// Reads run no query job: the service holds the append grant, and append
 	// plus job creation would let it run DML against the store of record.
 	readClient, err := bqstorage.NewBigQueryReadClient(ctx)
 	if err != nil {
-		return fail(fmt.Errorf("audit store: bigquery storage read client: %w", err))
+		return fmt.Errorf("audit store: bigquery storage read client: %w", err)
 	}
 	opened.closers = append(opened.closers, func() { _ = readClient.Close() })
 	reader, err := bigquerystore.NewReader(bigquerystore.ReadConfig{
@@ -264,7 +389,7 @@ func Open(ctx context.Context, swap *Swap) (*Opened, error) {
 		DeploymentID: swap.DeploymentID,
 	})
 	if err != nil {
-		return fail(err)
+		return err
 	}
 	warehouse, err := bigquerystore.New(bigQueryClient, bigquerystore.Config{
 		Dataset:                swap.BigQuery.Dataset,
@@ -272,26 +397,66 @@ func Open(ctx context.Context, swap *Swap) (*Opened, error) {
 		Reader:                 reader,
 	})
 	if err != nil {
-		return fail(err)
+		return err
 	}
-	ensureCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	ensureCtx, cancel := context.WithTimeout(ctx, ensureTimeout)
 	err = warehouse.Ensure(ensureCtx)
 	cancel()
 	if err != nil {
-		return fail(err)
+		return err
 	}
 	opened.Store, opened.History = warehouse, warehouse
+	return nil
+}
 
-	if swap.Archive.Scheme != ArchiveSchemeGCS {
-		return fail(fmt.Errorf("audit archive: no writer for scheme %q", swap.Archive.Scheme))
-	}
-	storageClient, err := storage.NewClient(ctx)
+// openClickHouse connects with the DSN and builds the ClickHouse store, which
+// writes and reads over that one connection pool.
+func (opened *Opened) openClickHouse(ctx context.Context, swap *Swap) error {
+	options, err := clickhouse.ParseDSN(swap.ClickHouse.DSN)
 	if err != nil {
-		return fail(fmt.Errorf("audit archive: storage client: %w", err))
+		// Load has parsed it already; never echo it.
+		return fmt.Errorf("audit store: %s is not a valid ClickHouse DSN", EnvClickHouseDSN)
 	}
-	opened.closers = append(opened.closers, func() { _ = storageClient.Close() })
-	if opened.Archive, err = gcsarchive.New(storageClient, swap.Archive.Bucket); err != nil {
-		return fail(err)
+	conn, err := clickhouse.Open(options)
+	if err != nil {
+		return fmt.Errorf("audit store: clickhouse connection: %w", err)
 	}
-	return opened, nil
+	opened.closers = append(opened.closers, func() { _ = conn.Close() })
+	warehouse, err := clickhousestore.New(conn, clickhousestore.Config{
+		Database:               swap.ClickHouse.Database,
+		Cluster:                swap.ClickHouse.Cluster,
+		DeploymentID:           swap.DeploymentID,
+		EventsRetention:        swap.ClickHouse.EventsRetention,
+		ContentDetailRetention: swap.ContentRetention,
+	})
+	if err != nil {
+		return err
+	}
+	ensureCtx, cancel := context.WithTimeout(ctx, ensureTimeout)
+	err = warehouse.Ensure(ensureCtx)
+	cancel()
+	if err != nil {
+		return err
+	}
+	opened.Store, opened.History = warehouse, warehouse
+	return nil
+}
+
+// openArchive builds the writer the archive URL's scheme names.
+func (opened *Opened) openArchive(ctx context.Context, location ArchiveLocation) error {
+	var err error
+	switch location.Scheme {
+	case ArchiveSchemeGCS:
+		storageClient, clientErr := storage.NewClient(ctx)
+		if clientErr != nil {
+			return fmt.Errorf("audit archive: storage client: %w", clientErr)
+		}
+		opened.closers = append(opened.closers, func() { _ = storageClient.Close() })
+		opened.Archive, err = gcsarchive.New(storageClient, location.Bucket)
+	case ArchiveSchemeS3:
+		opened.Archive, err = s3archive.NewFromEnvironment(ctx, location.Bucket)
+	default:
+		err = fmt.Errorf("audit archive: no writer for scheme %q", location.Scheme)
+	}
+	return err
 }

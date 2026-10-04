@@ -219,6 +219,12 @@ func (m *Matcher) EventTypes() ([]string, bool) {
 // must join every candidate's details before Match can decide.
 func (m *Matcher) NeedsPayload() bool { return m.payload != nil }
 
+// PayloadFilter is the payload filter as Match evaluates it — the query's
+// PayloadContains read back the way Postgres binds it as jsonb, numbers as
+// json.Number — or nil when the read has none. A store that pushes part of it
+// down reads it here, so what it pushes is exactly what Match decides.
+func (m *Matcher) PayloadFilter() any { return m.payload }
+
 // InScope reports whether an event belongs to the read's scope: its
 // organization's, or for the platform scope any event at all.
 func (m *Matcher) InScope(entry business.AuditEntry) bool {

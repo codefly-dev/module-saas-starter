@@ -52,6 +52,19 @@ func NewPage(q business.AuditQuery) (*Page, error) {
 	return p, nil
 }
 
+// Size is the page size: the query's, or DefaultPageSize when it names none.
+func (p *Page) Size() int { return p.size }
+
+// After is the keyset position the page token names — the last event of the
+// previous page — and whether there is one. A store that pages in its own
+// engine starts strictly after it.
+func (p *Page) After() (time.Time, string, bool) {
+	if p.after == nil {
+		return time.Time{}, "", false
+	}
+	return p.after.at, p.after.id, true
+}
+
 // Before is the occurrence the page token names, if any: no event at or after
 // it beyond the token's own tie-break can be on this page.
 func (p *Page) Before() *time.Time {
