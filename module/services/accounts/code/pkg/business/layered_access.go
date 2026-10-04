@@ -158,9 +158,22 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 }
 
 // RevokeScope removes a hierarchical scope grant.
+//
+// A NARROWING, so it runs under the policy log: appended and receipted before
+// the grant goes, and the delete commits in the same transaction as the
+// receipt's commit. A host that cannot witness the append refuses rather than
+// revoking unwitnessed — a revocation a restore could silently undo is worse
+// than a refusal the caller can see.
+//
+// The transaction is the policy log's control-plane one, because the receipt
+// relation is control-plane only and the two writes must be atomic. The
+// statement below names req.OrgId explicitly, so the delete stays confined to
+// the organisation the tenant policy would have confined it to.
 func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
 	w := wool.Get(ctx).In("RevokeScope")
-	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+	if err := s.WithPolicyLoggedNarrowing(ctx, revokeScopePolicyLogEntry(
+		actorID, req.OrgId, req.SubjectId, req.SubjectKind.String(), req.ScopePath, req.RoleId,
+	), func(ctx context.Context) error {
 		if e := s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId); e != nil {
 			return e
 		}

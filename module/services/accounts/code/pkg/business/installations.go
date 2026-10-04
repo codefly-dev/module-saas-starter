@@ -242,12 +242,28 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 // its standing grant, and marks the installation revoked. The solution scope node
 // is left in place (inert without a grant or a live agent) so a reinstall reuses
 // it. Idempotent on an already-revoked installation (no second audit event).
+//
+// It is a NARROWING, so it runs under the policy log: the entry is appended to
+// the external record and its receipt is written here BEFORE anything is
+// revoked, and the revocation commits in the same transaction as the receipt's
+// commit. A host that cannot witness the append refuses the uninstall rather
+// than performing one a restore could silently undo.
+//
+// The transaction is the policy log's CONTROL-PLANE one rather than this
+// organisation's, because the receipt lives in a control-plane relation that
+// app_tenant holds no grant on — and the receipt and the revocation have to be
+// the same transaction or the protocol's one forbidden state ("applied but
+// unwitnessed") becomes reachable. The organisation's own scoping is not lost:
+// every statement below names orgID explicitly, which is what the tenant policy
+// would have checked.
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	actorType := s.actorTypeForCreator(ctx, actorID)
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID)
-	}); err != nil {
+	if err := s.WithPolicyLoggedNarrowing(ctx,
+		uninstallPolicyLogEntry(actorID, orgID, installationID),
+		func(ctx context.Context) error {
+			return s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID)
+		}); err != nil {
 		return w.Wrapf(err, "cannot uninstall solution")
 	}
 	return nil
