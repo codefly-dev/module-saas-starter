@@ -660,13 +660,16 @@ func (r *Reader) consume(rows storagepb.BigQueryRead_ReadRowsClient, schema []by
 			return offset, err
 		}
 		batch := response.GetArrowRecordBatch()
-		if batch == nil || response.GetRowCount() == 0 {
+		if batch == nil || len(batch.GetSerializedRecordBatch()) == 0 {
 			continue
 		}
-		if err := decodeBatch(schema, batch.GetSerializedRecordBatch(), visit); err != nil {
+		// The offset to resume from counts the rows decoded, which is what the
+		// response's row count reports when it is set.
+		rows, err := decodeBatch(schema, batch.GetSerializedRecordBatch(), visit)
+		offset += int64(rows)
+		if err != nil {
 			return offset, err
 		}
-		offset += response.GetRowCount()
 	}
 }
 
@@ -687,14 +690,25 @@ func (e decodeError) Error() string { return e.err.Error() }
 func (e decodeError) Unwrap() error { return e.err }
 
 // decodeBatch decodes one serialized Arrow record batch against the session's
-// serialized schema and hands each row to visit. A visit error is returned as
-// it is; a decoding failure as a decodeError.
-func decodeBatch(schema, batch []byte, visit func(arrowRow) error) error {
-	reader, err := ipc.NewReader(io.MultiReader(bytes.NewReader(schema), bytes.NewReader(batch)), ipc.WithAllocator(memory.DefaultAllocator))
+// serialized schema, hands each row to visit, and returns how many rows it
+// visited. A visit error is returned as it is; a decoding failure as a
+// decodeError.
+//
+// BigQuery sends the schema once, on the session, and each batch without it,
+// so the two are read as one stream. A batch that carries its own schema is a
+// whole stream already — the BigQuery emulator sends them so — and is read
+// alone.
+func decodeBatch(schema, batch []byte, visit func(arrowRow) error) (int, error) {
+	stream := io.MultiReader(bytes.NewReader(schema), bytes.NewReader(batch))
+	if carriesSchema(batch) {
+		stream = bytes.NewReader(batch)
+	}
+	reader, err := ipc.NewReader(stream, ipc.WithAllocator(memory.DefaultAllocator))
 	if err != nil {
-		return decodeError{fmt.Errorf("decode arrow batch: %w", err)}
+		return 0, decodeError{fmt.Errorf("decode arrow batch: %w", err)}
 	}
 	defer reader.Release()
+	visited := 0
 	for reader.Next() {
 		record := reader.Record()
 		columns := make(map[string]arrow.Array, record.NumCols())
@@ -703,14 +717,26 @@ func decodeBatch(schema, batch []byte, visit func(arrowRow) error) error {
 		}
 		for i := 0; i < int(record.NumRows()); i++ {
 			if err := visit(arrowRow{columns: columns, index: i}); err != nil {
-				return err
+				return visited, err
 			}
+			visited++
 		}
 	}
 	if err := reader.Err(); err != nil {
-		return decodeError{fmt.Errorf("decode arrow batch: %w", err)}
+		return visited, decodeError{fmt.Errorf("decode arrow batch: %w", err)}
 	}
-	return nil
+	return visited, nil
+}
+
+// carriesSchema reports whether a serialized batch begins with a schema message.
+func carriesSchema(batch []byte) bool {
+	messages := ipc.NewMessageReader(bytes.NewReader(batch))
+	defer messages.Release()
+	message, err := messages.Message()
+	if err != nil {
+		return false
+	}
+	return message.Type() == ipc.MessageSchema
 }
 
 // arrowRow is one row of a decoded record batch.

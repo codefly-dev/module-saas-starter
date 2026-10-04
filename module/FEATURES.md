@@ -398,7 +398,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Export (JSON/CSV)      | ✅    | `audit_export.go`                                                  |
 | Impersonation tracking | ✅    | Records both real actor + viewed-as user                           |
 | Replay / event sourcing| ❌    | Audit log is read-only history; not used to reconstruct state      |
-| Warehouse store of record | 🟡 | `AUDIT_SINK=bigquery` (ADR 0009): each record commits to a Postgres queue on the mutation's transaction and a relay delivers it to BigQuery and a locked GCS archive. The activity list, aggregates, exports and the readable-source query read BigQuery through the Storage Read API — no query jobs — scoped to the caller's organization and the deployment, with each event returned once; Postgres history is not yet copied over; ClickHouse is not built |
+| Warehouse store of record | 🟡 | `AUDIT_SINK=bigquery` (ADR 0009): each record commits to a Postgres queue on the mutation's transaction and a relay delivers it to BigQuery and a locked GCS archive. The activity list, aggregates, exports and the readable-source query read BigQuery through the Storage Read API — no query jobs — scoped to the caller's organization and the deployment, with each event returned once. `audit-history-copy` copies a switching deployment's `audit_events` history into the store and the archive, verifies it by reading it back, and drops the copied partitions only with `-confirm-drop`; ClickHouse is not built |
 
 ### Admin panel
 

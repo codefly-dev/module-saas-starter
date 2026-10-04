@@ -27,6 +27,9 @@ pkg/auth/pg/session_store.go: (*SessionStore).FindByRefreshHash: WithControlPlan
 pkg/auth/pg/session_store.go: (*SessionStore).RevokeFamily: WithControlPlane
 pkg/auth/pg/session_store.go: (*SessionStore).RotateRefresh: WithControlPlane
 pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
+pkg/business/audit_history.go: (*AuditHistoryCopy).drop: WithControlPlane
+pkg/business/audit_history.go: (*AuditHistoryCopy).partitions: WithControlPlane
+pkg/business/audit_history.go: (*AuditHistoryCopy).readWindow: WithControlPlane
 pkg/business/audit_store_read.go: (postgresAuditReader).within: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane

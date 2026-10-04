@@ -506,6 +506,11 @@ All tenant/user rows remain constrained by their forced RLS policies.
 
 Retention deletes and token-based pre-auth reads/updates use the audited
 control-plane boundary; they are intentionally not granted to `app_tenant`.
+So does the one-time audit history copy of a deployment switching to a swap
+value (`cmd/audit-history-copy`, ADR 0009): it reads `audit_events` across
+organizations and, once its copy is verified and confirmed, drops the copied
+partitions through `audit_events_drop_partitions_before`, as retention does. It
+deletes no row.
 The infrastructure suite compares PostgreSQL's complete public-table inventory
 to this executable matrix, so adding a table without classifying and granting
 it fails the gate.

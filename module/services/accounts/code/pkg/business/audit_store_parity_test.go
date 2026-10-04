@@ -4,7 +4,10 @@ package business_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,10 +19,14 @@ import (
 	"accounts/pkg/infra"
 
 	"cloud.google.com/go/bigquery"
+	bqstorage "cloud.google.com/go/bigquery/storage/apiv1"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -54,7 +61,8 @@ type parityStore struct {
 // that needs a server the environment does not provide returns nil, after
 // logging how to provide one.
 var parityStores = map[string]func(t *testing.T) *parityStore{
-	"bigquery": newBigQueryParityStore,
+	"bigquery":          newBigQueryParityStore,
+	"bigquery-emulator": newBigQueryEmulatorParityStore,
 }
 
 // bigQueryAppender appends a batch's rows to the fake, as the BigQuery writer
@@ -102,6 +110,62 @@ func newBigQueryParityStore(t *testing.T) *parityStore {
 				ids = append(ids, row["event_id"].(string))
 			}
 			return ids
+		},
+	}
+}
+
+// newBigQueryEmulatorParityStore is the BigQuery store against the BigQuery
+// emulator: rows streamed through tabledata.insertAll, and read back through
+// its Storage Read API, which evaluates the row restrictions with a GoogleSQL
+// engine. It runs when both of its addresses are set:
+//
+//	docker run --rm -p 9050:9050 -p 9060:9060 ghcr.io/goccy/bigquery-emulator --project=test-project
+//	AUDIT_BIGQUERY_EMULATOR_HOST=localhost:9050 AUDIT_BIGQUERY_EMULATOR_GRPC_HOST=localhost:9060
+//
+// The project is the one the bigquerystore emulator tests use, so one emulator
+// serves both.
+func newBigQueryEmulatorParityStore(t *testing.T) *parityStore {
+	const project = "test-project"
+	rest, grpcHost := os.Getenv("AUDIT_BIGQUERY_EMULATOR_HOST"), os.Getenv("AUDIT_BIGQUERY_EMULATOR_GRPC_HOST")
+	if rest == "" || grpcHost == "" {
+		t.Log("bigquery-emulator: AUDIT_BIGQUERY_EMULATOR_HOST and AUDIT_BIGQUERY_EMULATOR_GRPC_HOST are not set; not run")
+		return nil
+	}
+	client, err := bigquery.NewClient(testCtx, project, option.WithEndpoint("http://"+rest), option.WithoutAuthentication())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+	dataset := "parity_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	require.NoError(t, client.Dataset(dataset).Create(testCtx, &bigquery.DatasetMetadata{}))
+	t.Cleanup(func() { _ = client.Dataset(dataset).DeleteWithContents(context.Background()) })
+	readClient, err := bqstorage.NewBigQueryReadClient(testCtx, option.WithEndpoint(grpcHost), option.WithoutAuthentication(),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = readClient.Close() })
+	// The emulator serves one stream per session.
+	reader, err := bigquerystore.NewReader(bigquerystore.ReadConfig{
+		Client: readClient, Project: project, Dataset: dataset, DeploymentID: parityDeployment, MaxStreams: 1,
+	})
+	require.NoError(t, err)
+	store, err := bigquerystore.New(client, bigquerystore.Config{Dataset: dataset, ContentDetailRetention: 30 * 24 * time.Hour, Reader: reader})
+	require.NoError(t, err)
+	require.NoError(t, store.Ensure(testCtx))
+	return &parityStore{
+		writer: store,
+		store:  store,
+		eventIDs: func(t *testing.T) []string {
+			var ids []string
+			rows := client.Dataset(dataset).Table(bigquerystore.EventsTable).Read(testCtx)
+			for {
+				var row struct {
+					EventID string `bigquery:"event_id"`
+				}
+				err := rows.Next(&row)
+				if errors.Is(err, iterator.Done) {
+					return ids
+				}
+				require.NoError(t, err)
+				ids = append(ids, row.EventID)
+			}
 		},
 	}
 }

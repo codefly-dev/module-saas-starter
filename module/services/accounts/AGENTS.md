@@ -83,6 +83,14 @@ survives a restart and reaches every replica, and is only served when it is
   evaluated in the service (`pkg/auditstore/auditeval`) with the Postgres
   reads' semantics; `pkg/business/audit_store_parity_test.go` holds the two to
   one fixture.
+- **History copy** (`cmd/audit-history-copy`, `pkg/business/audit_history.go`):
+  a deployment switching to a swap value copies its `audit_events` rows into the
+  store of record and the archive — classified and hashed as the relay does a
+  live event — and verifies them by reading them back. It reads back before it
+  writes, so a rerun finishes an interrupted run. Only with `-confirm-drop`,
+  after a verification pass in the same run and a recount showing nothing
+  changed, does it drop the copied partitions, through the function retention
+  uses; it never deletes a row.
 - A composed **module** with no frontend half declares its own audit event
   types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
   (`pkg/business/module_audit_declarations.go`): the same validator
