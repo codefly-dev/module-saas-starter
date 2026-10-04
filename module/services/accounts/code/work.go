@@ -378,7 +378,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
 		return nil, err
 	}
-	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider))
+	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider), codefly.IsLocal())
 	if err != nil {
 		return nil, err
 	}
@@ -2088,10 +2088,26 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // differently, break existing sessions, and desynchronise the pinned key. This
 // fails closed rather than fail-open-to-broken.
 //
+// The key's custody is the cell's, never accounts': the platform's
+// identity-seeding command writes the keypair to Vault once, create-only, from
+// the cell's durable seed, so a re-seed restores the *same* keypair and the
+// `kid` the gateway pinned does not move (module/KEY_ROTATION.md, "Custody of
+// the signing key"). accounts therefore never generates one outside the local
+// environment: a self-minted key would silently diverge from that seed,
+// invalidating every live session and leaving two cells signing differently.
+//
+// The refusal quotes VAULT_KEY_CUSTODY from the `vault` configuration group
+// when the cell sets it, so the operator reading a crash loop sees their own
+// seeding command rather than a sentence about one. This module never names
+// that command itself: a module names nothing above it.
+//
 // allowEphemeral is set only in dev/fixture mode, where a freshly generated key
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
-// no Vault. The fallback logs a warning.
-func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
+// no Vault. The fallback logs a warning. isLocal is checked here as well as at
+// the provider gate: the two conditions are enforced in different functions, and
+// an argument that spans two functions is one a later edit can quietly break.
+func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519core.PrivateKey, error) {
+	ephemeral := allowEphemeral && isLocal
 	connection, connectionErr := vaultconnection.Load(ctx)
 	if connectionErr == nil {
 		vaultToken, tokenErr := connection.Token()
@@ -2105,15 +2121,32 @@ func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.Priva
 		if err == nil {
 			return priv, nil
 		}
-		if !allowEphemeral {
-			return nil, fmt.Errorf("load signing key from Vault: %w", err)
+		if !ephemeral {
+			return nil, fmt.Errorf("load signing key from Vault at secret/data/jwt-signing-key: %w — seed it from the cell's durable identity seed%s; accounts never mints its own outside the local environment", err, keyCustodyHint())
 		}
 		wool.Get(ctx).In("loadSigningKey").Warn("could not load signing key from Vault — falling back to ephemeral", wool.ErrField(err))
-	} else if !allowEphemeral {
-		return nil, fmt.Errorf("load signing key: Vault address and token are required outside dev/fixture mode")
+	} else if !ephemeral {
+		return nil, fmt.Errorf("load signing key: no usable Vault binding for secret/data/jwt-signing-key: %w — name the cell's Vault in the `vault` configuration group, then seed the key from the cell's durable identity seed%s", connectionErr, keyCustodyHint())
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err
+}
+
+// keyCustodyHint renders the cell's own seeding command into the refusal, from
+// VAULT_KEY_CUSTODY in the `vault` configuration group. It is a free-text
+// operator note, so it is bounded and stripped of newlines before it reaches a
+// log line: an unbounded value from configuration would otherwise let whoever
+// writes the group forge log entries around the refusal.
+func keyCustodyHint() string {
+	custody := strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY"))
+	if custody == "" {
+		return " (module/KEY_ROTATION.md, \"Custody of the signing key\"; the cell's runbook names the command, and VAULT_KEY_CUSTODY in the `vault` configuration group puts it in this message)"
+	}
+	custody = strings.Join(strings.Fields(custody), " ")
+	if len(custody) > 200 {
+		custody = custody[:200] + "…"
+	}
+	return " — " + custody
 }
 
 // billingNotifier converts a completed billing projection into channel-specific

@@ -82,6 +82,17 @@ address. Production overlays must add narrowly scoped VPC endpoint/security
 group or CIDR policy for those configured destinations; the base deliberately
 does not open private address space globally.
 
+One managed kind is in-cluster rather than out: `cell-vault` names a Vault the
+cell runs in a namespace of its own. A pod-selector rule cannot authorize it
+either — it is in another namespace — and nor can a CIDR, because a pod address
+is not stable and the pod CIDR covers every workload in the cluster. It renders a
+namespace-selected egress policy instead
+(`allow-<caller>-to-<target>`, matching `kubernetes.io/metadata.name`), and no
+metadata-endpoint egress: the credential is the caller's own projected
+ServiceAccount token read off disk, not a workload-identity token fetched over
+the network. See [deployment/README.md](./deployment/README.md), "The cell's
+Vault".
+
 ## Mesh security baseline
 
 Alongside the NetworkPolicy layer, every environment renders an Istio mesh

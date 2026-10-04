@@ -17,8 +17,15 @@ package ed25519minter
 //	}
 //
 // The vault service used by the dev fixture already seeds this path on
-// first boot (see services/vault start). For deployed environments a
-// one-shot seeding script writes the keypair once and Vault persists it.
+// first boot (see services/vault start), in an in-memory store a restart
+// discards. For every deployed environment the key's custody is the
+// platform's identity-seeding command: it writes the keypair once,
+// create-only, from the cell's durable seed, so a re-seed restores the
+// SAME keypair and the kid the gateway pinned does not move. accounts
+// reads this path and refuses to boot without it; it never generates a
+// key of its own outside the local environment, because a self-minted one
+// would diverge from that seed and invalidate every live session. See
+// module/KEY_ROTATION.md, "Custody of the signing key".
 
 import (
 	"context"

@@ -232,6 +232,66 @@ managed-services:
 No cloud-provider behavior is added to the generic Postgres, Redis, S3, or
 Vault service plugins.
 
+### The cell's Vault: `kind: cell-vault`
+
+Every other kind above names something outside the cluster. `cell-vault` names a
+Vault the **cell already runs inside the same cluster**, in a namespace of its
+own, and it exists because of what this module's own `vault` service holds: the
+host's Ed25519 signing key and the Transit key that seals every API key,
+connector credential, MFA secret and WebAuthn credential. A product must reach
+that Vault by name rather than inherit whichever one the composition happened to
+render.
+
+```yaml
+managed-services:
+  vault:
+    kind: cell-vault
+    external-name: vault.vault.svc.cluster.local
+    auth-mode: external-identity
+    egress-namespace: vault
+```
+
+Declaring it drops this module's `vault` service from that environment's
+in-cluster inventory entirely — no StatefulSet, no PVC, no token — and renders
+an `ExternalName` Service plus one egress NetworkPolicy from each declared
+caller to the Vault's namespace on the dependency's declared ports.
+
+Three constraints are enforced rather than defaulted, because each one, left to
+a default, reproduces a failure this kind exists to prevent:
+
+- **`auth-mode: external-identity` is required**, and `password` is refused by
+  name. The caller logs in to the Vault as its own ServiceAccount and no Vault
+  token is projected to the pod; a token in a Secret is long-lived, identical
+  across replicas, and outlives the pod that read it. `secret-references`
+  alongside it is rejected, as for every passwordless kind.
+- **`egress-namespace` is required and `egress-cidrs` is refused.** A pod's
+  address is not stable across reschedules, and the pod CIDR that would cover it
+  authorizes every workload in the cluster. The destination is selected by
+  `kubernetes.io/metadata.name` instead.
+- **No metadata-endpoint egress is rendered**, unlike the cloud passwordless
+  kinds. The credential here is the pod's own projected ServiceAccount token read
+  off disk, so there is no workload-identity token to fetch over the network.
+
+What the cell must supply alongside it, through the `vault` configuration group,
+is in [../configurations/local/vault.env](../configurations/local/vault.env):
+an https `VAULT_ADDR`, a `VAULT_CA_FILE` path, `VAULT_AUTH_METHOD=kubernetes` and
+a `VAULT_K8S_ROLE`. accounts refuses every other binding outside the local
+environment, naming the key that is missing or wrong. The projected token's
+audience must be `vault`, not the API server.
+
+**A cell that would rather run this module's Vault** keeps it in its in-cluster
+inventory and declares nothing here. The vault agent then renders the durable
+shape — `vault server` with integrated raft storage on a retained
+PersistentVolumeClaim, auto-unsealed by the seal the environment supplies — for
+every deployed profile; the in-memory `vault server -dev` shape is reachable only
+from the ephemeral local-apply render. That durable server refuses to start
+without an auto-unseal seal, so the seal must be supplied as the vault service's
+own per-service configuration
+([../services/vault/configurations/aws/vault.env](../services/vault/configurations/aws/vault.env)).
+Note that its listener is plaintext, with transport protection left to the mesh,
+while accounts requires https outside the local environment — so such a cell must
+front it with TLS. Binding the cell's own TLS-terminating Vault avoids that.
+
 The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's
 environment contract; the module generator derives their exact gateway policy

@@ -85,7 +85,7 @@ func (h *harness) connect(t *testing.T, auth KubernetesAuth) (*Connection, *time
 	if auth.JWTPath == "" {
 		auth.JWTPath = h.jwt
 	}
-	c, err := New(Config{Address: h.server.URL, CAFile: h.ca, Kubernetes: &auth, Token: "must-never-be-used", TokenFile: ""})
+	c, err := New(Config{Address: h.server.URL, CAFile: h.ca, Kubernetes: &auth, Token: "must-never-be-used", TokenFile: "", Runtime: RuntimeLocal})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestKubernetesLogsInAgainAfterARefusal(t *testing.T) {
 func TestKubernetesLoginRefusalFailsClosedWithoutTheBody(t *testing.T) {
 	h := newHarness(t)
 	h.vault.refuse = true
-	_, err := New(Config{Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}})
+	_, err := New(Config{Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}, Runtime: RuntimeLocal})
 	if err == nil {
 		t.Fatal("a refused login produced a connection")
 	}
@@ -182,12 +182,16 @@ func TestKubernetesLoginRefusalFailsClosedWithoutTheBody(t *testing.T) {
 
 func TestKubernetesAuthRequiresARoleTLSAndAPinnedCA(t *testing.T) {
 	h := newHarness(t)
+	// Every case states RuntimeLocal so each is refused for the reason it names
+	// rather than for an unstated runtime, which would make the whole table pass
+	// while proving nothing.
 	for name, config := range map[string]Config{
-		"no role":        {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{JWTPath: h.jwt}},
-		"no CA":          {Address: h.server.URL, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}},
-		"cleartext":      {Address: "http://vault.example.internal:8200", Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}, AllowInsecureHTTP: true},
-		"escaping mount": {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", Mount: "../sys", JWTPath: h.jwt}},
-		"relative jwt":   {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: "token"}},
+		"no role":          {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{JWTPath: h.jwt}, Runtime: RuntimeLocal},
+		"no CA":            {Address: h.server.URL, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}, Runtime: RuntimeLocal},
+		"cleartext":        {Address: "http://vault.example.internal:8200", Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}, AllowInsecureHTTP: true, Runtime: RuntimeLocal},
+		"escaping mount":   {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", Mount: "../sys", JWTPath: h.jwt}, Runtime: RuntimeLocal},
+		"relative jwt":     {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: "token"}, Runtime: RuntimeLocal},
+		"unstated runtime": {Address: h.server.URL, CAFile: h.ca, Kubernetes: &KubernetesAuth{Role: "accounts", JWTPath: h.jwt}},
 	} {
 		if _, err := New(config); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -199,7 +203,7 @@ func TestKubernetesAuthNeverPresentsAStaticToken(t *testing.T) {
 	h := newHarness(t)
 	h.vault.refuse = true
 	auth := KubernetesAuth{Role: "accounts", JWTPath: h.jwt}
-	if _, err := New(Config{Address: h.server.URL, CAFile: h.ca, Kubernetes: &auth, Token: "root-token-must-not-be-used"}); err == nil {
+	if _, err := New(Config{Address: h.server.URL, CAFile: h.ca, Kubernetes: &auth, Token: "root-token-must-not-be-used", Runtime: RuntimeLocal}); err == nil {
 		t.Fatal("fell back to the static token when the login was refused")
 	}
 }

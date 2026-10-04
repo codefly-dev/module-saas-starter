@@ -95,8 +95,22 @@ environments:
       # Every module-managed AWS dependency requires an exact endpoint and
       # egress CIDR. Optional secret-references contain provider references,
       # never resolved values. See module/deployment/README.md.
+      #
+      # `cell-vault` is the one in-cluster kind: it names a Vault the cell runs
+      # in a namespace of its own, so this module renders none. It is selected
+      # by namespace rather than CIDR, and the caller logs in as its own
+      # ServiceAccount — see module/deployment/README.md, "The cell's Vault",
+      # and configurations/local/vault.env for what the `vault` configuration
+      # group must then carry. Left undeclared, this module renders its own
+      # durable Vault here, which needs the seal declared in
+      # module/services/vault/configurations/aws/vault.env.
       # managed-services:
       #     store:
       #         kind: rds-postgresql
       #         external-name: database.internal.example.com
       #         egress-cidrs: [10.42.0.0/24]
+      #     vault:
+      #         kind: cell-vault
+      #         external-name: vault.vault.svc.cluster.local
+      #         auth-mode: external-identity
+      #         egress-namespace: vault

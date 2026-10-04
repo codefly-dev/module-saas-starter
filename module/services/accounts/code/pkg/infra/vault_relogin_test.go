@@ -54,6 +54,7 @@ func TestVaultClientLogsInAgainWhenVaultRefusesItsToken(t *testing.T) {
 	connection, err := vaultconnection.New(vaultconnection.Config{
 		Address: server.URL, CAFile: ca,
 		Kubernetes: &vaultconnection.KubernetesAuth{Role: "accounts", JWTPath: jwt},
+		Runtime:    vaultconnection.RuntimeLocal,
 	})
 	require.NoError(t, err)
 	client := &VaultClient{address: connection.Address, transitKey: "api-keys", connection: connection}

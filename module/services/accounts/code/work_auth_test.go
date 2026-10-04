@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,16 +353,56 @@ func TestDevFixtureAuthProvider(t *testing.T) {
 // With no Vault configured, a real identity provider must fail closed at boot
 // rather than sign with an ephemeral key that differs per replica and breaks
 // existing sessions. Dev/fixture mode may still generate a key offline.
+//
+// The refusal must also name the custody verb and the KV path: the incident this
+// guards against ended with an operator generating a fresh keypair by hand
+// because nothing on the failure path said where the key was supposed to come
+// from, which invalidated every live session.
 func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	clearAuthProviderEnvironment(t)
 
-	_, err := loadSigningKey(context.Background(), false)
+	_, err := loadSigningKey(context.Background(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Vault")
+	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
+	require.Contains(t, err.Error(), "durable identity seed")
+	require.Contains(t, err.Error(), "KEY_ROTATION.md")
 
-	priv, err := loadSigningKey(context.Background(), true)
+	priv, err := loadSigningKey(context.Background(), true, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, priv)
+}
+
+// The cell's own seeding command reaches the operator through the `vault`
+// group, because this module names nothing above it. The value is operator free
+// text that lands in a log line, so it is collapsed to one line and bounded —
+// otherwise whoever writes the group could forge entries around the refusal.
+func TestSigningKeyRefusalQuotesTheCellsCustodyCommand(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	t.Setenv("VAULT_KEY_CUSTODY", "  platform-cli seed-identity\n  FORGED log line\t<coordinate>  ")
+
+	_, err := loadSigningKey(context.Background(), false, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "platform-cli seed-identity FORGED log line <coordinate>")
+	require.NotContains(t, err.Error(), "\n")
+
+	t.Setenv("VAULT_KEY_CUSTODY", strings.Repeat("x", 500))
+	_, err = loadSigningKey(context.Background(), false, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), strings.Repeat("x", 200)+"…")
+	require.NotContains(t, err.Error(), strings.Repeat("x", 201))
+}
+
+// A self-minted key outside the local environment would diverge from the cell's
+// durable seed, so the ephemeral fallback is refused there even when the
+// dev/fixture provider asks for it — the two conditions live in different
+// functions and only this asserts that both are enforced.
+func TestLoadSigningKeyNeverSelfMintsOutsideLocal(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+
+	_, err := loadSigningKey(context.Background(), true, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "durable identity seed")
 }
 
 // The dev and fixture identity providers accept unauthenticated identities, so

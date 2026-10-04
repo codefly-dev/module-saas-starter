@@ -40,13 +40,58 @@ limited to one per 5 s across all key ids so untrusted token input cannot drive 
 fetch per request. A key that stops being published stops verifying within one
 TTL — or within TTL + grace if accounts is unreachable for the whole window.
 
+## Custody of the signing key
+
+accounts **reads** the keypair; it never **owns** it. The private half lives in
+Vault KV v2 at `secret/data/jwt-signing-key`, and putting it there is the
+platform's identity-seeding command's job, not this module's:
+
+| | |
+| --- | --- |
+| Where the key lives | Vault KV v2, `secret/data/jwt-signing-key`, as `{"private_key": "<base64 Ed25519 seed>", "public_key": "<base64 Ed25519 public key>"}` |
+| Who writes it | the cell's identity-seeding command, from the cell's durable seed, create-only |
+| Who reads it | accounts, once, at boot (`pkg/auth/ed25519/vault_key.go`) |
+| If it is missing | accounts refuses to boot, naming the path and the custody contract. It does **not** generate one |
+
+**This module never names that command.** A module names nothing above it, so
+the exact verb belongs to the cell's own runbook. Put it in the operator's hands
+anyway by setting `VAULT_KEY_CUSTODY` in the `vault` configuration group to the
+command the cell uses: accounts quotes it verbatim in the refusal, bounded and
+collapsed to one line, so whoever reads the crash loop sees the command to run
+rather than a sentence about one. Left unset, the refusal points here.
+
+The incident this exists for: an operator met `load signing key from Vault:
+ed25519minter: vault http 404` with nothing on the failure path saying where the
+key was supposed to come from, generated a fresh keypair by hand, and invalidated
+every live session — while the durable seed and Vault then disagreed.
+
+**accounts never mints its own key outside the local environment.** A
+self-minted key would have a different `kid` from the coordinate's seed, so
+every session signed under the old key stops verifying the moment the gateway
+converges, two replicas that each minted one would sign differently, and the
+next deliberate re-seed would silently disagree with what Vault holds. Only the
+dev/fixture identity provider — which is itself refused outside the local
+environment — generates a key, so `codefly run service --fixture dev-admin`
+works on a machine with no Vault.
+
+That is why a re-seed must restore the **same** keypair: the seeding command is
+idempotent against the durable seed precisely so the `kid` the gateway pinned
+does not move and live sessions keep verifying. Generating a fresh keypair by
+hand instead invalidates every session — it is a last resort, and after it the
+durable seed and Vault disagree until one is reconciled.
+
+In the local environment the composed `vault` service seeds this path itself on
+first boot, and its store is in-memory: a restart mints a new key there, which
+is why that shape is refused anywhere else.
+
 ## Rotation
 
 Each step is safe to hold indefinitely; only move on once the previous step has
 converged.
 
 1. **Generate and stage.** Create the new keypair and store its private half in
-   Vault beside the current one. Nothing changes yet.
+   Vault beside the current one. Nothing changes yet. (The initial seed is not a
+   rotation — see "Custody of the signing key" above.)
 2. **Publish.** Append the **incoming public key** to `JWT_PREVIOUS_PUBLIC_KEYS`
    and restart accounts. The JWKS now lists both keys; accounts still signs with
    the old one. Wait one gateway key-set TTL (5 min) and confirm every gateway
