@@ -28,8 +28,14 @@ export {
 	AvatarImage,
 } from "./avatar.js";
 // Data display
-export { Badge, badgeVariants } from "./badge.js";
+export { Badge, badgeVariants, type StatusTone } from "./badge.js";
 export { Banner, type BannerProps } from "./banner.js";
+export {
+	Chip,
+	ChipGroup,
+	type ChipGroupProps,
+	type ChipProps,
+} from "./chip.js";
 
 // Actions
 export { Button, buttonVariants } from "./button.js";
@@ -126,6 +132,15 @@ export {
 	InputGroupTextarea,
 } from "./input-group.js";
 export { Label } from "./label.js";
+export {
+	DescriptionList,
+	type DescriptionListItem,
+	type DescriptionListProps,
+	List,
+	ListItem,
+	type ListItemProps,
+	type ListProps,
+} from "./list.js";
 // A floating, non-modal notice that asks for a decision. Its `escape` is
 // required, so it cannot trap the user behind it.
 export {

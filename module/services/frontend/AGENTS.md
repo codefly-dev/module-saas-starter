@@ -116,6 +116,19 @@ release. The package's `exports` map may not name a subpath into the generated
 tree: a consumer imports the SDK's own surface, never a stub path
 (`publish-frontend-kit.test.mjs` enforces it). See the `cut-a-release` skill.
 
+`@codefly-dev/ui` and `@codefly-dev/saas-ui` publish beside it. The kit owns its
+token layer (`packages/codefly-ui/src/skin/theme.css`: token → utility, the
+light/dark binding, the custom variants); `src/app/globals.css` only imports it,
+so a new appearance token is bound there, not here. The kit also ships
+`src/skin/preview.generated.css` (`@codefly-dev/ui/preview.css`) — the kit
+compiled with the default skin, so a solution can preview its pages with no
+host. It is committed and checked for staleness, because its bytes depend on the
+contract and the lockfile, which the kit-version gate does not see: after
+touching either, run `npm run generate:preview-stylesheet --workspace
+@codefly-dev/ui`. It is for previews only and never loaded by the
+host or a remote; what it may and may not be used for is in
+`packages/codefly-ui/README.md` § "Previewing a solution without a host".
+
 ## Two rules every admin surface owes its reader
 
 Both are product rules the owner has raised repeatedly, and both are kept by a

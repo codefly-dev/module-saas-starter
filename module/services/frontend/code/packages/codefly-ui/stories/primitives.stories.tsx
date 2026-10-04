@@ -51,7 +51,14 @@ import {
 	EmptyState,
 	ErrorState,
 	Notice,
+	Card,
+	Chip,
+	ChipGroup,
+	List,
+	ListItem,
+	DescriptionList,
 } from "../src/layout/index.js";
+import { FileTextIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
 
 export default { title: "Shared UI/Primitives" };
 export const Buttons = {
@@ -275,4 +282,170 @@ export const DecisionNotice = {
 			<Button onClick={() => setVisible(true)}>Show notice</Button>
 		);
 	},
+};
+
+// The three states a declared source can be in, told apart by tone and by
+// the dot's shape as well as by their words.
+export const StatusBadges = {
+	render: () => (
+		<div>
+			<Badge tone="neutral" dot>
+				Set up
+			</Badge>
+			<Badge tone="success" dot>
+				Connected
+			</Badge>
+			<Badge tone="danger" dot>
+				Error
+			</Badge>
+			<Badge tone="warning">Paused</Badge>
+			<Badge tone="info">Syncing</Badge>
+			<Badge tone="success" size="sm" dot>
+				Live
+			</Badge>
+			<Badge tone="info" size="lg" dot>
+				In review
+			</Badge>
+		</div>
+	),
+};
+
+export const Chips = {
+	render: function ChipsExample() {
+		const [owners, setOwners] = useState(["Jane Doe", "Acme Finance"]);
+		return (
+			<div>
+				<ChipGroup label="Affects">
+					<Chip href="#pricing" icon={<FileTextIcon />} meta="unread">
+						Pricing change
+					</Chip>
+					<Chip href="#onboarding" icon={<FileTextIcon />}>
+						Onboarding flow
+					</Chip>
+				</ChipGroup>
+				<ChipGroup label="Owners">
+					{owners.map((owner) => (
+						<Chip
+							key={owner}
+							icon={<UserIcon />}
+							onRemove={() =>
+								setOwners((current) => current.filter((o) => o !== owner))
+							}
+							removeLabel={`Remove ${owner}`}
+						>
+							{owner}
+						</Chip>
+					))}
+				</ChipGroup>
+				<ChipGroup label="Status">
+					<Chip tone="success" onClick={() => {}}>
+						Accepted
+					</Chip>
+					<Chip tone="warning">Needs review</Chip>
+					<Chip tone="danger">Rejected</Chip>
+					<Chip tone="info" meta="3">
+						Comments
+					</Chip>
+				</ChipGroup>
+			</div>
+		);
+	},
+};
+
+export const StatusBanners = {
+	render: () => (
+		<div>
+			<Banner tone="info" title="Local preview">
+				Nothing on this page reached a host.
+			</Banner>
+			<Banner tone="success" title="Source connected" />
+			<Banner tone="warning" title="Sync paused">
+				Scheduled pulls resume once the credential is renewed.
+			</Banner>
+			<Banner
+				tone="danger"
+				title="Could not reach the source"
+				actions={<Button variant="outline">Retry</Button>}
+			/>
+		</div>
+	),
+};
+
+export const Lists = {
+	render: () => (
+		<div>
+			<List label="Parsing notes" variant="divided">
+				<ListItem
+					icon={<TriangleAlertIcon />}
+					description="Line 12: front matter has no owner."
+					meta="proposal.md"
+				>
+					Missing owner
+				</ListItem>
+				<ListItem
+					icon={<TriangleAlertIcon />}
+					description="Two headings share level two."
+					actions={<Button variant="ghost">Open</Button>}
+				>
+					Heading level reused
+				</ListItem>
+			</List>
+			<List label="Related">
+				<ListItem meta="2 days ago">Pricing change</ListItem>
+				<ListItem meta="last week">Onboarding flow</ListItem>
+			</List>
+		</div>
+	),
+};
+
+export const DescriptionLists = {
+	render: () => (
+		<div>
+			<DescriptionList
+				items={[
+					{ term: "Status", value: <Badge tone="info">In review</Badge> },
+					{ term: "Owner", value: "Jane Doe" },
+					{ term: "Updated", value: "2 October 2026" },
+				]}
+			/>
+			<DescriptionList
+				layout="stacked"
+				items={[
+					{
+						term: "Summary",
+						value:
+							"Move the starter plan to annual billing and keep monthly for existing customers.",
+					},
+				]}
+			/>
+		</div>
+	),
+};
+
+export const CardWithDescription = {
+	render: () => (
+		<Card
+			title="Declared source"
+			description="Declared by this solution, not chosen here."
+			actions={<Button variant="outline">Sync now</Button>}
+		>
+			<Badge tone="success" dot>
+				Connected
+			</Badge>
+		</Card>
+	),
+};
+
+export const EmptyWithReference = {
+	render: () => (
+		<EmptyState
+			heading="No proposals to read"
+			description="This source has no readable proposals yet."
+			reference={
+				<>
+					The <a href="#source">source card above</a> says where this stands.
+				</>
+			}
+		/>
+	),
 };

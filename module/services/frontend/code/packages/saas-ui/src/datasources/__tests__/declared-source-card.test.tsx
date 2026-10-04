@@ -112,7 +112,9 @@ describe("DeclaredSourceCard", () => {
 			<DeclaredSourceCard client={client} orgId="org-1" declared={declared} />,
 		);
 
-		expect(await screen.findByText("Set up")).toBeTruthy();
+		expect(
+			(await screen.findByText("Set up")).getAttribute("data-tone"),
+		).toBe("neutral");
 		// The declaration is shown, as text — see "never offers the repository
 		// as a field" below for the half that matters.
 		expect(screen.getByText("example-org/handbook")).toBeTruthy();
@@ -226,7 +228,9 @@ describe("DeclaredSourceCard", () => {
 			<DeclaredSourceCard client={client} orgId="org-1" declared={declared} />,
 		);
 
-		expect(await screen.findByText("Error")).toBeTruthy();
+		expect(
+			(await screen.findByText("Error")).getAttribute("data-tone"),
+		).toBe("danger");
 		// The host writes status_reason from a closed set of named reasons, so
 		// it is rendered as it arrives rather than reworded into a guess.
 		expect(
@@ -250,6 +254,27 @@ describe("DeclaredSourceCard", () => {
 		);
 		// Reconnecting a declared source never re-asks for the repository.
 		expect(client.addGitHubSource).not.toHaveBeenCalled();
+	});
+
+	// The same source reads the same in DatasourcesPanel: paused is waiting on
+	// someone, not broken, and Reconnect is still the way back.
+	it("calls a paused source paused, as a warning, and still offers Reconnect", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...connected, status: "paused" as const },
+			]),
+		});
+		renderWithClient(
+			<DeclaredSourceCard client={client} orgId="org-1" declared={declared} />,
+		);
+
+		expect(
+			(await screen.findByText("Paused")).getAttribute("data-tone"),
+		).toBe("warning");
+		expect(screen.queryByText("Error")).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Reconnect and sync" }),
+		).toBeTruthy();
 	});
 
 	it("leaves a degraded source to an administrator when the viewer is not one", async () => {
@@ -278,8 +303,8 @@ describe("DeclaredSourceCard", () => {
 	it("tells the three states apart by shape, and says the repository was not chosen here", async () => {
 		// The consuming solution reported that a Connected badge on `secondary`
 		// reads neutral beside an outline "Set up", so a working source looks
-		// like one nobody has connected. Each state now carries a dot as well as
-		// a tone, and Connected no longer borrows `secondary`.
+		// like one nobody has connected. Each state now carries a dot and its
+		// own status tone.
 		const client = fakeClient({
 			listSources: vi.fn(async () => [connected]),
 		});
@@ -289,6 +314,7 @@ describe("DeclaredSourceCard", () => {
 
 		const badge = await screen.findByText("Connected");
 		expect(badge.className).not.toMatch(/bg-secondary/);
+		expect(badge.getAttribute("data-tone")).toBe("success");
 		expect(container.querySelector('[data-slot="badge-dot"]')).toBeTruthy();
 		// The card's own description slot, not a muted paragraph in the body:
 		// the first thing to understand is that the repository below is not a
@@ -348,6 +374,13 @@ describe("DeclaredSourceCard", () => {
 		expect(
 			await screen.findByText("More than one source matches this declaration"),
 		).toBeTruthy();
+		// Both keep ingesting; nothing is broken, it is unresolved.
+		expect(
+			screen.getByText("More than one source").getAttribute("data-tone"),
+		).toBe("warning");
+		expect(
+			screen.getAllByRole("listitem").map((item) => item.textContent),
+		).toEqual([expect.stringMatching(/^ds-1/), expect.stringMatching(/^ds-2/)]);
 		expect(screen.getByText(/ds-1/)).toBeTruthy();
 		expect(screen.getByText(/2 connected sources read/)).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "Sync now" })).toBeNull();

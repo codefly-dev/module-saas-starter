@@ -28,6 +28,38 @@ describe("Card", () => {
 		expect(screen.queryByRole("heading")).toBeNull();
 		expect(screen.getByText("only body")).toBeTruthy();
 	});
+
+	it("says what the card is under its title, in the card-description slot", () => {
+		const { container } = render(
+			<Card
+				title="Declared source"
+				description="Declared by this solution, not chosen here."
+			>
+				<p>body</p>
+			</Card>,
+		);
+		const description = container.querySelector(
+			"[data-slot=card-description]",
+		);
+		expect(description?.textContent).toBe(
+			"Declared by this solution, not chosen here.",
+		);
+		expect(description?.className).toContain("type-card-description");
+	});
+
+	// Two lines of heading would float centred actions against their middle.
+	it("top-aligns its actions against a heading with a description", () => {
+		const { container } = render(
+			<Card
+				title="Sources"
+				description="Where content comes from"
+				actions={<button type="button">Add</button>}
+			/>,
+		);
+		const header = container.querySelector("[data-slot=card-heading]")
+			?.parentElement?.parentElement;
+		expect(header?.className).toContain("items-start");
+	});
 });
 
 describe("Section", () => {

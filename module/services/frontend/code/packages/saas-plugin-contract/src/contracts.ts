@@ -167,6 +167,14 @@ export const FRONTEND_APPEARANCE_TOKEN_NAMES = [
 	"accent",
 	"accentForeground",
 	"destructive",
+	// Status tones beside `destructive`, which doubles as the danger tone. Each
+	// is ONE colour read as text and as a tint of itself (`bg-success/10
+	// text-success`), the shape `destructive` already has, so a status needs no
+	// foreground pair. Without them a healthy state could only borrow `default`
+	// or `secondary`, and neither reads as healthy.
+	"success",
+	"warning",
+	"info",
 	"border",
 	"input",
 	"ring",

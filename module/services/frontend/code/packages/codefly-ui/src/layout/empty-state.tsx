@@ -1,7 +1,8 @@
 // A pure, tokens-driven empty-state block for solution pages and list surfaces.
 // It replaces the heading + one-line-of-guidance that pages compose inline with a
 // single consistent shape: a centered icon, heading, and description, with an
-// optional trailing slot (children) for a call to action. No host context, no SDK,
+// optional pointer elsewhere on the page (reference) and a trailing slot
+// (children) for a call to action. No host context, no SDK,
 // no data fetching — so the host app and a solution's Module-Federation remote
 // render one shared instance.
 //
@@ -17,20 +18,16 @@ export interface EmptyStateProps {
 	/** Leading glyph; defaults to a generic inbox so the block always has one. */
 	icon?: ReactNode;
 	heading: ReactNode;
-	/**
-	 * The line under the heading. Takes nodes, not just a string, so an empty
-	 * state whose explanation lives elsewhere on the page can **point at it**
-	 * — "the source card above says where this stands", with a link if there is
-	 * one to give. That is what this prop is for; `children` below is the
-	 * action slot, and a cross-reference is not an action, so putting a
-	 * sentence there (or hand-writing one outside the block) loses the
-	 * `empty-state-description` slot and its width bound.
-	 */
+	/** The line under the heading: why there is nothing here. */
 	description?: ReactNode;
 	/**
-	 * Optional trailing content: a call to action, i.e. something to press.
-	 * Prose belongs in `description`.
+	 * Where the answer lives instead: "the source card above says where this
+	 * stands", with a link if there is one. A pointer, not an explanation and
+	 * not an action, so it is neither `description` nor `children`; written by
+	 * hand outside the block it loses the slot and its width bound.
 	 */
+	reference?: ReactNode;
+	/** A call to action: something to press. */
 	children?: ReactNode;
 	className?: string;
 	variant?: "default" | "illustrated";
@@ -41,6 +38,7 @@ export function EmptyState({
 	icon = <InboxIcon />,
 	heading,
 	description,
+	reference,
 	children,
 	className,
 	variant = "default",
@@ -80,7 +78,21 @@ export function EmptyState({
 				{heading}
 			</h3>
 			{description && (
-				<p className="max-w-sm type-empty-state-description text-muted-foreground">{description}</p>
+				<p
+					data-slot="empty-state-description"
+					className="max-w-sm type-empty-state-description text-muted-foreground"
+				>
+					{description}
+				</p>
+			)}
+			{reference != null && (
+				<p
+					data-slot="empty-state-reference"
+					// A pointer is usually a link, and muted text alone does not say so.
+					className="max-w-sm type-empty-state-reference text-muted-foreground [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-foreground"
+				>
+					{reference}
+				</p>
 			)}
 			{children}
 		</div>

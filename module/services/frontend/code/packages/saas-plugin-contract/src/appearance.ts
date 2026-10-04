@@ -29,6 +29,11 @@ const light: FrontendThemeTokens = {
 	accent: "oklch(0.97 0 0)",
 	accentForeground: "oklch(0.205 0 0)",
 	destructive: "oklch(0.577 0.245 27.325)",
+	// Dark enough to read as text on white and on a 10% tint of itself, the
+	// contrast `destructive` already meets.
+	success: "oklch(0.527 0.154 150.069)",
+	warning: "oklch(0.555 0.163 48.998)",
+	info: "oklch(0.546 0.245 262.881)",
 	border: "oklch(0.922 0 0)",
 	input: "oklch(0.922 0 0)",
 	ring: "oklch(0.708 0 0)",
@@ -63,6 +68,9 @@ const dark: FrontendThemeTokens = {
 	accent: "oklch(0.269 0 0)",
 	accentForeground: "oklch(0.985 0 0)",
 	destructive: "oklch(0.704 0.191 22.216)",
+	success: "oklch(0.792 0.209 151.711)",
+	warning: "oklch(0.828 0.189 84.429)",
+	info: "oklch(0.707 0.165 254.624)",
 	border: "oklch(1 0 0 / 10%)",
 	input: "oklch(1 0 0 / 15%)",
 	ring: "oklch(0.556 0 0)",
