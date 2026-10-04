@@ -308,9 +308,51 @@ func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solu
 	}
 }
 
-// resolve answers where to proxy a /solutions/<id>/* request, and why not when
-// it cannot.
-func (c *solutionRegistryCache) resolve(ctx context.Context, id string) (*url.URL, solutionResolution) {
+// solutionRouting is ONE resolution of one route alias: the identity admission
+// is decided on, and the address traffic is forwarded to, read from the SAME
+// record in the SAME lookup.
+//
+// It is one value rather than two entry points because two reads of mutable
+// state are two different answers. The proxy used to take the upstream from
+// `resolve` and then, further down the same request, take the target from
+// `resolveTarget` — and the snapshot moves between them: a lease lapses, the
+// reconcile loop lands, an on-demand read replaces the record. A replacement
+// binding arriving in that window was ADMITTED on its own installation and the
+// viewer's bearer was then forwarded to the PREDECESSOR's address, which no
+// organisation had consented to reach. Separating the two was argued for as a
+// safeguard — "admission needs the identity before any upstream is chosen" —
+// and ordering was never the problem: the two reads disagreeing was.
+//
+// So the resolution is taken once and carried. TargetID is empty for a record
+// nothing declared; that is deliberately not an error here, because the caller
+// that must refuse it is the one holding the viewer, and it refuses it as a
+// verdict rather than as a missing route.
+type solutionRouting struct {
+	// TargetID is the immutable solution target this alias resolves to, empty
+	// for a registration no declaration opened a target for.
+	TargetID string
+	// Upstream is the same record's backend address, normalised to scheme+host.
+	Upstream *url.URL
+}
+
+// GetTargetID is the resolved target, or empty on a nil routing. A nil routing
+// cannot reach admission — the caller's switch on the resolution returns first —
+// and answering empty rather than panicking keeps that a refusal if it ever
+// does.
+func (r *solutionRouting) GetTargetID() string {
+	if r == nil {
+		return ""
+	}
+	return r.TargetID
+}
+
+// resolveRouting answers where to proxy a /solutions/<id>/* request AND which
+// solution identity that destination is, or why neither can be answered. A read
+// whose snapshot does not settle the question triggers at most one on-demand
+// registry read (floor-limited), so a solution that registered against another
+// replica a moment ago is reachable here without waiting out the reconcile
+// interval.
+func (c *solutionRegistryCache) resolveRouting(ctx context.Context, id string) (*solutionRouting, solutionResolution) {
 	read := c.lookupFresh(ctx, id)
 	record, found := read.record, read.found
 	if !read.loaded || read.undecidable {
@@ -331,36 +373,10 @@ func (c *solutionRegistryCache) resolve(ctx context.Context, id string) (*url.UR
 		log.Printf("solution registry: record %q has an unusable upstream", id)
 		return nil, solutionNotActive
 	}
-	return &url.URL{Scheme: upstream.Scheme, Host: upstream.Host}, solutionRoutable
-}
-
-// resolveTarget answers which immutable solution target currently serves a route
-// alias, through the same snapshot and the same freshness rules as resolve.
-//
-// It is a separate entry point rather than a second return value on resolve
-// because the two answer different questions and are asked at different points:
-// admission needs the identity BEFORE any upstream is chosen or any bearer is
-// forwarded, and routing needs the address only after admission has passed. A
-// combined call would invite a caller to route on an address it obtained while
-// ignoring the identity beside it.
-//
-// A record with no declaration yields solutionUnregistered, not an empty target:
-// "declared by nothing" and "no such alias" are the same answer to the question
-// admission asks, because neither is a presence an administrator could install.
-func (c *solutionRegistryCache) resolveTarget(ctx context.Context, id string) (string, solutionResolution) {
-	read := c.lookupFresh(ctx, id)
-	record, found := read.record, read.found
-	if !read.loaded || read.undecidable {
-		return "", solutionRegistryUnavailable
-	}
-	if !found || record.GetTombstonedAt() != nil {
-		return "", solutionUnregistered
-	}
-	target := record.GetDeclared().GetTargetId()
-	if target == "" {
-		return "", solutionUnregistered
-	}
-	return target, solutionRoutable
+	return &solutionRouting{
+		TargetID: record.GetDeclared().GetTargetId(),
+		Upstream: &url.URL{Scheme: upstream.Scheme, Host: upstream.Host},
+	}, solutionRoutable
 }
 
 // solutionRecordActive re-derives activity here rather than trusting the status

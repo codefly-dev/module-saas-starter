@@ -75,3 +75,34 @@ func (a *entitledTo) List(
 	}
 	return resp, nil
 }
+
+// revokerDuringCheck is a revoker whose lookup runs a hook, once, the first time
+// ext_authz asks it about a token.
+//
+// It is how a test lands a registry change in the window the proxy used to take
+// two resolutions in. ext_authz's revocation lookup is a REAL step on the
+// production request path, between the proxy's resolution and the admission
+// decision, so the change arrives where a reconcile tick or a heartbeat would —
+// not through a seam built for the test, and not by faking either resolution.
+type revokerDuringCheck struct {
+	during func()
+	fired  bool
+}
+
+func revokerDuring(during func()) *revokerDuringCheck {
+	return &revokerDuringCheck{during: during}
+}
+
+func (r *revokerDuringCheck) Revoked(context.Context, string) (bool, error) {
+	if !r.fired {
+		r.fired = true
+		r.during()
+	}
+	return false, nil
+}
+
+func (r *revokerDuringCheck) RevokedSession(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+func (r *revokerDuringCheck) Forget(string) {}
