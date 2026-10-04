@@ -72,6 +72,33 @@ func drainAll(t *testing.T, queue *infra.PostgresAuditQueue) []business.QueuedAu
 	return got
 }
 
+func TestAuditQueueSnapshotTracksOldestRowAndClears(t *testing.T) {
+	pool := auditRelayPool(t)
+	emptyAuditQueue(t, pool)
+	orgID := seedOrg(t, seedUser(t))
+	queue, err := infra.NewPostgresAuditQueue(pool)
+	require.NoError(t, err)
+	before, err := queue.Snapshot(testCtx)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, before.Depth)
+	require.Nil(t, before.OldestEnqueuedAt)
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.EnqueueAuditEvent(ctx, queuedEntry(orgID, business.EventSessionRevoked))
+	}))
+	after, err := queue.Snapshot(testCtx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, after.Depth)
+	require.NotNil(t, after.OldestEnqueuedAt)
+	require.WithinDuration(t, time.Now(), *after.OldestEnqueuedAt, time.Minute)
+
+	drainAll(t, queue)
+	cleared, err := queue.Snapshot(testCtx)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, cleared.Depth)
+	require.Nil(t, cleared.OldestEnqueuedAt)
+}
+
 func TestAuditQueueTenantWritesOnlyItsOwnOrganizationAndReadsNothing(t *testing.T) {
 	pool := auditRelayPool(t)
 	emptyAuditQueue(t, pool)

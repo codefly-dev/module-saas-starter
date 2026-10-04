@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
+
+	"go.opentelemetry.io/otel"
 )
 
 // configuredAuditSink reads AUDIT_SINK and the settings its mode requires
@@ -19,10 +22,10 @@ func configuredAuditSink() (auditsink.Config, error) {
 // (auditsink.Open), and the relay that drains the queue into them on the
 // relay's own pool. The service reads the returned store; the returned close
 // releases every client.
-func newAuditSwap(ctx context.Context, types business.DeclaredAuditEventTypeReader, swap *auditsink.Swap) (*business.AuditRelay, business.AuditStore, func(), error) {
+func newAuditSwap(ctx context.Context, types business.DeclaredAuditEventTypeReader, swap *auditsink.Swap, metricsEnabled bool) (*business.AuditRelay, *business.AuditRelayMonitor, business.AuditStore, func(), error) {
 	opened, err := auditsink.Open(ctx, swap)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	closers := []func(){opened.Close}
 	closeAll := func() {
@@ -30,9 +33,9 @@ func newAuditSwap(ctx context.Context, types business.DeclaredAuditEventTypeRead
 			closers[i]()
 		}
 	}
-	fail := func(err error) (*business.AuditRelay, business.AuditStore, func(), error) {
+	fail := func(err error) (*business.AuditRelay, *business.AuditRelayMonitor, business.AuditStore, func(), error) {
 		closeAll()
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	pool, err := infra.NewAuditRelayPool(ctx)
@@ -57,5 +60,12 @@ func newAuditSwap(ctx context.Context, types business.DeclaredAuditEventTypeRead
 	if err != nil {
 		return fail(err)
 	}
-	return relay, opened.Store, closeAll, nil
+	var monitor *business.AuditRelayMonitor
+	if metricsEnabled {
+		monitor, err = business.NewAuditRelayMonitor(queue, otel.Meter("github.com/codefly-dev/module-saas-starter/accounts"), 10*time.Second)
+		if err != nil {
+			return fail(err)
+		}
+	}
+	return relay, monitor, opened.Store, closeAll, nil
 }

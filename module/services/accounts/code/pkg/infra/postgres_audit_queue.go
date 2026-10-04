@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"accounts/pkg/business"
 
@@ -54,6 +55,19 @@ func NewPostgresAuditQueue(pool *pgxpool.Pool) (*PostgresAuditQueue, error) {
 		return nil, errors.New("audit queue: pool is required")
 	}
 	return &PostgresAuditQueue{pool: pool}, nil
+}
+
+// Snapshot reads the queue's depth and oldest row for relay-lag telemetry.
+// The worker pool has the queue's cross-organization SELECT grant; request
+// traffic never receives this pool.
+func (q *PostgresAuditQueue) Snapshot(ctx context.Context) (business.AuditQueueSnapshot, error) {
+	var depth int64
+	var oldest *time.Time
+	err := q.pool.QueryRow(ctx, `SELECT count(*), min(enqueued_at) FROM public.audit_event_queue`).Scan(&depth, &oldest)
+	if err != nil {
+		return business.AuditQueueSnapshot{}, fmt.Errorf("audit queue: observe: %w", err)
+	}
+	return business.AuditQueueSnapshot{Depth: depth, OldestEnqueuedAt: oldest}, nil
 }
 
 // auditQueueSelectSQL reads the oldest queued events whose writing

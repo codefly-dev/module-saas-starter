@@ -571,6 +571,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	var auditRelay *business.AuditRelay
+	var auditRelayMonitor *business.AuditRelayMonitor
 	closeAuditRelay := func() {}
 	if auditSink.Swap != nil {
 		// Under a swap value the warehouse is the store of record for writes and
@@ -578,7 +579,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		// readable-source query read it, scoped to the caller's organization and
 		// this deployment.
 		var auditStore business.AuditStore
-		auditRelay, auditStore, closeAuditRelay, err = newAuditSwap(ctx, store, auditSink.Swap)
+		auditRelay, auditRelayMonitor, auditStore, closeAuditRelay, err = newAuditSwap(ctx, store, auditSink.Swap, otelMetricProvider != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1148,6 +1149,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if auditRelay != nil {
 		auditRelay.Start(ctx)
 	}
+	if auditRelayMonitor != nil {
+		auditRelayMonitor.Start(ctx)
+	}
 	if emailWorker != nil {
 		emailWorker.Start(ctx)
 	}
@@ -1190,6 +1194,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := auditRelay.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("audit relay shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if auditRelayMonitor != nil {
+			sw.Info("stopping audit relay metrics monitor")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := auditRelayMonitor.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("audit relay metrics monitor shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
