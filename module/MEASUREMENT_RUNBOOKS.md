@@ -31,6 +31,23 @@ provider responses into an incident channel.
 5. Confirm queue age drains, no new terminal failures appear, and logical
    destination counts match distinct source identities.
 
+## `audit-relay`
+
+1. Read `saas.audit_queue.depth` and `saas.audit_queue.oldest_age` together.
+   An absent series means telemetry is unavailable; a zero age with zero
+   depth means the queue has drained. Do not infer a healthy relay from a
+   missing series.
+2. Check the Accounts audit relay's bounded error logs and the health of its
+   declared warehouse and locked archive. Confirm the deployed `AUDIT_SINK`,
+   deployment id, destination, and workload identity without printing secrets.
+3. Restore the failing destination or identity and let the relay retry the
+   transactional queue. Do not delete queue rows, turn off audit emission,
+   or send around the relay. A retry may duplicate a warehouse row or archive
+   object; readers deduplicate by event id.
+4. Confirm depth and age return to zero, then compare source event ids with
+   distinct warehouse and archive event ids for the affected interval. Check
+   that service reads still enforce organization and deployment scope.
+
 ## `integrations`
 
 1. Separate transport failure, timeout, rate limiting, authentication,
