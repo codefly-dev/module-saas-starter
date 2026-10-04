@@ -26,12 +26,19 @@ type fakeModuleAuthority struct {
 	// calls counts the live reads, so a test can prove the check actually ran
 	// rather than inferring it from a verdict that might have other causes.
 	calls int
+	// namedInstallation is the installation id the caller's credential named,
+	// as passed to the read.
+	namedInstallation string
 }
 
 func (f *fakeModuleAuthority) LiveModuleAuthority(
-	context.Context, string, string,
+	_ context.Context, _, _, installationID string,
 ) (*LiveModuleAuthority, error) {
 	f.calls++
+	// Recorded so a test can prove the NAMED installation reached the read,
+	// rather than the read having inferred one — the regression that broke
+	// every capability path inferred it.
+	f.namedInstallation = installationID
 	if f.err != nil {
 		return nil, f.err
 	}

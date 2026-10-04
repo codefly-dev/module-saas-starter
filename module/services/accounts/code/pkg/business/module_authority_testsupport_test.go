@@ -22,7 +22,7 @@ import "context"
 type currentModuleAuthority struct{}
 
 func (currentModuleAuthority) LiveModuleAuthority(
-	_ context.Context, _, _ string,
+	_ context.Context, _, _, _ string,
 ) (*LiveModuleAuthority, error) {
 	return &LiveModuleAuthority{InstallationID: "installation-current"}, nil
 }

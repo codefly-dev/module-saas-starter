@@ -61,9 +61,21 @@ import (
 // re-mint-once.
 var ErrModuleAuthorityStale = errors.New("module capability authority has moved since it was minted")
 
-// ErrModuleInstallationInactive reports that the organisation's installation for
-// this principal is revoked or absent.
-var ErrModuleInstallationInactive = errors.New("module principal has no active installation in this organization")
+// ErrModuleInstallationInactive reports that an installation the credential
+// NAMED is revoked, absent, or another organisation's.
+//
+// It is not returned for a credential that names no installation. That
+// distinction is the difference between a check and the regression this replaced:
+// nothing relates a module principal to an installation, so treating "I could
+// not find one" as "it is revoked" denied every real module caller.
+var ErrModuleInstallationInactive = errors.New("the installation this capability names is not active in this organization")
+
+// ErrModuleAuthorityUnreadable reports a malformed caller the live read refuses
+// before it reaches the database.
+//
+// Separate from a database failure so that a missing bound organisation does not
+// surface as Unavailable, which would read as an outage and be retried forever.
+var ErrModuleAuthorityUnreadable = errors.New("live module authority cannot be read for this caller")
 
 // statusWrapped carries a gRPC status AND wraps a sentinel error.
 //
@@ -111,18 +123,24 @@ type ModuleCapabilityAuthority struct {
 
 // ModuleAuthorityStore is the live authority read.
 //
-// One method, deliberately: every term of the revocation predicate is read in
-// ONE statement, because reading them separately lets a revoke land between two
-// reads and produce a decision describing a state that never existed.
+// One method, deliberately: the terms are read at ONE snapshot, because reading
+// them separately lets a revoke land between two reads and produce a decision
+// describing a state that never existed.
 type ModuleAuthorityStore interface {
-	// LiveModuleAuthority reads the installation and epoch facts for one module
-	// principal in one organisation, at one snapshot.
+	// LiveModuleAuthority reads the authority facts for one module principal.
 	//
-	// Returns ErrModuleInstallationInactive when there is no active
-	// installation, rather than zero values: a capability for an uninstalled
-	// solution must be refused, and zero values would read as "revision 0",
-	// which a credential minted before any revision could match.
-	LiveModuleAuthority(ctx context.Context, principalID, orgID string) (*LiveModuleAuthority, error)
+	// installationID is the installation the CREDENTIAL named, or empty when it
+	// names none. It is a parameter rather than something the implementation
+	// infers, because nothing relates a module principal to an installation: an
+	// installation is an organisation's consent to a solution TARGET and the
+	// module principal is not a party to it. An implementation that guessed
+	// would answer "revoked" for every legitimate caller — which is exactly what
+	// the first Postgres implementation did, joining the installation's
+	// per-install agent principal against the module's deterministic one.
+	//
+	// Returns ErrModuleInstallationInactive when a NAMED installation is
+	// revoked, absent, or another organisation's. Naming none is not an error.
+	LiveModuleAuthority(ctx context.Context, principalID, orgID, installationID string) (*LiveModuleAuthority, error)
 }
 
 // LiveModuleAuthority is what the live read answers.
@@ -160,11 +178,22 @@ func (s *Service) AuthorizeModuleCapability(
 			"this host cannot re-read live module authority, so no capability may be exercised")
 	}
 
-	live, err := s.moduleAuthority.LiveModuleAuthority(ctx, caller.PrincipalID, caller.BoundOrg)
+	// The installation the credential named, when it names one. Passed in
+	// rather than inferred: see ModuleAuthorityStore.
+	var sealedInstallation string
+	if caller.Sealed != nil && caller.Sealed.InstallationID != nil {
+		sealedInstallation = *caller.Sealed.InstallationID
+	}
+	live, err := s.moduleAuthority.LiveModuleAuthority(
+		ctx, caller.PrincipalID, caller.BoundOrg, sealedInstallation)
 	if err != nil {
 		if errors.Is(err, ErrModuleInstallationInactive) {
 			return nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive,
 				"principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
+		}
+		if errors.Is(err, ErrModuleAuthorityUnreadable) {
+			return nil, wrapStatus(codes.InvalidArgument, ErrModuleAuthorityUnreadable,
+				"principal %s", caller.PrincipalID)
 		}
 		// The live read failed. NOT a denial and NOT an allow: the host does not
 		// know whether this capability is still authorized, so it answers
