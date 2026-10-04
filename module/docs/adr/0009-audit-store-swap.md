@@ -126,6 +126,22 @@ Postgres transaction.
    read half deduplicates exactly as every archive reader does (item 5), and
    the per-event hash makes the copies provably identical.
 
+   BigQuery reads run no query job. They go through the BigQuery Storage Read
+   API. Each read session carries a server-side row restriction: the
+   deployment, the caller's organization (unless the read is the platform
+   read), the time window, so partitions outside it are pruned, and the event
+   types when the read names them. The service then sorts, pages,
+   deduplicates, joins content details and aggregates the rows it streams back,
+   with the semantics of the Postgres reads.
+
+   The reason is the grants. The service that reads is the service that
+   appends, so it holds `bigquery.tables.updateData`. With
+   `bigquery.jobs.create` beside it, that identity could run DELETE, UPDATE and
+   MERGE against the store of record. So the identity is granted
+   `bigquery.datasets.get`, `bigquery.tables.get`, `bigquery.tables.getData`,
+   `bigquery.tables.list`, and `bigquery.readsessions.create`, `.getData` and
+   `.update`, and no job permission at all.
+
 5. **Retention tiers.** Every registered event type has a **retention class**
    in the typed registry (ADR 0003):
    - **security** — authentication, failed authentication, permission and role
@@ -214,6 +230,12 @@ Where the adapters live (item 3):
 | A separate warehouse service the kit calls | One more deployable per environment, a second queue in front of it, a second permission check, and every read becomes a network hop. Worth it only if producers or readers outside the kit needed the store directly; none do. |
 | One managed warehouse per cloud (BigQuery, Redshift, Synapse) | One adapter per cloud to build and hold at parity. ClickHouse covers every non-Google environment, on-premises included, with one adapter. |
 
+How BigQuery is read (item 4):
+
+| Alternative | Rejected because |
+| --- | --- |
+| A second, query-capable identity for reads | Adds a second principal to grant, rotate and audit. And the process that appends would then hold job creation through it too: the DML risk the append-only invariant exists to prevent. |
+
 The sink shape itself:
 
 | Alternative | Rejected because |
@@ -245,8 +267,9 @@ The sink shape itself:
   registry in the service instead.
 - `pkg/infra/postgres_readable_sources.go` — `LatestSourceSyncRequests` joins
   `audit_events` to `principals` in one query, inside the source-read snapshot.
-  Under a swap value it becomes a warehouse query for the latest actor ids, then
-  a join to display names in the service from Postgres — outside that snapshot.
+  Under a swap value it becomes a warehouse read of each source's latest actor
+  id — outside that snapshot — then a join to display names from Postgres,
+  inside it.
 - `pkg/business/audit_registry.go` — `AuditEventDefinition` gains the retention
   class, required the way `Durability` is. A declared type's class comes from
   its declaration — the manifest event, or the module declaration message —
