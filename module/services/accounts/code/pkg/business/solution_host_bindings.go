@@ -195,6 +195,17 @@ type SolutionHostBindingReconciler struct {
 	// answer to "what does this host accept".
 	activation *SolutionAuthorityActivation
 
+	// approvedBuilds is the execution authority this host serves to the mint,
+	// rebuilt from the same inbox in the same pass.
+	//
+	// ONE PASS FOR BOTH HALVES, deliberately. Presence and authority arrive in
+	// one inbox and describe one delivery, so refreshing them on separate
+	// schedules opens a window in which a generation is applied while the build
+	// it approves is still the previous one — and that window is exactly where
+	// a superseded build is mintable. Nothing can drift if there is only one
+	// pass.
+	approvedBuilds *ApprovedBuildReconciler
+
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -304,7 +315,26 @@ func NewSolutionHostBindingReconciler(
 		return nil, err
 	}
 	reconciler.activation = activation
+	approvedBuilds, err := NewApprovedBuildReconciler(activation)
+	if err != nil {
+		return nil, err
+	}
+	reconciler.approvedBuilds = approvedBuilds
 	return reconciler, nil
+}
+
+// ApprovedBuilds is the ExecutionAuthority a host wires into the mint: what
+// this host approves for a principal, as the last successful pass established
+// it.
+//
+// Exposed from here for the same reason AuthorityActivation is — the reconciler
+// already holds every policy input, and a second reader built beside it would
+// be a second answer to what this host approves.
+func (r *SolutionHostBindingReconciler) ApprovedBuilds() ExecutionAuthority {
+	if r == nil {
+		return nil
+	}
+	return r.approvedBuilds
 }
 
 // AuthorityActivation is the seam a capability-minting path asks "is the
@@ -395,6 +425,18 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			}
 			failures = append(failures, fmt.Errorf("apply binding %q generation %d: %w",
 				applied.Document.Binding, applied.Document.Generation, err))
+		}
+	}
+
+	// THE APPROVED-BUILD VIEW, from the same inbox, in the same pass. It is
+	// refreshed AFTER the applies rather than before: a generation that has just
+	// been applied is the one whose approved build the mint will be asked about,
+	// and refreshing first would serve the previous answer for one whole
+	// interval. Its failures join the pass's, so a principal this host refused
+	// to approve is visible in the same place as a binding it refused to apply.
+	if r.approvedBuilds != nil {
+		if err := r.approvedBuilds.RunOnce(ctx); err != nil {
+			failures = append(failures, fmt.Errorf("refresh the approved-build view: %w", err))
 		}
 	}
 

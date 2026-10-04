@@ -1684,6 +1684,14 @@ func configuredSolutionHostBindingReconciler(
 ) (*business.SolutionHostBindingReconciler, error) {
 	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
 	if coordinate == "" {
+		// NO DECLARED-PRESENCE SURFACE ALSO MEANS NO EXECUTION BINDING, and
+		// that is the coherent answer rather than an oversight. The approved
+		// build is read from delivered authority documents, and a host with no
+		// coordinate has no delivery endpoint to receive one — so it approves
+		// nothing, `SetExecutionBinding` is never called, and `BindExecution`
+		// answers ErrExecutionUnbound for every caller. A module cannot mint
+		// here, which is the fail-closed direction: the alternative is a host
+		// that cannot establish what anyone is running and mints anyway.
 		return nil, nil
 	}
 	// The ownership domains this host accepts delivery from. Required with the
@@ -1797,7 +1805,7 @@ func configuredSolutionHostBindingReconciler(
 	if err != nil {
 		return nil, err
 	}
-	return business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
+	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:          business.NewDeliveredSolutionHostBindings(service),
 		Verifier:        verifier,
 		Coordinate:      coordinate,
@@ -1806,6 +1814,35 @@ func configuredSolutionHostBindingReconciler(
 		Interval:        interval,
 		Envelope:        envelope,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	// EXECUTION-BOUND MINTING, wired here because this is where both of its
+	// independent sources exist.
+	//
+	// THIS IS THE LINE THAT WAS MISSING. `BindExecution`, the three digest
+	// types, the monotonicity guard and the TokenReview client were all built,
+	// guarded and unit-tested, and `SetExecutionBinding` was called from
+	// nowhere — so on a running host the reviewer was nil, `BindExecution`
+	// answered ErrExecutionUnbound for every caller, and the whole mechanism was
+	// unreachable. A check nothing calls is indistinguishable from a check that
+	// passes, which is why this is wired rather than merely available.
+	//
+	// THE TWO SOURCES ARE DELIBERATELY DIFFERENT ONES, and that is the entire
+	// design. The reviewer is the Kubernetes API, keyed by a pod UID that came
+	// from a TokenReview of a token the caller could not forge: it answers what
+	// the caller IS RUNNING. The authority answers what THIS HOST APPROVES, read
+	// from signed documents the caller has no influence over. Filling both sides
+	// from one source compares a value to itself and passes for every caller,
+	// including the superseded pod the check exists to refuse.
+	//
+	// It is the SAME client that reviews a delivery carrier, which is right
+	// rather than merely convenient: one api server, one in-cluster credential,
+	// one place a lost credential stops both halves at once instead of leaving
+	// one of them silently answering.
+	service.SetExecutionBinding(kubernetes, reconciler.ApprovedBuilds())
+	return reconciler, nil
 }
 
 func workspaceEnv(configuration, key string) string {
