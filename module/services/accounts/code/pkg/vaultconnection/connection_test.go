@@ -360,3 +360,55 @@ func requireRefusal(t *testing.T, err error, names string) {
 		t.Fatalf("refusal does not name %q: %v", names, err)
 	}
 }
+
+// No refusal, and no error on any path, may carry the credential's value.
+//
+// This is not hypothetical bookkeeping: a CI runner masks any log text equal to
+// one of its secrets, so an error that echoed a role id or secret id would come
+// back from CI with the useful part replaced by asterisks — the failure would
+// become undiagnosable precisely when it mattered. And a Vault token or an
+// AppRole secret in a test log is a leak whether or not anything masks it.
+//
+// Every refusal therefore names the KEY that is missing or wrong, never the
+// value it found, and the login refusal is asserted by exact equality so
+// Vault's own response body cannot widen it either.
+func TestNoRefusalEverCarriesTheCredentialValue(t *testing.T) {
+	const (
+		roleID   = "role-id-that-must-never-be-logged"
+		secretID = "secret-id-that-must-never-be-logged"
+		token    = "vault-token-that-must-never-be-logged"
+	)
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		// Vault echoing the credential back would be unusual, but an error that
+		// passed a response body through would leak whatever it contained.
+		_, _ = w.Write([]byte(`{"errors":["permission denied for ` + secretID + `"]}`))
+	}))
+	defer refusing.Close()
+
+	full := func() *AppRoleAuth { return &AppRoleAuth{RoleID: roleID, SecretID: secretID} }
+	for name, config := range map[string]Config{
+		"refused login":                       {Address: refusing.URL, AppRole: full(), Runtime: RuntimeLocal},
+		"half a credential":                   {Address: refusing.URL, AppRole: &AppRoleAuth{RoleID: roleID}, Runtime: RuntimeLocal},
+		"static token beside the credential":  {Address: refusing.URL, AppRole: full(), Token: token, Runtime: RuntimeDeployed},
+		"token binding on a deployed runtime": {Address: refusing.URL, Token: token, Runtime: RuntimeDeployed},
+		"cleartext off loopback":              {Address: "http://vault.example.com:8200", AppRole: full(), Runtime: RuntimeDeployed},
+		"invalid mount":                       {Address: refusing.URL, AppRole: &AppRoleAuth{RoleID: roleID, SecretID: secretID, Mount: "../sys"}, Runtime: RuntimeLocal},
+		"unstated runtime":                    {Address: refusing.URL, AppRole: full()},
+	} {
+		_, err := New(config)
+		if err == nil {
+			t.Errorf("%s: accepted, so this case proves nothing", name)
+			continue
+		}
+		for value, what := range map[string]string{
+			roleID:   "role id",
+			secretID: "secret id",
+			token:    "Vault token",
+		} {
+			if strings.Contains(err.Error(), value) {
+				t.Errorf("%s: the refusal carries the %s", name, what)
+			}
+		}
+	}
+}

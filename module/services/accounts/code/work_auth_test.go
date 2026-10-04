@@ -38,6 +38,29 @@ func clearAuthProviderEnvironment(t *testing.T) {
 	}
 }
 
+// clearVaultBinding blanks every carrier of every key the Vault binding reads,
+// so a signing-key test observes the binding the case constructs rather than one
+// the runtime supplied. Both forms matter: workspaceEnv and the connection's own
+// readers prefer the group over the plain process variable, and under `codefly
+// ci run` the group is populated from this module's own local defaults —
+// including the placeholder AppRole credential in vault.secret.env. Proven by
+// running this package with every carrier set to garbage.
+func clearVaultBinding(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"VAULT_ADDR", "VAULT_AUTH_METHOD", "VAULT_APPROLE_MOUNT",
+		"VAULT_APPROLE_ROLE_ID", "VAULT_APPROLE_SECRET_ID", "VAULT_KEY_CUSTODY",
+	} {
+		t.Setenv(key, "")
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__"+key, "")
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__VAULT__"+key, "")
+	}
+	t.Setenv("MESH_PROTECTED", "")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL_TRANSPORT__MESH_PROTECTED", "")
+	t.Setenv("CODEFLY__SERVICE_CONFIGURATION__SAAS_STARTER__VAULT___VAULT__ADDRESS", "")
+	t.Setenv("CODEFLY__SERVICE_SECRET_CONFIGURATION__SAAS_STARTER__VAULT___VAULT__TOKEN", "")
+}
+
 func setIdentityConfiguration(t *testing.T, key, value string) {
 	t.Helper()
 	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__IDENTITY__"+key, value)
@@ -360,6 +383,7 @@ func TestDevFixtureAuthProvider(t *testing.T) {
 // from, which invalidated every live session.
 func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
 
 	_, err := loadSigningKey(context.Background(), false, true)
 	require.Error(t, err)
@@ -373,12 +397,24 @@ func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	require.NotEmpty(t, priv)
 }
 
+// keyCustody sets the custody command on both carriers, because workspaceEnv
+// prefers the group over the plain process variable: setting only the latter
+// leaves the test reading whatever the group carries, and under `codefly ci
+// run` the group is populated from this module's own local defaults. Proven by
+// running this package with every carrier set to garbage.
+func keyCustody(t *testing.T, value string) {
+	t.Helper()
+	t.Setenv("VAULT_KEY_CUSTODY", value)
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", value)
+}
+
 // A diagnostic that is present only when somebody remembered to configure it is
 // absent exactly when the incident happens, so a hosted profile refuses to boot
 // without it — at a moment the deployment can still be fixed, rather than during
 // a crash loop.
 func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
-	t.Setenv("VAULT_KEY_CUSTODY", "")
+	clearVaultBinding(t)
+	keyCustody(t, "")
 	err := requireKeyCustody(false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "VAULT_KEY_CUSTODY is required outside the local environment")
@@ -386,7 +422,7 @@ func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
 
 	require.NoError(t, requireKeyCustody(true), "a local run has no cell and no seeding command")
 
-	t.Setenv("VAULT_KEY_CUSTODY", "platform-cli seed-identity example-cell")
+	keyCustody(t, "platform-cli seed-identity example-cell")
 	require.NoError(t, requireKeyCustody(false))
 }
 
@@ -396,14 +432,15 @@ func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
 // otherwise whoever writes the group could forge entries around the refusal.
 func TestSigningKeyRefusalQuotesTheCellsCustodyCommand(t *testing.T) {
 	clearAuthProviderEnvironment(t)
-	t.Setenv("VAULT_KEY_CUSTODY", "  platform-cli seed-identity\n  FORGED log line\t<coordinate>  ")
+	clearVaultBinding(t)
+	keyCustody(t, "  platform-cli seed-identity\n  FORGED log line\t<coordinate>  ")
 
 	_, err := loadSigningKey(context.Background(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "platform-cli seed-identity FORGED log line <coordinate>")
 	require.NotContains(t, err.Error(), "\n")
 
-	t.Setenv("VAULT_KEY_CUSTODY", strings.Repeat("x", 500))
+	keyCustody(t, strings.Repeat("x", 500))
 	_, err = loadSigningKey(context.Background(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), strings.Repeat("x", 200)+"…")
@@ -416,6 +453,7 @@ func TestSigningKeyRefusalQuotesTheCellsCustodyCommand(t *testing.T) {
 // functions and only this asserts that both are enforced.
 func TestLoadSigningKeyNeverSelfMintsOutsideLocal(t *testing.T) {
 	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
 
 	_, err := loadSigningKey(context.Background(), true, false)
 	require.Error(t, err)
