@@ -321,9 +321,16 @@ func TestVerificationPolicyRefusesWhatWouldAdmitTooMuch(t *testing.T) {
 // verify: refusing per document instead makes "this host has no trust root" and
 // "delivery is shipping something bad" the same observable, which are the two
 // facts an operator most needs to tell apart.
+// Driven through NewSolutionHostKeylessVerifier, which still takes a directory,
+// rather than through NewSolutionHostBundleVerifier, which no longer does.
+//
+// The policy-level constructor now reads the fixed anchor path, and asserting
+// refuse-at-boot through it would be asserting that a SYSTEM path is absent on
+// the machine running the test — true on a workstation and silently untrue on a
+// host that has the mount. A test whose verdict depends on the environment it
+// runs in is not evidence of this property.
 func TestKeylessRefusesAtBootWithoutATrustRoot(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustKeyless, t.TempDir())
+	verifier, err := infra.NewSolutionHostKeylessVerifier(t.TempDir())
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Nil(t, verifier, "an unusable policy must yield no verifier")
 	require.Contains(t, err.Error(), "trusted_root.json")
@@ -335,8 +342,9 @@ func TestKeylessRefusesARootWithNoPolicy(t *testing.T) {
 	directory := t.TempDir()
 	writeTrustRoot(t, directory)
 
-	_, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustKeyless, directory)
+	// Same reason as above: the directory is the unit under test here, so this
+	// goes through the keyless constructor rather than the policy dispatcher.
+	_, err := infra.NewSolutionHostKeylessVerifier(directory)
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Contains(t, err.Error(), "verification_policy.json")
 }
@@ -351,8 +359,7 @@ func TestVerificationPolicyDecodingIsStrict(t *testing.T) {
 		[]byte(`{"signers":[{"name":"d","issuer":"i","subjectAlternativeName":"s","sourceRepositoryUri":"r","domains":["acme"],"allowAnyIssuer":true}]}`),
 		0o600))
 
-	_, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustKeyless, directory)
+	_, err := infra.NewSolutionHostKeylessVerifier(directory)
 	require.ErrorIs(t, err, infra.ErrSolutionHostTrustRootUnavailable)
 	require.Contains(t, err.Error(), "does not decode")
 }
