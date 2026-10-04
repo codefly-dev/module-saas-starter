@@ -145,9 +145,9 @@ func directRegistryReaders(t *testing.T, dir string) []string {
 			}
 			// moduleGrant itself, and the one wrapper that is SUPPOSED to call
 			// it, are where a direct call is correct.
-			// The reads themselves, and the one wrapper that is SUPPOSED to
-			// perform them, are where a direct read is correct.
-			if registryReads[function.Name.Name] || function.Name.Name == "moduleCapability" {
+			// The reads themselves, and the enforcement entry points that are
+			// SUPPOSED to perform them, are where a direct read is correct.
+			if registryReads[function.Name.Name] || enforcementEntryPoints[function.Name.Name] {
 				continue
 			}
 			if !readsDeclaredRegistry(function) {
@@ -201,6 +201,40 @@ func requireEnforcementWrapperIntact(t *testing.T, dir string) {
 		t.Fatal("moduleCapability no longer calls AuthorizeModuleCapability, so the capability paths routed through it " +
 			"have stopped re-reading live authority while still looking routed")
 	}
+	requireAdmissionStillReadsLiveAuthority(t, dir)
+}
+
+// requireAdmissionStillReadsLiveAuthority holds the mint-side entry point to the
+// reason it is exempt.
+//
+// It is on this list because it re-reads live authority itself. If it stops, the
+// exemption becomes a hole: a function that resolves the declared ceiling and
+// nothing live would sit here looking compliant, which is exactly the shape this
+// gate exists to refuse.
+func requireAdmissionStillReadsLiveAuthority(t *testing.T, dir string) {
+	t.Helper()
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet,
+		filepath.Join(dir, "module_installation_admission.go"), nil, 0)
+	if err != nil {
+		t.Fatalf("parse module_installation_admission.go: %v", err)
+	}
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name == nil || function.Name.Name != "AdmitModuleUnderInstallation" {
+			continue
+		}
+		for _, required := range []string{"ResolveModuleInstallation", "liveAuthorityFor"} {
+			if !callsNamed(function, required) {
+				t.Fatalf("AdmitModuleUnderInstallation is exempt from this gate because it reads live "+
+					"authority, and it no longer calls %s — so the exemption now hides a path that decides "+
+					"on the declared ceiling alone", required)
+			}
+		}
+		return
+	}
+	t.Fatal("AdmitModuleUnderInstallation is listed as an enforcement entry point but is not declared: " +
+		"a stale exemption is how a gate goes quietly green")
 }
 
 // callsNamed reports whether a function calls a named function or method.
@@ -237,6 +271,27 @@ func callsNamed(function *ast.FuncDecl, name string) bool {
 var registryReads = map[string]bool{
 	"moduleGrant":     true,
 	"declaredModules": true,
+}
+
+// enforcementEntryPoints resolve the declared ceiling AND re-read live authority
+// in the same function, which is the thing this gate wants rather than the thing
+// it forbids.
+//
+// `moduleCapability` is the wrapper the 25 capability paths route through.
+// `AdmitModuleUnderInstallation` is the mint-side entry point: a module
+// capability names the installation it acts under, and that function resolves the
+// ceiling, checks the solution actually composes this module, and reads the live
+// installation and epoch. It appeared here as a violation the moment it was
+// written, which is the gate doing its job — the fix is to list the entry point,
+// not to widen what counts as compliant.
+//
+// Each entry is a function a reviewer must look at, so adding one is a decision
+// rather than a convenience. The list is checked against the code below: an entry
+// naming a function that no longer performs the live re-read fails the gate,
+// because a stale exemption is how a gate goes quietly green.
+var enforcementEntryPoints = map[string]bool{
+	"moduleCapability":             true,
+	"AdmitModuleUnderInstallation": true,
 }
 
 func readsDeclaredRegistry(function *ast.FuncDecl) bool {
