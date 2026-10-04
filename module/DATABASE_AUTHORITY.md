@@ -980,25 +980,34 @@ PermissionDenied**: the caller is not unauthorized, the host is unable, and a
 host answering "forbidden" would tell every caller their authority had been
 revoked when nothing of theirs had.
 
-**This deployment has no log transport, and wires none** rather than wiring
-something that refuses. The warehouse cannot issue the receipt the protocol is
-built on: `Append` must return a token the log minted and a monotonic sequence
-the log assigned, and a BigQuery dataset gives a writer neither — the non-job
-write paths return no ordinal, per-stream offsets are not a global order,
-ingestion time is unreadable until the streaming buffer flushes (minutes,
-against an append bounded at five seconds), and the writer role deliberately
-holds no read and no job-creation permission with which to read its own row
-back. Closing that needs a **receipt-issuing appender inside the warehouse's
-trust domain**, which this service does not own. Anything else would be the host
-minting its own receipt, which is the tautology the protocol exists to prevent.
+### The independent policy-log service
 
-The consequence is stated rather than softened: a host with no log **serves
-normally** — it has narrowed nothing through the protocol, so it holds nothing
-unreconciled — and **refuses all four narrowings** above. Wiring a log it could
-never reach would do the opposite and worse: `reached_at` would never refresh,
-the staleness window would close, and the host would stop answering anything at
-all. Refusing to narrow authority and refusing to serve are different refusals,
-and a deployment with no transport owes only the first.
+The transport owner is the **[policy-log service](services/policy-log/README.md);
+the host wires its client**. Its witness assigns a global sequence and returns
+a signed receipt only after an immutable entry and a generation-guarded object-store
+head have committed in the warehouse's trust domain. Accounts holds neither
+that store's write authority nor the signing key. Composition delivers
+`policy_log_public_key.json` under the host's trust-anchor directory.
+
+The warehouse remains a best-effort mirror, never the source of the receipt.
+A BigQuery writer gets no global ordinal from streaming inserts or per-stream
+offsets, cannot wait for ingestion visibility within the five-second bound,
+and deliberately holds no read or job-creation permission to recover its row.
+Those limitations are why the receipt issuer is a separate service rather than
+an accounts adapter that manufactures its own evidence.
+
+**This checkout does not yet have a runnable log transport.** The new service's
+witness, storage, signing-key loader, mirror, and private service declaration are
+implemented; protobuf and OpenAPI generation and the RPC listener remain blocked
+by the required generator prerequisite. Its README records that boundary and
+the remaining real-GCS qualification. The host's Go code and client wiring are
+unchanged, so this source addition must not be read as a running deployment or
+as completion of the policy-log condition.
+
+Until the transport and host client are wired, the existing host still serves
+normally and refuses the four narrowings above. Once wired, inability to reach
+the log expires the serving gate's freshness window and refuses service; an
+appended operation without a local commit remains a gap until reconciled.
 
 ## Control-plane boundary
 

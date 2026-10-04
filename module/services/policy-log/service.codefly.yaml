@@ -1,0 +1,26 @@
+name: policy-log
+version: 0.0.0
+description: Independent signed witness for authority changes
+agent:
+    kind: codefly:service
+    name: go-grpc
+    version: 0.1.50
+    publisher: codefly.dev
+workspace-configuration-dependencies:
+    - policy-log
+endpoints:
+    # Private to this module. The host declares the dependency when its client
+    # is wired; neither the public gateway nor composed modules get this API.
+    - name: grpc
+spec:
+    hot-reload: true
+    protocol-output-dirs:
+        - code/pkg/gen
+        - generated/openapi-raw
+    service-account:
+        name: policy-log
+    deployment:
+        # Codefly allocates the endpoint port. This declaration carries no
+        # accounts/store dependency and no fixed port or injected credential.
+        public-egress-ports:
+            - 443
