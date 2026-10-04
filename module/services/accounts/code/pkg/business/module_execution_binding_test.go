@@ -140,6 +140,56 @@ func TestDigestComparisonIsOnTheDigestNotTheSpelling(t *testing.T) {
 // Refusals: a verdict about the caller
 // ---------------------------------------------------------------------------
 
+// THE MOVED TAG, and the case that proves the three digest types are distinct by
+// execution rather than by comment.
+//
+// The pod's SPEC names exactly the approved image. Its STATUS reports something
+// else — which is what a moved tag produces, and what a mutable registry
+// reference makes possible at any time. Comparing approved against DECLARED
+// would pass here and admit an unapproved workload; comparing declared against
+// running would prove only that the pod got what it asked for.
+//
+// Approved == RUNNING is the only comparison that refuses it.
+func TestAPodThatAskedForTheApprovedImageAndRunsAnotherIsRefused(t *testing.T) {
+	reviewer := &fakeExecutionReviewer{
+		reviewed: reviewedPod(),
+		running: &RunningContainerStatus{
+			UID: "uid-alpha",
+			// Asked for the approved image...
+			DeclaredImage: approvedRef,
+			// ...and is running a different one.
+			ImageID: otherRef,
+			Found:   true,
+		},
+	}
+	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+
+	_, err := service.BindExecution(context.Background(), "principal-1", "token", "worker")
+	require.ErrorIs(t, err, ErrExecutionNotApproved)
+	// The refusal names BOTH, because an operator told only "not approved" would
+	// go reading the authority document when the registry is what moved.
+	require.Contains(t, err.Error(), approvedRef, "the refusal must name what was asked for")
+	require.Contains(t, err.Error(), otherRef, "and what is actually running")
+}
+
+// And the control: the same spec with a RUNNING image that matches is admitted,
+// so the test above is not passing because every declared image is refused.
+func TestAPodRunningWhatItAskedForAndWhatIsApprovedIsAdmitted(t *testing.T) {
+	reviewer := &fakeExecutionReviewer{
+		reviewed: reviewedPod(),
+		running: &RunningContainerStatus{
+			UID: "uid-alpha", DeclaredImage: approvedRef, ImageID: approvedRef, Found: true,
+		},
+	}
+	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 4})
+
+	identity, err := service.BindExecution(context.Background(), "principal-1", "token", "worker")
+	require.NoError(t, err)
+	require.Equal(t, RunningDigest(approvedRef), identity.Running)
+	require.Equal(t, DeclaredDigest(approvedRef), identity.Declared,
+		"the declared image is carried for diagnosis, distinct from the running one")
+}
+
 // A pod running a DIFFERENT image from the same repository is refused. Same
 // registry, same repo, different digest — which is what a moved tag produces.
 func TestUnapprovedRunningImageIsRefused(t *testing.T) {
