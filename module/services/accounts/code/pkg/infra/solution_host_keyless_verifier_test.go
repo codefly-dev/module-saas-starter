@@ -380,3 +380,57 @@ func writeTrustRoot(t *testing.T, directory string) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(directory, "trusted_root.json"), encoded, 0o600))
 }
+
+// A ref prefix admits every release tag, because an exact ref makes withdrawal
+// impossible.
+//
+// The failure it prevents, end to end: a binding is delivered under release tag
+// A; withdrawing it needs a tombstone, which is signed under whatever tag is
+// current — B; with the ref pinned to A that tombstone fails verification; and
+// since a tombstone is the only way to withdraw and nothing deletes from the
+// inbox, the binding stays applied forever. The CLI reports the same shape from
+// its side.
+func TestARefPrefixAdmitsEveryReleaseTag(t *testing.T) {
+	policy := &infra.SolutionHostVerificationPolicy{Signers: []infra.SolutionHostSigner{{
+		Name:                      "platform-delivery",
+		Issuer:                    "https://token.actions.githubusercontent.com",
+		SubjectAlternativeName:    "https://example.test/acme/infra/.github/workflows/deliver.yml@refs/tags/v2",
+		SourceRepositoryURI:       "https://example.test/acme/infra",
+		SourceRepositoryRefPrefix: "refs/tags/",
+		Domains:                   []string{"acme"},
+	}}}
+	require.NoError(t, policy.Validate(), "a ref prefix under refs/ is a valid narrowing")
+}
+
+// An exact ref and a prefix together are refused, because the exact one wins and
+// the prefix reads as though it had widened something.
+func TestAnExactRefAndAPrefixTogetherAreRefused(t *testing.T) {
+	policy := &infra.SolutionHostVerificationPolicy{Signers: []infra.SolutionHostSigner{{
+		Name:                      "platform-delivery",
+		Issuer:                    "https://token.actions.githubusercontent.com",
+		SubjectAlternativeName:    "https://example.test/acme/infra/.github/workflows/deliver.yml@refs/tags/v2",
+		SourceRepositoryURI:       "https://example.test/acme/infra",
+		SourceRepositoryRef:       "refs/tags/v2",
+		SourceRepositoryRefPrefix: "refs/tags/",
+		Domains:                   []string{"acme"},
+	}}}
+	err := policy.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "would win")
+}
+
+// A prefix outside the ref namespace is refused: "" admits every ref and "r"
+// admits half the ref space while looking like a constraint.
+func TestAnUnanchoredRefPrefixIsRefused(t *testing.T) {
+	for _, prefix := range []string{"r", "v", "tags/", "/refs/", "refs"} {
+		policy := &infra.SolutionHostVerificationPolicy{Signers: []infra.SolutionHostSigner{{
+			Name:                      "platform-delivery",
+			Issuer:                    "https://token.actions.githubusercontent.com",
+			SubjectAlternativeName:    "https://example.test/acme/infra/.github/workflows/deliver.yml@refs/tags/v2",
+			SourceRepositoryURI:       "https://example.test/acme/infra",
+			SourceRepositoryRefPrefix: prefix,
+			Domains:                   []string{"acme"},
+		}}}
+		require.Error(t, policy.Validate(), "ref prefix %q must be refused", prefix)
+	}
+}
