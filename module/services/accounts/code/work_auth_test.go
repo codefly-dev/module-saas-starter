@@ -549,3 +549,31 @@ func TestConfigureModuleIdentity(t *testing.T) {
 		})
 	}
 }
+
+// The call site, not just the helper. The helper's own test stays green when
+// somebody deletes the call from startup, which is how a guard becomes
+// decorative — so this drives doWork itself with hosted carriers and no custody
+// command, and the refusal has to come back from the real boot path.
+//
+// It is reachable without a database only because the check runs before any
+// dependency is acquired. If a future edit moves it back down, this test starts
+// failing on a connection error instead, which is the right kind of noisy.
+func TestStartupRefusesAHostedBootWithNoCustodyCommand(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+
+	_, err := doWork(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "VAULT_KEY_CUSTODY is required outside the local environment",
+		"doWork must refuse a hosted boot with no custody command, from the startup path and not only from the helper")
+
+	// With it set, startup gets past this check — so the assertion above is
+	// about the custody requirement and not about doWork failing for any reason.
+	keyCustody(t, "platform-cli seed-identity example-cell")
+	_, err = doWork(context.Background())
+	if err != nil {
+		require.NotContains(t, err.Error(), "VAULT_KEY_CUSTODY is required",
+			"a supplied custody command must satisfy the check")
+	}
+}

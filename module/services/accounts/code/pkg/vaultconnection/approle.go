@@ -116,9 +116,13 @@ func (k *appRoleLogin) loginLocked() error {
 	})
 	auth, err := k.post("/v1/auth/"+k.config.Mount+"/login", "", body)
 	if err != nil {
-		// The body is never echoed: a login request carries the credential and a
-		// refusal is diagnosed by its status.
-		return fmt.Errorf("Vault approle login: %w", err)
+		// Vault's own body is never echoed — the login request carries the
+		// credential and a server that reflected it back would put it in this
+		// error — so the status is all there is to go on. On its own that is a
+		// bare number, and the operator who meets it in a crash loop needs to
+		// know which two keys to look at and that a revoked or rotated secret_id
+		// looks exactly like a wrong one. Hence a named remedy beside it.
+		return fmt.Errorf("Vault approle login at mount %q: %w — check VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group: the role may not exist at this mount, or the secret_id may be revoked, expired or used past its limit. Replace the secret_id through the configuration plane and restart; a credential this login never accepted will not start accepting itself", k.config.Mount, err)
 	}
 	k.store(auth)
 	return nil

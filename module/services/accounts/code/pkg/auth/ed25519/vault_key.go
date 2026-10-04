@@ -98,7 +98,13 @@ func LoadKeyFromVault(ctx context.Context, cfg VaultKeyLoaderConfig) (ed25519.Pr
 		return nil, fmt.Errorf("ed25519minter: read vault response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ed25519minter: vault http %d: %s", resp.StatusCode, string(body))
+		// Vault's body is never echoed. This request presents the token in a
+		// header, and a server or intermediary that reflected the request back —
+		// some do, in an error — would put the live token into a startup error
+		// and from there into every log that collected it. The status plus the
+		// path is what diagnoses this, and the AppRole and Transit clients
+		// already suppress bodies for the same reason.
+		return nil, fmt.Errorf("ed25519minter: vault http %d reading %s", resp.StatusCode, cfg.SecretPath)
 	}
 
 	var envelope struct {

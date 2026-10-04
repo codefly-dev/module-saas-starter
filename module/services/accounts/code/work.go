@@ -50,6 +50,15 @@ func init() {
 }
 
 func doWork(ctx context.Context) (Clean, error) {
+	// Configuration this process cannot run without is checked before any
+	// dependency is touched. It used to be checked deep in the startup, after
+	// the database and Vault were already up, which meant a missing value cost
+	// a full bring-up before anyone was told — and made the check unreachable
+	// from a test without standing both of those up, so deleting the call
+	// site was invisible.
+	if err := requireStartupConfiguration(codefly.IsLocal()); err != nil {
+		return nil, err
+	}
 	w := wool.Get(ctx).In("doWork")
 	measurementPack, err := metrics.DefaultSeedBundle()
 	if err != nil {
@@ -376,9 +385,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	resolver.SetSignupMode(signupMode)
 	authProvider := configuredAuthProvider(selectedFixture)
 	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
-		return nil, err
-	}
-	if err := requireKeyCustody(codefly.IsLocal()); err != nil {
 		return nil, err
 	}
 	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider), codefly.IsLocal())
@@ -2137,6 +2143,15 @@ func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519c
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err
+}
+
+// requireStartupConfiguration refuses to start on configuration that cannot
+// work, before the process acquires anything. It is the one place a boot-time
+// configuration requirement is registered, so each is enforced at a moment a
+// deployment can still be fixed rather than discovered from a crash loop — and
+// so a test can reach all of them with nothing running.
+func requireStartupConfiguration(isLocal bool) error {
+	return requireKeyCustody(isLocal)
 }
 
 // requireKeyCustody refuses to start outside the local environment without the

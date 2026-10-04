@@ -174,10 +174,23 @@ func TestAppRoleLoginRefusalFailsClosedWithoutTheBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("a refused login produced a connection")
 	}
-	// Exact, not a substring: Vault's own body carries "permission denied" and
-	// must not reach the error, because a login body carries the credential.
-	if want := "Vault approle login: Vault answered 403"; err.Error() != want {
-		t.Fatalf("err = %q, want exactly %q", err, want)
+	// The status and a named remedy, and nothing of Vault's own body: it carries
+	// "permission denied" here, and a login response that reflected the request
+	// would carry the credential. A bare status is undiagnostic in a crash loop,
+	// so the refusal names the two keys and what to do about them instead.
+	for _, want := range []string{
+		"Vault answered 403",
+		"VAULT_APPROLE_ROLE_ID",
+		"VAULT_APPROLE_SECRET_ID",
+		"`vault` secret group",
+		"revoked",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("the refusal echoed Vault's response body: %v", err)
 	}
 }
 

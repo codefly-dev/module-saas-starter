@@ -3,7 +3,6 @@ package vaultconnection
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -48,8 +47,14 @@ type Config struct {
 	// MeshProtected is the composition's assertion that every in-cluster hop is
 	// carried by a mutually authenticated mesh. It admits a plaintext address,
 	// and only an in-cluster Service address: see package meshtransport, whose
-	// rule this carries. Nothing else admits plaintext off loopback.
+	// rule this carries. In a deployed runtime nothing else admits plaintext.
 	MeshProtected bool
+	// dial replaces the transport's dialer. It is unexported and set only by
+	// this package's own tests, so a hosted case can keep the canonical Service
+	// address the admission rule is about while the bytes go to a fixture —
+	// rewriting the address to reach a fixture would test a different address
+	// from the one the contract describes.
+	dial func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 type Connection struct {
@@ -163,9 +168,13 @@ func New(config Config) (*Connection, error) {
 		return nil, errors.New("Vault connection requires a stated runtime: local or deployed")
 	}
 	deployed := config.Runtime == RuntimeDeployed
+	// The address must be a bare origin. Anything else — credentials in the
+	// userinfo, a path, a query, a fragment — would be silently dropped or
+	// carried into every request path this connection builds, so it is refused
+	// rather than normalized, and the refusal names the key that carries it.
 	u, err := url.Parse(config.Address)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-		return nil, errors.New("invalid Vault endpoint")
+		return nil, errors.New("invalid VAULT_ADDR: it must be a bare http or https origin (scheme://host[:port]) with no credentials, path, query or fragment")
 	}
 	if config.TokenFile != "" && u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
 		return nil, errors.New("a Vault token file off loopback requires HTTPS")
@@ -192,17 +201,33 @@ func New(config Config) (*Connection, error) {
 	}
 	// The token rides every request, the login carries the AppRole credential,
 	// and Transit carries the secrets it seals — so plaintext is refused for the
-	// whole connection unless the mesh covers it. Loopback is always allowed, so
-	// a local run against the composed service needs no assertion.
-	if u.Scheme == "http" && !loopback && !meshtransport.Admits(config.MeshProtected, config.Address) {
-		return nil, fmt.Errorf("refusing cleartext http to a non-loopback Vault at %q: %s", u.Host, meshtransport.Remedy)
+	// whole connection unless something admits it.
+	//
+	// Exactly two things do. Loopback admits it in a LOCAL run, where the
+	// composed `vault` service answers on the developer's own machine and the
+	// traffic never leaves it. And the mesh assertion admits an in-cluster
+	// Service address anywhere.
+	//
+	// The loopback exemption is deliberately not extended to a deployed runtime.
+	// A cell that named a loopback Vault would be reading its secrets from
+	// something running inside its own pod — a sidecar or a dev server — which
+	// is the in-memory store this whole binding exists to stop, and it would
+	// reach it without the composition asserting anything at all. So a deployed
+	// runtime has one admission rule and loopback is not an exception to it.
+	if u.Scheme == "http" && !(loopback && !deployed) && !meshtransport.Admits(config.MeshProtected, config.Address) {
+		return nil, fmt.Errorf("refusing cleartext http to a Vault at %q: %s", u.Host, meshtransport.Remedy)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil // credentials stay on the declared private dependency
-	// No CA pinning: in-cluster transport security is the mesh's, so a cell
-	// Vault has no certificate of its own to anchor. An https address is
-	// verified against the system roots like any other.
-	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	// No service-owned TLS configuration at all: transport security here is the
+	// mesh's, so there is no certificate to anchor, no pool to build and no
+	// client certificate to present. A service that carried a TLS config anyway
+	// would be asserting a posture it does not implement — and an https address,
+	// if one is ever used, is better served by the platform defaults than by a
+	// policy this service invented and nobody revisits.
+	if config.dial != nil {
+		transport.DialContext = config.dial
+	}
 	c := &Connection{Address: strings.TrimSuffix(config.Address, "/"), MeshProtected: config.MeshProtected, token: config.Token, tokenFile: config.TokenFile, Client: &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("Vault redirect denied") }}}
 	if config.AppRole != nil {
 		auth := *config.AppRole

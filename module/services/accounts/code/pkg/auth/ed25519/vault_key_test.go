@@ -130,3 +130,29 @@ func TestLoadKeyFromVault_AllowsLoopbackHTTP(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ed25519.PrivateKey(priv), got)
 }
+
+// A non-200 from Vault must not put the presented token into the error.
+//
+// This request carries the token in a header, and a server or intermediary that
+// reflects the request back in its error body — some do — would otherwise put
+// the live AppRole-minted token into a startup error, and from there into every
+// log that collected it. The status and the path are what diagnose this.
+func TestLoadKeyFromVault_RefusalCarriesNoTokenFromTheResponseBody(t *testing.T) {
+	const token = "synthetic-vault-token-should-not-appear-in-errors"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		// The adversarial case: Vault echoing the presented credential.
+		_, _ = w.Write([]byte(`{"errors":["refused request token ` + r.Header.Get("X-Vault-Token") + `"]}`))
+	}))
+	defer server.Close()
+
+	_, err := ed25519minter.LoadKeyFromVault(context.Background(), ed25519minter.VaultKeyLoaderConfig{
+		Address: server.URL,
+		Token:   token,
+	})
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), token, "the refusal carries the presented Vault token")
+	require.NotContains(t, err.Error(), "refused request", "the refusal echoes Vault's response body")
+	require.Contains(t, err.Error(), "403")
+	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
+}

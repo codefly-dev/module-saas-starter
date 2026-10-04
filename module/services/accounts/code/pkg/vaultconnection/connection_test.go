@@ -2,6 +2,7 @@ package vaultconnection
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -112,39 +113,169 @@ func TestProjectionPermissionsAndContents(t *testing.T) {
 	}
 }
 
-// Plaintext off loopback is admitted by exactly one thing: the composition's
-// mesh assertion, and only for an in-cluster Service address. The host rules
-// themselves are exhausted in package meshtransport's own test; what this holds
-// is that New consults them — that an admitted address gets *past* the address
-// check and an unasserted one does not.
-func TestCleartextNeedsBothTheMeshAssertionAndAnInClusterAddress(t *testing.T) {
+// serviceFixture serves a Vault login at a fixture while the connection keeps
+// the canonical Service address the admission rule is about. Rewriting the
+// address to reach the fixture would test a different address from the one the
+// contract describes, and under the rule below a loopback address is no longer
+// admitted on a deployed runtime at all.
+func serviceFixture(t *testing.T) (string, func(context.Context, string, string) (net.Conn, error), func() int) {
+	t.Helper()
+	var logins int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/login") {
+			logins++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"auth":{"client_token":"minted","lease_duration":3600,"renewable":true}}`))
+			return
+		}
+		w.WriteHeader(204)
+	}))
+	t.Cleanup(server.Close)
+	target := strings.TrimPrefix(server.URL, "http://")
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, target)
+	}
+	return "http://vault.vault.svc.cluster.local:8200", dial, func() int { return logins }
+}
+
+// Plaintext is admitted by exactly two things, and which one applies depends on
+// the runtime: loopback in a LOCAL run, and the mesh assertion over an
+// in-cluster Service address anywhere.
+//
+// A deployed runtime gets no loopback exemption. A cell that named a loopback
+// Vault would be reading its secrets from something inside its own pod — the
+// in-memory store this binding exists to stop — and would reach it without the
+// composition asserting anything, so that case is refused by name.
+func TestPlaintextAdmissionDependsOnTheRuntime(t *testing.T) {
 	approle := func() *AppRoleAuth { return &AppRoleAuth{RoleID: "r", SecretID: "s"} }
 
+	// Local: loopback needs no assertion.
 	for _, address := range []string{"http://localhost:8200", "http://127.0.0.1:8200", "http://[::1]:8200"} {
 		if _, err := New(Config{Address: address, Token: "fixture", Runtime: RuntimeLocal}); err != nil {
-			t.Fatalf("loopback %s refused: %v", address, err)
+			t.Fatalf("loopback %s refused on a local runtime: %v", address, err)
 		}
 	}
 
-	const inCluster = "http://vault.vault.svc.cluster.local:8200"
-
-	// Asserted and in-cluster: the address check must let this through. Nothing
-	// answers at that name here, so it fails at the login instead — which is
-	// exactly the evidence that the address was admitted.
-	_, err := New(Config{Address: inCluster, AppRole: approle(), Runtime: RuntimeDeployed, MeshProtected: true})
-	if err != nil && strings.Contains(err.Error(), "refusing cleartext") {
-		t.Errorf("the in-mesh cell Vault was refused on its address: %v", err)
+	// Deployed: loopback is not an exception to the admission rule.
+	for _, address := range []string{"http://localhost:8200", "http://127.0.0.1:8200", "http://[::1]:8200"} {
+		_, err := New(Config{Address: address, AppRole: approle(), Runtime: RuntimeDeployed})
+		requireRefusal(t, err, "refusing cleartext http to a Vault")
+		requireRefusal(t, err, "internal-transport/mesh-protected=true")
+	}
+	// Not even with the assertion: a mesh does not carry a hop that never
+	// leaves the pod, so the assertion cannot cover it.
+	for _, address := range []string{"http://localhost:8200", "http://127.0.0.1:8200"} {
+		_, err := New(Config{Address: address, AppRole: approle(), Runtime: RuntimeDeployed, MeshProtected: true})
+		requireRefusal(t, err, "refusing cleartext http to a Vault")
 	}
 
-	// The same address with no assertion stays refused, and the refusal names
-	// the one way through.
-	_, err = New(Config{Address: inCluster, AppRole: approle(), Runtime: RuntimeDeployed})
-	requireRefusal(t, err, "refusing cleartext http to a non-loopback Vault")
-	requireRefusal(t, err, "internal-transport/mesh-protected=true")
+	// Deployed, asserted, and an in-cluster Service address: admitted, and the
+	// login actually completes over it.
+	address, dial, logins := serviceFixture(t)
+	c, err := New(Config{Address: address, AppRole: approle(), Runtime: RuntimeDeployed, MeshProtected: true, dial: dial})
+	if err != nil {
+		t.Fatalf("the in-mesh cell Vault was refused: %v", err)
+	}
+	if token, err := c.Token(); err != nil || token != "minted" || logins() != 1 {
+		t.Fatalf("token = %q, err = %v after %d logins", token, err, logins())
+	}
+	if c.Address != "http://vault.vault.svc.cluster.local:8200" {
+		t.Fatalf("the connection rewrote its address to %q", c.Address)
+	}
 
-	// Asserted, but a host no mesh can cover.
-	_, err = New(Config{Address: "http://vault.svc.example.com:8200", AppRole: approle(), Runtime: RuntimeDeployed, MeshProtected: true})
-	requireRefusal(t, err, "refusing cleartext http to a non-loopback Vault")
+	// The same address with no assertion stays refused.
+	_, err = New(Config{Address: address, AppRole: approle(), Runtime: RuntimeDeployed, dial: dial})
+	requireRefusal(t, err, "refusing cleartext http to a Vault")
+}
+
+// The mesh assertion admits only what a mesh can cover. An `svc` label inside
+// somebody else's domain is not an in-cluster Service: `vault.vault.svc.example.com`
+// resolves on the public internet, so admitting it would let the assertion
+// authorize a destination the mesh demonstrably does not carry.
+func TestTheMeshAssertionDoesNotAdmitAnExternalSvcName(t *testing.T) {
+	_, dial, _ := serviceFixture(t)
+	for _, address := range []string{
+		"http://vault.vault.svc.example.com:8200",
+		"http://a.b.c.svc.example.com:8200",
+		"http://vault.vault.svc.cluster.example.com:8200",
+		"http://vault.svc.example.com:8200",
+		"http://a.b.c.d.svc:8200",
+		"http://vault..svc:8200",
+		"http://vault.example.com:8200",
+		"http://10.0.0.5:8200",
+		"http://vault:8200",
+	} {
+		_, err := New(Config{
+			Address: address, AppRole: &AppRoleAuth{RoleID: "r", SecretID: "s"},
+			Runtime: RuntimeDeployed, MeshProtected: true, dial: dial,
+		})
+		requireRefusal(t, err, "refusing cleartext http to a Vault")
+	}
+}
+
+// A bare origin, or nothing. A path, query, fragment or userinfo would be
+// dropped or carried into every request path the connection builds, so each is
+// refused rather than normalized — and the refusal names the key that carries
+// the value.
+func TestTheAddressMustBeABareOrigin(t *testing.T) {
+	for _, address := range []string{
+		"not-a-url",
+		"",
+		"://missing-scheme",
+		"http://",
+		"ftp://vault.vault.svc:8200",
+		"vault.vault.svc:8200",
+		"http://user:pass@vault.vault.svc:8200",
+		"http://vault.vault.svc:8200/v1",
+		"http://vault.vault.svc:8200?token=x",
+		"http://vault.vault.svc:8200#fragment",
+		"http://vault.vault.svc:8200/v1/auth",
+	} {
+		_, err := New(Config{Address: address, Token: "fixture", Runtime: RuntimeLocal})
+		requireRefusal(t, err, "invalid VAULT_ADDR")
+	}
+	// A trailing slash is the one tolerated spelling, since it names the same
+	// origin and operators write it.
+	if _, err := New(Config{Address: "http://127.0.0.1:8200/", Token: "fixture", Runtime: RuntimeLocal}); err != nil {
+		t.Fatalf("a trailing slash was refused: %v", err)
+	}
+}
+
+// No service-owned TLS configuration: transport security here is the mesh's, so
+// there is no certificate to anchor, no pool to build and no client certificate
+// to present. A config carried anyway would assert a posture this service does
+// not implement.
+func TestTheClientCarriesNoServiceOwnedTLSConfiguration(t *testing.T) {
+	c, err := New(Config{Address: "http://127.0.0.1:8200", Token: "fixture", Runtime: RuntimeLocal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := c.Client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T, want *http.Transport", c.Client.Transport)
+	}
+	// What the cloned platform default carries is the platform's business, and
+	// the review's remediation says so: system defaults serve any separately
+	// supported https case. What must be absent is TLS policy this SERVICE
+	// chose — a pinned root, a client certificate, a verification hook, a
+	// skipped verification, or a protocol floor it invented.
+	if tls := transport.TLSClientConfig; tls != nil {
+		switch {
+		case tls.RootCAs != nil:
+			t.Error("the connection pins its own roots; there is no certificate for a service to anchor here")
+		case len(tls.Certificates) != 0, tls.GetClientCertificate != nil:
+			t.Error("the connection presents a client certificate; the credential is an AppRole secret")
+		case tls.InsecureSkipVerify:
+			t.Error("the connection skips verification")
+		case tls.VerifyPeerCertificate != nil, tls.VerifyConnection != nil:
+			t.Error("the connection carries its own verification hook")
+		case tls.MinVersion != 0, tls.MaxVersion != 0:
+			t.Error("the connection sets its own protocol floor rather than the platform's")
+		}
+	}
+	if transport.Proxy != nil {
+		t.Error("the connection honours a proxy, so the credential could be routed off the declared dependency")
+	}
 }
 
 // A deployed runtime accepts exactly one binding: the Vault the composition
@@ -204,8 +335,14 @@ func TestDeployedRuntimeAcceptsOnlyAnAppRoleBinding(t *testing.T) {
 	}
 
 	// The one shape that is accepted, so the refusals above are not simply "a
-	// deployed runtime never connects".
-	if _, err := New(Config{Address: server.URL, AppRole: approle(), Runtime: RuntimeDeployed}); err != nil {
+	// deployed runtime never connects". Every refusal above fires before the
+	// address is admitted, which is why they can use the loopback fixture while
+	// this one needs the canonical Service address.
+	address, dial, _ := serviceFixture(t)
+	if _, err := New(Config{
+		Address: address, AppRole: approle(), Runtime: RuntimeDeployed,
+		MeshProtected: true, dial: dial,
+	}); err != nil {
 		t.Fatalf("the AppRole binding was refused on a deployed runtime: %v", err)
 	}
 }
@@ -318,37 +455,39 @@ func TestLoadRefusesAMalformedMeshAssertion(t *testing.T) {
 
 // The credential arrives through the SECRET group, the way every other accounts
 // secret does, and never as a file. This is the whole hosted binding end to
-// end: values from one group, one secret from another, nothing mounted.
+// end: values from one group, one secret from another, the mesh assertion from
+// a third, nothing mounted.
+//
+// Load builds its own Config, so it cannot be handed the test dialer — and the
+// canonical Service address does not resolve here. That is the point: the
+// binding has to get past admission and fail at the login instead, which is
+// what proves Load read all three groups and reached the AppRole exchange. The
+// login completing over that address is held by
+// TestPlaintextAdmissionDependsOnTheRuntime, which can inject the dialer.
 func TestLoadBuildsTheHostedBindingFromValuesAndOneSecret(t *testing.T) {
-	var logins int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/login") {
-			logins++
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"auth":{"client_token":"minted","lease_duration":3600,"renewable":true}}`))
-			return
-		}
-		w.WriteHeader(204)
-	}))
-	defer server.Close()
-
 	hosted(t)
-	group(t, "VAULT_ADDR", server.URL) // loopback, so no assertion is needed
+	group(t, "VAULT_ADDR", "http://vault.vault.svc.cluster.local:8200")
 	group(t, "VAULT_AUTH_METHOD", "approle")
 	secretGroup(t, "VAULT_APPROLE_ROLE_ID", "role-from-the-secret-group")
 	secretGroup(t, "VAULT_APPROLE_SECRET_ID", "secret-from-the-secret-group")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL_TRANSPORT__MESH_PROTECTED", "true")
 
-	c, err := Load(context.Background())
-	if err != nil {
-		t.Fatalf("the hosted binding was refused: %v", err)
+	_, err := Load(context.Background())
+	if err == nil {
+		t.Fatal("the canonical Service address resolved here, so this proves nothing")
 	}
-	token, err := c.Token()
-	if err != nil {
-		t.Fatal(err)
+	// Admitted, then attempted: not refused on its address, and not refused for
+	// a missing credential.
+	if strings.Contains(err.Error(), "refusing cleartext") {
+		t.Fatalf("the asserted in-cluster address was refused on its address: %v", err)
 	}
-	if token != "minted" || logins != 1 {
-		t.Fatalf("token = %q after %d logins, want one AppRole login", token, logins)
-	}
+	requireRefusal(t, err, "Vault approle login")
+
+	// Without the assertion the same three groups are refused on the address,
+	// so the assertion is load-bearing rather than incidental.
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL_TRANSPORT__MESH_PROTECTED", "")
+	_, err = Load(context.Background())
+	requireRefusal(t, err, "refusing cleartext http to a Vault")
 }
 
 func requireRefusal(t *testing.T, err error, names string) {

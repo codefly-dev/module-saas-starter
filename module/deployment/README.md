@@ -314,16 +314,31 @@ authenticated mesh:
 mesh-protected=true
 ```
 
-and then only for an in-cluster Kubernetes Service address
-(`<service>.<namespace>.svc`, optionally with the cluster domain). Neither half
-is enough alone, which is the whole point: a hostname says nothing about whether
-a mesh wraps the wire — `vault.svc.example.com` is externally routable despite
-the label — and the assertion covers only what a mesh can cover, so an external
-name, a bare IP or a short name stays refused with it set. Only the exact value
-`true` asserts it; unset, empty and `false` keep plaintext refused, and any other
-value fails startup rather than being read as either answer. This is the same
-group, key, value handling and remedy sentence the composed modules apply to
-their own in-cluster hops, so a cell asserts it once.
+and then only for an in-cluster Kubernetes Service address, which is exactly
+`<service>.<namespace>.svc` or that followed by the default cluster domain
+`cluster.local`.
+
+Neither half is enough alone, which is the whole point: a hostname says nothing
+about whether a mesh wraps the wire, and the assertion covers only what a mesh
+can cover. So an external name, a bare IP, a short name — or an `svc` label
+buried in somebody else's domain, like `vault.vault.svc.example.com`, which
+resolves on the public internet — stays refused with the assertion set. The
+suffix is **matched**, never inferred from whatever follows `svc`: nothing in the
+platform supplies an authoritative cluster domain, so the trusted suffix is
+Kubernetes' default and only that, and a cell with a custom cluster domain uses
+the unqualified three-label form, which resolves in-cluster under any domain.
+
+Only the exact value `true` asserts it; unset, empty and `false` keep plaintext
+refused, and any other value fails startup rather than being read as either
+answer. The group, key, value handling and remedy sentence are the ones the
+composed modules apply to their own in-cluster hops, so a cell asserts it once —
+with one deliberate difference: this matcher is stricter about the suffix, and
+that is not drift to reconcile by loosening it.
+
+**Loopback admits plaintext in a local run only.** A deployed runtime gets no
+loopback exemption: a cell naming a loopback Vault would be reading its secrets
+from something inside its own pod — the in-memory store this binding exists to
+stop — and would reach it without the composition asserting anything at all.
 
 `VAULT_ALLOW_INSECURE_HTTP` is gone. It was a blanket per-service opt-in that no
 address could qualify; this replaces it with a rule that names what it covers.

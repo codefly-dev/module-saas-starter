@@ -2,6 +2,7 @@ package meshtransport_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"accounts/pkg/meshtransport"
@@ -61,37 +62,70 @@ func TestProtectedIsFailClosedAndExact(t *testing.T) {
 }
 
 // A hostname cannot settle whether a mesh wraps the wire, so the rule admits
-// only what a mesh can cover: a Service inside this cluster. The "svc" label
-// may not be one of the first two, because svc.example.com and
-// vault.svc.example.com are somebody else's hosts and are externally routable
-// despite carrying the label.
+// only what a mesh can cover: a Service inside THIS cluster, which is exactly
+// `<service>.<namespace>.svc` or that followed by the default cluster domain.
+//
+// The suffix is matched, not inferred. An arbitrary suffix after `svc` is not
+// evidence of a cluster domain — `vault.vault.svc.example.com` resolves on the
+// public internet — so accepting "anything after svc" would let the assertion
+// authorize a destination the mesh demonstrably does not carry. That was a real
+// hole: an earlier version of this matcher took any `svc` label from the third
+// position on and admitted both of the external names below.
 func TestClusterServiceHost(t *testing.T) {
 	for host, want := range map[string]bool{
-		"vault.vault.svc":                     true,
-		"vault.vault.svc:8200":                true,
-		"vault.vault.svc.cluster.local":       true,
-		"vault.vault.svc.cluster.local:8200":  true,
-		"VAULT.VAULT.SVC.CLUSTER.LOCAL:8200":  true,
-		"vault.vault.svc.cluster.local.:8200": true,
-		"accounts.saas-starter.svc":           true,
+		"vault.vault.svc":                    true,
+		"vault.vault.svc:8200":               true,
+		"vault.vault.svc.cluster.local":      true,
+		"vault.vault.svc.cluster.local:8200": true,
+		"VAULT.VAULT.SVC.CLUSTER.LOCAL:8200": true,
+		"vault.vault.svc.cluster.local.":     true,
+		"accounts.saas-starter.svc":          true,
+		"a1.ns-2.svc":                        true,
 
-		"svc.example.com":           false,
-		"svc.example.com:8200":      false,
-		"vault.svc.example.com":     false,
-		"vault.svc":                 false,
-		"vault":                     false,
+		// An `svc` label in somebody else's domain, which is the hole.
+		"vault.vault.svc.example.com":         false,
+		"a.b.c.svc.example.com":               false,
+		"vault.vault.svc.cluster.example.com": false,
+		"vault.svc.example.com":               false,
+		"svc.example.com":                     false,
+
+		// Too few or too many labels for either accepted shape.
+		"vault.svc":           false,
+		"vault":               false,
+		"a.b.c.d.svc":         false,
+		"vault.vault.svc.foo": false,
+
+		// Malformed labels must not ride through on the shape of the name.
+		"..svc":                    false,
+		"vault..svc":               false,
+		".vault.svc":               false,
+		"vault.-ns.svc":            false,
+		"vault.ns-.svc":            false,
+		"vault.n_s.svc":            false,
+		"vault..svc.cluster.local": false,
+
 		"vault.internal":            false,
 		"vault.example.com":         false,
 		"10.0.0.5":                  false,
 		"10.0.0.5:8200":             false,
 		"localhost":                 false,
-		"..svc":                     false,
-		"vault..svc.cluster.local":  false,
 		"vault.vault.service.local": false,
 	} {
 		if got := meshtransport.ClusterServiceHost(host); got != want {
 			t.Errorf("ClusterServiceHost(%q) = %v, want %v", host, got, want)
 		}
+	}
+}
+
+// A label longer than DNS permits is not a Service name, and the bound matters
+// because the check is what stands between the assertion and an arbitrary host.
+func TestClusterServiceHostBoundsLabelLength(t *testing.T) {
+	sixtyThree := strings.Repeat("a", 63)
+	if !meshtransport.ClusterServiceHost(sixtyThree + ".ns.svc") {
+		t.Error("a 63-character label was refused")
+	}
+	if meshtransport.ClusterServiceHost(sixtyThree + "a.ns.svc") {
+		t.Error("a 64-character label was admitted")
 	}
 }
 
@@ -107,6 +141,7 @@ func TestAdmitsRequiresBoth(t *testing.T) {
 	}
 	for _, rawURL := range []string{
 		"http://vault.example.com:8200",
+		"http://vault.vault.svc.example.com:8200",
 		"http://10.0.0.5:8200",
 		"http://vault:8200",
 		"",
