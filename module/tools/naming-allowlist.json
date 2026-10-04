@@ -16,6 +16,11 @@
       "path": ".gitleaks-baseline.json",
       "reason": "Machine-generated from commit metadata, so author names are reproduced mechanically. Regenerate the baseline rather than hand-editing it; hand-edits are overwritten on the next run.",
       "ticket": "policy:AGENTS.md"
+    },
+    {
+      "path": "module/services/accounts/code/pkg/infra/solution_host_bundle_verifier.go",
+      "reason": "Holds the ONE literal filesystem path the delivery trust anchor is mounted at. It must match byte-for-byte what the platform infrastructure renders and pins, in a different repository, or the host reads a path nothing writes \u2014 which fails closed at boot forever and invites someone to 'fix' it by making the path configurable again, restoring the seam that let a composition choose the anchor its own documents are verified against. A placeholder here would break the file in the strict sense: the constant would name a directory that does not exist. Scoped to this one file deliberately; every other reference in this repository cites the Go constant rather than repeating the literal, so there is one source of truth and nothing to drift.",
+      "ticket": "policy:AGENTS.md"
     }
   ]
 }
