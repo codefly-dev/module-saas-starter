@@ -433,9 +433,13 @@ func (f *httpMetadataFetcher) Fetch(ctx context.Context, clientID string) ([]byt
 // served from and projects it onto a registry client. Exported so the rules can
 // be tested against a real published document without a network.
 func ClientFromMetadataDocument(clientID string, body []byte) (RegisteredClient, error) {
-	decoder := json.NewDecoder(strings.NewReader(string(body)))
+	// Unmarshal, not a streaming Decode: Decode reads the first JSON value and
+	// ignores whatever follows it, so a document with a second object appended
+	// would be accepted as though only the first were published. Unknown MEMBERS
+	// are still ignored, as the draft requires — it is trailing CONTENT that is
+	// refused.
 	var document ClientMetadataDocument
-	if err := decoder.Decode(&document); err != nil {
+	if err := json.Unmarshal(body, &document); err != nil {
 		return RegisteredClient{}, fmt.Errorf("%w: %v", ErrClientMetadataMalformed, err)
 	}
 	// The document's own client_id must be the URL it was served from. This is

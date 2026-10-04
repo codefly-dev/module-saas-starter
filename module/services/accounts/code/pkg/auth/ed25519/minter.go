@@ -455,23 +455,30 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 //     unknown tokens return the same ErrRefreshRevoked sentinel to avoid an
 //     existence oracle.
 func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
-	return m.rotateRefresh(ctx, refreshToken, "")
+	return m.rotateRefresh(ctx, refreshToken, "", "")
 }
 
-// VerifyClientRefresh implements auth.JWTMinter.VerifyClientRefresh. The client
-// check happens inside the locked rotation, on the stored row, so it cannot be
-// raced by a concurrent rotation that changes which session the hash resolves
-// to. A mismatch is not a terminal rejection: the token is a legitimate one
-// held by its own client, and revoking its family because a different client
-// named it would make one client able to sign another out.
-func (m *Minter) VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*auth.TokenPair, error) {
+// VerifyClientRefresh implements auth.JWTMinter.VerifyClientRefresh. Both
+// checks happen inside the locked rotation, on the stored row, so neither can
+// be raced by a concurrent rotation that changes which session the hash
+// resolves to. Neither is a terminal rejection: the token is a legitimate one
+// held by its own client, and revoking its family because a different client —
+// or the same client naming a different resource — presented it would make one
+// request able to sign a session out.
+func (m *Minter) VerifyClientRefresh(
+	ctx context.Context,
+	refreshToken, clientID, requiredResource string,
+) (*auth.TokenPair, error) {
 	if clientID == "" {
 		return nil, errors.New("ed25519minter: client refresh names no client")
 	}
-	return m.rotateRefresh(ctx, refreshToken, clientID)
+	return m.rotateRefresh(ctx, refreshToken, clientID, requiredResource)
 }
 
-func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClientID string) (*auth.TokenPair, error) {
+func (m *Minter) rotateRefresh(
+	ctx context.Context,
+	refreshToken, requiredClientID, requiredResource string,
+) (*auth.TokenPair, error) {
 	if m.configErr != nil {
 		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
 	}
@@ -488,6 +495,13 @@ func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClient
 		}
 		if requiredClientID != "" && rec.ClientID != requiredClientID {
 			return nil, auth.ErrRefreshRevoked
+		}
+		// RFC 8707 §2.2 lets a token request repeat `resource`, and it must be
+		// one the authorization granted. Checked here, on the locked row and
+		// before consumption, so naming the wrong one costs the client nothing
+		// but the refusal — it still holds the token it was legitimately issued.
+		if requiredResource != "" && rec.Resource != requiredResource {
+			return nil, auth.ErrRefreshResourceMismatch
 		}
 		now := m.now()
 		if !now.Before(rec.ExpiresAt) {
@@ -518,7 +532,8 @@ func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClient
 		return next, err
 	})
 	if err != nil {
-		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) {
+		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) ||
+			errors.Is(err, auth.ErrRefreshResourceMismatch) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("ed25519minter: rotate refresh: %w", err)

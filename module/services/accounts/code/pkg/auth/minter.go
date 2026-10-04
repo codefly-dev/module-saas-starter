@@ -65,11 +65,14 @@ type JWTMinter interface {
 	// ErrRefreshRevoked without being misclassified as an attacker replay.
 	VerifyRefresh(ctx context.Context, refreshToken string) (*TokenPair, error)
 
-	// VerifyClientRefresh rotates a refresh token that must belong to clientID.
-	// The owning client is read from the locked session row rather than from the
-	// caller, so one client presenting another's token is refused exactly as a
-	// token that never existed is.
-	VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*TokenPair, error)
+	// VerifyClientRefresh rotates a refresh token that must belong to clientID
+	// and, when requiredResource is non-empty, to that resource. Both are read
+	// from the locked session row rather than from the caller, so one client
+	// presenting another's token is refused exactly as a token that never
+	// existed is — and a mismatch aborts BEFORE the token is consumed, so a
+	// client that names the wrong resource is told so without losing the session
+	// it legitimately holds.
+	VerifyClientRefresh(ctx context.Context, refreshToken, clientID, requiredResource string) (*TokenPair, error)
 
 	// MintForClient issues the first token pair for a registered client, from
 	// the host session that authorized it. The client's session is independent:

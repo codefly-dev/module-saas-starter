@@ -3,7 +3,6 @@
 package business_test
 
 import (
-	"context"
 	"testing"
 
 	"accounts/pkg/auth"
@@ -171,6 +170,48 @@ func TestAnMCPCodeCannotBeRedeemedForADifferentResource(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A client naming the wrong resource on refresh is refused as invalid_target
+// and keeps the session it legitimately holds. The refusal happens on the
+// locked session row, before the token is consumed.
+func TestAnMCPRefreshNamingAnotherResourceKeepsTheSession(t *testing.T) {
+	clearData(t)
+	admitMetadataClient(t)
+
+	signedIn, _ := signInAsClientUser(t, "google-mcp-refresh", "mcp-refresh@test.com")
+	signedInWithOrigin, err := auth.WithVerifiedPublicOrigin(signedIn, mcpHostOrigin)
+	require.NoError(t, err)
+	code, _, err := testService.GrantOAuthAuthorization(
+		signedInWithOrigin, mcpAuthorizationRequest())
+	require.NoError(t, err)
+
+	tokens, err := testService.ExchangeOAuthToken(testCtx, business.OAuthTokenRequest{
+		GrantType:    "authorization_code",
+		ClientID:     mcpClientID,
+		Code:         code,
+		RedirectURI:  "http://localhost:54321/callback",
+		CodeVerifier: testCodeVerifier,
+	})
+	require.NoError(t, err)
+
+	_, err = testService.ExchangeOAuthToken(testCtx, business.OAuthTokenRequest{
+		GrantType:    "refresh_token",
+		ClientID:     mcpClientID,
+		RefreshToken: tokens.RefreshToken,
+		Resource:     mcpHostOrigin + "/solutions/other/mcp",
+	})
+	require.Error(t, err)
+
+	// Still usable: a client told `invalid_target` has lost nothing.
+	rotated, err := testService.ExchangeOAuthToken(testCtx, business.OAuthTokenRequest{
+		GrantType:    "refresh_token",
+		ClientID:     mcpClientID,
+		RefreshToken: tokens.RefreshToken,
+		Resource:     mcpHostOrigin + "/solutions/example/mcp",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, rotated.AccessToken)
+}
+
 // A loopback redirect on a port the document did not name is admitted; one with
 // a different path is not. The rule applies to the presented port only, never to
 // the path, which is what keeps a local attacker from registering a listener on
@@ -193,15 +234,40 @@ func TestAnMCPRedirectMustStillMatchItsPath(t *testing.T) {
 }
 
 // An impersonated session may not hand a client a credential: the client would
-// hold a rotatable token for a person who never authorized it. The standard
-// authorize endpoint inherits that rule from the shared code issuer rather than
-// restating it, so this is the test that the inheritance is real.
+// hold a rotatable token for a person who never authorized it, and it would
+// outlive the window, which is capped precisely so nothing rotatable does. The
+// standard authorize endpoint inherits that rule from the shared code issuer
+// rather than restating it, so this is the test that the inheritance is real.
 func TestAnImpersonatedSessionCannotAuthorizeAnMCPClient(t *testing.T) {
 	clearData(t)
 	admitMetadataClient(t)
+	fixture := seedImpersonationFixture(t, "mcp")
 
-	_, _, err := testService.GrantOAuthAuthorization(
-		context.Background(), mcpAuthorizationRequest())
-	require.ErrorIs(t, err, auth.ErrClientAuthorizationRejected,
-		"no verified session at all is refused the same way")
+	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
+	require.NoError(t, err)
+	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
+	require.NoError(t, err)
+	impersonating := auth.WithVerifiedRequestIdentity(testCtx, auth.RequestIdentityOf(identity))
+	impersonating, err = auth.WithVerifiedPublicOrigin(impersonating, mcpHostOrigin)
+	require.NoError(t, err)
+
+	_, _, err = testService.GrantOAuthAuthorization(impersonating, mcpAuthorizationRequest())
+	require.ErrorIs(t, err, auth.ErrClientAuthorizationRejected)
+}
+
+// And a caller with no verified session at all. The request itself is valid —
+// the client resolves, the resource resolves — so the refusal can only come
+// from the code issuer having nobody to bind the code to.
+func TestAnUnauthenticatedCallerCannotAuthorizeAnMCPClient(t *testing.T) {
+	clearData(t)
+	admitMetadataClient(t)
+
+	publicCtx, err := auth.WithVerifiedPublicOrigin(testCtx, mcpHostOrigin)
+	require.NoError(t, err)
+	_, err = testService.ResolveOAuthAuthorization(publicCtx, mcpAuthorizationRequest())
+	require.NoError(t, err, "the request is well formed; only the caller is missing")
+
+	_, _, err = testService.GrantOAuthAuthorization(publicCtx, mcpAuthorizationRequest())
+	require.ErrorIs(t, err, auth.ErrClientAuthorizationRejected)
 }

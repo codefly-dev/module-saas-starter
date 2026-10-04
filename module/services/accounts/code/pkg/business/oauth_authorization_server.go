@@ -425,24 +425,20 @@ func (s *Service) exchangeOAuthRefreshToken(
 	if strings.TrimSpace(request.RefreshToken) == "" {
 		return nil, authorizationError(OAuthErrorInvalidRequest, "refresh_token is required", false)
 	}
-	pair, err := s.minter.VerifyClientRefresh(ctx, request.RefreshToken, client.ClientID)
+	// The resource is checked on the locked session row, before the token is
+	// consumed: a client naming the wrong one is refused and still holds the
+	// credential it legitimately has. Checking it after the rotation — on the
+	// token just minted — would have cost that client its session for sending a
+	// parameter RFC 8707 only lets it repeat.
+	pair, err := s.minter.VerifyClientRefresh(
+		ctx, request.RefreshToken, client.ClientID, strings.TrimSpace(request.Resource))
 	if err != nil {
+		if errors.Is(err, auth.ErrRefreshResourceMismatch) {
+			return nil, authorizationError(OAuthErrorInvalidTarget,
+				"this refresh token is not bound to that resource", false)
+		}
 		return nil, authorizationError(OAuthErrorInvalidGrant,
 			"the refresh token is invalid, expired, or has been revoked", false)
-	}
-	// The rotated token's audience comes from the locked session row, not from
-	// this request. A client repeating `resource` here is told so plainly if it
-	// names a different one, rather than quietly receiving a token bound to
-	// what it was granted.
-	if requested := strings.TrimSpace(request.Resource); requested != "" {
-		minted, verifyErr := s.minter.VerifyAccess(pair.AccessToken)
-		if verifyErr != nil {
-			return nil, authorizationError(OAuthErrorServerError, "could not verify the minted token", false)
-		}
-		if minted.Resource != requested {
-			return nil, authorizationError(OAuthErrorInvalidTarget,
-				"this refresh token is bound to a different resource", false)
-		}
 	}
 	return oauthTokenResponse(pair, supportedOAuthScope), nil
 }

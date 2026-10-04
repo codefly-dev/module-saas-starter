@@ -121,7 +121,7 @@ func (*fixedAccessMinter) VerifyRefresh(context.Context, string) (*auth.TokenPai
 	return nil, nil
 }
 
-func (*fixedAccessMinter) VerifyClientRefresh(context.Context, string, string) (*auth.TokenPair, error) {
+func (*fixedAccessMinter) VerifyClientRefresh(context.Context, string, string, string) (*auth.TokenPair, error) {
 	return nil, nil
 }
 

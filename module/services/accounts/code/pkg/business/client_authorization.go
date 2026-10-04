@@ -171,7 +171,10 @@ func (s *Service) rotateClientRefreshToken(
 	// Which client a refresh token belongs to is read from the locked session
 	// row, not from the request, so one client naming another's token is
 	// refused the same way a token that never existed is.
-	pair, err := s.minter.VerifyClientRefresh(ctx, grant.GetRefreshToken(), client.ClientID)
+	// No resource: this RPC predates resource indicators and carries none, so a
+	// resource-bound session rotates through it unchanged rather than being
+	// refused for a parameter the caller cannot send.
+	pair, err := s.minter.VerifyClientRefresh(ctx, grant.GetRefreshToken(), client.ClientID, "")
 	if err != nil {
 		if errors.Is(err, auth.ErrRefreshRevoked) || errors.Is(err, auth.ErrRefreshReuse) {
 			return nil, auth.ErrClientAuthorizationRejected

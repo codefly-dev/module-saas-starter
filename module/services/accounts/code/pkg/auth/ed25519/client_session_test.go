@@ -100,7 +100,7 @@ func TestClientRefreshRotationPreservesAzp(t *testing.T) {
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.NoError(t, err)
 
-	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-addin")
+	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-addin", "")
 	require.NoError(t, err)
 	require.NotEqual(t, pair.RefreshToken, rotated.RefreshToken, "the refresh half rotates")
 
@@ -120,11 +120,11 @@ func TestClientRefreshRefusesAnotherClientsToken(t *testing.T) {
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin", "")
 	require.NoError(t, err)
 
-	_, err = m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-cli")
+	_, err = m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-cli", "")
 	require.ErrorIs(t, err, auth.ErrRefreshRevoked)
 
 	// The refusal must not have revoked the family it did not belong to.
-	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-addin")
+	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-addin", "")
 	require.NoError(t, err)
 	require.NotEmpty(t, rotated.AccessToken)
 }
@@ -136,10 +136,10 @@ func TestClientRefreshRefusesTheHostsOwnWebSession(t *testing.T) {
 	hostPair, err := m.Mint(ctx, newIdentity())
 	require.NoError(t, err)
 
-	_, err = m.VerifyClientRefresh(ctx, hostPair.RefreshToken, "example-addin")
+	_, err = m.VerifyClientRefresh(ctx, hostPair.RefreshToken, "example-addin", "")
 	require.ErrorIs(t, err, auth.ErrRefreshRevoked)
 
-	_, err = m.VerifyClientRefresh(ctx, hostPair.RefreshToken, "")
+	_, err = m.VerifyClientRefresh(ctx, hostPair.RefreshToken, "", "")
 	require.Error(t, err, "a client refresh must name a client")
 }
 
@@ -227,11 +227,51 @@ func TestARotationReissuesTheBoundResource(t *testing.T) {
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
 	require.NoError(t, err)
 
-	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp")
+	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp", "")
 	require.NoError(t, err)
 	require.Contains(t, decodeJWTPayload(t, rotated.AccessToken),
 		`"aud":["test-audience","`+resource+`"]`)
 
+	identity, err := m.VerifyAccess(rotated.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, resource, identity.Resource)
+}
+
+// A client naming the wrong resource on refresh is refused AND keeps its
+// token. Checking the binding after the rotation would have cost it the session
+// it legitimately holds, for sending a parameter RFC 8707 only lets it repeat.
+func TestARefreshNamingTheWrongResourceDoesNotConsumeTheToken(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+	const resource = "https://host.example.com/solutions/example/mcp"
+
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
+	require.NoError(t, err)
+
+	_, err = m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp",
+		"https://host.example.com/solutions/other/mcp")
+	require.ErrorIs(t, err, auth.ErrRefreshResourceMismatch)
+
+	// The token survived: the rotation never happened.
+	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp", resource)
+	require.NoError(t, err)
+	require.NotEmpty(t, rotated.AccessToken)
+}
+
+// Repeating the resource it was granted is accepted, which is what a standard
+// OAuth client actually does.
+func TestARefreshRepeatingItsOwnResourceIsAccepted(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+	const resource = "https://host.example.com/solutions/example/mcp"
+
+	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
+	require.NoError(t, err)
+
+	rotated, err := m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp", resource)
+	require.NoError(t, err)
 	identity, err := m.VerifyAccess(rotated.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, resource, identity.Resource)
