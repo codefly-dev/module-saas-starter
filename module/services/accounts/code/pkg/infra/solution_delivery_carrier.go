@@ -25,6 +25,13 @@ import (
 //     DECLARE, because a presence Job runs one per module tree in that module's
 //     own namespace. A fixed value would refuse every genuine carrier.
 //
+// A generation that declares no workload declares no namespace, and a TOMBSTONE
+// is exactly that: removal is a generation, and it carries nothing. Refusing the
+// empty case outright therefore made removal through this endpoint IMPOSSIBLE.
+// The caller resolves such a document against the namespace this host last
+// applied for that binding, which is its own recorded state rather than
+// anything the arriving document asserts.
+//
 // Reading the presence namespace out of the signed document rather than from
 // configuration is what keeps it out of a deployer's reach — the same property
 // that puts the ownership domain inside the canonical bytes. And this host's
@@ -122,13 +129,18 @@ func (c *SolutionDeliveryCarrierCheck) AuthorizeCarrier(
 		return nil
 
 	case business.SolutionDeliveryPresence:
-		// The document says which namespace it is delivered from, through its
-		// workloads' SPIFFE IDs. A presence document declaring none cannot be
-		// authorised at all: there is nothing to check the carrier against, and
-		// accepting it would make the namespace check vacuous for exactly the
-		// documents that omitted it.
+		// The namespace comes from the signed document's own workloads, or —
+		// for a generation that declares none — from the namespace this host
+		// last APPLIED for that binding. Which of the two answered is the
+		// caller's to resolve; see business.presenceCarrierNamespaces.
+		//
+		// Empty means neither did: a first generation for a binding nothing has
+		// applied, declaring no workload. That cannot be authorised at all —
+		// there is nothing to check the carrier against, and accepting it would
+		// make the namespace check vacuous for exactly the documents that
+		// omitted one.
 		if len(declaredNamespaces) == 0 {
-			return fmt.Errorf("%w: the presence document declares no workload namespace, so there is nothing to authorise its carrier against",
+			return fmt.Errorf("%w: neither this presence document nor the binding's applied generation names a workload namespace, so there is nothing to authorise its carrier against",
 				ErrCarrierNotAuthorized)
 		}
 		// More than one distinct namespace has no single answer to "where was

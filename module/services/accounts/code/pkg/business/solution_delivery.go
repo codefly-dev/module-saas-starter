@@ -172,7 +172,8 @@ type SolutionDeliveryCarrierAuthorizer interface {
 //
 //  1. parse the carrier (core's ParseSigned, so the carrier's own schema is
 //     checked);
-//  2. verify the bundle against the trust root and the identity allowlist;
+//  2. verify the bundle against the trust root and the identity allowlist,
+//     WITH THE READER FOR THE KIND THE PATH NAMES;
 //  3. check the attested signer may speak for the domain the document asserts;
 //  4. authorise the CALLER as a carrier for this kind;
 //  5. persist.
@@ -200,19 +201,9 @@ func (s *Service) ReceiveSolutionDelivery(
 		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 	}
 
-	delivered, err := solutionhost.VerifyDelivered(ctx, signed, s.deliveryVerifier)
+	received, err := s.receiveDeliveredDocument(ctx, carrier.Kind, signed)
 	if err != nil {
-		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
-	}
-	document, err := delivered.Document()
-	if err != nil {
-		// The payload verified but does not decode to a document whose canonical
-		// encoding is those same bytes. Malformed rather than unattested: the
-		// attestation is sound and the bytes are not what they claim.
-		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
-	}
-	if err := document.Validate(); err != nil {
-		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryInvalid, err)
+		return "", nil, err
 	}
 
 	// The attested signer must be entitled to the domain the document asserts.
@@ -220,26 +211,25 @@ func (s *Service) ReceiveSolutionDelivery(
 	// refused at admission should not become durable desired state in the first
 	// place — an inbox of documents nobody may act on is an inbox an operator
 	// has to triage.
-	if !s.signerMaySpeakFor(delivered.DeliveredBy(), document.OwnershipDomain) {
+	if !s.signerMaySpeakFor(received.signer, received.ownershipDomain) {
 		return "", nil, fmt.Errorf("%w: signer %q, domain %q",
-			ErrSolutionDeliveryDomainNotGranted, delivered.DeliveredBy(), document.OwnershipDomain)
+			ErrSolutionDeliveryDomainNotGranted, received.signer, received.ownershipDomain)
 	}
 
 	if err := s.deliveryCarrier.AuthorizeCarrier(
-		ctx, credential, carrier.Kind, declaredNamespaces(document)); err != nil {
+		ctx, credential, carrier.Kind, received.carrierNamespaces); err != nil {
 		return "", nil, err
 	}
 
-	payload := delivered.Payload()
 	record := &SolutionDeliveryRecord{
 		Kind:            carrier.Kind,
-		DocumentID:      document.Binding,
-		Generation:      document.Generation,
-		ContentHash:     solutionDeliveryContentHash(payload),
-		Payload:         payload,
+		DocumentID:      received.documentID,
+		Generation:      received.generation,
+		ContentHash:     solutionDeliveryContentHash(received.payload),
+		Payload:         received.payload,
 		Bundle:          signed.Bundle,
-		SignerIdentity:  delivered.DeliveredBy(),
-		OwnershipDomain: document.OwnershipDomain,
+		SignerIdentity:  received.signer,
+		OwnershipDomain: received.ownershipDomain,
 		ReceivedAt:      time.Now().UTC(),
 	}
 
@@ -255,6 +245,188 @@ func (s *Service) ReceiveSolutionDelivery(
 		return SolutionDeliveryAccepted, record, nil
 	}
 	return SolutionDeliveryReplayed, record, nil
+}
+
+// receivedSolutionDelivery is one verified document read into the shape the
+// inbox stores. The two kinds are different documents with different identity
+// fields and different carrier rules, and this is where that difference ends:
+// everything past it is one row.
+type receivedSolutionDelivery struct {
+	documentID      string
+	generation      uint64
+	ownershipDomain string
+	signer          string
+	payload         []byte
+
+	// carrierNamespaces is what the CALLER is authorised against. It is empty
+	// for authority, which has one fixed writer namespace, and for presence it
+	// is the namespaces the document's own workloads declare — see
+	// presenceCarrierNamespaces for the generation that declares none.
+	carrierNamespaces []string
+}
+
+// receiveDeliveredDocument verifies the carrier with the reader for the kind
+// the PATH named.
+//
+// This dispatch is the defect it replaces, not a tidy-up. Both paths called
+// VerifyDelivered — the PRESENCE reader — so the two halves of the lifecycle
+// were exactly inverted at the endpoint:
+//
+//   - a genuine authority document POSTed to /authority was refused, because
+//     the presence reader checks the schema inside the signed bytes and an
+//     authority payload declares the authority schema;
+//   - a presence carrier POSTed to /authority was ACCEPTED and stored as
+//     kind=authority, because the presence reader is exactly what it satisfies.
+//
+// So the inbox could hold a presence document filed as authority and could
+// never hold an authority document at all. The kind in the path and the schema
+// inside the attested bytes have to be checked against each other, and core
+// gives one reader per kind precisely so that check is a function call rather
+// than a comparison a host writes itself.
+func (s *Service) receiveDeliveredDocument(
+	ctx context.Context, kind SolutionDeliveryKind, signed *solutionhost.Signed,
+) (*receivedSolutionDelivery, error) {
+	switch kind {
+	case SolutionDeliveryPresence:
+		return s.receiveDeliveredPresence(ctx, signed)
+	case SolutionDeliveryAuthority:
+		return s.receiveDeliveredAuthority(ctx, signed)
+	}
+	return nil, fmt.Errorf("%w: unknown delivery kind %q", ErrSolutionDeliveryMalformed, kind)
+}
+
+func (s *Service) receiveDeliveredPresence(
+	ctx context.Context, signed *solutionhost.Signed,
+) (*receivedSolutionDelivery, error) {
+	delivered, err := solutionhost.VerifyDelivered(ctx, signed, s.deliveryVerifier)
+	if err != nil {
+		return nil, classifySolutionDeliveryVerification(err)
+	}
+	document, err := delivered.Document()
+	if err != nil {
+		// The payload verified but does not decode to a document whose canonical
+		// encoding is those same bytes. Malformed rather than unattested: the
+		// attestation is sound and the bytes are not what they claim.
+		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+	}
+	if err := document.Validate(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryInvalid, err)
+	}
+	namespaces, err := s.presenceCarrierNamespaces(ctx, document)
+	if err != nil {
+		return nil, err
+	}
+	return &receivedSolutionDelivery{
+		documentID:        document.Binding,
+		generation:        document.Generation,
+		ownershipDomain:   document.OwnershipDomain,
+		signer:            delivered.DeliveredBy(),
+		payload:           delivered.Payload(),
+		carrierNamespaces: namespaces,
+	}, nil
+}
+
+func (s *Service) receiveDeliveredAuthority(
+	ctx context.Context, signed *solutionhost.Signed,
+) (*receivedSolutionDelivery, error) {
+	delivered, err := solutionhost.VerifyDeliveredAuthority(ctx, signed, s.deliveryVerifier)
+	if err != nil {
+		return nil, classifySolutionDeliveryVerification(err)
+	}
+	document, err := delivered.Document()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+	}
+	if err := document.Validate(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryInvalid, err)
+	}
+	// The authority document's identity is its OWN id, never the presence
+	// binding it is granted over. One binding can be granted authority under
+	// successive authority IDs, and core's own fold is keyed on the binding
+	// precisely so a rename does not reinstate a withdrawal — which only works
+	// if the inbox keeps the authority ID it was delivered as.
+	return &receivedSolutionDelivery{
+		documentID:      document.Authority,
+		generation:      document.Generation,
+		ownershipDomain: document.OwnershipDomain,
+		signer:          delivered.DeliveredBy(),
+		payload:         delivered.Payload(),
+		// Authority has ONE writer namespace for the whole platform, so there
+		// is nothing read out of the document to authorise the carrier against.
+		carrierNamespaces: nil,
+	}, nil
+}
+
+// classifySolutionDeliveryVerification separates "the signer is wrong" from
+// "the bytes are wrong", because the two have different response codes and a
+// caller acts differently on each.
+//
+// core's VerifyDelivered does two things behind one error: it hands the payload
+// and bundle to this host's verifier, and it then reads the attested bytes with
+// the reader for the kind. Only the first is about the SIGNER. A schema
+// mismatch, a payload that is not its own canonical encoding, or a document
+// core will not parse are all facts about the bytes — which is why a genuine
+// authority document POSTed to /presence is 400 rather than 403. Answering 403
+// would send an operator to look at the signing identity for a delivery that
+// was signed perfectly well and simply sent to the wrong path.
+func classifySolutionDeliveryVerification(err error) error {
+	if errors.Is(err, solutionhost.ErrUnsigned) {
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
+	}
+	return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+}
+
+// presenceCarrierNamespaces is what a presence carrier is authorised against.
+//
+// Normally it is the namespaces the document's OWN workloads declare, through
+// their SPIFFE IDs — a property of the signed bytes rather than of host
+// configuration a deployer can edit.
+//
+// A generation that declares no workload declares no namespace, and there are
+// two of those: a TOMBSTONE, which declares absence and may carry nothing at
+// all, and a present generation that renders only a frontend surface. Refusing
+// the empty case outright made REMOVAL THROUGH THIS ENDPOINT IMPOSSIBLE — the
+// one document delivery must be able to hand over to withdraw a binding was the
+// one document the carrier check could never authorise.
+//
+// So the fallback is the binding's LAST APPLIED namespace: what this host
+// recorded, from a generation it had already verified and admitted, for the same
+// binding. That is a stronger anchor than the arriving document, because the
+// arriving document is the thing under check and the applied record is the
+// host's own state.
+//
+// It can still come back empty — a first generation for a binding nothing has
+// applied, or a binding whose applied generation itself declared no workload.
+// Empty is handed to the authorizer rather than resolved here, so the refusal
+// reads in one place: there is nothing to authorise this carrier against.
+func (s *Service) presenceCarrierNamespaces(
+	ctx context.Context, document *solutionhost.SolutionHostBinding,
+) ([]string, error) {
+	if declared := declaredNamespaces(document); len(declared) > 0 {
+		return declared, nil
+	}
+	records, err := s.ListSolutionHostBindings(ctx)
+	if err != nil {
+		// NOT an empty namespace set. A store this host cannot read must not
+		// turn into "authorise against nothing", which for a document that
+		// declares none is indistinguishable from a carrier check that passed.
+		return nil, err
+	}
+	for _, record := range records {
+		if record.BindingID != document.Binding || record.Applied == nil {
+			continue
+		}
+		applied, err := solutionhost.Parse([]byte(record.Applied.Document))
+		if err != nil {
+			// This host wrote that document itself, after verifying and
+			// admitting it. Unparseable means the host's own state is damaged,
+			// which is reported rather than treated as "no namespace".
+			return nil, fmt.Errorf("%w: binding %q applied generation %d does not parse back: %w",
+				ErrSolutionDeliveryInvalid, record.BindingID, record.Applied.Generation, err)
+		}
+		return declaredNamespaces(applied), nil
+	}
+	return nil, nil
 }
 
 // signerMaySpeakFor reports whether an attested signer is granted an ownership
