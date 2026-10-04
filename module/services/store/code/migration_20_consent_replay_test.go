@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	_ "github.com/lib/pq"
 )
 
 // Migration 20's backfill, replayed from zero against staged pre-cutover rows.
@@ -35,45 +37,20 @@ import (
 //
 // `i.created_at >= t.opened_at` is the fix: the installation must have been
 // created during the period this target has been open.
+//
+// WHAT IT DOES NOT PROVE, said here because the migration's own comment is
+// easily read as stronger than it is: the predicate NARROWS the carry-over, it
+// does not establish historical consent. `created_at` records when the
+// installation row was written, not which binding the administrator was looking
+// at; an alias that was reused while a single target period stayed open, or a
+// clock that moved, are both outside what a timestamp can answer. What is proved
+// below is the one direction that matters for a disposition nobody will review
+// case by case: an installation that predates the live period is never carried
+// into it. Erring the other way (a carry that should have been a revoke) is not
+// detectable from this schema at all, and the fail-closed second statement is
+// the only answer to it.
 func TestMigration20DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
-	if os.Getenv("MIGRATION_CONSENT_REPLAY") == "" && testing.Short() {
-		t.Skip("needs docker; run without -short")
-	}
-	docker := func(args ...string) string {
-		t.Helper()
-		out, err := exec.Command("docker", args...).CombinedOutput()
-		if err != nil {
-			t.Fatalf("docker %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	// Pull up front: `docker run -d` interleaves pull progress with the id, so
-	// the id is only reliably the last line once the image is local.
-	docker("pull", "postgres:16")
-	started := docker("run", "--rm", "-d", "-e", "POSTGRES_PASSWORD=example",
-		"-p", "127.0.0.1::5432", "postgres:16")
-	id := started[strings.LastIndex(started, "\n")+1:]
-	t.Cleanup(func() { docker("rm", "-f", id) })
-
-	port := strings.TrimPrefix(docker("port", id, "5432/tcp"), "127.0.0.1:")
-	url := "postgres://postgres:example@127.0.0.1:" + port + "/postgres?sslmode=disable"
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	deadline := time.Now().Add(60 * time.Second)
-	for db.Ping() != nil {
-		if time.Now().After(deadline) {
-			t.Fatal("postgres did not become ready")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	proposed, err := filepath.Abs("../migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db, url := throwawayPostgres(t)
 
 	// Two ledgers: 1..19, then 1..20. The second CONTAINS the first, because the
 	// runner reads the database's current version and requires that migration's
@@ -84,26 +61,7 @@ func TestMigration20DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 	//
 	// Nothing past 20 is copied. 21 and 22 are irrelevant here and applying them
 	// would widen what a failure could mean.
-	upTo, from20 := t.TempDir(), t.TempDir()
-	for _, file := range listSQL(t, proposed) {
-		version := versionOf(t, file)
-		if version > 20 {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(proposed, file))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if version < 20 {
-			if err := os.WriteFile(filepath.Join(upTo, file), body, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if err := os.WriteFile(filepath.Join(from20, file), body, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := migrateStoreFrom("file://"+upTo, url); err != nil {
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 19), url); err != nil {
 		t.Fatalf("apply migrations 1..19: %v", err)
 	}
 
@@ -139,18 +97,15 @@ func TestMigration20DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 	kept := stageInstallation(t, db, alias, "now() - interval '1 day'",
 		lateOrg, lateAgent, lateOwner, lateNode)
 
-	if err := migrateStoreFrom("file://"+from20, url); err != nil {
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 20), url); err != nil {
 		t.Fatalf("apply migration 20: %v", err)
 	}
 
 	// `kept` carries over to the live target it was created under.
-	var keptTarget, keptStatus string
-	mustQuery(t, db, `SELECT COALESCE(target_id::text, ''), status FROM public.installations WHERE id = $1::uuid`,
-		&keptTarget, kept)
-	if keptStatus = statusOf(t, db, kept); keptStatus != "active" {
-		t.Fatalf("an installation created inside the live target's period must stay active, got %q", keptStatus)
+	if status := statusOf(t, db, kept); status != "active" {
+		t.Fatalf("an installation created inside the live target's period must stay active, got %q", status)
 	}
-	if keptTarget != liveTarget {
+	if keptTarget := targetOf(t, db, kept); keptTarget != liveTarget {
 		t.Fatalf("expected the live target %s, got %q", liveTarget, keptTarget)
 	}
 
@@ -164,14 +119,100 @@ func TestMigration20DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 	if movedTarget == liveTarget {
 		t.Fatal("consent was transferred across an alias reuse: the installation now names a target it never consented to")
 	}
+	// The closed period's target is not a consolation prize either: the
+	// disposition is a revocation with a recorded reason, not a carry onto
+	// whichever row happens to match the alias.
+	if movedTarget != "" {
+		t.Fatalf("a revoked installation names no target, got %q (the live period is %s, the closed one %s)",
+			movedTarget, liveTarget, closedTarget)
+	}
+	var reason string
+	mustQuery(t, db, `
+		SELECT COALESCE(revoked_reason, '') FROM public.installations WHERE id = $1::uuid`, &reason, moved)
+	if !strings.Contains(reason, "no live solution target") {
+		t.Fatalf("a revocation this migration performed states why, got %q", reason)
+	}
+}
+
+// throwawayPostgres starts a PostgreSQL 16 for one test and returns a connection
+// and its URL. Each test gets its own cluster: these tests apply PARTIAL ledgers
+// and stage rows that only exist before a cutover, so a shared cluster would let
+// a failure in either be attributed to the other.
+//
+// Skipped unless the migration replay gate asked for it. `migration-reference-gate.mjs
+// --replay` is the one CI step that declares `postgres:16` as an external input
+// and has a container runtime; a bare `go test ./...` in this package must not
+// start depending on docker, so the gate's signal is the switch. The gate selects
+// `-run '^TestMigration'`, which is why every test here carries that prefix.
+func throwawayPostgres(t *testing.T) (*sql.DB, string) {
+	t.Helper()
+	if os.Getenv("MIGRATION_CONSENT_REPLAY") == "" {
+		t.Skip("needs a container runtime; run through migration-reference-gate.mjs <reference> --replay")
+	}
+	docker := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("docker", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("docker %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	// Pull up front: `docker run -d` interleaves pull progress with the id, so
+	// the id is only reliably the last line once the image is local.
+	docker("pull", "postgres:16")
+	started := docker("run", "--rm", "-d", "-e", "POSTGRES_PASSWORD=example",
+		"-p", "127.0.0.1::5432", "postgres:16")
+	id := started[strings.LastIndex(started, "\n")+1:]
+	t.Cleanup(func() { docker("rm", "-f", id) })
+
+	port := strings.TrimPrefix(docker("port", id, "5432/tcp"), "127.0.0.1:")
+	url := "postgres://postgres:example@127.0.0.1:" + port + "/postgres?sslmode=disable"
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	deadline := time.Now().Add(60 * time.Second)
+	for db.Ping() != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("postgres did not become ready")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return db, url
+}
+
+// ledgerUpTo copies the proposed ledger's migrations through `highest` into a
+// temporary directory, so a test can stand a database at an intermediate version
+// and then apply one migration onto it.
+//
+// It reads `../migrations` directly rather than a git archive, which is the
+// point: an in-place edit of an applied migration is what this shape exists to
+// make observable, so the files under test have to be the working tree's.
+func ledgerUpTo(t *testing.T, highest int) string {
+	t.Helper()
+	source, err := filepath.Abs("../migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	into := t.TempDir()
+	for _, file := range listSQL(t, source) {
+		if versionOf(t, file) > highest {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(source, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(into, file), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return into
 }
 
 // stageInstallationParents creates the one organisation, two principals and
 // scope node that an installation's foreign keys require.
-//
-// Both installations share them deliberately: the variable under test is
-// `created_at` against the target's period, so everything else must be identical
-// or a failure could be attributed to the fixture.
 func stageInstallationParents(t *testing.T, db *sql.DB, email, slug string) (org, agent, owner, node string) {
 	t.Helper()
 	var user string
@@ -226,6 +267,19 @@ func targetOf(t *testing.T, db *sql.DB, id string) string {
 func mustQuery(t *testing.T, db *sql.DB, query string, into *string, args ...any) {
 	t.Helper()
 	if err := db.QueryRow(query, args...).Scan(into); err != nil {
-		t.Fatalf("%s: %v", strings.TrimSpace(strings.SplitN(query, "\n", 3)[1]), err)
+		t.Fatalf("%s: %v", summarize(query), err)
 	}
+}
+
+// summarize names the failing statement in one line. It takes the first
+// non-empty line rather than indexing into the split, which panicked on a
+// single-line query and reported a nil-pointer index out of range in place of
+// the database error it was called to show.
+func summarize(query string) string {
+	for _, line := range strings.Split(query, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "<empty query>"
 }
