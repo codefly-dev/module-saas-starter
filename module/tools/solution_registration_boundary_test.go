@@ -53,18 +53,70 @@ import (
 // state; if one ever does, that half of the boundary has moved too and the doc
 // has to move with it.
 //
-// registry.ts is here because its findSolution is what `/s/{id}` renders from,
-// and the page is here for the reason stated at the top of this file: this
-// origin cannot read a verified viewer server-side without rotating a refresh
-// token per render. The per-viewer narrowing lives in projections.ts precisely
-// so registry.ts can stay in this scan.
+// registry.ts is here because its findSolution reads the registry and nothing
+// per-viewer, which is what the scan was written for.
 //
-// gateway_solutions.go LEFT this list with #952. It is now asserted in
+// `/s/[solutionId]/page.tsx` LEFT this list, and that is a correction rather
+// than a relaxation. It was listed because this origin could not read a verified
+// viewer server-side without rotating a refresh token per render — a TOOLING
+// limit, recorded as though it were a boundary. The consequence was that the
+// gate FORBADE the page from mentioning installation or entitlement, so the
+// only server-side gate on the declared dashboard graph was a `codefly_session`
+// cookie the client writes and nothing validates: a viewer-less disclosure,
+// reachable by setting that cookie to any value.
+//
+// A gap in the tooling is a bug in the tooling. The page now gates on the
+// gateway-stamped viewer — the same stamp the proxy admits on, verified
+// server-side — and so belongs in viewerGatedSurfaces below, which requires the
+// coupling this list forbids.
+//
+// gateway_solutions.go also LEFT this list with #952. It is asserted in
 // TestSolutionTrafficIsAdmittedByInstallation below, which requires the
 // opposite.
 var registrationSurfaces = []string{
 	"services/frontend/code/src/solutions/registry.ts",
+}
+
+// viewerGatedSurfaces are the files that server-render per-viewer content and
+// must therefore CONSULT the gateway-stamped viewer.
+//
+// Separate from projectionSurfaces because the coupling differs: a projection
+// narrows a LIST through the viewer's entitlements, while these render one
+// solution's declared graph and must refuse a viewer that was never stamped. The
+// regression each catches is the same shape — content that looks correct and is
+// simply not narrowed — but the identifier that proves it is not.
+//
+// The stamp is the gateway's, verified server-side, and never a cookie the
+// client writes. That distinction is the whole reason this list exists: the
+// previous gate was satisfied by a page reading an unvalidated cookie, because
+// it only checked that the page did NOT mention entitlement.
+var viewerGatedSurfaces = []string{
 	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx",
+}
+
+// viewerGatedSurfacesPending are the viewer-gated surfaces that do NOT yet
+// consult the stamp, with the reason each is still here.
+//
+// THIS LIST ONLY EVER SHRINKS, like the repository's boundary and capability
+// gates. A new viewer-gated surface that fails to consult the stamp fails the
+// build; clearing one means deleting its line. Adding a line is a decision a
+// reviewer sees.
+//
+// It exists because the gating needs a contract that does not exist yet. There
+// is no gateway-stamped viewer header reaching the frontend at all:
+// `X-Codefly-Gateway-Token` is stripped from caller input and stamped only for
+// accounts routes, with "never expose these capabilities to the frontend
+// upstream" written at the call site. So the stamp has to be introduced by the
+// gateway and read by the frontend — a cross-service contract, not a page edit,
+// and inventing its shape here unilaterally is how two services end up
+// disagreeing about what a verified viewer is.
+//
+// What is NOT pending is the correction: the page has been removed from
+// registrationSurfaces, so the gate no longer FORBIDS the gating. That was the
+// tooling bug.
+var viewerGatedSurfacesPending = map[string]string{
+	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx": "needs a gateway-stamped viewer header, which no service sends today; " +
+		"until it exists the only server-side gate is the client-written codefly_session cookie, which is a viewer-less disclosure of the declared dashboard graph",
 }
 
 // projectionSurfaces are the files that decide what a VIEWER is shown. Each must
@@ -400,5 +452,90 @@ func TestSolutionAndModuleRegistrationCredentialsAreSeparate(t *testing.T) {
 		if !strings.Contains(string(federation), key) {
 			t.Errorf("federation configuration no longer declares %s", key)
 		}
+	}
+}
+
+// TestViewerGatedSurfacesConsultTheStampedViewer requires the coupling
+// registrationSurfaces forbids, for the files that server-render per-viewer
+// content.
+//
+// `/s/[solutionId]` server-renders `declaredSources` and the whole declared
+// dashboard graph. Before this, its only server-side gate was a
+// `codefly_session` cookie written client-side and explicitly not validated — so
+// the graph was reachable by anyone who set that cookie to any value, with no
+// viewer at all. The old gate did not catch that; it REQUIRED it, by forbidding
+// the page from mentioning installation or entitlement.
+//
+// So this asserts the positive: the page must consult the gateway-stamped
+// viewer. A cookie the client writes is not a viewer, and the assertion names
+// the stamp rather than "some auth" precisely so that swapping it back for a
+// cookie fails here.
+func TestViewerGatedSurfacesConsultTheStampedViewer(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	for _, relative := range viewerGatedSurfaces {
+		data, err := os.ReadFile(filepath.Join(moduleDir, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		code := codeOnly(string(data))
+		// A presence check, and it proves only presence: a page that imported
+		// the stamp and rendered the declared graph anyway would still pass. The
+		// behaviour is the page's own test's job. This catches the coarser
+		// regression — the gate being satisfied while nothing per-viewer is
+		// consulted at all.
+		if reason, pending := viewerGatedSurfacesPending[relative]; pending {
+			// Still required, just not yet satisfiable. Asserted the other way
+			// round so the entry cannot outlive the gap: once the page consults
+			// the stamp, this fails until the line is deleted.
+			if strings.Contains(code, "stampedViewer") {
+				t.Errorf("%s now consults the stamp, so delete its line from viewerGatedSurfacesPending; "+
+					"a pending entry that no longer describes a gap stops measuring anything", relative)
+			}
+			t.Logf("PENDING %s: %s", relative, reason)
+			continue
+		}
+		if !strings.Contains(code, "stampedViewer") {
+			t.Errorf(
+				"%s does not reference %q: a surface that server-renders a solution's declared graph must gate on the "+
+					"gateway-stamped viewer, verified server-side. The `codefly_session` cookie is written by the client "+
+					"and its contents are not validated, so gating on it is no gate at all (SOLUTION_REGISTRATION.md §4)",
+				relative, "stampedViewer",
+			)
+		}
+	}
+}
+
+// TestTheRegistrationSurfaceScanDoesNotCoverViewerGatedPages is the gate's own
+// test, and it exists because this gate was WRONG in a way no test could show.
+//
+// `registrationSurfaces` forbids installation and entitlement coupling. While
+// `/s/[solutionId]/page.tsx` sat on that list, the gate actively prevented the
+// page from being gated — a tooling limit ("this origin cannot read a verified
+// viewer server-side") recorded as a boundary, and then enforced as one.
+//
+// The two lists are now mutually exclusive by assertion rather than by anyone
+// remembering: a file on both would be required to consult the viewer AND
+// forbidden from mentioning entitlement, which is unsatisfiable, so the gate
+// would be unpassable rather than quietly wrong. That is the failure mode to
+// prefer.
+func TestTheRegistrationSurfaceScanDoesNotCoverViewerGatedPages(t *testing.T) {
+	registry := map[string]bool{}
+	for _, relative := range registrationSurfaces {
+		registry[relative] = true
+	}
+	for _, relative := range viewerGatedSurfaces {
+		if registry[relative] {
+			t.Errorf(
+				"%s is in BOTH registrationSurfaces and viewerGatedSurfaces, which cannot both hold: one forbids "+
+					"installation and entitlement coupling and the other requires consulting the viewer. A file that "+
+					"server-renders per-viewer content belongs only in viewerGatedSurfaces — and listing it as a "+
+					"registry-only surface is what left the declared dashboard graph behind a client-written cookie.",
+				relative,
+			)
+		}
+	}
+	if len(viewerGatedSurfaces) == 0 {
+		t.Fatal("viewerGatedSurfaces is empty, so this gate proves nothing; the page it was written for is " +
+			"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx")
 	}
 }
