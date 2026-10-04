@@ -156,6 +156,7 @@ type Service struct {
 	// capability rather than authorizing on the declared ceiling alone — which
 	// is the state enforcement-at-use exists to end.
 	moduleAuthority         ModuleAuthorityStore
+	moduleInstallations     ModuleInstallationResolver
 	moduleOperationBindings ModuleOperationBindingStore
 
 	// The independent sources execution-bound minting needs. Unset means
