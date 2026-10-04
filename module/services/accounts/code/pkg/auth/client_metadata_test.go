@@ -32,7 +32,10 @@ func TestClaudeCodeMetadataDocumentIsAdmittedAsPublished(t *testing.T) {
 	require.True(t, client.Metadata)
 	require.Equal(t, claudeCodeClientID, client.ClientID)
 	require.Equal(t, "Claude Code", client.Name)
-	require.Equal(t, "https://claude.ai", client.URI)
+	// The VERIFIED origin: the client_id URL's own. The document also declares
+	// `client_uri: https://claude.ai`, which happens to agree here — the test
+	// below proves the host does not read it even when it does not.
+	require.Equal(t, "https://claude.ai", client.Origin)
 	require.Equal(t,
 		[]string{"http://localhost/callback", "http://127.0.0.1/callback"},
 		client.RedirectURIs)
@@ -275,35 +278,6 @@ func TestTheResolverFetchesValidatesAndCachesADocument(t *testing.T) {
 	require.Equal(t, 1, fetches)
 }
 
-// A refusal is cached too, briefly. Without that, an unauthenticated caller can
-// make this host fetch an arbitrary https URL once per request.
-func TestARefusedDocumentIsCachedBriefly(t *testing.T) {
-	allowLoopbackMetadataDial(t)
-
-	var fetches int
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fetches++
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-	clientID := server.URL + "/metadata"
-
-	resolver := testResolver(t, "any", server)
-	for range 3 {
-		_, err := resolver.Resolve(context.Background(), clientID)
-		require.ErrorIs(t, err, auth.ErrClientMetadataUnreachable)
-	}
-	require.Equal(t, 1, fetches)
-
-	// Past the negative TTL it is tried again: a client that fixed its document
-	// must not be locked out for longer than that.
-	now := time.Now().Add(2 * time.Minute)
-	resolver.SetClockForTest(func() time.Time { return now })
-	_, err := resolver.Resolve(context.Background(), clientID)
-	require.Error(t, err)
-	require.Equal(t, 2, fetches)
-}
-
 // A redirect off the document's own origin is refused. The origin IS the
 // client's identity, so following one would let any site that can publish a
 // redirect claim another's client_id.
@@ -407,4 +381,165 @@ func TestTheMetadataDialGuardRefusesEveryNonPublicAddress(t *testing.T) {
 		require.Error(t, guard("tcp", address, nil), "should refuse %q", address)
 	}
 	require.NoError(t, guard("tcp", net.JoinHostPort("93.184.216.34", "443"), nil))
+}
+
+// A1007-06. A document may claim any `client_uri`; the host must display the
+// origin it VERIFIED by fetching, not the claim. Adopted from the Astra review
+// (A1007-06, client_origin_not_spoofable): a consent screen showing
+// `https://trusted.example.com` for a document served from
+// `https://client.example.com` names a publisher the host never reached.
+func TestAMetadataDocumentCannotChooseTheOriginShownToAPerson(t *testing.T) {
+	const clientID = "https://client.example.com/doc"
+	client, err := auth.ClientFromMetadataDocument(clientID, []byte(
+		`{"client_id":"https://client.example.com/doc",`+
+			`"client_name":"Totally Trusted",`+
+			`"client_uri":"https://trusted.example.com",`+
+			`"redirect_uris":["http://localhost/callback"],`+
+			`"token_endpoint_auth_method":"none"}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "https://client.example.com", client.Origin,
+		"the origin shown must be the one the document was fetched from")
+	require.NotContains(t, client.Origin, "trusted.example.com")
+	// The name is untrusted presentation and is carried as published — the
+	// consent screen shows it BESIDE the verified origin, never instead of it.
+	require.Equal(t, "Totally Trusted", client.Name)
+}
+
+// A1007-04. The guard answers for the concrete address a dial is about to
+// reach. Adopted from the Astra review (A1007-04, special_use_guard), which
+// found the previous IsGlobalUnicast+IsPrivate pair admitting shared,
+// benchmarking and reserved space.
+func TestNonPublicDestinationsAreRefusedAcrossEverySpecialUseRange(t *testing.T) {
+	refused := []string{
+		// The ranges the previous guard caught.
+		"127.0.0.1:443", "[::1]:443", "10.0.0.1:443", "192.168.1.1:443",
+		"172.16.0.1:443", "169.254.169.254:443", "[fe80::1]:443",
+		// The ranges it admitted. Each is routable somewhere and none is public.
+		"100.64.0.1:443",       // shared address space, carrier NAT
+		"198.18.0.1:443",       // benchmarking
+		"240.0.0.1:443",        // reserved
+		"192.0.0.1:443",        // IETF protocol assignments
+		"192.0.2.1:443",        // documentation
+		"198.51.100.1:443",     // documentation
+		"203.0.113.1:443",      // documentation
+		"192.88.99.1:443",      // 6to4 relay anycast
+		"0.0.0.0:443",          // this network
+		"255.255.255.255:443",  // limited broadcast
+		"[fc00::1]:443",        // unique local
+		"[2001:db8::1]:443",    // documentation
+		"[2001:2::1]:443",      // benchmarking
+		"[64:ff9b::a00:1]:443", // NAT64 wrapping 10.0.0.1
+		// A v4-mapped form of private space: classified as the v4 address it
+		// wraps, or the v6 registry alone would find no match and admit it.
+		"[::ffff:10.0.0.1]:443",
+		"[::ffff:127.0.0.1]:443",
+		// Unparseable. A guard that cannot tell what it is about to reach must
+		// not admit it.
+		"not-an-address", "", "example.com:443",
+	}
+	for _, address := range refused {
+		require.False(t, auth.IsPublicDestinationDialAddress(address),
+			"should refuse %q", address)
+	}
+	for _, address := range []string{
+		"93.184.216.34:443", "1.1.1.1:443", "[2606:4700::1111]:443",
+	} {
+		require.True(t, auth.IsPublicDestinationDialAddress(address),
+			"should admit %q", address)
+	}
+}
+
+// A1007-09. Every redirect is refused, same-origin included: CIMD draft-02
+// §5.1 says the document MUST be served at its own URL and the fetch MUST NOT
+// follow redirects, so the bytes deciding a client's identity always come from
+// its client_id. Adopted from the Astra review
+// (error_cache_and_same_origin_redirect).
+func TestASameOriginRedirectIsRefusedToo(t *testing.T) {
+	allowLoopbackMetadataDial(t)
+
+	var hops int
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hops++
+		if r.URL.Path == "/metadata" {
+			http.Redirect(w, r, server.URL+"/moved", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"client_id":"` + server.URL + `/metadata","client_name":"Moved","redirect_uris":["http://localhost/callback"],"token_endpoint_auth_method":"none"}`))
+	}))
+	defer server.Close()
+
+	resolver := testResolver(t, "any", server)
+	_, err := resolver.Resolve(context.Background(), server.URL+"/metadata")
+	require.ErrorIs(t, err, auth.ErrClientMetadataRedirected)
+	require.Equal(t, 1, hops, "the redirect target must never be fetched")
+}
+
+// A1007-09. A failed fetch is NOT cached: CIMD draft-02 §5.2 forbids it, and a
+// client whose origin had a 503 must work on its next attempt rather than
+// staying refused for a window it cannot see. The abuse a negative cache would
+// have bounded is bounded by the gateway's authentication rate-limit class on
+// the routes that reach here.
+func TestAFailedFetchIsNotCached(t *testing.T) {
+	allowLoopbackMetadataDial(t)
+
+	var fetches int
+	healthy := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches++
+		if !healthy {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"client_id":"https://` + r.Host + `/metadata","client_name":"Recovered","redirect_uris":["http://localhost/callback"],"token_endpoint_auth_method":"none"}`))
+	}))
+	defer server.Close()
+	clientID := server.URL + "/metadata"
+
+	resolver := testResolver(t, "any", server)
+	_, err := resolver.Resolve(context.Background(), clientID)
+	require.ErrorIs(t, err, auth.ErrClientMetadataUnreachable)
+	require.Equal(t, 1, fetches)
+
+	// Recovered, and the very next resolve sees it — no waiting out a cached
+	// refusal.
+	healthy = true
+	client, err := resolver.Resolve(context.Background(), clientID)
+	require.NoError(t, err)
+	require.Equal(t, "Recovered", client.Name)
+	require.Equal(t, 2, fetches)
+}
+
+// An invalid document is not cached either, for the same reason: a publisher
+// who fixes it must not wait out a window.
+func TestAnInvalidDocumentIsNotCached(t *testing.T) {
+	allowLoopbackMetadataDial(t)
+
+	var fetches int
+	valid := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches++
+		w.Header().Set("Content-Type", "application/json")
+		if !valid {
+			// Names a different client_id: the load-bearing validation rule.
+			_, _ = w.Write([]byte(`{"client_id":"https://elsewhere.example.com/doc","token_endpoint_auth_method":"none","redirect_uris":["http://localhost/callback"]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"client_id":"https://` + r.Host + `/metadata","client_name":"Fixed","redirect_uris":["http://localhost/callback"],"token_endpoint_auth_method":"none"}`))
+	}))
+	defer server.Close()
+	clientID := server.URL + "/metadata"
+
+	resolver := testResolver(t, "any", server)
+	_, err := resolver.Resolve(context.Background(), clientID)
+	require.ErrorIs(t, err, auth.ErrClientMetadataIdentityMismatch)
+
+	valid = true
+	client, err := resolver.Resolve(context.Background(), clientID)
+	require.NoError(t, err)
+	require.Equal(t, "Fixed", client.Name)
+	require.Equal(t, 2, fetches)
 }

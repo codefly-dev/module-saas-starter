@@ -51,8 +51,16 @@ import (
 
 // Config controls Minter behaviour. Zero values are safe defaults.
 type Config struct {
-	// Issuer is set as `iss` on every access token.
+	// Issuer is set as `iss` on every access token. A deployment that publishes
+	// RFC 8414 metadata sets it to the same https URL the metadata names, which
+	// is what lets a client that discovered the metadata verify the token.
 	Issuer string
+	// AdditionalAcceptedIssuers are `iss` values VerifyAccess accepts besides
+	// Issuer. It exists for exactly one migration: a deployment moving from the
+	// pre-metadata literal issuer to its https URL keeps accepting the literal
+	// while tokens minted under it are still in flight, so the change does not
+	// sign out every live session at deploy.
+	AdditionalAcceptedIssuers []string
 	// Audience is set as `aud` on every access token.
 	Audience string
 	// AccessTokenTTL is the lifetime of an access token. Default 3 min — kept
@@ -669,9 +677,13 @@ func (m *Minter) Revoke(ctx context.Context, refreshToken string) error {
 //
 // alg is locked to EdDSA. iss/aud/exp/nbf are validated. Clock skew tolerated.
 func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
+	// The issuer is checked below rather than by the parser: jwt.WithIssuer takes
+	// one value, and a deployment mid-migration must accept two — what it mints
+	// now and what it minted before. Dropping the parser option without
+	// replacing the check would accept ANY issuer, so the explicit comparison
+	// is the whole of it and runs before any claim is read.
 	parser := jwt.NewParser(
 		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithIssuer(m.cfg.Issuer),
 		jwt.WithAudience(m.cfg.Audience),
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(m.cfg.ClockSkew),
@@ -710,6 +722,9 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 	}
 	if !token.Valid {
 		return nil, auth.ErrTokenMalformed
+	}
+	if !m.acceptsIssuer(claims.Issuer) {
+		return nil, auth.ErrTokenWrongIssuer
 	}
 
 	userID, err := uuid.Parse(claims.Subject)
@@ -794,6 +809,20 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		AssuranceLevel:        claims.AssuranceLevel,
 		MFAVerifiedAt:         numericDateTime(claims.MFAVerifiedAt),
 	}, nil
+}
+
+// acceptsIssuer reports whether an `iss` is one this minter trusts: the one it
+// signs with, or one explicitly declared for a migration window. An empty
+// candidate is never accepted, so a token carrying no issuer at all is refused
+// rather than matching an unset slot.
+func (m *Minter) acceptsIssuer(candidate string) bool {
+	if candidate == "" {
+		return false
+	}
+	if candidate == m.cfg.Issuer {
+		return true
+	}
+	return slices.Contains(m.cfg.AdditionalAcceptedIssuers, candidate)
 }
 
 // RevokeAccess parses the given access token (signature + claim

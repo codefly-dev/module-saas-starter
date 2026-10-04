@@ -40,6 +40,10 @@ func oauthService(t *testing.T, declaredMetadata string) *business.Service {
 	policy, err := auth.NewClientMetadataPolicy(declaredMetadata)
 	require.NoError(t, err)
 	service.SetClientMetadataResolver(auth.NewClientMetadataResolver(policy))
+	// The issuer is configuration, resolved once — not the request's origin. A
+	// test that wants it absent clears it explicitly (see
+	// TestTheMetadataDocumentIsNotPublishedWithoutAnIssuer).
+	service.SetOAuthIssuer(theHost)
 	return service
 }
 
@@ -113,6 +117,7 @@ func TestTheMetadataDocumentReportsWhetherMetadataClientsAreEnabled(t *testing.T
 // named. Fail closed.
 func TestTheMetadataDocumentIsNotPublishedWithoutAnIssuer(t *testing.T) {
 	service := oauthService(t, "any")
+	service.SetOAuthIssuer("")
 	_, err := service.AuthorizationServerMetadata(context.Background())
 	require.ErrorIs(t, err, business.ErrOAuthIssuerUnavailable)
 }
@@ -193,8 +198,22 @@ func TestEachAuthorizeRuleRefusesWithTheRightDeliverability(t *testing.T) {
 			wantRedirectable: false,
 		},
 		{
-			name:             "a response type other than code",
-			mutate:           func(r *business.OAuthAuthorizationRequest) { r.ResponseType = "token" },
+			name:   "a response type other than code",
+			mutate: func(r *business.OAuthAuthorizationRequest) { r.ResponseType = "token" },
+			// RFC 6749 §4.1.2.1's own code, not invalid_request: the request is
+			// well formed and asks for something this server does not serve.
+			wantCode:         business.OAuthErrorUnsupportedResponse,
+			wantRedirectable: true,
+		},
+		{
+			name:             "no response type at all",
+			mutate:           func(r *business.OAuthAuthorizationRequest) { r.ResponseType = "" },
+			wantCode:         business.OAuthErrorInvalidRequest,
+			wantRedirectable: true,
+		},
+		{
+			name:             "no PKCE method at all",
+			mutate:           func(r *business.OAuthAuthorizationRequest) { r.CodeChallengeMethod = "" },
 			wantCode:         business.OAuthErrorInvalidRequest,
 			wantRedirectable: true,
 		},
@@ -310,4 +329,133 @@ func marshalJSON(t *testing.T, value any) string {
 	raw, err := json.Marshal(value)
 	require.NoError(t, err)
 	return string(raw)
+}
+
+// The grant endpoint re-resolves the whole request rather than trusting what
+// the page hands it. The page carries the request through sessionStorage across
+// a sign-in and a navigation, so by the time it asks for a code the values have
+// been outside the host's hands — and a tampered one must not be able to widen
+// anything. This is the test that re-resolution is real and not an optimisation
+// someone could remove.
+func TestTheGrantPathReResolvesTheRequestItIsGiven(t *testing.T) {
+	service := oauthService(t, "any")
+	ctx := issuerContext(t)
+
+	// Same values the page would hold, with the redirect URI swapped for one the
+	// client never registered. No session is needed to prove the point: the
+	// refusal must come from resolution, before the code issuer is reached at
+	// all, which is what makes it independent of who is calling.
+	request := authorizeRequest()
+	request.RedirectURI = "https://evil.example.com/cb"
+
+	_, _, err := service.GrantOAuthAuthorization(ctx, request)
+	refusal := requireAuthorizationError(t, err)
+	require.Equal(t, business.OAuthErrorInvalidRequest, refusal.Code)
+	require.False(t, refusal.Redirectable)
+}
+
+// A1007-02. One issuer: what the metadata publishes is what tokens carry. The
+// metadata is built from the CONFIGURED value, never from the request, so two
+// clients reaching the same deployment through different Host headers cannot be
+// handed two different issuers — and a token minted under one cannot fail
+// verification against the other. Adopted from the Astra review
+// (issuer_matches_metadata).
+func TestTheMetadataIssuerIsTheConfiguredOneAndNotTheRequestOrigin(t *testing.T) {
+	service := oauthService(t, "any")
+	service.SetOAuthIssuer(theHost)
+
+	// A request arriving with a different verified origin must not move it.
+	elsewhere, err := auth.WithVerifiedPublicOrigin(context.Background(),
+		"https://other-host.example.com")
+	require.NoError(t, err)
+	metadata, err := service.AuthorizationServerMetadata(elsewhere)
+	require.NoError(t, err)
+	require.Equal(t, theHost, metadata.Issuer)
+	require.Equal(t, theHost+"/oauth2/authorize", metadata.AuthorizationEndpoint)
+
+	// And with no configured issuer nothing is published, whatever the request
+	// claims: every URL in the document would name a host this service cannot
+	// vouch for, and a client that fetched it would authorize somewhere else.
+	bare := oauthService(t, "any")
+	bare.SetOAuthIssuer("")
+	_, err = bare.AuthorizationServerMetadata(elsewhere)
+	require.ErrorIs(t, err, business.ErrOAuthIssuerUnavailable)
+}
+
+// A1007-07. response_type is required and `code` is the only one served, and a
+// request for another gets RFC 6749 §4.1.2.1's own code rather than
+// invalid_request — a client asking for `token` has made a well-formed request
+// for something this server does not do.
+func TestTheResponseTypeIsRequiredAndOnlyCodeIsServed(t *testing.T) {
+	service := oauthService(t, "any")
+	ctx := issuerContext(t)
+
+	request := authorizeRequest()
+	request.ResponseType = ""
+	refusal := requireAuthorizationError(t,
+		mustFailResolve(t, service, ctx, request))
+	require.Equal(t, business.OAuthErrorInvalidRequest, refusal.Code)
+	require.Contains(t, refusal.Description, "response_type is required")
+
+	request.ResponseType = "token"
+	refusal = requireAuthorizationError(t, mustFailResolve(t, service, ctx, request))
+	require.Equal(t, business.OAuthErrorUnsupportedResponse, refusal.Code)
+	require.True(t, refusal.Redirectable)
+
+	// And the method is not defaulted either: a request naming none has not
+	// asked for S256, and supplying it would mask a client that believed it was
+	// sending `plain`.
+	request = authorizeRequest()
+	request.CodeChallengeMethod = ""
+	refusal = requireAuthorizationError(t, mustFailResolve(t, service, ctx, request))
+	require.Equal(t, business.OAuthErrorInvalidRequest, refusal.Code)
+}
+
+// A1007-07. A refresh request's scope must not exceed the grant (RFC 6749 §6),
+// and it is refused BEFORE the rotation — so a client that asked for more does
+// not lose the token it has for asking.
+func TestARefreshScopeBeyondTheGrantIsRefusedBeforeRotation(t *testing.T) {
+	service := oauthService(t, "any")
+
+	_, err := service.ExchangeOAuthToken(context.Background(), business.OAuthTokenRequest{
+		GrantType:    "refresh_token",
+		ClientID:     "example-addin",
+		RefreshToken: "whatever",
+		Scope:        "admin",
+	})
+	refusal := requireAuthorizationError(t, err)
+	require.Equal(t, business.OAuthErrorInvalidScope, refusal.Code)
+}
+
+// Consent is enforced by the HOST, not merely advertised to the page. A caller
+// told consent is required and asking for a code without saying the person
+// approved is refused — which is what stops a browser-side defect (a
+// mis-decoded `requires_consent`, a dropped navigation) from issuing
+// credentials nobody approved.
+func TestAGrantNeedingConsentIsRefusedWithoutIt(t *testing.T) {
+	service := oauthService(t, "any")
+	ctx := issuerContext(t)
+	request := authorizeRequest()
+	request.Resource = theHost + "/solutions/example/mcp"
+
+	resolved, err := service.ResolveOAuthAuthorization(ctx, request)
+	require.NoError(t, err)
+	require.True(t, resolved.RequiresConsent)
+
+	_, _, err = service.GrantOAuthAuthorization(ctx, request)
+	refusal := requireAuthorizationError(t, err)
+	require.Equal(t, business.OAuthErrorAccessDenied, refusal.Code)
+	require.Contains(t, refusal.Description, "approval")
+}
+
+func mustFailResolve(
+	t *testing.T,
+	service *business.Service,
+	ctx context.Context,
+	request business.OAuthAuthorizationRequest,
+) error {
+	t.Helper()
+	_, err := service.ResolveOAuthAuthorization(ctx, request)
+	require.Error(t, err)
+	return err
 }

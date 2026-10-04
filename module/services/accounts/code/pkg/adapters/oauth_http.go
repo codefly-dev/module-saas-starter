@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -147,6 +148,7 @@ type oauthAuthorizeRequestBody struct {
 	State               string `json:"state"`
 	Scope               string `json:"scope"`
 	Resource            string `json:"resource"`
+	ConsentGranted      bool   `json:"consent_granted"`
 }
 
 func (b oauthAuthorizeRequestBody) request() business.OAuthAuthorizationRequest {
@@ -159,21 +161,35 @@ func (b oauthAuthorizeRequestBody) request() business.OAuthAuthorizationRequest 
 		State:               b.State,
 		Scope:               b.Scope,
 		Resource:            b.Resource,
+		ConsentGranted:      b.ConsentGranted,
 	}
 }
 
 // oauthAuthorizeValidateResponse is what the page needs to render: who is
 // asking, where from, for what, and whether the person must approve it. The
-// registry itself — other redirect URIs, the client's origins — is never served
-// to a browser.
+// registry itself — other redirect URIs, the client's CORS origins — is never
+// served to a browser.
+//
+// The field names are the wire contract with the frontend, which DECODES them
+// (features/auth/model/oauth-authorization.ts). They were once read by casting
+// this JSON to a camelCase interface, which type-checked, compiled, and made
+// `requires_consent` read as undefined — so consent was skipped for every
+// client that needed it. Renaming a field here without changing the decoder
+// there breaks that seam silently again; the cross-seam test is what catches it.
 type oauthAuthorizeValidateResponse struct {
-	ClientName      string `json:"client_name"`
-	ClientURI       string `json:"client_uri,omitempty"`
+	// ClientName is untrusted presentation, from the client's own document.
+	ClientName string `json:"client_name"`
+	// ClientOrigin is the origin this host VERIFIED, for a metadata client the
+	// one it fetched the document from. Never the document's own `client_uri`.
+	ClientOrigin    string `json:"client_origin"`
 	ClientSource    string `json:"client_source"`
 	Resource        string `json:"resource,omitempty"`
 	ResourceName    string `json:"resource_name,omitempty"`
 	Scope           string `json:"scope"`
 	RequiresConsent bool   `json:"requires_consent"`
+	// Issuer is this authorization server's own identity, so the page can echo
+	// `iss` on the redirect it builds (RFC 9207) — including the decline.
+	Issuer string `json:"issuer"`
 }
 
 func serveOAuthAuthorizeValidate(svc *business.Service, w http.ResponseWriter, r *http.Request) {
@@ -183,21 +199,29 @@ func serveOAuthAuthorizeValidate(svc *business.Service, w http.ResponseWriter, r
 	}
 	resolved, err := svc.ResolveOAuthAuthorization(r.Context(), body.request())
 	if err != nil {
-		writeOAuthAuthorizationError(w, err)
+		writeOAuthAuthorizationError(w, svc.OAuthIssuer(), err)
 		return
 	}
 	source := "registry"
+	origin := resolved.Client.Origin
 	if resolved.Client.Metadata {
 		source = "metadata_document"
+	} else if origin == "" {
+		// An operator-declared client has no fetched origin to verify, and the
+		// page must still have something non-empty to show: the deployment
+		// vouched for this client by the id it declared, so that id is the
+		// verified fact about it.
+		origin = resolved.Client.ClientID
 	}
 	writeJSON(w, http.StatusOK, oauthAuthorizeValidateResponse{
 		ClientName:      resolved.Client.Name,
-		ClientURI:       resolved.Client.URI,
+		ClientOrigin:    origin,
 		ClientSource:    source,
 		Resource:        resolved.Resource.Value,
 		ResourceName:    resolved.Resource.SolutionID,
 		Scope:           resolved.Scope,
 		RequiresConsent: resolved.RequiresConsent,
+		Issuer:          svc.OAuthIssuer(),
 	})
 }
 
@@ -230,7 +254,7 @@ func serveOAuthAuthorizeGrant(svc *business.Service, w http.ResponseWriter, r *h
 	}
 	code, expiresIn, err := svc.GrantOAuthAuthorization(ctx, body.request())
 	if err != nil {
-		writeOAuthAuthorizationError(w, err)
+		writeOAuthAuthorizationError(w, svc.OAuthIssuer(), err)
 		return
 	}
 	metadata, err := svc.AuthorizationServerMetadata(ctx)
@@ -271,7 +295,7 @@ type oauthErrorBody struct {
 // the frontend knows whether it is holding a browser it may send to the
 // client's redirect URI — and sending one there before the URI is validated is
 // how an authorization endpoint becomes an open redirector.
-func writeOAuthAuthorizationError(w http.ResponseWriter, err error) {
+func writeOAuthAuthorizationError(w http.ResponseWriter, issuer string, err error) {
 	var refusal *business.OAuthAuthorizationError
 	if !errors.As(err, &refusal) {
 		if errors.Is(err, auth.ErrClientAuthorizationRejected) {
@@ -295,10 +319,16 @@ func writeOAuthAuthorizationError(w http.ResponseWriter, err error) {
 	}
 	writeJSON(w, status, struct {
 		oauthErrorBody
-		Redirectable bool `json:"redirectable"`
+		Redirectable bool   `json:"redirectable"`
+		Issuer       string `json:"issuer,omitempty"`
 	}{
 		oauthErrorBody: oauthErrorBody{Error: refusal.Code, ErrorDescription: refusal.Description},
 		Redirectable:   refusal.Redirectable,
+		// RFC 9207 §2 covers error responses, and this host advertises support
+		// for the parameter: a client enforcing that protection cannot
+		// authenticate an error redirect that carries no `iss`. The frontend
+		// echoes it on the redirect it builds.
+		Issuer: issuer,
 	})
 }
 
@@ -314,8 +344,12 @@ func serveOAuthToken(svc *business.Service, w http.ResponseWriter, r *http.Reque
 	// with no security value — the credential is in the body either way.
 	request, err := decodeOAuthTokenRequest(w, r)
 	if err != nil {
+		description := "the request body could not be read"
+		if errors.Is(err, errDuplicateOAuthParameter) {
+			description = "a request parameter was given more than once"
+		}
 		writeOAuthTokenError(w, http.StatusBadRequest,
-			business.OAuthErrorInvalidRequest, "the request body could not be read")
+			business.OAuthErrorInvalidRequest, description)
 		return
 	}
 	// Authorization-code and refresh-token responses must not be cached by
@@ -380,6 +414,24 @@ func decodeOAuthTokenRequest(w http.ResponseWriter, r *http.Request) (business.O
 	if err := r.ParseForm(); err != nil {
 		return business.OAuthTokenRequest{}, err
 	}
+	// RFC 6749 §3.2: request parameters MUST NOT be included more than once.
+	// `Get` reads the first and discards the rest, which turns a duplicated
+	// parameter into a silent choice between two values a caller sent — so a
+	// request carrying one is refused instead.
+	//
+	// `resource` is in the singleton set here even though RFC 8707 §2 allows it
+	// repeated: this host serves exactly one resource shape per token, so two
+	// distinct targets cannot both be honoured, and discarding the second would
+	// mint a token for a resource the client did not think it asked for.
+	for _, name := range []string{
+		"grant_type", "client_id", "code", "redirect_uri",
+		"code_verifier", "refresh_token", "resource", "scope",
+	} {
+		if len(r.PostForm[name]) > 1 {
+			return business.OAuthTokenRequest{}, fmt.Errorf(
+				"%w: %s", errDuplicateOAuthParameter, name)
+		}
+	}
 	return business.OAuthTokenRequest{
 		GrantType:    r.PostForm.Get("grant_type"),
 		ClientID:     r.PostForm.Get("client_id"),
@@ -391,6 +443,9 @@ func decodeOAuthTokenRequest(w http.ResponseWriter, r *http.Request) (business.O
 		Scope:        r.PostForm.Get("scope"),
 	}, nil
 }
+
+// errDuplicateOAuthParameter is a request carrying a singleton parameter twice.
+var errDuplicateOAuthParameter = errors.New("duplicate OAuth parameter")
 
 func writeOAuthTokenError(w http.ResponseWriter, status int, code, description string) {
 	w.Header().Set("Cache-Control", "no-store")

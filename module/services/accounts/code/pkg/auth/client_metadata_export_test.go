@@ -35,11 +35,6 @@ func (r *ClientMetadataResolver) SetTransportForTest(transport http.RoundTripper
 	r.fetcher.(*httpMetadataFetcher).client.Transport = transport
 }
 
-// SetClockForTest drives the cache's expiry without waiting.
-func (r *ClientMetadataResolver) SetClockForTest(now func() time.Time) {
-	r.now = now
-}
-
 // CachedMetadataTTLForTest exposes how long a document's own Cache-Control
 // would be honoured, bounds applied.
 func CachedMetadataTTLForTest(cacheControl string) time.Duration {

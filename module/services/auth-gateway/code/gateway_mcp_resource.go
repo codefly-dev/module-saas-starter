@@ -118,6 +118,25 @@ func mcpResourceMetadataPath(solutionID string) string {
 	return protectedResourceMetadataPrefix + solutionPrefix + solutionID + "/" + solutionMCPSegment
 }
 
+// solutionResourceMetadataPath is the URL the 401 challenge names:
+// `/solutions/<id>/.well-known/oauth-protected-resource`, the solution's own
+// well-known surface.
+//
+// Decided in issue #1003 (comment of 2026-10-04): it is derivable from the
+// route, the solution's `.well-known` GET is already public and proxied
+// unauthenticated to its runtime, and the runtime half serves its RFC 9728
+// document there naming this host as the authorization server. A client follows
+// the URL the challenge gives it, so this is the one it uses.
+//
+// mcpResourceMetadataPath above stays served by this gateway as well, because
+// that is the URL RFC 9728 §3.1 tells a client to CONSTRUCT when it has only
+// the resource — a client that never read a challenge would look there and
+// find nothing otherwise. The two documents describe the same resource and name
+// the same authorization server.
+func solutionResourceMetadataPath(solutionID string) string {
+	return solutionPrefix + solutionID + "/.well-known/oauth-protected-resource"
+}
+
 // handleProtectedResourceMetadata serves the RFC 9728 document. It returns true
 // when it has handled the request.
 //
@@ -191,17 +210,50 @@ func solutionIDFromMetadataPath(rest string) (string, bool) {
 	return id, true
 }
 
-// stampResourceChallenge puts the RFC 6750 / RFC 9728 challenge on a 401 from a
-// solution's MCP endpoint. It is what starts an MCP client's discovery chain:
-// the client reads `resource_metadata`, fetches the document, finds this host
-// as the authorization server, and runs the authorization-code flow. Without
-// this header a client has nowhere to begin and reports only "unauthorized".
+// stampResourceChallenge puts the RFC 6750 / RFC 9728 challenge on a denied
+// request to a solution's surface. It is what starts an MCP client's discovery
+// chain: the client reads `resource_metadata`, fetches the document, finds this
+// host as the authorization server, and runs the authorization-code flow.
+// Without this header a client has nowhere to begin and reports only
+// "unauthorized".
+//
+// Stamped for EVERY protected `/solutions/<id>/*` path, not only the exact
+// `/mcp`. The gateway is where such a request is denied — it strips identity,
+// runs ext_authz and answers 401 itself, never proxying — so a challenge the
+// runtime would have sent can only reach a direct-to-port caller. A 401 here
+// without it is a dead end, and that was true for `/solutions/<id>/mcp/` (a
+// trailing slash) and for every other solution path. Required by issue #1003's
+// comment of 2026-10-04.
 func stampResourceChallenge(w http.ResponseWriter, solutionID string) {
 	base := publicBaseURL()
-	metadata := mcpResourceMetadataPath(solutionID)
+	metadata := solutionResourceMetadataPath(solutionID)
 	if base != "" {
 		metadata = base + metadata
 	}
 	w.Header().Set("WWW-Authenticate",
 		`Bearer error="invalid_token", resource_metadata="`+metadata+`"`)
+}
+
+// legacyTokenIssuer is the literal `iss` accounts minted before it published
+// RFC 8414 metadata. Spelled here rather than imported: the gateway is its own
+// Go module and may not depend on accounts. TestTokenIssuerMatchesAccounts
+// holds the two together.
+const legacyTokenIssuer = "saas-starter"
+
+// gatewayTokenIssuer is the `iss` accounts mints today — the configured public
+// base URL, or the literal when none is configured. Derived from the same
+// APP_BASE_URL both sides read, so the two cannot be configured apart.
+func gatewayTokenIssuer() string {
+	if base := publicBaseURL(); base != "" {
+		return base
+	}
+	return legacyTokenIssuer
+}
+
+// gatewayAcceptedIssuers is what verification admits besides the minted one:
+// the literal, while tokens minted under it are still unexpired. A deployment
+// that never moved mints the literal anyway, so the extra entry is a no-op
+// there rather than a second trusted issuer.
+func gatewayAcceptedIssuers() []string {
+	return []string{legacyTokenIssuer}
 }

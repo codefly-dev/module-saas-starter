@@ -158,10 +158,11 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// stamped before the check runs rather than at each refusal site, which is
 	// also why a 503 from an unavailable revocation store carries it too
 	// (harmless: a client reads it only on 401).
-	isMCP := isSolutionMCPPath(path)
-	if isMCP {
-		stampResourceChallenge(w, id)
-	}
+	//
+	// Every protected solution path, not only the exact `/mcp`: this is the
+	// process that denies them all, so narrowing it left `/solutions/<id>/mcp/`
+	// and every other path without a way to begin.
+	stampResourceChallenge(w, id)
 	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
@@ -179,12 +180,10 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusForbidden, "forbidden")
 		return true
 	}
-	// The request was authenticated, so the challenge is not part of the
-	// answer. Leaving it on a 200 would tell a conforming client its token was
-	// refused on a response that served its data.
-	if isMCP {
-		w.Header().Del("WWW-Authenticate")
-	}
+	// The request was authenticated, so the challenge is not part of the answer.
+	// Leaving it on a 200 would tell a conforming client its token was refused
+	// on a response that served its data.
+	w.Header().Del("WWW-Authenticate")
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
 	// Proxy to the solution. The caller's bearer is preserved so the solution

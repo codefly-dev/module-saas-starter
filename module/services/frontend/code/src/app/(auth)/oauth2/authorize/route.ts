@@ -1,10 +1,11 @@
 import { getEndpoints } from "codefly";
 
 import {
-	isOAuthRefusal,
+	duplicatedOAuthParameter,
 	oauthQueryString,
 	oauthRedirect,
 	oauthWireFormat,
+	parseOAuthRefusal,
 	readOAuthAuthorizationRequest,
 } from "@/features/auth/model/oauth-authorization";
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
@@ -38,6 +39,17 @@ const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
  */
 export async function GET(request: Request): Promise<Response> {
 	const url = new URL(request.url);
+	// A duplicated singleton parameter is refused before anything is read from
+	// it: `get` would return the first and discard the rest, which is the host
+	// choosing between two values the caller sent. Refused HERE rather than at
+	// accounts, because by the time the request is reduced to a JSON object the
+	// duplicate no longer exists to notice.
+	const duplicated = duplicatedOAuthParameter(url.searchParams);
+	if (duplicated) {
+		return invalidRequestPage(
+			"This sign-in link repeats a parameter that may appear only once.",
+		);
+	}
 	const authorization = readOAuthAuthorizationRequest(url.searchParams);
 	if (!authorization) {
 		return invalidRequestPage(
@@ -84,8 +96,8 @@ export async function GET(request: Request): Promise<Response> {
 	}
 
 	if (!response.ok) {
-		const refusal = await response.json().catch(() => null);
-		if (isOAuthRefusal(refusal) && refusal.redirectable) {
+		const refusal = parseOAuthRefusal(await response.json().catch(() => null));
+		if (refusal?.redirectable) {
 			// The redirect URI is this client's own, so the client — which is
 			// sitting on a loopback listener waiting — is told what went wrong
 			// rather than being left on a browser tab that never comes back.
@@ -94,13 +106,17 @@ export async function GET(request: Request): Promise<Response> {
 					error: refusal.error,
 					error_description: refusal.errorDescription,
 					state: authorization.state || undefined,
+					// RFC 9207 §2 covers error responses, and this host advertises
+					// support for the parameter. The issuer comes from the host's
+					// own answer, never from the request, so a caller cannot choose
+					// what its client is told about who refused it.
+					iss: refusal.issuer,
 				}),
 			);
 		}
 		return invalidRequestPage(
-			isOAuthRefusal(refusal) && refusal.errorDescription
-				? refusal.errorDescription
-				: "This application is not registered to sign in here, or asked to be returned to an address it has not registered.",
+			refusal?.errorDescription ??
+				"This application is not registered to sign in here, or asked to be returned to an address it has not registered.",
 			response.status === 503 ? 503 : 400,
 		);
 	}

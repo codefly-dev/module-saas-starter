@@ -171,6 +171,40 @@ one registry, one authorization-code table, one minter and one session kind.
 | The first registered client's own RPCs | `/v1/auth/clients/validate`, `/v1/auth/clients/authorize`, `/v1/auth/token` | accounts (`pkg/business/client_authorization.go`) |
 | RFC 9728 protected-resource metadata for a solution's MCP endpoint | `GET /.well-known/oauth-protected-resource/solutions/<id>/mcp` | auth-gateway (`gateway_mcp_resource.go`) |
 
+**The issuer is `APP_BASE_URL`.** RFC 8414 §2 requires an authorization
+server's issuer to be an https URL, and a client that discovers the metadata
+then verifies `iss` against it — so the published `issuer` and the `iss` of
+every minted token are **one configured value**, resolved once at startup, never
+from the request's `Host`. A deployment with no `APP_BASE_URL` publishes no
+metadata and keeps the pre-metadata literal issuer, so the two cannot disagree;
+one that sets it mints the URL and keeps **accepting** the literal until tokens
+carrying it expire, so the change signs nobody out.
+
+**A denied `/solutions/<id>/*` carries the discovery challenge.** The gateway is
+where such a request is refused — it strips identity, runs ext_authz and answers
+itself, never proxying — so a challenge the runtime would have sent cannot reach
+anyone through it. Every protected solution path answers 401 with
+`WWW-Authenticate: Bearer resource_metadata="<base>/solutions/<id>/.well-known/oauth-protected-resource"`,
+the solution's own well-known, which the gateway already proxies unauthenticated
+to its runtime. The RFC 9728 §3.1 URL a client constructs from the resource
+alone is served by the gateway as well, so a client that read no challenge is
+not left without a document.
+
+**Consent is enforced by the host, not advertised to the page.** A grant request
+for a client whose authorization requires consent is refused unless it states
+that the person approved. That does not defend against a hostile browser — one
+holding the session can claim anything — but it is what stops a browser-side
+defect from issuing credentials nobody approved, which is precisely what a
+mis-decoded `requires_consent` did.
+
+**The wire names are the contract.** Accounts serialises OAuth snake_case and
+the frontend **decodes** it (`features/auth/model/oauth-authorization.ts`),
+failing closed on anything it cannot read. Casting that JSON to a camelCase
+interface compiled, type-checked, passed every unit test on both sides, and
+skipped consent for every client that needed it — so the seam is held from both
+ends (`accounts/pkg/adapters/oauth_wire_contract_test.go` and
+`frontend/.../model/__tests__/wire-contract.test.ts`).
+
 The OAuth surface is **raw HTTP, not transcoded RPCs**, because its shape is the
 contract: RFC 6749 §3.2 requires a form-encoded token request and §5.2 a
 specific JSON error object, neither of which grpc-gateway produces. A client
@@ -182,8 +216,13 @@ Two client sources, which cannot collide — a registry slug can never spell
 - **Operator-registered.** `IDENTITY_REGISTERED_CLIENTS`, a JSON array in the
   `identity` configuration group. Unset registers none, which refuses the flow.
 - **Client ID Metadata Documents.** A `client_id` that is an https URL is
-  fetched (bounded size and time, no redirect off its own origin, SSRF-guarded
-  at the dial), validated, and used as a public client for that one flow.
+  fetched (bounded size and time, **no redirect at all** per CIMD draft-02 §5.1,
+  and guarded at the dial against every non-public destination — the IANA
+  special-purpose registries for both families, not just loopback and RFC 1918),
+  validated, and used as a public client for that one flow. Failures and invalid
+  documents are **not** cached (§5.2), so a publisher who fixes one is not made
+  to wait out a window; the abuse a negative cache would have bounded is bounded
+  by the authentication rate-limit class on the routes that reach it.
   **Nothing durable is written.** Gated by
   `IDENTITY_CLIENT_METADATA_DOCUMENTS`, unset meaning refused. There is **no**
   dynamic client registration (RFC 7591) and no `registration_endpoint` in the
@@ -204,6 +243,17 @@ client registered itself by publishing a document (nobody but the person can
 vouch for it) or when the request narrows the credential to a named resource.
 An operator-declared client asking for nothing in particular keeps the silent
 handoff it has today.
+
+The consent screen always shows the origin the host **verified** — the one it
+fetched the document from. A document's own `client_uri` is read by nothing: a
+document at `https://client.example.com/doc` may claim any `client_uri`, and
+displaying that claim would name a publisher the host never reached (CIMD
+draft-02 §8.5). The client's `client_name` is shown as untrusted presentation
+beside the verified origin, never instead of it.
+
+A redemption is checked against the client's policy **as it stands then**, not
+only against the code: a metadata client withdraws a callback by removing it
+from its document, since there is no row to delete.
 
 An MCP token is a **session** credential: the gateway stamps
 `x-credential-kind: session` with a session id, so a solution's SDK mints the

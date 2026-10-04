@@ -40,7 +40,12 @@ func admitMetadataClient(t *testing.T) {
 	// stood in for. Its bounds, SSRF guard and cache are covered in pkg/auth.
 	testService.SetClientMetadataResolver(auth.NewClientMetadataResolverWith(policy,
 		auth.StaticMetadataDocuments{mcpClientID: mcpClientDocument}))
-	t.Cleanup(func() { testService.SetClientMetadataResolver(nil) })
+	// The issuer is configuration, and the resource origin is pinned to it.
+	testService.SetOAuthIssuer(mcpHostOrigin)
+	t.Cleanup(func() {
+		testService.SetClientMetadataResolver(nil)
+		testService.SetOAuthIssuer("")
+	})
 }
 
 func mcpAuthorizationRequest() business.OAuthAuthorizationRequest {
@@ -81,8 +86,13 @@ func TestStory_HOST_MCP_001(t *testing.T) {
 	signedInWithOrigin, err := auth.WithVerifiedPublicOrigin(signedIn, mcpHostOrigin)
 	require.NoError(t, err)
 
+	// Consent stated, as the consent page states it after the person pressed
+	// Allow. Without it the host refuses — see
+	// TestAGrantNeedingConsentIsRefusedWithoutIt.
+	approved := mcpAuthorizationRequest()
+	approved.ConsentGranted = true
 	code, expiresIn, err := testService.GrantOAuthAuthorization(
-		signedInWithOrigin, mcpAuthorizationRequest())
+		signedInWithOrigin, approved)
 	require.NoError(t, err)
 	require.NotEmpty(t, code)
 	require.Positive(t, expiresIn)
@@ -144,8 +154,9 @@ func TestAnMCPCodeCannotBeRedeemedForADifferentResource(t *testing.T) {
 	signedInWithOrigin, err := auth.WithVerifiedPublicOrigin(signedIn, mcpHostOrigin)
 	require.NoError(t, err)
 
-	code, _, err := testService.GrantOAuthAuthorization(
-		signedInWithOrigin, mcpAuthorizationRequest())
+	approved := mcpAuthorizationRequest()
+	approved.ConsentGranted = true
+	code, _, err := testService.GrantOAuthAuthorization(signedInWithOrigin, approved)
 	require.NoError(t, err)
 
 	_, err = testService.ExchangeOAuthToken(testCtx, business.OAuthTokenRequest{
@@ -180,8 +191,9 @@ func TestAnMCPRefreshNamingAnotherResourceKeepsTheSession(t *testing.T) {
 	signedIn, _ := signInAsClientUser(t, "google-mcp-refresh", "mcp-refresh@test.com")
 	signedInWithOrigin, err := auth.WithVerifiedPublicOrigin(signedIn, mcpHostOrigin)
 	require.NoError(t, err)
-	code, _, err := testService.GrantOAuthAuthorization(
-		signedInWithOrigin, mcpAuthorizationRequest())
+	approved := mcpAuthorizationRequest()
+	approved.ConsentGranted = true
+	code, _, err := testService.GrantOAuthAuthorization(signedInWithOrigin, approved)
 	require.NoError(t, err)
 
 	tokens, err := testService.ExchangeOAuthToken(testCtx, business.OAuthTokenRequest{
@@ -252,7 +264,9 @@ func TestAnImpersonatedSessionCannotAuthorizeAnMCPClient(t *testing.T) {
 	impersonating, err = auth.WithVerifiedPublicOrigin(impersonating, mcpHostOrigin)
 	require.NoError(t, err)
 
-	_, _, err = testService.GrantOAuthAuthorization(impersonating, mcpAuthorizationRequest())
+	approved := mcpAuthorizationRequest()
+	approved.ConsentGranted = true
+	_, _, err = testService.GrantOAuthAuthorization(impersonating, approved)
 	require.ErrorIs(t, err, auth.ErrClientAuthorizationRejected)
 }
 
@@ -268,6 +282,50 @@ func TestAnUnauthenticatedCallerCannotAuthorizeAnMCPClient(t *testing.T) {
 	_, err = testService.ResolveOAuthAuthorization(publicCtx, mcpAuthorizationRequest())
 	require.NoError(t, err, "the request is well formed; only the caller is missing")
 
-	_, _, err = testService.GrantOAuthAuthorization(publicCtx, mcpAuthorizationRequest())
+	approved := mcpAuthorizationRequest()
+	approved.ConsentGranted = true
+	_, _, err = testService.GrantOAuthAuthorization(publicCtx, approved)
 	require.ErrorIs(t, err, auth.ErrClientAuthorizationRejected)
+}
+
+// A1007-05. A metadata client's document is re-fetched on a short TTL, so a
+// publisher withdraws a callback by removing it — there is no row to delete.
+// Redemption must therefore honour the policy in force NOW, not the one at
+// issue time: comparing only against the code row would keep accepting a
+// callback the publisher had already taken down, and on a replica with a colder
+// cache the same code would be refused. Adopted from the Astra review
+// (document_removed_redirect_refused).
+func TestACodeIsRefusedOnceTheDocumentWithdrawsItsCallback(t *testing.T) {
+	clearData(t)
+	admitMetadataClient(t)
+
+	signedIn, _ := signInAsClientUser(t, "google-mcp-withdraw", "mcp-withdraw@test.com")
+	signedInWithOrigin, err := auth.WithVerifiedPublicOrigin(signedIn, mcpHostOrigin)
+	require.NoError(t, err)
+	approved := mcpAuthorizationRequest()
+	approved.ConsentGranted = true
+	code, _, err := testService.GrantOAuthAuthorization(signedInWithOrigin, approved)
+	require.NoError(t, err)
+
+	// The publisher removes the loopback callback. A fresh resolution — another
+	// replica, or this one past the TTL — now sees a document without it.
+	withdrawn := `{"client_id":"` + mcpClientID + `",` +
+		`"client_name":"Claude Code",` +
+		`"redirect_uris":["https://claude.ai/oauth/callback"],` +
+		`"grant_types":["authorization_code","refresh_token"],` +
+		`"response_types":["code"],` +
+		`"token_endpoint_auth_method":"none"}`
+	policy, err := auth.NewClientMetadataPolicy("any")
+	require.NoError(t, err)
+	testService.SetClientMetadataResolver(auth.NewClientMetadataResolverWith(policy,
+		auth.StaticMetadataDocuments{mcpClientID: withdrawn}))
+
+	_, err = testService.ExchangeOAuthToken(testCtx, business.OAuthTokenRequest{
+		GrantType:    "authorization_code",
+		ClientID:     mcpClientID,
+		Code:         code,
+		RedirectURI:  "http://localhost:54321/callback",
+		CodeVerifier: testCodeVerifier,
+	})
+	require.Error(t, err, "a callback the publisher withdrew must not still redeem")
 }

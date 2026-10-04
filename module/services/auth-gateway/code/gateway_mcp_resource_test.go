@@ -228,11 +228,15 @@ func TestGateway_MCPDiscoveryChain_401ThenProtectedResourceMetadata(t *testing.T
 	require.Equal(t, 401, w.Code)
 	challenge := w.Header().Get("WWW-Authenticate")
 	require.Contains(t, challenge, `error="invalid_token"`)
+	// The URL decided in issue #1003 (2026-10-04): the solution's own
+	// well-known, derivable from the route, which the runtime serves and the
+	// gateway already proxies unauthenticated.
 	require.Contains(t, challenge,
-		`resource_metadata="`+testPublicBase+`/.well-known/oauth-protected-resource/solutions/example/mcp"`)
+		`resource_metadata="`+testPublicBase+`/solutions/example/.well-known/oauth-protected-resource"`)
 
-	// Link 2: that document, unauthenticated, naming this host as the
-	// authorization server.
+	// Link 2: the RFC 9728 §3.1 URL a client CONSTRUCTS from the resource when
+	// it has no challenge to follow. This gateway serves it too, so a
+	// spec-literal client is not left without a document.
 	req = httptest.NewRequest(http.MethodGet,
 		"/.well-known/oauth-protected-resource/solutions/example/mcp", nil)
 	w = httptest.NewRecorder()
@@ -262,7 +266,105 @@ func TestGateway_MCPChallengeIsStampedOnAWrongResourceRefusal(t *testing.T) {
 
 	require.Equal(t, 401, w.Code)
 	require.Contains(t, w.Header().Get("WWW-Authenticate"),
-		`resource_metadata="`+testPublicBase+`/.well-known/oauth-protected-resource/solutions/example/mcp"`)
+		`resource_metadata="`+testPublicBase+`/solutions/example/.well-known/oauth-protected-resource"`)
+}
+
+// A1007-11. Every protected solution path carries the challenge, not only the
+// exact `/mcp`. Adopted from the Astra review
+// (TestReview1007GeneralSolutionChallenge), which measured the dead ends: a
+// trailing slash and any ordinary solution route got a 401 with no header, so a
+// client had nowhere to begin.
+//
+// This gateway is where such a request is denied — it strips identity, runs
+// ext_authz and answers itself, never proxying — so a challenge the runtime
+// would have sent cannot reach anyone through it.
+func TestGateway_EveryProtectedSolutionPathCarriesTheChallenge(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, _ := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "example")
+
+	for _, path := range []string{
+		"/solutions/example/mcp",
+		"/solutions/example/mcp/",
+		"/solutions/example/v1/items",
+		"/solutions/example/resolve",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, 401, w.Code, path)
+		require.Contains(t, w.Header().Get("WWW-Authenticate"),
+			`resource_metadata="`+testPublicBase+`/solutions/example/.well-known/oauth-protected-resource"`,
+			"no challenge on %s leaves a client with nowhere to begin", path)
+	}
+}
+
+// And it is absent once a request is served: leaving it on a 200 would tell a
+// conforming client its token was refused on the response carrying its data.
+func TestGateway_TheChallengeIsAbsentOnAServedSolutionResponse(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, priv := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "example")
+
+	for _, path := range []string{"/solutions/example/mcp", "/solutions/example/v1/items"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, 200, w.Code, path)
+		require.Empty(t, w.Header().Get("WWW-Authenticate"), path)
+	}
+}
+
+// A1007-02. The gateway verifies the issuer accounts mints — the configured
+// public base URL — and keeps accepting the pre-metadata literal while tokens
+// minted under it are unexpired. A token naming anything else is refused.
+func TestGateway_AcceptsTheConfiguredIssuerAndTheLegacyLiteralOnly(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, apiFake, _, priv := newGatewayHarness(t)
+
+	for _, issuer := range []string{testPublicBase, legacyTokenIssuer} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+		req.Header.Set("Authorization", "Bearer "+signTokenWithIssuer(t, priv, issuer))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, 200, w.Code, issuer)
+	}
+
+	for _, issuer := range []string{"", "https://evil.example.com", "saas-starter-2"} {
+		apiFake.lastPath = ""
+		req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+		req.Header.Set("Authorization", "Bearer "+signTokenWithIssuer(t, priv, issuer))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, 401, w.Code, "should refuse iss=%q", issuer)
+		require.Empty(t, apiFake.lastPath)
+	}
+}
+
+func signTokenWithIssuer(t *testing.T, priv ed25519.PrivateKey, issuer string) string {
+	t.Helper()
+	claims := accessClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Subject:   uuid.Must(uuid.NewV7()).String(),
+			Audience:  jwt.ClaimStrings{"saas-starter"},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			ID:        "jti",
+		},
+		OrgID:     uuid.Must(uuid.NewV7()).String(),
+		OrgRole:   "admin",
+		SessionID: uuid.Must(uuid.NewV7()).String(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = accessKeyID(priv.Public().(ed25519.PublicKey))
+	signed, err := token.SignedString(priv)
+	require.NoError(t, err)
+	return signed
 }
 
 // The metadata path describes a resource shape, not an inventory. Answering 404

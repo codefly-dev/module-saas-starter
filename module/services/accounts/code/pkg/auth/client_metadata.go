@@ -75,28 +75,40 @@ const (
 	// clientMetadataFetchTimeout bounds one fetch, including connect and body
 	// read. An authorize request is a person waiting in a browser.
 	clientMetadataFetchTimeout = 5 * time.Second
-	// clientMetadataMaxRedirects bounds same-origin redirects. A document moved
-	// within its own origin still resolves; a redirect off that origin is
-	// refused, because the origin is the client's identity.
-	clientMetadataMaxRedirects = 3
+	// clientMetadataNoRedirects: CIMD draft-02 §5.1 says a client-ID document
+	// MUST be served at its own URL and the fetch MUST NOT follow redirects.
+	// Following even a same-origin one means the bytes that decide a client's
+	// identity came from a URL that is not its client_id, and the draft removes
+	// the question by forbidding the hop outright.
+	clientMetadataNoRedirects = 0
 	// clientMetadataMinTTL / clientMetadataMaxTTL bound what a document's own
 	// Cache-Control may ask for. The floor keeps an aggressive no-store from
 	// turning every authorize request into an outbound fetch; the ceiling keeps
 	// a client's own rotation of its redirect URIs from taking a day to apply.
 	clientMetadataMinTTL = 60 * time.Second
 	clientMetadataMaxTTL = time.Hour
-	// clientMetadataFailureTTL caches a refusal briefly. Without it an
-	// unauthenticated caller can make this host fetch an arbitrary https URL
-	// once per request; with it the same bad client_id costs one fetch a minute.
-	clientMetadataFailureTTL = 60 * time.Second
+	// Failures are NOT cached. CIMD draft-02 §5.2 says a server must not cache
+	// an error or an invalid document: a client whose origin had a 503, or whose
+	// document was briefly wrong, must work on its next attempt rather than
+	// staying refused for a window it cannot see.
+	//
+	// The abuse that a negative cache would have bounded — an unauthenticated
+	// caller making this host fetch an arbitrary https URL once per request — is
+	// bounded where every other pre-credential route bounds it: the authorize
+	// routes carry RATE_LIMIT_CLASS_AUTHENTICATION at the gateway, and the
+	// resolver's own per-fetch size, time and destination limits cap what one
+	// admitted request can cost.
 )
 
 // ClientMetadataDocument is the subset of the registration document the host
 // reads. Unknown members are ignored, as the draft requires — but every member
 // the host acts on is read explicitly, never inferred from a default.
 type ClientMetadataDocument struct {
-	ClientID                string   `json:"client_id"`
-	ClientName              string   `json:"client_name"`
+	ClientID   string `json:"client_id"`
+	ClientName string `json:"client_name"`
+	// ClientURI is parsed so the document's shape stays documented here, and is
+	// then deliberately read by nothing: see RegisteredClient.Origin for why a
+	// document may not choose what a person is shown.
 	ClientURI               string   `json:"client_uri"`
 	RedirectURIs            []string `json:"redirect_uris"`
 	GrantTypes              []string `json:"grant_types"`
@@ -250,7 +262,6 @@ func (s StaticMetadataDocuments) Fetch(_ context.Context, clientID string) ([]by
 
 type cachedMetadataClient struct {
 	client    RegisteredClient
-	err       error
 	expiresAt time.Time
 }
 
@@ -260,13 +271,7 @@ type cachedMetadataClient struct {
 // hostname-only check leaves open. Package-level var so tests can point a
 // resolver at a loopback server; production always uses the guard.
 var metadataDialGuard = func(_, address string, _ syscall.RawConn) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return ErrClientMetadataUnreachable
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() ||
-		ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+	if !IsPublicDestinationDialAddress(address) {
 		return ErrClientMetadataUnreachable
 	}
 	return nil
@@ -313,13 +318,10 @@ func newHTTPMetadataFetcher() *httpMetadataFetcher {
 		client: &http.Client{
 			Transport: transport,
 			Timeout:   clientMetadataFetchTimeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= clientMetadataMaxRedirects {
-					return ErrClientMetadataRedirected
-				}
-				origin := via[0].URL
-				if !strings.EqualFold(req.URL.Scheme, "https") ||
-					!strings.EqualFold(req.URL.Host, origin.Host) {
+			CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+				// Every redirect, same-origin included. See
+				// clientMetadataNoRedirects.
+				if len(via) > clientMetadataNoRedirects {
 					return ErrClientMetadataRedirected
 				}
 				return nil
@@ -347,32 +349,37 @@ func (r *ClientMetadataResolver) Resolve(ctx context.Context, clientID string) (
 	if err := r.policy.Admits(canonical); err != nil {
 		return RegisteredClient{}, err
 	}
-	if client, err, ok := r.fromCache(canonical); ok {
-		return client, err
+	if client, ok := r.fromCache(canonical); ok {
+		return client, nil
 	}
 	document, freshness, err := r.fetcher.Fetch(ctx, canonical)
-	var client RegisteredClient
-	if err == nil {
-		client, err = ClientFromMetadataDocument(canonical, document)
+	if err != nil {
+		// Not cached: see the clientMetadataFailureTTL comment. A refusal is
+		// re-derived on the next request, so a recovered origin works at once.
+		return RegisteredClient{}, err
 	}
-	r.remember(canonical, client, err, freshness)
-	return client, err
+	client, err := ClientFromMetadataDocument(canonical, document)
+	if err != nil {
+		return RegisteredClient{}, err
+	}
+	r.remember(canonical, client, freshness)
+	return client, nil
 }
 
-func (r *ClientMetadataResolver) fromCache(clientID string) (RegisteredClient, error, bool) {
+func (r *ClientMetadataResolver) fromCache(clientID string) (RegisteredClient, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	entry, ok := r.cached[clientID]
 	if !ok || !r.now().Before(entry.expiresAt) {
-		return RegisteredClient{}, nil, false
+		return RegisteredClient{}, false
 	}
-	return entry.client, entry.err, true
+	return entry.client, true
 }
 
-func (r *ClientMetadataResolver) remember(clientID string, client RegisteredClient, err error, ttl time.Duration) {
+// remember caches a VALID document only. Nothing records a failure, so a
+// refusal is never served from here.
+func (r *ClientMetadataResolver) remember(clientID string, client RegisteredClient, ttl time.Duration) {
 	switch {
-	case err != nil:
-		ttl = clientMetadataFailureTTL
 	case ttl < clientMetadataMinTTL:
 		ttl = clientMetadataMinTTL
 	case ttl > clientMetadataMaxTTL:
@@ -391,7 +398,6 @@ func (r *ClientMetadataResolver) remember(clientID string, client RegisteredClie
 	}
 	r.cached[clientID] = cachedMetadataClient{
 		client:    client,
-		err:       err,
 		expiresAt: r.now().Add(ttl),
 	}
 }
@@ -476,27 +482,22 @@ func ClientFromMetadataDocument(clientID string, body []byte) (RegisteredClient,
 	if len(client.RedirectURIs) == 0 {
 		return RegisteredClient{}, ErrClientMetadataRedirectURIs
 	}
+	// The verified origin, from the URL this document was fetched from. Set
+	// before the name, because the name may fall back to it.
+	client.Origin = metadataClientOrigin(clientID)
 	client.Name = strings.TrimSpace(document.ClientName)
 	if client.Name == "" || len(client.Name) > 128 {
 		// A name is presentational and comes from an unvetted document, so a
-		// missing or oversized one falls back to the origin the document was
-		// served from — which is the one fact about this client the host
-		// verified. It is never truncated: a truncated name is a name chosen by
-		// whoever published it.
-		client.Name = metadataClientOrigin(clientID)
+		// missing or oversized one falls back to the verified origin. It is never
+		// truncated: a truncated name is still a name chosen by whoever published
+		// it, just shorter.
+		client.Name = client.Origin
 	}
-	// Origins are deliberately NOT derived from the document. A browser origin
-	// is what the gateway's CORS pass binds a token to, and a client that
-	// published its own would be choosing its own CORS grant. A metadata client
-	// is a native or server-side client talking to the host directly; a browser
-	// client still needs an operator-declared row.
-	client.URI = metadataClientOrigin(clientID)
-	if uri := strings.TrimSpace(document.ClientURI); uri != "" {
-		if parsed, err := url.Parse(uri); err == nil && parsed.IsAbs() &&
-			strings.EqualFold(parsed.Scheme, "https") && parsed.Host != "" {
-			client.URI = strings.ToLower(parsed.Scheme) + "://" + parsed.Host
-		}
-	}
+	// Origins (the CORS kind) are deliberately NOT derived from the document
+	// either. A browser origin is what the gateway's CORS pass binds a token to,
+	// and a client that published its own would be choosing its own CORS grant. A
+	// metadata client is a native or server-side client talking to the host
+	// directly; a browser client still needs an operator-declared row.
 	return client, nil
 }
 

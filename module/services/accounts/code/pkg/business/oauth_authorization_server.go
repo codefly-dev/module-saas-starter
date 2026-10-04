@@ -56,16 +56,54 @@ const (
 	OAuthErrorInvalidGrant     = "invalid_grant"
 	OAuthErrorUnsupportedGrant = "unsupported_grant_type"
 	OAuthErrorInvalidScope     = "invalid_scope"
-	OAuthErrorAccessDenied     = "access_denied"
-	OAuthErrorInvalidTarget    = "invalid_target"
-	OAuthErrorServerError      = "server_error"
+	// OAuthErrorUnsupportedResponse is RFC 6749 §4.1.2.1's own code for a
+	// response type the server does not serve. It is distinct from
+	// invalid_request on purpose: a client asking for `token` has made a
+	// well-formed request for something this server does not do, and telling it
+	// "invalid_request" sends it looking for a malformed parameter.
+	OAuthErrorUnsupportedResponse = "unsupported_response_type"
+	OAuthErrorAccessDenied        = "access_denied"
+	OAuthErrorInvalidTarget       = "invalid_target"
+	OAuthErrorServerError         = "server_error"
 )
 
-// ErrOAuthIssuerUnavailable is the authorization server with no trusted public
-// origin to call itself. Every document it publishes names that origin, and a
-// metadata document served under the wrong issuer is worse than none: a client
-// that fetched it would send authorization requests somewhere else. Fail closed.
-var ErrOAuthIssuerUnavailable = errors.New("the authorization server has no trusted public origin")
+// ErrOAuthIssuerUnavailable is the authorization server with no configured
+// issuer. Every document it publishes names that issuer, and a metadata
+// document served under the wrong one is worse than none: a client that
+// fetched it would send authorization requests somewhere else. Fail closed.
+var ErrOAuthIssuerUnavailable = errors.New("the authorization server has no configured issuer")
+
+// LegacyTokenIssuer is the literal `iss` this host minted before it published
+// RFC 8414 metadata. RFC 8414 §2 requires the issuer to be an https URL, and a
+// client that discovers the metadata and then verifies `iss` against it would
+// refuse every token carrying the literal — so a deployment with a configured
+// issuer mints the URL instead.
+//
+// It stays ACCEPTED on verification, because changing what is minted does not
+// change what is already in flight: every unexpired access token, and every
+// session that will rotate into one, carries the literal. Refusing it at the
+// same moment the new value starts being minted would sign out every live
+// session at deploy. Minting it is a fallback only for a deployment that has
+// configured no issuer at all, where no metadata is published either and the
+// two therefore cannot disagree.
+const LegacyTokenIssuer = "saas-starter"
+
+// SetOAuthIssuer records this authorization server's own identity: the
+// operator-configured public base URL. One value, resolved once at startup,
+// used for the published metadata AND for the `iss` of every token minted —
+// which is the only way the two can be proved equal.
+//
+// Deliberately not the per-request verified public origin. That value is
+// derived from the request, so it would make the issuer vary by Host header:
+// two clients discovering the same deployment could be handed two different
+// issuers, and a token minted under one would fail verification against the
+// other.
+func (s *Service) SetOAuthIssuer(issuer string) {
+	s.oauthIssuer = strings.TrimSuffix(strings.TrimSpace(issuer), "/")
+}
+
+// OAuthIssuer returns the configured issuer, or empty when none is configured.
+func (s *Service) OAuthIssuer() string { return s.oauthIssuer }
 
 // AuthorizationServerMetadata is the RFC 8414 document, in the field order and
 // spelling the registry uses. It is produced from what this service actually
@@ -102,8 +140,8 @@ const (
 // AuthorizationServerMetadata builds the published document for this request's
 // issuer. The issuer is the operator-trusted public base URL; without one the
 // call fails rather than naming a host it cannot vouch for.
-func (s *Service) AuthorizationServerMetadata(ctx context.Context) (*AuthorizationServerMetadata, error) {
-	issuer := s.publicBaseURL(ctx)
+func (s *Service) AuthorizationServerMetadata(_ context.Context) (*AuthorizationServerMetadata, error) {
+	issuer := s.oauthIssuer
 	if issuer == "" {
 		return nil, ErrOAuthIssuerUnavailable
 	}
@@ -151,6 +189,15 @@ type OAuthAuthorizationRequest struct {
 	State               string
 	Scope               string
 	Resource            string
+	// ConsentGranted is the caller stating that the person approved this client
+	// by name. Only the consent page sets it, and only after they pressed Allow.
+	//
+	// The host REQUIRES it wherever it requires consent, rather than trusting the
+	// page to have asked. It is not a boundary against a hostile browser — one
+	// holding the person's session can claim anything — but it is what stops a
+	// defect in the browser code from issuing credentials nobody approved, which
+	// is exactly what a mis-decoded `requires_consent` did.
+	ConsentGranted bool
 }
 
 // ResolvedOAuthAuthorization is a request the host has accepted: which client,
@@ -222,13 +269,26 @@ func (s *Service) ResolveOAuthAuthorization(
 	// From here the redirect URI is the client's own, so a refusal is delivered
 	// to it with `error` and `state`, which is what lets the client show the
 	// person something better than a hung browser tab.
-	if responseType := strings.TrimSpace(request.ResponseType); responseType != "" && responseType != "code" {
+	// response_type is REQUIRED (RFC 6749 §4.1.1), and `code` is the only one
+	// this server serves. It is not defaulted: a request missing it is not a
+	// request for a code, and repairing it here would make the host accept
+	// something no conforming client sends and hide the client's own bug.
+	switch strings.TrimSpace(request.ResponseType) {
+	case "code":
+	case "":
 		return nil, authorizationError(OAuthErrorInvalidRequest,
-			"only the authorization code response type is supported", true)
+			"response_type is required", true)
+	default:
+		return nil, authorizationError(OAuthErrorUnsupportedResponse,
+			"this authorization server supports only the code response type", true)
 	}
+	// Likewise not defaulted. OAuth 2.1 requires S256, and a request that names
+	// no method has not asked for it — silently supplying it would make the host
+	// the only reason the flow worked, and would mask a client that believed it
+	// was sending `plain`.
 	if request.CodeChallengeMethod != auth.ChallengeMethodS256 || request.CodeChallenge == "" {
 		return nil, authorizationError(OAuthErrorInvalidRequest,
-			"a PKCE S256 code challenge is required", true)
+			"a PKCE S256 code challenge and code_challenge_method=S256 are required", true)
 	}
 	if !auth.ValidCodeChallenge(request.CodeChallenge) {
 		return nil, authorizationError(OAuthErrorInvalidRequest,
@@ -250,12 +310,20 @@ func (s *Service) ResolveOAuthAuthorization(
 
 	resolved := &ResolvedOAuthAuthorization{Client: client, Scope: scope}
 	if raw := strings.TrimSpace(request.Resource); raw != "" {
-		issuer := s.publicBaseURL(ctx)
-		if issuer == "" {
+		// Pinned to the configured issuer when there is one, so a resource is
+		// minted only for this host's own published identity. A deployment that
+		// configured none publishes no metadata either, and falls back to the
+		// request's verified origin — which is what local development has, and
+		// which the gateway mirrors with the same fallback.
+		origin := s.oauthIssuer
+		if origin == "" {
+			origin = s.publicBaseURL(ctx)
+		}
+		if origin == "" {
 			return nil, authorizationError(OAuthErrorServerError,
 				"the authorization server cannot determine its own address", true)
 		}
-		resource, err := auth.RequireResourceAtOrigin(raw, issuer)
+		resource, err := auth.RequireResourceAtOrigin(raw, origin)
 		if err != nil {
 			return nil, authorizationError(OAuthErrorInvalidTarget,
 				"that resource is not one this host issues tokens for", true)
@@ -327,6 +395,14 @@ func (s *Service) GrantOAuthAuthorization(
 	resolved, err := s.ResolveOAuthAuthorization(ctx, request)
 	if err != nil {
 		return "", 0, err
+	}
+	// Consent is enforced here, not merely advertised by ResolveOAuthAuthorization.
+	// A caller that was told consent is required and asks for a code without it
+	// is refused: the page is not the only thing deciding whether the person
+	// approved.
+	if resolved.RequiresConsent && !request.ConsentGranted {
+		return "", 0, authorizationError(OAuthErrorAccessDenied,
+			"this client needs the person's approval before a code is issued", true)
 	}
 	issued, err := s.issueAuthorizationCode(ctx, authorizationCodeGrant{
 		Client:        resolved.Client,
@@ -424,6 +500,14 @@ func (s *Service) exchangeOAuthRefreshToken(
 	}
 	if strings.TrimSpace(request.RefreshToken) == "" {
 		return nil, authorizationError(OAuthErrorInvalidRequest, "refresh_token is required", false)
+	}
+	// RFC 6749 §6: a refresh request's scope must not exceed the grant. This
+	// host issues one scope, so anything else is refused — and refused BEFORE
+	// the rotation, so a client that asked for more does not lose the token it
+	// has for asking.
+	if _, err := resolveOAuthScope(request.Scope); err != nil {
+		return nil, authorizationError(OAuthErrorInvalidScope,
+			"this authorization server supports only the "+supportedOAuthScope+" scope", false)
 	}
 	// The resource is checked on the locked session row, before the token is
 	// consumed: a client naming the wrong one is refused and still holds the
@@ -533,6 +617,34 @@ func (s *Service) issueAuthorizationCode(
 	}, nil
 }
 
+// redemptionBindingsHold reports whether a presented code may be redeemed:
+// every binding the code carries, AND the client's policy as it stands now.
+//
+// Extracted so the rule is testable without a database — it is a security
+// decision, and the only other cover for it was a DB-backed story, which means
+// nothing holds it in a suite that runs without one.
+func redemptionBindingsHold(
+	client auth.RegisteredClient,
+	code *ClientAuthorizationCode,
+	presented authorizationCodeRedemption,
+) bool {
+	// The bindings recorded when the person approved it.
+	if code.ClientID != client.ClientID ||
+		code.RedirectURI != presented.RedirectURI ||
+		!verifyCodeChallenge(code.CodeChallenge, presented.CodeVerifier) {
+		return false
+	}
+	// And the client's CURRENT policy must still permit that URI. A metadata
+	// client's document is re-fetched on a short TTL, so between authorization
+	// and redemption it may have withdrawn the callback — which is how such a
+	// client revokes one, since there is no row to delete. Comparing only
+	// against the code row would honour a callback the publisher had already
+	// taken down, and on another replica with a colder cache the same code
+	// would be refused: the binding must come from the policy in force now,
+	// not from the policy at issue time.
+	return client.AllowsRedirect(presented.RedirectURI)
+}
+
 // authorizationCodeRedemption is what a token request presents for the
 // authorization-code grant.
 type authorizationCodeRedemption struct {
@@ -569,9 +681,7 @@ func (s *Service) redeemAuthorizationCode(
 		func(txCtx context.Context, code *ClientAuthorizationCode) error {
 			// The code is consumed before any of this is checked, so a mismatch
 			// burns it rather than leaving it to be guessed at again.
-			if code.ClientID != client.ClientID ||
-				code.RedirectURI != presented.RedirectURI ||
-				!verifyCodeChallenge(code.CodeChallenge, presented.CodeVerifier) {
+			if !redemptionBindingsHold(client, code, presented) {
 				return auth.ErrClientAuthorizationRejected
 			}
 			// A repeated `resource` must be the one the code was issued for.

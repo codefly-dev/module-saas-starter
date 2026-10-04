@@ -79,10 +79,15 @@ type ExtAuthz struct {
 	// `kid`, so tokens signed by either half of an overlapping key pair verify
 	// without restarting the gateway. Nil means verification is unconfigured
 	// and every JWT is refused 503.
-	keys          accessKeys
-	issuer        string
-	audience      string
-	internalToken string
+	keys accessKeys
+	// issuer is the `iss` accounts mints today. acceptedIssuers is that value
+	// plus any still accepted for a migration window, which is how the move from
+	// the pre-metadata literal to the host's own URL does not refuse every token
+	// already in flight at the moment of deploy.
+	issuer          string
+	acceptedIssuers []string
+	audience        string
+	internalToken   string
 	// previousInternalToken stays accepted alongside internalToken during an
 	// overlapping rotation window. Outbound calls always present the current
 	// internalToken; only inbound checks honour the previous one.
@@ -124,10 +129,16 @@ func constantTimeMatch(candidate, expected string) bool {
 // backend minter config.
 func NewExtAuthz(backendConn *grpc.ClientConn, keys accessKeys) *ExtAuthz {
 	return &ExtAuthz{
-		apiKey:                apigen.NewAPIKeyServiceClient(backendConn),
-		backendConn:           backendConn,
-		keys:                  keys,
-		issuer:                "saas-starter",
+		apiKey:      apigen.NewAPIKeyServiceClient(backendConn),
+		backendConn: backendConn,
+		keys:        keys,
+		// RFC 8414 §2 requires the authorization server's issuer to be an https
+		// URL, and accounts mints the configured public base URL when it has one
+		// (accounts work.go configuredTokenIssuer). This verifier must accept the
+		// same value, and the pre-metadata literal alongside it while tokens
+		// minted under the literal are still unexpired.
+		issuer:                gatewayTokenIssuer(),
+		acceptedIssuers:       gatewayAcceptedIssuers(),
 		audience:              "saas-starter",
 		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
 		previousInternalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"),
@@ -200,9 +211,13 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 	}
 
 	claims := &accessClaims{}
+	// The issuer is checked after the parse rather than by jwt.WithIssuer, which
+	// takes a single value: a deployment mid-migration accepts two. Dropping the
+	// option without replacing the check would accept ANY issuer, so the
+	// explicit comparison below is the whole of it and runs before any claim is
+	// projected onto a header.
 	parser := jwt.NewParser(
 		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithIssuer(s.issuer),
 		jwt.WithAudience(s.audience),
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(tokenClockSkewLeeway),
@@ -235,6 +250,10 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		recordJWTRejection(ctx, jwtRejectionAmbiguousKeyID)
 		return deny(401, "invalid or expired token"), nil
 	case err != nil || !token.Valid:
+		recordJWTRejection(ctx, jwtRejectionInvalidToken)
+		return deny(401, "invalid or expired token"), nil
+	}
+	if !s.acceptsIssuer(claims.Issuer) {
 		recordJWTRejection(ctx, jwtRejectionInvalidToken)
 		return deny(401, "invalid or expired token"), nil
 	}
@@ -364,6 +383,21 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		hdrs = append(hdrs, hdr("x-scoped-roles-truncated", "true"))
 	}
 	return s.allow(hdrs), nil
+}
+
+// acceptsIssuer reports whether an `iss` is one this gateway trusts. An empty
+// candidate never matches, so a token carrying no issuer is refused rather than
+// matching an unset slot.
+func (s *ExtAuthz) acceptsIssuer(candidate string) bool {
+	if candidate == "" {
+		return false
+	}
+	for _, accepted := range s.acceptedIssuers {
+		if candidate == accepted {
+			return true
+		}
+	}
+	return candidate == s.issuer
 }
 
 // resourceAudience returns the one audience value that is not this host's own —

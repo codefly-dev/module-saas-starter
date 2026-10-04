@@ -83,6 +83,8 @@ export function ConsentPage() {
 	);
 
 	const clientName = resolution?.clientName ?? request?.clientId ?? "";
+	// The only identity fact the host verified. Never the document's claim.
+	const verifiedOrigin = resolution?.clientOrigin ?? "";
 	const unvetted = resolution?.clientSource === "metadata_document";
 	const resourceName = useMemo(() => {
 		if (!resolution?.resource) return null;
@@ -94,7 +96,10 @@ export function ConsentPage() {
 		setError(null);
 		setDeciding("allow");
 		try {
-			await grantClientAuthorization(request, accessToken);
+			// The person pressed Allow: this is the one call site that may say so.
+			await grantClientAuthorization(request, accessToken, {
+				consentGranted: true,
+			});
 		} catch (err) {
 			setDeciding(null);
 			setError(
@@ -158,6 +163,16 @@ export function ConsentPage() {
 						<h1 data-slot="page-title" className="type-page-title">
 							Allow {clientName}?
 						</h1>
+						{/* The name above comes from the client's own document and is
+						    not verified. The origin here is: it is where the host
+						    actually fetched that document from, and it is shown
+						    unconditionally so a trusted-looking name can never be the
+						    only thing the person sees. CIMD draft-02 §8.5. */}
+						{verifiedOrigin && (
+							<p className="text-sm text-muted-foreground break-all">
+								<code>{verifiedOrigin}</code>
+							</p>
+						)}
 						<p className="text-sm text-muted-foreground">
 							{resourceName
 								? `It is asking to use ${resourceName} as you.`
@@ -189,10 +204,10 @@ export function ConsentPage() {
 							<div className="flex items-start gap-2.5">
 								<AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
 								<span className="text-muted-foreground">
-									This application was not installed by your administrator. It
-									identified itself as{" "}
+									This application was not installed by your administrator. The
+									host verified only that its registration is published at{" "}
 									<code className="break-all text-foreground">
-										{resolution?.clientUri ?? request.clientId}
+										{resolution?.clientOrigin ?? request.clientId}
 									</code>
 									. Allow it only if you started this yourself.
 								</span>

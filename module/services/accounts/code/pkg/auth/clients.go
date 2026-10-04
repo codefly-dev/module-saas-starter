@@ -35,10 +35,21 @@ type RegisteredClient struct {
 	Name         string
 	RedirectURIs []string
 	Origins      []string
-	// URI is the client's own home page, shown on the consent screen beside its
-	// name so the person can see where a client they did not install came from.
-	// Empty for an operator-declared client, which the deployment vouched for.
-	URI string
+	// Origin is the one fact about a metadata client this host VERIFIED: the
+	// scheme and host of the client_id URL the document was actually fetched
+	// from. Consent displays it, always.
+	//
+	// It is deliberately NOT the document's own `client_uri`. A document at
+	// https://client.example.com/doc may claim `client_uri:
+	// https://trusted.example.com`, and a consent screen showing that claim
+	// would name a publisher the host never reached — the exact confusion CIMD
+	// draft-02 §8.5 answers by telling a server to display the client_id's
+	// hostname. `client_uri` reaches nothing, so there is no path by which it
+	// can reach a person.
+	//
+	// Empty for an operator-declared client, which the deployment vouched for by
+	// name and whose origin the person does not need to judge.
+	Origin string
 	// Metadata marks a client resolved from a Client ID Metadata Document
 	// rather than from operator configuration.
 	Metadata bool

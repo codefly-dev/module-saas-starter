@@ -18,13 +18,14 @@
  */
 
 import {
-	isOAuthRefusal,
-	type OAuthAuthorizationRefusal,
 	type OAuthAuthorizationRequest,
 	type OAuthAuthorizationResolution,
 	oauthRedirect,
 	oauthWireFormat,
-	readOAuthAuthorizationRequest,
+	parseOAuthGrant,
+	parseOAuthRefusal,
+	parseOAuthResolution,
+	readLegacyLoginAuthorizationRequest,
 } from "./oauth-authorization";
 
 export type ClientAuthorizationRequest = OAuthAuthorizationRequest;
@@ -43,8 +44,14 @@ export type ClientAuthorizationRequest = OAuthAuthorizationRequest;
 export const PENDING_REQUEST_KEY = "client_authorization_request";
 export const PENDING_RESOLUTION_KEY = "client_authorization_resolution";
 
-/** Reads a client's authorization request out of the login page's URL. */
-export const readClientAuthorizationRequest = readOAuthAuthorizationRequest;
+/**
+ * Reads a client's authorization request out of the LOGIN PAGE's URL, with the
+ * two defaults that path has always applied — see
+ * readLegacyLoginAuthorizationRequest for why they stay here and not on the
+ * standard `/oauth2/authorize` endpoint.
+ */
+export const readClientAuthorizationRequest =
+	readLegacyLoginAuthorizationRequest;
 
 /**
  * Asks the host whether this request may proceed. A client id nobody
@@ -61,21 +68,24 @@ export async function validateClientAuthorization(
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(oauthWireFormat(request)),
 	});
-	const body = (await response.json().catch(() => null)) as
-		| OAuthAuthorizationResolution
-		| OAuthAuthorizationRefusal
-		| null;
+	const body = await response.json().catch(() => null);
 	if (!response.ok) {
 		throw new Error(
-			isOAuthRefusal(body) && body.errorDescription
-				? body.errorDescription
-				: "This application is not registered to sign in here, or asked to be returned to an address it has not registered.",
+			parseOAuthRefusal(body)?.errorDescription ??
+				"This application is not registered to sign in here, or asked to be returned to an address it has not registered.",
 		);
 	}
-	if (!body || isOAuthRefusal(body)) {
+	// DECODED, not cast. The host serialises OAuth snake_case; casting that JSON
+	// to this camelCase interface compiled, type-checked, and yielded `undefined`
+	// for every field — including `requiresConsent`, which is falsy, which meant
+	// consent was skipped and a code issued for a client nobody approved. A
+	// response this cannot decode is one whose meaning is unknown, and the only
+	// safe reading of that is to refuse.
+	const resolved = parseOAuthResolution(body);
+	if (!resolved) {
 		throw new Error("This application cannot sign in here.");
 	}
-	return body;
+	return resolved;
 }
 
 /**
@@ -128,11 +138,41 @@ export function parsePendingClientResolution(
 	raw: string | null,
 ): OAuthAuthorizationResolution | null {
 	if (!raw) return null;
+	let parsed: unknown;
 	try {
-		return JSON.parse(raw) as OAuthAuthorizationResolution;
+		parsed = JSON.parse(raw);
 	} catch {
 		return null;
 	}
+	// Validated, not cast — the same discipline as the wire decoder, for the
+	// same reason. This value has been outside this code's hands: it crossed a
+	// sign-in, possibly a provider round trip, and a navigation, in storage the
+	// page's own origin can write. A cast here would let a stored
+	// `requiresConsent: false` skip the consent screen, which is the first
+	// defect over again with a different carrier.
+	if (typeof parsed !== "object" || parsed === null) return null;
+	const stored = parsed as Record<string, unknown>;
+	if (typeof stored.requiresConsent !== "boolean") return null;
+	if (
+		stored.clientSource !== "registry" &&
+		stored.clientSource !== "metadata_document"
+	) {
+		return null;
+	}
+	if (typeof stored.clientOrigin !== "string" || stored.clientOrigin === "") {
+		return null;
+	}
+	return {
+		clientName: typeof stored.clientName === "string" ? stored.clientName : "",
+		clientOrigin: stored.clientOrigin,
+		clientSource: stored.clientSource,
+		resource: typeof stored.resource === "string" ? stored.resource : undefined,
+		resourceName:
+			typeof stored.resourceName === "string" ? stored.resourceName : undefined,
+		scope: typeof stored.scope === "string" ? stored.scope : "",
+		requiresConsent: stored.requiresConsent,
+		issuer: typeof stored.issuer === "string" ? stored.issuer : "",
+	};
 }
 
 /** Returns the pending request without consuming it. */
@@ -177,7 +217,13 @@ export async function completePendingClientAuthorization(
 	// is in hand.
 	const request = pendingClientAuthorization();
 	if (!request) return false;
-	if (pendingClientResolution()?.requiresConsent) {
+	// Fail closed. A pending request whose resolution did not survive — the host
+	// never answered, the browser cleared it, a response shape changed — must not
+	// be completed silently: that would be a code issued for a client whose
+	// approval requirement nobody could read. Send the person to consent, where
+	// the absence is visible and nothing is granted without them.
+	const resolution = pendingClientResolution();
+	if (!resolution || resolution.requiresConsent) {
 		// replace, not assign: Back must not return the person to a half-finished
 		// sign-in. It is a full navigation rather than a router push because this
 		// runs inside the auth provider, which has no router — and the session it
@@ -197,6 +243,7 @@ export async function completePendingClientAuthorization(
 export async function grantClientAuthorization(
 	request: ClientAuthorizationRequest,
 	accessToken: string | null,
+	options: { consentGranted?: boolean } = {},
 ): Promise<void> {
 	const response = await fetch("/v1/oauth2/authorize/grant", {
 		method: "POST",
@@ -205,15 +252,25 @@ export async function grantClientAuthorization(
 			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 		},
 		credentials: "include",
-		body: JSON.stringify(oauthWireFormat(request)),
+		body: JSON.stringify({
+			...oauthWireFormat(request),
+			// Stated only by the consent page, after the person pressed Allow. The
+			// host refuses a request that needs consent and does not carry it, so a
+			// client-side defect — a mis-decoded `requires_consent`, a dropped
+			// navigation — can no longer skip the screen silently. It is not a
+			// security boundary against a hostile browser (a browser that holds the
+			// session can say anything); it is what stops a bug in this file from
+			// quietly issuing credentials nobody approved.
+			consent_granted: options.consentGranted === true,
+		}),
 	});
 	if (!response.ok) {
 		throw new Error(
 			"Sign-in succeeded but the application could not be authorized.",
 		);
 	}
-	const data = (await response.json()) as { code?: string; issuer?: string };
-	if (typeof data.code !== "string" || data.code.length === 0) {
+	const granted = parseOAuthGrant(await response.json().catch(() => null));
+	if (!granted) {
 		throw new Error(
 			"Sign-in succeeded but the application could not be authorized.",
 		);
@@ -224,12 +281,12 @@ export async function grantClientAuthorization(
 	forgetClientAuthorization();
 	window.location.replace(
 		oauthRedirect(request.redirectUri, {
-			code: data.code,
+			code: granted.code,
 			state: request.state || undefined,
 			// RFC 9207: naming the issuer lets a client with more than one
 			// configured authorization server refuse a code that came back from
 			// the wrong one.
-			iss: data.issuer,
+			iss: granted.issuer,
 		}),
 	);
 }
@@ -241,12 +298,18 @@ export async function grantClientAuthorization(
 export function declineClientAuthorization(
 	request: ClientAuthorizationRequest,
 ): void {
+	// RFC 9207 §2 covers error responses too, and the host advertises support for
+	// it: a client enforcing that protection cannot authenticate a decline that
+	// carries no `iss`. The issuer is what the HOST answered, never anything from
+	// the request, so a caller cannot choose what the client is told.
+	const issuer = pendingClientResolution()?.issuer;
 	forgetClientAuthorization();
 	window.location.replace(
 		oauthRedirect(request.redirectUri, {
 			error: "access_denied",
 			error_description: "the person declined this authorization",
 			state: request.state || undefined,
+			iss: issuer,
 		}),
 	);
 }

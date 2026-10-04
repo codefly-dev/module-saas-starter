@@ -10,7 +10,11 @@ import {
 	takeClientAuthorization,
 	validateClientAuthorization,
 } from "./client-authorization";
-import type { OAuthAuthorizationResolution } from "./oauth-authorization";
+import {
+	duplicatedOAuthParameter,
+	type OAuthAuthorizationResolution,
+	readOAuthAuthorizationRequest,
+} from "./oauth-authorization";
 
 const request = {
 	responseType: "code",
@@ -25,9 +29,11 @@ const request = {
 
 const declared: OAuthAuthorizationResolution = {
 	clientName: "Example Add-in",
+	clientOrigin: "example-addin",
 	clientSource: "registry",
 	scope: "offline_access",
 	requiresConsent: false,
+	issuer: "https://host.example.com",
 };
 
 const replace = vi.fn();
@@ -47,6 +53,7 @@ describe("readClientAuthorizationRequest", () => {
 	it("reads a client's request out of the login URL", () => {
 		const parsed = readClientAuthorizationRequest(
 			new URLSearchParams({
+				response_type: "code",
 				client_id: "example-addin",
 				redirect_uri: "https://localhost:3000/auth/callback",
 				state: "opaque-state",
@@ -55,6 +62,53 @@ describe("readClientAuthorizationRequest", () => {
 			}),
 		);
 		expect(parsed).toEqual(request);
+	});
+
+	// A1007-07. The STANDARD endpoint repairs nothing: a request omitting
+	// response_type or code_challenge_method carries them EMPTY, so the host
+	// refuses it and names what the client owes. Defaulting them there made the
+	// host the only reason a non-conforming request worked, and would have
+	// silently upgraded a client that believed it was sending `plain`.
+	it("repairs no missing parameter on the standard endpoint", () => {
+		const parsed = readOAuthAuthorizationRequest(
+			new URLSearchParams({
+				client_id: "example-addin",
+				redirect_uri: "https://localhost:3000/auth/callback",
+				code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+			}),
+		);
+		expect(parsed?.responseType).toBe("");
+		expect(parsed?.codeChallengeMethod).toBe("");
+	});
+
+	// But the LOGIN PAGE keeps the two defaults it has always applied. The first
+	// registered client opens it directly with no response_type, against a
+	// contract that never had one; making that path strict would refuse a
+	// shipped client. Both defaults are the only values this host serves, so
+	// they cannot admit anything a strict read would have refused otherwise.
+	it("keeps the login page's historical defaults", () => {
+		const parsed = readClientAuthorizationRequest(
+			new URLSearchParams({
+				client_id: "example-addin",
+				redirect_uri: "https://localhost:3000/auth/callback",
+				state: "opaque-state",
+				code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+			}),
+		);
+		expect(parsed?.responseType).toBe("code");
+		expect(parsed?.codeChallengeMethod).toBe("S256");
+	});
+
+	// And a parameter given twice is named rather than silently resolved to its
+	// first value.
+	it("names a parameter that appears more than once", () => {
+		const query = new URLSearchParams();
+		query.append("client_id", "example-addin");
+		query.append("client_id", "someone-else");
+		expect(duplicatedOAuthParameter(query)).toBe("client_id");
+		expect(
+			duplicatedOAuthParameter(new URLSearchParams({ client_id: "x" })),
+		).toBeNull();
 	});
 
 	// The two parameters an MCP client adds. Neither may be invented here: a
@@ -109,20 +163,24 @@ describe("validateClientAuthorization", () => {
 	});
 
 	it("returns what the host says about the client and the resource", async () => {
+		// The REAL serialised shape: snake_case, as accounts sends it. A
+		// camelCase fixture here is what let the wire mismatch ship.
 		vi.mocked(fetch).mockResolvedValue({
 			ok: true,
 			json: async () => ({
-				clientName: "Claude Code",
-				clientUri: "https://claude.ai",
-				clientSource: "metadata_document",
+				client_name: "Claude Code",
+				client_origin: "https://claude.ai",
+				client_source: "metadata_document",
 				resource: "https://host.example.com/solutions/example/mcp",
-				resourceName: "example",
+				resource_name: "example",
 				scope: "offline_access",
-				requiresConsent: true,
+				requires_consent: true,
+				issuer: "https://host.example.com",
 			}),
 		} as Response);
 		await expect(validateClientAuthorization(request)).resolves.toMatchObject({
 			clientName: "Claude Code",
+			clientOrigin: "https://claude.ai",
 			clientSource: "metadata_document",
 			requiresConsent: true,
 		});

@@ -50,12 +50,15 @@ const request = {
 
 const resolution = {
 	clientName: "Claude Code",
-	clientUri: "https://claude.ai",
+	// The origin the host VERIFIED by fetching the document, never the
+	// document's own `client_uri` claim.
+	clientOrigin: "https://claude.ai",
 	clientSource: "metadata_document",
 	resource: "https://host.example.com/solutions/example/mcp",
 	resourceName: "example",
 	scope: "offline_access",
 	requiresConsent: true,
+	issuer: "https://host.example.com",
 };
 
 function storePending(
@@ -97,7 +100,26 @@ it("names the client, its origin and the resource from the host's own answer", (
 	// A client the operator never installed is said to be one, with the origin
 	// the host verified.
 	expect(screen.getByText(/not installed by your administrator/)).toBeTruthy();
-	expect(screen.getByText("https://claude.ai")).toBeTruthy();
+	// The verified origin, shown in both places: as the identity under the
+	// client's own (unverified) name, and in the warning.
+	expect(screen.getAllByText("https://claude.ai").length).toBeGreaterThan(0);
+});
+
+// A1007-06. A document claiming a trusted-looking `client_uri` must not be able
+// to put that origin in front of the person: the host never reads the claim, so
+// the page has only the verified origin to show. Adopted from the Astra review.
+it("shows only the origin the host verified, never a claimed one", () => {
+	storePending(request, {
+		...resolution,
+		clientName: "Totally Trusted",
+		clientOrigin: "https://client.example.com",
+	});
+	render(<ConsentPage />);
+
+	expect(
+		screen.getAllByText("https://client.example.com").length,
+	).toBeGreaterThan(0);
+	expect(screen.queryByText(/trusted\.example\.com/)).toBeNull();
 });
 
 it("issues the code only when the person allows it", () => {
@@ -106,9 +128,13 @@ it("issues the code only when the person allows it", () => {
 
 	expect(h.grantClientAuthorization).not.toHaveBeenCalled();
 	fireEvent.click(screen.getByRole("button", { name: /Allow/ }));
+	// And it states that the person approved — the one call site allowed to.
+	// The host refuses a grant that needs consent without it, so this argument
+	// is what makes the screen load-bearing rather than decorative.
 	expect(h.grantClientAuthorization).toHaveBeenCalledWith(
 		expect.objectContaining({ clientId: request.clientId }),
 		"access-token",
+		{ consentGranted: true },
 	);
 });
 
@@ -132,9 +158,11 @@ it("says nothing about installation for a client the operator declared", () => {
 		{ ...request, clientId: "example-addin", resource: "" },
 		{
 			clientName: "Example Add-in",
+			clientOrigin: "example-addin",
 			clientSource: "registry",
 			scope: "offline_access",
 			requiresConsent: true,
+			issuer: "https://host.example.com",
 		},
 	);
 	render(<ConsentPage />);

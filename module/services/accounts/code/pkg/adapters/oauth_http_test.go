@@ -34,6 +34,10 @@ func oauthHandler(t *testing.T, declaredMetadata string) http.Handler {
 	policy, err := auth.NewClientMetadataPolicy(declaredMetadata)
 	require.NoError(t, err)
 	service.SetClientMetadataResolver(auth.NewClientMetadataResolver(policy))
+	// The issuer is configuration, resolved once at startup — not the request's
+	// origin. The published metadata and the `iss` of every minted token are the
+	// same value, which is the only way the two can be proved equal.
+	service.SetOAuthIssuer("https://host.example.com")
 	return NewOAuthHTTPHandler(service)
 }
 
@@ -68,21 +72,54 @@ func TestTheMetadataDocumentIsServedAtItsOwnPath(t *testing.T) {
 	require.NotContains(t, document, "registration_endpoint")
 }
 
-// An origin claimed WITHOUT the gateway credential is not believed. With no
-// other source of a trusted origin the document cannot be published at all,
-// which is the fail-closed answer: a document naming a host this service
-// cannot vouch for is worse than none.
-func TestAnUntrustedOriginCannotChooseTheIssuer(t *testing.T) {
+// A1007-02. No request can choose the issuer: it is configuration, resolved
+// once, and the same value every minted token carries. A claimed origin — with
+// or without the gateway credential — changes nothing about the document.
+//
+// This is stronger than what it replaced. The earlier version read the issuer
+// from the request's VERIFIED origin and so only had to refuse an unverified
+// claim; the issuer could still vary by Host header between two legitimately
+// forwarded requests, and a token minted under one would fail verification
+// against the other.
+func TestNoRequestCanChooseTheIssuer(t *testing.T) {
 	withGatewayToken(t)
 	handler := oauthHandler(t, "any")
 
+	for _, header := range []func(*http.Request){
+		func(r *http.Request) { r.Header.Set("X-Codefly-Public-Origin", "https://evil.example.com") },
+		func(r *http.Request) { trustedOrigin(r, "https://also-not-the-issuer.example.com") },
+		func(*http.Request) {},
+	} {
+		req := httptest.NewRequest(http.MethodGet, OAuthMetadataPath, nil)
+		header(req)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		require.Equal(t, 200, w.Code)
+		var document map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &document))
+		require.Equal(t, "https://host.example.com", document["issuer"])
+		require.NotContains(t, w.Body.String(), "evil.example.com")
+		require.NotContains(t, w.Body.String(), "also-not-the-issuer")
+	}
+}
+
+// And with no configured issuer nothing is published at all: every URL in the
+// document would name a host this service cannot vouch for, and a client that
+// fetched it would authorize somewhere else.
+func TestNoIssuerMeansNoPublishedMetadata(t *testing.T) {
+	withGatewayToken(t)
+	service, err := business.NewService(nil)
+	require.NoError(t, err)
+	handler := NewOAuthHTTPHandler(service)
+
 	req := httptest.NewRequest(http.MethodGet, OAuthMetadataPath, nil)
-	req.Header.Set("X-Codefly-Public-Origin", "https://evil.example.com")
+	trustedOrigin(req, "https://host.example.com")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
 	require.Equal(t, 503, w.Code)
-	require.NotContains(t, w.Body.String(), "evil.example.com")
+	require.NotContains(t, w.Body.String(), "host.example.com")
 }
 
 // RFC 6749 §3.2: the token request is form-encoded. This is the assertion that
@@ -175,7 +212,7 @@ func TestTheValidateEndpointReportsWhetherARefusalIsDeliverable(t *testing.T) {
 	// An unregistered client: nothing has validated a redirect URI, so the
 	// browser must not be sent to the one it named.
 	req := httptest.NewRequest(http.MethodPost, OAuthAuthorizeValidatePath,
-		strings.NewReader(`{"client_id":"nobody","redirect_uri":"https://evil.example.com/cb","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256"}`))
+		strings.NewReader(`{"response_type":"code","client_id":"nobody","redirect_uri":"https://evil.example.com/cb","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256"}`))
 	req.Header.Set("Content-Type", "application/json")
 	trustedOrigin(req, "https://host.example.com")
 	w := httptest.NewRecorder()
@@ -190,7 +227,7 @@ func TestTheValidateEndpointReportsWhetherARefusalIsDeliverable(t *testing.T) {
 	// A registered client with a bad scope: the URI is its own, so the client
 	// is told rather than the person being shown an error page.
 	req = httptest.NewRequest(http.MethodPost, OAuthAuthorizeValidatePath,
-		strings.NewReader(`{"client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256","scope":"admin"}`))
+		strings.NewReader(`{"response_type":"code","client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256","scope":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
 	trustedOrigin(req, "https://host.example.com")
 	w = httptest.NewRecorder()
@@ -207,7 +244,7 @@ func TestTheValidateEndpointNamesTheClientAndTheResource(t *testing.T) {
 	handler := oauthHandler(t, "any")
 
 	req := httptest.NewRequest(http.MethodPost, OAuthAuthorizeValidatePath,
-		strings.NewReader(`{"client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256","resource":"https://host.example.com/solutions/example/mcp"}`))
+		strings.NewReader(`{"response_type":"code","client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256","resource":"https://host.example.com/solutions/example/mcp"}`))
 	req.Header.Set("Content-Type", "application/json")
 	trustedOrigin(req, "https://host.example.com")
 	w := httptest.NewRecorder()
@@ -229,7 +266,7 @@ func TestTheGrantEndpointRefusesAnUnauthenticatedCaller(t *testing.T) {
 	handler := oauthHandler(t, "any")
 
 	req := httptest.NewRequest(http.MethodPost, OAuthAuthorizeGrantPath,
-		strings.NewReader(`{"client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256"}`))
+		strings.NewReader(`{"response_type":"code","client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

@@ -45,6 +45,7 @@ type Service struct {
 	oauthPolicy               *auth.OAuthRequestPolicy
 	clientRegistry            *auth.ClientRegistry
 	clientMetadata            *auth.ClientMetadataResolver
+	oauthIssuer               string
 	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
 	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
 	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
