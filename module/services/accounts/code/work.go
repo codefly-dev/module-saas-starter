@@ -1636,19 +1636,22 @@ func configuredWebAuthn() (rpID, displayName string, origins []string, err error
 // optional and exists for a deployment that wants a tighter convergence bound
 // than the default.
 //
-// SOLUTION_HOST_TRUST_POLICY is how a delivered carrier's bundle is checked, and
-// SOLUTION_HOST_TRUST_MOUNT is where `keyless` reads the mirrored Fulcio/Rekor
-// root and the identity allowlist — which also declares which ownership domains
-// each accepted signer may deliver under. Both are required with the mount,
-// because core admits only a verified carrier: a host with no verifier cannot
-// produce the value Admit takes, and a host with no signer policy would let any
-// signer it accepted at all claim any domain it accepted.
+// SOLUTION_HOST_TRUST_POLICY is how a delivered carrier's bundle is checked. It
+// is required with the bindings mount, because core admits only a verified
+// carrier: a host with no verifier cannot produce the value Admit takes.
 //
-// The allowlist and the domains it grants deliberately come from ONE document on
-// an independently delivered mount. When the domains lived in this environment
-// instead, a deployer who could set the environment could widen what an accepted
-// signer speaks for without touching the policy that was supposed to be
-// independent of them.
+// WHERE the root and the allowlist are read from is NOT configurable. It is
+// `infra.SolutionHostTrustAnchorPath`, a constant, and there is deliberately no
+// environment value for it — see that constant for why an env var was a hole
+// rather than a convenience. In short: workspace environment is delivered by the
+// composition, so an overridable path lets a composition choose the anchor its
+// own documents are checked against, and no amount of checking downstream
+// recovers from that.
+//
+// The allowlist and the domains it grants come from ONE document at that path.
+// When the domains lived in this environment instead, a deployer who could set
+// the environment could widen what an accepted signer speaks for without
+// touching the policy that was supposed to be independent of them.
 func configuredSolutionHostBindingReconciler(
 	service *business.Service, store *infra.PostgresStore,
 ) (*business.SolutionHostBindingReconciler, error) {
@@ -1692,12 +1695,18 @@ func configuredSolutionHostBindingReconciler(
 	// could set the environment could widen what an accepted signer speaks for
 	// without touching the independently-delivered policy at all.
 	//
-	// Now both come from one document on the trust mount, which a platform-owned
+	// Now both come from one document at a FIXED path, which a platform-owned
 	// delivery path writes and neither delivery writer can.
-	trustMount := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_MOUNT"))
+	//
+	// The path is deliberately not read from configuration. It was
+	// `SOLUTION_HOST_TRUST_MOUNT`, and workspace environment is delivered by the
+	// COMPOSITION — so a composition could repoint this verifier at a policy and
+	// a root of its own, sign its own presence documents, and pass every check
+	// downstream, because the checks would be against an anchor it chose. That
+	// is not a check that can be hardened; the location of the check's inputs
+	// has to be out of reach by construction.
 	verifier, err := infra.NewSolutionHostBundleVerifier(
-		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))),
-		trustMount)
+		infra.SolutionHostTrustPolicy(strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_TRUST_POLICY"))))
 	if err != nil {
 		return nil, err
 	}

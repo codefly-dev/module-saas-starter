@@ -73,8 +73,34 @@ type solutionHostBundleVerifierWithPolicy interface {
 // operator-declared string doing security work. Nothing here is decided by it
 // now — what a host accepts is decided entirely by the trust root and the
 // allowlist it was delivered.
+// SolutionHostTrustAnchorPath is where the trust root and the verification
+// policy are read from, and it is a CONSTANT on purpose.
+//
+// It was `SOLUTION_HOST_TRUST_MOUNT`, a workspace environment value — and that
+// was a hole, not a convenience. Workspace environment is delivered by the
+// COMPOSITION, so a composition could repoint the verifier at a policy and a
+// root it wrote itself and then sign its own presence documents with a key the
+// policy it also wrote happened to list. Every check downstream still passed; it
+// was checking against an anchor the attacker chose.
+//
+// "A document never nominates its own anchor" cannot be enforced by a check,
+// because the thing being checked is where the check's own inputs come from. It
+// has to hold BY CONSTRUCTION, which means the path is not configurable — not by
+// environment, not by flag, not by a default a deployer can override. A
+// deployment that needs a different path changes the pod spec that mounts it,
+// which is the platform's to render and not the composition's to supply.
+//
+// The anchor is therefore reachable only by whoever can mount into this pod.
+// That is the property, and the constant is what makes it one.
+const SolutionHostTrustAnchorPath = "/etc/codefly/delivery-trust"
+
+// NewSolutionHostBundleVerifier builds the one verifier, reading its anchor from
+// the fixed path.
+//
+// It takes no path parameter. An optional path is a configurable path with extra
+// steps: a caller that could pass one is a caller that could be given one.
 func NewSolutionHostBundleVerifier(
-	policy SolutionHostTrustPolicy, trustMount string,
+	policy SolutionHostTrustPolicy,
 ) (solutionHostBundleVerifierWithPolicy, error) {
 	switch policy {
 	case SolutionHostTrustKeyless:
@@ -83,11 +109,11 @@ func NewSolutionHostBundleVerifier(
 		// cannot perform must not start and claim to verify, because refusing
 		// per document instead makes "this host has no trust root" and "delivery
 		// is shipping something bad" the same observable.
-		return NewSolutionHostKeylessVerifier(trustMount)
+		return NewSolutionHostKeylessVerifier(SolutionHostTrustAnchorPath)
 
 	case "":
 		return nil, fmt.Errorf(
-			"SOLUTION_HOST_TRUST_POLICY is required with the mount, and the only value is %q: "+
+			"SOLUTION_HOST_TRUST_POLICY is required with the bindings mount, and the only value is %q: "+
 				"a host must say how it checks a delivered carrier rather than inherit a default",
 			SolutionHostTrustKeyless)
 	}

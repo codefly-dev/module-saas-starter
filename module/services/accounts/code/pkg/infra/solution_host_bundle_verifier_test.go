@@ -20,8 +20,12 @@ import (
 // No policy is not a permissive policy: the absence is refused by name at boot
 // rather than defaulted, because a host that does not say how it checks a
 // carrier must not be guessed at.
+// No directory is passed to any of these any more: the anchor's location is a
+// constant, deliberately not a parameter. See
+// infra.SolutionHostTrustAnchorPath — a path a caller could pass is a path a
+// composition could eventually supply, which is the hole the constant closes.
 func TestUnsetTrustPolicyIsRefused(t *testing.T) {
-	verifier, err := infra.NewSolutionHostBundleVerifier("", t.TempDir())
+	verifier, err := infra.NewSolutionHostBundleVerifier("")
 	if err == nil {
 		t.Fatal("an unset trust policy must be refused, not defaulted")
 	}
@@ -42,7 +46,7 @@ func TestUnsetTrustPolicyIsRefused(t *testing.T) {
 // read as nothing at all.
 func TestUnknownTrustPolicyIsRefused(t *testing.T) {
 	for _, policy := range []infra.SolutionHostTrustPolicy{"trust-me", "local", "none", "KEYLESS"} {
-		verifier, err := infra.NewSolutionHostBundleVerifier(policy, t.TempDir())
+		verifier, err := infra.NewSolutionHostBundleVerifier(policy)
 		if err == nil {
 			t.Fatalf("trust policy %q must be refused", policy)
 		}
