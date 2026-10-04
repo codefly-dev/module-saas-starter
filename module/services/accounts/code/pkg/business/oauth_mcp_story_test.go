@@ -58,7 +58,7 @@ func mcpAuthorizationRequest() business.OAuthAuthorizationRequest {
 		CodeChallenge:       testCodeChallenge(),
 		CodeChallengeMethod: "S256",
 		State:               "opaque-state",
-		Resource:            mcpHostOrigin + "/solutions/example/mcp",
+		Resource:            mcpHostOrigin + "/api/solutions/example/proxy/mcp",
 	}
 }
 
@@ -106,7 +106,7 @@ func TestStory_HOST_MCP_001(t *testing.T) {
 		Code:         code,
 		RedirectURI:  "http://localhost:54321/callback",
 		CodeVerifier: testCodeVerifier,
-		Resource:     mcpHostOrigin + "/solutions/example/mcp",
+		Resource:     mcpHostOrigin + "/api/solutions/example/proxy/mcp",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "Bearer", tokens.TokenType, "RFC 6749 §5.1 requires it")
@@ -121,7 +121,7 @@ func TestStory_HOST_MCP_001(t *testing.T) {
 	require.Equal(t, mcpClientID, identity.ClientID, "azp names the client")
 	require.Equal(t, hostSession.User.Uuid, identity.UserID.String(), "the subject is the person")
 	require.NotEmpty(t, identity.SessionID, "a session id is what lets the SDK mint a Work Context")
-	require.Equal(t, mcpHostOrigin+"/solutions/example/mcp", identity.Resource)
+	require.Equal(t, mcpHostOrigin+"/api/solutions/example/proxy/mcp", identity.Resource)
 
 	// Rotation keeps the audience. A rotation that re-read it from the request
 	// would let the client move its own binding by asking.
@@ -134,7 +134,7 @@ func TestStory_HOST_MCP_001(t *testing.T) {
 	require.NotEqual(t, tokens.RefreshToken, rotated.RefreshToken, "the refresh half rotates")
 	rotatedIdentity, err := testService.JWTMinter().VerifyAccess(rotated.AccessToken)
 	require.NoError(t, err)
-	require.Equal(t, mcpHostOrigin+"/solutions/example/mcp", rotatedIdentity.Resource)
+	require.Equal(t, mcpHostOrigin+"/api/solutions/example/proxy/mcp", rotatedIdentity.Resource)
 
 	// Revocation follows the registered-client tokens: the person's own browser
 	// session is untouched by any of it.
@@ -165,7 +165,7 @@ func TestAnMCPCodeCannotBeRedeemedForADifferentResource(t *testing.T) {
 		Code:         code,
 		RedirectURI:  "http://localhost:54321/callback",
 		CodeVerifier: testCodeVerifier,
-		Resource:     mcpHostOrigin + "/solutions/audit/mcp",
+		Resource:     mcpHostOrigin + "/api/solutions/audit/proxy/mcp",
 	})
 	require.Error(t, err)
 
@@ -176,7 +176,7 @@ func TestAnMCPCodeCannotBeRedeemedForADifferentResource(t *testing.T) {
 		Code:         code,
 		RedirectURI:  "http://localhost:54321/callback",
 		CodeVerifier: testCodeVerifier,
-		Resource:     mcpHostOrigin + "/solutions/example/mcp",
+		Resource:     mcpHostOrigin + "/api/solutions/example/proxy/mcp",
 	})
 	require.Error(t, err)
 }
@@ -209,7 +209,7 @@ func TestAnMCPRefreshNamingAnotherResourceKeepsTheSession(t *testing.T) {
 		GrantType:    "refresh_token",
 		ClientID:     mcpClientID,
 		RefreshToken: tokens.RefreshToken,
-		Resource:     mcpHostOrigin + "/solutions/other/mcp",
+		Resource:     mcpHostOrigin + "/api/solutions/other/proxy/mcp",
 	})
 	require.Error(t, err)
 
@@ -218,7 +218,7 @@ func TestAnMCPRefreshNamingAnotherResourceKeepsTheSession(t *testing.T) {
 		GrantType:    "refresh_token",
 		ClientID:     mcpClientID,
 		RefreshToken: tokens.RefreshToken,
-		Resource:     mcpHostOrigin + "/solutions/example/mcp",
+		Resource:     mcpHostOrigin + "/api/solutions/example/proxy/mcp",
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, rotated.AccessToken)

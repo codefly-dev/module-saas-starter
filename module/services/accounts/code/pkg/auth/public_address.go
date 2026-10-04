@@ -56,17 +56,22 @@ var specialUseIPv6 = []string{
 	"64:ff9b::/96",   // NAT64
 	"64:ff9b:1::/48", // local-use NAT64
 	"100::/64",       // discard-only
-	"2001::/32",      // Teredo
-	"2001:1::1/128",  // port control protocol anycast
-	"2001:1::2/128",  // TURN anycast
-	"2001:2::/48",    // benchmarking
-	"2001:db8::/32",  // documentation
-	"2001:10::/28",   // deprecated ORCHID
-	"2001:20::/28",   // ORCHIDv2
-	"2002::/16",      // 6to4
-	"fc00::/7",       // unique local
-	"fe80::/10",      // link-local unicast
-	"5f00::/16",      // segment routing
+	// The dummy prefix. Inside 100::/8 but NOT inside the discard-only /64
+	// above, so listing that /64 alone left it admitted.
+	"100:0:0:1::/64",
+	// IETF protocol assignments, as one block rather than per sub-block. It
+	// covers Teredo (2001::/32), benchmarking (2001:2::/48), both ORCHID
+	// blocks, the anycast singletons AND the unassigned remainder, which a
+	// per-block list left admitted. 2001:db8::/32 is OUTSIDE this /23 and stays
+	// listed separately; ordinary global unicast such as 2001:4860::/32 is
+	// outside it too, so this does not over-refuse.
+	"2001::/23",
+	"2001:db8::/32", // documentation
+	"2002::/16",     // 6to4
+	"3fff::/20",     // documentation (RFC 9637)
+	"5f00::/16",     // segment routing
+	"fc00::/7",      // unique local
+	"fe80::/10",     // link-local unicast
 }
 
 // specialUsePrefixes is both registries, parsed once.
@@ -95,6 +100,19 @@ func parseSpecialUsePrefixes() []netip.Prefix {
 // next lookup, and only the dial knows which it got.
 func IsPublicDestination(address netip.Addr) bool {
 	if !address.IsValid() {
+		return false
+	}
+	// A ZONE makes this a scoped address — `fd00::1%lo0` is reachable only on
+	// the named interface — and netip.Prefix.Contains returns false for ANY
+	// zoned address, so every prefix below misses it. `fd00::1` was refused
+	// while `fd00::1%lo0` was admitted, and url.Parse accepts the `%25lo0`
+	// spelling that produces one.
+	//
+	// Refused outright rather than stripped: a scope identifier is meaningless
+	// for a destination on the public internet, so its presence is itself
+	// disqualifying — and stripping it would classify an address the dialer is
+	// then not going to use.
+	if address.Zone() != "" {
 		return false
 	}
 	// A v4-mapped v6 address (::ffff:10.0.0.1) is the v4 address it wraps, and

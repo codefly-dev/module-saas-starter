@@ -55,6 +55,21 @@ type Config struct {
 	// RFC 8414 metadata sets it to the same https URL the metadata names, which
 	// is what lets a client that discovered the metadata verify the token.
 	Issuer string
+	// RegistrationIssuer is the `iss` on the module- and solution-registration
+	// credentials, which is deliberately NOT Issuer.
+	//
+	// Those are internal cluster credentials with their own audiences and their
+	// own verifiers — in the gateway and in the frontend, each pinned to a
+	// literal. Access tokens had to move to an https URL because RFC 8414
+	// requires the published OAuth issuer to be one; registration credentials
+	// are not OAuth and publish nothing, so moving them with the access token
+	// bought nothing and broke every verifier that had not moved in the same
+	// release. A solution's gateway half would register while its frontend half
+	// was refused, and a registration needs both.
+	//
+	// Keeping it fixed means there is no migration: the verifiers are correct as
+	// they stand, including for credentials minted before and after the change.
+	RegistrationIssuer string
 	// AdditionalAcceptedIssuers are `iss` values VerifyAccess accepts besides
 	// Issuer. It exists for exactly one migration: a deployment moving from the
 	// pre-metadata literal issuer to its https URL keeps accepting the literal
@@ -99,6 +114,9 @@ func (c *Config) withDefaults() error {
 	}
 	if c.Audience == "" {
 		c.Audience = "saas-starter"
+	}
+	if c.RegistrationIssuer == "" {
+		c.RegistrationIssuer = "saas-starter"
 	}
 	if c.AccessTokenTTL == 0 {
 		c.AccessTokenTTL = 3 * time.Minute
@@ -313,7 +331,8 @@ func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error
 	}
 	claims := moduleRegistrationClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    m.cfg.Issuer,
+			// RegistrationIssuer, not Issuer: see the Config field's comment.
+			Issuer:    m.cfg.RegistrationIssuer,
 			Subject:   "module:" + prefix,
 			Audience:  jwt.ClaimStrings{ModuleRegistrationAudience},
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -1063,7 +1082,7 @@ func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time,
 	}
 	claims := solutionRegistrationClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    m.cfg.Issuer,
+			Issuer:    m.cfg.RegistrationIssuer,
 			Subject:   "solution:" + solutionID,
 			Audience:  jwt.ClaimStrings{SolutionRegistrationAudience},
 			IssuedAt:  jwt.NewNumericDate(now),

@@ -140,7 +140,7 @@ func TestAnOperatorDeclaredClientNeedsNoConsent(t *testing.T) {
 func TestARequestNamingAResourceNeedsConsent(t *testing.T) {
 	service := oauthService(t, "any")
 	request := authorizeRequest()
-	request.Resource = theHost + "/solutions/example/mcp"
+	request.Resource = theHost + "/api/solutions/example/proxy/mcp"
 
 	resolved, err := service.ResolveOAuthAuthorization(issuerContext(t), request)
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestARequestNamingAResourceNeedsConsent(t *testing.T) {
 func TestAResourceAtAnotherOriginIsRefused(t *testing.T) {
 	service := oauthService(t, "any")
 	request := authorizeRequest()
-	request.Resource = "https://evil.example.com/solutions/example/mcp"
+	request.Resource = "https://evil.example.com/api/solutions/example/proxy/mcp"
 
 	_, err := service.ResolveOAuthAuthorization(issuerContext(t), request)
 	refusal := requireAuthorizationError(t, err)
@@ -436,7 +436,7 @@ func TestAGrantNeedingConsentIsRefusedWithoutIt(t *testing.T) {
 	service := oauthService(t, "any")
 	ctx := issuerContext(t)
 	request := authorizeRequest()
-	request.Resource = theHost + "/solutions/example/mcp"
+	request.Resource = theHost + "/api/solutions/example/proxy/mcp"
 
 	resolved, err := service.ResolveOAuthAuthorization(ctx, request)
 	require.NoError(t, err)

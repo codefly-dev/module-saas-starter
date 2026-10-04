@@ -128,15 +128,6 @@ describe("proxy product API forwarding", () => {
 			],
 			// The RFC 6749 token endpoint, also accounts.
 			["/oauth2/token", "/v1/oauth2/token"],
-			// The RFC 9728 document for a solution's MCP endpoint, served by the
-			// gateway — the component that enforces what it says — at the same
-			// path the client asked for.
-			[
-				"/.well-known/oauth-protected-resource/solutions/example/mcp",
-				"/.well-known/oauth-protected-resource/solutions/example/mcp",
-			],
-			// The resource itself.
-			["/solutions/example/mcp", "/solutions/example/mcp"],
 		];
 		for (const [publicPath, upstreamPath] of cases) {
 			const response = await proxy(
@@ -156,19 +147,22 @@ describe("proxy product API forwarding", () => {
 		expect(rewrittenTo(response)).toBeNull();
 	});
 
-	// The gateway's /solutions/* surface also carries the cluster-internal
-	// registration endpoints, which decide where authenticated traffic is
-	// forwarded and what the host loads as an in-origin remote. The mapping is
-	// per-path precisely so widening it cannot expose them from the edge.
-	it("forwards no solution path other than the MCP endpoint", async () => {
+	// An MCP client reaches a solution's backend through
+	// `/api/solutions/<id>/proxy/*`, a route of this app that needs no rewrite.
+	// NO `/solutions/*` path is forwarded: on a deployed cell that prefix is a
+	// page of this app, and the gateway's own `/solutions/*` surface carries the
+	// cluster-internal registration endpoints that decide where authenticated
+	// traffic goes and what the host loads as an in-origin remote.
+	it("forwards no /solutions path at all", async () => {
 		for (const path of [
 			"/solutions/_register",
 			"/solutions/_frontend",
 			"/solutions/_registry",
+			"/solutions/example/mcp",
 			"/solutions/example/mcp/tools",
 			"/solutions/example/detail",
 			"/solutions/Example/mcp",
-			"/.well-known/oauth-protected-resource/solutions/example",
+			"/.well-known/oauth-protected-resource/solutions/example/mcp",
 		]) {
 			const response = await proxy(
 				productRequest(`https://app.example${path}`),
@@ -185,7 +179,6 @@ describe("proxy product API forwarding", () => {
 			"/.well-known/oauth-authorization-server",
 			"/oauth2/token",
 			"/oauth2/authorize",
-			"/solutions/example/mcp",
 		]) {
 			const request = new NextRequest(`https://app.example${path}`, {
 				headers: { "sec-fetch-dest": "empty", accept: "*/*" },

@@ -210,3 +210,34 @@ it("surfaces a failed grant instead of moving on", async () => {
 	expect(await screen.findByText(/could not be authorized/)).toBeTruthy();
 	expect(screen.getByRole("button", { name: /Allow/ })).toBeTruthy();
 });
+
+// A1007B-06. A pending request whose resolution is absent or no longer
+// decodable — an in-flight sessionStorage record written by an older response
+// shape across a deployment — must NOT render Allow. Without the resolution the
+// page has no verified origin, no resource and no uninstalled-client warning to
+// show, and an approval given against a blank presentation approves nothing.
+//
+// Adopted from the Astra review (missing resolution consent page continuation).
+it("offers no decision without a validated resolution", () => {
+	storePending(request, null);
+	render(<ConsentPage />);
+
+	expect(screen.queryByRole("button", { name: /Allow/ })).toBeNull();
+	expect(screen.queryByRole("button", { name: /Cancel/ })).toBeNull();
+	expect(screen.getByText(/could not be confirmed/)).toBeTruthy();
+	expect(h.grantClientAuthorization).not.toHaveBeenCalled();
+});
+
+// Including one that is present but undecodable, which is the shape an older
+// deployment's record actually takes.
+it("offers no decision when the stored resolution cannot be decoded", () => {
+	storePending(request, null);
+	sessionStorage.setItem(
+		"client_authorization_resolution",
+		JSON.stringify({ clientName: "Claude Code", requiresConsent: true }),
+	);
+	render(<ConsentPage />);
+
+	expect(screen.queryByRole("button", { name: /Allow/ })).toBeNull();
+	expect(screen.getByText(/could not be confirmed/)).toBeTruthy();
+});

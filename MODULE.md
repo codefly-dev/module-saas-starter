@@ -169,26 +169,45 @@ one registry, one authorization-code table, one minter and one session kind.
 | Authorization endpoint | `GET /oauth2/authorize` | frontend (`src/app/(auth)/oauth2/authorize/route.ts`) → the login page → the consent page |
 | Token endpoint (RFC 6749 form-encoded) | `POST /oauth2/token` | accounts (`pkg/adapters/oauth_http.go`) |
 | The first registered client's own RPCs | `/v1/auth/clients/validate`, `/v1/auth/clients/authorize`, `/v1/auth/token` | accounts (`pkg/business/client_authorization.go`) |
-| RFC 9728 protected-resource metadata for a solution's MCP endpoint | `GET /.well-known/oauth-protected-resource/solutions/<id>/mcp` | auth-gateway (`gateway_mcp_resource.go`) |
+| RFC 9728 protected-resource metadata for a solution's MCP endpoint | `GET /api/solutions/<id>/proxy/.well-known/oauth-protected-resource` | the solution's **runtime**, reached through the frontend's solution proxy (the gateway serves a solution's `.well-known` GET unauthenticated) |
+| The MCP endpoint itself | `POST /api/solutions/<id>/proxy/mcp` | the solution's runtime, same route |
 
 **The issuer is `APP_BASE_URL`.** RFC 8414 §2 requires an authorization
 server's issuer to be an https URL, and a client that discovers the metadata
 then verifies `iss` against it — so the published `issuer` and the `iss` of
 every minted token are **one configured value**, resolved once at startup, never
 from the request's `Host`. A deployment with no `APP_BASE_URL` publishes no
-metadata and keeps the pre-metadata literal issuer, so the two cannot disagree;
-one that sets it mints the URL and keeps **accepting** the literal until tokens
-carrying it expire, so the change signs nobody out.
+metadata and keeps the pre-metadata literal issuer, so the two cannot disagree —
+and the registered-client browser handoff keeps working there, because issuing a
+code never depends on a published issuer. One that sets it mints the URL and
+keeps **accepting** the literal until tokens carrying it expire, so the change
+signs nobody out.
 
-**A denied `/solutions/<id>/*` carries the discovery challenge.** The gateway is
-where such a request is refused — it strips identity, runs ext_authz and answers
-itself, never proxying — so a challenge the runtime would have sent cannot reach
-anyone through it. Every protected solution path answers 401 with
-`WWW-Authenticate: Bearer resource_metadata="<base>/solutions/<id>/.well-known/oauth-protected-resource"`,
-the solution's own well-known, which the gateway already proxies unauthenticated
-to its runtime. The RFC 9728 §3.1 URL a client constructs from the resource
-alone is served by the gateway as well, so a client that read no challenge is
-not left without a document.
+**Registration credentials keep their own issuer.** The module- and
+solution-registration credentials are internal, with their own audiences and
+their own verifiers in the gateway and the frontend. They are not OAuth and
+publish nothing, so they stay on the fixed `saas-starter` issuer rather than
+following `APP_BASE_URL`: moving them would have refused a solution's frontend
+half while its gateway half registered, and an active registration needs both.
+
+**The resource is the path a client can reach, which is the solution proxy.**
+`/api/solutions/<id>/proxy/*` is the **only** public route to a solution's
+backend: it forwards the caller's bearer to the gateway and already serves the
+solution's `.well-known` anonymously. `/solutions/<id>/*` is the gateway's own
+internal surface — on the public origin that prefix is a page of the frontend
+that redirects to login — so the RFC 8707 resource is
+`<base>/api/solutions/<id>/proxy/mcp` and nothing else. An audience naming the
+internal path is one no client could ever present at the resource it describes.
+
+**A denied solution request carries the discovery challenge.** The gateway is
+where it is refused — it strips identity, runs ext_authz and answers itself,
+never proxying — so a challenge the runtime would have sent cannot reach anyone
+through it. Every protected `/solutions/<id>/*` answers 401 with
+`WWW-Authenticate: Bearer resource_metadata="<base>/api/solutions/<id>/proxy/.well-known/oauth-protected-resource"`,
+and the proxy route **passes that header through**: it is the only public way
+out, so a challenge it dropped was one nobody could read. The host serves no
+second copy of that document — two for one resource are two places to disagree,
+and a client follows whichever URL the challenge names.
 
 **Consent is enforced by the host, not advertised to the page.** A grant request
 for a client whose authorization requires consent is refused unless it states

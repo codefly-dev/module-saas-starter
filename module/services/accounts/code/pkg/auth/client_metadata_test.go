@@ -434,6 +434,21 @@ func TestNonPublicDestinationsAreRefusedAcrossEverySpecialUseRange(t *testing.T)
 		// wraps, or the v6 registry alone would find no match and admit it.
 		"[::ffff:10.0.0.1]:443",
 		"[::ffff:127.0.0.1]:443",
+		// A1007B-04. A ZONED address: netip.Prefix.Contains returns false for
+		// any zoned address, so every prefix missed these and they were
+		// admitted while their unzoned forms were refused. url.Parse accepts
+		// the `%25lo0` spelling that produces them.
+		"[fd00::1%lo0]:443",
+		"[fe80::1%eth0]:443",
+		"[::1%lo0]:443",
+		// Ranges the first registry list omitted.
+		"[3fff::1]:443",       // documentation (RFC 9637)
+		"[100:0:0:1::1]:443",  // dummy prefix, outside the discard-only /64
+		"[2001:100::1]:443",   // unassigned inside IETF protocol assignments
+		"[2001:1::1]:443",     // port control protocol anycast
+		"[2001:20::1]:443",    // ORCHIDv2
+		"[2002:a00:1::1]:443", // 6to4 wrapping 10.0.0.1
+		"[5f00::1]:443",       // segment routing
 		// Unparseable. A guard that cannot tell what it is about to reach must
 		// not admit it.
 		"not-an-address", "", "example.com:443",
@@ -444,6 +459,10 @@ func TestNonPublicDestinationsAreRefusedAcrossEverySpecialUseRange(t *testing.T)
 	}
 	for _, address := range []string{
 		"93.184.216.34:443", "1.1.1.1:443", "[2606:4700::1111]:443",
+		// Global unicast just outside the blocks above, so the additions do not
+		// over-refuse: 2001:4860::/32 is outside 2001::/23, and 4000::/3 is
+		// ordinary assignable space.
+		"[2001:4860:4860::8888]:443", "[4001::1]:443",
 	} {
 		require.True(t, auth.IsPublicDestinationDialAddress(address),
 			"should admit %q", address)

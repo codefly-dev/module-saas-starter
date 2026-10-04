@@ -68,31 +68,27 @@ const OAUTH_SURFACE_REWRITES: ReadonlyArray<readonly [string, string]> = [
 	["/oauth2/token", "/v1/oauth2/token"],
 ] as const;
 
-const PROTECTED_RESOURCE_METADATA_PREFIX =
-	"/.well-known/oauth-protected-resource/solutions/";
-
-/** `/solutions/<id>/mcp`, and nothing under it. */
-const SOLUTION_MCP_PATH =
-	/^\/solutions\/[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\/mcp$/;
-
 /**
  * The gateway path a public OAuth path is served from, or undefined when the
  * path is not part of that surface.
+ *
+ * Deliberately only the two authorization-server paths. An MCP client reaches a
+ * solution's backend — and the protected-resource metadata its runtime serves —
+ * through `/api/solutions/<id>/proxy/*`, which is a route of this app and needs
+ * no rewrite.
+ *
+ * An earlier revision also forwarded `/solutions/<id>/mcp` and a constructed
+ * `/.well-known/oauth-protected-resource/...`. Both were public paths that do
+ * not exist on a deployed cell, where `/solutions/*` on the public origin is a
+ * page of this app that redirects to login — so a client following the
+ * advertised metadata URL reached a login page instead of a JSON document.
+ * Adding a second public route to a solution's backend would also mean two
+ * paths to keep identical forever.
  */
 export function oauthSurfaceUpstreamPath(pathname: string): string | undefined {
 	for (const [publicPath, upstreamPath] of OAUTH_SURFACE_REWRITES) {
 		if (pathname === publicPath) return upstreamPath;
 	}
-	// The resource metadata and the resource itself are served by the gateway at
-	// the same path the client asked for, so no rewrite — but they are still
-	// listed, because being on this list is what forwards them at all.
-	if (
-		pathname.startsWith(PROTECTED_RESOURCE_METADATA_PREFIX) &&
-		pathname.endsWith("/mcp")
-	) {
-		return pathname;
-	}
-	if (SOLUTION_MCP_PATH.test(pathname)) return pathname;
 	return undefined;
 }
 

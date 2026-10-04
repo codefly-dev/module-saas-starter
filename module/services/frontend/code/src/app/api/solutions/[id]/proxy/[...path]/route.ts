@@ -192,6 +192,23 @@ async function handler(
 	if (upstreamRequestID) {
 		responseHeaders.set("x-request-id", upstreamRequestID);
 	}
+	// The gateway's authentication challenge, passed through verbatim.
+	//
+	// This is how an MCP client starts discovery: a 401 names where the resource
+	// describes itself, that document names the authorization server, and the
+	// client runs the authorization-code flow. This route is the only public way
+	// to a solution's backend, so a challenge it drops is a challenge nobody can
+	// ever read — the client sees a bare 401 and reports "unauthorized" with
+	// nowhere to go. RFC 6750 §3 and RFC 9728 §5.1 both require the header to
+	// reach the caller.
+	//
+	// Forwarded on any status that carries it rather than only on 401: a 403 may
+	// legitimately carry one too, and the header is the gateway's statement
+	// about the credential, not this route's to interpret.
+	const challenge = upstream.headers.get("www-authenticate");
+	if (challenge) {
+		responseHeaders.set("www-authenticate", challenge);
+	}
 
 	// A forwarded error keeps its upstream status and body (the solution's remote
 	// owns how it renders them), but the host categorizes it so an operator can

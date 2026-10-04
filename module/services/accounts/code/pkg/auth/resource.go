@@ -26,13 +26,40 @@ import (
 // would report which solutions exist.
 var ErrResourceRejected = errors.New("resource indicator rejected")
 
-// solutionMCPSuffix is the one resource path the host mints audiences for. It
-// is the gateway's own `/solutions/<id>/<path>` surface with `mcp` as the path,
-// which is where a solution's runtime serves Streamable HTTP.
-const solutionMCPSuffix = "/mcp"
+// A resource indicator names the URL an MCP CLIENT CAN REACH, which on a
+// deployed cell is the host frontend's solution proxy and nothing else.
+//
+// `/solutions/<id>/*` is the gateway's own internal surface: it is not public,
+// and on the public origin that path is a page of the frontend that redirects
+// to login. The only public route to a solution's backend is
+// `/api/solutions/<id>/proxy/*`, which forwards the caller's bearer to the
+// gateway and already serves the solution's `.well-known` anonymously. An
+// audience naming anything else is an audience no client could present at the
+// resource it describes.
+//
+// The shape is the frontend's `solutionProxyBase` + `/mcp`
+// (frontend/code/src/solutions/registry.ts). It is spelled here because
+// pkg/auth cannot import TypeScript, and
+// TestTheResourceShapeMatchesTheFrontendProxyBase holds the two together.
+const (
+	solutionResourcePrefix = "/api/solutions/"
+	solutionResourceMiddle = "/proxy"
+	solutionMCPSuffix      = "/mcp"
+)
 
-// solutionResourcePrefix is the path prefix every resource indicator carries.
-const solutionResourcePrefix = "/solutions/"
+// SolutionResourceMetadataPath is where a client looks for the RFC 9728
+// document describing `<base>/api/solutions/<id>/proxy/mcp`: the solution's own
+// well-known, under the same proxy base.
+//
+// That document is the RUNTIME's — the gateway proxies the solution's
+// `.well-known` GET unauthenticated and the runtime answers it, naming this
+// host as its authorization server. The host does not serve a second copy: two
+// documents for one resource is two places to disagree, and the client follows
+// whichever URL the challenge names anyway.
+func SolutionResourceMetadataPath(solutionID string) string {
+	return solutionResourcePrefix + solutionID + solutionResourceMiddle +
+		"/.well-known/oauth-protected-resource"
+}
 
 // ResourceIndicator is a validated RFC 8707 `resource` value: the exact string
 // that becomes the token's audience, plus the parts the gateway and the consent
@@ -52,7 +79,8 @@ type ResourceIndicator struct {
 // is the single place the string is composed, so the authorization server, the
 // published metadata, and the gateway's expectation cannot drift apart.
 func SolutionMCPResource(origin, solutionID string) string {
-	return strings.TrimSuffix(origin, "/") + solutionResourcePrefix + solutionID + solutionMCPSuffix
+	return strings.TrimSuffix(origin, "/") + solutionResourcePrefix + solutionID +
+		solutionResourceMiddle + solutionMCPSuffix
 }
 
 // ParseResourceIndicator validates a client-supplied `resource` parameter
@@ -98,10 +126,11 @@ func ParseResourceIndicator(candidate string) (ResourceIndicator, error) {
 	if !ok {
 		return ResourceIndicator{}, ErrResourceRejected
 	}
-	solutionID, ok := strings.CutSuffix(rest, solutionMCPSuffix)
-	if !ok || !ValidSolutionID(solutionID) {
+	rest, ok = strings.CutSuffix(rest, solutionResourceMiddle+solutionMCPSuffix)
+	if !ok || !ValidSolutionID(rest) {
 		return ResourceIndicator{}, ErrResourceRejected
 	}
+	solutionID := rest
 	origin := strings.ToLower(parsed.Scheme) + "://" + parsed.Host
 	return ResourceIndicator{
 		Value:      candidate,

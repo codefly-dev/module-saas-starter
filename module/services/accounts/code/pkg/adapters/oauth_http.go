@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -257,16 +258,20 @@ func serveOAuthAuthorizeGrant(svc *business.Service, w http.ResponseWriter, r *h
 		writeOAuthAuthorizationError(w, svc.OAuthIssuer(), err)
 		return
 	}
-	metadata, err := svc.AuthorizationServerMetadata(ctx)
-	if err != nil {
-		writeJSONError(w, http.StatusServiceUnavailable,
-			"the authorization server has no configured public address")
-		return
-	}
 	writeJSON(w, http.StatusOK, oauthAuthorizeGrantResponse{
 		Code:      code,
 		ExpiresIn: expiresIn,
-		Issuer:    metadata.Issuer,
+		// Empty when this deployment publishes no OAuth metadata, and that is a
+		// supported mode: the registered-client browser handoff predates
+		// discovery and must keep working with no issuer configured. An earlier
+		// revision read the issuer out of the metadata document and answered 503
+		// when there was none — after the code had already been created, so the
+		// person's browser never received a code that existed.
+		//
+		// RFC 9207's `iss` is only something a client can expect when it
+		// discovered the metadata advertising it, which cannot have happened
+		// where no metadata is published.
+		Issuer: svc.OAuthIssuer(),
 	})
 }
 
@@ -386,28 +391,26 @@ func serveOAuthToken(svc *business.Service, w http.ResponseWriter, r *http.Reque
 func decodeOAuthTokenRequest(w http.ResponseWriter, r *http.Request) (business.OAuthTokenRequest, error) {
 	contentType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
 	if strings.EqualFold(strings.TrimSpace(contentType), "application/json") {
-		var body struct {
-			GrantType    string `json:"grant_type"`
-			ClientID     string `json:"client_id"`
-			Code         string `json:"code"`
-			RedirectURI  string `json:"redirect_uri"`
-			CodeVerifier string `json:"code_verifier"`
-			RefreshToken string `json:"refresh_token"`
-			Resource     string `json:"resource"`
-			Scope        string `json:"scope"`
-		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxOAuthRequestBytes)).Decode(&body); err != nil {
+		// Decoded strictly, by the same rule the form path applies. Go's JSON
+		// decoder takes the LAST of a repeated member and ignores anything after
+		// the first value, so a body with two `resource` members — or a second
+		// object appended — was accepted here while the identical form request
+		// was refused. One encoding being lenient is the whole strict-input
+		// policy being advisory.
+		members, err := decodeStrictJSONObject(
+			http.MaxBytesReader(w, r.Body, maxOAuthRequestBytes))
+		if err != nil {
 			return business.OAuthTokenRequest{}, err
 		}
 		return business.OAuthTokenRequest{
-			GrantType:    body.GrantType,
-			ClientID:     body.ClientID,
-			Code:         body.Code,
-			RedirectURI:  body.RedirectURI,
-			CodeVerifier: body.CodeVerifier,
-			RefreshToken: body.RefreshToken,
-			Resource:     body.Resource,
-			Scope:        body.Scope,
+			GrantType:    members["grant_type"],
+			ClientID:     members["client_id"],
+			Code:         members["code"],
+			RedirectURI:  members["redirect_uri"],
+			CodeVerifier: members["code_verifier"],
+			RefreshToken: members["refresh_token"],
+			Resource:     members["resource"],
+			Scope:        members["scope"],
 		}, nil
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxOAuthRequestBytes)
@@ -446,6 +449,63 @@ func decodeOAuthTokenRequest(w http.ResponseWriter, r *http.Request) (business.O
 
 // errDuplicateOAuthParameter is a request carrying a singleton parameter twice.
 var errDuplicateOAuthParameter = errors.New("duplicate OAuth parameter")
+
+// decodeStrictJSONObject reads exactly one flat JSON object of string members,
+// refusing a repeated member name and anything after the closing brace.
+//
+// encoding/json does neither: it silently keeps the last of a repeated member
+// and stops at the first value. Both are the kind of leniency that makes two
+// callers disagree about what a request said — and for `resource` the two
+// values name different solutions.
+//
+// Non-string values are refused rather than coerced: every parameter on this
+// endpoint is a string, and accepting `"resource": 1` would only move the
+// question of what it meant further downstream.
+func decodeStrictJSONObject(body io.Reader) (map[string]string, error) {
+	decoder := json.NewDecoder(body)
+	open, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := open.(json.Delim); !ok || delimiter != '{' {
+		return nil, errors.New("the request body must be a JSON object")
+	}
+	members := map[string]string{}
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return nil, errors.New("malformed JSON object")
+		}
+		if _, repeated := members[name]; repeated {
+			return nil, fmt.Errorf("%w: %s", errDuplicateOAuthParameter, name)
+		}
+		valueToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		value, ok := valueToken.(string)
+		if !ok {
+			return nil, fmt.Errorf("the %s parameter must be a string", name)
+		}
+		members[name] = value
+	}
+	// Consume the closing brace, then require end of input: a second value
+	// after it is content this request never acknowledged sending.
+	if _, err := decoder.Token(); err != nil {
+		return nil, err
+	}
+	if decoder.More() {
+		return nil, errors.New("the request body carries content after its object")
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("the request body carries content after its object")
+	}
+	return members, nil
+}
 
 func writeOAuthTokenError(w http.ResponseWriter, status int, code, description string) {
 	w.Header().Set("Cache-Control", "no-store")

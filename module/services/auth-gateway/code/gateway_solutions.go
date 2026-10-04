@@ -59,13 +59,6 @@ var solutionIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`)
 // it has handled the request (the caller must then return). Any other path is
 // left to the static route matcher.
 func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) bool {
-	// A solution's MCP endpoint is an OAuth protected resource, and RFC 9728
-	// puts its metadata under a well-known prefix rather than under the
-	// resource's own path, so that document is served here beside the surface
-	// it describes. See gateway_mcp_resource.go.
-	if g.handleProtectedResourceMetadata(w, r) {
-		return true
-	}
 	if !strings.HasPrefix(r.URL.Path, solutionPrefix) {
 		return false
 	}

@@ -244,7 +244,7 @@ func TestTheValidateEndpointNamesTheClientAndTheResource(t *testing.T) {
 	handler := oauthHandler(t, "any")
 
 	req := httptest.NewRequest(http.MethodPost, OAuthAuthorizeValidatePath,
-		strings.NewReader(`{"response_type":"code","client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256","resource":"https://host.example.com/solutions/example/mcp"}`))
+		strings.NewReader(`{"response_type":"code","client_id":"example-addin","redirect_uri":"https://addin.example.com/auth/callback","code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM","code_challenge_method":"S256","resource":"https://host.example.com/api/solutions/example/proxy/mcp"}`))
 	req.Header.Set("Content-Type", "application/json")
 	trustedOrigin(req, "https://host.example.com")
 	w := httptest.NewRecorder()
@@ -255,7 +255,7 @@ func TestTheValidateEndpointNamesTheClientAndTheResource(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resolved))
 	require.Equal(t, "Example Add-in", resolved["client_name"])
 	require.Equal(t, "registry", resolved["client_source"])
-	require.Equal(t, "https://host.example.com/solutions/example/mcp", resolved["resource"])
+	require.Equal(t, "https://host.example.com/api/solutions/example/proxy/mcp", resolved["resource"])
 	require.Equal(t, "example", resolved["resource_name"])
 	require.Equal(t, true, resolved["requires_consent"])
 }
@@ -299,4 +299,108 @@ func TestTheOAuthPrefixIsDisjointFromTheProviderHop(t *testing.T) {
 	} {
 		require.True(t, strings.HasPrefix(path, OAuthRoutePrefix), "%q", path)
 	}
+}
+
+// A1007B-03. A deployment with no configured issuer publishes no OAuth
+// metadata, and that is a supported mode — the registered-client browser
+// handoff predates discovery entirely. An earlier revision read the issuer out
+// of the metadata document on the grant path and answered 503 when there was
+// none, AFTER the code had been created: the browser never received a code that
+// existed, so an add-in that worked before the change stopped working.
+//
+// Adopted from the Astra review (registered_client_without_issuer).
+func TestTheGrantPathWorksWithNoPublishedIssuer(t *testing.T) {
+	withGatewayToken(t)
+	service, err := business.NewService(nil)
+	require.NoError(t, err)
+	registry, err := auth.NewClientRegistry(`[{
+		"client_id": "example-addin", "name": "Example Add-in",
+		"redirect_uris": ["https://addin.example.com/auth/callback"]
+	}]`)
+	require.NoError(t, err)
+	service.SetClientRegistry(registry)
+	// No SetOAuthIssuer: exactly the default local configuration.
+	handler := NewOAuthHTTPHandler(service)
+
+	body := `{"response_type":"code","client_id":"example-addin",` +
+		`"redirect_uri":"https://addin.example.com/auth/callback",` +
+		`"code_challenge":"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",` +
+		`"code_challenge_method":"S256"}`
+
+	// Validation answers, with no consent required and an empty issuer.
+	req := httptest.NewRequest(http.MethodPost, OAuthAuthorizeValidatePath,
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	trustedOrigin(req, "https://host.example.com")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	require.Equal(t, 200, w.Code)
+	var resolved map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resolved))
+	require.Equal(t, false, resolved["requires_consent"])
+	require.Equal(t, "", resolved["issuer"])
+
+	// And the grant is NOT a 503. It reaches the code issuer, which refuses only
+	// because this harness has no store and no signed-in caller — not because
+	// the authorization server could not name itself.
+	req = httptest.NewRequest(http.MethodPost, OAuthAuthorizeGrantPath,
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	trustedOrigin(req, "https://host.example.com")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	require.NotEqual(t, 503, w.Code,
+		"a missing OAuth issuer must not break the registered-client handoff")
+	require.Equal(t, 401, w.Code, "it is the absent caller that refuses it")
+}
+
+// A1007B-05. The JSON encoding must be as strict as the form one. Go's decoder
+// keeps the LAST of a repeated member and ignores anything after the first
+// value, so a body with two `resource` members — naming different solutions —
+// was accepted here while the identical form request was refused. One lenient
+// encoding makes the whole strict-input policy advisory.
+//
+// Adopted from the Astra review (json_duplicate_token_parameters,
+// json_trailing_content).
+func TestTheJSONTokenRequestIsAsStrictAsTheForm(t *testing.T) {
+	handler := oauthHandler(t, "any")
+
+	post := func(body string) map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, OAuthTokenPath, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		require.Equal(t, 400, w.Code, body)
+		var refusal map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &refusal))
+		return refusal
+	}
+
+	// A repeated member naming two different solutions.
+	refusal := post(`{"resource":"https://host.example.com/api/solutions/other/proxy/mcp",` +
+		`"grant_type":"authorization_code","client_id":"example-addin","code":"abc",` +
+		`"resource":"https://host.example.com/api/solutions/example/proxy/mcp"}`)
+	require.Equal(t, business.OAuthErrorInvalidRequest, refusal["error"])
+	require.Contains(t, refusal["error_description"], "more than once")
+
+	// A second object appended after the first.
+	refusal = post(`{"grant_type":"authorization_code","client_id":"example-addin",` +
+		`"code":"abc"}{"grant_type":"refresh_token"}`)
+	require.Equal(t, business.OAuthErrorInvalidRequest, refusal["error"])
+
+	// A non-string value, refused rather than coerced.
+	refusal = post(`{"grant_type":"authorization_code","client_id":"example-addin","resource":1}`)
+	require.Equal(t, business.OAuthErrorInvalidRequest, refusal["error"])
+
+	// A single well-formed object still parses: it reaches the grant and is
+	// refused for the grant's own reason, not for its encoding.
+	req := httptest.NewRequest(http.MethodPost, OAuthTokenPath,
+		strings.NewReader(`{"grant_type":"client_credentials","client_id":"example-addin"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	var answered map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &answered))
+	require.Equal(t, business.OAuthErrorUnsupportedGrant, answered["error"])
 }

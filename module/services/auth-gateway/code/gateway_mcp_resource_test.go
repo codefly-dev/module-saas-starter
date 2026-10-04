@@ -2,9 +2,10 @@ package main
 
 import (
 	"crypto/ed25519"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func TestGateway_MCPToken_IsAdmittedAtItsOwnResourceOnly(t *testing.T) {
 	example := registerSolutionUpstream(t, gw, "example")
 	other := registerSolutionUpstream(t, gw, "audit")
 
-	token := signResourceToken(t, priv, testPublicBase+"/solutions/example/mcp")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
 
 	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -100,7 +101,7 @@ func TestGateway_MCPToken_IsRefusedAtAnotherSolutionsDataRoutes(t *testing.T) {
 	registerSolutionUpstream(t, gw, "example")
 	other := registerSolutionUpstream(t, gw, "audit")
 
-	token := signResourceToken(t, priv, testPublicBase+"/solutions/example/mcp")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -118,7 +119,7 @@ func TestGateway_MCPToken_ReachesItsOwnSolutionsOtherRoutes(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	example := registerSolutionUpstream(t, gw, "example")
 
-	token := signResourceToken(t, priv, testPublicBase+"/solutions/example/mcp")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
 	req := httptest.NewRequest(http.MethodGet, "/solutions/example/resolve", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -137,7 +138,7 @@ func TestGateway_MCPToken_StillReachesTheHostAPI(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	gw, apiFake, _, priv := newGatewayHarness(t)
 
-	token := signResourceToken(t, priv, testPublicBase+"/solutions/example/mcp")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -174,7 +175,7 @@ func TestGateway_MCPToken_MustNameThisHostsOrigin(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	example := registerSolutionUpstream(t, gw, "example")
 
-	token := signResourceToken(t, priv, "https://other-host.example.com/solutions/example/mcp")
+	token := signResourceToken(t, priv, "https://other-host.example.com/api/solutions/example/proxy/mcp")
 	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -193,7 +194,7 @@ func TestGateway_WithNoConfiguredOrigin_OnlyTheSolutionIsChecked(t *testing.T) {
 	example := registerSolutionUpstream(t, gw, "example")
 	audit := registerSolutionUpstream(t, gw, "audit")
 
-	token := signResourceToken(t, priv, "http://localhost:3000/solutions/example/mcp")
+	token := signResourceToken(t, priv, "http://localhost:3000/api/solutions/example/proxy/mcp")
 
 	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -232,23 +233,8 @@ func TestGateway_MCPDiscoveryChain_401ThenProtectedResourceMetadata(t *testing.T
 	// well-known, derivable from the route, which the runtime serves and the
 	// gateway already proxies unauthenticated.
 	require.Contains(t, challenge,
-		`resource_metadata="`+testPublicBase+`/solutions/example/.well-known/oauth-protected-resource"`)
+		`resource_metadata="`+testPublicBase+`/api/solutions/example/proxy/.well-known/oauth-protected-resource"`)
 
-	// Link 2: the RFC 9728 §3.1 URL a client CONSTRUCTS from the resource when
-	// it has no challenge to follow. This gateway serves it too, so a
-	// spec-literal client is not left without a document.
-	req = httptest.NewRequest(http.MethodGet,
-		"/.well-known/oauth-protected-resource/solutions/example/mcp", nil)
-	w = httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-	require.Equal(t, 200, w.Code)
-
-	var metadata protectedResourceMetadata
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &metadata))
-	require.Equal(t, testPublicBase+"/solutions/example/mcp", metadata.Resource)
-	require.Equal(t, []string{testPublicBase}, metadata.AuthorizationServers)
-	require.Equal(t, []string{"header"}, metadata.BearerMethodsSupported)
-	require.Equal(t, []string{"offline_access"}, metadata.ScopesSupported)
 }
 
 // An expired or wrong-resource token gets the challenge too, so a client whose
@@ -258,7 +244,7 @@ func TestGateway_MCPChallengeIsStampedOnAWrongResourceRefusal(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "example")
 
-	token := signResourceToken(t, priv, testPublicBase+"/solutions/audit/mcp")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/audit/proxy/mcp")
 	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
@@ -266,7 +252,7 @@ func TestGateway_MCPChallengeIsStampedOnAWrongResourceRefusal(t *testing.T) {
 
 	require.Equal(t, 401, w.Code)
 	require.Contains(t, w.Header().Get("WWW-Authenticate"),
-		`resource_metadata="`+testPublicBase+`/solutions/example/.well-known/oauth-protected-resource"`)
+		`resource_metadata="`+testPublicBase+`/api/solutions/example/proxy/.well-known/oauth-protected-resource"`)
 }
 
 // A1007-11. Every protected solution path carries the challenge, not only the
@@ -295,7 +281,7 @@ func TestGateway_EveryProtectedSolutionPathCarriesTheChallenge(t *testing.T) {
 
 		require.Equal(t, 401, w.Code, path)
 		require.Contains(t, w.Header().Get("WWW-Authenticate"),
-			`resource_metadata="`+testPublicBase+`/solutions/example/.well-known/oauth-protected-resource"`,
+			`resource_metadata="`+testPublicBase+`/api/solutions/example/proxy/.well-known/oauth-protected-resource"`,
 			"no challenge on %s leaves a client with nowhere to begin", path)
 	}
 }
@@ -367,48 +353,6 @@ func signTokenWithIssuer(t *testing.T, priv ed25519.PrivateKey, issuer string) s
 	return signed
 }
 
-// The metadata path describes a resource shape, not an inventory. Answering 404
-// for an unregistered id would make an unauthenticated endpoint a list of every
-// solution the deployment runs; a token for a solution that is not serving
-// still meets a 503 at the resource itself, which is the honest answer.
-func TestGateway_ProtectedResourceMetadata_DescribesAnyWellFormedSolutionID(t *testing.T) {
-	withPublicBase(t, testPublicBase)
-	gw, _, _, _ := newGatewayHarness(t)
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/.well-known/oauth-protected-resource/solutions/never-registered/mcp", nil)
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-	require.Equal(t, 200, w.Code)
-
-	for _, path := range []string{
-		"/.well-known/oauth-protected-resource",
-		"/.well-known/oauth-protected-resource/solutions/example",
-		"/.well-known/oauth-protected-resource/solutions/example/mcp/tools",
-		"/.well-known/oauth-protected-resource/v1/users",
-		"/.well-known/oauth-protected-resource/solutions/Example/mcp",
-	} {
-		req = httptest.NewRequest(http.MethodGet, path, nil)
-		w = httptest.NewRecorder()
-		gw.ServeHTTP(w, req)
-		require.Equal(t, 404, w.Code, "should not describe %q", path)
-	}
-}
-
-// Without a configured public origin every URL in the document would be a
-// guess, and a client that fetched it would send its authorization request to
-// whatever it named. Say so rather than publishing one.
-func TestGateway_ProtectedResourceMetadata_RefusesWithoutAPublicOrigin(t *testing.T) {
-	withPublicBase(t, "")
-	gw, _, _, _ := newGatewayHarness(t)
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/.well-known/oauth-protected-resource/solutions/example/mcp", nil)
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-	require.Equal(t, 503, w.Code)
-}
-
 // An MCP token is a session credential, which is what lets the solution SDK
 // mint the viewer's Work Context from it. The identity headers the runtime
 // receives are the same ones every other authenticated route gets — this is
@@ -418,7 +362,7 @@ func TestGateway_MCPToken_StampsTheSameSessionIdentityHeaders(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	example := registerSolutionUpstream(t, gw, "example")
 
-	token := signResourceToken(t, priv, testPublicBase+"/solutions/example/mcp")
+	token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
 	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	// A caller-supplied identity header must not survive the allow decision.
@@ -440,26 +384,15 @@ func TestGateway_MCPToken_StampsTheSameSessionIdentityHeaders(t *testing.T) {
 	require.Equal(t, "Bearer "+token, example.lastHeaders.Get("authorization"))
 }
 
-// The scope the resource advertises and the scope the authorization server
-// issues must be the same string. A resource advertising one its own
-// authorization server does not issue sends every client to ask for something
-// it cannot get.
-func TestProtectedResourceScopeMatchesTheAuthorizationServer(t *testing.T) {
-	// accounts' supportedOAuthScope. Spelled out rather than imported: the
-	// gateway must not depend on the accounts module, so this is the one place
-	// the two are compared, and it fails loudly if either moves.
-	require.Equal(t, "offline_access", publishedOAuthScope)
-}
-
 // The audience projection, directly. More than one non-host audience is read as
 // none: a token this host minted carries at most one resource, so a second is a
 // token it did not produce and must not be treated as a binding.
 func TestResourceAudienceReadsAtMostOneResource(t *testing.T) {
 	require.Empty(t, resourceAudience(jwt.ClaimStrings{"saas-starter"}, "saas-starter"))
-	require.Equal(t, "https://h/solutions/w/mcp",
-		resourceAudience(jwt.ClaimStrings{"saas-starter", "https://h/solutions/w/mcp"}, "saas-starter"))
+	require.Equal(t, "https://h/api/solutions/w/proxy/mcp",
+		resourceAudience(jwt.ClaimStrings{"saas-starter", "https://h/api/solutions/w/proxy/mcp"}, "saas-starter"))
 	require.Empty(t, resourceAudience(
-		jwt.ClaimStrings{"saas-starter", "https://h/solutions/w/mcp", "https://h/solutions/x/mcp"},
+		jwt.ClaimStrings{"saas-starter", "https://h/api/solutions/w/proxy/mcp", "https://h/api/solutions/x/proxy/mcp"},
 		"saas-starter"))
 }
 
@@ -476,4 +409,31 @@ func TestSolutionIDFromPathOnlyMatchesSolutionPaths(t *testing.T) {
 		_, ok := solutionIDFromPath(path)
 		require.False(t, ok, "should not be a solution path: %q", path)
 	}
+}
+
+// A1007B-01. The challenge must name the path a client can actually fetch. On
+// a deployed cell the only public route to a solution's backend is the host
+// frontend's solution proxy; `/solutions/<id>/*` is this gateway's internal
+// surface, and on the public origin that path is a frontend page that redirects
+// to login — so the first attempt's challenge sent a client to a login page
+// instead of a JSON document.
+//
+// Spelled against the frontend's own source, because the two are in different
+// languages and nothing else makes them agree.
+func TestTheChallengeNamesTheFrontendProxyBase(t *testing.T) {
+	registry, err := os.ReadFile(filepath.Join("..", "..", "frontend", "code",
+		"src", "solutions", "registry.ts"))
+	require.NoError(t, err, "the frontend's proxy base must exist where this expects it")
+
+	// registry.ts: `return `/api/solutions/${encodeURIComponent(id)}/proxy`;`
+	require.Contains(t, string(registry), "/api/solutions/",
+		"solutionProxyBase's prefix must match this gateway's challenge")
+	require.Contains(t, string(registry), "/proxy",
+		"solutionProxyBase's suffix must match this gateway's challenge")
+	require.Equal(t, "/api/solutions/", solutionProxyBase)
+	require.Equal(t, "/proxy", solutionProxyMid)
+
+	require.Equal(t,
+		"/api/solutions/example/proxy/.well-known/oauth-protected-resource",
+		solutionResourceMetadataPath("example"))
 }

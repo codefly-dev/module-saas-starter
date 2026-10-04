@@ -128,17 +128,25 @@ export function ConsentPage() {
 		);
 	}
 
-	// No pending request, or no session to attribute the approval to. Both are
-	// the same thing from here: there is nothing this page can authorize, and
-	// saying so beats rendering an Allow button that cannot work.
-	if (!request || !isAuthenticated) {
+	// No pending request, no validated resolution, or no session to attribute
+	// the approval to. All three are the same thing from here: there is nothing
+	// this page can put in front of the person to decide about.
+	//
+	// The resolution is what the HOST said about this client — its verified
+	// origin, the resource, whether it is one the operator installed. Without
+	// it the page would render Allow next to a name and nothing else: no
+	// verified origin, no resource, no uninstalled-client warning, and clicking
+	// it would still produce a code. An approval given against a blank
+	// presentation is not an approval of anything, so it is refused and the
+	// person is told to start again.
+	if (!request || !resolution || !isAuthenticated) {
 		return (
 			<div className="w-full max-w-sm rounded-2xl border bg-card p-8 text-card-foreground">
 				<div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
 					<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
 					<span>
-						There is no sign-in request to approve here. Start again from the
-						application you were using.
+						There is no sign-in request to approve here, or its details could
+						not be confirmed. Start again from the application you were using.
 					</span>
 				</div>
 			</div>

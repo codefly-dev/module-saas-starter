@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,9 +36,19 @@ const (
 	// matching a prefix here would extend the resource binding to paths no
 	// resource indicator describes.
 	solutionMCPSegment = "mcp"
-	// protectedResourceMetadataPrefix is where RFC 9728 §3.1 puts a resource's
-	// metadata: the well-known name, then the resource's own path.
-	protectedResourceMetadataPrefix = "/.well-known/oauth-protected-resource"
+	// solutionProxyBase is the host frontend's public route to a solution's
+	// backend, and on a deployed cell the ONLY one: it forwards the caller's
+	// bearer to this gateway and already serves the solution's `.well-known`
+	// anonymously. `/solutions/<id>/*` is this gateway's internal surface — not
+	// public, and on the public origin a page of the frontend that redirects to
+	// login — so a challenge naming it sends a client to a login page instead
+	// of a JSON document.
+	//
+	// Spelled here because this is Go and the frontend is TypeScript
+	// (registry.ts solutionProxyBase); TestTheChallengeNamesTheFrontendProxyBase
+	// holds the two together.
+	solutionProxyBase = "/api/solutions/"
+	solutionProxyMid  = "/proxy"
 )
 
 // isSolutionMCPPath reports whether a solution sub-path (the suffix after
@@ -74,7 +83,10 @@ func resourceAudienceAdmits(resource, solutionID, publicBase string) bool {
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
 		return false
 	}
-	if parsed.EscapedPath() != solutionPrefix+solutionID+"/"+solutionMCPSegment {
+	// The resource names the PUBLIC proxy path a client can reach; this request
+	// arrived on this gateway's own internal path. Both carry the solution id,
+	// which is what the comparison turns on.
+	if parsed.EscapedPath() != solutionProxyBase+solutionID+solutionProxyMid+"/"+solutionMCPSegment {
 		return false
 	}
 	if publicBase == "" {
@@ -102,112 +114,25 @@ func solutionIDFromPath(path string) (string, bool) {
 	return id, true
 }
 
-// protectedResourceMetadata is the RFC 9728 document for one solution's MCP
-// endpoint.
-type protectedResourceMetadata struct {
-	Resource               string   `json:"resource"`
-	AuthorizationServers   []string `json:"authorization_servers"`
-	BearerMethodsSupported []string `json:"bearer_methods_supported"`
-	ScopesSupported        []string `json:"scopes_supported"`
-}
-
-// mcpResourceMetadataPath is where a client looks for the metadata of the
-// resource `<base>/solutions/<id>/mcp`, per RFC 9728 §3.1: the well-known
-// prefix followed by the resource's own path.
-func mcpResourceMetadataPath(solutionID string) string {
-	return protectedResourceMetadataPrefix + solutionPrefix + solutionID + "/" + solutionMCPSegment
-}
-
-// solutionResourceMetadataPath is the URL the 401 challenge names:
-// `/solutions/<id>/.well-known/oauth-protected-resource`, the solution's own
-// well-known surface.
+// solutionResourceMetadataPath is the URL the 401 challenge names: the
+// solution's own well-known under the host frontend's PROXY base.
 //
-// Decided in issue #1003 (comment of 2026-10-04): it is derivable from the
-// route, the solution's `.well-known` GET is already public and proxied
-// unauthenticated to its runtime, and the runtime half serves its RFC 9728
-// document there naming this host as the authorization server. A client follows
-// the URL the challenge gives it, so this is the one it uses.
+// Issue #1003's comment of 2026-10-04 asked for a URL derivable from the route,
+// pointing at the `.well-known` GET that is already public. The first attempt
+// named this gateway's own `/solutions/<id>/...` path, which is not reachable
+// from outside — following that challenge on a real cell lands on a login
+// redirect, so discovery could never reach the authorization server. This is
+// the path a client can actually fetch, and the one that already answers 200
+// anonymously: the gateway proxies a solution's `.well-known` GET
+// unauthenticated and its runtime serves the RFC 9728 document there, naming
+// this host as the authorization server.
 //
-// mcpResourceMetadataPath above stays served by this gateway as well, because
-// that is the URL RFC 9728 §3.1 tells a client to CONSTRUCT when it has only
-// the resource — a client that never read a challenge would look there and
-// find nothing otherwise. The two documents describe the same resource and name
-// the same authorization server.
+// The host deliberately serves no second copy of that document. Two documents
+// for one resource are two places to disagree, and a client follows whichever
+// URL the challenge gives it.
 func solutionResourceMetadataPath(solutionID string) string {
-	return solutionPrefix + solutionID + "/.well-known/oauth-protected-resource"
-}
-
-// handleProtectedResourceMetadata serves the RFC 9728 document. It returns true
-// when it has handled the request.
-//
-// Unauthenticated by design: this is the document that tells a client how to
-// authenticate, so requiring authentication to read it would close the only
-// loop that gets a first-time client a token. It carries no tenant data — the
-// resource's URL, this host as its authorization server, and the one scope the
-// authorization server publishes.
-func (g *Gateway) handleProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) bool {
-	if !strings.HasPrefix(r.URL.Path, protectedResourceMetadataPrefix) {
-		return false
-	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return true
-	}
-	// Identity headers are stripped exactly as they are on every other
-	// unauthenticated surface here: nothing downstream reads them on this path,
-	// and leaving a caller-supplied value in place on any route is how one
-	// eventually survives into a route that does.
-	stripAllIdentityHeaders(r)
-
-	rest := strings.TrimPrefix(r.URL.Path, protectedResourceMetadataPrefix)
-	solutionID, isMCP := solutionIDFromMetadataPath(rest)
-	if !isMCP {
-		httpError(w, http.StatusNotFound, "no such protected resource")
-		return true
-	}
-	base := publicBaseURL()
-	if base == "" {
-		// Every URL in the document would be a guess, and a client that
-		// fetched it would send its authorization request to whatever it named.
-		// Say so rather than publishing one.
-		httpError(w, http.StatusServiceUnavailable, "this host has no configured public address")
-		return true
-	}
-	// Registration is deliberately not consulted. The document describes how to
-	// authenticate for a resource, which does not change while a solution's
-	// lease is lapsed, and answering 404 here for an unregistered id would make
-	// an unauthenticated endpoint an inventory of the deployment's solutions.
-	// A token for a solution that is not serving still meets a 503 at the
-	// resource itself, which is the honest answer about availability.
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(protectedResourceMetadata{
-		Resource:               base + solutionPrefix + solutionID + "/" + solutionMCPSegment,
-		AuthorizationServers:   []string{base},
-		BearerMethodsSupported: []string{"header"},
-		ScopesSupported:        []string{publishedOAuthScope},
-	})
-	return true
-}
-
-// publishedOAuthScope mirrors accounts' supportedOAuthScope. The two must say
-// the same thing — a resource that advertises a scope its authorization server
-// does not issue sends clients to ask for something they cannot get — and
-// TestProtectedResourceScopeMatchesTheAuthorizationServer holds them together.
-const publishedOAuthScope = "offline_access"
-
-// solutionIDFromMetadataPath reads `/solutions/<id>/mcp` out of the suffix
-// after the well-known prefix. Nothing else is a resource this host describes.
-func solutionIDFromMetadataPath(rest string) (string, bool) {
-	trimmed, ok := strings.CutPrefix(rest, solutionPrefix)
-	if !ok {
-		return "", false
-	}
-	id, ok := strings.CutSuffix(trimmed, "/"+solutionMCPSegment)
-	if !ok || !solutionIDPattern.MatchString(id) {
-		return "", false
-	}
-	return id, true
+	return solutionProxyBase + solutionID + solutionProxyMid +
+		"/.well-known/oauth-protected-resource"
 }
 
 // stampResourceChallenge puts the RFC 6750 / RFC 9728 challenge on a denied

@@ -182,7 +182,7 @@ func TestMintForClientBindsTheResourceAsASecondAudience(t *testing.T) {
 	ctx := context.Background()
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
-	const resource = "https://host.example.com/solutions/example/mcp"
+	const resource = "https://host.example.com/api/solutions/example/proxy/mcp"
 
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
 	require.NoError(t, err)
@@ -222,7 +222,7 @@ func TestARotationReissuesTheBoundResource(t *testing.T) {
 	ctx := context.Background()
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
-	const resource = "https://host.example.com/solutions/example/mcp"
+	const resource = "https://host.example.com/api/solutions/example/proxy/mcp"
 
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
 	require.NoError(t, err)
@@ -244,13 +244,13 @@ func TestARefreshNamingTheWrongResourceDoesNotConsumeTheToken(t *testing.T) {
 	ctx := context.Background()
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
-	const resource = "https://host.example.com/solutions/example/mcp"
+	const resource = "https://host.example.com/api/solutions/example/proxy/mcp"
 
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
 	require.NoError(t, err)
 
 	_, err = m.VerifyClientRefresh(ctx, pair.RefreshToken, "example-mcp",
-		"https://host.example.com/solutions/other/mcp")
+		"https://host.example.com/api/solutions/other/proxy/mcp")
 	require.ErrorIs(t, err, auth.ErrRefreshResourceMismatch)
 
 	// The token survived: the rotation never happened.
@@ -265,7 +265,7 @@ func TestARefreshRepeatingItsOwnResourceIsAccepted(t *testing.T) {
 	ctx := context.Background()
 	m, store := newMinter(t)
 	host := mintHostSession(t, m, store)
-	const resource = "https://host.example.com/solutions/example/mcp"
+	const resource = "https://host.example.com/api/solutions/example/proxy/mcp"
 
 	pair, err := m.MintForClient(ctx, host.UserID, host.ID, "example-mcp", resource)
 	require.NoError(t, err)

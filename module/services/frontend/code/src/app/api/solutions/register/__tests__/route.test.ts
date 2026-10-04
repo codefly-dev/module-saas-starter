@@ -42,7 +42,10 @@ function base64url(value: object): string {
 }
 
 /** A credential accounts would mint: EdDSA, bound to one id and one publisher. */
-function credential(solution = "audit", subject = `solution:${solution}`): string {
+function credential(
+	solution = "audit",
+	subject = `solution:${solution}`,
+): string {
 	const now = Math.floor(Date.now() / 1000);
 	const head = base64url({ alg: "EdDSA", typ: "JWT", kid: KEY_ID });
 	const payload = base64url({
@@ -387,13 +390,19 @@ describe("solutions register route auth", () => {
 
 	it("relays a registry conflict rather than reporting success", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
-		vi.stubGlobal("fetch", registryAnswering(new Response("conflict", { status: 409 })));
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("conflict", { status: 409 })),
+		);
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(409);
 	});
 
 	it("relays a foreign-publisher refusal", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
-		vi.stubGlobal("fetch", registryAnswering(new Response("forbidden", { status: 403 })));
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("forbidden", { status: 403 })),
+		);
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(403);
 	});
 
@@ -487,8 +496,7 @@ describe("solutions register route auth", () => {
 		expect(res.status).toBe(422);
 		expect(
 			gateway.mock.calls.some(
-				([input]) =>
-					new URL(String(input)).pathname === "/solutions/_frontend",
+				([input]) => new URL(String(input)).pathname === "/solutions/_frontend",
 			),
 		).toBe(false);
 	});
@@ -551,9 +559,7 @@ describe("solutions register route auth", () => {
 				{
 					id: "activity",
 					layout: "grid",
-					widgets: [
-						{ id: "logins", metric: "logins", visualization: "line" },
-					],
+					widgets: [{ id: "logins", metric: "logins", visualization: "line" }],
 				},
 			],
 		};
