@@ -105,11 +105,56 @@ type SolutionHostSigner struct {
 	BuildConfigURI      string `json:"buildConfigUri,omitempty"`
 	SourceRepositoryRef string `json:"sourceRepositoryRef,omitempty"`
 
+	// SourceRepositoryRefPrefix admits every ref under one prefix instead of one
+	// exact ref, and it exists because an exact ref makes WITHDRAWAL IMPOSSIBLE.
+	//
+	// A binding is delivered under release tag A. Withdrawing it needs a
+	// tombstone, which is signed under whatever tag is current — B. With the ref
+	// pinned to A, that tombstone fails verification, and since a tombstone is
+	// the only way to withdraw and nothing deletes from the inbox, the binding
+	// stays applied FOREVER. The CLI reports the same shape from its side: its
+	// release policy admits the same repository and workflow path at any
+	// `refs/tags/*`, and a carrier it no longer admits is re-signed rather than
+	// refused.
+	//
+	// A PREFIX rather than a regular expression, deliberately. An arbitrary
+	// pattern in a trust policy is its own hazard: `.*` reads as a constraint
+	// and is none, and a mis-anchored pattern is a widening nobody notices.
+	// `strings.HasPrefix` is anchored by construction, and Validate requires the
+	// prefix to start with `refs/` so it cannot be the empty string or a single
+	// letter matching half the ref space.
+	SourceRepositoryRefPrefix string `json:"sourceRepositoryRefPrefix,omitempty"`
+
 	// Domains are the ownership domains this signer may deliver under. core
 	// refuses a document whose asserted domain is not in this list for the
 	// attested signer, which is what stops an accepted signer from speaking for
 	// a slice of the binding space it was not given.
 	Domains []string `json:"domains"`
+}
+
+// refMatches reports why a verified certificate's ref is refused, or "" when it
+// is accepted.
+//
+// Only the prefix rule is applied here; an exact `sourceRepositoryRef` was
+// already enforced by sigstore inside the identity. A signer declaring neither
+// is accepted on the ref axis, which Validate is what decides is allowed.
+func (signer SolutionHostSigner) refMatches(result *verify.VerificationResult) string {
+	if signer.SourceRepositoryRefPrefix == "" {
+		return ""
+	}
+	if result == nil || result.Signature == nil || result.Signature.Certificate == nil {
+		// Verification succeeded but reported no certificate, so the ref cannot
+		// be read. Refused rather than skipped: a rule that silently does not
+		// run is worse than one that refuses, because the policy still reads as
+		// though the ref were constrained.
+		return "verification reported no certificate, so its source ref could not be checked"
+	}
+	actual := result.Signature.Certificate.SourceRepositoryRef
+	if !strings.HasPrefix(actual, signer.SourceRepositoryRefPrefix) {
+		return fmt.Sprintf("certificate ref %q is not under %q",
+			actual, signer.SourceRepositoryRefPrefix)
+	}
+	return ""
 }
 
 // Validate refuses a policy that would accept more than its author meant.
@@ -141,6 +186,20 @@ func (policy *SolutionHostVerificationPolicy) Validate() error {
 			// run of the same file.
 			return fmt.Errorf("verification policy signer %q names neither a source repository nor a build config: "+
 				"a workflow identity alone matches that same workflow path in any fork, so the repository is what makes the claim narrow", signer.Name)
+		case signer.SourceRepositoryRef != "" && signer.SourceRepositoryRefPrefix != "":
+			// Two ways to state one constraint is two places for them to
+			// disagree — the same argument that keeps the issuer out of the
+			// extensions. And the disagreement here is silent: sigstore would
+			// enforce the exact ref and the prefix check would pass trivially,
+			// so the policy would read as permissive and behave as exact.
+			return fmt.Errorf("verification policy signer %q declares both an exact source ref and a ref prefix; "+
+				"the exact ref would win and the prefix would read as though it had widened anything", signer.Name)
+		case signer.SourceRepositoryRefPrefix != "" && !strings.HasPrefix(signer.SourceRepositoryRefPrefix, "refs/"):
+			// An unanchored prefix is the widening nobody notices: "" admits
+			// every ref, and "r" admits half the ref space while looking like a
+			// constraint.
+			return fmt.Errorf("verification policy signer %q declares ref prefix %q, which is not under refs/: "+
+				"a prefix that does not name the ref namespace admits refs nobody intended", signer.Name, signer.SourceRepositoryRefPrefix)
 		case len(signer.Domains) == 0:
 			return fmt.Errorf("verification policy signer %q may deliver under no ownership domain, so accepting it could not admit anything; "+
 				"remove the entry or give it a domain", signer.Name)
@@ -294,9 +353,18 @@ func (v *keylessBundleVerifier) verifySignedEntity(
 			// as "this carrier was not signed by an accepted signer".
 			return "", fmt.Errorf("verification policy signer %q cannot be compiled into an identity matcher: %w", signer.Name, err)
 		}
-		if _, err := v.verifier.Verify(signed,
-			verify.NewPolicy(artifactPolicy, verify.WithCertificateIdentity(identity))); err != nil {
+		result, err := v.verifier.Verify(signed,
+			verify.NewPolicy(artifactPolicy, verify.WithCertificateIdentity(identity)))
+		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", signer.Name, err))
+			continue
+		}
+		// The prefix rule runs on the VERIFIED certificate, after the signature
+		// holds. Checking it before would be reading an unverified claim, and
+		// checking it inside the identity is not available — sigstore matches
+		// extensions exactly.
+		if refused := signer.refMatches(result); refused != "" {
+			failures = append(failures, fmt.Sprintf("%s: %s", signer.Name, refused))
 			continue
 		}
 		return signer.Name, nil
@@ -340,6 +408,12 @@ func (signer SolutionHostSigner) certificateIdentity() (verify.CertificateIdenti
 	// refuses it in both ("please specify issuer in IssuerMatcher, not
 	// Extensions") rather than silently preferring one, which is the right call
 	// — two places to state one constraint is two places for them to disagree.
+	// The ref prefix is NOT given to sigstore: its extension matching is exact
+	// and offers no pattern, so a prefix has to be checked after verification
+	// against the certificate the result reports. Passing the empty string here
+	// means sigstore does not constrain the ref, and `refMatches` below is what
+	// constrains it — so the two must stay together, which is why Validate
+	// refuses a signer declaring neither when a ref rule is required.
 	return verify.NewCertificateIdentity(san, issuer, certificate.Extensions{
 		SourceRepositoryURI: signer.SourceRepositoryURI,
 		BuildConfigURI:      signer.BuildConfigURI,
