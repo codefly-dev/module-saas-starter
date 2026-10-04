@@ -125,13 +125,19 @@ type solutionRegistryCache struct {
 	// it at time.Now.
 	now func() time.Time
 
-	mu         sync.RWMutex
-	records    map[string]*accountsv1.SolutionRegistration
-	revision   int64
-	loaded     bool
-	loadedAt   time.Time
-	lastErr    error
-	refreshing sync.Mutex
+	mu       sync.RWMutex
+	records  map[string]*accountsv1.SolutionRegistration
+	revision int64
+	loaded   bool
+	// attemptedAt is when a read was last ATTEMPTED, successfully or not. The
+	// refresh floor is measured from it rather than from the last SUCCESS: a
+	// failed read leaves the snapshot's age where it was, so measuring from that
+	// made every miss during an outage issue its own full-registry read — the
+	// flood the floor exists to prevent, arriving exactly when the authority is
+	// least able to serve it.
+	attemptedAt time.Time
+	lastErr     error
+	refreshing  sync.Mutex
 }
 
 func newSolutionRegistryCache(client solutionRegistryClient) *solutionRegistryCache {
@@ -161,13 +167,28 @@ func (c *solutionRegistryCache) refresh(ctx context.Context) error {
 // its result, so issuing a fresh registry read for each of them turns a burst
 // of misses into a serialized queue of full-registry reads, each request
 // waiting out every one before it.
+//
+// When the floor suppresses the read it reports the outcome of the most recent
+// one rather than nil. The suppressed read is the read the caller was going to
+// decide on, and a caller cannot tell "I did not need to ask" from "the last
+// answer to that question was an error" — so returning nil handed a burst of
+// misses arriving inside the floor a clean bill of health drawn from a read that
+// had failed, and the first miss a 503 while the next ones answered 502.
 func (c *solutionRegistryCache) refreshIfStale(ctx context.Context) error {
 	c.refreshing.Lock()
 	defer c.refreshing.Unlock()
 	if !c.staleEnoughToRefresh() {
-		return nil
+		return c.lastLoadErr()
 	}
 	return c.load(ctx)
+}
+
+// lastLoadErr is the outcome of the most recent registry read: nil once one has
+// succeeded, the failure while the authority is unreachable.
+func (c *solutionRegistryCache) lastLoadErr() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastErr
 }
 
 // load performs the read itself. The caller holds c.refreshing.
@@ -178,6 +199,7 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	resp, err := c.client.List(ctx, &accountsv1.ListSolutionRegistrationsRequest{IncludeTombstoned: true})
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.attemptedAt = c.now()
 	if err != nil {
 		c.lastErr = err
 		return err
@@ -189,7 +211,6 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	c.records = records
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
-	c.loadedAt = c.now()
 	c.lastErr = nil
 	return nil
 }
@@ -226,22 +247,73 @@ func (c *solutionRegistryCache) lookup(id string) (*accountsv1.SolutionRegistrat
 func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return !c.loaded || c.now().Sub(c.loadedAt) >= solutionRefreshFloor
+	return !c.loaded || c.now().Sub(c.attemptedAt) >= solutionRefreshFloor
+}
+
+// solutionLookup is one read of this replica's view of one alias, with the fact
+// a verdict must never be derived without: whether the registry could actually
+// be consulted about it.
+type solutionLookup struct {
+	record *accountsv1.SolutionRegistration
+	found  bool
+	// loaded is false until a snapshot has ever loaded on this replica.
+	loaded bool
+	// undecidable is set when this alias had no conclusive record in the
+	// snapshot AND the on-demand read that would have settled it failed. The
+	// lookup then rests on absence of evidence, which is not evidence of
+	// absence.
+	undecidable bool
+}
+
+// conclusive reports whether a held record settles the question on its own,
+// with no registry read.
+//
+// A live record and a TOMBSTONE both do. The tombstone is the one that is easy
+// to get wrong: it is positive, durable evidence that an operator removed the
+// registration, carried in every snapshot for exactly that reason — so a failed
+// refresh must not convert a deliberate removal into an outage, which would
+// answer 503 forever for something that is permanently gone.
+func (c *solutionRegistryCache) conclusive(record *accountsv1.SolutionRegistration, found bool) bool {
+	if !found {
+		return false
+	}
+	return record.GetTombstonedAt() != nil || solutionRecordActive(record, c.now())
+}
+
+// lookupFresh reads the snapshot, issuing at most one on-demand registry read
+// (floor-limited) when what it holds does not settle the question — so a
+// solution that registered against another replica a moment ago is reachable
+// here without waiting out the reconcile interval.
+//
+// The read's failure is CARRIED rather than logged and dropped. It used to be
+// dropped, and the empty lookup that followed was then reported as a fact: the
+// proxy answered "solution not registered" and admission answered "your
+// organization did not install this" because accounts was down. An authority
+// that cannot be asked must never read as an answer from it.
+func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solutionLookup {
+	record, found, loaded := c.lookup(id)
+	if c.conclusive(record, found) {
+		return solutionLookup{record: record, found: found, loaded: loaded}
+	}
+	refreshErr := c.refreshIfStale(ctx)
+	if refreshErr != nil {
+		log.Printf("solution registry: on-demand refresh for %q failed: %v", id, refreshErr)
+	}
+	record, found, loaded = c.lookup(id)
+	return solutionLookup{
+		record:      record,
+		found:       found,
+		loaded:      loaded,
+		undecidable: refreshErr != nil && !c.conclusive(record, found),
+	}
 }
 
 // resolve answers where to proxy a /solutions/<id>/* request, and why not when
-// it cannot. A miss triggers at most one on-demand refresh (floor-limited), so
-// a solution that registered against another replica a moment ago is reachable
-// here without waiting out the reconcile interval.
+// it cannot.
 func (c *solutionRegistryCache) resolve(ctx context.Context, id string) (*url.URL, solutionResolution) {
-	record, found, loaded := c.lookup(id)
-	if !found || !solutionRecordActive(record, c.now()) {
-		if err := c.refreshIfStale(ctx); err != nil {
-			log.Printf("solution registry: on-demand refresh for %q failed: %v", id, err)
-		}
-		record, found, loaded = c.lookup(id)
-	}
-	if !loaded {
+	read := c.lookupFresh(ctx, id)
+	record, found := read.record, read.found
+	if !read.loaded || read.undecidable {
 		return nil, solutionRegistryUnavailable
 	}
 	// A tombstoned record is in the snapshot so re-registration and diagnostics
@@ -276,14 +348,9 @@ func (c *solutionRegistryCache) resolve(ctx context.Context, id string) (*url.UR
 // "declared by nothing" and "no such alias" are the same answer to the question
 // admission asks, because neither is a presence an administrator could install.
 func (c *solutionRegistryCache) resolveTarget(ctx context.Context, id string) (string, solutionResolution) {
-	record, found, loaded := c.lookup(id)
-	if !found || !solutionRecordActive(record, c.now()) {
-		if err := c.refreshIfStale(ctx); err != nil {
-			log.Printf("solution registry: on-demand refresh for %q failed: %v", id, err)
-		}
-		record, found, loaded = c.lookup(id)
-	}
-	if !loaded {
+	read := c.lookupFresh(ctx, id)
+	record, found := read.record, read.found
+	if !read.loaded || read.undecidable {
 		return "", solutionRegistryUnavailable
 	}
 	if !found || record.GetTombstonedAt() != nil {
