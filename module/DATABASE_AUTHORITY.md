@@ -946,6 +946,60 @@ Applying an entry means re-running the narrowing it describes, which is domain
 logic — a reconciler that re-derived authority from log payloads would be a
 second implementation of every narrowing, and the copy is what drifts.
 
+### What goes through it, and what the host does without it
+
+**Four narrowings route through the protocol**, each appending before it applies
+and committing its receipt in the transaction that applies it: revoking an
+installation (`UninstallSolution`), closing a withdrawn solution target — which
+revokes every installation naming it — revoking a hierarchical scope grant, and
+removing a team membership. Installing, granting and adding are not narrowings
+and do not appear in the log; an authorised **regrant** does, because a log that
+recorded only reductions could not tell "this authority was restored" from "it
+was never taken away".
+
+That transaction is a **control-plane** one even for an organisation-scoped
+narrowing, because `policy_log_commits` is control-plane only and the receipt and
+the narrowing must be the same transaction or "applied but unwitnessed" becomes
+reachable. The tenant policy that would otherwise have confined each statement is
+replaced by an explicit predicate at the call site: three of the four already
+name their organisation in the statement, and the fourth — a team membership,
+whose delete is keyed on (team, user) and carries no organisation column —
+re-reads the team's owning organisation on the same transaction and refuses a
+mismatch.
+
+The **serving gate runs on the request path**, in both transports' authorization
+interceptors, after authorization so the refusal reaches only callers the host
+would have served. Its answer is reused for a bounded window rather than
+recomputed per request — the gate is a control-plane read — and the window hides
+nothing: a gap this host opens itself drops the cached answer at the instant the
+append is recorded, and a gap another replica opened arrives through
+reconciliation, whose interval is longer than the window. A host that cannot
+evaluate the gate refuses, because "I could not check" must not be served as
+"there is nothing to find". The refusal is **Unavailable and never
+PermissionDenied**: the caller is not unauthorized, the host is unable, and a
+host answering "forbidden" would tell every caller their authority had been
+revoked when nothing of theirs had.
+
+**This deployment has no log transport, and wires none** rather than wiring
+something that refuses. The warehouse cannot issue the receipt the protocol is
+built on: `Append` must return a token the log minted and a monotonic sequence
+the log assigned, and a BigQuery dataset gives a writer neither — the non-job
+write paths return no ordinal, per-stream offsets are not a global order,
+ingestion time is unreadable until the streaming buffer flushes (minutes,
+against an append bounded at five seconds), and the writer role deliberately
+holds no read and no job-creation permission with which to read its own row
+back. Closing that needs a **receipt-issuing appender inside the warehouse's
+trust domain**, which this service does not own. Anything else would be the host
+minting its own receipt, which is the tautology the protocol exists to prevent.
+
+The consequence is stated rather than softened: a host with no log **serves
+normally** — it has narrowed nothing through the protocol, so it holds nothing
+unreconciled — and **refuses all four narrowings** above. Wiring a log it could
+never reach would do the opposite and worse: `reached_at` would never refresh,
+the staleness window would close, and the host would stop answering anything at
+all. Refusing to narrow authority and refusing to serve are different refusals,
+and a deployment with no transport owes only the first.
+
 ## Control-plane boundary
 
 Migrations `67_control_plane_role` and `68_remove_policy_guc_bypass` replace
