@@ -169,6 +169,7 @@ pkg/infra/postgres_membership_diagnostic.go: (*PostgresStore).RecordMembershipIn
 pkg/infra/postgres_mfa.go: (*PostgresStore).MigrateLegacyMFASecrets: WithControlPlane
 pkg/infra/postgres_mfa_login.go: (*PostgresStore).ConsumeMFALoginTransaction: WithControlPlane
 pkg/infra/postgres_mfa_login.go: (*PostgresStore).GetActiveMFALoginTransaction: WithControlPlane
+pkg/infra/postgres_module_authority.go: (*PostgresStore).LiveModuleAuthority: WithControlPlane
 pkg/infra/postgres_org.go: (*PostgresStore).CreateOrganization: txbind.BindRequest
 pkg/infra/postgres_org_identity_providers.go: (*PostgresStore).resolvePreAuthProvider: WithControlPlane
 pkg/infra/postgres_permissions.go: (*PostgresStore).CreateRole: txbind.BindRequest
