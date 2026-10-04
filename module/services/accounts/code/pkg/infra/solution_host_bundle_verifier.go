@@ -3,6 +3,7 @@ package infra
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -94,6 +95,36 @@ type solutionHostBundleVerifierWithPolicy interface {
 // That is the property, and the constant is what makes it one.
 const SolutionHostTrustAnchorPath = "/etc/obin/delivery-trust"
 
+// RequireSolutionHostTrustAnchor refuses when the trust anchor is not mounted.
+//
+// It exists so the ABSENCE OF THE ANCHOR IS A BOOT FAILURE THAT NAMES THE
+// ANCHOR. Verification already fails without it — the keyless verifier cannot
+// read a root it does not have — but the refusal an operator reads then depends
+// on which configuration value was consulted first, and an unmounted anchor was
+// reported as a missing policy setting. Those send an operator to two different
+// places, and only one of them is where the problem is.
+//
+// It takes no path, for the reason SolutionHostTrustAnchorPath is a constant: a
+// function that could be told where to look is a function that will be told,
+// and the location of the check's own inputs is exactly what must not be
+// anyone's choice. A deployment that needs a different path changes the pod spec
+// that mounts it.
+func RequireSolutionHostTrustAnchor() error {
+	info, err := os.Stat(SolutionHostTrustAnchorPath)
+	if err != nil {
+		return fmt.Errorf("%w: the delivery trust anchor is not mounted at %s: %w; "+
+			"this host verifies every delivered carrier against the root and the identity allowlist delivered "+
+			"there, so starting without it would mean serving while claiming to verify",
+			ErrSolutionHostTrustRootUnavailable, SolutionHostTrustAnchorPath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s is not a directory, and the trust anchor is two documents in one: "+
+			"%s and %s", ErrSolutionHostTrustRootUnavailable, SolutionHostTrustAnchorPath,
+			trustedRootFileName, verificationPolicyFileName)
+	}
+	return nil
+}
+
 // NewSolutionHostBundleVerifier builds the one verifier, reading its anchor from
 // the fixed path.
 //
@@ -113,7 +144,7 @@ func NewSolutionHostBundleVerifier(
 
 	case "":
 		return nil, fmt.Errorf(
-			"SOLUTION_HOST_TRUST_POLICY is required with the bindings mount, and the only value is %q: "+
+			"SOLUTION_HOST_TRUST_POLICY is required wherever this host answers for a coordinate, and the only value is %q: "+
 				"a host must say how it checks a delivered carrier rather than inherit a default",
 			SolutionHostTrustKeyless)
 	}
