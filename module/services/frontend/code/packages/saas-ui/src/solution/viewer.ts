@@ -70,6 +70,18 @@ export function viewerOrganization(token: string | null | undefined): string {
 }
 
 /**
+ * The principal reading, as the access token names it (its `sub` claim), or ""
+ * when it names none. On an impersonation token this is still the real actor —
+ * the person at the keyboard — and never the user being viewed as, so a
+ * record that user wrote is never read back to the administrator as theirs.
+ * It decides whether a principal on screen reads as "You", and nothing else.
+ */
+export function viewerPrincipal(token: string | null | undefined): string {
+	const sub = unverifiedClaims(token)?.sub;
+	return typeof sub === "string" ? sub : "";
+}
+
+/**
  * Whether the access token names the viewer an administrator of its active
  * organization — its owner or an admin (`or` claim), or a platform super
  * administrator (`pr` claim) — the tier the host requires to connect, sync or

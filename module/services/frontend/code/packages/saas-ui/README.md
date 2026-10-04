@@ -80,6 +80,60 @@ components:
   `useViewerEpoch(getAccessToken)` — who the current credential speaks for,
   stable across a refresh and changing with the viewer. They partition local UI
   state; they never authorize anything (the claims are read unverified).
+- `viewerPrincipal(token)` — the principal reading (the token's `sub`). On an
+  impersonation token it is still the real actor, never the user being viewed
+  as. It decides what reads as "You", nothing else.
+
+### Who did something: principal names
+
+Every module records who did something as a principal id. The host holds the
+directory that names them, so a solution asks the kit rather than listing the
+directory itself:
+
+```tsx
+<PrincipalNamesProvider binding={props}>
+  <Page />
+</PrincipalNamesProvider>
+
+// anywhere beneath it
+<PrincipalName principal={comment.author.principal} />
+const names = usePrincipalNames(ids); // Record<id, PrincipalName | undefined>
+const nameOf = useNameOf();           // (id) => string | undefined, for a kit's `nameOf` prop
+const directory = usePrincipalDirectory(); // loading | ready | refused | failed
+```
+
+- **One read per page.** `<PrincipalNamesProvider>` reads the viewer's
+  organization directory (`DirectoryService.ListOrganizationMembers`) the first
+  time anything beneath it asks, once however many cards ask, and keeps the
+  answer until the viewer changes (the change `useViewerEpoch` counts). A new
+  viewer's page never sees the last viewer's names, not for one render, and an
+  answer that arrives after the switch is dropped. Its binding needs
+  `getAccessToken`: names are kept per viewer, and a binding that cannot say who
+  the viewer is cannot keep them apart.
+- **Only the viewer's organization.** The host answers the directory only for
+  an organization the viewer belongs to, and the kit also ignores any row naming
+  another one. A principal outside it resolves to `undefined`, never to another
+  tenant's member.
+- **`PrincipalName = { display, email?, avatarUrl?, you }`.** `display` is the
+  directory's label for the member. The host's tenant directory carries a
+  member's email and no display name or avatar, so today `display` is the email
+  and `avatarUrl` is never set; a richer directory changes what is shown without
+  changing a consumer. A member the directory gives no label (a deleted
+  account) is unknown, never `""`. `you` is an exact match with
+  `viewerPrincipal`: a near match (another case, the same email) is never "You".
+- **States are said once.** A name is `undefined` while loading, when the read
+  was refused, or when the principal is not listed. Which of those it is,
+  `usePrincipalDirectory()` says once for the page: `refused` (the host answered
+  unauthenticated or permission denied, or the credential names no
+  organization) is kept for the viewer; `failed` (anything else) is tried again
+  by the next component that asks.
+- **`<PrincipalName principal>`** renders "You" on an exact match, the
+  directory's label once known, and otherwise the id shortened to its ends
+  (`0000…00a1`). The full id is always its `title`, and `data-state` (`you`,
+  `named`, `loading`, `unknown`, `refused`, `failed`) says which it is.
+- **`useNameOf()`** is the function form a module kit takes as a prop. It
+  answers the directory's label or `undefined`, never "You" — a kit decides that
+  from the viewer it is given — and never `""`.
 
 ## Datasources
 
