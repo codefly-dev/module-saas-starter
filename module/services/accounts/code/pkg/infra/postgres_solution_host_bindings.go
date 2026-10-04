@@ -80,14 +80,42 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 	return &record, nil
 }
 
-// GetSolutionHostBindingForUpdate reads and row-locks one binding record,
-// returning nil when nothing has been delivered for it. The lock holds for the
+// GetSolutionHostBindingForUpdate locks one binding, then reads its record,
+// returning nil when nothing has been delivered for it. Both locks hold for the
 // caller's transaction, which is what serializes two replicas applying the same
 // generation.
+//
+// TWO locks, because a row lock cannot lock a row that does not exist — and the
+// FIRST delivery for a binding is precisely the pass that has none. Without the
+// advisory lock the sequence is:
+//
+//	pass A reads nil and builds a record with no applied state;
+//	pass B reads nil, inserts, applies, and writes applied_* ;
+//	pass A upserts its stale record, and ON CONFLICT DO UPDATE sets every
+//	applied_* column to the NULLs it is carrying.
+//
+// The erasure is then invisible: `solution_host_bindings_applied_whole` permits
+// seven NULLs — that is a legally absent group — so nothing refuses it, and a
+// binding that IS serving reads as one this host never applied. Every reader of
+// applied state sees no presence, and the reconciler re-applies a generation it
+// had already admitted.
+//
+// Keyed on the binding and taken here rather than in each writer, because every
+// writer of this row reaches it through this function and a lock one writer
+// forgets serializes nothing. Two bindings whose ids collide in the hash
+// serialize against each other, which costs throughput and nothing else.
+//
+// Both locks are transaction-scoped, so like `FOR UPDATE` this serializes
+// nothing at all if a caller reaches it outside a `WithControlPlane`
+// transaction — the assumption stated at the top of this file.
 func (s *PostgresStore) GetSolutionHostBindingForUpdate(
 	ctx context.Context, bindingID string,
 ) (*business.SolutionHostBindingRecord, error) {
 	q := s.getQueryExecutor(ctx)
+	if _, err := q.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, bindingID); err != nil {
+		return nil, err
+	}
 	record, err := scanSolutionHostBinding(q.QueryRow(ctx,
 		`SELECT `+solutionHostBindingColumns+`
 		 FROM public.solution_host_bindings WHERE binding_id = $1 FOR UPDATE`, bindingID))
