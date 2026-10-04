@@ -146,6 +146,22 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// unauthenticated flood of this proxy is still capped. Leaving it on bare
 	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
+		if routing.TargetID == "" {
+			// Presence nothing declared. This fetch carries no credential, so
+			// there is no VIEWER to ask the authority about — but there is still
+			// an installation question with a final answer, and it needs no
+			// viewer: a registration no declaration opened a target for cannot
+			// have been installed by any organisation, so nobody consented to
+			// this host serving its bytes. Until this check, such a record's
+			// remote entry and chunks were served same-origin and executed
+			// inside the host origin under its own `'self'`, while the
+			// authenticated surface beside it refused the same record outright.
+			//
+			// A verdict (403), not an outage: the record is here, it is active,
+			// and it is declared by nothing — no later read changes that.
+			httpError(w, http.StatusForbidden, "solution is not declared on this host")
+			return true
+		}
 		stripAllIdentityHeaders(r)
 		entry := &RouteEntry{
 			Service:        "solution:" + id,
@@ -192,11 +208,16 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// impersonated viewer — the subject accounts authorizes against — rather
 	// than the administrator acting. Both come from what the check just stamped.
 	//
-	// The public GET surface above is not gated and cannot be: it is fetched by
-	// the browser's module loader with no credential, so there is no viewer to
-	// ask about. What it serves is the solution's own static Module-Federation
-	// bytes, which carry no tenant data; the authenticated surface below is
-	// where an organization's admission is enforced.
+	// The public GET surface above is not gated PER VIEWER and cannot be: it is
+	// fetched by the browser's module loader with no credential, so there is no
+	// viewer to ask about. What it serves is the solution's own static
+	// Module-Federation bytes, which carry no tenant data; the authenticated
+	// surface below is where an organization's admission is enforced.
+	//
+	// It is not declaration-blind, though, and the two were conflated for as
+	// long as "there is no viewer" was treated as "nothing can be checked". A
+	// record nothing declared is refused above, because that answer needs no
+	// viewer.
 	org := r.Header.Get("X-Org-Id")
 	viewer := effectiveViewer(r)
 	if org == "" || viewer == "" {

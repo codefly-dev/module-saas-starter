@@ -213,12 +213,28 @@ func TestGatewaySolutionProxy_UnhealthyEntitlementIsStillAdmitted(t *testing.T) 
 		"an unhealthy installation is still installed; the registry's resolve owns liveness")
 }
 
-// The public Module-Federation surface is NOT gated, and cannot be: the browser's
-// module loader fetches it with no credential, so there is no viewer to ask
-// about. It is named here as a test rather than left as a comment, because a
-// later change that gated it would break same-origin remote loading and the
-// reason would not be obvious.
-func TestGatewaySolutionProxy_PublicAssetSurfaceIsNotAdmissionGated(t *testing.T) {
+// The public Module-Federation surface is not gated PER VIEWER, and cannot be:
+// the browser's module loader fetches it with no credential, so there is no
+// viewer to ask about. It is named here as a test rather than left as a comment,
+// because a later change that gated it per viewer would break same-origin remote
+// loading and the reason would not be obvious.
+//
+// This test's EXPECTATION CHANGED. It used to be named
+// ...IsNotAdmissionGated and assert that this branch checked nothing at all,
+// which pinned a hole: "no viewer to ask about" was read as "nothing is
+// checkable", and a record nothing declared had its remote entry and chunks
+// served same-origin and executed inside the host origin under its own
+// `'self'` — while the authenticated surface beside it refused the very same
+// record. The declaration half needs no viewer, so it is checked now (see the
+// test below), and what remains pinned here is only the per-viewer half.
+//
+// What was deliberately NOT changed, stated so a reviewer can overrule it: a
+// credential-less fetch is still served 200 with the authority not asked. There
+// is no identity on the request to decide an organisation's admission with, and
+// gating only the fetches that happen to carry one adds nothing — an attacker
+// omits the credential — while 503-ing a solution's own asset loads during an
+// accounts outage.
+func TestGatewaySolutionProxy_PublicAssetSurfaceIsNotGatedPerViewer(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	fake := registerSolutionUpstream(t, gw, "example-go")
 	authority := &entitledTo{ids: nil}
@@ -232,6 +248,41 @@ func TestGatewaySolutionProxy_PublicAssetSurfaceIsNotAdmissionGated(t *testing.T
 	require.NotNil(t, fake.lastHeaders)
 	require.Empty(t, authority.calls,
 		"an unauthenticated asset fetch has no viewer, so the authority is not asked")
+}
+
+// The declaration half of the same branch, which needs no viewer.
+//
+// A registration no declaration opened a target for cannot have been installed
+// by any organisation, so nobody consented to this host serving its bytes. The
+// authenticated surface has refused such a record since the target join landed;
+// the public surface served it, same-origin, as a script the host origin
+// executes.
+//
+// Against the pre-change gateway this answers 200 and the upstream is reached.
+func TestGatewaySolutionProxy_PublicAssetSurfaceRefusesPresenceNothingDeclared(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	fake := registerSolutionUpstream(t, gw, "example-go")
+	solutionRegistryFake(t, gw).undeclare("example-go")
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	authority := &entitledTo{ids: nil}
+	gw.solutionEntitlements = authority
+
+	for _, path := range []string{
+		"/assets/mf-manifest.json",
+		"/assets/remoteEntry.js",
+		"/.well-known/capabilities",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/solutions/example-go"+path, nil)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code,
+			"%q: presence nothing declared must serve no bytes through this host", path)
+	}
+	require.Nil(t, fake.lastHeaders,
+		"an undeclared solution must never be reached, not even for its static bytes")
+	require.Empty(t, authority.calls,
+		"and the refusal is final without asking the authority: no viewer, and no target to ask about")
 }
 
 // A session that has selected no organization has no org-scoped admission to
