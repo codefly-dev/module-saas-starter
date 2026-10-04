@@ -1676,6 +1676,10 @@
     }
   }
 
+  .border-ring {
+    border-color: var(--ring);
+  }
+
   .border-sidebar-border {
     border-color: var(--sidebar-border);
   }
@@ -3494,6 +3498,10 @@
   }
 
   @media (hover: hover) {
+    .hover\:border-ring:hover {
+      border-color: var(--ring);
+    }
+
     .hover\:bg-accent\/50:hover {
       background-color: var(--accent);
     }

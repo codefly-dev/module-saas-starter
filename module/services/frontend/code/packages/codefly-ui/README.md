@@ -50,7 +50,14 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `TextBlock` — are exported too. Untrusted by default: no raw HTML, links only
   for http/https/mailto with `rel="noopener noreferrer"`, images off unless
   `allowImages`, and no `innerHTML` anywhere; colour only through the host's
-  token utilities.
+  token utilities. `<Markdown>` also marks what it rendered with the bytes it
+  came from (`sourceOffsets`) and lets the caller say where a link actually goes
+  (`resolveLink`) — see *A rendered document an annotation layer can read*.
+
+- **Board** (`@codefly-dev/ui/board`) — one collection in columns, one per value
+  of a field, whose cards a reader drags from one column to another or moves from
+  a menu. It commits nothing: a move is reported and the consumer confirms,
+  writes or refuses it. See *A board commits no move*.
 
 ### Status, card headers, lists and empty states
 
@@ -102,6 +109,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
+| `@codefly-dev/ui/board`           | `Board` (React-only)                                |
 | `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
 | `@codefly-dev/ui/theme.css`       | The token layer: token → utility, light/dark binding, custom variants (Tailwind source) |
 | `@codefly-dev/ui/preview.css`     | The kit compiled with the default skin, for previews only — see below |
@@ -114,7 +122,7 @@ second copy would split that context and break `usePluginRuntime` in a remote.
 
 The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
 `./plugin-host`, and `./skin` touch them, and the host supplies them. The
-`./layout`, `./dashboard`, `./chat` and `./content` subpaths reference neither, so a consumer
+`./layout`, `./dashboard`, `./chat`, `./content` and `./board` subpaths reference neither, so a consumer
 of just those subpaths installs the kit without pulling the host-internal plugin
 packages. `./layout` does pull the primitives' public runtime deps
 (`@base-ui/react`, `lucide-react`, `class-variance-authority`, `clsx`,
@@ -273,6 +281,111 @@ and missing everywhere else. `DescriptionList`'s
 `grid-cols-[minmax(0,max-content)_minmax(0,1fr)]` is fine here for that reason. A
 kit element meant to render from a remote carries its structure inline (a
 `style` for layout) and takes only colour and type from the tokens.
+`src/__tests__/remote-safe-structure.test.ts` holds the components written
+against that rule to it, and names the ones it does not yet cover.
+
+## A rendered document an annotation layer can read
+
+A reader selects words in a rendered document and writes a comment about them.
+Mapping that selection back to the document is not a matter of counting
+characters on screen, because **rendered text is not its source**: markdown drops
+`**`, a heading loses its `#`, a list gains a bullet nobody wrote. So the
+renderer says which bytes it rendered, and the reading layer never has to guess.
+
+```tsx
+const front = version.indexOf("# ");          // the body, without its front matter
+<Markdown
+  headingLevel={2}
+  sourceOffsets                               // mark what was rendered
+  sourceStart={utf8Length(version.slice(0, front))}
+  resolveLink={(href) => resolve(href)}       // where a link in this corpus goes
+>
+  {version.slice(front)}
+</Markdown>
+```
+
+| Attribute | On | Means |
+| --- | --- | --- |
+| `data-source-start`, `data-source-end` | every block, and a `<span>` around every text run | the element's text was rendered from bytes `[start, end)` of the version |
+| `data-source-exact="false"` | anything markdown rewrote | the text is not those bytes verbatim, so a selection inside it widens to the whole element |
+| `data-source-ignore` | a code block's copy control | chrome the renderer added; it maps to nothing |
+
+This is the contract a composed module's annotation kit already reads through
+its text-range locator (its own `src/anchors/source-map.ts`); this kit matches it
+rather than inventing one.
+
+- **Offsets are UTF-8 bytes, half-open, counted in the version** — not string
+  indices. `é` is one index and two bytes, an emoji two indices and four, so a
+  document of plain ASCII passes a renderer that forgot the difference.
+  `sourceStart` is the byte offset of what you passed inside the whole version,
+  so a body rendered without its front matter still names the version's bytes.
+- **A plain run is byte-exact; everything else says so.** Exactness is *measured*
+  — each element's and each run's text is compared with the source it claims —
+  rather than listed, so a construct nobody anticipated is marked inexact instead
+  of lying. A fenced block is the shape in miniature: the `<pre>` carries the
+  whole fence and is never exact, while the `<code>` inside carries the body
+  alone and is, so a reader comments on the block as a whole and selects inside
+  it character for character.
+- **The two source-rewriting options are off.** `references` protects a `[n]`
+  marker by rewriting the source before it is parsed, which would move every
+  offset after it, so it is not applied under `sourceOffsets`. `lineBreaks` is
+  applied: it splits a run rather than the source, and each piece keeps its own
+  bytes.
+- **Chrome the source did not write** — a GFM footnote's generated heading, its
+  `↩` back-reference — has no range of its own and maps to its nearest marked
+  ancestor as a whole.
+
+`resolveLink` answers the other half. A link in a corpus is usually a path in a
+repository (`../decisions/x.md#why`), and only the caller knows where that goes:
+it returns `{ href, external }` for a destination it knows, `{ open }` to
+navigate inside the product with no URL at all, `{ unavailable }` for a target it
+cannot show, or `undefined` to leave the kit's own rule in place. **A resolved
+href is held to exactly the same allowlist as one the content wrote** — http,
+https or mailto, no credentials in the authority — so no resolver can turn
+`javascript:` into a link.
+
+## A board commits no move
+
+```tsx
+import { Board } from "@codefly-dev/ui/board";
+
+<Board
+  items={requests}
+  columns={[{ id: "open", label: "Open", empty: "Nothing waiting" }, …]}
+  columnOf={(request) => request.stage}       // the field it groups by
+  idOf={(request) => request.ref}
+  labelOf={(request) => request.name}         // what to call one, in a sentence
+  renderCard={(request) => <RequestCard request={request} />}
+  onOpen={(request) => open(request)}
+  onMove={(request, column) => confirmThenWrite(request, column)}
+  canMove={(request, column) => mayMove(request, column)}  // optional
+  searchText={(request) => `${request.name} ${request.owner}`}
+/>
+```
+
+- **The board changes nothing.** A drop, or a choice in a card's Move menu, calls
+  `onMove(item, column)` and stops there. The consumer confirms it with the
+  reader, writes it, or refuses it, and passes `items` back with the new column. A
+  board that moved the card itself would be showing a state the server never
+  agreed to, and would have to take it back when the write failed.
+- **Dragging is never the only way.** A pointer drag is a gesture a keyboard
+  cannot make and a screen reader cannot see, so every card that may move carries
+  a **Move** menu listing the columns it may go to, beside the control that opens
+  it. (This is where `SortableGrid` asks its caller for the keyboard
+  alternative — a board knows what the alternative is, so it ships it.) The
+  screen-reader instructions name that menu rather than the arrow keys dnd-kit
+  assumes.
+- **It knows nothing about what a column means.** No status, no workflow, no
+  vocabulary: `columnOf` names the field and `columns` names its values, so two
+  columns or five cost the same. `canMove` narrows which moves exist at all — a
+  column it refuses accepts no drop and is absent from the Move menu, and a card
+  with nowhere to go does not drag.
+- **Search is the consumer's.** `searchText` says what a search matches an item
+  against; without it there is no box, because only the consumer knows which
+  fields are worth searching.
+- Structure is inline (see *Structure travels inline when the host does not
+  compile you*), which `src/__tests__/remote-safe-structure.test.ts` holds it to:
+  a board renders from a remote, where only what the host already compiled exists.
 
 ## A loading indicator never flashes
 

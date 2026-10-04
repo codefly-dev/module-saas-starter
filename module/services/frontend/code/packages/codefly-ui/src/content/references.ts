@@ -28,8 +28,8 @@ export const REFERENCE_ELEMENT = "content-reference";
 const MARKER = /\[(\d+)\]/g;
 const OPEN = String.fromCharCode(0xe000);
 const CLOSE = String.fromCharCode(0xe001);
-const SENTINEL = new RegExp("\\uE000(\\d+)\\uE001", "g");
-const SENTINEL_CHARS = new RegExp("[\\uE000\\uE001]", "g");
+const SENTINEL = /\uE000(\d+)\uE001/g;
+const SENTINEL_CHARS = /[\uE000\uE001]/g;
 const DEFINITION_LINE = /^[ \t]*\[(\d+)\]:[ \t]+\S.*$/gm;
 const INLINE_LINK = /\[(\d+)\]\([^\s()]*(?:[ \t]+"[^"]*")?\)/g;
 
@@ -179,9 +179,21 @@ export function remarkReferences() {
 	};
 }
 
+/** The source offset a node starts at, when the parser recorded one. */
+function startOffset(node: MdNode): number | undefined {
+	const at = node.position as { start?: { offset?: number } } | undefined;
+	return typeof at?.start?.offset === "number" ? at.start.offset : undefined;
+}
+
 /**
  * Remark plugin: a single newline inside a paragraph is a line break, the way
  * chat and model output are written, rather than CommonMark's soft wrap.
+ *
+ * Each piece keeps the position of the text it came from. A split that dropped
+ * it would leave the renderer unable to say which bytes a run was rendered from
+ * (`Markdown`'s `sourceOffsets`), and a run with no position maps to nothing —
+ * so the whole paragraph would silently lose its anchor the moment a caller
+ * asked for line breaks.
  */
 export function remarkLineBreaks() {
 	return (tree: MdNode) => {
@@ -194,11 +206,37 @@ export function remarkLineBreaks() {
 					next.push(child);
 					continue;
 				}
-				const lines = child.value.split(/\r?\n/);
-				lines.forEach((line, index) => {
-					if (index > 0) next.push({ type: "break" });
-					if (line !== "") next.push({ type: "text", value: line });
-				});
+				const base = startOffset(child);
+				// Split keeping the separators, so each piece's offset is the sum of
+				// what precedes it whether the source wrote `\n` or `\r\n`.
+				const pieces = child.value.split(/(\r?\n)/);
+				let at = 0;
+				for (const [index, piece] of pieces.entries()) {
+					const from = at;
+					at += piece.length;
+					if (index % 2 === 1) {
+						next.push({ type: "break" });
+						continue;
+					}
+					if (piece === "") continue;
+					next.push({
+						type: "text",
+						value: piece,
+						// A unist point is 1-based and a position with a line of 0 is
+						// dropped wholesale by `mdast-util-to-hast`, taking the offsets
+						// with it. Only the offsets are read downstream, so the line and
+						// column are the smallest valid pair rather than a recount of
+						// where the break landed.
+						...(base === undefined
+							? {}
+							: {
+									position: {
+										start: { line: 1, column: 1, offset: base + from },
+										end: { line: 1, column: 1, offset: base + at },
+									},
+								}),
+					});
+				}
 			}
 			node.children = next;
 		};
