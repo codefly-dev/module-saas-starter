@@ -172,10 +172,21 @@ func throwawayPostgres(t *testing.T) (*sql.DB, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	deadline := time.Now().Add(60 * time.Second)
-	for db.Ping() != nil {
+	// Generously long, and deliberately not tuned to how fast this starts on an
+	// idle machine. A readiness timeout here says nothing about the migration
+	// under test, so a short one converts "the host was busy" into a red that
+	// reads as a schema failure — which is what the fourth run of this test did,
+	// with four agents starting containers at once. The last ping error is
+	// reported so a genuine refusal is still distinguishable from slowness.
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		err := db.Ping()
+		if err == nil {
+			break
+		}
 		if time.Now().After(deadline) {
-			t.Fatal("postgres did not become ready")
+			t.Fatalf("postgres did not become ready within %s (last error: %v); on a contended machine this is start-up time, not the schema",
+				5*time.Minute, err)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
