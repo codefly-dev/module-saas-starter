@@ -3,51 +3,17 @@
 The authenticated product, behind auth-gateway. Architecture is in
 `FRONTEND_ARCHITECTURE.md` at the repository root; the page and plugin inventory in [../../FRONTEND_CATALOG.md](../../FRONTEND_CATALOG.md)
 and [../../FRONTEND_PLUGINS.md](../../FRONTEND_PLUGINS.md). This file covers the
-runtime-registration surfaces and the published client kit.
+solution read projections and the published client kit.
 
-## Registering a solution's frontend half
+## Reading declared solutions
 
-`POST /api/solutions/register` (and `DELETE ?id=…`) at
-`code/src/app/api/solutions/register/route.ts`. The POST body is the solution
-manifest — `id`, `nav`, `frontend.manifestUrl` + `exposedModule`, optional
-`backend.serviceAlias`, optional compatibility requirements — validated in
-`src/solutions/registry.ts`, which then writes the frontend half **through the
-gateway** (`POST /solutions/_frontend`).
-
-`sources` is the optional declaration of what a solution is **built on**:
-`[{ provider: github, repo: owner/name, paths, ref, label }]`. `repo` is held
-to `AddGitHubSourceRequest`'s own pattern, and the paths and ref to its bounds,
-at the far end of the same journey — the declaration is submitted unedited by
-the kit's `<DeclaredSourceCard>`, so a repository the connect RPC would refuse
-is refused when it is *declared* rather than weeks later when somebody presses
-Connect. A malformed declaration fails the registration whole, as a dashboard
-or a surface does, and one repository declared twice is refused outright:
-nothing downstream could say which of the two a card renders. It is a
-statement, not an authority — declaring a source connects nothing and grants
-no read of its contents. The solution page reads it in process and hands it to
-the remote it mounts as `SolutionBinding.declaredSources`, so it is on neither
-the public nor the internal HTTP projection and no new RPC exists to serve it.
-
-The route **relays the registry's own answer**: `409` for a revision conflict,
-`403` when the id belongs to another publisher, `422` (`registration_rejected`)
-when the registry will not admit the manifest, `503` when the registry cannot be
-reached — and `503` (not `401`) when the key set it verifies the credential
-against cannot be reached, because a credential that was never judged was not
-refused. A registrant is never told it is serving when it is not.
-
-A dashboard event carrying `fields` declares an audit event type the solution
-owns (`packages/saas-plugin-manifest/src/data-graph.ts`). `assertDataGraph`
-checks its shape here; accounts admits it into the audit registry in the same
-write as the frontend half, and refuses the write — the `422` above, with a
-`detail` naming the rule — when the namespace is not bound to the solution or
-belongs to another producer, or a changed field set drops or retypes an
-admitted field. accounts marks that refusal with a `google.rpc.ErrorInfo`
-reason (`SOLUTION_AUDIT_DECLARATION_REJECTED`), and only that reason becomes
-the gateway's `422 registration_rejected`; any other refusal keeps its old
-mapping. Re-registering
-a deregistered solution requires an explicit `reactivate: true`. The frontend
-additionally enforces the declared runtime compatibility requirements before
-activating a remote.
+`src/solutions/registry.ts` validates the gateway's durable registry snapshot and
+caches it for five seconds. It exposes reads only. An expired snapshot is dropped
+when a refresh fails, so callers receive unavailable instead of stale authority.
+The manifest includes navigation, frontend loading information, backend alias,
+compatibility requirements and optional dashboard, surfaces and source metadata.
+These declarations grant no access to content. The solution page reads the full
+manifest in process; browser projections carry only the fields described below.
 
 ## Three projections, deliberately separate
 
@@ -55,7 +21,7 @@ Two of them are **per viewer** (issue #949): they answer the solutions the
 caller's organization installed and the caller's teams were granted, not the
 deployment-wide registered set.
 
-- `GET /api/solutions/register` is **authenticated** and returns the navigation
+- `GET /api/solutions` is **authenticated** and returns the navigation
   projection — `{id, nav, available}` per entitled solution and nothing else. It is
   what the sidebar polls (through `authedFetch`, so a lapsed access token is
   exchanged and retried rather than emptying the menu). It answers `401` to an
@@ -94,9 +60,8 @@ so hiding it would send someone looking for one that already does. It is a new
 field on both projections: the host's own sidebar renders such a solution disabled,
 and **a registered client of the surfaces projection must honour it the same way**
 — a client that ignores the field will offer an unavailable solution's surfaces as
-usable. Only the listing is narrowed: `/s/{id}` and the solution proxy still render
-and route a registered solution for any authenticated caller, available or not
-(route and page exposure stays deployment-wide, SOLUTION_REGISTRATION.md §4).
+usable. The solution proxy also checks per-viewer installation admission. `/s/{id}`
+reads deployment-wide state; see SOLUTION_REGISTRATION.md §4 for this boundary.
 
 **Failure answers.** Neither projection answers an empty list for a failure.
 `401` — the viewer is not signed in; `403 no_organization` — signed in with no

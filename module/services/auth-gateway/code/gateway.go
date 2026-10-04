@@ -50,7 +50,6 @@ type Gateway struct {
 	// clients is this replica's view of the registered-client registry: which
 	// browser origins each first-party client speaks from (track 0016).
 	clients *clientRegistryCache
-	modules *upstreamRegistry // runtime-registered composed-module REST upstreams
 	// registeredTransport re-validates a runtime-registered upstream's resolved
 	// address at dial time (SSRF / DNS-rebinding defense). Both federated module
 	// and solution routes use it: a solution upstream is durable now (#534) but
@@ -58,8 +57,6 @@ type Gateway struct {
 	// bearers. Catalog upstreams are static trusted config and keep the default
 	// transport.
 	registeredTransport http.RoundTripper
-	// registrationReplay makes each solution-registration credential single-use.
-	registrationReplay *registrationReplayGuard
 	// solutionEntitlements answers what one viewer may use (#949). Set after
 	// construction, like workContext: a nil client fails the entitlement surface
 	// closed rather than answering an empty projection, which would retract every
@@ -92,9 +89,7 @@ func NewGateway(
 		requiredUpstreams:   matcher.RequiredServices(),
 		solutions:           newSolutionRegistryCache(solutionRegistry),
 		clients:             newClientRegistryCache(clientRegistry),
-		modules:             newUpstreamRegistry(),
 		registeredTransport: newModuleUpstreamTransport(net.DefaultResolver),
-		registrationReplay:  newRegistrationReplayGuard(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -201,22 +196,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Composed-module REST self-registration (/modules/_register): a privileged
-	// mutation authenticated on the X-Codefly-Internal-Token header, so it must
-	// run before withTrustedFrontendOrigin consumes and strips that header. It
-	// only stores a prefix→upstream mapping; every proxied module request below
-	// still runs the full auth pipeline.
-	if g.handleModuleRegister(w, r) {
-		return
-	}
-
-	// The credential exchange that precedes it (/modules/_registration-token):
-	// same listener, same reason to run before the header is stripped, and it
-	// brokers to accounts rather than deciding anything itself.
-	if g.handleModuleRegistrationToken(w, r) {
-		return
-	}
-
 	// The module's other startup exchange (/modules/_work-context): the identity
 	// it calls the module-facing capability surface with, brokered the same way
 	// and gated on the same header this pass has yet to strip.
@@ -242,13 +221,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
-		// The generated + explicit catalog is the authority and always wins:
-		// module federation is attempted ONLY once the catalog has no match, so
-		// a registered prefix can never shadow a catalog route. An unregistered
-		// /v1/<module>/* prefix falls through to the 404 below.
-		if g.handleFederatedModule(w, r) {
-			return
-		}
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
 		return

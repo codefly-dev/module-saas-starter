@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 36)
-	require.Len(t, catalog.GetMethods(), 249)
+	require.Len(t, catalog.GetMethods(), 247)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -38,6 +38,10 @@ func TestServiceCatalogCompilation(t *testing.T) {
 		require.NotEmpty(t, method.GetOutputType())
 		require.NotEmpty(t, method.GetSourceProto())
 		require.NotNil(t, method.GetPolicy())
+	}
+
+	for _, method := range []string{"PutSolutionRegistration", "DeleteSolutionRegistration"} {
+		require.NotContains(t, methods, "/saas.accounts.v1.SolutionRegistryService/"+method)
 	}
 
 	readableSources := methods["/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"]

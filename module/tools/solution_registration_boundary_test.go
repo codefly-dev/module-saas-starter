@@ -72,7 +72,7 @@ var registrationSurfaces = []string{
 // the deployment-wide listing #949 removed — and that regression would look
 // like working code, since every viewer would simply see everything.
 var projectionSurfaces = []string{
-	"services/frontend/code/src/app/api/solutions/register/route.ts",
+	"services/frontend/code/src/app/api/solutions/route.ts",
 	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
 }
 

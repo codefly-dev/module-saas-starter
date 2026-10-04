@@ -363,12 +363,11 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 	const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
 
 	// Every authored route, and the methods that carry internal authority on it.
-	// A GET on /api/solutions/register is the sidebar's unauthenticated nav poll
+	// A GET on /api/solutions is the sidebar's viewer-authenticated nav poll
 	// and must stay reachable; a GET on /api/internal/solutions is the internal
 	// detail read and must not.
 	wantRules := map[string][]any{
 		"/api/internal/solutions": {"GET"},
-		"/api/solutions/register": {"DELETE", "POST"},
 	}
 
 	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
@@ -423,7 +422,7 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 				require.True(t, ok)
 				paths := operation["paths"].([]any)
 				// Istio does not merge duplicate slashes by default, so the exact
-				// path alone would let //api/solutions/register reach the handler.
+				// path alone would let //api/internal/solutions reach the handler.
 				require.Len(t, paths, 2, "each route is matched exactly and as a suffix")
 				path := paths[1].(string)
 				require.Equal(t, "*"+path, paths[0])
@@ -517,15 +516,15 @@ func TestDeploymentTopologyRejectsUnsafeOrIncompleteManifests(t *testing.T) {
 	require.ErrorContains(t, err, "service entry references unknown service")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "                - DELETE\n                - POST", "                - POST\n                - DELETE"))
-	require.ErrorContains(t, err, "internal HTTP route \"/api/solutions/register\" methods are invalid or unsorted")
+		withService(t, documents, "frontend", "                - GET", "                - POST\n                - GET"))
+	require.ErrorContains(t, err, "internal HTTP route \"/api/internal/solutions\" methods are invalid or unsorted")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "            - path: /api/solutions/register", "            - path: api/solutions/register"))
+		withService(t, documents, "frontend", "            - path: /api/internal/solutions", "            - path: api/internal/solutions"))
 	require.ErrorContains(t, err, "internal HTTP routes are invalid or unsorted")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withService(t, documents, "frontend", "              methods:\n                - DELETE\n                - POST", "              methods: []"))
+		withService(t, documents, "frontend", "              methods:\n                - GET", "              methods: []"))
 	require.ErrorContains(t, err, "declares no methods")
 
 	// A path policy on a service that speaks TCP matches nothing that will ever

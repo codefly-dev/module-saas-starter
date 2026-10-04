@@ -30,8 +30,6 @@ import {
   findSolution,
   loadSolutions,
   parseManifest,
-  registerSolution,
-  unregisterSolution,
 } from "@/solutions/registry";
 
 // The host's target for a route alias, in these fixtures. A projection joins
@@ -611,7 +609,7 @@ describe("registry snapshot", () => {
     solutions: Array<{ id: string; status: string; manifest?: string }>,
   ) {
     return new Response(
-      JSON.stringify({ revision: 7, leaseSeconds: 120, solutions }),
+      JSON.stringify({ revision: 7, solutions }),
       {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -634,6 +632,15 @@ describe("registry snapshot", () => {
     vi.unstubAllGlobals();
     getEndpoints.mockReset();
     getWorkspaceSecret.mockReset();
+  });
+
+  it("checks runtime compatibility on the read-only projection", async () => {
+    const manifest = baseManifest({ schemaVersion: 999 });
+    vi.stubGlobal("fetch", vi.fn(async () => snapshotResponse([
+      { id: "audit", status: "active", manifest: JSON.stringify(manifest) },
+    ])));
+    expect(await loadSolutions()).toEqual([]);
+    expect(await findSolution("audit")).toBeNull();
   });
 
   // Every browser polling the navigation drives this read, so a registry
@@ -741,87 +748,18 @@ describe("registry snapshot", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // A registry outage must degrade, not delete: a blip after a good read keeps
-  // serving the last snapshot instead of emptying the navigation.
-  it("keeps the last snapshot when a refetch fails", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        snapshotResponse([
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ]),
-      )
-      .mockRejectedValue(new Error("unreachable"));
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("drops an expired snapshot when a refetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(snapshotResponse([
+        { id: "a", status: "active", manifest: manifestFor("a", 1) },
+      ]))
+      .mockRejectedValue(new Error("unreachable")));
     expect(await loadSolutions()).toHaveLength(1);
-    (globalThis as Record<string, unknown>).__solutionSnapshot = {
-      ...((globalThis as Record<string, unknown>).__solutionSnapshot as object),
-      expiresAt: 0,
-    };
-    expect(await loadSolutions()).toHaveLength(1);
-  });
-
-  // Degrading on a blip is right; degrading forever is not. Past the gateway's
-  // lease nothing in the held snapshot is provably still registered, so
-  // continuing to serve it renders pages the gateway has already stopped
-  // routing.
-  it("stops serving a stale snapshot once it outlives the gateway lease", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        snapshotResponse([
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ]),
-      )
-      .mockRejectedValue(new Error("unreachable"));
-    vi.stubGlobal("fetch", fetchMock);
-
-    expect(await loadSolutions()).toHaveLength(1);
-
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      expiresAt: 0,
-      fetchedAt: Date.now() - 120_001,
-    };
-
+    const state = globalThis as Record<string, unknown>;
+    state.__solutionSnapshot = { ...(state.__solutionSnapshot as object), expiresAt: 0 };
     expect(await loadSolutions()).toBe("unavailable");
     expect(await findSolution("a")).toBe("unavailable");
-  });
-
-  // The ceiling must come from the gateway's own lease, not a copy of it: a
-  // mirrored literal keeps the old bound when the gateway's lease changes.
-  it("bounds staleness by the lease the gateway reported, not a local copy", async () => {
-    const shortLease = new Response(
-      JSON.stringify({
-        revision: 7,
-        leaseSeconds: 10,
-        solutions: [
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ],
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(shortLease)
-        .mockRejectedValue(new Error("unreachable")),
-    );
-
-    expect(await loadSolutions()).toHaveLength(1);
-
-    // Older than the gateway's 10s lease, far younger than the 120s fallback.
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      expiresAt: 0,
-      fetchedAt: Date.now() - 11_000,
-    };
-
-    expect(await loadSolutions()).toBe("unavailable");
+    expect(state.__solutionSnapshot).toBeNull();
   });
 
   // Unbounded, a wedged gateway never settles the fetch. Readers coalesce onto
@@ -840,78 +778,13 @@ describe("registry snapshot", () => {
     );
 
     await loadSolutions();
-    const manifest = parseManifest(JSON.parse(manifestFor("a", 1)));
-    if (!manifest) throw new Error("fixture failed to parse");
-    await registerSolution(manifest);
-
-    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen).toHaveLength(1);
     for (const init of seen) {
       expect(
         init?.signal,
         "every registry request must carry an abort signal",
       ).toBeInstanceOf(AbortSignal);
     }
-  });
-
-  // The TTL and the ceiling are independent windows. Serving on the TTL alone
-  // is only safe while the ceiling is the larger of the two, which nothing
-  // guarantees once the gateway reports the lease.
-  it("honours a lease shorter than the snapshot TTL", async () => {
-    const shortLease = new Response(
-      JSON.stringify({
-        revision: 7,
-        leaseSeconds: 1,
-        solutions: [
-          { id: "a", status: "active", manifest: manifestFor("a", 1) },
-        ],
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(shortLease)
-        .mockRejectedValue(new Error("unreachable")),
-    );
-    expect(await loadSolutions()).toHaveLength(1);
-
-    // Past the 1s lease but still inside the 5s TTL: the fast path must not
-    // serve it just because the TTL has not elapsed.
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      fetchedAt: Date.now() - 2_000,
-      expiresAt: Date.now() + 3_000,
-    };
-    expect(await loadSolutions()).toBe("unavailable");
-  });
-
-  // The ceiling is a safety bound, so the far side must not be able to set it
-  // to "effectively never".
-  it("clamps an out-of-range reported lease", async () => {
-    // 1e999 parses to Infinity; an unchecked `> 0` accepts it and the ceiling
-    // silently never trips again.
-    const absurd = new Response(
-      `{"revision":7,"leaseSeconds":1e999,"solutions":[{"id":"a","status":"active","manifest":${JSON.stringify(manifestFor("a", 1))}}]}`,
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(absurd)
-        .mockRejectedValue(new Error("unreachable")),
-    );
-    expect(await loadSolutions()).toHaveLength(1);
-
-    const g = globalThis as Record<string, unknown>;
-    g.__solutionSnapshot = {
-      ...(g.__solutionSnapshot as object),
-      expiresAt: 0,
-      fetchedAt: Date.now() - 3_600_001,
-    };
-    expect(await loadSolutions()).toBe("unavailable");
   });
 
   it("drops a stored manifest that no longer validates", async () => {
@@ -930,34 +803,7 @@ describe("registry snapshot", () => {
     expect(await loadSolutions()).toEqual([]);
   });
 
-  it("maps a registry refusal onto a typed write result", async () => {
-    const manifest = parseManifest(JSON.parse(manifestFor("a", 1)));
-    if (!manifest) throw new Error("fixture failed to parse");
-    for (const [status, reason] of [
-      [409, "conflict"],
-      [403, "forbidden"],
-      [500, "unavailable"],
-    ] as const) {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response("", { status })),
-      );
-      expect(await registerSolution(manifest)).toEqual({ ok: false, reason });
-    }
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ revision: 4, status: "active" }), {
-            status: 200,
-          }),
-      ),
-    );
-    expect(await unregisterSolution("a")).toMatchObject({
-      ok: true,
-      revision: 4,
-    });
-  });
+
 });
 
 describe("surfacesProjection for a solution served through the host", () => {

@@ -8,7 +8,7 @@
 # An earlier version of that gate watched only `moduleGrant`, so a function
 # reading `declaredModules()` directly bypassed it and the gate was, in a
 # reviewer's words, green about a NAME. Widening it to the registry read itself
-# surfaced these thirteen. They are NOT all the same problem, and the file says
+# surfaced these paths. They are NOT all the same problem, and the file says
 # which is which rather than implying one disposition:
 #
 # A. CAPABILITY DECISIONS that must be routed through
@@ -38,6 +38,5 @@ source_delegation.go:sourceDelegationShape
 #    are here rather than silently excluded by name inside the gate, because
 #    excluding them there would be the gate's author deciding what counts.
 service.go:ModulePrincipals
-principals.go:modulePrincipalsActingIn
 layered_access.go:ListCollectionAccess
 module_capabilities.go:ModuleContentResources

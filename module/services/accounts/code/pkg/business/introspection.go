@@ -272,8 +272,6 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"SSOAdminService/GetSSO":                                       "Read org SSO state.",
 	"SSOAdminService/StartSetup":                                   "Mint WorkOS portal link.",
 	"ClientRegistryService/ListRegisteredClients":                  "Read the declared first-party clients the gateway resolves origins from.",
-	"SolutionRegistryService/PutSolutionRegistration":              "Write or renew one half of a solution's durable runtime registration.",
-	"SolutionRegistryService/DeleteSolutionRegistration":           "Deregister a solution and leave a tombstone that blocks resurrection.",
 	"SolutionRegistryService/ListSolutionRegistrations":            "Read the solution registry snapshot a replica rebuilds its cache from.",
 	"SolutionRegistryService/ListSolutionHostBindings":             "Read the declared solution bindings: desired, applied and why they differ.",
 	"TeamService/AddMember":                                        "Add a user to a team.",

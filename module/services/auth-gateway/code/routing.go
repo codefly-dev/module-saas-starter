@@ -221,61 +221,6 @@ func (m *RouteMatcher) RequiredArtifactUpstreams() []routeArtifactUpstream {
 	return result
 }
 
-// ReservedV1Prefixes returns the set of `/v1/<prefix>` first segments owned by
-// the loaded catalog (generated + explicit extensions). Runtime module
-// federation must never register one of these prefixes: the catalog is the
-// authority for its own surface, and a colliding registration would be a route
-// the matcher can never reach (catalog wins) — so it is rejected at
-// registration rather than silently ignored.
-func (m *RouteMatcher) ReservedV1Prefixes() map[string]struct{} {
-	reserved := make(map[string]struct{})
-	collect := func(path string) {
-		if prefix, ok := v1Prefix(path); ok {
-			reserved[prefix] = struct{}{}
-		}
-	}
-	for _, routes := range m.restRoutes {
-		for _, route := range routes {
-			collect(route.entry.Path)
-		}
-	}
-	for _, entry := range m.connectRoutes {
-		collect(entry.Path)
-	}
-	return reserved
-}
-
-// v1Prefix extracts the `<prefix>` from a `/v1/<prefix>/...` (or `/v1/<prefix>`)
-// path. It reports false for any path not under /v1/ or with an empty prefix.
-//
-// A custom-verb route ends its first segment with `:<verb>`
-// (`/v1/permissions:check`, `/v1/work-contexts:renew`), and the verb is not part
-// of the prefix. Splitting only on `/` made `permissions:check` the "prefix" of
-// that route, which left the real prefix `permissions` absent from
-// ReservedV1Prefixes: a runtime module could claim a namespace the catalog owns,
-// which is exactly what the reservation exists to refuse. It also made the
-// federation lookup on the other caller compare a verb-suffixed segment against
-// registered prefixes, so `/v1/<module>:<verb>` could never reach a registered
-// module even when that module owned the prefix.
-func v1Prefix(path string) (string, bool) {
-	const root = "/v1/"
-	if !strings.HasPrefix(path, root) {
-		return "", false
-	}
-	rest := path[len(root):]
-	prefix := rest
-	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
-		prefix = rest[:idx]
-	}
-	if idx := strings.IndexByte(prefix, ':'); idx >= 0 {
-		prefix = prefix[:idx]
-	}
-	if prefix == "" {
-		return "", false
-	}
-	return prefix, true
-}
-
 // MatchREST looks up a REST route by HTTP method and path.
 func (m *RouteMatcher) MatchREST(method, path string) *RouteEntry {
 	method = strings.ToUpper(method)

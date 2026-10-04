@@ -26,8 +26,8 @@ import (
 // nothing while reading as protection. The correspondence spans a Go-authored
 // binding and TypeScript route modules, so it is checked at the text level.
 const (
-	moduleManifestFile  = "module.codefly.yaml"
-	internalCallGate    = "isTrustedInternalCall"
+	moduleManifestFile = "module.codefly.yaml"
+	internalCallGate   = "isTrustedInternalCall"
 	// internalRouteExemption is how an author says a gated route is
 	// deliberately not mesh-denied. Absence from internal-http-routes otherwise
 	// means both "not internal" and "forgotten", which is the silence this gate
@@ -44,16 +44,9 @@ const (
 	internalTokenModule = "src/lib/internal-token.ts"
 )
 
-// internalRouteGates are the checks that mark a route as carrying authority the
-// public front door does not grant, each mapped to the module that defines it.
-// There is more than one: registration moved from the shared cluster-internal
-// token to a signed, solution-bound credential, and a check keyed to a single
-// function name read that route as having stopped being internal — while the
-// binding still declared it and the mesh still denied it. What makes a route
-// internal is that it verifies a credential, not which credential it verifies.
+// internalRouteGates identify the credential checks on cluster-internal routes.
 var internalRouteGates = map[string]string{
-	internalCallGate:             internalTokenModule,
-	"verifySolutionRegistration": "src/solutions/registration-authority.ts",
+	internalCallGate: internalTokenModule,
 }
 
 // nextRouteHandlerMethods is the set of exported names Next.js serves as route

@@ -319,7 +319,6 @@ const (
 	// A composed module notified a tenant's administrators (NotifyOrgAdmins).
 	EventModuleOrgAdminsNotified     EventType = "saas.module.org_admins_notified"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
-	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
 	// EventSolutionHostBindingApplied records that this host reconciled a
 	// declared generation (issue #952). It is emitted by the reconcile pass, not
@@ -578,7 +577,6 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
 		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}), 2),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
-	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over")),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventSolutionHostBindingApplied, CategoryAccess,
 		"The host reconciled a declared SolutionHostBinding generation.",
