@@ -42,6 +42,9 @@ func TestGateway_WorkContextMint_StampsTheVerifiedSolution(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "audit", apiFake.lastHeaders.Get(solutionIdentityHeader))
+	// The publisher travels with the id, from the same claims: accounts checks
+	// it against the publisher that owns the registration.
+	require.Equal(t, "solution:audit", apiFake.lastHeaders.Get(solutionPublisherHeader))
 	// The credential itself never reaches accounts: it proves the identity here
 	// and the header is what accounts reads.
 	require.Empty(t, apiFake.lastHeaders.Get(solutionRegistrationHeader))
@@ -67,12 +70,14 @@ func TestGateway_WorkContextMint_StripsACallerAssertedSolution(t *testing.T) {
 
 	req := mintRequest(t, priv)
 	req.Header.Set(solutionIdentityHeader, "audit")
+	req.Header.Set(solutionPublisherHeader, "solution:audit")
 	req.Header.Set("Grpc-Metadata-X-Codefly-Solution-Id", "audit")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Empty(t, apiFake.lastHeaders.Get(solutionIdentityHeader))
+	require.Empty(t, apiFake.lastHeaders.Get(solutionPublisherHeader))
 	requireNoGRPCMetadataHeaders(t, apiFake.lastHeaders)
 }
 
@@ -86,11 +91,13 @@ func TestGateway_WorkContextMint_CredentialDecidesTheSolution(t *testing.T) {
 	req.Header.Set(solutionRegistrationHeader,
 		signSolutionRegistration(t, "example-b", "solution:example-b"))
 	req.Header.Set(solutionIdentityHeader, "example-a")
+	req.Header.Set(solutionPublisherHeader, "solution:example-a")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "example-b", apiFake.lastHeaders.Get(solutionIdentityHeader))
+	require.Equal(t, "solution:example-b", apiFake.lastHeaders.Get(solutionPublisherHeader))
 }
 
 // A presented credential that does not verify is refused rather than treated as
@@ -105,6 +112,7 @@ func TestGateway_WorkContextMint_RefusesAnUnverifiableCredential(t *testing.T) {
 		"wrong audience":   signValidToken(t, priv),
 		"empty solution":   signSolutionRegistration(t, "", "solution:audit"),
 		"invalid solution": signSolutionRegistration(t, "Not A Solution", "solution:audit"),
+		"no publisher":     signSolutionRegistration(t, "audit", ""),
 	} {
 		t.Run(name, func(t *testing.T) {
 			req := mintRequest(t, priv)
@@ -130,36 +138,32 @@ func TestGateway_WorkContextMint_WithoutACredentialIsUnchanged(t *testing.T) {
 	require.Empty(t, apiFake.lastHeaders.Get(solutionIdentityHeader))
 }
 
-// The half that mints learns its boundary from its own registration, and
-// nothing else does: not the frontend half, not a deregistration, and not the
-// registry snapshot every replica and the host frontend read.
-func TestGateway_SolutionRegistration_EchoesTheBoundaryToTheMintingHalfOnly(t *testing.T) {
+// A registration answer carries NO boundary, to either half, and neither does
+// the registry snapshot. A solution never needs one — accounts derives and
+// seals it from the credential the solution already presents — so echoing it
+// would only widen who can see a value that is now stable for the life of the
+// registration. The accounts half of this promise is
+// TestSolutionRegistrationResponsesCarryNoRuntimeBoundary.
+func TestGateway_SolutionRegistration_EchoesNoBoundary(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 
 	srv := httptest.NewServer(&fakeUpstream{body: "solution-response"})
 	t.Cleanup(srv.Close)
 
-	frontend := postSolutionRegistration(t, gw, "/solutions/_frontend",
-		`{"id":"audit","manifest":"{\"id\":\"audit\"}"}`, http.StatusOK)
-	require.NotContains(t, frontend, "runtimeBoundary",
-		"the frontend half does not mint, so it is not told the boundary")
-
-	backend := postSolutionRegistration(t, gw, "/solutions/_register",
-		`{"id":"audit","upstream":"`+srv.URL+`"}`, http.StatusOK)
-	require.Equal(t, "boundary-audit", backend["runtimeBoundary"])
-
-	// A renewal is the same registration, so it reports the same boundary: this
-	// is how a restarted backend recovers it without the host ever listing one.
-	renewed := postSolutionRegistration(t, gw, "/solutions/_register",
-		`{"id":"audit","upstream":"`+srv.URL+`"}`, http.StatusOK)
-	require.Equal(t, "boundary-audit", renewed["runtimeBoundary"])
+	for name, call := range map[string][2]string{
+		"the frontend half": {"/solutions/_frontend", `{"id":"audit","manifest":"{\"id\":\"audit\"}"}`},
+		"the backend half":  {"/solutions/_register", `{"id":"audit","upstream":"` + srv.URL + `"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			answer := postSolutionRegistration(t, gw, call[0], call[1], http.StatusOK)
+			require.NotContains(t, answer, "runtimeBoundary")
+		})
+	}
 
 	snapshot := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
 	snapshot.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, snapshot)
 	require.Equal(t, http.StatusOK, w.Code)
-	require.NotContains(t, w.Body.String(), "boundary-audit",
-		"the registry snapshot must never carry a boundary")
-	require.NotContains(t, strings.ToLower(w.Body.String()), "runtimeboundary")
+	require.NotContains(t, strings.ToLower(w.Body.String()), "boundary")
 }

@@ -95,17 +95,7 @@ func (s *SolutionRegistryServer) PutSolutionRegistration(
 	if err != nil {
 		return nil, solutionRegistryError(err)
 	}
-	out := solutionRegistrationProto(record)
-	// The runtime boundary leaves this service on exactly one response: the
-	// backend half's own write (issue #1015). That half is registered by the
-	// solution's backend against its own solution-bound credential, and the
-	// backend is the only thing that mints — so it is the one caller that needs
-	// the boundary and the one caller proved to be that solution. The frontend
-	// half does not mint, so it is not told; no listing carries it at all.
-	if write.Backend != nil {
-		out.RuntimeBoundary = record.RuntimeBoundary
-	}
-	return out, nil
+	return solutionRegistrationProto(record), nil
 }
 
 func (s *SolutionRegistryServer) DeleteSolutionRegistration(
@@ -153,11 +143,18 @@ var solutionRegistrationStatusProto = map[business.SolutionRegistrationStatus]ge
 // clock as it serializes, so a lease that lapsed since the row was written is
 // reported expired rather than active.
 //
-// It deliberately never sets RuntimeBoundary. Every read of the registry goes
-// through here — including the whole-registry snapshot the gateway and the
-// frontend cache — and a consumer holding every solution's boundary could mint
-// for runs that are not its own. The one response that carries it sets it at
-// the call site, where which solution authenticated is known.
+// It deliberately never sets RuntimeBoundary, and NO path here ever does
+// (issue #1015). Every read of the registry goes through this one function —
+// the whole-registry snapshot the gateway and the frontend cache, a
+// deregistration, and a registrant's own write alike — and the seed behind that
+// boundary is the only thing standing between one solution's runs and another's
+// now that the derived boundary is stable for the life of the registration.
+// A solution does not need it: accounts derives and seals the boundary from the
+// credential the solution already presents, so nothing above this service
+// reads, sends or stores one. The field stays on the message so that
+// TestSolutionRegistrationResponsesCarryNoRuntimeBoundary can hold every
+// response to that, and a change that starts populating it fails rather than
+// ships.
 func solutionRegistrationProto(record *business.SolutionRegistration) *gen.SolutionRegistration {
 	out := &gen.SolutionRegistration{
 		SolutionId: record.SolutionID,

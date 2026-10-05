@@ -422,7 +422,10 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
 	if solution := firstMetadataValue(md, strings.ToLower(solutionIdentityHeader)); solution != "" {
-		if ctx, err = auth.WithVerifiedSolution(ctx, solution); err != nil {
+		ctx, err = auth.WithVerifiedSolution(
+			ctx, solution, firstMetadataValue(md, strings.ToLower(solutionPublisherHeader)),
+		)
+		if err != nil {
 			return ctx, err
 		}
 	}

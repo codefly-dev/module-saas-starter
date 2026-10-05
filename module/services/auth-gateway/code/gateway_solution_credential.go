@@ -39,13 +39,21 @@ const solutionServicePrefix = "solution:"
 // solutionRegistrationHeader carries the signed per-solution registration token.
 const solutionRegistrationHeader = "X-Codefly-Solution-Registration"
 
-// solutionIdentityHeader is this gateway's own assertion of which registered
-// solution a request mints a Work Context for (issue #1015). It is stamped only
-// from a verified solution-registration credential, only on the mint procedure,
-// and only beside the gateway credential accounts believes; it is in
-// untrustedAuthHeaders, so any inbound spelling of it is stripped first. It is
+// solutionIdentityHeader and solutionPublisherHeader are this gateway's own
+// assertion of which registered solution a request mints a Work Context for,
+// and of the publisher its credential names (issue #1015). Both are stamped
+// only from a verified solution-registration credential, only on the mint
+// procedure, and only beside the gateway credential accounts believes; both are
+// in untrustedAuthHeaders, so any inbound spelling is stripped first. They are
 // lowercase because that is the form both the strip set and gRPC metadata use.
-const solutionIdentityHeader = "x-codefly-solution-id"
+//
+// The publisher travels with the id because accounts checks it against the
+// publisher of record: a secret re-provisioned to a different publisher must
+// not mint the boundary of a registration it cannot write.
+const (
+	solutionIdentityHeader  = "x-codefly-solution-id"
+	solutionPublisherHeader = "x-codefly-solution-publisher"
+)
 
 // workContextMintProcedure is the Work Context mint. It is the only procedure
 // outside the registration surface on which a solution's registration
@@ -315,20 +323,22 @@ func (g *Gateway) authorizeSolutionRegistration(w http.ResponseWriter, r *http.R
 // scope set, so burning it would force a fresh credential exchange — an audited
 // mint on accounts — several times per page. The credential's five-minute life
 // is the bound here.
-func (g *Gateway) verifiedSolutionMint(r *http.Request, entry *RouteEntry) (string, bool) {
+func (g *Gateway) verifiedSolutionMint(
+	r *http.Request, entry *RouteEntry,
+) (solution, publisher string, refused bool) {
 	if entry == nil || entry.Procedure != workContextMintProcedure {
-		return "", false
+		return "", "", false
 	}
 	presented := r.Header.Get(solutionRegistrationHeader)
 	if presented == "" {
-		return "", false
+		return "", "", false
 	}
 	if g.authz == nil {
-		return "", true
+		return "", "", true
 	}
 	claims, ok := g.authz.verifySolutionRegistration(r.Context(), presented)
-	if !ok || !solutionIDPattern.MatchString(claims.Solution) {
-		return "", true
+	if !ok || !solutionIDPattern.MatchString(claims.Solution) || claims.Subject == "" {
+		return "", "", true
 	}
-	return claims.Solution, false
+	return claims.Solution, claims.Subject, false
 }

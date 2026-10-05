@@ -261,7 +261,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Which registered solution is minting a Work Context, read BEFORE the
 	// strip below removes the credential it is proved from. A refused
 	// credential never becomes an ordinary mint (verifiedSolutionMint).
-	solution, solutionRefused := g.verifiedSolutionMint(r, entry)
+	solution, solutionPublisher, solutionRefused := g.verifiedSolutionMint(r, entry)
 	if solutionRefused {
 		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_solution_registration_credential", r.Method, r.URL.Path)
 		httpError(w, http.StatusUnauthorized, "unauthorized")
@@ -353,6 +353,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// identity field is refused by accounts as ambiguous.
 		if solution != "" {
 			r.Header.Set(solutionIdentityHeader, solution)
+			r.Header.Set(solutionPublisherHeader, solutionPublisher)
 		}
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
@@ -671,10 +672,12 @@ var untrustedAuthHeaders = []string{
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
 	// This gateway's assertion of which registered solution is minting a Work
-	// Context. It selects the runtime boundary accounts seals, so a caller that
-	// could set it would mint under another solution's boundary; it is stripped
-	// here and restamped only from a verified solution credential.
+	// Context, and of its publisher. They select the runtime boundary accounts
+	// seals, so a caller that could set them would mint under another solution's
+	// boundary; both are stripped here and restamped only from a verified
+	// solution credential.
 	solutionIdentityHeader,
+	solutionPublisherHeader,
 	clientIDHeader,
 }
 

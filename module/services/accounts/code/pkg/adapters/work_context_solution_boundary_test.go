@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	accountsauth "accounts/pkg/auth"
@@ -34,9 +36,22 @@ import (
 const (
 	boundarySolutionA = "example-solution-a"
 	boundarySolutionB = "example-solution-b"
-	boundaryValueA    = "019f6c01-aaaa-7aaa-8aaa-aaaaaaaaaa01"
-	boundaryValueB    = "019f6c01-bbbb-7bbb-8bbb-bbbbbbbbbb02"
+	boundarySeedA     = "019f6c01-aaaa-7aaa-8aaa-aaaaaaaaaa01"
+	boundarySeedB     = "019f6c01-bbbb-7bbb-8bbb-bbbbbbbbbb02"
+	boundaryPublisher = "solution:example"
+	// A second organization, to show one tenant's boundary is not another's.
+	boundaryOtherOrg = "019f6bf7-5b4b-74e5-8c17-092259bb1672"
 )
+
+// derivedBoundary is what the host seals for one solution in one organization.
+// The test derives it the same way the mint does rather than hard-coding a
+// digest, so the assertion is about the rule and not about today's output.
+func derivedBoundary(t *testing.T, seed, orgID string) string {
+	t.Helper()
+	boundary, err := business.SolutionRuntimeBoundary(seed, orgID)
+	require.NoError(t, err)
+	return boundary
+}
 
 // solutionBoundaryAuthorityFake is the renewal authority plus the registry read
 // the mint makes. It records every lookup so a test can prove which solution id
@@ -44,23 +59,48 @@ const (
 // from the verified credential and from nowhere else.
 type solutionBoundaryAuthorityFake struct {
 	workContextAuthorityFake
-	boundaries map[string]string
-	errs       map[string]error
-	asked      []string
+	seeds          map[string]string
+	errs           map[string]error
+	publisher      string
+	backendStopped bool
+	seedsErr       error
+	asked          []string
+	seedsAsked     int
 }
 
-func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundary(
+func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundarySeed(
 	_ context.Context, solutionID string,
-) (string, error) {
+) (business.SolutionBoundarySeed, error) {
 	f.asked = append(f.asked, solutionID)
 	if err, ok := f.errs[solutionID]; ok {
-		return "", err
+		return business.SolutionBoundarySeed{}, err
 	}
-	boundary, ok := f.boundaries[solutionID]
+	seed, ok := f.seeds[solutionID]
 	if !ok {
-		return "", business.ErrSolutionRegistrationNotFound
+		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
 	}
-	return boundary, nil
+	return business.SolutionBoundarySeed{
+		Seed:           seed,
+		Publisher:      f.publisher,
+		BackendServing: !f.backendStopped,
+	}, nil
+}
+
+// SolutionRuntimeBoundarySeeds answers the collision check. It returns every
+// seed, as the relation does — tombstones included — so a test can prove an
+// ordinary mint cannot name one.
+func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundarySeeds(
+	_ context.Context,
+) ([]string, error) {
+	f.seedsAsked++
+	if f.seedsErr != nil {
+		return nil, f.seedsErr
+	}
+	out := make([]string, 0, len(f.seeds))
+	for _, seed := range f.seeds {
+		out = append(out, seed)
+	}
+	return out, nil
 }
 
 func newSolutionBoundaryServer(t *testing.T) (*WorkContextAuthorityServer, *solutionBoundaryAuthorityFake) {
@@ -71,11 +111,12 @@ func newSolutionBoundaryServer(t *testing.T) (*WorkContextAuthorityServer, *solu
 		workContextAuthorityFake: workContextAuthorityFake{
 			facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 12},
 		},
-		boundaries: map[string]string{
-			boundarySolutionA: boundaryValueA,
-			boundarySolutionB: boundaryValueB,
+		seeds: map[string]string{
+			boundarySolutionA: boundarySeedA,
+			boundarySolutionB: boundarySeedB,
 		},
-		errs: map[string]error{},
+		errs:      map[string]error{},
+		publisher: boundaryPublisher,
 	}
 	server := &WorkContextAuthorityServer{}
 	server.Configure(WorkContextAuthorityConfiguration{
@@ -145,7 +186,7 @@ func boundaryOf(
 func TestSolutionScopedMintCarriesTheSameBoundaryOnEveryMint(t *testing.T) {
 	solutionBoundaryService(t)
 	server, authority := newSolutionBoundaryServer(t)
-	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA)
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
 	require.NoError(t, err)
 
 	first, err := server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
@@ -155,11 +196,14 @@ func TestSolutionScopedMintCarriesTheSameBoundaryOnEveryMint(t *testing.T) {
 	otherAudience, err := server.StartTask(ctx, boundaryMintRequest("documents"))
 	require.NoError(t, err)
 
-	require.Equal(t, boundaryValueA, boundaryOf(t, server, "runtime.tasks", first))
-	require.Equal(t, boundaryValueA, boundaryOf(t, server, "runtime.tasks", second),
+	boundary := derivedBoundary(t, boundarySeedA, renewOrgID)
+	require.Equal(t, boundary, boundaryOf(t, server, "runtime.tasks", first))
+	require.Equal(t, boundary, boundaryOf(t, server, "runtime.tasks", second),
 		"a renewed context for the same solution must carry the same boundary")
-	require.Equal(t, boundaryValueA, boundaryOf(t, server, "documents", otherAudience),
+	require.Equal(t, boundary, boundaryOf(t, server, "documents", otherAudience),
 		"a mint for another audience is still the same solution's boundary")
+	require.NotEqual(t, boundarySeedA, boundary,
+		"the sealed boundary is derived from the seed, never the seed itself")
 	require.Equal(t,
 		[]string{boundarySolutionA, boundarySolutionA, boundarySolutionA},
 		authority.asked,
@@ -172,27 +216,29 @@ func TestSolutionScopedMintCarriesTheSameBoundaryOnEveryMint(t *testing.T) {
 func TestSolutionScopedMintCannotReachAnotherSolutionsBoundary(t *testing.T) {
 	solutionBoundaryService(t)
 	server, authority := newSolutionBoundaryServer(t)
-	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionB)
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionB, boundaryPublisher)
 	require.NoError(t, err)
 
 	// B asks with A's boundary in every field a caller controls on this RPC: the
 	// Task it would have named, the Session it roots in, and the workspace and
 	// project attribution. None of them reaches the boundary.
 	request := boundaryMintRequest("runtime.tasks")
-	workspace, project := boundaryValueA, boundaryValueA
+	workspace, project := derivedBoundary(t, boundarySeedA, renewOrgID), boundarySeedA
 	request.WorkspaceId, request.ProjectId = &workspace, &project
 
 	issued, err := server.StartTask(ctx, request)
 	require.NoError(t, err)
-	require.Equal(t, boundaryValueB, boundaryOf(t, server, "runtime.tasks", issued))
-	require.NotEqual(t, boundaryValueA, boundaryOf(t, server, "runtime.tasks", issued))
+	require.Equal(t, derivedBoundary(t, boundarySeedB, renewOrgID),
+		boundaryOf(t, server, "runtime.tasks", issued))
+	require.NotEqual(t, derivedBoundary(t, boundarySeedA, renewOrgID),
+		boundaryOf(t, server, "runtime.tasks", issued))
 	require.Equal(t, []string{boundarySolutionB}, authority.asked)
 
 	// And naming A's boundary as the task_id is refused outright rather than
 	// quietly replaced, so a solution reaching for another's gets an error and
 	// not a capability it might mistake for one.
 	request = boundaryMintRequest("runtime.tasks")
-	request.TaskId = boundaryValueA
+	request.TaskId = derivedBoundary(t, boundarySeedA, renewOrgID)
 	_, err = server.StartTask(ctx, request)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
@@ -201,7 +247,7 @@ func TestSolutionScopedMintCannotReachAnotherSolutionsBoundary(t *testing.T) {
 func TestSolutionScopedMintRefusesACallerSuppliedTaskID(t *testing.T) {
 	solutionBoundaryService(t)
 	server, _ := newSolutionBoundaryServer(t)
-	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA)
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
 	require.NoError(t, err)
 
 	request := boundaryMintRequest("runtime.tasks")
@@ -219,15 +265,15 @@ func TestSolutionScopedMintRefusesAnUnregisteredOrRemovedSolution(t *testing.T) 
 	solutionBoundaryService(t)
 	server, authority := newSolutionBoundaryServer(t)
 
-	delete(authority.boundaries, boundarySolutionA)
-	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA)
+	delete(authority.seeds, boundarySolutionA)
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
 	require.NoError(t, err)
 	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Contains(t, status.Convert(err).Message(), "not registered")
 
 	authority.errs[boundarySolutionB] = business.ErrSolutionRegistrationTombstoned
-	ctx, err = accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionB)
+	ctx, err = accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionB, boundaryPublisher)
 	require.NoError(t, err)
 	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
@@ -242,14 +288,15 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 	solutionBoundaryService(t)
 	server, authority := newSolutionBoundaryServer(t)
 
-	t.Run("a_named_task_is_the_boundary", func(t *testing.T) {
+	t.Run("a_task_that_is_nobody_else_s_boundary_is_the_boundary", func(t *testing.T) {
 		request := boundaryMintRequest("tool.test")
 		request.TaskId = renewTaskID
 
 		issued, err := server.StartTask(boundaryCaller(), request)
 		require.NoError(t, err)
 		require.Equal(t, renewTaskID, boundaryOf(t, server, "tool.test", issued))
-		require.Empty(t, authority.asked, "an ordinary mint never reads the registry")
+		require.Empty(t, authority.asked,
+			"an ordinary mint never resolves a solution's own registration")
 	})
 
 	t.Run("no_task_and_no_solution_is_refused", func(t *testing.T) {
@@ -258,10 +305,11 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 		require.Contains(t, status.Convert(err).Message(), "task_id is required")
 	})
 
-	// A module mint draws nothing from the request and nothing from the
-	// registry, so a verified solution in the context must not reach it: each of
-	// these keeps generating its own fresh Task, as it always has.
-	t.Run("module_mints_ignore_a_verified_solution", func(t *testing.T) {
+	// A module mint takes no context at all — StartModuleTask and
+	// StartModuleOperationTask are called with an authority struct, so there is
+	// nothing for a verified solution to reach. What is worth pinning is that
+	// each still draws its own fresh Task and never a solution's boundary.
+	t.Run("module_mints_draw_their_own_fresh_task", func(t *testing.T) {
 		_, moduleFirst, err := server.StartModuleTask(business.ModuleWorkContextAuthority{
 			Tenant:      renewOrgID,
 			PrincipalID: renewOwnerID,
@@ -273,7 +321,7 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotEqual(t, moduleFirst.GetTaskId(), moduleSecond.GetTaskId())
-		require.NotEqual(t, boundaryValueA, moduleFirst.GetTaskId())
+		require.NotEqual(t, derivedBoundary(t, boundarySeedA, renewOrgID), moduleFirst.GetTaskId())
 
 		operation := business.ModuleOperationContextAuthority{
 			ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
@@ -292,7 +340,7 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 		_, operationSecond, err := server.StartModuleOperationTask(operation)
 		require.NoError(t, err)
 		require.NotEqual(t, operationFirst.GetTaskId(), operationSecond.GetTaskId())
-		require.NotEqual(t, boundaryValueA, operationFirst.GetTaskId())
+		require.NotEqual(t, derivedBoundary(t, boundarySeedA, renewOrgID), operationFirst.GetTaskId())
 		require.Empty(t, authority.asked)
 	})
 }
@@ -308,12 +356,13 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 
 	trustedConnect, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
 		context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", http.Header{
-			"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
-			"X-Credential-Kind":       []string{credentialKindSession},
-			"X-Scopes":                []string{""},
-			"X-User-Id":               []string{renewActorID},
-			"X-Org-Id":                []string{renewOrgID},
-			"X-Codefly-Solution-Id":   []string{boundarySolutionA},
+			"X-Codefly-Gateway-Token":      []string{"test-gateway-token"},
+			"X-Credential-Kind":            []string{credentialKindSession},
+			"X-Scopes":                     []string{""},
+			"X-User-Id":                    []string{renewActorID},
+			"X-Org-Id":                     []string{renewOrgID},
+			"X-Codefly-Solution-Id":        []string{boundarySolutionA},
+			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
 		})
 	require.NoError(t, err)
 
@@ -325,6 +374,7 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 			"x-user-id", renewActorID,
 			"x-org-id", renewOrgID,
 			"x-codefly-solution-id", boundarySolutionA,
+			"x-codefly-solution-publisher", boundaryPublisher,
 		)), "/saas.accounts.v1.WorkContextService/StartTask")
 	require.NoError(t, err)
 
@@ -332,9 +382,10 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 		"gateway to Connect": trustedConnect,
 		"gateway to gRPC":    trustedGRPC,
 	} {
-		solution, ok := accountsauth.VerifiedSolution(ctx)
+		identity, ok := accountsauth.VerifiedSolution(ctx)
 		require.True(t, ok, name)
-		require.Equal(t, boundarySolutionA, solution, name)
+		require.Equal(t, boundarySolutionA, identity.SolutionID, name)
+		require.Equal(t, boundaryPublisher, identity.Publisher, name)
 	}
 
 	minter := func() accountsauth.JWTMinter {
@@ -345,8 +396,9 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 	}
 	forgedConnect, err := (&connectPolicyInterceptor{getMinter: minter}).authorize(
 		context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", http.Header{
-			"Authorization":         []string{"Bearer any"},
-			"X-Codefly-Solution-Id": []string{boundarySolutionA},
+			"Authorization":                []string{"Bearer any"},
+			"X-Codefly-Solution-Id":        []string{boundarySolutionA},
+			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
 		})
 	require.NoError(t, err)
 	_, ok := accountsauth.VerifiedSolution(forgedConnect)
@@ -356,6 +408,7 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 		metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"authorization", "Bearer any",
 			"x-codefly-solution-id", boundarySolutionA,
+			"x-codefly-solution-publisher", boundaryPublisher,
 		)), "/saas.accounts.v1.WorkContextService/StartTask")
 	require.NoError(t, err)
 	_, ok = accountsauth.VerifiedSolution(forgedGRPC)
@@ -363,13 +416,188 @@ func TestForwardedSolutionIdentityIsOnlyTrustedBehindTheGateway(t *testing.T) {
 
 	// A trusted forwarder's value that is not a catalog identity is refused
 	// rather than dropped: minting with it would seal a boundary nobody owns.
-	_, err = (&connectPolicyInterceptor{getMinter: nil}).authorize(
-		context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", http.Header{
-			"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
-			"X-Credential-Kind":       []string{credentialKindSession},
-			"X-Scopes":                []string{""},
-			"X-User-Id":               []string{renewActorID},
-			"X-Codefly-Solution-Id":   []string{"Not A Solution"},
+	// So is an id with no publisher — the gateway stamps both from the same
+	// claims, so an assertion carrying one lost half of itself, and admitting it
+	// would skip the ownership check entirely.
+	for name, headers := range map[string]http.Header{
+		"not a catalog identity": {
+			"X-Codefly-Solution-Id":        []string{"Not A Solution"},
+			"X-Codefly-Solution-Publisher": []string{boundaryPublisher},
+		},
+		"no publisher": {
+			"X-Codefly-Solution-Id": []string{boundarySolutionA},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			headers.Set("X-Codefly-Gateway-Token", "test-gateway-token")
+			headers.Set("X-Credential-Kind", credentialKindSession)
+			headers.Set("X-Scopes", "")
+			headers.Set("X-User-Id", renewActorID)
+			_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
+				context.Background(), "/saas.accounts.v1.WorkContextService/StartTask", headers)
+			require.Error(t, err)
 		})
-	require.Error(t, err)
+	}
+}
+
+// The hole this closes (issue #1015, BLOCKER of the PR #1017 review). A
+// boundary is not a secret a consumer keeps: the runtime's execution reads
+// report the Work Context task a run was admitted under, so one read any caller
+// is entitled to hands them a value that is now stable for the life of the
+// registration. If an ORDINARY mint would sign it, that caller — holding only a
+// viewer's bearer, which a solution's passthrough forwards to its backend —
+// could reach another solution's runs for every tenant, with no rotation.
+//
+// So a caller-named task_id that is any registered solution's boundary is
+// refused. The refusal does not name the solution: the caller learns only that
+// the value is not theirs to name. The seed itself is refused too, in case it
+// ever reaches a caller by another route.
+func TestOrdinaryMintRefusesARegisteredSolutionsBoundary(t *testing.T) {
+	solutionBoundaryService(t)
+	server, authority := newSolutionBoundaryServer(t)
+
+	for name, taskID := range map[string]string{
+		"another solution's derived boundary": derivedBoundary(t, boundarySeedA, renewOrgID),
+		"its own derived boundary":            derivedBoundary(t, boundarySeedB, renewOrgID),
+		"the seed behind one":                 boundarySeedA,
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := boundaryMintRequest("runtime.tasks")
+			request.TaskId = taskID
+
+			_, err := server.StartTask(boundaryCaller(), request)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			require.Contains(t, status.Convert(err).Message(), "registered solution's runtime boundary")
+			require.NotContains(t, status.Convert(err).Message(), boundarySolutionA)
+			require.NotContains(t, status.Convert(err).Message(), boundarySolutionB)
+		})
+	}
+
+	// The headless installation mint names its own Task the same way, so it is
+	// held to the same refusal. It is checked before the installation is
+	// resolved, so the refusal does not depend on a live installation.
+	t.Run("the headless installation mint too", func(t *testing.T) {
+		SetInternalToken("solution-boundary-test-token")
+		t.Cleanup(func() { SetInternalToken("") })
+		internal := metadata.NewIncomingContext(boundaryCaller(),
+			metadata.Pairs("x-codefly-internal-token", "solution-boundary-test-token"))
+
+		_, err := server.StartInstallationTask(internal, &gen.StartInstallationTaskRequest{
+			OrgId:          renewOrgID,
+			InstallationId: renewTaskID,
+			TaskId:         derivedBoundary(t, boundarySeedA, renewOrgID),
+			SessionId:      renewSession,
+			Audience:       "runtime.tasks",
+			AuthorityScopes: []*gen.WorkContextScope{{
+				ResourceKind: "evidence",
+				Actions:      []string{"read"},
+			}},
+		})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Contains(t, status.Convert(err).Message(), "registered solution's runtime boundary")
+	})
+
+	// A registry that cannot answer fails the mint CLOSED. Signing anyway would
+	// be the whole hole: the capability cannot be shown not to be a solution's.
+	t.Run("a registry that cannot answer refuses the mint", func(t *testing.T) {
+		authority.seedsErr = errors.New("registry unavailable")
+		t.Cleanup(func() { authority.seedsErr = nil })
+
+		request := boundaryMintRequest("tool.test")
+		request.TaskId = renewTaskID
+		_, err := server.StartTask(boundaryCaller(), request)
+		require.Equal(t, codes.Internal, status.Code(err))
+	})
+}
+
+// One tenant's boundary is not another's. A run is filed under (tenant,
+// boundary), so a single per-solution value would make every tenant of a
+// solution share one — and an org admin who can read one execution would hold
+// the boundary every other tenant's runs are filed under.
+func TestSolutionBoundaryIsPerOrganization(t *testing.T) {
+	solutionBoundaryService(t)
+	server, _ := newSolutionBoundaryServer(t)
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
+	require.NoError(t, err)
+
+	here, err := server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.NoError(t, err)
+	require.Equal(t, derivedBoundary(t, boundarySeedA, renewOrgID),
+		boundaryOf(t, server, "runtime.tasks", here))
+	require.NotEqual(t, derivedBoundary(t, boundarySeedA, boundaryOtherOrg),
+		boundaryOf(t, server, "runtime.tasks", here),
+		"two organizations of one solution must not share a boundary")
+}
+
+// The credential binds a solution id to the publisher holding its secret; the
+// registry binds the same id to the publisher that claimed it. A secret
+// re-provisioned to a different publisher can write nothing — the registry
+// refuses it — and must mint nothing either.
+func TestSolutionScopedMintRefusesAForeignPublisher(t *testing.T) {
+	solutionBoundaryService(t)
+	server, _ := newSolutionBoundaryServer(t)
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, "solution:someone-else")
+	require.NoError(t, err)
+
+	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "another publisher")
+}
+
+// The backend half is the half that mints. One whose lease lapsed is a
+// deployment that stopped renewing, and the gateway has already stopped routing
+// to it, so minting its boundary hands out authority for a solution nothing can
+// reach.
+func TestSolutionScopedMintRefusesANonServingBackend(t *testing.T) {
+	solutionBoundaryService(t)
+	server, authority := newSolutionBoundaryServer(t)
+	authority.backendStopped = true
+	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
+	require.NoError(t, err)
+
+	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "not serving")
+}
+
+// The collision check compares strings, so what spellings can reach it matters.
+//
+// uuid.Parse accepts a braced, unhyphenated or URN form of the same value, and
+// any of those would walk past a string compare of the canonical one. They do
+// not reach the handler: the schema's uuid rule on task_id admits only the
+// canonical hyphenated form, so the single variance left is case — which the
+// check folds. This pins both halves, because the guard is only safe while the
+// schema keeps rejecting the rest: relax that rule and the refusal becomes
+// bypassable with no test failing anywhere near it.
+func TestRegisteredBoundaryRefusalCoversEverySpellingThatReachesIt(t *testing.T) {
+	solutionBoundaryService(t)
+	server, _ := newSolutionBoundaryServer(t)
+	boundary := derivedBoundary(t, boundarySeedA, renewOrgID)
+
+	t.Run("an upper-case spelling is still refused", func(t *testing.T) {
+		request := boundaryMintRequest("runtime.tasks")
+		request.TaskId = strings.ToUpper(boundary)
+
+		_, err := server.StartTask(boundaryCaller(), request)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Contains(t, status.Convert(err).Message(), "registered solution's runtime boundary")
+	})
+
+	// Rejected by Validate before the handler decides anything, so the refusal
+	// above is the only one that has to recognise a boundary.
+	for name, spelling := range map[string]string{
+		"braced":       "{" + boundary + "}",
+		"unhyphenated": strings.ReplaceAll(boundary, "-", ""),
+		"urn":          "urn:uuid:" + boundary,
+	} {
+		t.Run(name+" does not reach the handler", func(t *testing.T) {
+			request := boundaryMintRequest("runtime.tasks")
+			request.TaskId = spelling
+
+			_, err := server.StartTask(boundaryCaller(), request)
+			require.Error(t, err)
+			require.NotContains(t, status.Convert(err).Message(), "registered solution's runtime boundary",
+				"the schema must refuse this spelling, so the guard never sees it")
+		})
+	}
 }

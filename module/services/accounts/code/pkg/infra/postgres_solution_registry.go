@@ -170,7 +170,8 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 	return nil
 }
 
-// SolutionRuntimeBoundary returns one registered solution's runtime boundary.
+// SolutionRuntimeBoundarySeed returns one registered solution's boundary seed,
+// the publisher of record, and whether its backend half is currently serving.
 //
 // It opens its own control-plane transaction rather than assuming one: the Work
 // Context issuer calls it on the mint path, which holds no registry transaction
@@ -178,27 +179,67 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 // a missing one ErrSolutionRegistrationNotFound — a deregistered solution must
 // not keep minting under the boundary its runs are filed against, and the two
 // cases send an operator to different places.
-func (s *PostgresStore) SolutionRuntimeBoundary(ctx context.Context, solutionID string) (string, error) {
+//
+// "Serving" is the backend half alone, not the record's derived status: the
+// backend is the half that mints, and a solution whose page has not registered
+// yet is still entitled to a boundary for the calls its own backend makes.
+func (s *PostgresStore) SolutionRuntimeBoundarySeed(
+	ctx context.Context, solutionID string,
+) (business.SolutionBoundarySeed, error) {
 	var (
-		boundary     string
+		seed         string
+		publisher    string
 		tombstonedAt *time.Time
+		backendLease *time.Time
 	)
 	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.getQueryExecutor(ctx).QueryRow(ctx,
-			`SELECT runtime_boundary, tombstoned_at
+			`SELECT runtime_boundary, publisher, tombstoned_at, backend_lease_expires_at
 			 FROM public.solution_registrations WHERE solution_id = $1`, solutionID).
-			Scan(&boundary, &tombstonedAt)
+			Scan(&seed, &publisher, &tombstonedAt, &backendLease)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", business.ErrSolutionRegistrationNotFound
+		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
 	}
 	if err != nil {
-		return "", err
+		return business.SolutionBoundarySeed{}, err
 	}
 	if tombstonedAt != nil {
-		return "", business.ErrSolutionRegistrationTombstoned
+		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationTombstoned
 	}
-	return boundary, nil
+	return business.SolutionBoundarySeed{
+		Seed:           seed,
+		Publisher:      publisher,
+		BackendServing: backendLease != nil && backendLease.After(time.Now().UTC()),
+	}, nil
+}
+
+// SolutionRuntimeBoundarySeeds returns every stored seed, tombstones included.
+// It is the input to the mint's collision check, which refuses a caller-named
+// task_id that is any solution's boundary; a removed solution's runs may still
+// be executing, so its seed still has to be protected.
+func (s *PostgresStore) SolutionRuntimeBoundarySeeds(ctx context.Context) ([]string, error) {
+	var seeds []string
+	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
+		rows, err := s.getQueryExecutor(ctx).Query(ctx,
+			`SELECT runtime_boundary FROM public.solution_registrations`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var seed string
+			if err := rows.Scan(&seed); err != nil {
+				return err
+			}
+			seeds = append(seeds, seed)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return seeds, nil
 }
 
 // ListSolutionRegistrations returns the registry snapshot ordered by solution
@@ -235,4 +276,22 @@ func (s *PostgresStore) ListSolutionRegistrations(
 		return nil, 0, err
 	}
 	return records, registryRevision, nil
+}
+
+// ForceSolutionRuntimeBoundarySeedForTest writes a seed directly, bypassing
+// every rule above it. It exists so the UNIQUE constraint on the column can be
+// proved: nothing in the service writes that column, so there is no legitimate
+// path that could ever collide, and a constraint no test can reach is a
+// constraint nobody knows still exists. It is never called outside a test —
+// `_ForTest` is what says so, and the control-plane call-site golden records
+// the authority it reaches.
+func (s *PostgresStore) ForceSolutionRuntimeBoundarySeedForTest(
+	ctx context.Context, solutionID, seed string,
+) error {
+	return s.WithControlPlane(ctx, func(ctx context.Context) error {
+		_, err := s.getQueryExecutor(ctx).Exec(ctx,
+			`UPDATE public.solution_registrations SET runtime_boundary = $2 WHERE solution_id = $1`,
+			solutionID, seed)
+		return err
+	})
 }

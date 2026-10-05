@@ -261,17 +261,17 @@ type SolutionRegistration struct {
 	Backend      *SolutionBackendBinding    `protobuf:"bytes,6,opt,name=backend,proto3,oneof" json:"backend,omitempty"`
 	UpdatedAt    *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	TombstonedAt *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
-	// The solution's runtime boundary: the opaque id every Work Context minted
-	// for this solution is sealed under, so a run a page admits stays reachable
-	// across the mints of one session instead of only under the context that
-	// admitted it (issue #1015).
+	// The seed a solution's runtime boundary is derived from (issue #1015).
 	//
-	// Assigned by this service when the record is created and never again — no
-	// request carries it, no write replaces it, and it survives a tombstone so a
-	// reactivated registration keeps naming the same runs. It is returned only on
-	// the record's OWN write, to the registrant that authenticated as that
-	// solution, and is cleared from every listing: a consumer that could read the
-	// whole registry could otherwise mint for someone else's runs.
+	// ALWAYS EMPTY on the wire, on every response, deliberately. The seed is
+	// assigned by this service when the record is created and never again, and it
+	// is the only input to the per-organization boundary every Work Context
+	// minted for that solution is sealed under — so it is what stands between one
+	// solution's runs and another's. No registrant needs it: accounts derives and
+	// seals the boundary from the credential the solution already presents.
+	//
+	// The field is kept rather than removed so this promise is testable: a change
+	// that starts populating it fails a test instead of shipping.
 	RuntimeBoundary string `protobuf:"bytes,9,opt,name=runtime_boundary,json=runtimeBoundary,proto3" json:"runtime_boundary,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
