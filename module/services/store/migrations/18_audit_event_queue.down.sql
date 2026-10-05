@@ -1,4 +1,22 @@
--- Removing the queue removes every event still in it. Under the default
--- (postgres) and the tee (both) nothing writes it; under a swap value, roll back
--- only once the relay has drained it.
+-- The queue holds the only copy of an event the relay has not yet delivered, so
+-- removing it removes those events. Under the default (postgres) and the tee
+-- (both) nothing writes it, and rolling back an empty queue is safe; with rows
+-- in it the rollback refuses. Restore a warehouse sink and let the relay drain
+-- the queue to depth 0 (MEASUREMENT_RUNBOOKS.md, audit-relay), then roll back.
+--
+-- The check reads as the relay's role: the queue forces row level security, and
+-- that role's policy admits every row, so the count is the real one rather than
+-- whatever the migrating session's own policies happen to show it.
+SET LOCAL ROLE app_job_worker;
+DO $$
+DECLARE
+    queued bigint;
+BEGIN
+    SELECT count(*) INTO queued FROM public.audit_event_queue;
+    IF queued > 0 THEN
+        RAISE EXCEPTION 'audit_event_queue still holds % queued audit events; refusing to drop the only copy of them. Restore a warehouse AUDIT_SINK and let the audit relay drain the queue to zero first.', queued;
+    END IF;
+END
+$$;
+RESET ROLE;
 DROP TABLE IF EXISTS public.audit_event_queue;

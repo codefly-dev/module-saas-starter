@@ -33,20 +33,81 @@ provider responses into an incident channel.
 
 ## `audit-relay`
 
+Under `AUDIT_SINK=bigquery` or `clickhouse` each audit event is a row in the
+Postgres `audit_event_queue`, written in the transaction of the change it
+records. The accounts relay delivers it to the locked archive and then the
+warehouse, and deletes the row only after both acknowledged. Delivery is
+at-least-once: a retry may duplicate a warehouse row or archive object, and
+readers deduplicate by event id.
+
 1. Read `saas.audit_queue.depth` and `saas.audit_queue.oldest_age` together.
-   An absent series means telemetry is unavailable; a zero age with zero
-   depth means the queue has drained. Do not infer a healthy relay from a
-   missing series.
+   A zero age with zero depth means the queue has drained. **An absent series
+   means the queue could not be read** (the latest read failed, or none was
+   made in the last two intervals), not that it is healthy: do not infer a
+   healthy relay from a missing series. `saas.audit_queue.snapshot_errors`
+   counts the failed reads, and the monitor runs under every `AUDIT_SINK`, so
+   the series are present whenever the service is.
 2. Check the Accounts audit relay's bounded error logs and the health of its
    declared warehouse and locked archive. Confirm the deployed `AUDIT_SINK`,
    deployment id, destination, and workload identity without printing secrets.
 3. Restore the failing destination or identity and let the relay retry the
    transactional queue. Do not delete queue rows, turn off audit emission,
-   or send around the relay. A retry may duplicate a warehouse row or archive
-   object; readers deduplicate by event id.
+   or send around the relay. Queue rows are never destroyed by the kit.
 4. Confirm depth and age return to zero, then compare source event ids with
    distinct warehouse and archive event ids for the affected interval. Check
    that service reads still enforce organization and deployment scope.
+
+### A row the warehouse refuses (`saas.audit_queue.quarantined`)
+
+One row the warehouse rejects for its own content must not hold every other
+organization's events behind it. When a batch write fails, the relay splits the
+batch and retries the halves, down to single rows. A single row is set aside only
+when the warehouse refused it alone, accepted other rows afterwards, and refused
+it again on a second try; during an outage every write fails and nothing is set
+aside. The archive is written once, whole, before any of this, so a set-aside row
+is already in the archive.
+
+A set-aside row moves, whole and with the error, into `audit_event_quarantine`
+in the same transaction that deletes the delivered rows. The relay logs each at
+error level (event id, type and queue sequence number, never the payload).
+`saas.audit_queue.quarantined` counts the rows there and the
+`audit_relay_quarantine` alert fires while it is above zero. The kit never
+deletes a quarantined row. Replaying or resolving quarantined rows is not built
+yet: until it is, read the table as the database owner (the relay's role may read
+it), fix the cause, and keep the rows.
+
+### Switching `AUDIT_SINK` back to `postgres` (or `both`)
+
+Nothing drains the queue under `postgres` or `both`, and rows left in it are not
+lost: they reach the warehouse only when a warehouse sink is restored. The
+service does not refuse to start (that would take login down). At startup it logs
+an error with the number of queued events, and the depth and age series keep
+reporting them. To roll back for good, first restore the warehouse sink and let
+the relay drain the queue to zero.
+
+Migration 18's down refuses (`audit_event_queue still holds N queued audit
+events`) while any row is queued, and migration 21's down refuses while any row
+is quarantined: rolling the schema back would drop the only copy of those events.
+Do not work around the refusal by deleting rows.
+
+### The queue is full but nothing is delivered and nothing is logged
+
+The relay hands out only rows whose writing transaction is older than every
+transaction still running. Two conditions hold the whole queue behind that gate
+without an error: depth and age rise, `snapshot_errors` stays at zero, and the
+relay logs nothing.
+
+- A write transaction left open: a stuck session, a long migration, a forgotten
+  `BEGIN`. Look for the oldest `xact_start` in `pg_stat_activity` and end that
+  transaction; the queue drains by itself behind it.
+- A logical restore into a new cluster: restored rows carry transaction ids from
+  the old cluster, which can be ahead of the new cluster's, so the gate never
+  opens for them. Compare `min(xact_id)` and `max(xact_id)` of the queue with
+  `pg_snapshot_xmin(pg_current_snapshot())`; rows whose `xact_id` is at or past
+  `pg_snapshot_xmax(pg_current_snapshot())` came from another cluster. They are
+  committed and complete, and re-stamping their `xact_id` below the new
+  cluster's horizon (an owner-level update; the relay's role cannot) releases
+  them. Nothing is lost while they wait.
 
 ## `integrations`
 

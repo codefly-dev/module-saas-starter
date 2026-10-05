@@ -593,6 +593,11 @@ func doWork(ctx context.Context) (Clean, error) {
 			return nil, err
 		}
 		service.SetAuditStore(auditStore)
+	} else {
+		// Under postgres and both nothing drains the audit queue, but it is still
+		// watched: events left in it by a warehouse sink that was switched back
+		// are reported, with their count, instead of waiting unseen.
+		auditRelayMonitor, closeAuditRelay = observeAuditQueue(ctx, auditSink.Mode, otelMetricProvider != nil)
 	}
 
 	var auditExportWorker *jobs.Worker

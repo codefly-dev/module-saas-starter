@@ -109,6 +109,22 @@
       "expression": "min_over_time(saas_audit_queue_oldest_age_seconds[5m]) > 300"
     },
     {
+      "id": "audit_relay_telemetry_gap",
+      "signal": "saas.audit_queue.snapshot_errors",
+      "condition": "the audit queue could not be read in the last 5m, or its depth series is absent: the lag alert cannot fire for a queue nobody can see",
+      "runbook": "audit-relay",
+      "expression_language": "promql",
+      "expression": "increase(saas_audit_queue_snapshot_errors_total[5m]) > 0 or absent(saas_audit_queue_depth)"
+    },
+    {
+      "id": "audit_relay_quarantine",
+      "signal": "saas.audit_queue.quarantined",
+      "condition": "the relay holds audit events the warehouse refused; nothing deletes them",
+      "runbook": "audit-relay",
+      "expression_language": "promql",
+      "expression": "max_over_time(saas_audit_queue_quarantined[10m]) > 0"
+    },
+    {
       "id": "integration_failures",
       "signal": "saas.jobs.completed",
       "condition": "webhook or email retry and dead-letter rate exceeds baseline for 15m",
