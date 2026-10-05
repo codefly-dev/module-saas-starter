@@ -34,6 +34,11 @@ func openStore(ctx context.Context, testURL string) (*infra.PostgresStore, error
 	}
 	return infra.NewPostgresStore(ctx)
 }
+
+// safeConfiguration is what a receipt may say about where the commands pointed:
+// enough to identify the warehouse, archive and deployment, and never a
+// credential. A ClickHouse store is identified by its database and cluster (the
+// DSN names a host and carries the password, and neither is reported).
 func safeConfiguration(swap *auditsink.Swap) map[string]string {
 	out := map[string]string{
 		"AUDIT_SINK": string(swap.Mode), "AUDIT_DEPLOYMENT_ID": swap.DeploymentID,
@@ -45,6 +50,8 @@ func safeConfiguration(swap *auditsink.Swap) map[string]string {
 		out["AUDIT_BIGQUERY_DATASET"] = swap.BigQuery.Dataset
 	}
 	if swap.ClickHouse != nil {
+		out["AUDIT_CLICKHOUSE_DATABASE"] = swap.ClickHouse.Database
+		out["AUDIT_CLICKHOUSE_CLUSTER"] = swap.ClickHouse.Cluster
 		out["AUDIT_EVENTS_RETENTION_DAYS"] = strconv.Itoa(int(swap.ClickHouse.EventsRetention / (24 * time.Hour)))
 	}
 	return out

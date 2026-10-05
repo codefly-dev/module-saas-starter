@@ -104,7 +104,7 @@ func (s *probeWarehouse) LatestSourceSyncEvents(_ context.Context, scope busines
 func probeReceipt(t *testing.T, o qualificationOptions, records []business.AuditRecord) QualificationReceipt {
 	t.Helper()
 	var stderr bytes.Buffer
-	_, swap, code := parse(nil, env(swapEnv), &stderr)
+	_, swap, code := parse(nil, env(swapEnv), &stderr, probeNow)
 	require.Zero(t, code)
 	return newQualificationReceipt(o, swap, records)
 }

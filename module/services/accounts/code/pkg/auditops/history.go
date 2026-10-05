@@ -3,27 +3,41 @@
 // copies the audit_events rows the deployment already holds into the store of
 // record and the locked archive — each event classified, serialized and hashed
 // exactly as the relay does a live one — and verifies the copy by reading it
-// back: every row present, every copy identical, per organization. Only with
+// back: every row present, every copy identical, per organization, and no event
+// older than the cutoff held outside the verified partitions. Only with
 // -confirm-drop, and only after this run verified every copied partition, it
-// drops the copied monthly partitions, the way retention drops them; no row is
-// ever deleted.
+// drops those monthly partitions, named one by one: the database locks them,
+// recounts each against what was verified and drops exactly them, in one
+// transaction, and the receipt names what it dropped. No row is ever deleted.
 //
 // Usage:
 //
-//	audit-history-copy [-through YYYY-MM] [-verify-only] [-confirm-drop -expected-partitions-sha256 HEX] [-json]
+//	audit-history-copy [-through YYYY-MM] [-verify-only] [-confirm-drop -expected-partitions-sha256 HEX] [-batch-size N] [-json]
 //
-// It reads the same AUDIT_* settings as the accounts service and runs only
-// under a swap value: run it with the service's own environment, after the
-// service has switched, so nothing writes audit_events any more. The
-// connection principal must be a member of app_control_plane, the authority
-// retention runs under.
+// -through names the last month copied and must be a completed month (UTC): the
+// current month and later ones are refused. It reads the same AUDIT_* settings
+// as the accounts service and runs only under a swap value: run it with the
+// service's own environment, after the service has switched, so nothing writes
+// audit_events any more. The connection principal must be a member of
+// app_control_plane, the authority retention runs under.
 //
-// It is resumable: a run reads back what the store holds before writing, so a
-// run after an interrupted one copies only what is missing. -verify-only
-// copies nothing, for a re-check once the store has caught up.
+// It is resumable: a run reads each window's rows, reads back what the store
+// holds, appends only the events missing from it, reads the window back again
+// and verifies every event, so a run after an interrupted one copies only what
+// is missing. -verify-only copies nothing, for a re-check once the store has
+// caught up.
 //
-// Exit status: 0 done; 1 failed; 2 usage; 3 verification failed, nothing
-// dropped.
+// Exit status:
+//
+//	0  done
+//	1  failed (configuration, connection, warehouse or database error)
+//	2  usage (a flag or its value is invalid)
+//	3  verification failed: an event is missing or differs, or events older
+//	   than the cutoff sit outside the verified partitions; nothing dropped
+//	4  drop refused: what was verified no longer holds, or the approval does
+//	   not match; nothing dropped
+//	5  nothing to verify: no monthly partition ends at or before the cutoff and
+//	   nothing older than it is held elsewhere; nothing claimed, nothing dropped
 package auditops
 
 import (
@@ -35,6 +49,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"accounts/pkg/auditstore/auditsink"
@@ -57,23 +72,23 @@ type options struct {
 
 // parse reads the command line and the sink settings, refusing everything a
 // run cannot start from.
-func parse(args []string, getenv func(string) string, stderr io.Writer) (options, *auditsink.Swap, int) {
+func parse(args []string, getenv func(string) string, stderr io.Writer, now time.Time) (options, *auditsink.Swap, int) {
 	fs := flag.NewFlagSet("audit-history-copy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	databaseURL := getenv("DATABASE_URL")
 	machine := fs.Bool("json", false, "emit a sanitized machine receipt")
 	capabilities := fs.Bool("capabilities-json", false, "report supported command schemas and destination without connecting")
 	expected := fs.String("expected-partitions-sha256", "", "digest from prior verification, required for drop")
-	through := fs.String("through", "", "copy only the partitions up to and including this month, YYYY-MM (default every partition)")
+	through := fs.String("through", "", "copy only the partitions up to and including this completed month (UTC), YYYY-MM (default every partition)")
 	verifyOnly := fs.Bool("verify-only", false, "copy nothing; verify what the store already holds")
 	confirmDrop := fs.Bool("confirm-drop", false, "after a verification pass, drop the copied partitions")
 	batchSize := fs.Int("batch-size", business.DefaultAuditRelayBatchSize, "events per copied batch")
 	if err := fs.Parse(args); err != nil {
-		return options{}, nil, 2
+		return options{}, nil, exitUsage
 	}
 	if fs.NArg() > 0 {
 		line(stderr, "audit-history-copy: unexpected arguments:", fs.Args())
-		return options{}, nil, 2
+		return options{}, nil, exitUsage
 	}
 	opts := options{
 		databaseURL: databaseURL,
@@ -85,30 +100,39 @@ func parse(args []string, getenv func(string) string, stderr io.Writer) (options
 		monthStart, err := time.Parse("2006-01", *through)
 		if err != nil {
 			line(stderr, "audit-history-copy: -through must be a month, YYYY-MM; got", *through)
-			return options{}, nil, 2
+			return options{}, nil, exitUsage
 		}
 		end := monthStart.AddDate(0, 1, 0)
+		if end.After(now.UTC()) {
+			line(stderr, fmt.Sprintf("audit-history-copy: -through must be a completed month (UTC); %s ends %s",
+				*through, end.Format(time.RFC3339)))
+			return options{}, nil, exitUsage
+		}
 		opts.through = &end
+	}
+	if *batchSize < 1 || *batchSize > business.MaxAuditRelayBatchSize {
+		line(stderr, fmt.Sprintf("audit-history-copy: -batch-size must be between 1 and %d; got %d", business.MaxAuditRelayBatchSize, *batchSize))
+		return options{}, nil, exitUsage
 	}
 	if *confirmDrop && (*through == "" || !*verifyOnly || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(*expected)) {
 		line(stderr, "audit-history-copy: drop requires -through YYYY-MM, -verify-only and -expected-partitions-sha256")
-		return options{}, nil, 2
+		return options{}, nil, exitUsage
 	}
 	sink, err := auditsink.Load(getenv)
 	if err != nil {
 		line(stderr, "audit-history-copy: invalid audit destination configuration")
-		return options{}, nil, 1
+		return options{}, nil, exitFailed
 	}
 	if sink.Swap == nil {
 		line(stderr, fmt.Sprintf("audit-history-copy: AUDIT_SINK is %s; the history copy runs only under a swap value, "+
 			"after the service has switched, so nothing writes audit_events any more", sink.Mode))
-		return options{}, nil, 1
+		return options{}, nil, exitFailed
 	}
 	return opts, sink.Swap, 0
 }
 
 func RunHistory(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
-	opts, swap, code := parse(args, getenv, stderr)
+	opts, swap, code := parse(args, getenv, stderr, time.Now())
 	if swap == nil {
 		return code
 	}
@@ -156,6 +180,16 @@ func RunHistory(args []string, getenv func(string) string, stdout, stderr io.Wri
 	return summarize(stdout, stderr, report, err)
 }
 
+// The exit statuses of audit-history-copy, documented in the command header and
+// in module/AUDIT_OPERATIONS.md.
+const (
+	exitFailed          = 1
+	exitUsage           = 2
+	exitUnverified      = 3
+	exitDropRefused     = 4
+	exitNothingToVerify = 5
+)
+
 // summarize prints what the run found and maps it to the exit status. Pure over
 // its inputs so the mapping is testable without a database or a warehouse.
 func summarize(stdout, stderr io.Writer, report business.AuditHistoryReport, err error) int {
@@ -180,15 +214,27 @@ func summarize(stdout, stderr io.Writer, report business.AuditHistoryReport, err
 			line(stderr, fmt.Sprintf("  %s: and %d more", partition.Partition.Name, hidden))
 		}
 	}
+	for _, table := range report.Uncovered {
+		line(stderr, fmt.Sprintf("  %s holds %d events older than %s that no verified partition covers",
+			table.Table, table.Rows, report.Cutoff.UTC().Format(time.RFC3339)))
+	}
 	switch {
 	case errors.Is(err, business.ErrAuditHistoryUnverified):
 		line(stderr, "audit-history-copy:", err)
-		return 3
+		return exitUnverified
+	case errors.Is(err, business.ErrAuditHistoryNothingToVerify):
+		line(stderr, fmt.Sprintf("audit-history-copy: nothing to verify: no audit_events partition ends at or before %s, "+
+			"and no event older than it is held elsewhere; nothing was verified or dropped", report.Cutoff.UTC().Format(time.RFC3339)))
+		return exitNothingToVerify
+	case errors.Is(err, business.ErrAuditHistoryDropRefused):
+		line(stderr, "audit-history-copy: drop refused: "+report.DropRefused+"; nothing was dropped")
+		return exitDropRefused
 	case err != nil:
 		line(stderr, "audit-history-copy: operation_failed")
-		return 1
+		return exitFailed
 	case report.Dropped > 0:
-		line(stdout, fmt.Sprintf("verified; dropped %d partitions ending at or before %s", report.Dropped, report.Cutoff.UTC().Format(time.RFC3339)))
+		line(stdout, fmt.Sprintf("verified; dropped %d partitions ending at or before %s: %s", report.Dropped,
+			report.Cutoff.UTC().Format(time.RFC3339), strings.Join(report.DroppedNames, ", ")))
 	default:
 		line(stdout, "verified")
 	}
@@ -209,7 +255,17 @@ type HistoryReceipt struct {
 	Partitions       []HistoryPartition `json:"partitions"`
 	Dropped          []string           `json:"dropped"`
 	Cutoff           time.Time          `json:"cutoff"`
-	ErrorCode        string             `json:"error_code"`
+	// Uncovered are the tables holding events older than the cutoff that no
+	// verified partition covers; any makes the run unverified.
+	Uncovered []HistoryUncovered `json:"uncovered"`
+	// DropRefused is why a confirmed drop did not happen; it names partitions
+	// and row counts only.
+	DropRefused string `json:"drop_refused"`
+	ErrorCode   string `json:"error_code"`
+}
+type HistoryUncovered struct {
+	Table string `json:"table"`
+	Rows  int64  `json:"rows"`
 }
 type HistoryPartition struct {
 	Name         string       `json:"name"`
@@ -230,17 +286,20 @@ func writeHistory(out io.Writer, opts options, swap *auditsink.Swap, report busi
 	if receipt.Dropped == nil {
 		receipt.Dropped = []string{}
 	}
+	receipt.Uncovered = []HistoryUncovered{}
+	for _, table := range report.Uncovered {
+		receipt.Uncovered = append(receipt.Uncovered, HistoryUncovered{Table: table.Table, Rows: table.Rows})
+	}
 	code := 0
-	if err != nil {
-		code = 1
-		receipt.ErrorCode = "operation_failed"
-	}
-	if errors.Is(err, business.ErrAuditHistoryUnverified) {
-		code = 3
-		receipt.ErrorCode = "verification_failed"
-	}
-	if report.DropRefused != "" {
-		receipt.ErrorCode = "drop_refused"
+	switch {
+	case errors.Is(err, business.ErrAuditHistoryUnverified):
+		code, receipt.ErrorCode = exitUnverified, "verification_failed"
+	case errors.Is(err, business.ErrAuditHistoryNothingToVerify):
+		code, receipt.ErrorCode = exitNothingToVerify, "nothing_to_verify"
+	case errors.Is(err, business.ErrAuditHistoryDropRefused):
+		code, receipt.ErrorCode, receipt.DropRefused = exitDropRefused, "drop_refused", report.DropRefused
+	case err != nil:
+		code, receipt.ErrorCode = exitFailed, "operation_failed"
 	}
 	for _, p := range report.Partitions {
 		part := HistoryPartition{Name: p.Partition.Name, From: p.Partition.From, To: p.Partition.To, Failures: p.Failures, EventsSHA256: p.EventsSHA256, Orgs: []HistoryOrg{}}
@@ -256,7 +315,7 @@ func writeHistory(out io.Writer, opts options, swap *auditsink.Swap, report busi
 		receipt.Partitions = append(receipt.Partitions, part)
 	}
 	if json.NewEncoder(out).Encode(receipt) != nil {
-		return 1
+		return exitFailed
 	}
 	return code
 }
@@ -265,5 +324,5 @@ func historyFailure(out, stderr io.Writer, opts options, swap *auditsink.Swap, c
 		return writeHistory(out, opts, swap, business.AuditHistoryReport{}, errors.New(code))
 	}
 	line(stderr, "audit-history-copy:", code)
-	return 1
+	return exitFailed
 }
