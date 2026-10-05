@@ -373,3 +373,28 @@ func TestAnOrganizationIdIsBoundInItsCanonicalForm(t *testing.T) {
 	_, err = store.LatestSourceSyncEvents(context.Background(), business.OrganizationAuditScope("org-1"), []string{"source-1"})
 	require.ErrorContains(t, err, "not a uuid", "the readable-source query refuses what the other reads refuse, as Postgres does")
 }
+
+// A time bound is a query parameter of the column's own type, whose range is
+// 1900 to 2299; the driver refuses the Go zero time outright and the server
+// has no value for a year before the range. A bound outside the range is
+// carried as the edge it clamps to: every stored value lies inside the range,
+// so every comparison against it keeps its answer.
+func TestATimeBoundOutsideTheColumnRangeIsClamped(t *testing.T) {
+	inside := time.Date(2026, 10, 3, 12, 0, 0, 123456000, time.UTC)
+	for name, tc := range map[string]struct{ at, want time.Time }{
+		"in range":    {inside, inside},
+		"zero time":   {time.Time{}, time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)},
+		"year 1000":   {time.Date(1000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)},
+		"unix epoch":  {time.Unix(0, 0), time.Unix(0, 0)},
+		"year 9999":   {time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC), time.Date(2299, 12, 31, 23, 59, 59, 999999000, time.UTC)},
+		"far future":  {time.Date(2300, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2299, 12, 31, 23, 59, 59, 999999000, time.UTC)},
+		"other zone":  {inside.In(time.FixedZone("x", 3600)), inside},
+		"column edge": {time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)},
+	} {
+		p := &sqlParams{}
+		require.Equal(t, "{p0:DateTime64(6, 'UTC')}", p.instant(tc.at), name)
+		bound := p.args[0].(driver.NamedDateValue)
+		require.False(t, bound.Value.IsZero(), "%s: the driver refuses a zero time", name)
+		require.True(t, bound.Value.Equal(tc.want), "%s: got %s, want %s", name, bound.Value, tc.want)
+	}
+}

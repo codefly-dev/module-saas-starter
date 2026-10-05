@@ -424,6 +424,73 @@ func TestServerReadsAnOrganizationOfAnySpelling(t *testing.T) {
 	}
 }
 
+// A zero or far-future bound — a Go zero time through a protobuf timestamp is
+// the year 1 — is no bound at all to Postgres; here it must read the same.
+func TestServerReadsATimeBoundOutsideTheColumnRange(t *testing.T) {
+	conn, database := serverDatabase(t)
+	ctx := context.Background()
+	store := serverStore(t, conn, database)
+	require.NoError(t, store.Ensure(ctx))
+
+	org, actor := uuid.NewString(), uuid.NewString()
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	f := &fixture{org: org}
+	f.records = []business.AuditRecord{
+		newRecord(t, org, actor, business.EventAuthLogin, "", base, business.RetentionSecurity, map[string]any{"method": "password"}),
+		newRecord(t, org, actor, business.EventDocumentRead, "doc-1", base.Add(-time.Hour), business.RetentionContent, map[string]any{"boundary": "b-1", "count": 3}),
+		newRecord(t, org, actor, business.EventDocumentRead, "doc-2", base.Add(-48*time.Hour), business.RetentionContent, map[string]any{"boundary": "b-1"}),
+	}
+	appendBatch(t, store, testDeployment, f.records...)
+
+	zero, farFuture := time.Time{}, time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
+	between := base.Add(-2 * time.Hour)
+	reads := map[string]struct {
+		from, to *time.Time
+		want     int
+	}{
+		"zero from":              {from: &zero, want: 3},
+		"far-future to":          {to: &farFuture, want: 3},
+		"both":                   {from: &zero, to: &farFuture, want: 3},
+		"zero from, real to":     {from: &zero, to: &between, want: 1},
+		"real from, far to":      {from: &between, to: &farFuture, want: 2},
+		"to before every event":  {to: &zero, want: 0},
+		"from after every event": {from: &farFuture, want: 0},
+	}
+	specs := map[string]business.AuditAggregationSpec{
+		"default": {},
+		"payload": {GroupBy: []string{"payload:boundary"}},
+	}
+	for name, tc := range reads {
+		q := business.AuditQuery{OrgID: org, From: tc.from, To: tc.to}
+		read := business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: q}
+		listed, _, err := store.ListAuditEvents(ctx, read)
+		require.NoError(t, err, name)
+		require.Len(t, listed, tc.want, name)
+		want, _ := f.referenceList(t, read)
+		require.Equal(t, want, listed, name)
+		exported, err := store.ExportAuditEvents(ctx, read)
+		require.NoError(t, err, name)
+		require.Equal(t, want, exported, name)
+		for specName, spec := range specs {
+			got, err := store.AggregateAuditEvents(ctx, read, spec)
+			require.NoError(t, err, "%s / %s", name, specName)
+			require.Equal(t, f.referenceAggregate(t, read, spec), got, "%s / %s", name, specName)
+		}
+		payload := q
+		payload.PayloadContains = map[string]any{"boundary": "b-1"}
+		read.Query = payload
+		listed, _, err = store.ListAuditEvents(ctx, read)
+		require.NoError(t, err, name)
+		want, _ = f.referenceList(t, read)
+		require.Equal(t, want, listed, name+" with a payload filter")
+	}
+
+	// The history read-back takes the same bounds.
+	copies := 0
+	require.NoError(t, store.ReadStoredAuditEvents(ctx, zero, farFuture, func(business.StoredAuditEvent) error { copies++; return nil }))
+	require.Equal(t, 3, copies)
+}
+
 // Decimal texts whose nearest double a fast parser misses: ClickHouse reads
 // each — as a JSON number and as a JSON string — to the double Postgres's
 // float8in reads, so the metrics over them run in ClickHouse and agree.

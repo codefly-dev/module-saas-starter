@@ -52,9 +52,37 @@ func (p *sqlParams) texts(values []string) string {
 	return "{" + name + ":Array(String)}"
 }
 
+// The range of the DateTime64(6, 'UTC') columns: the earliest and latest
+// instant ClickHouse can store. A time bound outside it has no value of the
+// column's type — the driver refuses the Go zero time (the year 1, which a
+// zero protobuf timestamp becomes) and the server has none before 1900 — yet
+// to Postgres it is a bound like any other.
+var (
+	columnMin = time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+	columnMax = time.Date(2299, 12, 31, 23, 59, 59, 999999000, time.UTC)
+)
+
+// clampToColumn is at, or the edge of the column's range it lies beyond.
+// Every stored value lies inside the range, so a comparison against the edge
+// answers as one against the bound itself did: a bound below the range admits
+// every row from below, and one above it admits every row from above. The
+// service evaluates the original bound again on every row it reads.
+func clampToColumn(at time.Time) time.Time {
+	switch {
+	case at.Before(columnMin):
+		return columnMin
+	case at.After(columnMax):
+		return columnMax
+	default:
+		return at
+	}
+}
+
 // instant binds a time at the microsecond precision occurred_at keeps; a finer
-// part is truncated, as Postgres truncates a bound parameter.
+// part is truncated, as Postgres truncates a bound parameter. A time outside
+// the column's range is bound as the edge it clamps to (clampToColumn).
 func (p *sqlParams) instant(at time.Time) string {
+	at = clampToColumn(at)
 	name := p.name()
 	p.args = append(p.args, clickhouse.DateNamed(name, at, clickhouse.MicroSeconds))
 	return "{" + name + ":DateTime64(6, 'UTC')}"
