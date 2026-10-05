@@ -160,6 +160,9 @@ pkg/infra/postgres_permissions.go: (*PostgresStore).CreateRole: txbind.BindReque
 pkg/infra/postgres_permissions.go: (*PostgresStore).ResolveIdentity: controlPlane.Begin
 pkg/infra/postgres_role_catalog.go: (*PostgresStore).ImportRoleCatalog: WithControlPlane
 pkg/infra/postgres_solution_audit_events.go: (*PostgresStore).GetDeclaredAuditEventType: withControlPlaneTx
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).ForceSolutionRuntimeBoundarySeedForTest: WithControlPlane
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeed: WithControlPlane
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeeds: WithControlPlane
 pkg/infra/postgres_webhook_relay.go: (*PostgresWebhookRelay).Deliver: txbind.BindWorker
 pkg/infra/postgres_webhook_secrets.go: (*PostgresStore).MigrateLegacyWebhookSecrets: WithControlPlane
 pkg/infra/scoped.go: (*Scoped).Within: WithControlPlane

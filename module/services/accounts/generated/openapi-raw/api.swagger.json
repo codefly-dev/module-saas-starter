@@ -10316,7 +10316,8 @@
           "type": "string"
         },
         "taskId": {
-          "type": "string"
+          "type": "string",
+          "description": "The runtime boundary the capability is minted under. Required on an\nordinary mint, where the caller owns the Task it names.\n\nFORBIDDEN on a solution-scoped mint. The host assigns each registered\nsolution one opaque boundary at registration and seals that one, so a\nsolution never chooses the boundary its runs are visible under and can\nnever name another solution's (issue #1015). Which of the two a request is\ndepends on the credential it carries, which no schema rule can see, so the\nrule here is only \"a UUID when present\" and the handler refuses the wrong\nshape on either path: an absent boundary on an ordinary mint, a named one\non a solution-scoped mint."
         },
         "sessionId": {
           "type": "string"

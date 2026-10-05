@@ -43,6 +43,10 @@ and exports the injected TanStack `DataTable`. It emits declarations using the
 existing package build. The host shares every exported UI subpath, including
 table, as a versioned federation singleton; the exported-subpath guard prevents
 future omissions. Generic remotes must share those same exact subpath keys.
+`@codefly-dev/ui/board` joined them at 0.12.1 on the same terms
+([#1010](https://github.com/codefly-dev/module-saas-starter/issues/1010)):
+composite rank 3, layout below it, and a declared key in the host's shared scope
+and in the behavioural contract that is checked against it.
 
 The existing `dashboard` tier also owns `MetricAreaChart`, `MetricLineChart`,
 `MetricBarChart`, metric tiles, metric state and provenance, and Sparkline.

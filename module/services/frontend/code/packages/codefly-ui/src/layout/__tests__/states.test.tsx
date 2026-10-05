@@ -32,6 +32,36 @@ describe("EmptyState", () => {
 		expect(screen.getByTestId("glyph")).toBeTruthy();
 	});
 
+	// "The card above says where this stands" points elsewhere: it is neither
+	// the explanation (description) nor something to press (children).
+	it("renders a reference after the description and before the action", () => {
+		const { container } = render(
+			<EmptyState
+				heading="No matching proposals"
+				description="No proposal matches these filters."
+				reference={
+					<>
+						The <a href="#source">source card above</a> says where this
+						stands.
+					</>
+				}
+			>
+				<button type="button">Clear filters</button>
+			</EmptyState>,
+		);
+		const order = [
+			...container.querySelectorAll(
+				"[data-slot=empty-state-description], [data-slot=empty-state-reference], button",
+			),
+		].map((element) => element.getAttribute("data-slot") ?? "action");
+		expect(order).toEqual([
+			"empty-state-description",
+			"empty-state-reference",
+			"action",
+		]);
+		expect(screen.getByRole("link", { name: "source card above" })).toBeTruthy();
+	});
+
 	it("omits the description paragraph when none is given", () => {
 		const { container } = render(<EmptyState heading="Empty" />);
 		expect(container.querySelector("p")).toBeNull();

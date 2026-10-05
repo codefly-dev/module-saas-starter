@@ -142,10 +142,21 @@ func (x *WorkContextScope) GetResourceIds() []string {
 }
 
 type StartTaskWorkContextRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	OrgId     string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	TaskId    string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	SessionId string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// The runtime boundary the capability is minted under. Required on an
+	// ordinary mint, where the caller owns the Task it names.
+	//
+	// FORBIDDEN on a solution-scoped mint. The host assigns each registered
+	// solution one opaque boundary at registration and seals that one, so a
+	// solution never chooses the boundary its runs are visible under and can
+	// never name another solution's (issue #1015). Which of the two a request is
+	// depends on the credential it carries, which no schema rule can see, so the
+	// rule here is only "a UUID when present" and the handler refuses the wrong
+	// shape on either path: an absent boundary on an ordinary mint, a named one
+	// on a solution-scoped mint.
+	TaskId    string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId string `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Empty means a direct human-owned Task. Otherwise this must name an active,
 	// registered agent Principal in org_id.
 	ActorPrincipalId string                  `protobuf:"bytes,4,opt,name=actor_principal_id,json=actorPrincipalId,proto3" json:"actor_principal_id,omitempty"`
@@ -1164,10 +1175,10 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\rresource_kind\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\fresourceKind\x12/\n" +
 	"\aactions\x18\x02 \x03(\tB\x15\xbaH\x12\x92\x01\x0f\b\x01\x10@\x18\x01\"\ar\x05\x10\x01\x18\x80\x01R\aactions\x127\n" +
-	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xbc\x04\n" +
+	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xbf\x04\n" +
 	"\x1bStartTaskWorkContextRequest\x12\x1f\n" +
-	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12!\n" +
-	"\atask_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06taskId\x12'\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12$\n" +
+	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12'\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12,\n" +
 	"\x12actor_principal_id\x18\x04 \x01(\tR\x10actorPrincipalId\x12Y\n" +

@@ -142,6 +142,19 @@ var solutionRegistrationStatusProto = map[business.SolutionRegistrationStatus]ge
 // solutionRegistrationProto resolves the derived status against the server
 // clock as it serializes, so a lease that lapsed since the row was written is
 // reported expired rather than active.
+//
+// It deliberately never sets RuntimeBoundary, and NO path here ever does
+// (issue #1015). Every read of the registry goes through this one function —
+// the whole-registry snapshot the gateway and the frontend cache, a
+// deregistration, and a registrant's own write alike — and the seed behind that
+// boundary is the only thing standing between one solution's runs and another's
+// now that the derived boundary is stable for the life of the registration.
+// A solution does not need it: accounts derives and seals the boundary from the
+// credential the solution already presents, so nothing above this service
+// reads, sends or stores one. The field stays on the message so that
+// TestSolutionRegistrationResponsesCarryNoRuntimeBoundary can hold every
+// response to that, and a change that starts populating it fails rather than
+// ships.
 func solutionRegistrationProto(record *business.SolutionRegistration) *gen.SolutionRegistration {
 	out := &gen.SolutionRegistration{
 		SolutionId: record.SolutionID,

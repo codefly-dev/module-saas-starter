@@ -41,7 +41,21 @@ message WorkContextScope {
 
 message StartTaskWorkContextRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
-  string task_id = 2 [(buf.validate.field).string.uuid = true];
+  // The runtime boundary the capability is minted under. Required on an
+  // ordinary mint, where the caller owns the Task it names.
+  //
+  // FORBIDDEN on a solution-scoped mint. The host assigns each registered
+  // solution one opaque boundary at registration and seals that one, so a
+  // solution never chooses the boundary its runs are visible under and can
+  // never name another solution's (issue #1015). Which of the two a request is
+  // depends on the credential it carries, which no schema rule can see, so the
+  // rule here is only "a UUID when present" and the handler refuses the wrong
+  // shape on either path: an absent boundary on an ordinary mint, a named one
+  // on a solution-scoped mint.
+  string task_id = 2 [
+    (buf.validate.field).string.uuid = true,
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE
+  ];
   string session_id = 3 [(buf.validate.field).string.uuid = true];
   // Empty means a direct human-owned Task. Otherwise this must name an active,
   // registered agent Principal in org_id.

@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 // same rank as `dashboard` — they compose the atoms below, never each other.
 // `content` (markdown, JSON, code, text) sits beside `charts`: it composes
 // layout atoms, and the composites (chat renders a markdown answer) compose it.
+// `board` is a composite like `table`: one collection, laid out by a field.
 // `plugin-host` and the root entry are deliberately absent: they are the
 // host-facing surface, not part of the presentational turtle stack.
 const TIER_RANK: Record<string, number> = {
@@ -25,6 +26,7 @@ const TIER_RANK: Record<string, number> = {
 	dashboard: 3,
 	chat: 3,
 	table: 3,
+	board: 3,
 	form: 3,
 };
 

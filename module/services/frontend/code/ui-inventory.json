@@ -4,6 +4,32 @@
   "status": "Implementation in progress; story coverage and closure evidence incomplete",
   "families": [
     {
+      "source": "packages/codefly-ui/src/board/board.tsx",
+      "imports": [
+        "@dnd-kit/core",
+        "react",
+        "../layout/badge.js",
+        "../layout/dropdown-menu.js",
+        "../layout/input.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui/board",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation: a collection in columns by a field, whose cards move between them. Replaces the board a consuming solution wrote for itself (module-saas-starter#1010).",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/board.stories.tsx",
+          "export": "RequestsByStage"
+        },
+        {
+          "file": "packages/codefly-ui/stories/board.stories.tsx",
+          "export": "ReadOnly"
+        }
+      ],
+      "coverage": "owner stories; the pointer drag is exercised against a stubbed layout, not a browser",
+      "remaining": "Verify the drag in a real browser under external skins, and the Move menu with a screen reader."
+    },
+    {
       "source": "packages/codefly-ui/src/chat/chat.tsx",
       "imports": [
         "react",
@@ -136,9 +162,13 @@
         "hast",
         "react",
         "react-markdown",
-        "remark-gfm",
+        "unified",
         "../layout/cn.js",
         "./code-block.js",
+        "./gfm.js",
+        "./links.js",
+        "./references.js",
+        "./source-offsets.js",
         "./url.js"
       ],
       "owner": "@codefly-dev/ui",
@@ -152,6 +182,10 @@
         {
           "file": "packages/codefly-ui/stories/content.stories.tsx",
           "export": "DocumentPreview"
+        },
+        {
+          "file": "packages/codefly-ui/stories/content.stories.tsx",
+          "export": "SourceMappedDocument"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -435,6 +469,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "BadgesAndAvatars"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "StatusBadges"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -445,6 +483,7 @@
       "imports": [
         "lucide-react",
         "react",
+        "./badge.js",
         "./button.js",
         "./cn.js"
       ],
@@ -455,6 +494,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "NotificationBanner"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "StatusBanners"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -519,6 +562,10 @@
         {
           "file": "packages/codefly-ui/stories/controls.stories.tsx",
           "export": "CompactCard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CardWithDescription"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -538,6 +585,27 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/chip.tsx",
+      "imports": [
+        "@base-ui/react/use-render",
+        "lucide-react",
+        "react",
+        "./badge.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "An actionable badge (link, button, removable) for relation, scope, status and owner rows in solution pages.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Chips"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -659,6 +727,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Empty"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "EmptyWithReference"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -789,6 +861,28 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/list.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Light list and term/value primitives for rows where a Table is too heavy.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Lists"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "DescriptionLists"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/notice.tsx",
       "imports": [
         "lucide-react",
@@ -876,7 +970,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -1423,6 +1517,36 @@
         {
           "file": "packages/saas-ui/stories/no-readable-collection.stories.tsx",
           "export": "Chat"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/solution/principal-names.tsx",
+      "imports": [
+        "@codefly-dev/saas-sdk",
+        "@connectrpc/connect",
+        "react",
+        "./binding.js",
+        "./transport.js",
+        "./viewer.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Who did something, named from the viewer's own organization directory: one read per page, kept per viewer, so a solution or module kit showing a principal does not list the directory itself or show a bare id.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Named"
+        },
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Loading"
+        },
+        {
+          "file": "packages/saas-ui/stories/principal-names.stories.tsx",
+          "export": "Refused"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -4974,6 +5098,7 @@
     "@codefly-dev/ui/layout": "packages/codefly-ui/src/layout/index.ts",
     "@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
     "@codefly-dev/ui/content": "packages/codefly-ui/src/content/index.ts",
-    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts"
+    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts",
+    "@codefly-dev/ui/board": "packages/codefly-ui/src/board/index.ts"
   }
 }

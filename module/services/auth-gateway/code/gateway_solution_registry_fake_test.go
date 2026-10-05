@@ -72,6 +72,11 @@ func (f *fakeSolutionRegistry) Put(
 		record = &accountsv1.SolutionRegistration{
 			SolutionId: req.GetSolutionId(),
 			Publisher:  req.GetPublisher(),
+			// No RuntimeBoundary: accounts never puts the seed on any response
+			// (issue #1015), and the accounts test that holds it to that is
+			// TestSolutionRegistrationResponsesCarryNoRuntimeBoundary. A fake
+			// that sent one here would let the gateway grow a reader for a field
+			// it will never receive.
 		}
 		f.records[req.GetSolutionId()] = record
 	}

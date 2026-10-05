@@ -106,8 +106,14 @@ export { parsePaths } from "./datasources/util.js";
 export {
 	type AccessibleScopeState,
 	COLLECTION_ACCESS_PATH,
+	type NameOf,
 	NoReadableCollection,
 	type NoReadableCollectionProps,
+	PrincipalName,
+	type PrincipalDirectoryState,
+	type PrincipalNameProps,
+	PrincipalNamesProvider,
+	type PrincipalNamesProviderProps,
 	requestBinding,
 	type SolutionBinding,
 	SolutionBindingError,
@@ -120,11 +126,15 @@ export {
 	solutionTransport,
 	useAccessibleScope,
 	useAccessToken,
+	useNameOf,
+	usePrincipalDirectory,
+	usePrincipalNames,
 	useSolutionJson,
 	useViewerEpoch,
 	viewerAdministersOrganization,
 	viewerIdentity,
 	viewerOrganization,
+	viewerPrincipal,
 } from "./solution/index.js";
 // When someone last signed in, said as a person reads it and kept true as time
 // passes; relativeTime is its words alone, for a consumer's own shell.

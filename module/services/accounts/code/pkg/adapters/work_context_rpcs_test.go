@@ -39,6 +39,22 @@ func (f *workContextAuthorityFake) ResolveWorkContextAuthority(
 	return f.facts, f.err
 }
 
+// SolutionRuntimeBoundarySeed and SolutionRuntimeBoundarySeeds model a
+// deployment with NO registered solution: there is no boundary to be given and
+// none to collide with. They are on the base fake because the mint's collision
+// check fails CLOSED on a store that cannot answer (issue #1015) — a nil one is
+// a wiring bug, not an empty registry — so every test that mints has to say
+// which of the two it is, and these say "empty registry".
+func (f *workContextAuthorityFake) SolutionRuntimeBoundarySeed(
+	_ context.Context, _ string,
+) (business.SolutionBoundarySeed, error) {
+	return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
+}
+
+func (f *workContextAuthorityFake) SolutionRuntimeBoundarySeeds(_ context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func (f *workContextAuthorityFake) ResolveInstallationAuthority(
 	_ context.Context,
 	_ string,

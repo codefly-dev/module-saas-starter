@@ -50,6 +50,15 @@ func init() {
 }
 
 func doWork(ctx context.Context) (Clean, error) {
+	// Configuration this process cannot run without is checked before any
+	// dependency is touched. It used to be checked deep in the startup, after
+	// the database and Vault were already up, which meant a missing value cost
+	// a full bring-up before anyone was told — and made the check unreachable
+	// from a test without standing both of those up, so deleting the call
+	// site was invisible.
+	if err := requireStartupConfiguration(codefly.IsLocal()); err != nil {
+		return nil, err
+	}
 	w := wool.Get(ctx).In("doWork")
 	measurementPack, err := metrics.DefaultSeedBundle()
 	if err != nil {
@@ -378,7 +387,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err := requireLocalForDevFixtureProvider(authProvider, codefly.IsLocal()); err != nil {
 		return nil, err
 	}
-	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider))
+	priv, err := loadSigningKey(ctx, devFixtureAuthProvider(authProvider), codefly.IsLocal())
 	if err != nil {
 		return nil, err
 	}
@@ -2168,32 +2177,104 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // differently, break existing sessions, and desynchronise the pinned key. This
 // fails closed rather than fail-open-to-broken.
 //
+// The key's custody is the cell's, never accounts': the platform's
+// identity-seeding command writes the keypair to Vault once, create-only, from
+// the cell's durable seed, so a re-seed restores the *same* keypair and the
+// `kid` the gateway pinned does not move (module/KEY_ROTATION.md, "Custody of
+// the signing key"). accounts therefore never generates one outside the local
+// environment: a self-minted key would silently diverge from that seed,
+// invalidating every live session and leaving two cells signing differently.
+//
+// The refusal quotes VAULT_KEY_CUSTODY from the `vault` configuration group
+// when the cell sets it, so the operator reading a crash loop sees their own
+// seeding command rather than a sentence about one. This module never names
+// that command itself: a module names nothing above it.
+//
 // allowEphemeral is set only in dev/fixture mode, where a freshly generated key
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
-// no Vault. The fallback logs a warning.
-func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
+// no Vault. The fallback logs a warning. isLocal is checked here as well as at
+// the provider gate: the two conditions are enforced in different functions, and
+// an argument that spans two functions is one a later edit can quietly break.
+func loadSigningKey(ctx context.Context, allowEphemeral, isLocal bool) (ed25519core.PrivateKey, error) {
+	ephemeral := allowEphemeral && isLocal
 	connection, connectionErr := vaultconnection.Load(ctx)
 	if connectionErr == nil {
 		vaultToken, tokenErr := connection.Token()
 		if tokenErr != nil {
 			return nil, tokenErr
 		}
+		// The connection already resolved and enforced the mesh assertion for
+		// this address; passing it on keeps the loader's own check consistent
+		// with the one that admitted the connection rather than re-deriving it
+		// from configuration a second time.
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
 			Address: connection.Address, Token: vaultToken, HTTPClient: connection.Client,
-			AllowInsecureHTTP: workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") == "true",
+			MeshProtected: connection.MeshProtected,
 		})
 		if err == nil {
 			return priv, nil
 		}
-		if !allowEphemeral {
-			return nil, fmt.Errorf("load signing key from Vault: %w", err)
+		if !ephemeral {
+			return nil, fmt.Errorf("load signing key from Vault at secret/data/jwt-signing-key: %w — seed it from the cell's durable identity seed%s; accounts never mints its own outside the local environment", err, keyCustodyHint())
 		}
 		wool.Get(ctx).In("loadSigningKey").Warn("could not load signing key from Vault — falling back to ephemeral", wool.ErrField(err))
-	} else if !allowEphemeral {
-		return nil, fmt.Errorf("load signing key: Vault address and token are required outside dev/fixture mode")
+	} else if !ephemeral {
+		return nil, fmt.Errorf("load signing key: no usable Vault binding for secret/data/jwt-signing-key: %w — name the cell's Vault in the `vault` configuration group, then seed the key from the cell's durable identity seed%s", connectionErr, keyCustodyHint())
 	}
 	_, priv, err := ed25519minter.GenerateKey()
 	return priv, err
+}
+
+// requireStartupConfiguration refuses to start on configuration that cannot
+// work, before the process acquires anything. It is the one place a boot-time
+// configuration requirement is registered, so each is enforced at a moment a
+// deployment can still be fixed rather than discovered from a crash loop — and
+// so a test can reach all of them with nothing running.
+func requireStartupConfiguration(isLocal bool) error {
+	return requireKeyCustody(isLocal)
+}
+
+// requireKeyCustody refuses to start outside the local environment without the
+// cell's seeding command.
+//
+// It is required rather than optional because of how the October 2026 incident
+// actually went: an operator met `load signing key from Vault: vault http 404`,
+// nothing on the failure path said where the key was supposed to come from, and
+// they generated a fresh keypair by hand — which invalidated every live session
+// and left the durable seed and Vault disagreeing. A diagnostic that is present
+// only when somebody remembered to configure it is absent exactly when the
+// incident happens, so the configuration is checked at boot, when a deployment
+// can still be fixed, rather than discovered during one.
+//
+// This module cannot name the command itself: it names nothing above it, and
+// the verb belongs to the cell. So the composition supplies it and this only
+// insists that it did.
+func requireKeyCustody(isLocal bool) error {
+	if isLocal || strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY")) != "" {
+		return nil
+	}
+	return fmt.Errorf("vault: VAULT_KEY_CUSTODY is required outside the local environment: set it in the `vault` configuration group to the command this cell uses to seed secret/data/jwt-signing-key, so an operator meeting a missing-key refusal is told what to run rather than left to mint a key by hand (module/KEY_ROTATION.md, \"Custody of the signing key\")")
+}
+
+// keyCustodyHint renders the cell's own seeding command into the refusal, from
+// VAULT_KEY_CUSTODY in the `vault` configuration group. It is a free-text
+// operator note, so it is bounded and stripped of newlines before it reaches a
+// log line: an unbounded value from configuration would otherwise let whoever
+// writes the group forge log entries around the refusal.
+//
+// The empty branch is reachable only in the local environment, where
+// requireKeyCustody does not insist on the key: a local run has no cell and no
+// seeding command.
+func keyCustodyHint() string {
+	custody := strings.TrimSpace(workspaceEnv("vault", "VAULT_KEY_CUSTODY"))
+	if custody == "" {
+		return " (module/KEY_ROTATION.md, \"Custody of the signing key\"; the cell's runbook names the command, and VAULT_KEY_CUSTODY in the `vault` configuration group puts it in this message)"
+	}
+	custody = strings.Join(strings.Fields(custody), " ")
+	if len(custody) > 200 {
+		custody = custody[:200] + "…"
+	}
+	return " — " + custody
 }
 
 // billingNotifier converts a completed billing projection into channel-specific
