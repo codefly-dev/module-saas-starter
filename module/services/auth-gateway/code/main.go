@@ -133,7 +133,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	rev, err := newRevoker(redisURL, revocationTTL)
+	rev, err := newRevoker(redisURL, revocationTTL, codefly.IsLocal())
 	if err != nil {
 		panic(fmt.Sprintf("configure access-token revocation: %v", err))
 	}
@@ -219,15 +219,21 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		// Malformed TRUSTED_PROXY_CIDRS fails boot rather than silently trusting
-		// a narrower/empty set — parity with accounts' ParseTrustedProxyCIDRs.
-		if _, err := parseProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS")); err != nil {
-			panic(err)
+		// A malformed OR empty TRUSTED_PROXY_CIDRS fails boot on a deployed
+		// runtime rather than silently collapsing every bucket onto the frontend's
+		// pod address.
+		if err := requireProxyTrust(workspaceEnv("gateway", "TRUSTED_PROXY_CIDRS"), codefly.IsLocal()); err != nil {
+			panic(err.Error())
 		}
-		rateLimiter = NewRateLimiter(1000,
+		// 1000 req/min per org/IP; stricter MFA budget is configured separately.
+		rateLimiter, err = NewRateLimiter(1000,
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
-		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
+			WithInProcessBackendAllowed(codefly.IsLocal()),
+		)
+		if err != nil {
+			panic(fmt.Sprintf("configure rate limiting: %v", err))
+		}
 		// The durable solution registry lives in accounts and is reached over the
 		// same internal connection as the other brokered internal calls. The
 		// reconcile loop rebuilds this replica's routing cache from it — once at

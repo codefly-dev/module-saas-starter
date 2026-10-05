@@ -302,7 +302,7 @@ func TestGatewaySolutionEntitlements_IgnoresCallerSuppliedActingHeader(t *testin
 func TestGatewaySolutionEntitlements_SpendsThePerOrgBudget(t *testing.T) {
 	gw, authority, priv := entitlementGateway(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	// One token, so every request keys on the same stamped X-Org-Id.
 	token := signValidToken(t, priv)
 

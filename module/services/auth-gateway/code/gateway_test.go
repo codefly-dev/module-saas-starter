@@ -255,7 +255,7 @@ func TestGateway_GitHubWebhooks_ForwardedUnauthenticatedWithSignature(t *testing
 func TestGateway_GitHubWebhook_BudgetIsolatedFromAnonymousTraffic(t *testing.T) {
 	gw, apiFake, _, _ := newGatewayHarness(t)
 	// effective anonymous budget = limit(1) + burst(max(1/5,1)=1) = 2 per minute.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 
 	// Spend the anonymous per-IP budget on an unrelated public route.
 	spent := false

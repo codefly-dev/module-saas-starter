@@ -536,7 +536,7 @@ func TestCORS_PreflightRefusesWhatThePublicSolutionSurfaceCannotGrant(t *testing
 func TestCORS_ThrottledResponseIsReadableAndRefusalsCostNoBudget(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	twoRegisteredClients(t, gw)
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 
 	token := signClientToken(t, priv, addinClient)
 	call := func(origin string) *httptest.ResponseRecorder {

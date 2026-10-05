@@ -10,6 +10,28 @@ for the trust model behind declared presence.
 Nothing here may name a specific solution or composed module: every seam is
 generic, and a registered target is data, never a branch.
 
+## What a deployed gateway refuses to start without
+
+Three of this service's controls are only controls when the thing they depend on
+is there, and each used to degrade into something that read as working:
+
+- **A trusted-proxy range** (`gateway/TRUSTED_PROXY_CIDRS`). Empty means no
+  forwarding header is trusted, so `clientIP` answers the peer — behind the
+  frontend, the frontend's own pod. Every anonymous caller then shares one budget
+  and every authentication-factor attempt shares one, so a few bogus completions a
+  minute deny the factor to the whole cell. The limiter was enabled and the buckets
+  were enforced throughout; nothing said they had collapsed onto one key.
+- **A shared rate-limit store.** Per-replica counters enforce the configured budget
+  times the replica count, and which replica a caller lands on decides their share.
+- **A revocation store.** A revoker with no store answers "not revoked" to every
+  question, so a signed-out session, a killed device and an ended impersonation
+  window all keep authenticating until their tokens expire — and no request can
+  tell that from an empty revocation set.
+
+Each refuses at boot outside local development, naming what to provision. Local
+development keeps all three fallbacks: one replica, no ingress hop, no cache
+service, and the alternative is a gateway that cannot start.
+
 ## Reading declared solution upstreams
 
 `GET /solutions/_registry` returns this replica's read projection: identity,

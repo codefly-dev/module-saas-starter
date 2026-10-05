@@ -272,7 +272,7 @@ func TestGateway_Solution_MissingID_NotFound(t *testing.T) {
 func TestGateway_Solution_RateLimited(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	fake := registerSolutionUpstream(t, gw, "audit")
 
 	// Reuse ONE token so every request keys on the same injected x-org-id.
@@ -301,7 +301,7 @@ func TestGateway_Solution_RateLimited(t *testing.T) {
 func TestGateway_Solution_PublicSurface_RateLimited(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / key / min.
-	gw.rateLimiter = NewRateLimiter(1)
+	gw.rateLimiter = newInProcessRateLimiter(1)
 	fake := registerSolutionUpstream(t, gw, "audit")
 
 	got429 := false
