@@ -222,6 +222,39 @@ function selectableCard(metric: Metric): {
 }
 
 /**
+ * A metric's value, delta and trend sparkline, without the card around them.
+ * {@link StatTile} draws one under its label; a tile that already has its own
+ * header (a title and controls) draws one in its body, so a headline number
+ * looks the same in both.
+ */
+export function MetricFigure({
+	metric,
+	className,
+}: {
+	metric: Metric;
+	className?: string;
+}) {
+	return (
+		<div className={cn("flex items-end justify-between gap-3", className)}>
+			<div className="flex flex-col gap-1">
+				<MetricValue metric={metric} />
+				<MetricDelta
+					delta={metric.delta}
+					deltaLabel={metric.deltaLabel}
+					higherIsBetter={metric.higherIsBetter}
+				/>
+			</div>
+			{hasTrend(metric.series) && (
+				<Sparkline
+					points={metric.series}
+					className="shrink-0 text-muted-foreground/70"
+				/>
+			)}
+		</div>
+	);
+}
+
+/**
  * A single headline number — label, value, optional delta and trend sparkline,
  * with a freshness badge when the metric isn't `ready`. The compact building
  * block of a {@link KPIRow}.
@@ -245,22 +278,7 @@ export function StatTile({
 				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
 			</div>
-			<div className="flex items-end justify-between gap-3">
-				<div className="flex flex-col gap-1">
-					<MetricValue metric={metric} />
-					<MetricDelta
-						delta={metric.delta}
-						deltaLabel={metric.deltaLabel}
-						higherIsBetter={metric.higherIsBetter}
-					/>
-				</div>
-				{hasTrend(metric.series) && (
-					<Sparkline
-						points={metric.series}
-						className="shrink-0 text-muted-foreground/70"
-					/>
-				)}
-			</div>
+			<MetricFigure metric={metric} />
 		</Card>
 	);
 }

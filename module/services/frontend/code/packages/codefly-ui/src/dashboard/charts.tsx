@@ -102,17 +102,21 @@ function cartesian({
 	);
 }
 
+/** @deprecated A dashboard draws a line with `MetricLineChart` (or `WidgetChart` for a resolved widget). */
 export function LineChart({ points, className, height = VIEW_H, axes, formatValue }: ChartProps) {
 	return cartesian({ points, className, height, axes, formatValue, fill: false, label: "line chart" });
 }
 
+/** @deprecated A dashboard draws an area with `MetricAreaChart` (or `WidgetChart` for a resolved widget). */
 export function AreaChart({ points, className, height = VIEW_H, axes, formatValue }: ChartProps) {
 	return cartesian({ points, className, height, axes, formatValue, fill: true, label: "area chart" });
 }
 
 // A ranked horizontal bar list — the categorical counterpart to the line/area
-// charts. Widths are relative to the largest value; labels are the group keys.
-// `format` writes a key and `formatValue` a value.
+// charts, and the one ranked list every dashboard draws (the audit log's top
+// event types and actors, a declared widget's groups). Widths are relative to
+// the largest value; labels are the group keys. `format` writes a key and
+// `formatValue` a value.
 export function BarList({
 	points,
 	className,
@@ -127,20 +131,24 @@ export function BarList({
 	const max = Math.max(1, ...points.map((p) => p.value));
 	return (
 		<div className={cn("flex flex-col gap-2", className)}>
-			{points.map((p) => (
-				<div key={p.key} className="flex items-center gap-2 type-body">
-					<span className="w-32 shrink-0 truncate text-muted-foreground" title={p.key}>
-						{format ? format(p.key) : p.key}
-					</span>
-					<span className="relative h-4 flex-1 overflow-hidden rounded bg-muted">
-						<span
-							className="absolute inset-y-0 left-0 rounded"
+			{points.map((p, i) => (
+				// Keys can repeat (two actors who share a display name), so the
+				// position keeps React's identity unique.
+				<div key={`${i}-${p.key}`} className="flex flex-col gap-1">
+					<div className="flex items-center justify-between gap-2 type-caption-plain">
+						<span className="truncate text-muted-foreground" title={p.key}>
+							{format ? format(p.key) : p.key}
+						</span>
+						<span className="shrink-0 font-mono">
+							{formatValue ? formatValue(p.value) : p.value.toLocaleString()}
+						</span>
+					</div>
+					<div className="h-2 rounded-full bg-muted">
+						<div
+							className="h-2 rounded-full opacity-70"
 							style={{ width: `${(p.value / max) * 100}%`, backgroundColor: "var(--primary)" }}
 						/>
-					</span>
-					<span className="w-10 shrink-0 text-right tabular-nums">
-						{formatValue ? formatValue(p.value) : p.value.toLocaleString()}
-					</span>
+					</div>
 				</div>
 			))}
 		</div>
@@ -150,6 +158,7 @@ export function BarList({
 // A single headline number with an inline sparkline — the KPI tile. The
 // sparkline stays axis-less by construction (no `axes` prop), so the tile reads
 // as one number, not a chart. `formatValue` writes the number.
+/** @deprecated A dashboard draws a headline number with `MetricFigure` or `StatTile` (or `WidgetChart`). */
 export function StatChart({
 	total,
 	points,

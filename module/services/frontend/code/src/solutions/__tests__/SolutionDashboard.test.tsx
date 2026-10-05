@@ -197,9 +197,11 @@ describe("SolutionDashboards", () => {
 		expect(screen.getByText("42")).toBeTruthy();
 		// Number widget: the total-logins stat sums the time buckets (3 + 5).
 		expect(screen.getByText("8")).toBeTruthy();
-		// Each widget's title is rendered from the declaration.
-		expect(screen.getByText("Logins over time")).toBeTruthy();
-		expect(screen.getByText("Total logins")).toBeTruthy();
+		// Each widget's title is rendered from the declaration. A chart also names
+		// its hidden data table after it, so the tile's own title is asked for.
+		expect(tileTitles()).toEqual(
+			expect.arrayContaining(["Logins over time", "Total logins"]),
+		);
 	});
 
 	it("isolates a widget whose metric fails without blanking its siblings", async () => {

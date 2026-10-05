@@ -78,6 +78,7 @@ export {
 
 export {
 	MetricCard,
+	MetricFigure,
 	StatTile,
 	KPIRow,
 	formatMetricValue,
@@ -86,3 +87,4 @@ export {
 } from "./metric-tiles.js";
 
 export { TrendLineChart } from "./trend-line-chart.js";
+export { WidgetChart } from "./widget-chart.js";

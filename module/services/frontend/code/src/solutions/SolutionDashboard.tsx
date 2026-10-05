@@ -11,18 +11,14 @@ import {
 	type ResolvedWidget,
 	runDashboard,
 } from "@codefly-dev/saas-sdk";
-// Charts come from the shared kit, not host-internal components: the same
-// primitives a solution's own remote would render with, so host-rendered and
-// solution-rendered dashboards look identical and there is one charting
-// implementation to maintain.
+// A tile's values are drawn by the shared kit, not host-internal components:
+// the same component a solution's own remote draws with, built on the metric
+// charts the audit log draws with, so every dashboard looks alike and there is
+// one charting implementation to maintain.
 import {
-	AreaChart,
-	BarList,
-	formatShare,
-	LineChart,
 	SortableBoard,
 	type SortableGroupHandle,
-	StatChart,
+	WidgetChart,
 } from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { Ellipsis, GripVertical, Info, Pencil, Plus, X } from "lucide-react";
@@ -190,69 +186,11 @@ function withoutValues({
 }
 
 function WidgetValues({ widget }: { widget: ResolvedWidget }) {
-	const { series, visualization } = widget;
-	// A metric declared as a percent is a share from 0 to 1, written as a
-	// percentage everywhere the tile shows a value; a plain number keeps each
-	// chart's own default.
-	const formatValue = widget.format === "percent" ? formatShare : undefined;
 	const missing = withoutValues(widget);
 	if (missing) {
 		return <p className="text-sm text-muted-foreground">{missing.tile}</p>;
 	}
-	switch (visualization) {
-		case "line":
-			return (
-				<LineChart
-					points={series.points}
-					className="text-primary/70"
-					axes
-					formatValue={formatValue}
-				/>
-			);
-		case "area":
-			return (
-				<AreaChart
-					points={series.points}
-					className="text-primary/70"
-					axes
-					formatValue={formatValue}
-				/>
-			);
-		case "bar":
-			return <BarList points={series.points} formatValue={formatValue} />;
-		case "number":
-			// A number with no total has said so above; this only narrows it.
-			return series.total === null ? null : (
-				<StatChart
-					total={series.total}
-					points={series.points}
-					formatValue={formatValue}
-				/>
-			);
-		case "table":
-			return (
-				<table className="w-full text-sm">
-					<tbody>
-						{series.points.map((point) => (
-							<tr key={point.key} className="border-b last:border-0">
-								<td className="py-1 text-muted-foreground">{point.key}</td>
-								<td className="py-1 text-right font-mono">
-									{formatValue
-										? formatValue(point.value)
-										: point.value.toLocaleString()}
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			);
-		default: {
-			// Compile-time exhaustiveness: a new WidgetVisualization must be
-			// handled here or this assignment fails to type-check.
-			const _exhaustive: never = visualization;
-			return _exhaustive;
-		}
-	}
+	return <WidgetChart widget={widget} />;
 }
 
 // Where a dashboard's widgets resolve: the solution's graph, and whose
