@@ -252,7 +252,7 @@ their next owning change.
 | Session list + revoke               | ✅    | Stable per-device family ids, device context, idle/absolute expiry, whole-family revoke |
 | Session lifetime policy             | ✅    | Configurable fixed absolute TTL, idle TTL, and serialized active-device cap |
 | Logout                              | ✅    | Revokes the presented device family                              |
-| OAuth state / CSRF                  | 🟡    | Validated client-side in `sessionStorage`; no server-side double-check (gap) |
+| OAuth state / CSRF                  | ✅    | Server-signed state bound to (provider, redirect_uri), single-use: the nonce is consumed on first verification and the state is refused when single use cannot be recorded |
 | OAuth PKCE                          | ❌    | Comments mention PKCE but exchanger uses `client_secret` (acceptable for confidential server-side; PKCE adds defense for SPA-driven flows) |
 | Account lockout (failed attempts)   | ❌    | No counter on user table                                         |
 | Email verification                  | 🟡    | `email_verified` flag stored; no flow that issues + checks       |
