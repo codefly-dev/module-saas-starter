@@ -242,6 +242,8 @@ func TestEmulatorReadsThroughTheStorageReadAPI(t *testing.T) {
 	require.Equal(t, 6, served(func(w *restriction) { w.eq("deployment_id", "deployment-1") }))
 	require.Equal(t, 9, served(func(w *restriction) { w.timeBound("occurred_at", "<=", content.Entry.CreatedAt) }))
 	require.Equal(t, 6, served(func(w *restriction) { w.timeBound("occurred_at", "<", content.Entry.CreatedAt) }))
-	require.Equal(t, 3, served(func(w *restriction) { w.in("event_type", []string{string(business.EventDatasourceSourceSynced), "saas.none.none"}) }))
+	require.Equal(t, 3, served(func(w *restriction) {
+		w.in("event_type", []string{string(business.EventDatasourceSourceSynced), "saas.none.none"})
+	}))
 	require.Zero(t, served(func(w *restriction) { w.eq("resource_id", `session-1" OR TRUE OR "`+"\n\u00e9\\") }))
 }

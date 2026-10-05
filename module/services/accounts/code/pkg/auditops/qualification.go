@@ -8,11 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
 	"reflect"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // QualificationReceipt contains only fixture identifiers, hashes and checks

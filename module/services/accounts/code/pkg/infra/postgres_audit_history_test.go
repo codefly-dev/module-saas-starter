@@ -195,7 +195,7 @@ func runHistoryCopy(t *testing.T, entries []business.AuditEntry) {
 		require.Equal(t, want, got)
 	}
 
-	report, err = copier.Run(testCtx, business.AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true, ExpectedPartitionsSHA256:report.PartitionsSHA256})
+	report, err = copier.Run(testCtx, business.AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true, ExpectedPartitionsSHA256: report.PartitionsSHA256})
 	require.NoError(t, err)
 	require.Positive(t, report.Dropped)
 	require.Equal(t, through, report.Cutoff)
