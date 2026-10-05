@@ -35,6 +35,7 @@ workspace-configuration-dependencies:
     - gateway-trust
     - github-app
     - identity
+    - identity-provider
     - internal-auth
     - internal-transport
     - key-service

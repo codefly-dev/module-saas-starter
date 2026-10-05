@@ -35,6 +35,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
@@ -660,7 +661,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			// SSO administration is a WorkOS-specific optional adapter. Other
 			// identity providers cannot accidentally activate it by exposing a
 			// similarly named management credential.
-			service.SetSSOManagementAPIKey(identityEnv("IDENTITY_MANAGEMENT_API_KEY"))
+			service.SetSSOManagementAPIKey(identityProviderSecret("IDENTITY_MANAGEMENT_API_KEY"))
 		}
 		oauthPolicy, err := buildOAuthRequestPolicy(authProvider)
 		if err != nil {
@@ -2015,6 +2016,43 @@ func identityEnv(key string) string {
 	return value
 }
 
+// identityProviderSecret reads a credential that authenticates THIS HOST to the
+// identity provider, from the `identity-provider` group only accounts declares.
+//
+// They used to live in `identity`, which the frontend declares too — it renders
+// the login page from that group's public facts, the issuer and the client id —
+// so a deployment putting the provider's credentials there delivered them to the
+// frontend as well, which reads neither. A public-facing process holding the
+// provider's administration credential widens what a frontend compromise is worth,
+// for nothing.
+//
+// The read falls back to `identity` while a deployment still holds them there, and
+// says so once per key: the group a value is delivered under is the composition's
+// to change, and a hard cutover here would take sign-in down on every cell between
+// this landing and that edit. The fallback goes when the cells have moved — until
+// then, the warning is how an operator knows one has not.
+func identityProviderSecret(key string) string {
+	if value, err := codefly.For(codefly.Context()).WorkspaceValue("identity-provider", key); err == nil && hasConfiguredValue(value) {
+		return value
+	}
+	legacy := identityEnv(key)
+	if hasConfiguredValue(legacy) {
+		reportIdentityProviderSecretStillInIdentityGroup(key)
+	}
+	return legacy
+}
+
+var identityProviderSecretWarned sync.Map
+
+func reportIdentityProviderSecretStillInIdentityGroup(key string) {
+	if _, loaded := identityProviderSecretWarned.LoadOrStore(key, true); loaded {
+		return
+	}
+	wool.Get(context.Background()).In("identityProviderSecret").Warn(
+		"an identity-provider credential is still delivered under the `identity` group, which the frontend also declares; move it to `identity-provider`, which only this service declares",
+		wool.Field("key", key))
+}
+
 // applicationEnv is also Codefly-only. Local product origins and bootstrap
 // identity must come from the selected workspace configuration, never from an
 // ambient shell file that can disagree with the browser runtime.
@@ -2133,7 +2171,7 @@ func buildGenericOIDCStack(provider string) (auth.TokenValidator, business.CodeE
 // two can never disagree at login.
 func discoverOIDCValidator(provider string, defaultAudienceToClientID bool) (validator auth.TokenValidator, tokenURL, clientID, clientSecret string, err error) {
 	clientID = identityEnv("IDENTITY_CLIENT_ID")
-	clientSecret = identityEnv("IDENTITY_CLIENT_SECRET")
+	clientSecret = identityProviderSecret("IDENTITY_CLIENT_SECRET")
 	issuer := identityEnv("IDENTITY_ISSUER")
 	if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
 		return nil, "", "", "", fmt.Errorf(
@@ -2237,7 +2275,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 		domain := identityEnv("IDENTITY_DOMAIN")
 		audience := identityEnv("IDENTITY_AUDIENCE")
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+		clientSecret := identityProviderSecret("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(domain) || !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) || !hasConfiguredValue(audience) {
 			return nil, nil, fmt.Errorf("identity provider auth0 requires IDENTITY_DOMAIN, IDENTITY_AUDIENCE, IDENTITY_CLIENT_ID, and IDENTITY_CLIENT_SECRET")
 		}
@@ -2257,7 +2295,7 @@ func buildProviderStack(provider, selectedFixture string) (auth.TokenValidator, 
 
 	case "google":
 		clientID := identityEnv("IDENTITY_CLIENT_ID")
-		clientSecret := identityEnv("IDENTITY_CLIENT_SECRET")
+		clientSecret := identityProviderSecret("IDENTITY_CLIENT_SECRET")
 		if !hasConfiguredValue(clientID) || !hasConfiguredValue(clientSecret) {
 			return nil, nil, fmt.Errorf("identity provider google requires IDENTITY_CLIENT_ID and IDENTITY_CLIENT_SECRET")
 		}
