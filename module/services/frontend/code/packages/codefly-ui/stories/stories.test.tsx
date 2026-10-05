@@ -3,14 +3,15 @@ import { resolveSkinRules } from "@codefly/saas-plugin-contract";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { assertSkinRules } from "../src/skin/rules.js";
+import * as board from "./board.stories";
 import * as composites from "./composites.stories";
 import * as content from "./content.stories";
-import * as foundations from "./foundations.stories";
 import * as controls from "./controls.stories";
-import * as primitives from "./primitives.stories";
+import * as foundations from "./foundations.stories";
 import * as metrics from "./metrics.stories";
-import * as tables from "./table.stories";
+import * as primitives from "./primitives.stories";
 import * as semanticTables from "./semantic-table.stories";
+import * as tables from "./table.stories";
 
 afterEach(cleanup);
 
@@ -31,6 +32,7 @@ for (const [section, stories] of Object.entries({
 	semanticTables,
 	composites,
 	content,
+	board,
 })) {
 	for (const [name, story] of Object.entries(stories)) {
 		if (!("render" in story)) continue;

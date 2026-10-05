@@ -4,6 +4,32 @@
   "status": "Implementation in progress; story coverage and closure evidence incomplete",
   "families": [
     {
+      "source": "packages/codefly-ui/src/board/board.tsx",
+      "imports": [
+        "@dnd-kit/core",
+        "react",
+        "../layout/badge.js",
+        "../layout/dropdown-menu.js",
+        "../layout/input.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui/board",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation: a collection in columns by a field, whose cards move between them. Replaces the board a consuming solution wrote for itself (module-saas-starter#1010).",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/board.stories.tsx",
+          "export": "RequestsByStage"
+        },
+        {
+          "file": "packages/codefly-ui/stories/board.stories.tsx",
+          "export": "ReadOnly"
+        }
+      ],
+      "coverage": "owner stories; the pointer drag is exercised against a stubbed layout, not a browser",
+      "remaining": "Verify the drag in a real browser under external skins, and the Move menu with a screen reader."
+    },
+    {
       "source": "packages/codefly-ui/src/chat/chat.tsx",
       "imports": [
         "react",
@@ -136,9 +162,13 @@
         "hast",
         "react",
         "react-markdown",
-        "remark-gfm",
+        "unified",
         "../layout/cn.js",
         "./code-block.js",
+        "./gfm.js",
+        "./links.js",
+        "./references.js",
+        "./source-offsets.js",
         "./url.js"
       ],
       "owner": "@codefly-dev/ui",
@@ -152,6 +182,10 @@
         {
           "file": "packages/codefly-ui/stories/content.stories.tsx",
           "export": "DocumentPreview"
+        },
+        {
+          "file": "packages/codefly-ui/stories/content.stories.tsx",
+          "export": "SourceMappedDocument"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -936,7 +970,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -5035,6 +5069,7 @@
     "@codefly-dev/ui/layout": "packages/codefly-ui/src/layout/index.ts",
     "@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
     "@codefly-dev/ui/content": "packages/codefly-ui/src/content/index.ts",
-    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts"
+    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts",
+    "@codefly-dev/ui/board": "packages/codefly-ui/src/board/index.ts"
   }
 }
