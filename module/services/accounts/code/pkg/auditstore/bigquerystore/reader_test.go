@@ -315,3 +315,54 @@ func TestAnOrganizationIdIsReadInItsCanonicalForm(t *testing.T) {
 	_, err := w.reader.LatestSourceSyncEvents(ctx, business.OrganizationAuditScope("org-1"), []string{"source-0"})
 	require.ErrorContains(t, err, "not a uuid", "the readable-source query refuses what the other reads refuse, as Postgres does")
 }
+
+// The budget of retries is for a stream that makes no headway. A long stream
+// that breaks now and then, each time further on, is not out of retries: it
+// has never failed twice at one place.
+func TestAStreamThatKeepsMakingProgressIsNeverOutOfRetries(t *testing.T) {
+	w := newWarehouse(t)
+	w.fake.StreamsPerSession, w.fake.RowsPerBatch = 1, 1
+	const events = 12
+	for i := 1; i <= events; i++ {
+		w.append(t, deployment, event(t, i, orgA, business.EventAuthLogin, business.RetentionSecurity, now.Add(-time.Duration(i)*time.Minute), nil))
+	}
+	var mu sync.Mutex
+	failures := 0
+	failedAt := map[int64]bool{}
+	w.fake.FailReadRows = func(_ string, offset int64) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if offset > 0 && !failedAt[offset] {
+			failedAt[offset] = true
+			failures++
+			return status.Error(codes.Unavailable, "transient")
+		}
+		return nil
+	}
+	entries, _, err := w.reader.ListAuditEvents(context.Background(), orgRead(business.AuditQuery{PageSize: events}))
+	require.NoError(t, err)
+	require.Len(t, entries, events, "nothing lost")
+	require.Equal(t, events-1, failures, "every row boundary broke the stream once, far more than the retries one stream without progress gets")
+}
+
+func TestAStreamThatFailsAtOnePlaceStopsAfterItsRetries(t *testing.T) {
+	w := newWarehouse(t)
+	w.fake.StreamsPerSession, w.fake.RowsPerBatch = 1, 1
+	for i := 1; i <= 3; i++ {
+		w.append(t, deployment, event(t, i, orgA, business.EventAuthLogin, business.RetentionSecurity, now.Add(-time.Duration(i)*time.Minute), nil))
+	}
+	var mu sync.Mutex
+	attempts := 0
+	w.fake.FailReadRows = func(_ string, offset int64) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if offset == 1 {
+			attempts++
+			return status.Error(codes.Unavailable, "transient")
+		}
+		return nil
+	}
+	_, _, err := w.reader.ListAuditEvents(context.Background(), orgRead(business.AuditQuery{}))
+	require.ErrorContains(t, err, "after 5 attempts")
+	require.Equal(t, 5, attempts)
+}

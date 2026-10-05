@@ -623,17 +623,25 @@ func (r *Reader) scan(ctx context.Context, table string, fields []string, where 
 }
 
 // readStream reads one stream to its end, reopening it at the offset reached
-// after a transient failure.
+// after a transient failure. The retries are for a stream that makes no
+// headway: a failure that follows rows read since the last one starts the
+// count, and the backoff, over, so a long stream that breaks now and then is
+// never out of retries while it keeps moving.
 func (r *Reader) readStream(ctx context.Context, table, stream string, schema []byte, visit func(arrowRow) error) error {
 	var offset int64
-	backoff := gax.Backoff{Initial: 100 * time.Millisecond, Max: 5 * time.Second}
+	newBackoff := func() gax.Backoff { return gax.Backoff{Initial: 100 * time.Millisecond, Max: 5 * time.Second} }
+	backoff := newBackoff()
 	failures := 0
 	for {
+		reached := offset
 		rows, err := r.client.ReadRows(ctx, &storagepb.ReadRowsRequest{ReadStream: stream, Offset: offset})
 		if err == nil {
 			offset, err = r.consume(rows, schema, offset, visit)
 			if err == nil {
 				return nil
+			}
+			if offset > reached {
+				failures, backoff = 0, newBackoff()
 			}
 		}
 		var decodeErr decodeError
