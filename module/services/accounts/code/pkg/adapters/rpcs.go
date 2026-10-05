@@ -1075,7 +1075,37 @@ func (s *AuthServer) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequ
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	return service.RefreshToken(ctx, req)
+	resp, err := service.RefreshToken(ctx, req)
+	if err != nil {
+		return nil, refreshStatusError(ctx, err)
+	}
+	return resp, nil
+}
+
+// refreshStatusError maps a refusal to refresh onto the one answer a caller is
+// allowed to see: unauthenticated, with a fixed reason.
+//
+// Every rejection the session store can reach — an unknown token, a revoked
+// family, an expired or idled-out session, a reused token — is reported as
+// ErrRefreshRevoked or ErrRefreshReuse, deliberately indistinguishable so the
+// store is not an oracle. Returning the wrapped chain undid that twice over: it
+// named the internal call path, and a refusal counted as a server error, so an
+// expired cookie — the single most ordinary thing a browser can present —
+// arrived as HTTP 500 and was counted against availability.
+//
+// The cause is logged, where it is diagnosable without being disclosed.
+// Anything that is NOT a refusal (a store that cannot be reached, an invalid
+// session policy) still passes through unchanged: it is a genuine server-side
+// failure, and reporting it as a credential problem would send an operator
+// looking at the wrong half.
+func refreshStatusError(ctx context.Context, err error) error {
+	switch {
+	case errors.Is(err, auth.ErrRefreshReuse), errors.Is(err, auth.ErrRefreshRevoked):
+		wool.Get(ctx).In("RefreshToken").Warn("refresh refused", wool.ErrField(err))
+		return status.Error(codes.Unauthenticated, "invalid refresh token")
+	default:
+		return err
+	}
 }
 
 func (s *AuthServer) SwitchOrganization(ctx context.Context, req *gen.SwitchOrganizationRequest) (*gen.SwitchOrganizationResponse, error) {
@@ -1110,7 +1140,15 @@ func (s *AuthServer) BeginOAuth(ctx context.Context, req *gen.BeginOAuthRequest)
 	}
 	state, err := service.BeginOAuth(ctx, req.Provider, req.RedirectUri)
 	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "cannot mint oauth state: %v", err)
+		// A refused provider or redirect is the caller's request being wrong,
+		// not this host failing; and the reason is a wrapped internal chain,
+		// which named the call path to an unauthenticated caller. Log it, and
+		// answer the one thing the caller may know.
+		wool.Get(ctx).In("BeginOAuth").Warn("oauth begin refused", wool.ErrField(err))
+		if errors.Is(err, auth.ErrInvalidOAuthRequest) {
+			return nil, status.Error(codes.InvalidArgument, "provider or redirect_uri not allowed")
+		}
+		return nil, status.Error(codes.FailedPrecondition, "oauth state unavailable")
 	}
 	return &gen.BeginOAuthResponse{State: state}, nil
 }
