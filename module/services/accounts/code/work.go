@@ -867,7 +867,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	// The datasource content-ticket signer is keyed from the same internal secret,
 	// domain-separated, so a change-set job's opaque content ticket verifies at
 	// redemption without a second key to provision.
-	service.SetDatasourceTicketKey([]byte(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")))
+	// One delivered key per purpose, never derived from the perimeter credential:
+	// see business.SetDatasourceKeys.
+	service.SetDatasourceKeys(
+		[]byte(strings.TrimSpace(workspaceEnv("datasource-keys", "DATASOURCE_CONTENT_TICKET_KEY"))),
+		[]byte(strings.TrimSpace(workspaceEnv("datasource-keys", "DATASOURCE_ACCOUNT_LINK_KEY"))),
+	)
 
 	centralEnforcement, err := configuredCentralEnforcement()
 	if err != nil {

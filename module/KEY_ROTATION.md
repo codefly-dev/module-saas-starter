@@ -246,6 +246,34 @@ the gateway never pins a key at boot: a gateway started mid-overlap loads the
 whole published set and accepts both keys regardless of the order the document
 lists them in.
 
+## One key per purpose, delivered
+
+The signing key above is one key with one purpose. Everything else this module
+signs or authenticates with carries its own **delivered** key, in a group of its
+own, so rotating one rotates one thing.
+
+Two did not, until the 2026-10-04 audit: the datasource **content-ticket** key and
+the **account-link state** key were both derived from `CODEFLY_INTERNAL_TOKEN`, the
+cell-wide perimeter credential every service and composed module holds. That had
+two consequences, neither visible from either end — every holder of the perimeter
+credential could compute those keys and forge what they authenticate, and rotating
+the perimeter credential silently invalidated every outstanding ticket and link
+state. Both now come from `datasource-keys`
+(`DATASOURCE_CONTENT_TICKET_KEY`, `DATASOURCE_ACCOUNT_LINK_KEY`), which only
+accounts declares.
+
+An absent key leaves its purpose unavailable rather than falling back to a
+derivation: a key reachable from a credential thirteen workloads hold is not a key,
+and a fallback would make that conditional on nobody forgetting. **Rotating one of
+these is a flag day for the tokens it signed** — an outstanding content ticket does
+not survive it — which is why each purpose has its own, so the day is one purpose
+wide.
+
+The sealing keys are a separate axis and are no longer one key: a stored value
+names the service that sealed it and that service's own key, and the envelope key
+is per organization. Rotating and moving those is the next two sections; this one
+is about the keys a purpose is DELIVERED, which rotate on their own.
+
 ## Rotating the envelope key
 
 Unlike the signing key, this is invisible to users and needs no overlap window:

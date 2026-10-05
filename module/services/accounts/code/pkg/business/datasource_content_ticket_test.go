@@ -58,17 +58,47 @@ func TestContentTicketRejectsTamperAndForeignKey(t *testing.T) {
 	}
 }
 
-// TestAttack_UnsetTicketKeyDisablesTickets: an unset seed used to produce the
-// key sha256("datasource-content-ticket\x00") — a constant anyone can compute,
-// so anyone could mint a ticket for any tenant's source. An unset key must
-// leave content tickets disabled, which minting and redemption already treat
-// as unavailable.
+// TestAttack_UnsetTicketKeyDisablesTickets: an unset key used to produce
+// sha256("datasource-content-ticket\x00") — a constant anyone can compute, so
+// anyone could mint a ticket for any tenant's source. An unset key must leave
+// content tickets disabled, which minting and redemption already treat as
+// unavailable — and must NOT fall back to any other value, which is the shape the
+// derivation from the perimeter credential had.
 func TestAttack_UnsetTicketKeyDisablesTickets(t *testing.T) {
-	for _, seed := range [][]byte{nil, {}} {
+	for _, key := range [][]byte{nil, {}} {
 		s := &Service{}
-		s.SetDatasourceTicketKey(seed)
+		// A link key is present, so an absent ticket key cannot be satisfied by the
+		// other purpose's value.
+		s.SetDatasourceKeys(key, []byte("a-delivered-link-key"))
 		if s.datasourceTicketSigner != nil {
-			t.Fatalf("SetDatasourceTicketKey(%q) installed a signer keyed by a public constant", seed)
+			t.Fatalf("SetDatasourceKeys(%q, ...) installed a signer keyed by a public constant", key)
 		}
+	}
+}
+
+// And the other way round: an absent account-link key leaves the link state
+// unsignable rather than borrowing the ticket key.
+func TestAttack_UnsetAccountLinkKeyDisablesLinkState(t *testing.T) {
+	for _, key := range [][]byte{nil, {}} {
+		s := &Service{}
+		s.SetDatasourceKeys([]byte("a-delivered-ticket-key"), key)
+		if s.datasourceLinkKey != nil {
+			t.Fatalf("SetDatasourceKeys(..., %q) installed a link key from somewhere else", key)
+		}
+	}
+}
+
+// The two purposes do not share a key even when an operator provisions one value
+// for both: the link key is domain-separated, so a content ticket and a link state
+// can never pass for each other.
+func TestDatasourceKeysStayDistinctUnderOneProvisionedValue(t *testing.T) {
+	s := &Service{}
+	one := []byte("one-value-provisioned-for-both-purposes")
+	s.SetDatasourceKeys(one, one)
+	if s.datasourceTicketSigner == nil || s.datasourceLinkKey == nil {
+		t.Fatal("both purposes must be available")
+	}
+	if string(s.datasourceLinkKey) == string(s.datasourceTicketSigner.key) {
+		t.Fatal("the link key and the ticket key must differ even from one provisioned value")
 	}
 }

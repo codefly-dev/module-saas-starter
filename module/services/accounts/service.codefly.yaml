@@ -30,6 +30,7 @@ workspace-configuration-dependencies:
     - abuse-protection
     - application
     - billing
+    - datasource-keys
     - email
     - federation
     - gateway-trust
