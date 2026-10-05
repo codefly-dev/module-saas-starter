@@ -145,6 +145,28 @@ A solution remote executes in the host origin with the viewer's credentials; the
 trust model and the registration/installation/entitlement boundary are in
 [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
 
+**Open, and recorded here so the next reader does not have to rediscover it.**
+Nothing pins what a cross-origin manifest serves. An absolute URL on any origin is
+accepted, admitting it adds that origin to the script source, and there is no
+integrity digest — so a holder of a solution's registration credential can point a
+registered remote at code of its choosing and have it execute in the host origin
+with the viewer's session. The audit raised this as a minor finding because the
+live policy lists no foreign origin and every deployed remote is same-origin today,
+which bounds it to the credential-to-code path.
+
+Closing it means one of two things, and both are decisions about the solution
+contract rather than a defect to repair:
+
+- **Accept only root-relative manifests.** This removes the cross-origin-remote
+  shape described above, and with it the runtime origin derivation in
+  `src/proxy.ts` — the listing fetch, its cache, its outage reporting and the
+  policy-size guard exist only to carry foreign origins.
+- **Pin each remote by a digest recorded when it was published.** This keeps the
+  shape and needs a publication-time provenance record the registration contract
+  does not have.
+
+Either is its own change, with the owner choosing which shape the contract keeps.
+
 ## The published client kit
 
 `code/packages/saas-sdk` is `@codefly-dev/saas-sdk`, published to GitHub Packages

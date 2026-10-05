@@ -75,6 +75,8 @@ func TestPerimeterCredentialsCoverEveryTrustDecidingKey(t *testing.T) {
 // origin and every emailed link were bound to whatever origin the request's trusted
 // hop forwarded — which that hop derived from the caller's own forwarding header.
 func TestDeployedRequiresTheApplicationBaseURL(t *testing.T) {
+	blankWorkspaceKey(t, "application", "APP_BASE_URL")
+
 	err := requireApplicationBaseURL(false)
 	require.Error(t, err, "a deployed runtime must refuse an unset APP_BASE_URL")
 	require.Contains(t, err.Error(), "APP_BASE_URL",
@@ -82,4 +84,48 @@ func TestDeployedRequiresTheApplicationBaseURL(t *testing.T) {
 
 	require.NoError(t, requireApplicationBaseURL(true),
 		"local development pins no runtime port")
+}
+
+// Every perimeter credential and the application base URL are refused when a
+// deployed runtime holds a placeholder, which is also what the shipped local
+// defaults hold — so a test that drives these reads has to blank BOTH carriers.
+// `codefly ci run` injects this module's own local groups as
+// CODEFLY__WORKSPACE_CONFIGURATION__<GROUP>__<KEY> (and the secret form), while a
+// bare `go test` injects none and only the plain fallback can carry a stray value.
+// Blanking one passes locally and fails in CI, or the reverse.
+func blankWorkspaceKey(t *testing.T, group, key string) {
+	t.Helper()
+	upper := strings.ToUpper(group)
+	upper = strings.ReplaceAll(upper, "-", "_")
+	t.Setenv(key, "")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__"+upper+"__"+key, "")
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__"+upper+"__"+key, "")
+}
+
+// The deployed perimeter check over the REAL carriers, not only over the pure
+// comparison: with the shipped local default in the group a deployed runtime
+// refuses, and with a provisioned value it starts.
+func TestDeployedPerimeterCheckReadsTheConfigurationGroup(t *testing.T) {
+	for _, key := range []string{"CODEFLY_INTERNAL_TOKEN", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"} {
+		blankWorkspaceKey(t, "internal-auth", key)
+	}
+	for _, key := range []string{"CODEFLY_GATEWAY_TOKEN", "CODEFLY_GATEWAY_TOKEN_PREVIOUS"} {
+		blankWorkspaceKey(t, "gateway-trust", key)
+	}
+
+	// Nothing provisioned: each loader's own required-or-optional question, not
+	// this one's.
+	require.NoError(t, requirePerimeterCredentials(false))
+
+	// The value this module ships in its public local defaults.
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__INTERNAL_AUTH__CODEFLY_INTERNAL_TOKEN",
+		"local-dev-only-replace-me")
+	err := requirePerimeterCredentials(false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "internal-auth/CODEFLY_INTERNAL_TOKEN")
+
+	// A provisioned one.
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__INTERNAL_AUTH__CODEFLY_INTERNAL_TOKEN",
+		strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+	require.NoError(t, requirePerimeterCredentials(false))
 }
