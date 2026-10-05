@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -53,4 +54,51 @@ func TestPerimeterCredentialsCoverEveryTrustDecidingKey(t *testing.T) {
 		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS": true,
 		"gateway-trust/CODEFLY_GATEWAY_TOKEN":           true,
 	}, names)
+}
+
+// The boot refusals are only refusals if main WIRES them. Removing a call site leaves
+// every unit test above green while a deployed gateway starts on a published
+// credential, with no shared store for revocation or rate limits, and with no
+// trusted-proxy range — so the wiring is asserted from the source.
+//
+// A fourth refusal stood here, for a durable module prefix-claim store. It is gone
+// because its subject is: a module route is no longer claimed at runtime but read
+// per request from the delivered registry (gateway_module_routes.go), which is
+// shared and durable by construction and fails closed when no snapshot has loaded.
+//
+// Each is matched with codefly.IsLocal() specifically: wiring one of these to a
+// constant, or to a request-derived value, is the same defect as not wiring it.
+func TestR1019DeployedRefusalsAreWiredAtBoot(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	require.NoError(t, err)
+	text := string(source)
+
+	for _, wiring := range []struct{ what, call string }{
+		{"the shipped-placeholder refusal", "requirePerimeterCredentials(codefly.IsLocal())"},
+		{"the trusted-proxy range refusal", "requireProxyTrust(workspaceEnv(\"gateway\", \"TRUSTED_PROXY_CIDRS\"), codefly.IsLocal())"},
+		{"the revocation-store refusal", "newRevoker(redisURL, revocationTTL, codefly.IsLocal())"},
+		{"the rate-limit store refusal", "WithInProcessBackendAllowed(codefly.IsLocal())"},
+	} {
+		require.Contains(t, text, wiring.call,
+			"%s must be wired at boot from the runtime, not from a constant", wiring.what)
+	}
+
+	// And the refusal has to stop the process. A call whose error is ignored is not a
+	// refusal; every one of these is fatal at boot.
+	require.NotContains(t, text, "_ = requirePerimeterCredentials",
+		"the placeholder refusal's error must not be discarded")
+}
+
+// The per-replica limiter is reachable only through a distinct constructor, so a
+// deployed wiring cannot opt into it by passing a flag. This is the claim the review
+// found overstated: the option EXISTS and any caller could pass it, so what holds is
+// that the only production call site passes codefly.IsLocal() — which is what the
+// source assertion above actually establishes.
+func TestR1019InProcessLimiterIsNotTheProductionWiring(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(source), "WithInProcessBackendAllowed(true)",
+		"production must not hard-enable the per-replica limiter")
+	require.NotContains(t, string(source), "newInProcessRateLimiter(",
+		"the per-replica constructor is for tests and local development only")
 }

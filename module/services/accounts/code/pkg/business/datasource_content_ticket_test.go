@@ -100,3 +100,42 @@ func TestDatasourceKeysStayDistinctUnderOneProvisionedValue(t *testing.T) {
 		t.Fatal("the link key and the ticket key must differ even from one provisioned value")
 	}
 }
+
+// Each purpose's key must derive from ITS OWN delivered input. Asserting only that the
+// two keys differ is not enough: a link key derived from the TICKET input through a
+// domain label still differs from the ticket key, so that assertion passes while the
+// two purposes once again share one secret — which is the whole of SA-F-KEYREUSE.
+//
+// So this varies one input at a time and requires the other purpose not to move.
+func TestR1019DatasourceKeysDeriveFromTheirOwnInput(t *testing.T) {
+	keys := func(ticket, link string) (string, string) {
+		s := &Service{}
+		s.SetDatasourceKeys([]byte(ticket), []byte(link))
+		if s.datasourceTicketSigner == nil || s.datasourceLinkKey == nil {
+			t.Fatal("both purposes must be available")
+		}
+		return string(s.datasourceTicketSigner.key), string(s.datasourceLinkKey)
+	}
+
+	baseTicket, baseLink := keys("ticket-key-one", "link-key-one")
+
+	// Changing the LINK input must move the link key and leave the ticket key alone.
+	movedTicket, movedLink := keys("ticket-key-one", "link-key-two")
+	if movedLink == baseLink {
+		t.Fatal("the link key does not depend on the account-link input")
+	}
+	if movedTicket != baseTicket {
+		t.Fatal("the ticket key must not depend on the account-link input")
+	}
+
+	// And changing the TICKET input must move the ticket key and leave the link key
+	// alone. This is the direction that catches a link key derived from the ticket
+	// input.
+	movedTicket, movedLink = keys("ticket-key-two", "link-key-one")
+	if movedTicket == baseTicket {
+		t.Fatal("the ticket key does not depend on the content-ticket input")
+	}
+	if movedLink != baseLink {
+		t.Fatal("the link key must not depend on the content-ticket input")
+	}
+}
