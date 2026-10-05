@@ -21,7 +21,9 @@
 //
 // Inserts are batched: one insert per table per relay batch, never a row at a
 // time (a single-row insert creates a data part per insert and ends in
-// too-many-parts errors). Reads run in ClickHouse wherever ClickHouse computes
+// too-many-parts errors). On a cluster an insert returns only once a majority
+// of the replicas hold it, because the relay deletes its queue rows on the
+// acknowledgement. Reads run in ClickHouse wherever ClickHouse computes
 // exactly what the Postgres reads compute, and in the service (auditeval)
 // where it does not; reader.go says which.
 package clickhousestore
@@ -63,7 +65,10 @@ type Config struct {
 	Database string
 	// Cluster, when set, creates both tables ON CLUSTER as ReplicatedMergeTree,
 	// coordinated by ClickHouse Keeper under the servers' default replica path
-	// and name. Empty creates them as MergeTree on the one server.
+	// and name. Every insert then waits for a majority of the replicas before
+	// it is acknowledged, and every read is served only by a replica that holds
+	// all of them (insert_quorum, select_sequential_consistency). Empty creates
+	// the tables as MergeTree on the one server and sends neither setting.
 	Cluster string
 	// DeploymentID confines every read to this deployment's events.
 	DeploymentID string
@@ -92,6 +97,9 @@ type Store struct {
 	eventsDays   int
 	detailDays   int
 	readSettings clickhouse.Settings
+	// writeSettings are sent with every insert: on a cluster, the quorum that
+	// makes an acknowledgement durable.
+	writeSettings clickhouse.Settings
 	// inService, when set, is told each time an aggregation is evaluated in the
 	// service rather than in ClickHouse; tests use it to prove which ran.
 	inService func()
@@ -119,7 +127,7 @@ func New(conn Conn, cfg Config) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{
+	store := &Store{
 		conn:         conn,
 		database:     cfg.Database,
 		cluster:      cfg.Cluster,
@@ -138,8 +146,35 @@ func New(conn Conn, cfg Config) (*Store, error) {
 			// An unmatched details row reads as '' — no details — not NULL.
 			"join_use_nulls": 0,
 		},
-	}, nil
+	}
+	if cfg.Cluster != "" {
+		// An insert is acknowledged by the replica that took it unless told to
+		// wait, and the relay deletes its queue rows on the acknowledgement: a
+		// replica lost before the others copied the block would take events
+		// the queue no longer holds. So an insert waits for a majority of the
+		// replicas, one at a time (a parallel quorum insert may reach a
+		// different majority than the one before it, which no single replica
+		// can then be read as complete against), and gives up before the
+		// relay's own attempt does. A retried block is the same block, which a
+		// replicated table recognizes and does not store twice.
+		store.writeSettings = clickhouse.Settings{
+			"insert_quorum":          "auto",
+			"insert_quorum_parallel": 0,
+			"insert_quorum_timeout":  insertQuorumTimeoutMillis,
+		}
+		// A read is served only by a replica that holds every quorum insert, so
+		// an event the relay was told is stored is never missing from a read,
+		// and one that never reached the quorum is never in it. A replica that
+		// has not caught up fails the read, which the caller retries.
+		store.readSettings["select_sequential_consistency"] = 1
+	}
+	return store, nil
 }
+
+// insertQuorumTimeoutMillis is how long an insert waits for its quorum: less
+// than the relay's two-minute attempt, so the server gives up before the
+// caller's deadline does and the relay retries the block whole.
+const insertQuorumTimeoutMillis = 60_000
 
 func wholeDays(name string, window time.Duration) (int, error) {
 	const day = 24 * time.Hour
@@ -468,6 +503,9 @@ func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch)
 func (s *Store) insert(ctx context.Context, table string, columns []Column, rows [][]any) error {
 	if len(rows) == 0 {
 		return nil
+	}
+	if len(s.writeSettings) > 0 {
+		ctx = clickhouse.Context(ctx, clickhouse.WithSettings(s.writeSettings))
 	}
 	batch, err := s.conn.PrepareBatch(ctx, insertStatement(table, columns))
 	if err != nil {

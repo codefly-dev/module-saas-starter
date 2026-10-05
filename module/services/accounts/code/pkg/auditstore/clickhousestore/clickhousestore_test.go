@@ -398,3 +398,30 @@ func TestATimeBoundOutsideTheColumnRangeIsClamped(t *testing.T) {
 		require.True(t, bound.Value.Equal(tc.want), "%s: got %s, want %s", name, bound.Value, tc.want)
 	}
 }
+
+// On a cluster an insert acknowledged by one replica can be lost with it
+// before the others copy it, and the relay deletes its queue rows on the
+// acknowledgement; so every insert waits for a majority of replicas, and every
+// read refuses a replica that has not caught up with the quorum. On one
+// server neither setting means anything and neither is sent.
+func TestAClusterInsertsWithAQuorumAndReadsSequentially(t *testing.T) {
+	single, err := New(panicConn{}, validConfig())
+	require.NoError(t, err)
+	require.Empty(t, single.writeSettings)
+	require.NotContains(t, single.readSettings, "select_sequential_consistency")
+
+	cfg := validConfig()
+	cfg.Cluster = "audit_cluster"
+	clustered, err := New(panicConn{}, cfg)
+	require.NoError(t, err)
+	require.Equal(t, "auto", clustered.writeSettings["insert_quorum"], "a majority of the replicas")
+	require.Equal(t, 0, clustered.writeSettings["insert_quorum_parallel"], "sequential quorum inserts, which sequential reads need")
+	require.Equal(t, 1, clustered.readSettings["select_sequential_consistency"])
+	timeout, ok := clustered.writeSettings["insert_quorum_timeout"].(int)
+	require.True(t, ok)
+	require.Positive(t, timeout)
+	require.Less(t, time.Duration(timeout)*time.Millisecond, 2*time.Minute, "the quorum gives up before the relay's own attempt does")
+	for name, value := range single.readSettings {
+		require.Equal(t, value, clustered.readSettings[name], "the pinned reading settings are the same on a cluster: %s", name)
+	}
+}
