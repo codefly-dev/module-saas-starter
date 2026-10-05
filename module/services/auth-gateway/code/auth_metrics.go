@@ -28,6 +28,10 @@ const (
 	// names a different resource than the one being requested — an MCP token
 	// for one solution presented at another.
 	jwtRejectionWrongResource = "wrong_resource"
+	// jwtRejectionGenericAudience is a token carrying only the host audience
+	// presented at a solution's tool endpoint, which admits only a token issued
+	// for its own resource (SP-SOL-07).
+	jwtRejectionGenericAudience = "generic_audience"
 )
 
 // Instruments are created once against the global meter provider. main installs

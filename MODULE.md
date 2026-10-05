@@ -209,6 +209,16 @@ out, so a challenge it dropped was one nobody could read. The host serves no
 second copy of that document — two for one resource are two places to disagree,
 and a client follows whichever URL the challenge names.
 
+**Every `/.well-known/` path is public, served or not.** A well-known URI is
+public metadata by construction (RFC 8615) and every discovery chain begins by
+fetching one with no credential, so the page middleware's login redirect must
+never reach them — including the ones this host does not answer, which must get
+the 404 that says so. A browser follows a 307 and looks fine; a non-browser
+client follows it, parses a login page as JSON, and concludes that this host is
+not an authorization server, which is a report pointing nowhere near the
+middleware that caused it. The predicate is `isPublic` in `frontend/src/proxy.ts`
+and it is tested directly for exactly that reason.
+
 **Consent is enforced by the host, not advertised to the page.** A grant request
 for a client whose authorization requires consent is refused unless it states
 that the person approved. That does not defend against a hostile browser — one
@@ -248,14 +258,37 @@ Two client sources, which cannot collide — a registry slug can never spell
   published metadata.
 
 **Resource indicators (RFC 8707).** An authorization request may name one
-resource: a solution's MCP endpoint at this host's own public origin,
-`https://<host>/solutions/<id>/mcp`. The resource is recorded on the
-authorization code, persisted on the session, and carried as a second `aud`
-value beside the host's own — so every existing verifier still accepts the
-token, while the gateway refuses it at any **other** solution's surface. A
-rotation reissues the binding from the locked session row, never from the
-request. A token naming no resource is the ordinary session credential and is
-unaffected.
+resource: a solution's MCP endpoint **as a client can reach it**, which on a
+deployed cell is the host frontend's solution proxy —
+`https://<host>/api/solutions/<id>/proxy/mcp`. The gateway's own
+`/solutions/<id>/*` is an internal surface, and on the public origin that prefix
+is a frontend page that redirects to login, so a resource spelled that way names
+a document no client can fetch.
+
+The resource is recorded on the authorization code, persisted on the session, and
+carried as a second `aud` value beside the host's own — so every existing
+verifier still accepts the token. A rotation reissues the binding from the locked
+session row, never from the request.
+
+**A solution's MCP endpoint admits only a token issued for itself** (the security
+posture's SP-SOL-07). A token carrying just the host audience is a credential for
+the host's own API, and the whole purpose of a resource indicator is that one
+audience is not the other: it is refused there, with a 401 and a challenge saying
+what to authorize for. A deployment that has not been told its own public address
+cannot state which resource its tool endpoint requires, so it refuses by name
+rather than admitting what arrived.
+
+That line is drawn at the tool endpoint, not across every solution route. A
+solution's other routes are the product's own API surface, reached by a signed-in
+person whose session token names no resource; a resource-bound token is still
+confined there to the solution it names, so one solution's token never reads
+another's data.
+
+**A session cookie is not a credential at this perimeter.** The gateway verifies
+a bearer — an access token or an API key — and reads no cookie anywhere; a cookie
+is how the frontend holds a session for its own pages. A caller presenting one is
+told that, rather than reading "authentication required" while holding what looks
+to them like a credential.
 
 **Consent.** The host asks the person to approve a client by name when the
 client registered itself by publishing a document (nobody but the person can

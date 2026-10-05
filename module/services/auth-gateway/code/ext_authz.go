@@ -175,8 +175,19 @@ func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3
 		}
 	}
 
-	// No credentials — deny. The gateway decides whether to enforce
-	// or skip based on the route's auth requirement.
+	// No credential this perimeter accepts. It verifies a bearer — this host's
+	// own access token, or an API key — and nothing else; a session cookie is
+	// the frontend's way of holding a session for its own pages, never a
+	// credential presented here, so a caller that sent one is told that rather
+	// than being left to read "authentication required" while holding what
+	// looks to them like a credential.
+	//
+	// Stated only when a cookie was actually sent, so the ordinary
+	// no-credential answer is unchanged for every caller that sent nothing.
+	if headers["cookie"] != "" {
+		return deny(401, "a session cookie is not a credential at this surface; "+
+			"present an access token as `Authorization: Bearer`"), nil
+	}
 	return deny(401, "authentication required"), nil
 }
 
@@ -306,28 +317,67 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		}
 	}
 
-	// RFC 8707 resource binding. A token carrying a resource audience is
-	// admitted only at the solution that audience names — refusing one minted
-	// for another resource is the whole reason the audience is there. A token
-	// carrying none is an ordinary session credential and is admitted exactly
-	// as it is today: the browser's own session, and the first registered
-	// client, predate resource indicators and must keep working.
+	// RFC 8707 resource binding, with the tool endpoint held to a stricter rule
+	// than the rest of a solution's surface.
 	//
-	// Only solution paths are constrained. A resource-bound token still reaches
-	// the host's own API, because the host is where a solution's runtime
-	// resolves the caller's authority, and the token names the host audience
-	// too for precisely that reason (see the minter's two-audience comment).
-	if resource := resourceAudience(claims.Audience, s.audience); resource != "" {
-		if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath &&
-			!resourceAudienceAdmits(resource, solutionID, publicBaseURL()) {
-			recordJWTRejection(ctx, jwtRejectionWrongResource)
-			// 401, not 403: RFC 6750 §3.1 classes a token that is not valid for
-			// this resource as `invalid_token`, and an MCP client answers a 401
-			// by re-running discovery and authorizing for the right resource.
-			// A 403 would read as "you may not", which is not what happened.
-			return deny(401, "token audience does not name this resource"), nil
+	// Every refusal here answers 401 rather than 403: RFC 6750 §3.1 classes a
+	// token that is not valid for this resource as `invalid_token`, and an MCP
+	// client answers a 401 by re-reading the challenge and authorizing for the
+	// right resource. A 403 would read as "you may not", which is not what
+	// happened — and would leave the client with nothing to do.
+	if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
+		resource := resourceAudience(claims.Audience, s.audience)
+		base := publicBaseURL()
+		switch {
+		case isSolutionToolRequestPath(path):
+			// SP-SOL-07 (register finding SA-F-MCPAUD): a solution's tool
+			// endpoint is an OAuth protected resource in its own right, so it
+			// admits only a token ISSUED FOR it. A token naming just the host
+			// audience is a credential for the host's own API, and the whole
+			// point of the resource indicator is that one audience is not the
+			// other: a client, a solution or an intermediary holding a host
+			// token must not be able to act at a tool endpoint with it.
+			//
+			// This is deliberately stricter than issue #1003's original wording,
+			// which also admitted the session-kind token. The register's
+			// invariant wins: nothing that is not addressed to this endpoint
+			// reaches it.
+			if base == "" {
+				// Fail closed, by name. Without a configured public address this
+				// process cannot state which resource it requires, so it cannot
+				// judge a token against it — and the challenge it would emit
+				// would carry no absolute URL for a client to follow.
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, "this host has no configured public address, "+
+					"so it cannot state the resource this endpoint requires"), nil
+			}
+			if resource == "" {
+				recordJWTRejection(ctx, jwtRejectionGenericAudience)
+				return deny(401, "this endpoint requires a token issued for its own "+
+					"resource; the token presented names only the host. Authorize for "+
+					"this resource and retry"), nil
+			}
+			if !resourceAudienceAdmits(resource, solutionID, base) {
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, "the token presented was issued for a different "+
+					"resource than this endpoint"), nil
+			}
+		case resource != "":
+			// A solution's other routes are the product's own API surface,
+			// reached with an ordinary session. A resource-bound token is still
+			// confined to the solution it names, so one minted for solution A
+			// cannot read solution B's data either.
+			if !resourceAudienceAdmits(resource, solutionID, base) {
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, "the token presented was issued for a different "+
+					"resource than this endpoint"), nil
+			}
 		}
 	}
+	// A resource-bound token still reaches the host's own API, which is not a
+	// solution path: the host is where a solution's runtime resolves the
+	// caller's authority, and the token names the host audience too for exactly
+	// that reason (see the minter's two-audience comment).
 
 	hdrs := []*corev3.HeaderValueOption{
 		hdr("x-user-id", claims.Subject),

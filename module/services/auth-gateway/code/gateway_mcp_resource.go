@@ -57,6 +57,26 @@ func isSolutionMCPPath(subPath string) bool {
 	return subPath == solutionMCPSegment
 }
 
+// isSolutionToolRequestPath reports whether a FULL request path addresses a
+// solution's MCP endpoint — the surface the security posture treats as an OAuth
+// protected resource in its own right (SP-SOL-07).
+//
+// It is deliberately narrower than "any solution path". A solution's other
+// routes are the product's own API surface, reached by a signed-in person's
+// session through the host's pages; requiring a resource-bound token there
+// would refuse the product. The tool endpoint is the one a third-party client
+// connects to, and the one whose metadata this host publishes, so it is the one
+// that must demand a token issued for itself.
+func isSolutionToolRequestPath(path string) bool {
+	pathOnly, _, _ := strings.Cut(path, "?")
+	rest, ok := strings.CutPrefix(pathOnly, solutionPrefix)
+	if !ok {
+		return false
+	}
+	_, subPath, found := strings.Cut(rest, "/")
+	return found && isSolutionMCPPath(subPath)
+}
+
 // publicBaseURL is the operator-trusted public origin of this host, read from
 // the `application` configuration group — the same APP_BASE_URL accounts uses
 // for the links it mints. It is empty when the deployment has not pinned one.

@@ -310,18 +310,25 @@ func (s *Service) ResolveOAuthAuthorization(
 
 	resolved := &ResolvedOAuthAuthorization{Client: client, Scope: scope}
 	if raw := strings.TrimSpace(request.Resource); raw != "" {
-		// Pinned to the configured issuer when there is one, so a resource is
-		// minted only for this host's own published identity. A deployment that
-		// configured none publishes no metadata either, and falls back to the
-		// request's verified origin — which is what local development has, and
-		// which the gateway mirrors with the same fallback.
+		// Pinned to the CONFIGURED issuer, with no fallback to the request's
+		// origin.
+		//
+		// A resource names a thing this host will later have to recognise, and
+		// the gateway recognises it against the one configured address — it
+		// refuses the tool endpoint outright when there is none, because a rule
+		// it cannot evaluate must not wave a request through. A second notion of
+		// "this host's address" here would mint a credential that endpoint then
+		// rejects: the authorization would succeed, the token would issue, and
+		// the first tool call would fail with nothing in the flow pointing at
+		// the configuration that caused it.
+		//
+		// So it is refused HERE, where an operator is watching a browser, and
+		// the deployment that wants this surface configures its public address.
 		origin := s.oauthIssuer
 		if origin == "" {
-			origin = s.publicBaseURL(ctx)
-		}
-		if origin == "" {
 			return nil, authorizationError(OAuthErrorServerError,
-				"the authorization server cannot determine its own address", true)
+				"this host has no configured public address, so it cannot issue "+
+					"a token bound to a resource", true)
 		}
 		resource, err := auth.RequireResourceAtOrigin(raw, origin)
 		if err != nil {

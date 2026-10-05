@@ -599,7 +599,17 @@ function reportMissingGateway(err: unknown): void {
 	);
 }
 
-function isPublic(pathname: string): boolean {
+/**
+ * Whether a path bypasses the page middleware's login redirect.
+ *
+ * Exported for its own test. This one predicate decides whether an
+ * unauthenticated request is answered or sent to a login page, and getting it
+ * wrong is invisible from inside the app: a browser follows the 307 and looks
+ * fine, while a non-browser client parses a login page as JSON and reports that
+ * the endpoint does not exist. That failure mode is worth a direct test rather
+ * than one inferred through `proxy()`.
+ */
+export function isPublic(pathname: string): boolean {
 	if (PUBLIC_PATHS.includes(pathname)) return true;
 	// Next internals must always pass through.
 	if (pathname.startsWith("/_next/")) return true;
@@ -617,6 +627,20 @@ function isPublic(pathname: string): boolean {
 	// /oauth2/authorize is a page of this app and belongs here too — it is where
 	// an unauthenticated person is SUPPOSED to arrive.
 	if (pathname === "/oauth2/authorize") return true;
+	// EVERY well-known path, not only the ones this host answers itself.
+	//
+	// A `/.well-known/` URI is public metadata by construction (RFC 8615), and
+	// every discovery chain begins by GETting one with no credential at all.
+	// Answering one with a 307 to a login page does not merely inconvenience a
+	// client: a non-browser client follows the redirect, parses an HTML login
+	// page as JSON, and concludes the metadata does not exist — so the flow ends
+	// before it has begun, and the symptom it reports is "this host is not an
+	// authorization server" rather than "you are not signed in".
+	//
+	// A well-known path this host does NOT serve must reach the handler that
+	// answers 404. "No document here" is a true answer a client can act on; a
+	// login page is not.
+	if (pathname.startsWith("/.well-known/")) return true;
 	if (oauthSurfaceUpstreamPath(pathname) !== undefined) return true;
 	if (pathname === "/monitoring") return true;
 	if (pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif|css|js|woff2?)$/))

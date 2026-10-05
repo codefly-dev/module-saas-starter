@@ -122,6 +122,41 @@ func TestTheMetadataDocumentIsNotPublishedWithoutAnIssuer(t *testing.T) {
 	require.ErrorIs(t, err, business.ErrOAuthIssuerUnavailable)
 }
 
+// And a resource is refused for the same reason, rather than being pinned to
+// whatever origin the request arrived on.
+//
+// The gateway recognises a resource against the one CONFIGURED address, and
+// refuses a tool endpoint outright when there is none. A second notion of this
+// host's address here would mint a credential that endpoint rejects: the
+// authorization succeeds, the token issues, and the first tool call fails with
+// nothing in the flow naming the configuration that caused it. Refusing here
+// puts the answer where an operator is already watching.
+func TestAResourceIsRefusedWithoutAConfiguredAddress(t *testing.T) {
+	service := oauthService(t, "any")
+	service.SetOAuthIssuer("")
+
+	request := authorizeRequest()
+	request.Resource = theHost + "/api/solutions/example/proxy/mcp"
+	_, err := service.ResolveOAuthAuthorization(issuerContext(t), request)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no configured public address")
+}
+
+// With no resource the same deployment still signs a person in to a registered
+// client. The legacy browser handoff never named a resource and does not
+// acquire a new configuration prerequisite from this change (A1007B-03).
+func TestAResourcelessAuthorizationStillWorksWithoutAConfiguredAddress(t *testing.T) {
+	service := oauthService(t, "any")
+	service.SetOAuthIssuer("")
+
+	resolved, err := service.ResolveOAuthAuthorization(issuerContext(t), authorizeRequest())
+
+	require.NoError(t, err)
+	require.Equal(t, "Example Add-in", resolved.Client.Name)
+	require.Empty(t, resolved.Resource.Value)
+}
+
 func TestAnOperatorDeclaredClientNeedsNoConsent(t *testing.T) {
 	service := oauthService(t, "any")
 	resolved, err := service.ResolveOAuthAuthorization(issuerContext(t), authorizeRequest())

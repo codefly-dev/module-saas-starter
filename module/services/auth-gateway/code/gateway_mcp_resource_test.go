@@ -88,7 +88,7 @@ func TestGateway_MCPToken_IsAdmittedAtItsOwnResourceOnly(t *testing.T) {
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, 401, w.Code)
-	require.Contains(t, w.Body.String(), "does not name this resource")
+	require.Contains(t, w.Body.String(), "issued for a different resource")
 	require.Empty(t, other.lastPath, "the other solution must never be reached")
 }
 
@@ -152,7 +152,15 @@ func TestGateway_MCPToken_StillReachesTheHostAPI(t *testing.T) {
 // always minted — the browser's own session, and the first registered client.
 // It keeps reaching every solution surface, so enabling resource indicators
 // changes nothing for anything that predates them.
-func TestGateway_SessionTokenWithNoResource_IsStillAdmitted(t *testing.T) {
+// SP-SOL-07, register finding SA-F-MCPAUD. A solution's tool endpoint is an
+// OAuth protected resource in its own right, so a token carrying only the host
+// audience — a credential addressed to a different thing — does not reach it.
+//
+// This test replaces one that asserted the opposite. Issue #1003's wording also
+// admitted the plain session-kind token here; the register's invariant is
+// narrower and wins, because "any token this host signed" is precisely the
+// property a resource indicator exists to stop being sufficient.
+func TestGateway_AGenericHostTokenIsRefusedAtTheToolEndpoint(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	gw, _, _, priv := newGatewayHarness(t)
 	example := registerSolutionUpstream(t, gw, "example")
@@ -162,8 +170,93 @@ func TestGateway_SessionTokenWithNoResource_IsStillAdmitted(t *testing.T) {
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
+	require.Equal(t, 401, w.Code)
+	require.Contains(t, w.Body.String(), "requires a token issued for its own resource")
+	// The refusal must carry the challenge, or the client it refuses has nothing
+	// to act on: it learns what to authorize FOR from this header and nowhere
+	// else. A 401 without one is the measured defect this surface exists to fix.
+	require.Contains(t, w.Header().Get("WWW-Authenticate"), "resource_metadata=")
+	require.Empty(t, example.lastPath, "the refused request must not have reached the solution")
+}
+
+// The line drawn above is the tool endpoint, NOT every solution route. A
+// solution's other routes are the product's own API surface, reached by a
+// signed-in person whose session token carries no resource at all; refusing
+// those would refuse the product. Tightening one surface and tightening all of
+// them are different changes, and only the first is the register's.
+func TestGateway_AGenericHostTokenStillReachesASolutionsOtherRoutes(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, priv := newGatewayHarness(t)
+	example := registerSolutionUpstream(t, gw, "example")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/saas.example.v1.Items/List", nil)
+	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
 	require.Equal(t, 200, w.Code)
-	require.Equal(t, "/mcp", example.lastPath)
+	require.Equal(t, "/saas.example.v1.Items/List", example.lastPath)
+}
+
+// Fail closed, by name. Without a configured public address this process cannot
+// state which resource its tool endpoint requires, so it cannot judge a token
+// against one — and any challenge it emitted would carry no absolute URL for a
+// client to follow. It says that, rather than falling back to admitting
+// whatever arrived.
+func TestGateway_TheToolEndpointFailsClosedWithoutAConfiguredPublicAddress(t *testing.T) {
+	withPublicBase(t, "")
+	gw, _, _, priv := newGatewayHarness(t)
+	example := registerSolutionUpstream(t, gw, "example")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	req.Header.Set("Authorization",
+		"Bearer "+signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp"))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, 401, w.Code)
+	require.Contains(t, w.Body.String(), "no configured public address")
+	require.Empty(t, example.lastPath)
+}
+
+// Point 5 of the staging measurements, answered deliberately: a browser session
+// cookie is NOT a credential at this perimeter. The gateway verifies a bearer —
+// this host's access token, or an API key — and reads no cookie anywhere, so a
+// cookie-bearing caller is refused. What changes here is that the refusal says
+// so, instead of answering "authentication required" to someone who believes
+// they presented a credential.
+func TestGateway_ASessionCookieIsRefusedAndSaysWhy(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, _ := newGatewayHarness(t)
+	example := registerSolutionUpstream(t, gw, "example")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	req.Header.Set("Cookie", "refresh_token=whatever")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, 401, w.Code)
+	require.Contains(t, w.Body.String(), "session cookie is not a credential")
+	require.Contains(t, w.Body.String(), "Authorization: Bearer")
+	require.Contains(t, w.Header().Get("WWW-Authenticate"), "resource_metadata=")
+	require.Empty(t, example.lastPath)
+}
+
+// And a caller that presented nothing at all still gets the plain answer: the
+// cookie sentence is an explanation for a specific mistake, not a new generic
+// message for every unauthenticated request.
+func TestGateway_ARequestWithNoCredentialKeepsThePlainRefusal(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, _ := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "example")
+
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, 401, w.Code)
+	require.Contains(t, w.Body.String(), "authentication required")
+	require.NotContains(t, w.Body.String(), "session cookie")
 }
 
 // A resource at a host this deployment is not. The origin is pinned to
@@ -185,9 +278,15 @@ func TestGateway_MCPToken_MustNameThisHostsOrigin(t *testing.T) {
 	require.Empty(t, example.lastPath)
 }
 
-// Without a configured public origin the origin cannot be checked, so only the
-// solution the resource names is — which still stops one solution's token
-// reaching another, and is the property local development needs.
+// Without a configured public origin the origin cannot be checked, so on the
+// product's own API surface only the solution the resource names is — which
+// still stops one solution's token reaching another.
+//
+// The TOOL endpoint does not share this leniency: it fails closed instead (see
+// TestGateway_TheToolEndpointFailsClosedWithoutAConfiguredPublicAddress). The
+// difference is deliberate. Here the check is a narrowing of a token that was
+// already accepted; there it is the whole admission rule, and a rule that
+// cannot be evaluated must refuse rather than wave the request through.
 func TestGateway_WithNoConfiguredOrigin_OnlyTheSolutionIsChecked(t *testing.T) {
 	withPublicBase(t, "")
 	gw, _, _, priv := newGatewayHarness(t)
@@ -196,14 +295,14 @@ func TestGateway_WithNoConfiguredOrigin_OnlyTheSolutionIsChecked(t *testing.T) {
 
 	token := signResourceToken(t, priv, "http://localhost:3000/api/solutions/example/proxy/mcp")
 
-	req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example/v1/items", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, 200, w.Code)
-	require.Equal(t, "/mcp", example.lastPath)
+	require.Equal(t, "/v1/items", example.lastPath)
 
-	req = httptest.NewRequest(http.MethodPost, "/solutions/audit/mcp", nil)
+	req = httptest.NewRequest(http.MethodPost, "/solutions/audit/v1/items", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
@@ -293,9 +392,16 @@ func TestGateway_TheChallengeIsAbsentOnAServedSolutionResponse(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "example")
 
-	for _, path := range []string{"/solutions/example/mcp", "/solutions/example/v1/items"} {
+	// Each path with a credential that path actually admits: the tool endpoint
+	// takes only a token issued for its own resource, the product surface takes
+	// the ordinary session token.
+	for path, token := range map[string]string{
+		"/solutions/example/mcp": signResourceToken(t, priv,
+			testPublicBase+"/api/solutions/example/proxy/mcp"),
+		"/solutions/example/v1/items": signValidToken(t, priv),
+	} {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
-		req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 		gw.ServeHTTP(w, req)
 
