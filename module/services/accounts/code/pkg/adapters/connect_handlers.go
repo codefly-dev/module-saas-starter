@@ -10,6 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -66,6 +68,58 @@ func unary[Req, Resp any](
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// unaryCookieingRefreshToken serves a method that completes an authentication:
+// it moves the minted refresh credential out of the response body and into the
+// browser's cookie, exactly as the REST middleware does for the same methods.
+//
+// The Connect surface serves the same browser over the same origin and returned
+// the credential as readable content, so an injected script could read it from a
+// response it provoked. A caller that genuinely needs a refresh token in a body
+// is a registered OAuth client using the token endpoint, which is a separate
+// contract with its own audience and its own registry.
+func unaryCookieingRefreshToken[Req, Resp any](
+	ctx context.Context,
+	req *connect.Request[Req],
+	fn func(context.Context, *Req) (*Resp, error),
+) (*connect.Response[Resp], error) {
+	resp, err := unary(ctx, req, fn)
+	if err != nil {
+		return nil, err
+	}
+	if message, ok := any(resp.Msg).(proto.Message); ok {
+		cookieTheRefreshToken(resp.Header(), message)
+	}
+	return resp, nil
+}
+
+// connectHandlersExemptFromTheRefreshCookie are the authentication-completing
+// Connect methods whose response body carries the refresh credential by
+// contract. One entry: the OAuth 2.1 token endpoint (see
+// oauthTokenEndpointRESTPath). The coverage test requires the set to be exactly
+// this, so an exemption cannot be added without being read.
+var connectHandlersExemptFromTheRefreshCookie = map[string]bool{
+	"ExchangeClientToken": true,
+}
+
+// cookieTheRefreshToken clears a message's refresh_token field, if it has one
+// carrying a value, and sets the same cookie the REST path sets. Reflection
+// rather than a per-message setter: the field is named identically on every
+// authentication-completing response, and a response type added later is covered
+// without being enumerated here.
+func cookieTheRefreshToken(header http.Header, message proto.Message) {
+	reflected := message.ProtoReflect()
+	field := reflected.Descriptor().Fields().ByName("refresh_token")
+	if field == nil || field.Kind() != protoreflect.StringKind {
+		return
+	}
+	token := reflected.Get(field).String()
+	if token == "" {
+		return
+	}
+	reflected.Clear(field)
+	header.Add("Set-Cookie", refreshCookie(token, refreshCookieMaxAgeSeconds).String())
 }
 
 // translateGRPCError converts a google.golang.org/grpc/status error
@@ -470,7 +524,7 @@ func (h *authConnectHandler) BeginOAuth(ctx context.Context, req *connect.Reques
 
 func (h *authConnectHandler) Authenticate(ctx context.Context, req *connect.Request[gen.AuthenticateRequest]) (*connect.Response[gen.AuthenticateResponse], error) {
 	injectHeaderJWTCredential(req.Msg, req.Header())
-	return unary(ctx, req, h.inner.Authenticate)
+	return unaryCookieingRefreshToken(ctx, req, h.inner.Authenticate)
 }
 
 // injectHeaderJWTCredential turns a gateway-injected identity header into the
@@ -496,16 +550,16 @@ func injectHeaderJWTCredential(req *gen.AuthenticateRequest, h http.Header) {
 	}
 }
 func (h *authConnectHandler) CompleteMFAChallenge(ctx context.Context, req *connect.Request[gen.CompleteMFAChallengeRequest]) (*connect.Response[gen.CompleteMFAChallengeResponse], error) {
-	return unary(ctx, req, h.inner.CompleteMFAChallenge)
+	return unaryCookieingRefreshToken(ctx, req, h.inner.CompleteMFAChallenge)
 }
 func (h *authConnectHandler) BeginWebAuthnMFAChallenge(ctx context.Context, req *connect.Request[gen.BeginWebAuthnMFAChallengeRequest]) (*connect.Response[gen.BeginWebAuthnMFAChallengeResponse], error) {
 	return unary(ctx, req, h.inner.BeginWebAuthnMFAChallenge)
 }
 func (h *authConnectHandler) CompleteWebAuthnMFAChallenge(ctx context.Context, req *connect.Request[gen.CompleteWebAuthnMFAChallengeRequest]) (*connect.Response[gen.CompleteMFAChallengeResponse], error) {
-	return unary(ctx, req, h.inner.CompleteWebAuthnMFAChallenge)
+	return unaryCookieingRefreshToken(ctx, req, h.inner.CompleteWebAuthnMFAChallenge)
 }
 func (h *authConnectHandler) RefreshToken(ctx context.Context, req *connect.Request[gen.RefreshTokenRequest]) (*connect.Response[gen.RefreshTokenResponse], error) {
-	return unary(ctx, req, h.inner.RefreshToken)
+	return unaryCookieingRefreshToken(ctx, req, h.inner.RefreshToken)
 }
 func (h *authConnectHandler) SwitchOrganization(ctx context.Context, req *connect.Request[gen.SwitchOrganizationRequest]) (*connect.Response[gen.SwitchOrganizationResponse], error) {
 	return unary(ctx, req, h.inner.SwitchOrganization)

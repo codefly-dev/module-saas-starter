@@ -467,14 +467,21 @@ func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) 
 	return s.oauthState.Mint(provider, redirectURI)
 }
 
-// Logout revokes the session family associated with the given refresh
-// token AND adds the caller's access token jti to the revocation list
-// (when accessToken is non-empty). Idempotent: revoking an
-// already-revoked token is a no-op.
+// Logout ends the presented session: it revokes the session family the refresh
+// token belongs to, adds the caller's access token jti to the revocation list,
+// and marks the presented session so every access token minted for it dies now
+// rather than at its natural TTL. Idempotent: revoking an already-revoked
+// session is a no-op.
 //
-// The access token half is best-effort — failure here never fails the
-// logout, since the token will expire naturally within AccessTokenTTL.
-func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken string) error {
+// sessionID is the verified session the caller presented, not a request field.
+// It is what makes the access half of the sign-out independent of the body: a
+// logout that reaches here revokes the presented session's access tokens whether
+// or not a refresh credential came with it.
+//
+// Both access-token revocations are best-effort — a failure never fails the
+// logout, since those tokens expire within AccessTokenTTL — while the family
+// revocation is the durable authority and its error is returned.
+func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken, sessionID string) error {
 	w := wool.Get(ctx).In("Logout")
 
 	if s.minter == nil {
@@ -483,6 +490,11 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToke
 	if accessToken != "" {
 		if err := s.minter.RevokeAccess(ctx, accessToken); err != nil {
 			w.Warn("RevokeAccess failed (best-effort)", wool.ErrField(err))
+		}
+	}
+	if sessionID != "" {
+		if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
+			w.Warn("RevokeSessionAccess failed (best-effort)", wool.ErrField(err))
 		}
 	}
 	return s.minter.Revoke(ctx, req.RefreshToken)

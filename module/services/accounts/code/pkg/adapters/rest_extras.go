@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -31,32 +30,35 @@ const refreshTokenCookieName = "codefly_rt"
 // refreshTokenCookie is an HTTP middleware that moves the refresh token between
 // the auth JSON endpoints and an httpOnly, SameSite=Strict cookie:
 //
-//   - POST /v1/auth/refresh: if the request body carries no refresh token, the
-//     one from the cookie is injected, so the browser never has to hold it.
-//   - 2xx responses of /v1/auth/authenticate, /v1/auth/mfa/complete, and
-//     /v1/auth/refresh: the refresh token is lifted out of the JSON body into
-//     the cookie and STRIPPED from the body, so JS never sees it.
+//   - POST /v1/auth/refresh and POST /v1/auth/logout: when the request body
+//     carries no refresh token, the one from the cookie is injected, so the
+//     browser never has to hold it.
+//   - 2xx responses of every authentication-completing route: the refresh token
+//     is lifted out of the JSON body into the cookie and STRIPPED from the body,
+//     so JS never sees it.
 //   - POST /v1/auth/logout: the cookie is cleared.
 //
 // SameSite=Strict + the existing credentialed-CORS allowlist is the CSRF
-// defense for the (same-origin) refresh call. Secure is set automatically on
-// TLS so local http dev still works.
+// defense for the (same-origin) refresh call.
 func refreshTokenCookie(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		isAuth := path == "/v1/auth/authenticate"
-		isMFAComplete := path == "/v1/auth/mfa/complete"
-		isRefresh := path == "/v1/auth/refresh"
-		isLogout := path == "/v1/auth/logout"
+		completesAuthentication := authenticationCompletingRESTPaths[path]
+		consumesCookieRefreshToken := cookieRefreshTokenRESTPaths[path]
+		isLogout := path == logoutRESTPath
 
-		if !isAuth && !isMFAComplete && !isRefresh && !isLogout {
+		if !completesAuthentication && !consumesCookieRefreshToken {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Request side: feed the cookie's refresh token into the refresh call
-		// when the body doesn't already carry one.
-		if isRefresh {
+		// Request side: feed the cookie's refresh token into the call when the
+		// body doesn't already carry one. Logout needs this as much as refresh
+		// does — the browser's logout posts an empty body and the HttpOnly
+		// cookie, so without the lift the request failed field validation before
+		// Logout ran, leaving the session family and the access token live while
+		// the browser's own cookie was cleared.
+		if consumesCookieRefreshToken {
 			if c, err := r.Cookie(refreshTokenCookieName); err == nil && c.Value != "" {
 				r = injectRefreshToken(r, c.Value)
 			}
@@ -67,12 +69,12 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 
 		if isLogout {
-			clearRefreshCookie(w, r)
+			clearRefreshCookie(w)
 		}
 		body := rec.buf.Bytes()
-		if (isAuth || isMFAComplete || isRefresh) && rec.status >= 200 && rec.status < 300 {
+		if completesAuthentication && rec.status >= 200 && rec.status < 300 {
 			if token, stripped, ok := extractAndStripRefreshToken(body); ok {
-				setRefreshCookie(w, r, token)
+				setRefreshCookie(w, token)
 				body = stripped
 			}
 		}
@@ -80,6 +82,47 @@ func refreshTokenCookie(next http.Handler) http.Handler {
 		rec.Header().Del("Content-Length")
 		rec.flush(w, body)
 	})
+}
+
+const logoutRESTPath = "/v1/auth/logout"
+
+// authenticationCompletingRESTPaths are the REST routes whose response carries a
+// freshly minted refresh token. Every one of them must hand it to the browser as
+// a cookie and strip it from the body; a route missing here returns the
+// credential as readable content.
+//
+// TestEveryAuthCompletionCookiesTheRefreshToken derives the same set from the
+// service descriptor and fails when the two disagree, so a new route cannot be
+// added to the contract and left out here. The WebAuthn completion was exactly
+// that: it shares its response message with the TOTP completion, and only the
+// TOTP path was listed.
+var authenticationCompletingRESTPaths = map[string]bool{
+	"/v1/auth/authenticate":          true,
+	"/v1/auth/mfa/complete":          true,
+	"/v1/auth/mfa/webauthn/complete": true,
+	"/v1/auth/refresh":               true,
+}
+
+// oauthTokenEndpointRESTPath is the one authentication-completing route whose
+// response carries the refresh credential in the body, and must.
+//
+// It is the OAuth 2.1 token endpoint. Its caller is a registered client
+// exchanging an authorization code or a refresh token over a back-channel POST,
+// not a browser completing a session: RFC 6749 §5.1 defines the response as a
+// JSON body with `refresh_token` in it, and a Set-Cookie there reaches no client
+// that could use it. The credential it issues is bound to that client's own
+// session kind and registry, which is the separate contract the browser's
+// session is deliberately not part of.
+//
+// Named as an exemption rather than simply absent, so the descriptor-derived
+// coverage test can require it to be the ONLY one.
+const oauthTokenEndpointRESTPath = "/v1/auth/token"
+
+// cookieRefreshTokenRESTPaths are the routes whose refresh-token field is served
+// from the cookie when the body does not carry one.
+var cookieRefreshTokenRESTPaths = map[string]bool{
+	"/v1/auth/refresh": true,
+	logoutRESTPath:     true,
 }
 
 // bodyCapture buffers the downstream handler's response so the middleware can
@@ -152,45 +195,51 @@ func extractAndStripRefreshToken(body []byte) (token string, stripped []byte, ok
 	return token, out, true
 }
 
-func secureRefreshCookie(r *http.Request) bool {
-	// Public hosts stay fail-closed behind TLS-terminating proxies. Loopback
-	// HTTP is the only exception because browsers otherwise discard the cookie.
-	host := r.Host
-	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-		host = parsedHost
-	}
-	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
-		return false
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		return false
-	}
-	return true
+// allowInsecureRefreshCookie drops Secure from the refresh cookie. It exists for
+// one situation: a browser discards a Secure cookie on a plaintext loopback
+// origin, so local development would have no session at all.
+//
+// It is a property of the DEPLOYMENT, and the zero value — every deployed
+// environment, since only work.go sets it — keeps Secure. The flag replaces a
+// derivation from the request's Host header, which a caller supplies: a request
+// arriving at a deployed cell with `Host: localhost` was answered with a cookie
+// the browser would then send over plaintext.
+var allowInsecureRefreshCookie bool
+
+// SetAllowInsecureRefreshCookie wires the local-development exemption. Call it
+// from codefly.IsLocal() only, like SetExposeAuthErrorDetail: it must never be
+// true in a deployed environment.
+func SetAllowInsecureRefreshCookie(v bool) { allowInsecureRefreshCookie = v }
+
+// secureRefreshCookie reports whether the refresh cookie carries Secure.
+func secureRefreshCookie() bool { return !allowInsecureRefreshCookie }
+
+// refreshCookieMaxAgeSeconds matches the refresh-token TTL.
+const refreshCookieMaxAgeSeconds = 7 * 24 * 60 * 60
+
+func setRefreshCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, refreshCookie(token, refreshCookieMaxAgeSeconds))
 }
 
-func setRefreshCookie(w http.ResponseWriter, r *http.Request, token string) {
-	http.SetCookie(w, &http.Cookie{
+func clearRefreshCookie(w http.ResponseWriter) {
+	cleared := refreshCookie("", -1)
+	cleared.Expires = time.Unix(0, 0)
+	http.SetCookie(w, cleared)
+}
+
+// refreshCookie is the one shape the refresh credential is ever handed to a
+// browser in: scoped to the auth routes, not script-readable, same-site, and
+// transport-protected outside local development.
+func refreshCookie(token string, maxAge int) *http.Cookie {
+	return &http.Cookie{
 		Name:     refreshTokenCookieName,
 		Value:    token,
 		Path:     "/v1/auth",
 		HttpOnly: true,
-		Secure:   secureRefreshCookie(r),
+		Secure:   secureRefreshCookie(),
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   7 * 24 * 60 * 60, // 7 days, matches refresh-token TTL
-	})
-}
-
-func clearRefreshCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     refreshTokenCookieName,
-		Value:    "",
-		Path:     "/v1/auth",
-		HttpOnly: true,
-		Secure:   secureRefreshCookie(r),
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
+		MaxAge:   maxAge,
+	}
 }
 
 var (

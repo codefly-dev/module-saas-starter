@@ -158,7 +158,7 @@ rather than at first login.
 | Rotation      | One locked transaction consumes the family, resolves current authorization, and inserts one successor |
 | Org exchange  | Authenticated target-only exchange; current membership/roles resolved under the active session lock; same device family and refresh credential |
 | Reuse defense | Reuse of a token consumed by rotation revokes every active user session; administrative revocation is not replay |
-| Logout        | Revokes the refresh family and deny-lists the current access-token JTI in Redis |
+| Logout        | The browser posts an empty body and its HttpOnly refresh cookie; the middleware moves the cookie's token into the request as it does for refresh, so the family is revoked without the credential ever reaching script. Deny-lists the presented access-token JTI and the verified session, so the access half dies on the strength of who is calling rather than of what the body carried |
 | Current state | Refresh requires current authorization; database triggers atomically revoke affected families on status, membership/role, platform-role, and verified-MFA changes |
 
 ---
@@ -248,10 +248,10 @@ their next owning change.
 | Password login                       | ❌    | Intentional — provider-only; account recovery routed via OAuth    |
 | Fixture login (dev)                 | ✅    | Click-to-login in dev mode; not exposed in prod build            |
 | MFA (passkeys + TOTP + recovery)    | ✅    | WebAuthn with exact RP/origin policy and encrypted credential state; durable one-use login challenges and recent AAL2 step-up |
-| Refresh-token rotation              | ✅    | OWASP family revocation on reuse                                 |
+| Refresh-token rotation              | ✅    | OWASP family revocation on reuse. The credential never leaves as readable content: every authentication-completing surface — REST and Connect alike — moves it into the scoped HttpOnly SameSite=Strict cookie and strips the field, with one declared exemption, the OAuth 2.1 token endpoint, whose caller is a registered client and whose body carrier is the protocol's |
 | Session list + revoke               | ✅    | Stable per-device family ids, device context, idle/absolute expiry, whole-family revoke |
 | Session lifetime policy             | ✅    | Configurable fixed absolute TTL, idle TTL, and serialized active-device cap |
-| Logout                              | ✅    | Revokes the presented device family                              |
+| Logout                              | ✅    | Revokes the presented device family, the presented access token and the verified session's access half; the browser's cookie is the credential carrier, so an empty body is a complete sign-out |
 | OAuth state / CSRF                  | ✅    | Server-signed state bound to (provider, redirect_uri), single-use: the nonce is consumed on first verification and the state is refused when single use cannot be recorded |
 | OAuth PKCE                          | ❌    | Comments mention PKCE but exchanger uses `client_secret` (acceptable for confidential server-side; PKCE adds defense for SPA-driven flows) |
 | Account lockout (failed attempts)   | ❌    | No counter on user table                                         |

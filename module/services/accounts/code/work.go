@@ -839,6 +839,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// debugging; every deployed environment returns generic auth errors so the
 	// identity/enumeration oracle stays closed (#208).
 	adapters.SetExposeAuthErrorDetail(codefly.IsLocal())
+	// A browser discards a Secure cookie on a plaintext loopback origin, so local
+	// development needs the exemption; nothing else does, and the default keeps
+	// Secure.
+	adapters.SetAllowInsecureRefreshCookie(codefly.IsLocal())
 
 	// Separate shared-secret guards for internal RPC admission and forwarded
 	// gateway identity. Empty values fail closed; production deploys provide

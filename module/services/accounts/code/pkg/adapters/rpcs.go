@@ -1162,7 +1162,14 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*empty
 	// family. Empty when called from a non-authenticated context (e.g.
 	// the FE only forwards the refresh, never the access).
 	accessToken := bearerFromContext(ctx)
-	if err := service.Logout(ctx, req, accessToken); err != nil {
+	// The verified session, from the credential the caller actually presented
+	// rather than from the message: the session's access half is then revoked on
+	// the strength of who is calling, not of what the body happened to carry.
+	var verifiedSession string
+	if sessionID, ok := auth.VerifiedSessionID(ctx); ok {
+		verifiedSession = sessionID.String()
+	}
+	if err := service.Logout(ctx, req, accessToken, verifiedSession); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
