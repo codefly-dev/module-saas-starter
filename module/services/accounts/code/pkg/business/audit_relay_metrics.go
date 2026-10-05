@@ -15,6 +15,9 @@ import (
 type AuditQueueSnapshot struct {
 	Depth            int64
 	OldestEnqueuedAt *time.Time
+	// Quarantined is how many rows the relay has set aside, and which nothing
+	// deletes.
+	Quarantined int64
 }
 
 // AuditQueueMetricsSource reads the queue without taking the relay lease.

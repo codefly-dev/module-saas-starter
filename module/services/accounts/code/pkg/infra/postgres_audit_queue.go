@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"accounts/pkg/business"
 
@@ -57,22 +56,36 @@ func NewPostgresAuditQueue(pool *pgxpool.Pool) (*PostgresAuditQueue, error) {
 	return &PostgresAuditQueue{pool: pool}, nil
 }
 
-// Snapshot reads the queue's depth and oldest row for relay-lag telemetry.
-// The worker pool has the queue's cross-organization SELECT grant; request
-// traffic never receives this pool.
+// Snapshot reads the queue's depth, its oldest row and the size of the
+// quarantine for relay telemetry, in one statement so the three agree. The
+// worker pool has the queue's and the quarantine's cross-organization SELECT
+// grant; request traffic never receives this pool.
 func (q *PostgresAuditQueue) Snapshot(ctx context.Context) (business.AuditQueueSnapshot, error) {
-	var depth int64
-	var oldest *time.Time
-	err := q.pool.QueryRow(ctx, `SELECT count(*), min(enqueued_at) FROM public.audit_event_queue`).Scan(&depth, &oldest)
+	var snapshot business.AuditQueueSnapshot
+	err := q.pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM public.audit_event_queue),
+		       (SELECT min(enqueued_at) FROM public.audit_event_queue),
+		       (SELECT count(*) FROM public.audit_event_quarantine)`,
+	).Scan(&snapshot.Depth, &snapshot.OldestEnqueuedAt, &snapshot.Quarantined)
 	if err != nil {
 		return business.AuditQueueSnapshot{}, fmt.Errorf("audit queue: observe: %w", err)
 	}
-	return business.AuditQueueSnapshot{Depth: depth, OldestEnqueuedAt: oldest}, nil
+	return snapshot, nil
 }
 
 // auditQueueSelectSQL reads the oldest queued events whose writing
-// transactions are below the snapshot's xmin — every transaction that old has
-// finished, so nothing still in flight can later commit a row ahead of these.
+// transactions took their ids before the oldest transaction still running
+// (the snapshot's xmin): every transaction that old has finished, so its rows
+// are complete. The gate is transaction visibility, not sequence order. A row
+// can carry a lower sequence number than one already handed over when its
+// transaction took its id later; that is harmless, because both stores key a
+// record by event id and every read orders by event time.
+//
+// The same gate holds the whole queue behind a write transaction left open (a
+// stuck session, a long migration), and behind rows whose transaction ids are
+// ahead of the cluster's after a logical restore into a new cluster. Both
+// stall delivery without losing anything; MEASUREMENT_RUNBOOKS.md (`audit-relay`)
+// says how to tell them apart.
 const auditQueueSelectSQL = `
 	SELECT seq, id::text, event_type, schema_version,
 	       COALESCE(actor_id::text, ''), actor_type, resource,
@@ -86,34 +99,37 @@ const auditQueueSelectSQL = `
 	LIMIT $1`
 
 // Drain implements business.AuditQueue. The whole delivery runs in one
-// transaction holding the relay lease: read the batch, hand it to deliver,
-// delete exactly its rows, commit. A delivery that fails, a crash, or a lost
-// connection rolls the transaction back and leaves every row queued.
+// transaction holding the relay lease: read the batch, hand it to deliver, then
+// apply what deliver decided — delete the delivered rows and move the
+// quarantined ones into audit_event_quarantine, in the same transaction — and
+// commit. A delivery that fails, a crash, or a lost connection rolls the
+// transaction back and leaves every row queued.
 func (q *PostgresAuditQueue) Drain(
 	ctx context.Context,
 	limit int,
-	deliver func(ctx context.Context, events []business.QueuedAuditEvent) (bool, error),
-) (int, error) {
+	deliver func(ctx context.Context, events []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error),
+) (business.AuditDrainResult, error) {
+	var none business.AuditDrainResult
 	if limit < 1 {
-		return 0, fmt.Errorf("audit queue: limit must be positive, got %d", limit)
+		return none, fmt.Errorf("audit queue: limit must be positive, got %d", limit)
 	}
 	tx, err := q.pool.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return none, err
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck // rollback after commit is a no-op
 
 	var leased bool
 	if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`, auditRelayLeaseKey).Scan(&leased); err != nil {
-		return 0, fmt.Errorf("audit queue: take relay lease: %w", err)
+		return none, fmt.Errorf("audit queue: take relay lease: %w", err)
 	}
 	if !leased {
-		return 0, nil
+		return none, nil
 	}
 
 	rows, err := tx.Query(ctx, auditQueueSelectSQL, limit)
 	if err != nil {
-		return 0, fmt.Errorf("audit queue: read: %w", err)
+		return none, fmt.Errorf("audit queue: read: %w", err)
 	}
 	var events []business.QueuedAuditEvent
 	for rows.Next() {
@@ -132,43 +148,112 @@ func (q *PostgresAuditQueue) Drain(
 			&entry.ClientID, &event.EnqueuedAt,
 		); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("audit queue: scan: %w", err)
+			return none, fmt.Errorf("audit queue: scan: %w", err)
 		}
 		entry.EventType = business.EventType(eventType)
 		entry.CreatedAt = entry.CreatedAt.UTC()
 		event.EnqueuedAt = event.EnqueuedAt.UTC()
 		if entry.Payload, err = decodeQueuedPayload(payload); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("audit queue: payload of event %s: %w", entry.ID, err)
+			return none, fmt.Errorf("audit queue: payload of event %s: %w", entry.ID, err)
 		}
 		events = append(events, event)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("audit queue: read: %w", err)
+		return none, fmt.Errorf("audit queue: read: %w", err)
 	}
 
-	delivered, err := deliver(ctx, events)
-	if err != nil || !delivered {
-		return 0, err
-	}
-
-	seqs := make([]int64, len(events))
-	for i, event := range events {
-		seqs[i] = event.Seq
-	}
-	tag, err := tx.Exec(ctx, `DELETE FROM public.audit_event_queue WHERE seq = ANY($1)`, seqs)
+	outcome, err := deliver(ctx, events)
 	if err != nil {
-		return 0, fmt.Errorf("audit queue: delete delivered rows: %w", err)
+		return none, err
 	}
-	if tag.RowsAffected() != int64(len(seqs)) {
-		// Only the lease holder deletes, so this is a broken invariant, not a race.
-		return 0, fmt.Errorf("audit queue: deleted %d of %d delivered rows", tag.RowsAffected(), len(seqs))
+	if len(outcome.Delivered)+len(outcome.Quarantined) == 0 {
+		return none, outcome.Pending
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("audit queue: commit delivered batch: %w", err)
+	if err := checkOutcomeNamesOnlyTheseRows(outcome, events); err != nil {
+		return none, err
 	}
-	return len(events), nil
+
+	// The writes are acknowledged, so recording them is worth finishing even when
+	// the delivery used up its own deadline.
+	bookkeeping, cancel := context.WithTimeout(context.WithoutCancel(ctx), business.AuditRelayBookkeepingTimeout)
+	defer cancel()
+
+	if len(outcome.Delivered) > 0 {
+		tag, err := tx.Exec(bookkeeping, `DELETE FROM public.audit_event_queue WHERE seq = ANY($1)`, outcome.Delivered)
+		if err != nil {
+			return none, fmt.Errorf("audit queue: delete delivered rows: %w", err)
+		}
+		if tag.RowsAffected() != int64(len(outcome.Delivered)) {
+			// Only the lease holder deletes, so this is a broken invariant, not a race.
+			return none, fmt.Errorf("audit queue: deleted %d of %d delivered rows", tag.RowsAffected(), len(outcome.Delivered))
+		}
+	}
+	if len(outcome.Quarantined) > 0 {
+		seqs := make([]int64, len(outcome.Quarantined))
+		reasons := make([]string, len(outcome.Quarantined))
+		for i, set := range outcome.Quarantined {
+			seqs[i], reasons[i] = set.Seq, set.Reason
+		}
+		tag, err := tx.Exec(bookkeeping, auditQueueQuarantineSQL, seqs, reasons)
+		if err != nil {
+			return none, fmt.Errorf("audit queue: quarantine rows: %w", err)
+		}
+		if tag.RowsAffected() != int64(len(seqs)) {
+			return none, fmt.Errorf("audit queue: quarantined %d of %d rows", tag.RowsAffected(), len(seqs))
+		}
+	}
+	if err := tx.Commit(bookkeeping); err != nil {
+		return none, fmt.Errorf("audit queue: commit delivered batch: %w", err)
+	}
+	return business.AuditDrainResult{Delivered: len(outcome.Delivered), Quarantined: len(outcome.Quarantined)}, outcome.Pending
+}
+
+// auditQueueQuarantineSQL moves rows out of the queue into the quarantine in a
+// single statement, so a row is in exactly one of the two whatever happens:
+// the DELETE's rows feed the INSERT, and a failure of either undoes both.
+const auditQueueQuarantineSQL = `
+	WITH moved AS (
+		DELETE FROM public.audit_event_queue WHERE seq = ANY($1::bigint[]) RETURNING *
+	)
+	INSERT INTO public.audit_event_quarantine (
+		seq, xact_id, id, event_type, schema_version, actor_id, actor_type,
+		resource, resource_id, org_id, payload, ip_address, created_at,
+		impersonated_by, is_impersonated, client_id, enqueued_at, error
+	)
+	SELECT m.seq, m.xact_id, m.id, m.event_type, m.schema_version, m.actor_id, m.actor_type,
+	       m.resource, m.resource_id, m.org_id, m.payload, m.ip_address, m.created_at,
+	       m.impersonated_by, m.is_impersonated, m.client_id, m.enqueued_at, why.error
+	FROM moved m
+	JOIN unnest($1::bigint[], $2::text[]) AS why(seq, error) ON why.seq = m.seq`
+
+// checkOutcomeNamesOnlyTheseRows refuses an outcome that names a row this drain
+// did not read, or names one twice: applying it would delete or move a row no
+// one delivered.
+func checkOutcomeNamesOnlyTheseRows(outcome business.AuditDeliveryOutcome, events []business.QueuedAuditEvent) error {
+	read := make(map[int64]bool, len(events))
+	for _, event := range events {
+		read[event.Seq] = true
+	}
+	named := func(seq int64) error {
+		if !read[seq] {
+			return fmt.Errorf("audit queue: the outcome names row %d, which this drain did not read", seq)
+		}
+		delete(read, seq)
+		return nil
+	}
+	for _, seq := range outcome.Delivered {
+		if err := named(seq); err != nil {
+			return err
+		}
+	}
+	for _, set := range outcome.Quarantined {
+		if err := named(set.Seq); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // decodeQueuedPayload decodes a queued payload keeping each number's text

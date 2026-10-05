@@ -18,42 +18,84 @@ import (
 // every organization's events kept in queue order. These run it against
 // in-memory fakes of the three sides.
 
-// memQueue is a fake AuditQueue with the Postgres queue's delete-on-success
-// semantics.
+// memQueue is a fake AuditQueue with the Postgres queue's semantics: what the
+// relay delivers is deleted, what it sets aside moves to the quarantine, and
+// the rest stays.
 type memQueue struct {
 	mu     sync.Mutex
 	rows   []QueuedAuditEvent
-	leased bool // another relay holds the lease
-	// crashes makes the next n successful deliveries fail before their delete
-	// commits, the way a crash or a lost connection between the writes and the
-	// delete would.
+	held   []QueuedAuditEvent // the quarantine
+	leased bool               // another relay holds the lease
+	// crashes makes the next n removals fail before their commit, the way a
+	// crash or a lost connection between the writes and the delete would.
 	crashes int
 	drains  int
+	// onDrain runs at the start of every Drain, and ctxDeadlines records the
+	// deadline each Drain's context carried (zero for none).
+	onDrain      func(context.Context)
+	ctxDeadlines []time.Time
 }
 
-func (q *memQueue) Drain(ctx context.Context, limit int, deliver func(context.Context, []QueuedAuditEvent) (bool, error)) (int, error) {
+func (q *memQueue) Drain(ctx context.Context, limit int, deliver func(context.Context, []QueuedAuditEvent) (AuditDeliveryOutcome, error)) (AuditDrainResult, error) {
+	if q.onDrain != nil {
+		q.onDrain(ctx)
+	}
 	q.mu.Lock()
 	q.drains++
+	deadline, _ := ctx.Deadline()
+	q.ctxDeadlines = append(q.ctxDeadlines, deadline)
 	if q.leased {
 		q.mu.Unlock()
-		return 0, nil
+		return AuditDrainResult{}, nil
 	}
 	events := slices.Clone(q.rows[:min(limit, len(q.rows))])
 	q.mu.Unlock()
 
-	delivered, err := deliver(ctx, events)
-	if err != nil || !delivered {
-		return 0, err
+	outcome, err := deliver(ctx, events)
+	if err != nil {
+		return AuditDrainResult{}, err
+	}
+	result := AuditDrainResult{Delivered: len(outcome.Delivered), Quarantined: len(outcome.Quarantined)}
+	if result.Removed() == 0 {
+		return AuditDrainResult{}, outcome.Pending
 	}
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.crashes > 0 {
 		q.crashes--
-		return 0, errors.New("connection lost before the delete committed")
+		return AuditDrainResult{}, errors.New("connection lost before the commit")
 	}
-	q.rows = q.rows[len(events):]
-	return len(events), nil
+	gone := map[int64]bool{}
+	for _, seq := range outcome.Delivered {
+		gone[seq] = true
+	}
+	for _, set := range outcome.Quarantined {
+		gone[set.Seq] = true
+	}
+	var kept []QueuedAuditEvent
+	for _, row := range q.rows {
+		switch {
+		case !gone[row.Seq]:
+			kept = append(kept, row)
+		case slices.ContainsFunc(outcome.Quarantined, func(set QuarantinedAuditEvent) bool { return set.Seq == row.Seq }):
+			q.held = append(q.held, row)
+		}
+	}
+	q.rows = kept
+	return result, outcome.Pending
+}
+
+func (q *memQueue) quarantined() []QueuedAuditEvent {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.held)
+}
+
+func (q *memQueue) deadlines() []time.Time {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return slices.Clone(q.ctxDeadlines)
 }
 
 func (q *memQueue) remaining() []QueuedAuditEvent {
@@ -355,10 +397,9 @@ func TestAuditRelayRetriesOnlyTheUnacknowledgedWrite(t *testing.T) {
 	t.Run("warehouse outage", func(t *testing.T) {
 		f := newRelayFixture(t, 3, time.Second, nil)
 		f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 3)...)
-		outage := 4
+		outage := true
 		f.warehouse.fail = func(AuditBatch) error {
-			if outage > 0 {
-				outage--
+			if outage {
 				return errors.New("warehouse unavailable")
 			}
 			return nil
@@ -367,6 +408,7 @@ func TestAuditRelayRetriesOnlyTheUnacknowledgedWrite(t *testing.T) {
 			_, err := f.relay.DrainOnce(context.Background())
 			require.Error(t, err)
 		}
+		outage = false
 		delivered, err := f.relay.DrainOnce(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, 3, delivered)
@@ -387,30 +429,40 @@ func TestAuditRelayRetriesOnlyTheUnacknowledgedWrite(t *testing.T) {
 		require.Len(t, f.archive.order, 1)
 		require.Len(t, f.warehouse.appended, 3, "neither side is written twice")
 	})
-	t.Run("a grown batch is a new batch", func(t *testing.T) {
+	t.Run("a grown batch archives only its new rows, as an object of their own", func(t *testing.T) {
 		f := newRelayFixture(t, 4, time.Second, nil)
-		f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 2)...)
+		first := f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 2)...)
 		f.warehouse.fail = func(AuditBatch) error { return errors.New("warehouse unavailable") }
 		_, err := f.relay.DrainOnce(context.Background())
 		require.Error(t, err)
 
-		f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 2)...)
+		second := f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 2)...)
 		f.warehouse.fail = nil
 		delivered, err := f.relay.DrainOnce(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, 4, delivered)
 		require.Len(t, f.archive.order, 2, "different rows are archived as their own object")
-		require.Len(t, f.archive.objects[f.archive.order[1]].Records, 4)
+		require.ElementsMatch(t, second, recordIDs(f.archive.objects[f.archive.order[1]]), "and rows already archived are not archived again")
+		require.ElementsMatch(t, first, recordIDs(f.archive.objects[f.archive.order[0]]))
+		require.Len(t, f.warehouse.byID, 4)
 	})
 }
 
-func TestAuditRelayStopsAtTheFirstFailedBatch(t *testing.T) {
+func recordIDs(batch AuditBatch) []string {
+	ids := make([]string, len(batch.Records))
+	for i, record := range batch.Records {
+		ids[i] = record.Entry.ID
+	}
+	return ids
+}
+
+func TestAuditRelayStopsAtTheFirstBatchThatLeavesRowsQueued(t *testing.T) {
 	f := newRelayFixture(t, 2, time.Second, nil)
 	ids := f.enqueue(time.Minute, EventSessionRevoked, repeatOrg(teeOrgID, 6)...)
 	appends := 0
 	f.warehouse.fail = func(AuditBatch) error {
 		appends++
-		if appends == 2 {
+		if appends >= 2 {
 			return errors.New("warehouse unavailable")
 		}
 		return nil
@@ -419,11 +471,8 @@ func TestAuditRelayStopsAtTheFirstFailedBatch(t *testing.T) {
 	delivered, err := f.relay.DrainOnce(context.Background())
 	require.Error(t, err)
 	require.Equal(t, 2, delivered)
-	var remaining []string
-	for _, row := range f.queue.remaining() {
-		remaining = append(remaining, row.Entry.ID)
-	}
-	require.Equal(t, ids[2:], remaining, "the failed batch and everything behind it stay queued, in order")
+	require.Equal(t, ids[2:], queuedIDs(f.queue.remaining()), "the failed batch and everything behind it stay queued, in order")
+	require.Empty(t, f.queue.quarantined())
 }
 
 func TestAuditRelayLeaseHeldElsewhereDeliversNothing(t *testing.T) {

@@ -61,12 +61,21 @@ func queuedEntry(orgID string, eventType business.EventType) business.AuditEntry
 	}
 }
 
+// deliveredAll is the outcome of a relay that delivered every row it was handed.
+func deliveredAll(events []business.QueuedAuditEvent) business.AuditDeliveryOutcome {
+	var outcome business.AuditDeliveryOutcome
+	for _, event := range events {
+		outcome.Delivered = append(outcome.Delivered, event.Seq)
+	}
+	return outcome
+}
+
 func drainAll(t *testing.T, queue *infra.PostgresAuditQueue) []business.QueuedAuditEvent {
 	t.Helper()
 	var got []business.QueuedAuditEvent
-	_, err := queue.Drain(testCtx, 1000, func(_ context.Context, events []business.QueuedAuditEvent) (bool, error) {
+	_, err := queue.Drain(testCtx, 1000, func(_ context.Context, events []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error) {
 		got = events
-		return true, nil
+		return deliveredAll(events), nil
 	})
 	require.NoError(t, err)
 	return got
@@ -192,23 +201,23 @@ func TestAuditQueueDeletesOnlyWhatWasDelivered(t *testing.T) {
 	queue, err := infra.NewPostgresAuditQueue(pool)
 	require.NoError(t, err)
 
-	_, err = queue.Drain(testCtx, 3, func(context.Context, []business.QueuedAuditEvent) (bool, error) {
-		return false, errors.New("warehouse unavailable")
+	_, err = queue.Drain(testCtx, 3, func(context.Context, []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error) {
+		return business.AuditDeliveryOutcome{}, errors.New("warehouse unavailable")
 	})
 	require.ErrorContains(t, err, "warehouse unavailable")
-	n, err := queue.Drain(testCtx, 3, func(context.Context, []business.QueuedAuditEvent) (bool, error) {
-		return false, nil
+	removed, err := queue.Drain(testCtx, 3, func(context.Context, []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error) {
+		return business.AuditDeliveryOutcome{}, nil
 	})
 	require.NoError(t, err)
-	require.Zero(t, n, "a batch the relay is not ready to deliver is left queued")
+	require.Zero(t, removed.Removed(), "a batch the relay is not ready to deliver is left queued")
 
 	var first []business.QueuedAuditEvent
-	n, err = queue.Drain(testCtx, 3, func(_ context.Context, events []business.QueuedAuditEvent) (bool, error) {
+	removed, err = queue.Drain(testCtx, 3, func(_ context.Context, events []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error) {
 		first = events
-		return true, nil
+		return deliveredAll(events), nil
 	})
 	require.NoError(t, err)
-	require.Equal(t, 3, n)
+	require.Equal(t, 3, removed.Delivered)
 
 	rest := drainAll(t, queue)
 	require.Len(t, rest, 2, "exactly the delivered rows were deleted")
@@ -274,15 +283,15 @@ func TestAuditQueueLeaseAdmitsOneRelayAtATime(t *testing.T) {
 	second, err := infra.NewPostgresAuditQueue(auditRelayPool(t))
 	require.NoError(t, err)
 
-	_, err = first.Drain(testCtx, 10, func(ctx context.Context, events []business.QueuedAuditEvent) (bool, error) {
+	_, err = first.Drain(testCtx, 10, func(ctx context.Context, events []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error) {
 		require.Len(t, events, 1)
-		n, err := second.Drain(ctx, 10, func(context.Context, []business.QueuedAuditEvent) (bool, error) {
+		removed, err := second.Drain(ctx, 10, func(context.Context, []business.QueuedAuditEvent) (business.AuditDeliveryOutcome, error) {
 			t.Fatal("a second relay must not be handed rows while the first holds the lease")
-			return false, nil
+			return business.AuditDeliveryOutcome{}, nil
 		})
 		require.NoError(t, err)
-		require.Zero(t, n)
-		return true, nil
+		require.Zero(t, removed.Removed())
+		return deliveredAll(events), nil
 	})
 	require.NoError(t, err)
 }
