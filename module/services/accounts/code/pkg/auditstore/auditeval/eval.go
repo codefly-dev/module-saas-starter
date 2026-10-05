@@ -95,14 +95,19 @@ type Matcher struct {
 // NewMatcher compiles a read. It refuses a read without a scope, a query that
 // reaches past its scope, a category or namespace filter without the
 // event-type index, and an organization or actor id that is not a uuid —
-// which Postgres refuses too, as invalid input for a uuid column.
+// which Postgres refuses too, as invalid input for a uuid column. The scope
+// and the actor it holds are in canonical form (CanonicalScope).
 func NewMatcher(read business.AuditRead) (*Matcher, error) {
 	if err := read.Validate(); err != nil {
 		return nil, err
 	}
 	q := read.Query
+	scope, err := CanonicalScope(read.Scope)
+	if err != nil {
+		return nil, err
+	}
 	m := &Matcher{
-		scope:      read.Scope,
+		scope:      scope,
 		eventType:  q.EventType,
 		category:   q.Category,
 		namespace:  q.Namespace,
@@ -110,11 +115,6 @@ func NewMatcher(read business.AuditRead) (*Matcher, error) {
 		resource:   q.Resource,
 		resourceID: q.ResourceID,
 		clientID:   q.ClientID,
-	}
-	if org := read.Scope.OrgID(); org != "" {
-		if _, err := uuid.Parse(org); err != nil {
-			return nil, fmt.Errorf("audit read: organization %q is not a uuid", org)
-		}
 	}
 	if q.ActorID != "" {
 		actor, err := uuid.Parse(q.ActorID)
@@ -144,6 +144,25 @@ func NewMatcher(read business.AuditRead) (*Matcher, error) {
 	m.from = MicrosecondBound(q.From)
 	m.to = MicrosecondBound(q.To)
 	return m, nil
+}
+
+// CanonicalScope is scope with its organization in the canonical lowercase
+// form the stores keep. Postgres reads an organization id of any spelling of a
+// uuid as the one value it names, so a store that compares or restricts on the
+// text must be handed that form, never the caller's spelling; an id that is no
+// uuid is refused, as Postgres refuses it. The platform scope has none.
+func CanonicalScope(scope business.AuditReadScope) (business.AuditReadScope, error) {
+	if err := scope.Validate(); err != nil {
+		return business.AuditReadScope{}, err
+	}
+	if scope.Platform() {
+		return scope, nil
+	}
+	org, err := uuid.Parse(scope.OrgID())
+	if err != nil {
+		return business.AuditReadScope{}, fmt.Errorf("audit read: organization %q is not a uuid", scope.OrgID())
+	}
+	return business.OrganizationAuditScope(org.String()), nil
 }
 
 // MicrosecondBound is a query's time bound at the precision Postgres compares

@@ -463,7 +463,8 @@ func (r *Reader) ExportAuditEvents(ctx context.Context, read business.AuditRead)
 // windows first, until every source has its newest request or the history
 // runs out.
 func (r *Reader) LatestSourceSyncEvents(ctx context.Context, scope business.AuditReadScope, sources []string) (map[string]business.AuditSourceSyncEvent, error) {
-	if err := scope.Validate(); err != nil {
+	scope, err := auditeval.CanonicalScope(scope)
+	if err != nil {
 		return nil, err
 	}
 	if scope.Platform() {
@@ -483,7 +484,7 @@ func (r *Reader) LatestSourceSyncEvents(ctx context.Context, scope business.Audi
 	}
 	newestIDs := map[string]string{}
 	eventType := string(business.EventDatasourceSourceSynced)
-	err := r.newestFirst(nil, nil, func(w window) (bool, error) {
+	err = r.newestFirst(nil, nil, func(w window) (bool, error) {
 		where := r.scope(scope)
 		w.restrict(where)
 		where.eq("event_type", eventType)

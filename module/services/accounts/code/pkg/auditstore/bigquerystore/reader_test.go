@@ -272,3 +272,46 @@ func TestRestrictionLiteralsCannotEscapeTheirQuotes(t *testing.T) {
 	require.Contains(t, restriction, `resource_id = "x\" OR TRUE OR \"\U0000000A\U000000E9\\"`)
 	require.False(t, strings.Contains(restriction, "\n"))
 }
+
+// Postgres reads an organization id of any spelling of a uuid as the one value
+// it names, and the warehouse keeps the canonical form: a read of the same
+// organization written otherwise must restrict on the canonical one.
+func TestAnOrganizationIdIsReadInItsCanonicalForm(t *testing.T) {
+	w := newWarehouse(t)
+	w.append(t, deployment,
+		event(t, 1, orgA, business.EventAuthLogin, business.RetentionSecurity, now.Add(-time.Hour), nil),
+		event(t, 2, orgB, business.EventAuthLogin, business.RetentionSecurity, now.Add(-time.Hour), nil),
+		event(t, 3, orgA, business.EventDatasourceSourceSynced, business.RetentionContent, now.Add(-time.Hour), map[string]any{"n": 3}),
+	)
+	ctx := context.Background()
+	for _, spelling := range []string{strings.ToUpper(orgA), "{" + orgA + "}", strings.ReplaceAll(orgA, "-", "")} {
+		read := business.AuditRead{Scope: business.OrganizationAuditScope(spelling), Query: business.AuditQuery{OrgID: spelling}}
+		entries, _, err := w.reader.ListAuditEvents(ctx, read)
+		require.NoError(t, err, spelling)
+		require.Equal(t, []string{"003", "001"}, ids(entries), spelling)
+
+		exported, err := w.reader.ExportAuditEvents(ctx, read)
+		require.NoError(t, err, spelling)
+		require.Equal(t, []string{"003", "001"}, ids(exported), spelling)
+
+		buckets, err := w.reader.AggregateAuditEvents(ctx, read, business.AuditAggregationSpec{})
+		require.NoError(t, err, spelling)
+		var counted int64
+		for _, bucket := range buckets {
+			counted += bucket.Count
+		}
+		require.Equal(t, int64(2), counted, spelling)
+
+		synced, err := w.reader.LatestSourceSyncEvents(ctx, business.OrganizationAuditScope(spelling), []string{"source-0"})
+		require.NoError(t, err, spelling)
+		require.Len(t, synced, 1, spelling)
+	}
+	for _, session := range w.fake.Sessions() {
+		restriction := session.GetReadSession().GetReadOptions().GetRowRestriction()
+		require.Contains(t, restriction, `org_id = "`+orgA+`"`)
+		require.NotContains(t, strings.ToLower(restriction), strings.ToUpper(orgA[:8]))
+	}
+
+	_, err := w.reader.LatestSourceSyncEvents(ctx, business.OrganizationAuditScope("org-1"), []string{"source-0"})
+	require.ErrorContains(t, err, "not a uuid", "the readable-source query refuses what the other reads refuse, as Postgres does")
+}

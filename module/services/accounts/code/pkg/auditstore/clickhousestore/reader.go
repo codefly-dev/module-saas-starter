@@ -427,7 +427,8 @@ func (s *Store) aggregateInClickHouse(ctx context.Context, pl plan, spec busines
 // source, its newest sync request in the scope's organization — by
 // occurrence, and by event id between two at one instant — in one GROUP BY.
 func (s *Store) LatestSourceSyncEvents(ctx context.Context, scope business.AuditReadScope, sources []string) (map[string]business.AuditSourceSyncEvent, error) {
-	if err := scope.Validate(); err != nil {
+	scope, err := auditeval.CanonicalScope(scope)
+	if err != nil {
 		return nil, err
 	}
 	if scope.Platform() {
@@ -452,7 +453,7 @@ func (s *Store) LatestSourceSyncEvents(ctx context.Context, scope business.Audit
 	w.and("has(" + p.texts(ids) + ", resource_id)")
 	statement := "SELECT resource_id, max(occurred_at), argMax(actor_id, (occurred_at, event_id)) FROM " + EventsTable +
 		" WHERE " + w.String() + " GROUP BY resource_id"
-	err := s.scan(ctx, statement, p.args, func(rows driver.Rows) (bool, error) {
+	err = s.scan(ctx, statement, p.args, func(rows driver.Rows) (bool, error) {
 		var source, actor string
 		var at time.Time
 		if err := rows.Scan(&source, &at, &actor); err != nil {

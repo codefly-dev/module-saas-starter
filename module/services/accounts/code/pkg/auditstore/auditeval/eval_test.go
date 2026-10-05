@@ -2,6 +2,7 @@ package auditeval
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,4 +172,35 @@ func TestMatcherRefusals(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	require.Equal(t, "bbbbbbbb-0000-4000-8000-000000000002", m.ActorID(), "an actor id compares as the uuid it names")
+}
+
+// Postgres reads an organization id of any spelling of a uuid as the one value
+// it names; the stores keep it in the canonical lowercase form, so every read
+// carries that form, whatever the caller wrote.
+func TestMatcherReadsAnOrganizationInItsCanonicalForm(t *testing.T) {
+	canonical := "aaaaaaaa-0000-4000-8000-0000000000ab"
+	for _, spelling := range []string{
+		strings.ToUpper(canonical),
+		"{" + canonical + "}",
+		strings.ReplaceAll(canonical, "-", ""),
+	} {
+		scope := business.OrganizationAuditScope(spelling)
+		m, err := NewMatcher(business.AuditRead{Scope: scope, Query: business.AuditQuery{OrgID: spelling}})
+		require.NoError(t, err, spelling)
+		require.Equal(t, canonical, m.Scope().OrgID(), spelling)
+		require.True(t, m.InScope(business.AuditEntry{OrgID: canonical}), spelling)
+		require.False(t, m.InScope(business.AuditEntry{OrgID: "aaaaaaaa-0000-4000-8000-0000000000ac"}), spelling)
+
+		canonicalScope, err := CanonicalScope(scope)
+		require.NoError(t, err, spelling)
+		require.Equal(t, canonical, canonicalScope.OrgID(), spelling)
+	}
+
+	platform, err := CanonicalScope(business.PlatformAuditScope())
+	require.NoError(t, err)
+	require.True(t, platform.Platform())
+	_, err = CanonicalScope(business.OrganizationAuditScope("org-1"))
+	require.ErrorContains(t, err, "not a uuid")
+	_, err = CanonicalScope(business.AuditReadScope{})
+	require.ErrorIs(t, err, business.ErrAuditReadUnscoped)
 }

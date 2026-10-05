@@ -385,6 +385,45 @@ func TestServerLatestSourceSyncEvents(t *testing.T) {
 	}, got, "another organization's and another deployment's requests are outside the read")
 }
 
+// An organization id is any spelling of a uuid to Postgres; the store keeps
+// the canonical lowercase form, so a read written otherwise still finds it.
+func TestServerReadsAnOrganizationOfAnySpelling(t *testing.T) {
+	conn, database := serverDatabase(t)
+	ctx := context.Background()
+	store := serverStore(t, conn, database)
+	require.NoError(t, store.Ensure(ctx))
+
+	org, other, actor := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	synced := newRecord(t, org, actor, business.EventDatasourceSourceSynced, "source-1", base, business.RetentionContent, map[string]any{"n": 1})
+	appendBatch(t, store, testDeployment,
+		synced,
+		newRecord(t, org, actor, business.EventAuthLogin, "", base.Add(-time.Hour), business.RetentionSecurity, map[string]any{"method": "password"}),
+		newRecord(t, other, actor, business.EventAuthLogin, "", base.Add(-time.Hour), business.RetentionSecurity, nil),
+	)
+	for _, spelling := range []string{strings.ToUpper(org), "{" + org + "}", strings.ReplaceAll(org, "-", "")} {
+		read := business.AuditRead{Scope: business.OrganizationAuditScope(spelling), Query: business.AuditQuery{OrgID: spelling}}
+		listed, _, err := store.ListAuditEvents(ctx, read)
+		require.NoError(t, err, spelling)
+		require.Len(t, listed, 2, spelling)
+		exported, err := store.ExportAuditEvents(ctx, read)
+		require.NoError(t, err, spelling)
+		require.Len(t, exported, 2, spelling)
+		buckets, err := store.AggregateAuditEvents(ctx, read, business.AuditAggregationSpec{})
+		require.NoError(t, err, spelling)
+		var counted int64
+		for _, bucket := range buckets {
+			counted += bucket.Count
+		}
+		require.Equal(t, int64(2), counted, spelling)
+		latest, err := store.LatestSourceSyncEvents(ctx, business.OrganizationAuditScope(spelling), []string{"source-1"})
+		require.NoError(t, err, spelling)
+		require.Equal(t, map[string]business.AuditSourceSyncEvent{
+			"source-1": {RequestedAt: time.UnixMicro(base.UnixMicro()), ActorID: actor},
+		}, latest, spelling)
+	}
+}
+
 // Decimal texts whose nearest double a fast parser misses: ClickHouse reads
 // each — as a JSON number and as a JSON string — to the double Postgres's
 // float8in reads, so the metrics over them run in ClickHouse and agree.

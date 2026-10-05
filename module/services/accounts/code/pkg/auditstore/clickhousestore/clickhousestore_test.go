@@ -346,3 +346,30 @@ func decode(t *testing.T, text string) map[string]any {
 	require.NoError(t, json.Unmarshal([]byte(text), &out))
 	return out
 }
+
+// Postgres reads an organization id of any spelling of a uuid as the one value
+// it names, and the store keeps the canonical form: the statement of a read
+// written otherwise must bind the canonical one.
+func TestAnOrganizationIdIsBoundInItsCanonicalForm(t *testing.T) {
+	store, err := New(panicConn{}, validConfig())
+	require.NoError(t, err)
+	canonical := "22222222-aaaa-4000-8000-0000000000ab"
+	for _, spelling := range []string{strings.ToUpper(canonical), "{" + canonical + "}", strings.ReplaceAll(canonical, "-", "")} {
+		read := business.AuditRead{Scope: business.OrganizationAuditScope(spelling), Query: business.AuditQuery{OrgID: spelling}}
+		m, err := auditeval.NewMatcher(read)
+		require.NoError(t, err, spelling)
+		p := &sqlParams{}
+		w, ok := store.eventsWhere(p, newPlan(m, read.Query))
+		require.True(t, ok)
+		require.Contains(t, w.String(), "org_id = ")
+		var bound []any
+		for _, arg := range p.args {
+			bound = append(bound, arg.(driver.NamedValue).Value)
+		}
+		require.Contains(t, bound, canonical, spelling)
+		require.NotContains(t, bound, spelling, spelling)
+	}
+
+	_, err = store.LatestSourceSyncEvents(context.Background(), business.OrganizationAuditScope("org-1"), []string{"source-1"})
+	require.ErrorContains(t, err, "not a uuid", "the readable-source query refuses what the other reads refuse, as Postgres does")
+}
