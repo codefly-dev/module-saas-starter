@@ -63,7 +63,7 @@ const (
 // the runtime module with one operation binding the parent is exchanged
 // through.
 const contractPrincipals = `{` +
-	`"` + contractSourceModule + `":{"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
+	`"` + contractSourceModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
 	`"source-sync":{"audience":"` + contractRuntimeModule + `",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
@@ -72,7 +72,7 @@ const contractPrincipals = `{` +
 	`"invoke_scopes":[{"resource_kind":"indexes","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"indexes","actions":["read"]}],` +
 	`"headless_scopes":[{"resource_kind":"indexes","actions":["write"]}]}}},` +
-	`"` + contractRuntimeModule + `":{"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
+	`"` + contractRuntimeModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + contractModuleOrg + `","operation_audiences":{` +
 	`"ingest":{"audience":"docstore-ingest",` +
 	`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 	`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`

@@ -194,7 +194,7 @@ const executionTokenAudience = "accounts"
 // caller named, which is a caller-supplied input; the token is what makes the
 // pod reference trustworthy.
 func (s *Service) BindExecution(
-	ctx context.Context, principalID, token, containerName string,
+	ctx context.Context, principalID, token string,
 ) (*ExecutionIdentity, error) {
 	if s.executionReviewer == nil || s.executionAuthority == nil {
 		return nil, fmt.Errorf("%w: this host has no execution reviewer wired", ErrExecutionUnbound)
@@ -202,13 +202,21 @@ func (s *Service) BindExecution(
 	if token == "" {
 		return nil, fmt.Errorf("%w: no token presented", ErrExecutionNotBoundToken)
 	}
-	if containerName == "" {
-		// The container is what runs the image, so without it there is nothing
-		// whose running digest could be read. A pod's FIRST container is the
-		// tempting default and it is wrong: a sidecar would satisfy the check
-		// for the workload beside it.
-		return nil, fmt.Errorf("%w: no container named", ErrExecutionUnbound)
+
+	// THE DECLARED WORKLOAD, read before the token is reviewed, because it is
+	// what the review will be held against. A principal this host has no
+	// declaration for is refused as unknown rather than as unapproved: nothing
+	// is known about it, so nothing can be approved for it, and the two must
+	// not read alike.
+	grant, declared := s.declaredModules()[principalID]
+	if !declared || !grant.Workload.declared() {
+		return nil, fmt.Errorf("%w: %s declares no workload identity", ErrUnknownExecutionPrincipal, principalID)
 	}
+	// The container comes from the declaration, never from the caller. It used
+	// to be an argument, which left the caller choosing which of its pod's
+	// images the approval was tested against — a pod's containers do not all
+	// run the same image, so naming a sibling picks the comparison.
+	containerName := grant.Workload.Container
 
 	// 1. Authenticate. The API server checks the audience, so a token minted
 	//    for anything else is rejected before this host reasons about it.
@@ -223,6 +231,22 @@ func (s *Service) BindExecution(
 	if reviewed.PodUID == "" || reviewed.PodName == "" {
 		return nil, fmt.Errorf("%w: the token authenticates %s/%s but names no pod",
 			ErrExecutionNotBoundToken, reviewed.Namespace, reviewed.ServiceAccount)
+	}
+
+	// THE CALLER MUST BE THE WORKLOAD THE PRINCIPAL DECLARES. Without this the
+	// principal is a bare claim: a module holding its own valid token could
+	// name another module's prefix, and the comparison below would test that
+	// other principal's approved build against THIS caller's running image —
+	// which passes whenever the two share an image, and a shared base image is
+	// ordinary. A verdict rather than "unbound": the host established exactly
+	// who the caller is, and it is not who it says it is.
+	if reviewed.ServiceAccount != grant.Workload.ServiceAccount ||
+		reviewed.Namespace != grant.Workload.Namespace {
+		return nil, fmt.Errorf(
+			"%w: %s is declared to run as %s/%s, the presented token authenticates %s/%s",
+			ErrExecutionIdentityMismatch, principalID,
+			grant.Workload.Namespace, grant.Workload.ServiceAccount,
+			reviewed.Namespace, reviewed.ServiceAccount)
 	}
 
 	// 2. Read the pod the TOKEN named — never one the caller named.

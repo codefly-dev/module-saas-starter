@@ -10,8 +10,8 @@ import (
 func TestListPrincipals_DoesNotProjectDeclaredAuthority(t *testing.T) {
 	const org = "019f6bf7-6a01-7001-8001-0000000000c1"
 	registry, err := ParseModulePrincipalRegistry(`{
-		"example": {"tenant":"` + org + `"},
-		"worker": {"tenant":"019f6bf7-6a01-7001-8001-0000000000c2","cross_tenant":true}
+		"example": {"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + org + `"},
+		"worker": {"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-6a01-7001-8001-0000000000c2","cross_tenant":true}
 	}`)
 	require.NoError(t, err)
 	stored := &Principal{ID: "019f6bf7-6a01-7001-8001-0000000000a1", Kind: PrincipalKindService, OrgID: org, DisplayName: "Example service"}

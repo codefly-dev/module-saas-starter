@@ -19,7 +19,7 @@ import (
 
 const (
 	moduleWorkContextTenant = "55555555-5555-4555-8555-555555555555"
-	documentsPrincipals     = `{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` +
+	documentsPrincipals     = `{"documents":{"queues":["datasource"],"namespaces":["document"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` +
 		moduleWorkContextTenant + `"}}`
 )
 
@@ -311,8 +311,8 @@ func TestMintModuleWorkContextReportsAnUnconfiguredAuthority(t *testing.T) {
 func TestMintModuleWorkContextBindsSecretToPrefix(t *testing.T) {
 	installModuleWorkContextService(t,
 		"documents:"+registrationDigest("documents-secret")+",billing:"+registrationDigest("billing-secret"),
-		`{"documents":{"queues":["datasource"],"tenant":"`+moduleWorkContextTenant+`"},`+
-			`"billing":{"queues":["billing"],"tenant":"`+moduleWorkContextTenant+`"}}`)
+		`{"documents":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"},`+
+			`"billing":{"queues":["billing"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"`+moduleWorkContextTenant+`"}}`)
 	installModuleWorkContextAuthority(t)
 
 	_, err := mintModuleWorkContext(t, "billing", "documents-secret")

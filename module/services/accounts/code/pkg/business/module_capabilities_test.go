@@ -950,7 +950,7 @@ func TestModuleRequestApproval_ResumeQueueMustBeAllowed(t *testing.T) {
 // an opaque id and every side computes the same one.
 func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 	registry, err := business.ParseModulePrincipalRegistry(
-		`{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` + moduleTenantA + `"}}`)
+		`{"documents":{"queues":["datasource"],"namespaces":["document"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -970,7 +970,7 @@ func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
 // two the host reads out of a sealed capability are refused.
 func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing.T) {
 	registry, err := business.ParseModulePrincipalRegistry(
-		`{"documents":{"resources":["documents.files","rolesets"],"tenant":"` + moduleTenantA + `"}}`)
+		`{"documents":{"resources":["documents.files","rolesets"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -989,16 +989,16 @@ func TestParseModulePrincipalRegistry_AcceptsOrdinaryContentResources(t *testing
 
 func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
 	tests := map[string]string{
-		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
+		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// The tenant is sealed into a signed capability and compared against
 		// organization ids: a malformed one signs, then matches no tenant and drops
 		// the org from its own audit record, so it is rejected where it is read.
 		"no tenant":       `{"documents":{"queues":["datasource"]}}`,
-		"non-uuid tenant": `{"documents":{"queues":["datasource"],"tenant":"acme-org"}}`,
+		"non-uuid tenant": `{"documents":{"queues":["datasource"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"acme-org"}}`,
 		// A principal id is a valid prefix by pattern, so an entry keyed the way the
 		// registry used to be would otherwise parse into a principal no module can
 		// ever be, denying every call for a reason that names the caller.
-		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 		// `roles` and `audit` are read off a sealed capability by the host itself
 		// (the collection-metadata disclosure) rather than authorized per node, so
 		// the content-read branch's "every read is re-authorized per node"
@@ -1007,8 +1007,8 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 		// who holds a grant on every readable collection, which only an
 		// organization-wide assignment could reach before. The registry is operator
 		// text this host cannot otherwise check, so it is refused at parse time.
-		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"tenant":"` + moduleTenantA + `"}}`,
-		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource roles": `{"documents":{"resources":["documents.files","roles"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
+		"host-sealed scope resource audit": `{"documents":{"resources":["audit"],"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"` + moduleTenantA + `"}}`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1466,5 +1466,51 @@ func TestModuleNotifyOrgAdmins_RefusedBeforeAnyWrite(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 	if len(store.notified) != 0 {
 		t.Fatalf("a refused call wrote %d notifications", len(store.notified))
+	}
+}
+
+// A declaration with no workload FAILS THE BOOT, naming the entry.
+//
+// Config errors fail early here, and this is one: execution binding is
+// unconditional, so a principal whose workload is not declared can never be
+// authenticated — every call it makes is refused. Caught at parse, the operator
+// reads one line naming the entry; caught at the mint, they read "denied" and go
+// looking at the caller.
+//
+// All three parts, each on its own, because a partial workload is the
+// whole-or-absent trap: it would check the parts it has and silently skip the
+// rest, which reads as enforcement.
+func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
+	const tenant = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
+	for name, workload := range map[string]string{
+		"absent":             ``,
+		"empty":              `"workload":{},`,
+		"no service account": `"workload":{"namespace":"acme-prod","container":"app"},`,
+		"no namespace":       `"workload":{"service_account":"documents","container":"app"},`,
+		"no container":       `"workload":{"service_account":"documents","namespace":"acme-prod"},`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := business.ParseModulePrincipalRegistry(
+				`{"documents":{` + workload + `"tenant":"` + tenant + `"}}`)
+			if err == nil {
+				t.Fatal("a principal that can never be authenticated must not parse")
+			}
+			if !strings.Contains(err.Error(), "documents") || !strings.Contains(err.Error(), "workload") {
+				t.Fatalf("the refusal must name the entry and the workload, or an operator cannot find it: %v", err)
+			}
+		})
+	}
+
+	// NON-VACUITY: a fully declared workload parses, so the cases above fail for
+	// the workload rather than for something else in the fixture.
+	registry, err := business.ParseModulePrincipalRegistry(
+		`{"documents":{"workload":{"service_account":"documents","namespace":"acme-prod","container":"app"},` +
+			`"tenant":"` + tenant + `"}}`)
+	if err != nil {
+		t.Fatalf("a fully declared entry must parse: %v", err)
+	}
+	want := business.ModuleWorkload{ServiceAccount: "documents", Namespace: "acme-prod", Container: "app"}
+	if got := registry[business.ModulePrincipalID("documents")].Workload; got != want {
+		t.Fatalf("the parsed workload must be carried through verbatim, or it reads as undeclared later: got %+v want %+v", got, want)
 	}
 }

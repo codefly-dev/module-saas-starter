@@ -264,7 +264,7 @@ func TestParseDeclaredAuditEventTypes_ReadsVisibility(t *testing.T) {
 // be corrected — at boot, naming both the namespace and what it is not among —
 // rather than at the registration that trips over it.
 func TestParseModulePrincipalRegistry_ExternalNamespaceMustBeBound(t *testing.T) {
-	const tenant = `"tenant":"11111111-1111-1111-1111-111111111111"`
+	const tenant = `"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"11111111-1111-1111-1111-111111111111"`
 	if _, err := ParseModulePrincipalRegistry(
 		`{"example":{"namespaces":["example"],"external_namespaces":["example"],` + tenant + `}}`,
 	); err != nil {

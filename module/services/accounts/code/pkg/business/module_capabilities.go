@@ -52,6 +52,44 @@ import (
 // worker needs to service every tenant's deliveries on its queue. Tenant is the
 // org a single-tenant module is bound to, which its minted Work Context carries;
 // a cross-tenant module names the tenant per mint instead.
+// ModuleWorkload is the Kubernetes identity this principal's pods run as, and
+// the container within them that runs its image.
+//
+// WHY THE DECLARATION HOLDS THIS AT ALL. Execution binding is unconditional, so
+// `BindExecution` is the only thing authenticating a module mint — and it takes
+// the principal as an INPUT. On its own that leaves the principal a bare claim:
+// a module presenting its own perfectly valid service-account token could name
+// ANOTHER module's prefix, and the check would then compare that other
+// principal's approved build against this caller's running image. Two modules
+// built from one image are interchangeable, and a shared base image makes the
+// hole wider than that. The shared secret used to bind the prefix to the
+// caller; removing it without this would have removed the binding.
+//
+// So the declaration says which workload a principal IS, the TokenReview says
+// which workload the caller is, and a mismatch is a refusal. The prefix becomes
+// a claim the host can check rather than one it has to believe.
+//
+// THE CONTAINER IS DECLARED, NOT CHOSEN. It was a caller-supplied argument, and
+// that is the last degree of freedom the caller had over its own identity: a
+// pod's containers do not all run the same image, so naming a sibling picks
+// which image the approval is tested against. Reading it from the declaration
+// means nothing about the identity is the caller's to pick — the prefix is
+// checked, the pod comes from the token, the container comes from here, the
+// running image comes from the pod's status, and the approval comes from a
+// signed document.
+type ModuleWorkload struct {
+	ServiceAccount string `json:"service_account"`
+	Namespace      string `json:"namespace"`
+	Container      string `json:"container"`
+}
+
+// declared reports whether the workload is fully stated. All three or none: a
+// partial workload would check the parts it has and silently skip the rest,
+// which is the whole-or-absent trap.
+func (w ModuleWorkload) declared() bool {
+	return w.ServiceAccount != "" && w.Namespace != "" && w.Container != ""
+}
+
 type ModulePrincipalGrant struct {
 	ReadAudiences      map[string]ModuleReadAudience      `json:"read_audiences"`
 	OperationAudiences map[string]ModuleOperationAudience `json:"operation_audiences"`
@@ -69,6 +107,11 @@ type ModulePrincipalGrant struct {
 	Resources          []string
 	CrossTenant        bool
 	Tenant             string
+
+	// Workload is the Kubernetes identity this principal runs as. Required:
+	// see ModuleWorkload for why a principal without one cannot be
+	// authenticated at all.
+	Workload ModuleWorkload
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -209,6 +252,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		Resources          []string                           `json:"resources"`
 		CrossTenant        bool                               `json:"cross_tenant"`
 		Tenant             string                             `json:"tenant"`
+		Workload           ModuleWorkload                     `json:"workload"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, err
@@ -237,6 +281,19 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		tenant, err := uuid.Parse(grant.Tenant)
 		if err != nil {
 			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
+		}
+		// The workload, refused at boot rather than at the mint it would deny.
+		// A principal with no declared workload can never be authenticated —
+		// execution binding is unconditional and has nothing to compare the
+		// reviewed service account against — so an entry missing it is a
+		// composition that cannot work, and saying so here names the entry
+		// instead of leaving every one of its calls refused as "denied".
+		if !grant.Workload.declared() {
+			return nil, fmt.Errorf(
+				"module principal %q must declare its workload identity (service_account, namespace, container): "+
+					"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
+					"from any other caller holding a valid token",
+				prefix)
 		}
 		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
 			return nil, err
@@ -275,6 +332,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 			Resources:          grant.Resources,
 			CrossTenant:        grant.CrossTenant,
 			Tenant:             tenant.String(),
+			Workload:           grant.Workload,
 		}
 	}
 	return registry, nil

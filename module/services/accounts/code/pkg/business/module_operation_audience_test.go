@@ -13,7 +13,7 @@ func TestInstalledOperationAudiencePolicy(t *testing.T) {
 		InvokeScopes: []ModuleOperationScope{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIDs: []string{"result-1"}}},
 		LookupScopes: []ModuleOperationScope{{ResourceKind: "results", Actions: []string{"read"}, ResourceIDs: []string{"result-1"}}},
 	}
-	raw, err := json.Marshal(map[string]any{"example": map[string]any{"tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661", "operation_audiences": map[string]ModuleOperationAudience{"generate": valid}}})
+	raw, err := json.Marshal(map[string]any{"example": map[string]any{"workload": map[string]any{"service_account": "module", "namespace": "acme-prod", "container": "app"}, "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661", "operation_audiences": map[string]ModuleOperationAudience{"generate": valid}}})
 	require.NoError(t, err)
 	registry, err := ParseModulePrincipalRegistry(string(raw))
 	require.NoError(t, err)
@@ -36,8 +36,8 @@ func TestInstalledOperationAudiencePolicy(t *testing.T) {
 
 func TestInstalledOperationAudienceRejectsUnknownFieldsAndNonCanonicalSets(t *testing.T) {
 	for _, raw := range []string{
-		`{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"other","scopes":[]}}}}`,
-		`{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"other","invoke_scopes":[{"resource_kind":"results","actions":["write","read"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}`,
+		`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"other","scopes":[]}}}}`,
+		`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"other","invoke_scopes":[{"resource_kind":"results","actions":["write","read"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}`,
 		"{\"example\":{\"tenant\":\"019f6bf7-5b4b-74e5-8c17-092259bb1661\",\"operation_audiences\":{\"generate\":{\"audience\":\"other\",\"invoke_scopes\":[{\"resource_kind\":\"results\",\"actions\":[\"read\\n\"]}],\"lookup_scopes\":[{\"resource_kind\":\"results\",\"actions\":[\"read\"]}]}}}}",
 	} {
 		_, err := ParseModulePrincipalRegistry(raw)
@@ -87,14 +87,14 @@ func TestInstalledOperationAudienceHeadlessScopes(t *testing.T) {
 		})
 	}
 
-	raw := `{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"other",` +
+	raw := `{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"other",` +
 		`"invoke_scopes":[{"resource_kind":"profiles","actions":["invoke"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`
 	_, err := ParseModulePrincipalRegistry(raw)
 	require.Error(t, err, "lookup scopes must still be a subset of invoke scopes")
 
-	raw = `{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"other",` +
+	raw = `{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"other",` +
 		`"invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`
@@ -105,7 +105,7 @@ func TestInstalledOperationAudienceHeadlessScopes(t *testing.T) {
 }
 
 func TestModuleAuthorizeOperationContext(t *testing.T) {
-	registry, err := ParseModulePrincipalRegistry(`{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{` +
+	registry, err := ParseModulePrincipalRegistry(`{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{` +
 		`"model":{"audience":"other","invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]},` +
@@ -146,7 +146,7 @@ func TestModuleAuthorizeOperationContext(t *testing.T) {
 }
 
 func TestModuleOperationContextRevisionIsADeterministicDigestOfTheGrant(t *testing.T) {
-	raw := `{"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","queues":["a"],"operation_audiences":{` +
+	raw := `{"example":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","queues":["a"],"operation_audiences":{` +
 		`"model":{"audience":"other","invoke_scopes":[{"resource_kind":"profiles","actions":["invoke","read"]}],` +
 		`"lookup_scopes":[{"resource_kind":"profiles","actions":["read"]}],` +
 		`"headless_scopes":[{"resource_kind":"profiles","actions":["invoke"],"resource_ids":["p-1"]}]}}}}`

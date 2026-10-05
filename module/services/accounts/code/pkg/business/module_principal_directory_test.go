@@ -46,7 +46,7 @@ func TestParseModulePrincipalRegistry_CanonicalizesTheTenant(t *testing.T) {
 		"019f6bf76a01700180010000000000c1",
 	} {
 		t.Run(spelling, func(t *testing.T) {
-			registry, err := ParseModulePrincipalRegistry(`{"documents": {"tenant": "` + spelling + `"}}`)
+			registry, err := ParseModulePrincipalRegistry(`{"documents": {"workload": {"service_account": "module", "namespace": "acme-prod", "container": "app"}, "tenant": "` + spelling + `"}}`)
 			require.NoError(t, err)
 			require.Equal(t, canonical, registry[ModulePrincipalID("documents")].Tenant)
 		})
