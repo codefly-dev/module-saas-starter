@@ -2553,7 +2553,10 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err != nil {
 		return err
 	}
-	return requireKeyCustody(selection.SigningBackend, isLocal)
+	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
+		return err
+	}
+	return requirePerimeterCredentials(isLocal)
 }
 
 // requireKeyCustody refuses to start outside the local environment without the

@@ -33,6 +33,13 @@ func main() {
 		panic(fmt.Sprintf("codefly init failed: %v", err))
 	}
 
+	// Refuse before anything is served: a deployed gateway holding a shipped
+	// placeholder, or a perimeter credential too short to be one, decides
+	// perimeter membership on a published value.
+	if err := requirePerimeterCredentials(codefly.IsLocal()); err != nil {
+		panic(err.Error())
+	}
+
 	grpcPort := codefly.For(ctx).WithDefaultNetwork().API(standards.GRPC).NetworkInstance().Port
 	var httpPort uint16
 	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()

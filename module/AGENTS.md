@@ -107,6 +107,18 @@ Context. That is a property of those maps, not of configuration here.
 Other groups ship a **working default**, which is the opposite posture: `local`
 carries `CODEFLY_INTERNAL_TOKEN=local-dev-only-replace-me` in
 `internal-auth.secret.env` and `IDENTITY_SIGNUP_MODE=open` in `identity.env`.
-Nothing rejects a shipped placeholder that reaches a real deployment, so an
-unprovisioned group is not a denied one — it is a live credential with a value
-everybody knows.
+
+For the credentials that decide **perimeter membership** — the cluster-internal
+token and the gateway-provenance token — a shipped default no longer reaches a
+deployed runtime: accounts and `auth-gateway` each refuse to start when one
+carries a marker from the same list the shipping gate requires of every secret
+default, or is shorter than 32 characters, and the refusal names the
+group-qualified key. The marker lists and the length floor live in
+`shipped_placeholder.go` beside each service's entrypoint, and
+`module/tools/shipped_placeholder_lockstep_test.go` holds all three copies
+identical — one added on only one side leaves either a published value a cell
+accepts or a default that side can no longer boot on.
+
+Every **other** group still ships a working default that a deployed runtime will
+use: an unprovisioned optional group is not a denied one. Where that matters for a
+credential, the loader's own "is this required" check is the place to say so.
