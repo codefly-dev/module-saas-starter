@@ -3,8 +3,9 @@
 - Status: Proposed
 - Date: 2026-10-02
 - Supersedes, in part: [ADR 0006](./0006-audit-sink-and-retention-tiers.md) — its
-  sink decision, "a tee, not a swap" (Decision item 2, option B), and for a
-  deployment that selects a swap value, its retention tiers (Decision item 3).
+  sink decision, "a tee, not a swap" (Decision item 2; option C of its Options
+  considered), and for a deployment that selects a swap value, its retention
+  tiers (Decision item 3).
   ADR 0006's admission policy and sizing stand.
 - Refines: [ADR 0003](./0003-typed-audit-event-registry.md) — "analytics stays in
   Postgres" now holds for the `postgres` default only. The registry and the
@@ -56,18 +57,35 @@ Postgres transaction.
    default for every deployment that does not opt in. `both` — ADR 0006's tee —
    keeps its current behaviour, for compatibility. `external` stays refused.
 
-   A deployment that selects a swap value sets, beside `AUDIT_SINK`: the
-   warehouse (`AUDIT_BIGQUERY_PROJECT` and `AUDIT_BIGQUERY_DATASET` for
-   `bigquery`; `AUDIT_CLICKHOUSE_DSN` and `AUDIT_EVENTS_RETENTION_DAYS` for
-   `clickhouse`), `AUDIT_ARCHIVE_URL` — the locked archive as a URL whose scheme
-   picks the archive writer (`gs://<bucket>` for GCS or `s3://<bucket>` for S3;
-   any scheme without a writer is refused at startup) —
-   `AUDIT_CONTENT_RETENTION_DAYS` (the details window of item 5) and
-   `AUDIT_DEPLOYMENT_ID`, stamped on every record. ClickHouse may additionally
-   set `AUDIT_CLICKHOUSE_CLUSTER` for replicated tables. The events retention
-   must be at least the content-detail window. A missing required setting
-   fails startup. Credentials are the platform's ambient identity (on
-   Kubernetes, the pod's workload identity), never a key in configuration.
+   A deployment that selects a swap value sets, beside `AUDIT_SINK`:
+   - the warehouse: `AUDIT_BIGQUERY_PROJECT` and `AUDIT_BIGQUERY_DATASET` for
+     `bigquery`; `AUDIT_CLICKHOUSE_DSN` and `AUDIT_EVENTS_RETENTION_DAYS` for
+     `clickhouse`, which may additionally set `AUDIT_CLICKHOUSE_CLUSTER` for
+     replicated tables;
+   - `AUDIT_ARCHIVE_URL` — the locked archive as a URL whose scheme picks the
+     archive writer (`gs://<bucket>` for GCS or `s3://<bucket>` for S3; any
+     scheme without a writer is refused at startup);
+   - `AUDIT_CONTENT_RETENTION_DAYS` — the details window of item 5;
+   - `AUDIT_DEPLOYMENT_ID`, stamped on every record;
+   - optionally, the relay's tuning: `AUDIT_RELAY_BATCH_SIZE` (the most events
+     one delivery carries; default 500) and `AUDIT_RELAY_MAX_WAIT` (how long a
+     partial batch waits for more events before it is delivered anyway;
+     default 5s, at most 60s).
+
+   A missing required setting fails startup. `AUDIT_EVENTS_RETENTION_DAYS` is a
+   ClickHouse setting only — BigQuery's events table has no expiry the kit sets
+   (item 5) — and ClickHouse requires it to be at least the content-detail
+   window, since details must not outlive their event.
+
+   Credentials never go in configuration. BigQuery and GCS use the platform's
+   ambient identity (on Kubernetes, the pod's workload identity). An `s3://`
+   archive uses the AWS SDK's default credential chain and also needs
+   `AWS_REGION` — startup refuses without it — and `AWS_ENDPOINT_URL_S3` when
+   the bucket is in an S3-compatible store rather than S3 itself. The one
+   credential that has no ambient identity is `AUDIT_CLICKHOUSE_DSN`, which
+   carries the ClickHouse user and password: it is a secret, delivered to the
+   service the way the deployment delivers its other secrets, never plain
+   configuration, and never logged or echoed in an error.
 
 2. **Postgres keeps only the transactional queue.** `EmitTx` still writes inside
    the caller's transaction (and `Emit` inside its own, for the observational
@@ -92,11 +110,28 @@ Postgres transaction.
      every read returns each event once by event id (item 4);
    - **ordered per organization** (platform-level events form one more ordering
      key);
-   - each batch is **appended to the warehouse and written as one object to the
-     locked archive** (item 5) — the archive copy is written within the batch,
-     not filled in later;
+   - each batch is **written as one object to the locked archive first, then
+     appended to the warehouse** (item 5) — the archive copy is written within
+     the batch, not filled in later, and a failure between the two writes
+     repeats the archive write, not the warehouse's. The relay remembers which
+     writes the batch at the head of the queue has had acknowledged, so an
+     outage of one side does not write that batch to the other side again; only
+     a restart forgets, which is the redelivery above;
    - the batch's queue rows are **deleted only after both writes are
-     acknowledged**.
+     acknowledged**;
+   - a row the warehouse **permanently rejects** — one that fails alone while
+     the other rows of the same attempt succeed — does not stall the queue. It
+     moves, in one transaction, to an `audit_event_quarantine` table beside the
+     queue and is counted in `saas.audit_queue.quarantined`. The kit never
+     deletes a quarantined row; replaying one is future work.
+
+   The queue is monitored: `saas.audit_queue.depth` and
+   `saas.audit_queue.oldest_age` report how much is waiting and for how long.
+   When the queue cannot be read they go absent rather than staying at their
+   last value, and each failed read counts in
+   `saas.audit_queue.snapshot_errors`. The monitoring runs under every sink, not
+   only a swap value: under a non-warehouse sink a non-empty queue — rows left
+   by an earlier swap, which nothing drains — is logged at startup.
 
    The idempotency reservation (`audit_event_idempotency`) stays in Postgres
    beside the queue row, as it is today.
@@ -135,7 +170,8 @@ Postgres transaction.
    read), the time window, so partitions outside it are pruned, and the event
    types when the read names them. The service then sorts, pages,
    deduplicates, joins content details and aggregates the rows it streams back,
-   with the semantics of the Postgres reads.
+   with the semantics of the Postgres reads, in bounded memory whatever the size
+   of the history in the window.
 
    The reason is the grants. The service that reads is the service that
    appends, so it holds `bigquery.tables.updateData`. With
@@ -147,9 +183,15 @@ Postgres transaction.
 
 5. **Retention tiers.** Every registered event type has a **retention class**
    in the typed registry (ADR 0003):
-   - **security** — authentication, failed authentication, permission and role
-     changes, admin actions, data exports, configuration changes;
-   - **content** — everything else.
+   - **security** — the record of who could get in and what they were allowed to
+     do: authentication (including failures), credentials issued and revoked,
+     permission, role, membership, sharing and delegation changes,
+     administrative and operator actions, data leaving the platform (exports,
+     replays), and configuration changes. The registry's declarations
+     (`pkg/business/audit_registry.go`) are the source of truth for which types
+     are in this class;
+   - **content** — everything else: what happened to a tenant's own content and
+     operations.
 
    A code-owned type declares its class beside its durability, and cannot be
    registered without one. A type declared by a solution (its manifest) or a
@@ -165,18 +207,26 @@ Postgres transaction.
    The warehouse keeps two tables:
    - an **events** table holding the envelope — actor, organization, event
      type, target id, timestamp — plus a hash of the details, and the full
-     details as well for security-class types; kept for the compliance window.
-     An event's outcome stays where it is today: in the event type's name
-     (`saas.approval.denied`) or in the payload's `outcome` field;
+     details as well for security-class types. An event's outcome stays where it
+     is today: in the event type's name (`saas.approval.denied`) or in the
+     payload's `outcome` field. How long the table keeps a row depends on the
+     warehouse. On ClickHouse, `AUDIT_EVENTS_RETENTION_DAYS` sets the table's
+     TTL. On BigQuery the kit sets no expiry on the events table; a deployment
+     that wants one sets a table or partition expiration on its dataset;
    - a **details** table holding the full details of content-class types, kept
-     for a shorter, configurable window.
+     for the shorter content window, `AUDIT_CONTENT_RETENTION_DAYS` — a
+     partition expiration on BigQuery, a table TTL on ClickHouse.
 
-   A **locked object-storage archive** holds the compliance copy, one object
-   per relay batch: full for security-class events, content-free (envelope plus
-   hash) for content-class events. Locked means write-once under a retention
-   lock the operator cannot shorten. The first two writers target GCS Bucket
-   Lock and S3 Object Lock. Azure Blob immutability policies still need a
-   writer; an on-premises S3-compatible lock must be qualified before use.
+   The **compliance record is the locked object-storage archive**, one object
+   per relay batch: the full event for security-class types, and for
+   content-class types the envelope plus the SHA-256 of the details, never the
+   details themselves. Locked means write-once under a retention lock the
+   operator cannot shorten, set to the deployment's compliance window (ADR
+   0006's sizing assumes seven years). The warehouse's events table serves
+   reads; it is not what a compliance regime relies on. The first two writers
+   target GCS Bucket Lock and S3 Object Lock. Azure Blob immutability policies
+   still need a writer; an on-premises S3-compatible lock must be qualified
+   before use.
 
    Archive objects are named per batch. A retried batch writes a new object, so
    the archive may hold an event more than once. Every archive reader —
@@ -184,7 +234,8 @@ Postgres transaction.
    deduplicates by event id, and the per-event hash makes duplicates provably
    identical.
 
-   Windows are deployment configuration, not code.
+   The content window is deployment configuration, not code; so is the lock
+   period of the archive bucket, and the events TTL on ClickHouse.
 
 6. **ClickHouse operating requirements.**
    - Inserts are batched — the relay's batches, `async_insert`, or both. A
@@ -193,18 +244,24 @@ Postgres transaction.
    - A single-node deployment uses MergeTree. When
      `AUDIT_CLICKHOUSE_CLUSTER` is set, tables use `ReplicatedMergeTree` with
      ClickHouse Keeper; the cluster must exist before the adapter starts.
-   - Tables are partitioned by month, and table TTL expires each tier at its
-     window.
+   - Tables are partitioned by month, and a table TTL expires each table at its
+     window: `AUDIT_EVENTS_RETENTION_DAYS` for events,
+     `AUDIT_CONTENT_RETENTION_DAYS` for details.
    - Growing past one shard is a planned operation, not an automatic one — or
      the deployment uses a managed ClickHouse with shared storage.
 
 7. **History migration.** Switching a deployment from `postgres` to a swap value
    includes a one-time copy of the existing `audit_events` rows into the
    warehouse and the archive, verified per organization by row counts and by
-   per-row hashes. Once verified, the copied monthly partitions are detached
-   and dropped — the mechanism `RunRetention` already uses — so no row is
-   deleted and the append-only triggers stay as they are. From then on
-   `audit_events` receives no new rows, and Postgres holds only the queue.
+   per-row hashes. Once verified, the copied monthly partitions are removed
+   with `DROP TABLE`, as `RunRetention` drops expired ones, so no row is
+   deleted and the append-only triggers stay as they are. The removal is one
+   database function (migration 20) that takes an explicit list of the
+   verified partitions, locks them, re-counts each against the count that was
+   verified, and refuses on any mismatch — a partition that gained a row since
+   verification is never dropped. `--through`, the cutoff of the copy, accepts
+   completed months only. From then on `audit_events` receives no new rows, and
+   Postgres holds only the queue.
 
 8. **Conformance.** Every adapter passes one shared test suite: read
    deduplication (after a batch is appended twice, every read returns each
@@ -251,10 +308,15 @@ The sink shape itself:
 
 **What changes in code** (paths under `module/services/accounts/code/`):
 
-- `work.go` — `configuredAuditSink` admits `bigquery` and `clickhouse`, builds
-  the adapter and the archive writer, and starts the relay. The `external`
-  refusal stays; its message, which today says Postgres is the source of truth
-  under every value, is reworded.
+- `audit_sink.go` and `pkg/auditstore/auditsink` — `auditsink.Load` admits
+  `bigquery` and `clickhouse`, reads and validates their settings, and
+  `auditsink.Open` builds the adapter and the archive writer; `audit_sink.go`
+  starts the relay on them. The `external` refusal stays; its message, which
+  today says Postgres is the source of truth under every value, is reworded.
+  The one-time history copy and the role-catalog importer resolve the sink
+  through the same `auditsink.Load` as the service, so a deployment configures
+  the swap once and neither tool writes to a different store than the service
+  reads; the importer never falls back silently to `audit_events`.
 - `pkg/business/audit.go` — under a swap value, the emitter's write inserts into
   the queue table in place of `audit_events`, for org-scoped and platform-level
   entries alike. `EmitTx`'s transaction contract, `VerifyAuditWiring` and the
@@ -279,13 +341,18 @@ The sink shape itself:
   class, required the way `Durability` is. A declared type's class comes from
   its declaration — the manifest event, or the module declaration message —
   and is stored on its `audit_event_types` row, `content` when it states none.
-- `pkg/business/retention.go` — partition drop keeps running for `audit_events`,
-  and is also how the history migration (item 7) removes copied partitions.
-  Under a swap value, tier expiry belongs to the warehouse (TTL or table
-  expiration) and to the archive's lock.
+- `pkg/business/retention.go` — partition drop keeps running for `audit_events`;
+  the history migration (item 7) removes copied partitions with `DROP TABLE`
+  as well, through its own verified-partition function. Under a swap value,
+  expiry belongs to the warehouse where it sets one — the details table on
+  both, the events table on ClickHouse only — and to the archive's lock.
 - `store/migrations` — a new queue table, under the same tenant row-level
   security as `audit_events` (`audit_events_tenant`, in `1_baseline.up.sql`),
-  with delete granted to the relay. `audit_events` itself is untouched: its
+  with delete granted to the relay; its down migration refuses to drop a
+  non-empty queue, since the rows in it are audit records no warehouse holds
+  yet. A second migration (21) adds the `audit_event_quarantine` table of item
+  2, and migration 20 the partition-removal function of item 7. `audit_events`
+  itself is untouched: its
   `audit_events_no_delete` and `audit_events_no_update` triggers and its
   `SELECT`/`INSERT`-only grants stay as they are. Stored history in the
   warehouse is guarded by the service-side scope of item 4, not by these
@@ -308,6 +375,9 @@ The sink shape itself:
 - Under a swap value, reads trail writes: an event is listed once the relay has
   delivered it, not when its mutation commits.
 - A deployment that opts in runs two more systems — the warehouse and the
-  archive bucket — and a relay whose lag needs watching.
+  archive bucket — and a relay whose lag and quarantine table need watching.
+- On BigQuery the events table is never expired by the kit and grows until the
+  deployment sets an expiry on its dataset; the locked archive, not that table,
+  is the compliance record.
 - Each adapter must stay at parity with the Postgres implementation; the
   conformance suite is what holds it there.
