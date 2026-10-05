@@ -7,23 +7,23 @@ import (
 
 // Whether an address is on the public internet.
 //
-// Go's net.IP.IsGlobalUnicast is NOT a public-routability test: it answers
-// "is this a unicast address outside the loopback/link-local/multicast set",
-// which leaves shared, benchmarking, documentation and reserved space looking
-// public. Combining it with IsPrivate still admits 100.64.0.0/10 (carrier NAT,
-// routable inside many networks), 198.18.0.0/15 (benchmarking), 240.0.0.0/4
-// (reserved), the documentation ranges, and the 6to4 relay anycast block.
+// The invariant: a destination this host may be asked to fetch from reaches
+// only the public internet. This classifier is the single authority for that
+// question, and it enumerates the IANA special-purpose address registries for
+// both families.
 //
-// A guard built on those two predicates therefore does not mean what the
-// comment above it says, and for a URL an unauthenticated caller chooses — a
-// Client ID Metadata Document's client_id — the gap is an SSRF reach into
-// whatever a deployment routes in that space.
+// It does not compose Go's net.IP predicates, because they answer a different
+// question. net.IP.IsGlobalUnicast is not a public-routability test — it
+// answers "is this a unicast address outside the loopback, link-local and
+// multicast sets" — and IsPrivate covers the three RFC 1918 ranges. Their
+// conjunction therefore classes a number of special-purpose registry ranges as
+// public, so a predicate built from them would not mean what this one must
+// mean. The registries are the specification of "not the public internet", so
+// they are what this reads.
 //
-// The classifier below enumerates the IANA special-purpose registries for both
-// families instead. It is deliberately a denylist of non-public space rather
-// than an allowlist of public space: the unassigned ranges that exist today
-// become public assignments tomorrow, and a deployment must not need a release
-// to reach a newly assigned host.
+// It is deliberately a denylist of non-public space rather than an allowlist of
+// public space: ranges unassigned today become public assignments tomorrow, and
+// a deployment must not need a release to reach a newly assigned host.
 
 // specialUseIPv4 is the IANA IPv4 Special-Purpose Address Registry, minus the
 // ranges net.IP already answers for (loopback, link-local, multicast). Each
@@ -57,12 +57,13 @@ var specialUseIPv6 = []string{
 	"64:ff9b:1::/48", // local-use NAT64
 	"100::/64",       // discard-only
 	// The dummy prefix. Inside 100::/8 but NOT inside the discard-only /64
-	// above, so listing that /64 alone left it admitted.
+	// above, so that /64 alone does not cover it.
 	"100:0:0:1::/64",
 	// IETF protocol assignments, as one block rather than per sub-block. It
 	// covers Teredo (2001::/32), benchmarking (2001:2::/48), both ORCHID
-	// blocks, the anycast singletons AND the unassigned remainder, which a
-	// per-block list left admitted. 2001:db8::/32 is OUTSIDE this /23 and stays
+	// blocks, the anycast singletons AND the unassigned remainder; enumerating
+	// the sub-blocks individually would not cover that remainder, which is why
+	// the whole /23 is listed. 2001:db8::/32 is OUTSIDE this /23 and stays
 	// listed separately; ordinary global unicast such as 2001:4860::/32 is
 	// outside it too, so this does not over-refuse.
 	"2001::/23",
@@ -102,16 +103,16 @@ func IsPublicDestination(address netip.Addr) bool {
 	if !address.IsValid() {
 		return false
 	}
-	// A ZONE makes this a scoped address — `fd00::1%lo0` is reachable only on
-	// the named interface — and netip.Prefix.Contains returns false for ANY
-	// zoned address, so every prefix below misses it. `fd00::1` was refused
-	// while `fd00::1%lo0` was admitted, and url.Parse accepts the `%25lo0`
-	// spelling that produces one.
+	// A zone makes this a SCOPED address, reachable only on the interface it
+	// names. A scope identifier is meaningless for a destination on the public
+	// internet, so its presence is itself disqualifying and such an address is
+	// refused here, before the registries are consulted at all.
 	//
-	// Refused outright rather than stripped: a scope identifier is meaningless
-	// for a destination on the public internet, so its presence is itself
-	// disqualifying — and stripping it would classify an address the dialer is
-	// then not going to use.
+	// Two reasons it is refused rather than stripped. netip.Prefix.Contains
+	// reports false for every zoned address, so a zoned address compared
+	// against the prefixes below would match no entry in either registry; and
+	// stripping the zone would classify an address the dialer is then not going
+	// to use. Refusing is the only answer that stays true of the destination.
 	if address.Zone() != "" {
 		return false
 	}

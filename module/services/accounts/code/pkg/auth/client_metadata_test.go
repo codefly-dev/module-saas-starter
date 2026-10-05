@@ -80,10 +80,17 @@ func TestLoopbackRedirectWithoutAPortMatchesAnyPort(t *testing.T) {
 	}
 }
 
-// The rule must not widen a registration that names a port. Every client the
-// operator declared today names one, so enabling metadata documents cannot
-// change what an existing registration means.
-func TestARegisteredLoopbackPortStaysExact(t *testing.T) {
+// RFC 8252 §7.3 is unconditional for loopback: a native client takes an
+// ephemeral port from the operating system at the moment of the request, so it
+// cannot have registered the port it will listen on, and the authorization
+// server MUST allow any port at request time. The rule applies whether or not
+// the registration named a port — this test replaces one that asserted a
+// declared port stayed exact.
+//
+// The port is the only component relaxed, which is what the refusals below
+// establish: a different path, a different host, https, userinfo and a fragment
+// are all still refused on the same registration.
+func TestALoopbackRedirectMatchesAnyPort(t *testing.T) {
 	registry, err := auth.NewClientRegistry(`[{
 		"client_id": "example-cli",
 		"name": "Example CLI",
@@ -93,9 +100,27 @@ func TestARegisteredLoopbackPortStaysExact(t *testing.T) {
 	client, ok := registry.Lookup("example-cli")
 	require.True(t, ok)
 
-	require.True(t, client.AllowsRedirect("http://localhost:3000/auth/callback"))
-	require.False(t, client.AllowsRedirect("http://localhost:3001/auth/callback"))
-	require.False(t, client.AllowsRedirect("http://localhost/auth/callback"))
+	for _, presented := range []string{
+		"http://localhost:3000/auth/callback",
+		"http://localhost:3001/auth/callback",
+		"http://localhost:49152/auth/callback", // an OS-assigned ephemeral port
+		"http://localhost/auth/callback",
+	} {
+		require.True(t, client.AllowsRedirect(presented), "should allow %q", presented)
+	}
+
+	for _, presented := range []string{
+		"http://localhost:3000/auth/other",      // a different callback
+		"http://localhost:3000/auth/callback/x", // an added segment
+		"http://example.com:3000/auth/callback", // not loopback
+		"https://localhost:3000/auth/callback",  // not http
+		"http://localhost:3000/auth/callback?x=1",
+		"http://user@localhost:3000/auth/callback",
+		"http://localhost:3000/auth/callback#f",
+		"http://localhost:notaport/auth/callback",
+	} {
+		require.False(t, client.AllowsRedirect(presented), "should refuse %q", presented)
+	}
 }
 
 // Each validation rule, refused by name. The public answer collapses to one

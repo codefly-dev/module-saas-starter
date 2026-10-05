@@ -32,6 +32,30 @@ func withPublicBase(t *testing.T, base string) {
 
 // signResourceToken signs an access token carrying the host audience plus one
 // resource audience — the shape accounts mints for a resource-bound session.
+// signTwoResourceToken signs a token carrying the host audience plus TWO
+// resource audiences — a shape no issuance path produces, which is the point:
+// the verifier must refuse it rather than reduce it to something it admits.
+func signTwoResourceToken(t *testing.T, priv ed25519.PrivateKey, first, second string) string {
+	t.Helper()
+	claims := accessClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   uuid.Must(uuid.NewV7()).String(),
+			Audience:  jwt.ClaimStrings{"saas-starter", first, second},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now().Add(-time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			ID:        "jti",
+		},
+		OrgID:     uuid.Must(uuid.NewV7()).String(),
+		SessionID: uuid.Must(uuid.NewV7()).String(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	signed, err := token.SignedString(priv)
+	require.NoError(t, err)
+	return signed
+}
+
 func signResourceToken(t *testing.T, priv ed25519.PrivateKey, resource string) string {
 	t.Helper()
 	audience := jwt.ClaimStrings{"saas-starter"}
@@ -490,16 +514,85 @@ func TestGateway_MCPToken_StampsTheSameSessionIdentityHeaders(t *testing.T) {
 	require.Equal(t, "Bearer "+token, example.lastHeaders.Get("authorization"))
 }
 
-// The audience projection, directly. More than one non-host audience is read as
-// none: a token this host minted carries at most one resource, so a second is a
-// token it did not produce and must not be treated as a binding.
-func TestResourceAudienceReadsAtMostOneResource(t *testing.T) {
-	require.Empty(t, resourceAudience(jwt.ClaimStrings{"saas-starter"}, "saas-starter"))
-	require.Equal(t, "https://h/api/solutions/w/proxy/mcp",
-		resourceAudience(jwt.ClaimStrings{"saas-starter", "https://h/api/solutions/w/proxy/mcp"}, "saas-starter"))
-	require.Empty(t, resourceAudience(
-		jwt.ClaimStrings{"saas-starter", "https://h/api/solutions/w/proxy/mcp", "https://h/api/solutions/x/proxy/mcp"},
-		"saas-starter"))
+// The audience classification, directly. Three outcomes, never two:
+// "unbound", "bound to this resource" and "I cannot read this" are different
+// facts, and an empty string cannot carry the third — it reads as the first,
+// which is the classification admitted most widely.
+//
+// This replaces a test that asserted several resource audiences were read as
+// none.
+func TestTheAudienceClassificationHasThreeOutcomes(t *testing.T) {
+	const host = "saas-starter"
+	const good = "https://h.example.com/api/solutions/w/proxy/mcp"
+
+	kind, resource := classifyResourceAudience(jwt.ClaimStrings{host}, host)
+	require.Equal(t, resourceUnbound, kind)
+	require.Empty(t, resource)
+
+	kind, resource = classifyResourceAudience(jwt.ClaimStrings{host, good}, host)
+	require.Equal(t, resourceBound, kind)
+	require.Equal(t, good, resource)
+
+	// Two resources: there is no single resource this token is bound to, so no
+	// answer to "is it bound to THIS one" is true of it.
+	kind, resource = classifyResourceAudience(
+		jwt.ClaimStrings{host, good, "https://h.example.com/api/solutions/x/proxy/mcp"}, host)
+	require.Equal(t, resourceInvalid, kind)
+	require.Empty(t, resource)
+
+	// Shapes the issuer would never produce. The identifier is meant to be
+	// byte-exact with the URL a client dialled, so a query, a fragment or
+	// userinfo means the audience names something other than what it appears
+	// to name — and the verifier must be no looser than the issuer.
+	for _, malformed := range []string{
+		good + "?x=1",
+		good + "#f",
+		"https://user@h.example.com/api/solutions/w/proxy/mcp",
+		"http://h.example.com/api/solutions/w/proxy/mcp", // plain http, not loopback
+		"ftp://h.example.com/api/solutions/w/proxy/mcp",
+		"/api/solutions/w/proxy/mcp", // not absolute
+		"https:///api/solutions/w/proxy/mcp",
+		"mailto:someone@example.com",
+		" " + good,
+	} {
+		kind, resource = classifyResourceAudience(jwt.ClaimStrings{host, malformed}, host)
+		require.Equal(t, resourceInvalid, kind, "should be invalid: %q", malformed)
+		require.Empty(t, resource, "an invalid binding carries no resource: %q", malformed)
+	}
+
+	// Loopback http IS accepted, because local development's origin is not
+	// https and the issuer accepts it there too.
+	kind, _ = classifyResourceAudience(
+		jwt.ClaimStrings{host, "http://localhost:3000/api/solutions/w/proxy/mcp"}, host)
+	require.Equal(t, resourceBound, kind)
+}
+
+// And an unreadable audience is refused on EVERY path, including the host's own
+// API — not only at a solution. A credential whose scope cannot be determined
+// has no surface it is known to be good for.
+func TestAnUnreadableAudienceIsRefusedEverywhere(t *testing.T) {
+	withPublicBase(t, testPublicBase)
+	gw, _, _, priv := newGatewayHarness(t)
+	example := registerSolutionUpstream(t, gw, "example")
+
+	twoResources := signTwoResourceToken(t, priv,
+		testPublicBase+"/api/solutions/example/proxy/mcp",
+		testPublicBase+"/api/solutions/other/proxy/mcp")
+
+	for _, path := range []string{
+		"/solutions/example/mcp",
+		"/solutions/example/v1/items",
+		"/v1/users",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Authorization", "Bearer "+twoResources)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+
+		require.Equal(t, 401, w.Code, path)
+		require.Contains(t, w.Body.String(), "does not name a single valid resource", path)
+	}
+	require.Empty(t, example.lastPath, "no path may be reached with an unreadable audience")
 }
 
 func TestSolutionIDFromPathOnlyMatchesSolutionPaths(t *testing.T) {

@@ -15,12 +15,17 @@ import (
 
 // The frontend↔accounts wire contract for the OAuth surface.
 //
-// A1007-01, the blocker the Astra review found: accounts serialises OAuth
-// snake_case (`requires_consent`), and the browser cast that JSON straight to a
-// camelCase TypeScript interface. It compiled, it type-checked, every unit test
-// on both sides passed — and `requiresConsent` was `undefined`, which is falsy,
-// which meant the consent screen was skipped and a code was issued for a client
-// the person never approved.
+// A1007-01. The invariant: the names this handler serialises are the names the
+// browser decodes, and neither side may assert the other's shape without
+// checking it.
+//
+// Accounts serialises OAuth snake_case (`requires_consent`); the browser's
+// interface is camelCase. The two spellings are different strings, so a cast
+// across the seam type-checks while producing `undefined` for every field, and
+// an undefined boolean is falsy — a value that cannot be distinguished from a
+// real answer. A unit test on either side cannot catch that, because each
+// side's test fixes the shape that side expects; so this one is spelled against
+// the OTHER side's source.
 //
 // No unit suite could see it, because each side mocked the other's shape. These
 // tests read the REAL serialised response and the REAL decoder source, so the
@@ -66,9 +71,9 @@ func TestTheValidateResponseCarriesExactlyTheKeysTheFrontendDecodes(t *testing.T
 	require.IsType(t, false, wire["requires_consent"])
 }
 
-// The decoder on the other side must read those same names. Checked against
-// the TypeScript source, because the alternative — trusting that two languages
-// agree — is exactly what failed.
+// The decoder on the other side must read those same names. Checked against the
+// TypeScript source, because the alternative is trusting that two languages
+// agree about a string neither compiler compares.
 func TestTheFrontendDecoderReadsTheKeysThisHandlerSerialises(t *testing.T) {
 	source := frontendOAuthModelSource(t)
 	for _, key := range oauthValidateResponseKeys {

@@ -98,6 +98,25 @@ func publicBaseURL() string {
 // A token with no resource audience never reaches here: the caller treats an
 // unbound session token as admissible, which is what keeps the browser's own
 // session and the first registered client working at a solution's surface.
+// resourceBindingKind is what a token's audience set says about the resource it
+// is bound to. Exactly one of three, and never inferred from an empty string:
+// "no resource" and "a resource I could not read" are different facts, and
+// conflating them makes the second one admissible wherever the first is.
+type resourceBindingKind int
+
+const (
+	// resourceUnbound: the audience names this host and nothing else — an
+	// ordinary session credential, which every surface except a solution's tool
+	// endpoint accepts.
+	resourceUnbound resourceBindingKind = iota
+	// resourceBound: exactly one audience beside the host's, well-formed as a
+	// resource identifier. Admitted only at the resource it names.
+	resourceBound
+	// resourceInvalid: two or more resource audiences, or one whose shape is not
+	// a resource identifier. Refused everywhere.
+	resourceInvalid
+)
+
 func resourceAudienceAdmits(resource, solutionID, publicBase string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(resource))
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
@@ -137,15 +156,14 @@ func solutionIDFromPath(path string) (string, bool) {
 // solutionResourceMetadataPath is the URL the 401 challenge names: the
 // solution's own well-known under the host frontend's PROXY base.
 //
-// Issue #1003's comment of 2026-10-04 asked for a URL derivable from the route,
-// pointing at the `.well-known` GET that is already public. The first attempt
-// named this gateway's own `/solutions/<id>/...` path, which is not reachable
-// from outside — following that challenge on a real cell lands on a login
-// redirect, so discovery could never reach the authorization server. This is
-// the path a client can actually fetch, and the one that already answers 200
-// anonymously: the gateway proxies a solution's `.well-known` GET
-// unauthenticated and its runtime serves the RFC 9728 document there, naming
-// this host as the authorization server.
+// The requirement is that the URL be derivable from the route AND fetchable by
+// the client the challenge is sent to. Those are two conditions, and only the
+// frontend's proxy base satisfies both: it answers 200 anonymously, the gateway
+// proxies a solution's `.well-known` GET unauthenticated, and the runtime
+// serves the RFC 9728 document there naming this host as the authorization
+// server. This gateway's own `/solutions/<id>/...` prefix is an internal
+// surface — on the public origin that prefix is a page of the frontend — so a
+// challenge naming it would name a URL no client can resolve to a document.
 //
 // The host deliberately serves no second copy of that document. Two documents
 // for one resource are two places to disagree, and a client follows whichever

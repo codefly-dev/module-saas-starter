@@ -75,12 +75,11 @@ export async function validateClientAuthorization(
 				"This application is not registered to sign in here, or asked to be returned to an address it has not registered.",
 		);
 	}
-	// DECODED, not cast. The host serialises OAuth snake_case; casting that JSON
-	// to this camelCase interface compiled, type-checked, and yielded `undefined`
-	// for every field — including `requiresConsent`, which is falsy, which meant
-	// consent was skipped and a code issued for a client nobody approved. A
-	// response this cannot decode is one whose meaning is unknown, and the only
-	// safe reading of that is to refuse.
+	// DECODED, not cast. The host serialises OAuth snake_case and this side is
+	// camelCase, so a cast type-checks and produces `undefined` for every
+	// field — and a falsy `requiresConsent` is indistinguishable from a host
+	// that said no approval was required. A response this cannot decode is one
+	// whose meaning is unknown, and the only safe reading of that is to refuse.
 	const resolved = parseOAuthResolution(body);
 	if (!resolved) {
 		throw new Error("This application cannot sign in here.");

@@ -808,6 +808,14 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		}
 	}
 
+	// Refused rather than projected: a token whose audience set names no single
+	// valid resource has no scope this host can state, and every caller
+	// downstream reads Identity.Resource as that scope.
+	resource, err := resourceAudienceOf(claims.Audience, m.cfg.Audience)
+	if err != nil {
+		return nil, err
+	}
+
 	return &auth.Identity{
 		UserID:                userID,
 		OrgID:                 orgID,
@@ -817,7 +825,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
 		ClientID:              claims.AuthorizedParty,
-		Resource:              resourceAudience(claims.Audience, m.cfg.Audience),
+		Resource:              resource,
 		Email:                 claims.Email,
 		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
@@ -990,23 +998,39 @@ func (m *Minter) signAccess(
 	return signed, expiresAt, nil
 }
 
-// resourceAudience returns the one audience value that is not the host's own —
-// the RFC 8707 resource this token is bound to — or empty when the token names
-// only the host. More than one such value is read as none: a token the host
-// minted carries at most one resource, so a second is a token this code did not
-// produce and must not be reported as a binding anything could enforce.
-func resourceAudience(audience jwt.ClaimStrings, hostAudience string) string {
-	var resource string
+// resourceAudienceOf projects the resource a verified token is bound to, and
+// refuses an audience set that names no single valid one.
+//
+// Three outcomes, not two. An empty resource means "bound to nothing" — an
+// ordinary session credential — so it cannot also stand for "I could not read
+// this", which would make an unreadable binding indistinguishable from the
+// classification that is accepted most widely. Two resource audiences, or one
+// that is not a resource identifier this host issues, are refused here.
+//
+// The shape question is answered by auth.ParseResourceIndicator, the same
+// function the authorization endpoint uses when it ISSUES one, so the verifier
+// cannot drift looser than the issuer. The gateway holds the identical rule on
+// its own side of the module boundary (classifyResourceAudience), which it must
+// spell separately because nothing may be imported across that boundary.
+func resourceAudienceOf(audience jwt.ClaimStrings, hostAudience string) (string, error) {
+	var resources []string
 	for _, value := range audience {
 		if value == hostAudience {
 			continue
 		}
-		if resource != "" {
-			return ""
-		}
-		resource = value
+		resources = append(resources, value)
 	}
-	return resource
+	switch len(resources) {
+	case 0:
+		return "", nil
+	case 1:
+		if _, err := auth.ParseResourceIndicator(resources[0]); err != nil {
+			return "", auth.ErrInvalidResourceAudience
+		}
+		return resources[0], nil
+	default:
+		return "", auth.ErrInvalidResourceAudience
+	}
 }
 
 func numericDateTime(value *jwt.NumericDate) time.Time {

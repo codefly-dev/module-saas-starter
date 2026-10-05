@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -325,8 +327,20 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 	// client answers a 401 by re-reading the challenge and authorizing for the
 	// right resource. A 403 would read as "you may not", which is not what
 	// happened — and would leave the client with nothing to do.
+	binding, resource := classifyResourceAudience(claims.Audience, s.audience)
+	if binding == resourceInvalid {
+		// Refused on EVERY path, not only a solution's.
+		//
+		// An audience set this cannot read as one resource is not a credential
+		// whose scope is known, and the earlier shape — collapsing it to an
+		// empty string — made it indistinguishable from a token bound to
+		// nothing, which is the one classification that is admitted most
+		// widely. No issuance path produces this; a token carrying it did not
+		// come from this host's authorization endpoint.
+		recordJWTRejection(ctx, jwtRejectionInvalidAudience)
+		return deny(401, "the token's audience does not name a single valid resource"), nil
+	}
 	if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
-		resource := resourceAudience(claims.Audience, s.audience)
 		base := publicBaseURL()
 		switch {
 		case isSolutionToolRequestPath(path):
@@ -351,7 +365,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 				return deny(401, "this host has no configured public address, "+
 					"so it cannot state the resource this endpoint requires"), nil
 			}
-			if resource == "" {
+			if binding == resourceUnbound {
 				recordJWTRejection(ctx, jwtRejectionGenericAudience)
 				return deny(401, "this endpoint requires a token issued for its own "+
 					"resource; the token presented names only the host. Authorize for "+
@@ -362,7 +376,7 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 				return deny(401, "the token presented was issued for a different "+
 					"resource than this endpoint"), nil
 			}
-		case resource != "":
+		case binding == resourceBound:
 			// A solution's other routes are the product's own API surface,
 			// reached with an ordinary session. A resource-bound token is still
 			// confined to the solution it names, so one minted for solution A
@@ -455,18 +469,72 @@ func (s *ExtAuthz) acceptsIssuer(candidate string) bool {
 // only the host. More than one such value is read as none, matching the
 // minter: a token this host produced carries at most one resource, so a second
 // is a token it did not produce and must not be treated as a binding.
-func resourceAudience(audience jwt.ClaimStrings, hostAudience string) string {
-	var resource string
+func classifyResourceAudience(audience jwt.ClaimStrings, hostAudience string) (resourceBindingKind, string) {
+	var resources []string
 	for _, value := range audience {
 		if value == hostAudience {
 			continue
 		}
-		if resource != "" {
-			return ""
-		}
-		resource = value
+		resources = append(resources, value)
 	}
-	return resource
+	switch len(resources) {
+	case 0:
+		return resourceUnbound, ""
+	case 1:
+		if !wellFormedResourceIdentifier(resources[0]) {
+			return resourceInvalid, ""
+		}
+		return resourceBound, resources[0]
+	default:
+		// Two or more. There is no single resource this token is bound to, so
+		// no answer to "is it bound to THIS one" is true of it.
+		return resourceInvalid, ""
+	}
+}
+
+// wellFormedResourceIdentifier reports whether a single audience value is
+// shaped like a resource identifier at all.
+//
+// It mirrors what the authorization endpoint accepts when it ISSUES one
+// (accounts' auth.ParseResourceIndicator): an absolute http or https URL with a
+// host, no userinfo, no query, no fragment and no opaque part, with plain http
+// confined to loopback for local development. The two must agree, because a
+// verifier looser than the issuer admits a token no issuance path would have
+// produced — and the identifier is supposed to be byte-exact with the URL a
+// client dialled, so a query or a fragment in it means the audience names
+// something other than the resource it appears to name.
+func wellFormedResourceIdentifier(candidate string) bool {
+	if candidate == "" || len(candidate) > 2048 || candidate != strings.TrimSpace(candidate) {
+		return false
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
+		return false
+	}
+	if parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" ||
+		parsed.ForceQuery || parsed.Opaque != "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return isLoopbackResourceHost(parsed.Hostname())
+	default:
+		return false
+	}
+}
+
+// isLoopbackResourceHost matches the issuer's own loopback rule, for the local
+// development origin that is not https.
+func isLoopbackResourceHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if address, err := netip.ParseAddr(host); err == nil {
+		return address.IsLoopback()
+	}
+	return false
 }
 
 // checkAPIKey delegates to the backend for api-key validation.

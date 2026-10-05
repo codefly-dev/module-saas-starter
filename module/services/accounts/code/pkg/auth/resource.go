@@ -24,6 +24,13 @@ import (
 // ErrClientAuthorizationRejected it is a single sentinel: the authorize
 // endpoint answers an unauthenticated browser, and a distinguishable refusal
 // would report which solutions exist.
+// ErrInvalidResourceAudience is a verified token whose audience set names no
+// single valid resource — two or more resource audiences, or one that is not a
+// resource identifier this host issues. Distinct from ErrResourceRejected,
+// which is a resource a CALLER asked for: this one is a token already signed,
+// so it is a credential whose scope cannot be stated rather than a bad request.
+var ErrInvalidResourceAudience = errors.New("token audience names no single valid resource")
+
 var ErrResourceRejected = errors.New("resource indicator rejected")
 
 // A resource indicator names the URL an MCP CLIENT CAN REACH, which on a

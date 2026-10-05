@@ -50,11 +50,11 @@ const OAUTH_SINGLETON_PARAMETERS = [
  * Returns null when the three parameters without which there is no request at
  * all are absent — a plain visit to the login page rather than a malformed
  * authorization request. Everything else is carried EXACTLY as sent, including
- * absent `response_type` and `code_challenge_method`: those used to be
- * defaulted to `code` and `S256` here, which meant the host was the only reason
- * a non-conforming request worked, and a client that believed it was sending
- * `plain` would have been silently upgraded. The host refuses them instead, and
- * tells the client which parameter it owes.
+ * absent `response_type` and `code_challenge_method`. Neither is defaulted
+ * here: a default would make this page the reason a non-conforming request
+ * worked, and would answer a client's stated challenge method with a different
+ * one. The host refuses an incomplete request instead, and tells the client
+ * which parameter it owes.
  */
 export function readOAuthAuthorizationRequest(
 	query: QueryReader,
@@ -146,14 +146,20 @@ export function oauthQueryString(request: OAuthAuthorizationRequest): string {
 /**
  * What accounts answers a validate call with.
  *
- * This is a DECODED value, never a cast one. The host serialises OAuth-style
- * snake_case (`requires_consent`, `client_name`); casting that JSON to a
- * camelCase interface compiles, type-checks, and silently yields `undefined`
- * for every field — which for `requiresConsent` means falsy, which means the
- * consent screen is skipped and a code is issued for a client the person never
- * approved. That is exactly what happened, and no unit test on either side of
- * the seam could see it, because each mocked the other's shape. Decode at the
- * boundary and validate; see `parseOAuthResolution`.
+ * This is a DECODED value, never a cast one.
+ *
+ * The host serialises OAuth-style snake_case (`requires_consent`,
+ * `client_name`) and this interface is camelCase, so the two spellings are not
+ * the same string. A cast asserts a shape rather than checking it: it compiles,
+ * type-checks, and produces `undefined` for every field — and an undefined
+ * `requiresConsent` is falsy, indistinguishable from a host that said no
+ * approval was required. The invariant is that a response this cannot decode is
+ * refused rather than interpreted; `parseOAuthResolution` is where that is
+ * enforced.
+ *
+ * A unit test on either side of this seam cannot establish the agreement,
+ * because each side's test fixes the shape that side expects. The seam is held
+ * by tests spelled against the other side's own serialisation.
  */
 export interface OAuthAuthorizationResolution {
 	/** Untrusted presentation, from the client's own document. */

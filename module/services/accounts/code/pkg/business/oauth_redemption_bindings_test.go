@@ -14,10 +14,10 @@ import (
 // rather than as a side effect of a database transaction — so the rules are
 // held in a suite that needs no database.
 //
-// A1007-05 is the one that was missing: redemption compared the presented
-// redirect URI only with the code row, never with the client's policy as it
-// stands NOW. A metadata client's document is re-fetched on a short TTL, so
-// that is exactly how such a client withdraws a callback; honouring the code
+// A1007-05 is the rule this exists for: redemption holds the presented redirect
+// URI against BOTH the code row and the client's policy as it stands NOW. A
+// metadata client has no registry row to delete, so re-publishing its document
+// without a callback is how it withdraws one; honouring the code
 // row alone kept accepting one the publisher had taken down.
 
 const redemptionVerifier = "ZmFrZS12ZXJpZmllci10aGF0LWlzLWxvbmctZW5vdWdoLTAxMjM0NTY3ODk"

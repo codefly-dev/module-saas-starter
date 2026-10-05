@@ -223,15 +223,16 @@ and it is tested directly for exactly that reason.
 for a client whose authorization requires consent is refused unless it states
 that the person approved. That does not defend against a hostile browser — one
 holding the session can claim anything — but it is what stops a browser-side
-defect from issuing credentials nobody approved, which is precisely what a
-mis-decoded `requires_consent` did.
+defect from issuing credentials nobody approved: the host does not rely on the
+page having read `requires_consent` correctly.
 
 **The wire names are the contract.** Accounts serialises OAuth snake_case and
 the frontend **decodes** it (`features/auth/model/oauth-authorization.ts`),
-failing closed on anything it cannot read. Casting that JSON to a camelCase
-interface compiled, type-checked, passed every unit test on both sides, and
-skipped consent for every client that needed it — so the seam is held from both
-ends (`accounts/pkg/adapters/oauth_wire_contract_test.go` and
+failing closed on anything it cannot read. A cast would type-check while
+producing `undefined` for every field, and a unit test on either side cannot
+establish the agreement because each side's test fixes the shape that side
+expects — so the seam is held from both ends, each spelled against the other's
+own serialisation (`accounts/pkg/adapters/oauth_wire_contract_test.go` and
 `frontend/.../model/__tests__/wire-contract.test.ts`).
 
 The OAuth surface is **raw HTTP, not transcoded RPCs**, because its shape is the

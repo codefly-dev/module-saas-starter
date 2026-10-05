@@ -60,13 +60,19 @@ type RegisteredClient struct {
 // added path segment or appended query can widen it, with one bounded exception
 // below for loopback redirects.
 //
-// The exception is RFC 8252 §7.3: a native client listens on an ephemeral
-// loopback port it cannot know in advance, so a registration that names a
-// loopback http URI WITHOUT a port matches that URI on any port. A registration
-// that names a port still matches only that port — so declaring
-// `http://localhost:3000/auth/callback` keeps meaning port 3000, and no
-// existing registration is widened by this rule. Only a deliberately
-// port-less declaration opts in.
+// The exception is RFC 8252 §7.3, which is unconditional for loopback: a native
+// client obtains an ephemeral port from the operating system at the moment of
+// the request, so it cannot have registered the port it will listen on, and the
+// authorization server MUST allow any port to be specified at request time. The
+// rule therefore applies whether or not the registration names a port —
+// `http://127.0.0.1:3000/callback` and `http://127.0.0.1/callback` both match
+// the same path on any port.
+//
+// The port is the ONLY component this relaxes. Scheme, host, path and query
+// must still be identical, userinfo and a fragment are refused outright, and
+// the rule reaches only http on a loopback host — so it cannot turn a
+// registration for one callback into a match for another, or let a non-loopback
+// redirect vary at all.
 func (c RegisteredClient) AllowsRedirect(candidate string) bool {
 	for _, registered := range c.RedirectURIs {
 		if registered == candidate {
@@ -80,13 +86,13 @@ func (c RegisteredClient) AllowsRedirect(candidate string) bool {
 }
 
 // loopbackRedirectMatchesAnyPort implements the RFC 8252 §7.3 loopback rule for
-// one registered/presented pair. It applies only when the registered URI is
-// http on a loopback host and declares no port; everything else about the two
-// URIs — scheme, host, path, query — must still be identical.
+// one registered/presented pair. It applies when the registered URI is http on
+// a loopback host, with or without a declared port; everything else about the
+// two URIs — scheme, host, path, query — must still be identical.
 func loopbackRedirectMatchesAnyPort(registered, candidate string) bool {
 	registeredURL, err := url.Parse(registered)
 	if err != nil || !strings.EqualFold(registeredURL.Scheme, "http") ||
-		registeredURL.Port() != "" || !isLoopbackHost(registeredURL.Hostname()) {
+		!isLoopbackHost(registeredURL.Hostname()) {
 		return false
 	}
 	candidateURL, err := url.Parse(strings.TrimSpace(candidate))
@@ -99,9 +105,10 @@ func loopbackRedirectMatchesAnyPort(registered, candidate string) bool {
 	if !strings.EqualFold(candidateURL.Hostname(), registeredURL.Hostname()) {
 		return false
 	}
-	// A port is optional on the presented URI too (the registered form is then
-	// matched exactly by the caller above), but if present it must be a port and
-	// nothing else — url.Parse accepts an empty or malformed port in some forms.
+	// A port is optional on the presented URI too, but if present it must be a
+	// port and nothing else — url.Parse accepts an empty or malformed port in
+	// some forms, and a non-numeric one would make this compare host strings
+	// that are not hosts.
 	if port := candidateURL.Port(); port != "" {
 		for _, digit := range port {
 			if digit < '0' || digit > '9' {

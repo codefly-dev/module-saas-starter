@@ -627,20 +627,27 @@ export function isPublic(pathname: string): boolean {
 	// /oauth2/authorize is a page of this app and belongs here too — it is where
 	// an unauthenticated person is SUPPOSED to arrive.
 	if (pathname === "/oauth2/authorize") return true;
-	// EVERY well-known path, not only the ones this host answers itself.
+	// EVERY well-known path, wherever it sits in the tree and whether or not
+	// this host serves a document there.
 	//
-	// A `/.well-known/` URI is public metadata by construction (RFC 8615), and
-	// every discovery chain begins by GETting one with no credential at all.
+	// `.well-known` is a reserved metadata namespace (RFC 8615) and every
+	// discovery chain begins by GETting one with no credential at all.
 	// Answering one with a 307 to a login page does not merely inconvenience a
 	// client: a non-browser client follows the redirect, parses an HTML login
 	// page as JSON, and concludes the metadata does not exist — so the flow ends
 	// before it has begun, and the symptom it reports is "this host is not an
 	// authorization server" rather than "you are not signed in".
 	//
+	// Matched as a path SEGMENT rather than a prefix, because these documents
+	// are not all at the root. A solution's protected-resource metadata sits
+	// beneath its own route, and `/solutions/<id>/` is a page of this app — so a
+	// prefix test on "/.well-known/" leaves exactly the namespace a client reads
+	// during discovery behind the login redirect.
+	//
 	// A well-known path this host does NOT serve must reach the handler that
 	// answers 404. "No document here" is a true answer a client can act on; a
 	// login page is not.
-	if (pathname.startsWith("/.well-known/")) return true;
+	if (pathname.split("/").includes(".well-known")) return true;
 	if (oauthSurfaceUpstreamPath(pathname) !== undefined) return true;
 	if (pathname === "/monitoring") return true;
 	if (pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif|css|js|woff2?)$/))

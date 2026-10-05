@@ -27,6 +27,12 @@ describe("public paths", () => {
 			// existing, and conflating them is what produced the redirect.
 			"/.well-known/openid-configuration",
 			"/.well-known/anything-at-all",
+			// Not at the root. A solution's protected-resource metadata sits
+			// beneath its own route, and `/solutions/<id>/` is a page of this
+			// app — so a prefix test on "/.well-known/" would leave exactly the
+			// namespace a client reads during discovery behind the redirect.
+			"/solutions/example/.well-known/oauth-protected-resource",
+			"/solutions/example/.well-known/anything",
 		]) {
 			expect(isPublic(pathname), pathname).toBe(true);
 		}

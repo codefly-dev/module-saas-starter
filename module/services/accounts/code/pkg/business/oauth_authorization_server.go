@@ -195,8 +195,8 @@ type OAuthAuthorizationRequest struct {
 	// The host REQUIRES it wherever it requires consent, rather than trusting the
 	// page to have asked. It is not a boundary against a hostile browser — one
 	// holding the person's session can claim anything — but it is what stops a
-	// defect in the browser code from issuing credentials nobody approved, which
-	// is exactly what a mis-decoded `requires_consent` did.
+	// defect in the browser code from issuing credentials nobody approved: the
+	// host does not rely on the page having read `requires_consent` correctly.
 	ConsentGranted bool
 }
 
@@ -562,6 +562,42 @@ type issuedAuthorizationCode struct {
 // issueAuthorizationCode is the one place a code is minted, shared by the
 // standard authorize endpoint and by the IssueClientAuthorizationCode RPC the
 // first registered client was built against.
+// callerMayAuthorizeAClient decides whether a verified caller may hand a client
+// a credential. A code issued here authorizes a client to act as the person for
+// as long as it keeps rotating, so what is checked is not "is this request
+// authenticated" but "is there a real person, in a real session, who is
+// themselves".
+//
+// Extracted from issueAuthorizationCode so each refusal is decidable without a
+// database. The path it lives on needs a store, so covering these four
+// conditions only through that path meant one DB test standing for four rules —
+// and a test that stops at the first refusal it meets proves nothing about the
+// others, because any of them would have produced the same error.
+func callerMayAuthorizeAClient(caller auth.RequestIdentity, hasCaller bool) error {
+	switch {
+	case !hasCaller:
+		// No verified identity at all. The interceptor would normally have
+		// stopped this, but a rule this consequential does not delegate.
+		return auth.ErrClientAuthorizationRejected
+	case caller.EffectiveSubject == uuid.Nil:
+		// Verified, but naming no person. There is nobody for the client to act
+		// as, so there is nothing to authorize.
+		return auth.ErrClientAuthorizationRejected
+	case caller.SessionID == uuid.Nil:
+		// A person with no session. The credential the client receives is bound
+		// to a session for its whole life — that is what revoking a session
+		// revokes — so one minted outside a session could not be withdrawn.
+		return auth.ErrClientAuthorizationRejected
+	case caller.Impersonated():
+		// An impersonated session may not hand a client a credential: the
+		// client would hold a rotatable token for a person who never
+		// authorized it, and would keep it after the impersonation ended.
+		return auth.ErrClientAuthorizationRejected
+	default:
+		return nil
+	}
+}
+
 func (s *Service) issueAuthorizationCode(
 	ctx context.Context,
 	grant authorizationCodeGrant,
@@ -571,14 +607,9 @@ func (s *Service) issueAuthorizationCode(
 	if !hasStore {
 		return nil, w.NewError("store does not implement ClientAuthorizationCodeStore")
 	}
-	caller, ok := auth.VerifiedRequestIdentity(ctx)
-	if !ok || caller.EffectiveSubject == uuid.Nil || caller.SessionID == uuid.Nil {
-		return nil, auth.ErrClientAuthorizationRejected
-	}
-	// An impersonated session may not hand a client a credential: the client
-	// would hold a rotatable token for a person who never authorized it.
-	if caller.Impersonated() {
-		return nil, auth.ErrClientAuthorizationRejected
+	caller, hasCaller := auth.VerifiedRequestIdentity(ctx)
+	if err := callerMayAuthorizeAClient(caller, hasCaller); err != nil {
+		return nil, err
 	}
 
 	plaintext, hash, err := newClientAuthorizationCode()

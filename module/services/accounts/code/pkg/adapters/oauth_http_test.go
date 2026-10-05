@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -340,18 +341,33 @@ func TestTheGrantPathWorksWithNoPublishedIssuer(t *testing.T) {
 	require.Equal(t, false, resolved["requires_consent"])
 	require.Equal(t, "", resolved["issuer"])
 
-	// And the grant is NOT a 503. It reaches the code issuer, which refuses only
-	// because this harness has no store and no signed-in caller — not because
-	// the authorization server could not name itself.
+	// And the grant with a VERIFIED caller is not a 503.
+	//
+	// The caller matters: with no bearer the handler refuses at authentication,
+	// before it could ever consult the issuer, so such a request stays green
+	// however the issuer is handled and proves nothing about it. A verified
+	// session is what carries the request past authentication and into the code
+	// issuer, which is where the published issuer would be read.
+	service.SetJWTMinter(&fixedAccessMinter{identity: &auth.Identity{
+		UserID:    uuid.New(),
+		OrgID:     uuid.New(),
+		SessionID: uuid.New(),
+	}})
+
 	req = httptest.NewRequest(http.MethodPost, OAuthAuthorizeGrantPath,
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer verified")
 	trustedOrigin(req, "https://host.example.com")
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
+
 	require.NotEqual(t, 503, w.Code,
 		"a missing OAuth issuer must not break the registered-client handoff")
-	require.Equal(t, 401, w.Code, "it is the absent caller that refuses it")
+	require.NotEqual(t, 401, w.Code,
+		"the caller is verified, so a 401 here would mean this test never reached the issuer")
+	require.NotContains(t, strings.ToLower(w.Body.String()), "issuer",
+		"whatever refuses this harness must not be the absent issuer")
 }
 
 // A1007B-05. The JSON encoding must be as strict as the form one. Go's decoder

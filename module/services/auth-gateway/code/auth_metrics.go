@@ -32,6 +32,10 @@ const (
 	// presented at a solution's tool endpoint, which admits only a token issued
 	// for its own resource (SP-SOL-07).
 	jwtRejectionGenericAudience = "generic_audience"
+	// jwtRejectionInvalidAudience is an audience set that names no single valid
+	// resource — two or more, or one that is not shaped like a resource
+	// identifier. Refused on every path.
+	jwtRejectionInvalidAudience = "invalid_audience"
 )
 
 // Instruments are created once against the global meter provider. main installs
