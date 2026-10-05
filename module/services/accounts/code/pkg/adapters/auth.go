@@ -878,17 +878,29 @@ func parseUnixTimestamp(raw string) time.Time {
 	return time.Unix(seconds, 0)
 }
 
-// requireMFA gates sensitive operations behind a satisfied MFA challenge
-// when the actor has at least one MFA device enrolled. Users who never
-// set up MFA still pass — enforcement is opt-in per user, not platform-
-// wide. Returns codes.FailedPrecondition with the canonical
-// "mfa_required" reason so frontends can branch on it without parsing
-// strings.
+// requireMFA gates sensitive operations behind a satisfied MFA challenge.
+// Returns codes.FailedPrecondition with the canonical "mfa_required" reason so
+// frontends can branch on it without parsing strings.
 //
 // Apply to: anything that, if hijacked, would let an attacker pivot to
 // admin scope, exfiltrate data, or move money. Concretely: billing
 // checkout/portal, role grants, GDPR delete, impersonation, API key
 // creation with broad scopes.
+//
+// There are two populations, and the difference is what enrolment means for each.
+//
+// For a PRIVILEGED actor — any platform role, or ownership of the organization
+// the request names — not being enrolled is not a pass. It used to be: the check
+// looked for a device, found none, and admitted, so the one principal whose
+// compromise is the whole platform or the whole tenant was the one the gate could
+// not touch. A privileged actor without recent AAL2 evidence is refused, which
+// also makes "a privileged principal holds a second factor" enforceable at all:
+// the alternative to enrolling is not reaching these operations.
+//
+// For every other member the gate stays opt-in per user: enrolled means a recent
+// factor is required, unenrolled means the operation proceeds and the audit row
+// records mfa_satisfied=false. Making it unconditional there is an operator's
+// policy decision about their whole roster, not a property of the host.
 //
 // Refresh does not update MFAVerifiedAt. An enrolled user must therefore
 // have explicit AAL2 evidence no older than DefaultRecentStepUpMaxAge;
@@ -896,6 +908,13 @@ func parseUnixTimestamp(raw string) time.Time {
 func requireMFA(ctx context.Context, actorID string) error {
 	if auth.AssuranceFromContext(ctx).HasRecentMFA(time.Now(), recentStepUpMaxAge) {
 		return nil
+	}
+	privileged, err := actorHoldsPrivilegedRole(ctx, actorID)
+	if err != nil {
+		return err
+	}
+	if privileged {
+		return status.Error(codes.FailedPrecondition, "mfa_required")
 	}
 	// mfa_devices is RLS-protected by user_id (Phase 2G); wrap in
 	// the actor's WithUserTx so the count query sees their devices.
@@ -910,13 +929,45 @@ func requireMFA(ctx context.Context, actorID string) error {
 		return status.Errorf(codes.Internal, "cannot verify MFA status: %v", err)
 	}
 	if !enrolled {
-		// No verified MFA device → can't enforce. Sensitive ops still
-		// run; audit captures mfa_satisfied=false. Operators who want
-		// to force-enroll go through a separate "MFA required" feature
-		// flag at the org level (not yet implemented).
 		return nil
 	}
 	return status.Error(codes.FailedPrecondition, "mfa_required")
+}
+
+// actorHoldsPrivilegedRole reports whether this actor is one whose sensitive
+// operations must sit behind a second factor whatever they have enrolled: a
+// platform administrator of any grade, or an owner of the organization the
+// request names.
+//
+// Org ADMIN is deliberately not included. Owner is the role that cannot be
+// removed by anyone else in the tenant and that carries the tenant's own
+// lifecycle; admin is a delegated role an owner grants and withdraws, and
+// sweeping it in here would change the gate for a population an operator did not
+// choose. An operator who wants admins covered says so through org policy.
+//
+// A failure to resolve either role refuses: this runs only on the path to a
+// sensitive operation, where not knowing is not a reason to proceed.
+func actorHoldsPrivilegedRole(ctx context.Context, actorID string) (bool, error) {
+	role, err := platformRole(ctx, actorID)
+	if err != nil {
+		return false, status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
+	}
+	if role != "" {
+		return true, nil
+	}
+	// The organization comes from the verified identity the auth interceptor
+	// installed, not from the request message or a log field: it is the same
+	// tenant the membership read is scoped to, so the two cannot disagree. A
+	// request with no tenant has no owner role to hold.
+	orgID, _, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok || orgID == "" {
+		return false, nil
+	}
+	orgRole, err := lookupMembership(ctx, orgID, actorID)
+	if err != nil {
+		return false, membershipLookupStatus("cannot verify membership", err)
+	}
+	return orgRole == gen.OrgRole_ORG_ROLE_OWNER.String(), nil
 }
 
 // requireRecentMFA is the strict step-up gate for money-moving operations.
