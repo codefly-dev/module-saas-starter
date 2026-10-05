@@ -102,9 +102,9 @@ type AuditArchive interface {
 	WriteAuditBatch(ctx context.Context, batch AuditBatch) error
 }
 
-// AuditBatch is one delivery: the records of a run of queued events, in queue
-// order — oldest first, which keeps every organization's events (and the
-// platform's, which have none) in the order they were queued.
+// AuditBatch is one delivery: the records of a run of queued events, oldest
+// first. The order is not a guarantee across batches (see AuditQueue.Drain): a
+// store keys a record by event id and a read orders by event time.
 type AuditBatch struct {
 	// ID is unique to this delivery attempt; the archive names its object by it.
 	ID string

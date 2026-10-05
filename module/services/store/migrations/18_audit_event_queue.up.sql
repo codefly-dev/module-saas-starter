@@ -11,13 +11,16 @@
 -- touched, and under a swap value it simply receives no new rows. Under the
 -- default (postgres) and the tee (both) nothing writes this table.
 CREATE TABLE public.audit_event_queue (
-    -- Insertion order. The relay delivers in this order, which keeps every
-    -- organization's events — and the platform's, which have no organization —
-    -- in the order they were queued.
+    -- Insertion order. A batch is read oldest first, but delivery order is not
+    -- guaranteed: see xact_id below. Nothing downstream depends on it, because
+    -- both stores key a record by event id and every read orders by event time.
     seq bigint NOT NULL,
     -- The writing transaction. The relay reads a row only once every
-    -- transaction older than the oldest one still running has finished, so a
-    -- row committed late can never be overtaken by one queued after it.
+    -- transaction older than the oldest one still running has finished, so it
+    -- never reads a row whose transaction has not committed. The gate is
+    -- transaction visibility, not sequence order: a row whose transaction took
+    -- its id earlier but its sequence number later can be delivered ahead of a
+    -- lower sequence number still to commit.
     xact_id xid8 DEFAULT pg_current_xact_id() NOT NULL,
     -- The event, column for column as audit_events keeps it.
     id uuid NOT NULL,

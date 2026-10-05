@@ -81,7 +81,9 @@ driver mounts the catalog, connects the target, sets those variables, runs
 `command`, and fails the promotion if it exits non-zero. `role-catalog-import`
 inherits `AUDIT_SINK`: it records its audit events through the same emitter as
 `accounts`, so under a swap value (ADR 0009) they reach the queue the accounts
-relay delivers instead of `audit_events`. Re-running an unchanged catalog is an empty
+relay delivers instead of `audit_events`. Unlike `accounts`, the importer refuses
+an unset `AUDIT_SINK` rather than default to `postgres`, so a deployment that
+relies on that default must set `AUDIT_SINK=postgres` explicitly. Re-running an unchanged catalog is an empty
 no-op, so the step is idempotent. Generation rejects a deploy Job whose catalog
 artifact is absent, whose write target is not a declared dependency of the
 running service, that references an undeclared service, or that writes to a

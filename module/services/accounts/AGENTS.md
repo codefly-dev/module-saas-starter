@@ -113,8 +113,12 @@ survives a restart and reaches every replica, and is only served when it is
   live event — and verifies them by reading them back. It reads back before it
   writes, so a rerun finishes an interrupted run. Only with `-confirm-drop`,
   after a verification pass in the same run and a recount showing nothing
-  changed, does it drop the copied partitions, through the function retention
-  uses; it never deletes a row.
+  changed, does it drop the copied partitions, named one by one through
+  `audit_events_drop_verified_partitions` (migration 20), which recounts each
+  under a lock and drops exactly those; retention's
+  `audit_events_drop_partitions_before` is not used. It never deletes a row.
+  Its exit statuses (2 usage, 3 unverified, 4 drop refused, 5 nothing to verify)
+  are documented in `module/AUDIT_OPERATIONS.md`.
 - A composed **module** with no frontend half declares its own audit event
   types through `ModuleCapabilitiesService.DeclareAuditEventTypes`
   (`pkg/business/module_audit_declarations.go`): the same validator

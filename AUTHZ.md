@@ -912,8 +912,13 @@ The importer records one audit event per changed role through the same emitter
 the service uses, so it must run under the deployment's `AUDIT_SINK`
 (`-audit-sink`, defaulting to `$AUDIT_SINK`): under a swap value (ADR 0009) its
 events go to the transactional queue the accounts relay delivers, not to
-`audit_events`. The deploy step below declares it (`service_environment:
-[AUDIT_SINK]`), so the driver gives the Job the accounts service's own value.
+`audit_events`. Unlike the service, the importer has no default: an unset (or
+blank) `AUDIT_SINK` makes it exit before touching the store, because guessing
+`postgres` would write its events where a warehouse deployment never reads
+them. A deployment that relies on the service's `postgres` default must
+therefore set `AUDIT_SINK=postgres` explicitly. The deploy step below declares
+it (`service_environment: [AUDIT_SINK]`), so the driver gives the Job the
+accounts service's own value, which is why the service must have one.
 
 Domain core is `pkg/rolecatalog` (parse + diff + deterministic plan, no DB);
 `pkg/infra` snapshots current state and applies the plan in one transaction.

@@ -429,7 +429,7 @@ pools' generic refusal.
 | `app_control_plane` | no | yes | Audited pre-auth, bootstrap, platform administration, retention, and cross-tenant account operations |
 | `app_billing_worker` | no | yes | Stripe subscription catalog reads and reconciliation writes only |
 | `app_webhook_worker` | no | yes | Webhook subscription reads and delivery-history projection only |
-| `app_job_worker` | no | yes | Product-neutral job messages, attempts, transitions, and scoped enqueue operation only |
+| `app_job_worker` | no | yes | Product-neutral job messages, attempts, transitions, and scoped enqueue operation, plus the audit relay's own relations: reads and deletes `audit_event_queue`, reads and inserts `audit_event_quarantine` |
 
 All application roles are `NOLOGIN`, `NOINHERIT`, `NOSUPERUSER`,
 `NOCREATEDB`, `NOCREATEROLE`, and `NOREPLICATION`. The tenant role cannot
