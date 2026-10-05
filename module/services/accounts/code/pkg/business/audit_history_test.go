@@ -181,6 +181,10 @@ func newHistoryFixture() *historyFixture {
 func (f *historyFixture) copier(t *testing.T, cfg AuditHistoryCopyConfig) *AuditHistoryCopy {
 	t.Helper()
 	cfg.Source, cfg.Store, cfg.Archive, cfg.ReadBack = f.source, f.store, f.archive, f.store
+	if cfg.Through == nil && len(f.source.partitions) > 0 {
+		through := f.source.partitions[len(f.source.partitions)-1].To
+		cfg.Through = &through
+	}
 	cfg.DeploymentID = "deployment-1"
 	if cfg.ContentRetention == 0 {
 		cfg.ContentRetention = 400 * 24 * time.Hour
@@ -234,7 +238,7 @@ func TestAuditHistoryCopyCopiesVerifiesAndDropsOnlyWhenConfirmed(t *testing.T) {
 	// A second run finds everything there: it copies nothing, verifies, and with
 	// the confirmation drops every partition up to the cutoff.
 	appends := f.store.appends
-	report, err = f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	report, err = f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
 	require.NoError(t, err)
 	require.Equal(t, appends, f.store.appends, "a resumed run copies nothing already there")
 	require.Equal(t, []time.Time{report.Cutoff}, f.source.drops)
@@ -245,7 +249,7 @@ func TestAuditHistoryCopyCopiesVerifiesAndDropsOnlyWhenConfirmed(t *testing.T) {
 func TestAuditHistoryCopyResumesAfterAnInterruption(t *testing.T) {
 	f := newHistoryFixture()
 	f.store.failAppend = 3
-	_, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	_, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
 	require.ErrorContains(t, err, "warehouse unavailable")
 	require.Empty(t, f.source.drops, "an interrupted run drops nothing")
 	partial := len(f.store.copies())
@@ -253,7 +257,7 @@ func TestAuditHistoryCopyResumesAfterAnInterruption(t *testing.T) {
 	require.Less(t, partial, len(f.source.rows))
 
 	f.store.failAppend = 0
-	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
 	require.NoError(t, err)
 	require.True(t, report.Verified)
 	copied := 0
@@ -362,7 +366,7 @@ func TestAuditHistoryContentDetailsPastTheWindowAreNotRequired(t *testing.T) {
 			e.Details, e.HasDetails = "", false // expired with their day partition
 		}
 	}
-	report, err := f.copier(t, AuditHistoryCopyConfig{ContentRetention: 7 * 24 * time.Hour}).Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	report, err := f.copier(t, AuditHistoryCopyConfig{ContentRetention: 7 * 24 * time.Hour}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{ContentRetention: 7 * 24 * time.Hour}))
 	require.NoError(t, err)
 	require.True(t, report.Verified)
 	require.Equal(t, int64(3), report.Dropped)
@@ -374,7 +378,7 @@ func TestAuditHistoryDropIsRefusedWhenAPartitionChangedSinceVerification(t *test
 		s.beforeCount = nil
 		s.rows = append(s.rows, historyRow(999, "", EventAuthLogin, time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)))
 	}
-	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
 	require.ErrorContains(t, err, "changed since it was verified")
 	require.True(t, report.Verified)
 	require.Contains(t, report.DropRefused, "audit_events_2026_09")
@@ -384,7 +388,7 @@ func TestAuditHistoryDropIsRefusedWhenAPartitionChangedSinceVerification(t *test
 func TestAuditHistoryThroughLimitsThePartitionsAndTheCutoff(t *testing.T) {
 	f := newHistoryFixture()
 	through := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	report, err := f.copier(t, AuditHistoryCopyConfig{Through: &through}).Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	report, err := f.copier(t, AuditHistoryCopyConfig{Through: &through}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{Through: &through}))
 	require.NoError(t, err)
 	require.Len(t, report.Partitions, 1)
 	require.Equal(t, "audit_events_2026_08", report.Partitions[0].Partition.Name)
@@ -397,8 +401,9 @@ func TestAuditHistoryThroughLimitsThePartitionsAndTheCutoff(t *testing.T) {
 	f = newHistoryFixture()
 	f.source.partitions = append([]AuditHistoryPartition{{Name: "audit_events_2026_07", From: month(2026, time.July).From, To: month(2026, time.July).To}}, f.source.partitions...)
 	copier := f.copier(t, AuditHistoryCopyConfig{Through: &through})
+	digest := f.dropOptions(t, AuditHistoryCopyConfig{Through: &through})
 	copier.cfg.Source = &listingAfterVerification{historySource: f.source, extra: AuditHistoryPartition{Name: "audit_events_2026_06", From: month(2026, time.June).From, To: month(2026, time.June).To}}
-	_, err = copier.Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true})
+	_, err = copier.Run(context.Background(), digest)
 	require.ErrorContains(t, err, "audit_events_2026_06 ends before the cutoff and was not verified")
 	require.Empty(t, f.source.drops)
 }
@@ -430,4 +435,50 @@ func TestAuditHistoryVerifyOnlyWritesNothing(t *testing.T) {
 	require.True(t, report.Verified)
 	require.Equal(t, appends, f.store.appends)
 	require.Len(t, f.archive.batches, archived)
+}
+
+// Construct the explicit prior verification receipt against a separate copy of
+// the source, so interruption/tamper tests retain their original effects.
+func (f *historyFixture) dropOptions(t *testing.T, cfg AuditHistoryCopyConfig) AuditHistoryCopyOptions {
+	t.Helper()
+	clone := &historyFixture{source: &historySource{partitions: append([]AuditHistoryPartition(nil), f.source.partitions...), rows: append([]AuditEntry(nil), f.source.rows...)}, store: &historyStore{}, archive: &historyArchive{}}
+	report, err := clone.copier(t, cfg).Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	return AuditHistoryCopyOptions{ConfirmDrop: true, ExpectedPartitionsSHA256: report.PartitionsSHA256}
+}
+
+func TestAuditHistoryDropDigestBindsContentAndNeedsAPriorVerification(t *testing.T) {
+	f := newHistoryFixture()
+	copier := f.copier(t, AuditHistoryCopyConfig{})
+	plan, err := copier.Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	verify, err := copier.Run(context.Background(), AuditHistoryCopyOptions{VerifyOnly: true})
+	require.NoError(t, err)
+	require.Equal(t, plan.PartitionsSHA256, verify.PartitionsSHA256, "copy counts and run timing do not alter a verification authorization")
+	_, err = copier.Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true})
+	require.ErrorContains(t, err, "matching verification digest")
+	require.Empty(t, f.source.drops)
+	// Equal counts are insufficient: model a source and destination rewritten
+	// together after the receipt, preserving IDs and counts but changing content.
+	f.source.rows[0].Payload = map[string]any{"n": 999, "repo": "example/changed"}
+	resolver := NewAuditEventResolver(nil)
+	resolved, err := resolver.Resolve(context.Background(), f.source.rows[0].EventType)
+	require.NoError(t, err)
+	record, err := NewAuditRecord(f.source.rows[0], resolved.RetentionClass())
+	require.NoError(t, err)
+	for i := range f.store.stored {
+		if f.store.stored[i].Entry.ID == record.Entry.ID {
+			f.store.stored[i].Details = record.Details
+			f.store.stored[i].DetailsSHA256 = record.DetailsSHA256
+		}
+	}
+	current, err := copier.Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true, ExpectedPartitionsSHA256: plan.PartitionsSHA256})
+	require.ErrorContains(t, err, "matching verification digest")
+	require.True(t, current.Verified, "current copy is valid but the operator approved different content")
+	require.NotEqual(t, plan.PartitionsSHA256, current.PartitionsSHA256)
+	require.Empty(t, f.source.drops)
+	copier.cfg.Through = nil
+	_, err = copier.Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true, ExpectedPartitionsSHA256: current.PartitionsSHA256})
+	require.ErrorContains(t, err, "explicit cutoff")
+	require.Empty(t, f.source.drops)
 }

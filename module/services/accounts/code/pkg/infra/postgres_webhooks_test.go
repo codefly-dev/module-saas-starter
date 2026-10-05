@@ -17,6 +17,7 @@ import (
 	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -103,7 +104,9 @@ func runPostgresInfraTests(m *testing.M) int {
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
-		sdk.WithNamingScope("test-infra"),
+		// Each run owns a fresh database. A fixed scope can reopen an old
+		// unmerged ledger after migrations are renumbered against current main.
+		sdk.WithNamingScope("test-infra-"+uuid.NewString()[:12]),
 		sdk.WithTimeout(90*time.Second),
 		sdk.WithSilence("store"),
 	)

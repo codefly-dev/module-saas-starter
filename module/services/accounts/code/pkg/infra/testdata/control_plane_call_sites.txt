@@ -21,6 +21,8 @@ pkg/adapters/rpcs.go: (*UserServer).DeleteUser: System()
 pkg/adapters/rpcs.go: (*UserServer).DeleteUser: System()
 pkg/adapters/rpcs.go: (*UserServer).GetUser: System()
 pkg/adapters/rpcs.go: userDataIdentity: System()
+pkg/auditops/qualification.go: prepareQualification: WithControlPlane
+pkg/auditops/qualification.go: verifyQualification: WithControlPlane
 pkg/auth/pg/client_session_store.go: (*SessionStore).AuthorizeClientSession: WithControlPlane
 pkg/auth/pg/session_store.go: (*SessionStore).ExchangeOrganization: WithControlPlane
 pkg/auth/pg/session_store.go: (*SessionStore).FindByRefreshHash: WithControlPlane

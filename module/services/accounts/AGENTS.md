@@ -398,6 +398,14 @@ viewer may read out.
   which `Subscribe` refuses to a module principal, so a consumer chooses its own
   refresh — per read, or cached against a TTL it accepts.
 
+## Audit warehouse operator interface
+
+The deployed accounts executable owns `audit-history-copy` and `audit-qualify`
+subcommands through authored init dispatch. Their sanitized receipts, production
+database capabilities and content-bound removal guard are documented in
+[../../AUDIT_OPERATIONS.md](../../AUDIT_OPERATIONS.md). A qualification receipt
+retains pending checks for every live behavior it did not observe.
+
 ## Mesh reachability is the composition's to grant
 
 A composed module reaches the internal tier on the named `authority` endpoint

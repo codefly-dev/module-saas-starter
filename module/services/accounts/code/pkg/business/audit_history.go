@@ -2,8 +2,12 @@ package business
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"sort"
 	"strings"
 	"time"
@@ -110,6 +114,9 @@ type AuditHistoryCopyOptions struct {
 	// ConfirmDrop drops the copied partitions once this run has verified every
 	// one of them. Without it nothing is ever dropped.
 	ConfirmDrop bool
+	// ExpectedPartitionsSHA256 is the digest of a previous verification receipt.
+	// A confirmed drop re-verifies and refuses a changed plan before any DDL.
+	ExpectedPartitionsSHA256 string
 }
 
 // AuditHistoryOrgCount is one organization's events in a partition: how many
@@ -122,6 +129,8 @@ type AuditHistoryOrgCount struct {
 // AuditHistoryPartitionReport is what a run found in one partition.
 type AuditHistoryPartitionReport struct {
 	Partition AuditHistoryPartition
+	// EventsSHA256 binds the source event envelopes, classes and details hashes.
+	EventsSHA256 string
 	// Copied is how many events this run wrote; the rest were already there.
 	Copied int
 	// Orgs counts the partition's events per organization ("" is the
@@ -136,7 +145,9 @@ type AuditHistoryPartitionReport struct {
 
 // AuditHistoryReport is what a run did.
 type AuditHistoryReport struct {
-	Partitions []AuditHistoryPartitionReport
+	Partitions       []AuditHistoryPartitionReport
+	PartitionsSHA256 string
+	DroppedNames     []string
 	// Verified is true when every partition's events are in the store, each
 	// copy identical to its row.
 	Verified bool
@@ -213,7 +224,11 @@ func (c *AuditHistoryCopy) Run(ctx context.Context, opts AuditHistoryCopyOptions
 	if err != nil {
 		return report, err
 	}
+	if c.cfg.Through != nil {
+		report.Cutoff = *c.cfg.Through
+	}
 	if len(partitions) == 0 {
+		report.PartitionsSHA256 = c.planDigest(report)
 		report.Verified = true
 		c.cfg.Progress("no audit_events partitions to copy")
 		return report, nil
@@ -236,12 +251,17 @@ func (c *AuditHistoryCopy) Run(ctx context.Context, opts AuditHistoryCopyOptions
 			report.Verified = false
 		}
 	}
+	report.PartitionsSHA256 = c.planDigest(report)
 	if !report.Verified {
 		return report, ErrAuditHistoryUnverified
 	}
 	if !opts.ConfirmDrop {
 		c.cfg.Progress("verified; nothing dropped without the drop confirmation")
 		return report, nil
+	}
+	if c.cfg.Through == nil || opts.ExpectedPartitionsSHA256 == "" || opts.ExpectedPartitionsSHA256 != report.PartitionsSHA256 {
+		report.DropRefused = "explicit cutoff and matching verification digest required"
+		return report, errors.New("audit history copy: drop refused: explicit cutoff and matching verification digest required")
 	}
 	if refused, err := c.drop(ctx, &report, partitions); err != nil || refused != "" {
 		report.DropRefused = refused
@@ -278,16 +298,18 @@ func (c *AuditHistoryCopy) partitions(ctx context.Context) ([]AuditHistoryPartit
 // copyPartition copies and verifies one partition, a window at a time.
 func (c *AuditHistoryCopy) copyPartition(ctx context.Context, resolver *AuditEventResolver, partition AuditHistoryPartition, opts AuditHistoryCopyOptions) (AuditHistoryPartitionReport, error) {
 	report := AuditHistoryPartitionReport{Partition: partition, Orgs: map[string]AuditHistoryOrgCount{}}
+	digest := sha256.New()
 	for from := partition.From; from.Before(partition.To); from = from.Add(auditHistoryWindow) {
 		to := from.Add(auditHistoryWindow)
 		if to.After(partition.To) {
 			to = partition.To
 		}
-		if err := c.copyWindow(ctx, resolver, from, to, opts, &report); err != nil {
+		if err := c.copyWindow(ctx, resolver, from, to, opts, &report, digest); err != nil {
 			return report, fmt.Errorf("audit history copy: %s [%s, %s): %w", partition.Name,
 				from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339), err)
 		}
 	}
+	report.EventsSHA256 = hex.EncodeToString(digest.Sum(nil))
 	var rows, verified int64
 	for _, count := range report.Orgs {
 		rows += count.Postgres
@@ -300,7 +322,7 @@ func (c *AuditHistoryCopy) copyPartition(ctx context.Context, resolver *AuditEve
 
 // copyWindow reads a window's rows, reads back what the store holds of it,
 // writes what is missing, and verifies every row.
-func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventResolver, from, to time.Time, opts AuditHistoryCopyOptions, report *AuditHistoryPartitionReport) error {
+func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventResolver, from, to time.Time, opts AuditHistoryCopyOptions, report *AuditHistoryPartitionReport, digest hash.Hash) error {
 	records, err := c.readWindow(ctx, resolver, from, to)
 	if err != nil {
 		return err
@@ -333,6 +355,16 @@ func (c *AuditHistoryCopy) copyWindow(ctx context.Context, resolver *AuditEventR
 		}
 	}
 	for _, record := range records {
+		envelope := record.Entry
+		envelope.Payload, envelope.IdempotencyKey = nil, ""
+		envelope.CreatedAt = envelope.CreatedAt.UTC()
+		// Encoding an explicit envelope plus the content hash binds source bytes
+		// without retaining payloads or a deployment-sized stream in memory.
+		_ = json.NewEncoder(digest).Encode(struct {
+			Entry         AuditEntry
+			Retention     AuditRetentionClass
+			DetailsSHA256 string
+		}{envelope, record.Retention, record.DetailsSHA256})
 		org := record.Entry.OrgID
 		count := report.Orgs[org]
 		count.Postgres++
@@ -495,7 +527,32 @@ func (c *AuditHistoryCopy) drop(ctx context.Context, report *AuditHistoryReport,
 		return "", fmt.Errorf("audit history copy: drop: %w", err)
 	}
 	if refused == "" {
+		for _, p := range report.Partitions {
+			report.DroppedNames = append(report.DroppedNames, p.Partition.Name)
+		}
 		c.cfg.Progress(fmt.Sprintf("dropped %d partitions ending at or before %s", report.Dropped, report.Cutoff.UTC().Format(time.RFC3339)))
 	}
 	return refused, nil
+}
+
+// planDigest excludes run timing and copied counts: copy, verify and drop runs
+// of unchanged source events produce the same authorization digest.
+func (c *AuditHistoryCopy) planDigest(report AuditHistoryReport) string {
+	type partition struct {
+		Name         string
+		From, To     time.Time
+		Orgs         map[string]AuditHistoryOrgCount
+		EventsSHA256 string
+	}
+	parts := make([]partition, 0, len(report.Partitions))
+	for _, p := range report.Partitions {
+		parts = append(parts, partition{p.Partition.Name, p.Partition.From.UTC(), p.Partition.To.UTC(), p.Orgs, p.EventsSHA256})
+	}
+	body, _ := json.Marshal(struct {
+		Deployment string
+		Cutoff     time.Time
+		Partitions []partition
+	}{c.cfg.DeploymentID, report.Cutoff.UTC(), parts})
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
 }
