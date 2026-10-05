@@ -508,9 +508,10 @@ Retention deletes and token-based pre-auth reads/updates use the audited
 control-plane boundary; they are intentionally not granted to `app_tenant`.
 So does the one-time audit history copy of a deployment switching to a swap
 value (`cmd/audit-history-copy`, ADR 0009): it reads `audit_events` across
-organizations and, once its copy is verified and confirmed, drops the copied
-partitions through `audit_events_drop_partitions_before`, as retention does. It
-deletes no row.
+organizations and, once its copy is verified and confirmed, drops exactly the
+partitions it verified through `audit_events_drop_verified_partitions` (see
+[Dropping verified partitions](#dropping-verified-partitions)), where retention
+uses `audit_events_drop_partitions_before`. It deletes no row.
 The infrastructure suite compares PostgreSQL's complete public-table inventory
 to this executable matrix, so adding a table without classifying and granting
 it fails the gate.
@@ -587,6 +588,58 @@ policies too: a non-superuser owner-level `pg_dump` or `COPY` of a partition,
 attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
+
+## Dropping verified partitions
+
+The one-time history copy retires the monthly partitions it copied into a
+warehouse, and retires exactly those. `audit_events_drop_partitions_before` cannot
+promise that: it picks partitions by the month in their *name*, read in the
+calling session's time zone, while the copy verified partitions by the bounds
+PostgreSQL holds. A partition created from a session in another zone has bounds on
+that zone's midnights, so a UTC session asked to retire everything before 1
+September also dropped `audit_events_2026_08` created from New York, whose last
+four hours are September's events, unverified. It also drops without looking: a
+row committed into a partition after the copy's last recount, before the `DROP`,
+was destroyed with the table.
+
+Migration `20_audit_verified_partition_drop` adds
+`audit_events_drop_verified_partitions(cutoff, names, expected_rows)`, which takes
+the explicit list of verified partition names with the row count each held when
+verified, and in one transaction:
+
+1. locks `audit_events` and then each named partition `ACCESS EXCLUSIVE`, in name
+   order, with a 10-second lock wait: a writer in flight is waited for, a later
+   writer waits behind the drop, and a writer that does not finish makes the drop
+   refuse rather than hang. Inserters take the parent before a partition, so the
+   order cannot deadlock with them;
+2. confirms from `pg_catalog`, after the lock, that each name is a monthly
+   partition of `audit_events` with a timestamp range whose upper bound is at or
+   before the cutoff;
+3. recounts each partition and compares it with the verified count;
+4. only then drops exactly the named partitions and returns their names.
+
+Any mismatch raises SQLSTATE `AH001` and the transaction rolls back with nothing
+dropped; the command refuses unless the returned names equal the verified set
+before it commits. The function never chooses a partition itself.
+
+It is `SECURITY DEFINER`, owned by the migration principal that owns the
+partitions, with `pg_temp` last in its `search_path`, and `EXECUTE` granted to
+`app_control_plane` alone, the role that holds the same authority through
+`audit_events_drop_partitions_before` today; nothing is widened. The recount reads a
+partition by name as its owner, and partitions *force* row-level security, which
+holds an owner without `BYPASSRLS` (the migration principal) to the policies:
+bound to no organization it would count no rows. The function therefore lifts
+`FORCE` on each partition inside its own transaction before counting. The
+partition is held `ACCESS EXCLUSIVE`, so no other session sees the change, and the
+transaction either drops the partition or rolls the change back with everything
+else; `TestVerifiedPartitionDropRefusesWhatItWasNotAskedToVerify` checks a refused
+call leaves every partition forced. The history copy does not call
+`audit_events_drop_partitions_before`; retention still does.
+
+`TestAuditHistoryDropsExactlyTheVerifiedPartitionsWhateverZoneCreatedThem` pins the
+time-zone case, `TestAuditHistoryDropDoesNotDestroyARowCommittedAfterTheRecount` and
+`TestVerifiedPartitionDropWaitsForAnInFlightInsertAndThenRefusesToDestroyIt` the
+concurrent-insert case.
 
 ## SECURITY DEFINER functions list pg_temp last
 

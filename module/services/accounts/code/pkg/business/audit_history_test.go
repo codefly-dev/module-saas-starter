@@ -17,15 +17,35 @@ import (
 
 type historySource struct {
 	partitions []AuditHistoryPartition
-	rows       []AuditEntry
-	drops      []time.Time
+	// hidden are tables the monthly listing does not return — the default
+	// partition, a partition under another name — that still hold rows.
+	hidden []AuditHistoryPartition
+	rows   []AuditEntry
+	// tableOf, when set, says which table a row sits in; the default is the
+	// partition whose bounds hold it.
+	tableOf func(AuditEntry) string
+	// drops are the partitions each drop asked for, dropCutoffs its cutoffs.
+	drops       [][]AuditHistoryDropTarget
+	dropCutoffs []time.Time
+	// dropNames, when set, is the set the database claims to have dropped (and
+	// did drop), in place of the one asked for.
+	dropNames func([]AuditHistoryDropTarget) []string
+	// refusal, when set, is the database refusing the drop.
+	refusal string
 	// beforeCount runs before every count, so a test can change the table
 	// between verification and the drop.
 	beforeCount func(*historySource)
 }
 
+// WithControlPlane runs fn as one transaction: what fn drops stays dropped only
+// if fn returns nil.
 func (s *historySource) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
-	return fn(ctx)
+	before := append([]AuditHistoryPartition(nil), s.partitions...)
+	if err := fn(ctx); err != nil {
+		s.partitions = before
+		return err
+	}
+	return nil
 }
 
 func (s *historySource) ListAuditPartitions(context.Context) ([]AuditHistoryPartition, error) {
@@ -69,19 +89,55 @@ func (s *historySource) CountAuditHistory(_ context.Context, from, to time.Time)
 	return counts, nil
 }
 
-func (s *historySource) DropAuditPartitionsBefore(_ context.Context, before time.Time) (int64, error) {
-	s.drops = append(s.drops, before)
+func (s *historySource) table(row AuditEntry) string {
+	if s.tableOf != nil {
+		return s.tableOf(row)
+	}
+	for _, partition := range append(append([]AuditHistoryPartition(nil), s.partitions...), s.hidden...) {
+		if !row.CreatedAt.Before(partition.From) && row.CreatedAt.Before(partition.To) {
+			return partition.Name
+		}
+	}
+	return "audit_events"
+}
+
+func (s *historySource) CountAuditHistoryByTable(_ context.Context, from, to time.Time) ([]AuditHistoryTableRows, error) {
+	totals := map[string]int64{}
+	for _, row := range s.rows {
+		if row.CreatedAt.Before(to) && (from.IsZero() || !row.CreatedAt.Before(from)) {
+			totals[s.table(row)]++
+		}
+	}
+	var out []AuditHistoryTableRows
+	for table, rows := range totals {
+		out = append(out, AuditHistoryTableRows{Table: table, Rows: rows})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Table < out[j].Table })
+	return out, nil
+}
+
+func (s *historySource) DropVerifiedAuditPartitions(_ context.Context, cutoff time.Time, targets []AuditHistoryDropTarget) ([]string, error) {
+	s.drops = append(s.drops, append([]AuditHistoryDropTarget(nil), targets...))
+	s.dropCutoffs = append(s.dropCutoffs, cutoff)
+	if s.refusal != "" {
+		return nil, &AuditHistoryDropRefusal{Reason: s.refusal}
+	}
+	names := targetNames(targets)
+	if s.dropNames != nil {
+		names = s.dropNames(targets)
+	}
+	gone := map[string]bool{}
+	for _, name := range names {
+		gone[name] = true
+	}
 	var kept []AuditHistoryPartition
-	var dropped int64
 	for _, partition := range s.partitions {
-		if partition.To.After(before) {
+		if !gone[partition.Name] {
 			kept = append(kept, partition)
-		} else {
-			dropped++
 		}
 	}
 	s.partitions = kept
-	return dropped, nil
+	return names, nil
 }
 
 // historyStore is a store of record that keeps what it is given, as the
@@ -139,7 +195,9 @@ func (a *historyArchive) WriteAuditBatch(_ context.Context, batch AuditBatch) er
 	return nil
 }
 
-var historyNow = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+// historyNow is after the last of the fixture's months: a drop needs a cutoff
+// that has passed.
+var historyNow = time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 
 func month(year int, m time.Month) AuditHistoryPartition {
 	from := time.Date(year, m, 1, 0, 0, 0, 0, time.UTC)
@@ -241,8 +299,13 @@ func TestAuditHistoryCopyCopiesVerifiesAndDropsOnlyWhenConfirmed(t *testing.T) {
 	report, err = f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
 	require.NoError(t, err)
 	require.Equal(t, appends, f.store.appends, "a resumed run copies nothing already there")
-	require.Equal(t, []time.Time{report.Cutoff}, f.source.drops)
+	require.Equal(t, []time.Time{report.Cutoff}, f.source.dropCutoffs)
+	require.Equal(t, []AuditHistoryDropTarget{
+		{"audit_events_2026_08", 15}, {"audit_events_2026_09", 12}, {"audit_events_2026_10", 0},
+	}, f.source.drops[0], "the database is asked for each verified partition by name, with the rows it was verified with")
 	require.Equal(t, int64(3), report.Dropped)
+	require.Equal(t, []string{"audit_events_2026_08", "audit_events_2026_09", "audit_events_2026_10"}, report.DroppedNames,
+		"the receipt names what the database says it dropped")
 	require.Empty(t, f.source.partitions)
 }
 
@@ -392,7 +455,7 @@ func TestAuditHistoryThroughLimitsThePartitionsAndTheCutoff(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, report.Partitions, 1)
 	require.Equal(t, "audit_events_2026_08", report.Partitions[0].Partition.Name)
-	require.Equal(t, []time.Time{through}, f.source.drops)
+	require.Equal(t, []time.Time{through}, f.source.dropCutoffs)
 	for _, event := range f.store.stored {
 		require.True(t, event.Entry.CreatedAt.Before(through), "only August is copied")
 	}
@@ -481,4 +544,210 @@ func TestAuditHistoryDropDigestBindsContentAndNeedsAPriorVerification(t *testing
 	_, err = copier.Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true, ExpectedPartitionsSHA256: current.PartitionsSHA256})
 	require.ErrorContains(t, err, "explicit cutoff")
 	require.Empty(t, f.source.drops)
+}
+
+// The drop is by name, the names are the verified ones, and the receipt carries
+// what the database reports it dropped. A database that drops anything else —
+// the way a drop by partition name in another time zone would — is rolled back
+// before it commits, whatever it claims.
+func TestAuditHistoryDropRefusesASetThatIsNotTheVerifiedOne(t *testing.T) {
+	for name, tc := range map[string]struct {
+		dropNames func([]AuditHistoryDropTarget) []string
+		want      string
+	}{
+		"one more than was verified": {
+			dropNames: func(targets []AuditHistoryDropTarget) []string {
+				return append(targetNames(targets), "audit_events_2026_11")
+			},
+			want: "not the verified",
+		},
+		"one fewer": {
+			dropNames: func(targets []AuditHistoryDropTarget) []string { return targetNames(targets)[:2] },
+			want:      "not the verified",
+		},
+		"another in place of one": {
+			dropNames: func(targets []AuditHistoryDropTarget) []string {
+				return []string{"audit_events_2026_08", "audit_events_2026_09", "audit_events_2026_12"}
+			},
+			want: "not the verified",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newHistoryFixture()
+			f.source.dropNames = tc.dropNames
+			options := f.dropOptions(t, AuditHistoryCopyConfig{})
+			report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), options)
+			require.ErrorIs(t, err, ErrAuditHistoryDropRefused)
+			require.Contains(t, report.DropRefused, tc.want)
+			require.Empty(t, report.DroppedNames)
+			require.Zero(t, report.Dropped)
+			require.Len(t, f.source.partitions, 3, "the transaction was rolled back")
+		})
+	}
+}
+
+func TestAuditHistoryDropReportsTheDatabasesRefusal(t *testing.T) {
+	f := newHistoryFixture()
+	f.source.refusal = "partition audit_events_2026_09 holds 13 rows, 12 were verified"
+	report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), f.dropOptions(t, AuditHistoryCopyConfig{}))
+	require.ErrorIs(t, err, ErrAuditHistoryDropRefused)
+	require.ErrorContains(t, err, "holds 13 rows, 12 were verified")
+	require.Equal(t, f.source.refusal, report.DropRefused)
+	require.True(t, report.Verified, "the copy was verified; the drop was refused")
+	require.Empty(t, report.DroppedNames)
+	require.Len(t, f.source.partitions, 3)
+}
+
+func TestAuditHistoryDropNeedsACutoffThatHasPassed(t *testing.T) {
+	f := newHistoryFixture()
+	copier := f.copier(t, AuditHistoryCopyConfig{})
+	copier.cfg.Now = func() time.Time { return time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC) }
+	plan, err := copier.Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err, "copying and verifying through a month that has not ended is allowed")
+	report, err := copier.Run(context.Background(), AuditHistoryCopyOptions{ConfirmDrop: true, VerifyOnly: true, ExpectedPartitionsSHA256: plan.PartitionsSHA256})
+	require.ErrorIs(t, err, ErrAuditHistoryDropRefused)
+	require.Contains(t, report.DropRefused, "completed month")
+	require.Empty(t, f.source.drops)
+}
+
+// A run that finds no partition to verify has not verified anything, and says
+// so as an outcome of its own rather than as success.
+func TestAuditHistoryWithNoPartitionToVerifyClaimsNothing(t *testing.T) {
+	f := newHistoryFixture()
+	f.source.partitions, f.source.rows = nil, nil
+	through := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, opts := range []AuditHistoryCopyOptions{{}, {VerifyOnly: true, ConfirmDrop: true, ExpectedPartitionsSHA256: "ignored"}} {
+		report, err := f.copier(t, AuditHistoryCopyConfig{Through: &through}).Run(context.Background(), opts)
+		require.ErrorIs(t, err, ErrAuditHistoryNothingToVerify)
+		require.False(t, report.Verified)
+		require.Empty(t, report.Uncovered)
+		require.Empty(t, f.source.drops)
+	}
+}
+
+// Events older than the cutoff that no verified partition holds fail the run:
+// the partitions were chosen by their bounds, and the table can hold events
+// elsewhere — in a default partition, a partition under another name, one that
+// straddles the cutoff, or when it is not partitioned at all.
+func TestAuditHistoryEventsOutsideTheVerifiedPartitionsFailVerification(t *testing.T) {
+	newYork := func(m time.Month) AuditHistoryPartition {
+		p := month(2026, m)
+		p.From, p.To = p.From.Add(4*time.Hour), p.To.Add(4*time.Hour)
+		return p
+	}
+	through := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		prepare func(*historyFixture)
+		table   string
+		rows    int64
+	}{
+		"a default partition": {
+			prepare: func(f *historyFixture) {
+				// An event from before the first partition, which only a default
+				// partition could hold.
+				f.source.rows = append(f.source.rows, historyRow(900, "", EventAuthLogin, time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)))
+				f.source.tableOf = func(e AuditEntry) string {
+					if e.CreatedAt.Before(month(2026, time.August).From) {
+						return "audit_events_default"
+					}
+					return "audit_events_2026_08"
+				}
+			},
+			table: "audit_events_default", rows: 1,
+		},
+		"a partition under another name": {
+			prepare: func(f *historyFixture) {
+				// The listing returns monthly names only; this one holds August 30th.
+				odd := AuditHistoryPartition{Name: "audit_events_aug_late", From: time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)}
+				f.source.hidden = []AuditHistoryPartition{odd}
+				f.source.partitions = []AuditHistoryPartition{{Name: "audit_events_2026_07", From: month(2026, time.July).From, To: odd.From}, {Name: "audit_events_2026_08", From: odd.To, To: month(2026, time.August).To}}
+			},
+			table: "audit_events_aug_late", rows: 6,
+		},
+		"a partition that straddles the cutoff": {
+			prepare: func(f *historyFixture) {
+				f.source.partitions = []AuditHistoryPartition{newYork(time.July), newYork(time.August)}
+			},
+			table: "audit_events_2026_08", rows: 15,
+		},
+		"a table that is not partitioned": {
+			prepare: func(f *historyFixture) { f.source.partitions = nil },
+			table:   "audit_events", rows: 15,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newHistoryFixture()
+			tc.prepare(f)
+			report, err := f.copier(t, AuditHistoryCopyConfig{Through: &through}).Run(context.Background(), AuditHistoryCopyOptions{})
+			require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+			require.False(t, report.Verified)
+			require.Contains(t, report.Uncovered, AuditHistoryTableRows{Table: tc.table, Rows: tc.rows})
+
+			// The digest of the unverified run authorizes nothing.
+			_, err = f.copier(t, AuditHistoryCopyConfig{Through: &through}).Run(context.Background(),
+				AuditHistoryCopyOptions{VerifyOnly: true, ConfirmDrop: true, ExpectedPartitionsSHA256: report.PartitionsSHA256})
+			require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+			require.Empty(t, f.source.drops)
+		})
+	}
+}
+
+// Contiguous verified partitions leave no gap to look in but the two ends, and
+// nothing outside them passes unnoticed on either.
+func TestAuditHistoryLooksForUncoveredEventsOnlyWhereThePartitionsAreNot(t *testing.T) {
+	f := newHistoryFixture()
+	queried := &countingTables{historySource: f.source}
+	through := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	copier := f.copier(t, AuditHistoryCopyConfig{Through: &through})
+	copier.cfg.Source = queried
+	_, err := copier.Run(context.Background(), AuditHistoryCopyOptions{})
+	require.NoError(t, err)
+	require.Len(t, queried.intervals, 1, "before the first partition; the cutoff is the last partition's end")
+	require.True(t, queried.intervals[0][0].IsZero())
+	require.Equal(t, month(2026, time.August).From, queried.intervals[0][1])
+}
+
+type countingTables struct {
+	*historySource
+	intervals [][2]time.Time
+}
+
+func (c *countingTables) CountAuditHistoryByTable(ctx context.Context, from, to time.Time) ([]AuditHistoryTableRows, error) {
+	c.intervals = append(c.intervals, [2]time.Time{from, to})
+	return c.historySource.CountAuditHistoryByTable(ctx, from, to)
+}
+
+// The copy matches events by id within a read window while audit_events is keyed
+// by (id, created_at). Two rows with one id in the same window cannot both match
+// the copies found, so verification fails closed; in different windows each copy
+// matches its own row. module/AUDIT_OPERATIONS.md says exactly this.
+func TestAuditHistoryDuplicateIDsFailVerificationWithinAWindow(t *testing.T) {
+	for name, tc := range map[string]struct {
+		offset   time.Duration
+		verified bool
+	}{
+		"in the same UTC-day window":    {offset: time.Hour, verified: false},
+		"in a different window (a day)": {offset: 24 * time.Hour, verified: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newHistoryFixture()
+			twin := f.source.rows[0]
+			twin.CreatedAt = twin.CreatedAt.Add(tc.offset)
+			f.source.rows = append(f.source.rows, twin)
+			report, err := f.copier(t, AuditHistoryCopyConfig{}).Run(context.Background(), AuditHistoryCopyOptions{})
+			if tc.verified {
+				require.NoError(t, err)
+				require.True(t, report.Verified)
+				require.Equal(t, 2, f.store.copies()[twin.ID], "one stored row per source row")
+				return
+			}
+			require.ErrorIs(t, err, ErrAuditHistoryUnverified)
+			require.False(t, report.Verified)
+			var problems []string
+			for _, partition := range report.Partitions {
+				problems = append(problems, partition.Problems...)
+			}
+			require.Contains(t, problems[0], "stored envelope differs from the row")
+		})
+	}
 }

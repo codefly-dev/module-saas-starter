@@ -2,10 +2,14 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // audit_events as the one-time history copy reads and retires it
@@ -13,9 +17,10 @@ import (
 // transaction the caller opened: the copy spans every organization.
 
 // auditPartitionsSQL lists the monthly partitions of audit_events — the ones
-// audit_events_ensure_partition creates and audit_events_drop_partitions_before
-// drops — with the bounds Postgres holds for each, parsed back from its own
-// rendering of them so no time zone is assumed.
+// audit_events_ensure_partition creates — with the bounds Postgres holds for
+// each, parsed back from its own rendering of them so no time zone is assumed.
+// The copy verifies the partitions this lists and drops those same ones by name,
+// through audit_events_drop_verified_partitions, which reads the same bounds.
 const auditPartitionsSQL = `
 	SELECT c.relname,
 	       (regexp_match(pg_get_expr(c.relpartbound, c.oid), 'FROM \(''([^'']+)''\) TO \(''([^'']+)''\)'))[1]::timestamptz,
@@ -127,6 +132,75 @@ func (s *PostgresStore) CountAuditHistory(ctx context.Context, from, to time.Tim
 		counts[org] = n
 	}
 	return counts, rows.Err()
+}
+
+// CountAuditHistoryByTable implements business.AuditHistorySource. It reads
+// through the parent, so partition pruning keeps it to the partitions that
+// overlap [from, to) and the default partition, and tableoid names the table a
+// row sits in.
+func (s *PostgresStore) CountAuditHistoryByTable(ctx context.Context, from, to time.Time) ([]business.AuditHistoryTableRows, error) {
+	query := `
+		SELECT tableoid::regclass::text, count(*)
+		FROM public.audit_events
+		WHERE created_at < $1`
+	args := []any{to}
+	if !from.IsZero() {
+		query += ` AND created_at >= $2`
+		args = append(args, from)
+	}
+	query += ` GROUP BY tableoid ORDER BY 1`
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []business.AuditHistoryTableRows
+	for rows.Next() {
+		var table business.AuditHistoryTableRows
+		if err := rows.Scan(&table.Table, &table.Rows); err != nil {
+			return nil, err
+		}
+		out = append(out, table)
+	}
+	return out, rows.Err()
+}
+
+// The SQLSTATE audit_events_drop_verified_partitions raises when it refuses,
+// and the one PostgreSQL raises when a lock wait ends (lock_timeout).
+const (
+	auditDropRefusedState = "AH001"
+	lockNotAvailableState = "55P03"
+	auditDropRefusedLead  = "audit history drop refused: "
+)
+
+// DropVerifiedAuditPartitions implements business.AuditHistorySource. The
+// database function locks audit_events and each named partition, confirms from
+// the catalog that each is a partition whose upper bound is at or before the
+// cutoff, recounts each against the number it was verified with, and only then
+// drops exactly those partitions, all in the caller's transaction.
+func (s *PostgresStore) DropVerifiedAuditPartitions(ctx context.Context, cutoff time.Time, partitions []business.AuditHistoryDropTarget) ([]string, error) {
+	names := make([]string, 0, len(partitions))
+	rows := make([]int64, 0, len(partitions))
+	for _, partition := range partitions {
+		names = append(names, partition.Name)
+		rows = append(rows, partition.Rows)
+	}
+	var dropped []string
+	err := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT public.audit_events_drop_verified_partitions($1, $2::text[], $3::bigint[])`, cutoff, names, rows).Scan(&dropped)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case auditDropRefusedState:
+			return nil, &business.AuditHistoryDropRefusal{Reason: strings.TrimPrefix(pgErr.Message, auditDropRefusedLead)}
+		case lockNotAvailableState:
+			return nil, &business.AuditHistoryDropRefusal{Reason: "audit_events is locked by another transaction that did not finish in time; nothing was dropped"}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return dropped, nil
 }
 
 var _ business.AuditHistorySource = (*PostgresStore)(nil)
