@@ -50,6 +50,7 @@ type WorkContextAuthorityServer struct {
 	consumer     business.WorkContextConsumerAuthorityStore
 	journal      business.ActorChainJournal
 	replay       business.WorkContextReplayStore
+	boundaries   business.SolutionRuntimeBoundaryStore
 	configureErr error
 }
 
@@ -61,6 +62,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.consumer = nil
 	s.journal = nil
 	s.replay = nil
+	s.boundaries = nil
 	s.configureErr = nil
 
 	if s.issuer == "" || strings.TrimSpace(config.KeyID) == "" {
@@ -103,6 +105,7 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.consumer, _ = config.Authority.(business.WorkContextConsumerAuthorityStore)
 	s.journal, _ = config.Authority.(business.ActorChainJournal)
 	s.replay, _ = config.Authority.(business.WorkContextReplayStore)
+	s.boundaries, _ = config.Authority.(business.SolutionRuntimeBoundaryStore)
 }
 
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
@@ -303,6 +306,72 @@ func mapConsumerAuthorityError(err error) error {
 	}
 }
 
+// taskBoundary resolves the runtime boundary a StartTask capability is sealed
+// under: the task_id a consumer reads to decide which runs a context may see.
+//
+// There are two kinds of mint and the request cannot tell them apart; the
+// credential can. An ORDINARY mint — every mint the host's own pages and every
+// composed module make — names its own Task, and naming none is refused exactly
+// as the schema used to refuse it. A SOLUTION-SCOPED mint is one the gateway
+// proved came from a registered solution, by verifying that solution's signed,
+// solution-bound registration credential and stamping the id it names; such a
+// mint gets the boundary the registry assigned that solution at registration,
+// and naming a task_id is refused rather than ignored.
+//
+// Why the host has to assign it (issue #1015): a run is reachable only under
+// its admitting boundary, so a solution needs a boundary that outlives one
+// context. A boundary the solution could choose would let one solution mint for
+// another's and read, answer and recover its runs for the same viewer. Nothing
+// a request carries reaches this value — not here, not in the registry — and
+// the solution id comes from a credential that names exactly one solution, so
+// there is no spelling of this call that mints another solution's boundary.
+//
+// What this does NOT decide is which viewer may see which run inside one
+// solution: the boundary is per-solution, the owner is the person in the
+// capability, and separating two people's runs under one boundary stays the
+// consumer's own owner check.
+func (s *WorkContextAuthorityServer) taskBoundary(ctx context.Context, requested string) (string, error) {
+	solution, scoped := accountsauth.VerifiedSolution(ctx)
+	if !scoped {
+		if requested == "" {
+			return "", status.Error(codes.InvalidArgument, "task_id is required")
+		}
+		return requested, nil
+	}
+	if requested != "" {
+		return "", status.Error(
+			codes.InvalidArgument,
+			"a solution-scoped Work Context may not name a task_id: the host assigns the solution's runtime boundary",
+		)
+	}
+	if s.boundaries == nil {
+		return "", status.Error(codes.Unavailable, "solution runtime boundaries are unavailable")
+	}
+	boundary, err := s.boundaries.SolutionRuntimeBoundary(ctx, solution)
+	switch {
+	case err == nil:
+	case errors.Is(err, business.ErrSolutionRegistrationNotFound):
+		return "", status.Error(codes.FailedPrecondition, "solution is not registered")
+	case errors.Is(err, business.ErrSolutionRegistrationTombstoned):
+		return "", status.Error(codes.FailedPrecondition, business.ErrSolutionRegistrationTombstoned.Error())
+	case errors.Is(err, context.Canceled):
+		return "", status.Error(codes.Canceled, "solution runtime boundary lookup canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return "", status.Error(codes.DeadlineExceeded, "solution runtime boundary lookup timed out")
+	default:
+		return "", status.Error(codes.Internal, "cannot resolve the solution runtime boundary")
+	}
+	// A registration with no boundary cannot happen — the column is NOT NULL
+	// with a server-side default and no write replaces it — so an empty one
+	// means the record was reached some way this service does not own. Refuse
+	// rather than sign a capability whose boundary is the empty string, which
+	// every other solution's empty boundary would also be.
+	if boundary == "" {
+		return "", status.Error(codes.Internal, "solution registration carries no runtime boundary")
+	}
+	return boundary, nil
+}
+
 func (s *WorkContextAuthorityServer) StartTask(
 	ctx context.Context,
 	req *gen.StartTaskWorkContextRequest,
@@ -311,6 +380,10 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 	ownerID, err := s.authorizeOwner(ctx, req.GetOrgId())
+	if err != nil {
+		return nil, err
+	}
+	taskID, err := s.taskBoundary(ctx, req.GetTaskId())
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +417,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		Audience:              req.GetAudience(),
 		TenantID:              req.GetOrgId(),
 		OwnerPrincipalID:      ownerID,
-		TaskID:                req.GetTaskId(),
+		TaskID:                taskID,
 		SessionID:             sessionID,
 		AuthorizationRevision: facts.EffectiveRevision(),
 		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),

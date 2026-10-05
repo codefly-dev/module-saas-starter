@@ -84,6 +84,41 @@ survives a restart and reaches every replica, and is only served when it is
   convergence after any write is bounded: the gateway reconciles about every 10s
   plus an on-demand refresh on a cache miss, the frontend holds a 5s snapshot TTL.
 
+## The record carries the solution's runtime boundary
+
+A runtime task is reachable only under the boundary of the Work Context that
+admitted it — the context's `task_id`. `solution_registrations.runtime_boundary`
+(migration `17_solution_runtime_boundary`) is the boundary every Work Context
+minted for that solution is sealed under, so a run a page admits stays
+reachable across the mints of one session rather than only under the one
+context that admitted it.
+
+**The host assigns it and nothing else can.** The column's `gen_random_uuid()`
+default fires on insert; the registry's upsert deliberately omits the column
+from its `ON CONFLICT … DO UPDATE`, and `RETURNING` makes the stored value the
+one the caller gets back. So no request field reaches it, no write replaces it,
+and it survives a tombstone — a reactivated registration keeps naming the runs
+it already admitted. A boundary a solution could choose would let one solution
+mint for another's and read, answer and recover its runs for the same viewer,
+which is why it is the host's.
+
+It leaves this service on exactly **one** response: the **backend half's own**
+`PutSolutionRegistration`. That half is registered by the solution's backend
+against its own solution-bound credential, and the backend is the only thing
+that mints. `solutionRegistrationProto` never sets the field, so no listing can
+carry one — a consumer holding the whole registry would otherwise hold every
+solution's boundary.
+
+The mint reads it through `business.SolutionRuntimeBoundaryStore`, a read of one
+boundary by solution id, refusing a missing record and a tombstone separately.
+Which solution is asking comes from `auth.VerifiedSolution`, stamped from the
+`X-Codefly-Solution-Id` the gateway proved from that solution's registration
+credential (`../auth-gateway/AGENTS.md`); it is a forwarded identity header, so
+it is stripped from any caller arriving without a valid gateway token. On such a
+mint a caller-supplied `task_id` is **refused**, not ignored. Every other mint
+is unchanged: a request with no verified solution must name its own `task_id`,
+exactly as the schema used to require.
+
 ## The composed-module service principal
 
 A module consuming the module-facing capability surface

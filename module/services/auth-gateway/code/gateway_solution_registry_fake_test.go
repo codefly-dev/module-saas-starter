@@ -72,6 +72,11 @@ func (f *fakeSolutionRegistry) Put(
 		record = &accountsv1.SolutionRegistration{
 			SolutionId: req.GetSolutionId(),
 			Publisher:  req.GetPublisher(),
+			// Assigned once, by the registry, when the record is created — and
+			// never again, through a replacement half, a tombstone or a
+			// reactivation. A fake that re-drew it on any later write would make
+			// the gateway's "the boundary is stable" tests prove nothing.
+			RuntimeBoundary: "boundary-" + req.GetSolutionId(),
 		}
 		f.records[req.GetSolutionId()] = record
 	}
@@ -100,7 +105,14 @@ func (f *fakeSolutionRegistry) Put(
 		}
 	}
 	record.Status = fakeSolutionStatus(record, time.Now())
-	return proto.Clone(record).(*accountsv1.SolutionRegistration), nil
+	out := proto.Clone(record).(*accountsv1.SolutionRegistration)
+	// As accounts does: the boundary leaves the registry on exactly one
+	// response, the backend half's own write, because that half is the one that
+	// mints and the one whose credential proved which solution it is.
+	if req.GetBackend() == nil {
+		out.RuntimeBoundary = ""
+	}
+	return out, nil
 }
 
 func (f *fakeSolutionRegistry) Delete(
@@ -122,7 +134,9 @@ func (f *fakeSolutionRegistry) Delete(
 	record.Backend = nil
 	record.TombstonedAt = timestamppb.Now()
 	record.Status = accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED
-	return proto.Clone(record).(*accountsv1.SolutionRegistration), nil
+	tombstone := proto.Clone(record).(*accountsv1.SolutionRegistration)
+	tombstone.RuntimeBoundary = ""
+	return tombstone, nil
 }
 
 func (f *fakeSolutionRegistry) List(
@@ -141,6 +155,9 @@ func (f *fakeSolutionRegistry) List(
 		}
 		listed := proto.Clone(record).(*accountsv1.SolutionRegistration)
 		listed.Status = fakeSolutionStatus(listed, time.Now())
+		// No listing carries a boundary: a consumer holding the whole registry
+		// would otherwise hold every solution's.
+		listed.RuntimeBoundary = ""
 		out.Registrations = append(out.Registrations, listed)
 	}
 	return out, nil

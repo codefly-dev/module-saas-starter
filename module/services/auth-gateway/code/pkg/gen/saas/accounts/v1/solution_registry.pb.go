@@ -254,15 +254,27 @@ type SolutionRegistration struct {
 	SolutionId string                 `protobuf:"bytes,1,opt,name=solution_id,json=solutionId,proto3" json:"solution_id,omitempty"`
 	// Owner of record. First claim binds it; a registration naming a different
 	// publisher is refused rather than overwriting.
-	Publisher     string                     `protobuf:"bytes,2,opt,name=publisher,proto3" json:"publisher,omitempty"`
-	Revision      int64                      `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
-	Status        SolutionRegistrationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=saas.accounts.v1.SolutionRegistrationStatus" json:"status,omitempty"`
-	Frontend      *SolutionFrontendBinding   `protobuf:"bytes,5,opt,name=frontend,proto3,oneof" json:"frontend,omitempty"`
-	Backend       *SolutionBackendBinding    `protobuf:"bytes,6,opt,name=backend,proto3,oneof" json:"backend,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	TombstonedAt  *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Publisher    string                     `protobuf:"bytes,2,opt,name=publisher,proto3" json:"publisher,omitempty"`
+	Revision     int64                      `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	Status       SolutionRegistrationStatus `protobuf:"varint,4,opt,name=status,proto3,enum=saas.accounts.v1.SolutionRegistrationStatus" json:"status,omitempty"`
+	Frontend     *SolutionFrontendBinding   `protobuf:"bytes,5,opt,name=frontend,proto3,oneof" json:"frontend,omitempty"`
+	Backend      *SolutionBackendBinding    `protobuf:"bytes,6,opt,name=backend,proto3,oneof" json:"backend,omitempty"`
+	UpdatedAt    *timestamppb.Timestamp     `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	TombstonedAt *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=tombstoned_at,json=tombstonedAt,proto3,oneof" json:"tombstoned_at,omitempty"`
+	// The solution's runtime boundary: the opaque id every Work Context minted
+	// for this solution is sealed under, so a run a page admits stays reachable
+	// across the mints of one session instead of only under the context that
+	// admitted it (issue #1015).
+	//
+	// Assigned by this service when the record is created and never again — no
+	// request carries it, no write replaces it, and it survives a tombstone so a
+	// reactivated registration keeps naming the same runs. It is returned only on
+	// the record's OWN write, to the registrant that authenticated as that
+	// solution, and is cleared from every listing: a consumer that could read the
+	// whole registry could otherwise mint for someone else's runs.
+	RuntimeBoundary string `protobuf:"bytes,9,opt,name=runtime_boundary,json=runtimeBoundary,proto3" json:"runtime_boundary,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SolutionRegistration) Reset() {
@@ -349,6 +361,13 @@ func (x *SolutionRegistration) GetTombstonedAt() *timestamppb.Timestamp {
 		return x.TombstonedAt
 	}
 	return nil
+}
+
+func (x *SolutionRegistration) GetRuntimeBoundary() string {
+	if x != nil {
+		return x.RuntimeBoundary
+	}
+	return ""
 }
 
 // SolutionFrontendRegistration is the caller-supplied frontend half. Revision
@@ -769,7 +788,7 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\bupstream\x18\x02 \x01(\tR\bupstream\x12#\n" +
 	"\rservice_alias\x18\x03 \x01(\tR\fserviceAlias\x12)\n" +
 	"\x10contract_version\x18\x04 \x01(\tR\x0fcontractVersion\x12D\n" +
-	"\x10lease_expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xf8\x03\n" +
+	"\x10lease_expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xa3\x04\n" +
 	"\x14SolutionRegistration\x12\x1f\n" +
 	"\vsolution_id\x18\x01 \x01(\tR\n" +
 	"solutionId\x12\x1c\n" +
@@ -780,7 +799,8 @@ const file_saas_accounts_v1_solution_registry_proto_rawDesc = "" +
 	"\abackend\x18\x06 \x01(\v2(.saas.accounts.v1.SolutionBackendBindingH\x01R\abackend\x88\x01\x01\x129\n" +
 	"\n" +
 	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12D\n" +
-	"\rtombstoned_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\ftombstonedAt\x88\x01\x01B\v\n" +
+	"\rtombstoned_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampH\x02R\ftombstonedAt\x88\x01\x01\x12)\n" +
+	"\x10runtime_boundary\x18\t \x01(\tR\x0fruntimeBoundaryB\v\n" +
 	"\t_frontendB\n" +
 	"\n" +
 	"\b_backendB\x10\n" +

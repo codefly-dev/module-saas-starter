@@ -528,12 +528,20 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 // a registrant can hold it and drive its own compare-and-swap next time, and
 // the status, so it learns immediately that its half alone is not yet serving.
 func (g *Gateway) writeSolutionRegistrationResult(w http.ResponseWriter, record *accountsv1.SolutionRegistration) {
-	writeSolutionJSON(w, http.StatusOK, map[string]any{
+	result := map[string]any{
 		"ok":       true,
 		"id":       record.GetSolutionId(),
 		"revision": record.GetRevision(),
 		"status":   solutionRegistryStatusLabel(record, g.solutions.now()),
-	})
+	}
+	// The runtime boundary, when the registry sent one. It does so on exactly
+	// one response — the backend half's own write — so this is how the half that
+	// mints learns the boundary the host assigned it (issue #1015), and the
+	// frontend half and every registry read carry nothing to omit here.
+	if boundary := record.GetRuntimeBoundary(); boundary != "" {
+		result["runtimeBoundary"] = boundary
+	}
+	writeSolutionJSON(w, http.StatusOK, result)
 }
 
 func writeSolutionJSON(w http.ResponseWriter, code int, payload any) {

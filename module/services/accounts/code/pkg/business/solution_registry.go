@@ -88,14 +88,30 @@ type SolutionBackendHalf struct {
 }
 
 // SolutionRegistration is the canonical record for one solution.
+//
+// RuntimeBoundary is the opaque id every Work Context minted for this solution
+// is sealed under (issue #1015). The store assigns it when the record is
+// created and no path here ever writes it again, which is what makes it the
+// host's and not the solution's: see SolutionRuntimeBoundaryStore.
 type SolutionRegistration struct {
-	SolutionID   string
-	Publisher    string
-	Revision     int64
-	Frontend     *SolutionFrontendHalf
-	Backend      *SolutionBackendHalf
-	UpdatedAt    time.Time
-	TombstonedAt *time.Time
+	SolutionID      string
+	Publisher       string
+	Revision        int64
+	RuntimeBoundary string
+	Frontend        *SolutionFrontendHalf
+	Backend         *SolutionBackendHalf
+	UpdatedAt       time.Time
+	TombstonedAt    *time.Time
+}
+
+// SolutionRuntimeBoundaryStore reads one registered solution's runtime
+// boundary. It is a read of its own rather than a field of the registry
+// snapshot because the two have opposite audiences: the snapshot is the whole
+// registry, which the gateway and the frontend cache, while a boundary is the
+// one thing that must never leave the solution it belongs to. The Work Context
+// issuer asks for exactly one, by the solution id a verified credential named.
+type SolutionRuntimeBoundaryStore interface {
+	SolutionRuntimeBoundary(ctx context.Context, solutionID string) (string, error)
 }
 
 // Status resolves the record against the wall clock.
@@ -261,6 +277,10 @@ func planSolutionRegistrationWrite(
 		if write.ExpectedRevision != nil {
 			return nil, false, ErrSolutionRegistrationStale
 		}
+		// RuntimeBoundary is deliberately left empty: the store assigns it on
+		// the INSERT this write becomes and reports back what it assigned, so
+		// nothing above the database — including this planner — is ever in a
+		// position to choose one.
 		next := &SolutionRegistration{
 			SolutionID: write.SolutionID,
 			Publisher:  write.Publisher,
@@ -284,10 +304,14 @@ func planSolutionRegistrationWrite(
 		if write.ExpectedRevision == nil {
 			return nil, false, ErrSolutionRegistrationTombstoned
 		}
+		// The boundary is carried across the tombstone, not re-drawn: the
+		// record is the same solution under the same publisher, and the runs it
+		// already admitted stay the ones it can read.
 		next := &SolutionRegistration{
-			SolutionID: current.SolutionID,
-			Publisher:  current.Publisher,
-			UpdatedAt:  now,
+			SolutionID:      current.SolutionID,
+			Publisher:       current.Publisher,
+			RuntimeBoundary: current.RuntimeBoundary,
+			UpdatedAt:       now,
 		}
 		applySolutionHalf(next, write, leaseUntil)
 		return next, true, nil
@@ -520,11 +544,12 @@ func (s *Service) DeleteSolutionRegistration(
 		}
 		tombstoned := now
 		next := &SolutionRegistration{
-			SolutionID:   current.SolutionID,
-			Publisher:    current.Publisher,
-			Revision:     revision,
-			UpdatedAt:    now,
-			TombstonedAt: &tombstoned,
+			SolutionID:      current.SolutionID,
+			Publisher:       current.Publisher,
+			Revision:        revision,
+			RuntimeBoundary: current.RuntimeBoundary,
+			UpdatedAt:       now,
+			TombstonedAt:    &tombstoned,
 		}
 		if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
 			return err

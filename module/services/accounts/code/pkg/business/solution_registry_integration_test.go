@@ -268,3 +268,98 @@ func TestSolutionRegistry_RejectsWriteWithoutIdentity(t *testing.T) {
 		t.Fatalf("err = %v, want identity required", err)
 	}
 }
+
+// The host assigns a solution's runtime boundary (issue #1015).
+//
+// It is the column's DEFAULT that assigns it and the upsert's deliberate
+// omission of the column that keeps it, so these are facts about the relation
+// and belong here rather than in the pure planner tests. Four things have to
+// hold: it is there from the first write, it is the same through every later
+// write of either half, it survives a tombstone and a reactivation, and two
+// solutions never share one.
+func TestSolutionRegistry_RuntimeBoundaryIsAssignedOnceByTheHost(t *testing.T) {
+	id := testSolutionID(t)
+
+	first, err := testService.PutSolutionRegistration(testCtx, frontendWrite(id, "acme", `{"id":"`+id+`"}`))
+	if err != nil {
+		t.Fatalf("frontend half: %v", err)
+	}
+	boundary := first.RuntimeBoundary
+	if boundary == "" {
+		t.Fatal("the first write left the registration with no runtime boundary")
+	}
+
+	backend, err := testService.PutSolutionRegistration(testCtx, backendWrite(id, "acme", "http://upstream.example:8080"))
+	if err != nil {
+		t.Fatalf("backend half: %v", err)
+	}
+	if backend.RuntimeBoundary != boundary {
+		t.Fatalf("the second half moved the boundary %q -> %q", boundary, backend.RuntimeBoundary)
+	}
+
+	// A heartbeat (identical content, no revision advance) and a real
+	// replacement both keep it: a renewed Work Context has to be sealed under
+	// the same boundary as the one it replaces, which is the whole point.
+	renewed, err := testService.PutSolutionRegistration(testCtx, backendWrite(id, "acme", "http://upstream.example:8080"))
+	if err != nil {
+		t.Fatalf("renewal: %v", err)
+	}
+	if renewed.RuntimeBoundary != boundary {
+		t.Fatalf("a renewal moved the boundary to %q", renewed.RuntimeBoundary)
+	}
+	replacement := backendWrite(id, "acme", "http://moved.example:8080")
+	replacement.ExpectedRevision = &renewed.Revision
+	replaced, err := testService.PutSolutionRegistration(testCtx, replacement)
+	if err != nil {
+		t.Fatalf("replacement: %v", err)
+	}
+	if replaced.RuntimeBoundary != boundary {
+		t.Fatalf("a replaced half moved the boundary to %q", replaced.RuntimeBoundary)
+	}
+
+	// The registry read the Work Context mint makes answers the same value.
+	minted, err := testStore.SolutionRuntimeBoundary(testCtx, id)
+	if err != nil {
+		t.Fatalf("mint lookup: %v", err)
+	}
+	if minted != boundary {
+		t.Fatalf("the mint would seal %q, not the registration's %q", minted, boundary)
+	}
+
+	// A tombstone keeps it — the record is the same solution under the same
+	// publisher — but a deregistered solution may not mint under it.
+	tombstone, err := testService.DeleteSolutionRegistration(testCtx, id, nil)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if tombstone.RuntimeBoundary != boundary {
+		t.Fatalf("the tombstone moved the boundary to %q", tombstone.RuntimeBoundary)
+	}
+	if _, err := testStore.SolutionRuntimeBoundary(testCtx, id); err != business.ErrSolutionRegistrationTombstoned {
+		t.Fatalf("mint lookup on a tombstone: err = %v, want tombstoned", err)
+	}
+
+	reactivate := backendWrite(id, "acme", "http://upstream.example:8080")
+	reactivate.ExpectedRevision = &tombstone.Revision
+	revived, err := testService.PutSolutionRegistration(testCtx, reactivate)
+	if err != nil {
+		t.Fatalf("reactivation: %v", err)
+	}
+	if revived.RuntimeBoundary != boundary {
+		t.Fatalf("reactivation moved the boundary to %q", revived.RuntimeBoundary)
+	}
+
+	// Another solution gets its own, and the mint refuses one that never
+	// registered rather than answering an empty boundary every solution shares.
+	other := testSolutionID(t)
+	second, err := testService.PutSolutionRegistration(testCtx, backendWrite(other, "acme", "http://other.example:8080"))
+	if err != nil {
+		t.Fatalf("second solution: %v", err)
+	}
+	if second.RuntimeBoundary == boundary || second.RuntimeBoundary == "" {
+		t.Fatalf("two solutions share the boundary %q", second.RuntimeBoundary)
+	}
+	if _, err := testStore.SolutionRuntimeBoundary(testCtx, testSolutionID(t)); err != business.ErrSolutionRegistrationNotFound {
+		t.Fatalf("mint lookup on an unregistered solution: err = %v, want not found", err)
+	}
+}

@@ -87,6 +87,18 @@ message SolutionRegistration {
   optional SolutionBackendBinding backend = 6;
   google.protobuf.Timestamp updated_at = 7;
   optional google.protobuf.Timestamp tombstoned_at = 8;
+  // The solution's runtime boundary: the opaque id every Work Context minted
+  // for this solution is sealed under, so a run a page admits stays reachable
+  // across the mints of one session instead of only under the context that
+  // admitted it (issue #1015).
+  //
+  // Assigned by this service when the record is created and never again — no
+  // request carries it, no write replaces it, and it survives a tombstone so a
+  // reactivated registration keeps naming the same runs. It is returned only on
+  // the record's OWN write, to the registrant that authenticated as that
+  // solution, and is cleared from every listing: a consumer that could read the
+  // whole registry could otherwise mint for someone else's runs.
+  string runtime_boundary = 9;
 }
 
 // SolutionFrontendRegistration is the caller-supplied frontend half. Revision

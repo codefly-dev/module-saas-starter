@@ -39,6 +39,20 @@ const solutionServicePrefix = "solution:"
 // solutionRegistrationHeader carries the signed per-solution registration token.
 const solutionRegistrationHeader = "X-Codefly-Solution-Registration"
 
+// solutionIdentityHeader is this gateway's own assertion of which registered
+// solution a request mints a Work Context for (issue #1015). It is stamped only
+// from a verified solution-registration credential, only on the mint procedure,
+// and only beside the gateway credential accounts believes; it is in
+// untrustedAuthHeaders, so any inbound spelling of it is stripped first. It is
+// lowercase because that is the form both the strip set and gRPC metadata use.
+const solutionIdentityHeader = "x-codefly-solution-id"
+
+// workContextMintProcedure is the Work Context mint. It is the only procedure
+// outside the registration surface on which a solution's registration
+// credential means anything, because it is the only one whose answer depends on
+// which solution is asking.
+const workContextMintProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
+
 // solutionSecretHeader carries the solution's own registration secret. The
 // gateway consumes it in the exchange and forwards it only on the internal leg,
 // to accounts, which holds the digest to compare it against.
@@ -273,4 +287,48 @@ func (g *Gateway) authorizeSolutionRegistration(w http.ResponseWriter, r *http.R
 		return nil, false
 	}
 	return claims, true
+}
+
+// verifiedSolutionMint reports which registered solution is minting a Work
+// Context on this request, and whether a presented credential was refused.
+//
+// A solution's runs are reachable only under the boundary of the context that
+// admitted them, so a solution needs a boundary that outlives one context — and
+// a boundary it could choose would let one solution mint for another's and read
+// its runs (issue #1015). The host therefore assigns one per registration, and
+// this is where "which solution" is established: from the solution's own
+// signed, solution-bound registration credential, the same one both
+// registration halves take, verified against the published key set with the
+// same alg-locked discipline. Nothing in the request body is consulted, and the
+// caller's own spelling of the stamped header was already stripped.
+//
+// A presented credential that does not verify is a refusal, not an ordinary
+// mint: falling back would answer a broken or replayed credential with a
+// capability under a different boundary, which is the one outcome worth being
+// loud about. A request that presents none is an ordinary mint and is untouched
+// — that is every mint the host's own pages and every composed module make.
+//
+// Unlike authorizeSolutionRegistration this does NOT burn the credential's
+// jti. That guard exists so a captured credential cannot re-point a route or
+// replace a remote after the legitimate registrant has moved on; a mint changes
+// no state a replay could steer, and the passthrough mints per audience and
+// scope set, so burning it would force a fresh credential exchange — an audited
+// mint on accounts — several times per page. The credential's five-minute life
+// is the bound here.
+func (g *Gateway) verifiedSolutionMint(r *http.Request, entry *RouteEntry) (string, bool) {
+	if entry == nil || entry.Procedure != workContextMintProcedure {
+		return "", false
+	}
+	presented := r.Header.Get(solutionRegistrationHeader)
+	if presented == "" {
+		return "", false
+	}
+	if g.authz == nil {
+		return "", true
+	}
+	claims, ok := g.authz.verifySolutionRegistration(r.Context(), presented)
+	if !ok || !solutionIDPattern.MatchString(claims.Solution) {
+		return "", true
+	}
+	return claims.Solution, false
 }

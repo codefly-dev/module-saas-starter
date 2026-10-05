@@ -15,7 +15,7 @@ import (
 // therefore assume the caller opened a WithControlPlane transaction, which
 // getQueryExecutor picks up from ctx.
 
-const solutionRegistrationColumns = `solution_id, publisher, revision, tombstoned_at,
+const solutionRegistrationColumns = `solution_id, publisher, revision, runtime_boundary, tombstoned_at,
 	frontend_revision, frontend_manifest, frontend_contract_version, frontend_lease_expires_at,
 	backend_revision, backend_upstream, backend_service_alias, backend_contract_version, backend_lease_expires_at,
 	updated_at`
@@ -35,7 +35,7 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 		backendLease    *time.Time
 	)
 	if err := row.Scan(
-		&record.SolutionID, &record.Publisher, &record.Revision, &tombstonedAt,
+		&record.SolutionID, &record.Publisher, &record.Revision, &record.RuntimeBoundary, &tombstonedAt,
 		&frontRevision, &frontManifest, &frontContract, &frontLease,
 		&backendRevision, &backendUpstream, &backendAlias, &backendContract, &backendLease,
 		&record.UpdatedAt,
@@ -107,6 +107,15 @@ func (s *PostgresStore) NextSolutionRegistryRevision(ctx context.Context) (int64
 // SaveSolutionRegistration writes the whole record. Every half column is
 // written on every save, so tombstoning — which passes a record with no halves
 // — clears the endpoints in the same statement that records the deletion.
+//
+// runtime_boundary is the one column this statement will not write (issue
+// #1015). It is absent from the INSERT, so a new row takes the column's
+// gen_random_uuid() default, and absent from the ON CONFLICT ... DO UPDATE, so
+// an existing row keeps what it was given — through a replacement half, a
+// tombstone and a reactivation alike. RETURNING reports whichever of the two
+// happened, and the caller's record is corrected from it: the database is the
+// only thing that can answer what a solution's boundary is, and a value
+// invented anywhere above here is discarded rather than stored.
 func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *business.SolutionRegistration) error {
 	var (
 		frontRevision   *int64
@@ -127,7 +136,8 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 		backendRevision, backendUpstream = &half.Revision, &half.Upstream
 		backendAlias, backendContract, backendLease = &half.ServiceAlias, &half.ContractVersion, &half.LeaseExpiresAt
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+	var boundary string
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		INSERT INTO public.solution_registrations (
 			solution_id, publisher, revision, tombstoned_at,
 			frontend_revision, frontend_manifest, frontend_contract_version, frontend_lease_expires_at,
@@ -147,12 +157,48 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			backend_service_alias = EXCLUDED.backend_service_alias,
 			backend_contract_version = EXCLUDED.backend_contract_version,
 			backend_lease_expires_at = EXCLUDED.backend_lease_expires_at,
-			updated_at = EXCLUDED.updated_at`,
+			updated_at = EXCLUDED.updated_at
+		RETURNING runtime_boundary`,
 		record.SolutionID, record.Publisher, record.Revision, record.TombstonedAt,
 		frontRevision, frontManifest, frontContract, frontLease,
 		backendRevision, backendUpstream, backendAlias, backendContract, backendLease,
-		record.UpdatedAt)
-	return err
+		record.UpdatedAt).Scan(&boundary)
+	if err != nil {
+		return err
+	}
+	record.RuntimeBoundary = boundary
+	return nil
+}
+
+// SolutionRuntimeBoundary returns one registered solution's runtime boundary.
+//
+// It opens its own control-plane transaction rather than assuming one: the Work
+// Context issuer calls it on the mint path, which holds no registry transaction
+// of its own. A tombstoned record answers ErrSolutionRegistrationTombstoned and
+// a missing one ErrSolutionRegistrationNotFound — a deregistered solution must
+// not keep minting under the boundary its runs are filed against, and the two
+// cases send an operator to different places.
+func (s *PostgresStore) SolutionRuntimeBoundary(ctx context.Context, solutionID string) (string, error) {
+	var (
+		boundary     string
+		tombstonedAt *time.Time
+	)
+	err := s.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.getQueryExecutor(ctx).QueryRow(ctx,
+			`SELECT runtime_boundary, tombstoned_at
+			 FROM public.solution_registrations WHERE solution_id = $1`, solutionID).
+			Scan(&boundary, &tombstonedAt)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", business.ErrSolutionRegistrationNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if tombstonedAt != nil {
+		return "", business.ErrSolutionRegistrationTombstoned
+	}
+	return boundary, nil
 }
 
 // ListSolutionRegistrations returns the registry snapshot ordered by solution

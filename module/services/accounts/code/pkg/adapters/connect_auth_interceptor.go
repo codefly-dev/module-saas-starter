@@ -24,6 +24,13 @@ var forwardedIdentityHeaders = []string{
 	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-Credential-Kind", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 	"X-Client-Id",
+	// Which registered solution a Work Context mint is for (issue #1015). It
+	// names no person, but it selects the runtime boundary the capability is
+	// sealed under, so it is identity in every sense that matters here: left
+	// caller-settable, one solution could mint under another's boundary and read
+	// its runs. It belongs in this list for the same reason X-Org-Id does —
+	// stripped unless the gateway token is valid, refused if it arrives twice.
+	"X-Codefly-Solution-Id",
 }
 
 const publicOriginHeader = "X-Codefly-Public-Origin"
@@ -271,5 +278,15 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) (conte
 	if scopedRoles := headers.Get("X-Scoped-Roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
+	if solution := headers.Get(solutionIdentityHeader); solution != "" {
+		if ctx, err = auth.WithVerifiedSolution(ctx, solution); err != nil {
+			return ctx, err
+		}
+	}
 	return withScopedRolesTruncated(ctx, headers.Get("X-Scoped-Roles-Truncated") == "true"), nil
 }
+
+// solutionIdentityHeader is the registered solution the gateway proved from its
+// signed, solution-bound registration credential. Only the Work Context mint
+// reads it, and only from a trusted forwarder.
+const solutionIdentityHeader = "X-Codefly-Solution-Id"

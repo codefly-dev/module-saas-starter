@@ -34,6 +34,37 @@ registration token in `X-Codefly-Solution-Registration`, obtained from `POST
 from the module secrets). The credential names one solution id and one
 publisher, so a holder can neither claim nor re-point another solution.
 
+## The mint is where a solution's boundary is decided
+
+A registered solution's runs are filed under one opaque **runtime boundary**
+accounts assigned at registration (`../accounts/AGENTS.md`), and accounts seals
+it into every Work Context it mints for that solution. It learns which solution
+is asking from one place: the `X-Codefly-Solution-Id` this gateway stamps on
+`POST /saas.accounts.v1.WorkContextService/StartTask` (and its REST spelling)
+after verifying the **same** solution-bound registration credential both
+registration halves take. Nothing in the request body has a say, and the
+caller's own spelling of that header is stripped like every other canonical
+identity header — without which any authenticated viewer could mint under any
+solution's boundary by typing its id.
+
+Three deliberate choices:
+
+- **Only that procedure.** The credential means nothing on any other route, so
+  what it widens is one mint rather than the whole surface.
+- **A presented credential that does not verify is a 401**, not an ordinary
+  mint. Falling through would answer a forged, expired or malformed credential
+  with a capability under a different boundary — the one outcome worth being
+  loud about. A request presenting none is an ordinary mint and is untouched.
+- **The `jti` is not burned here**, unlike on the registration mutations. That
+  guard stops a captured credential re-pointing a route after the registrant has
+  moved on; a mint steers no state a replay could reach, and a solution's
+  passthrough mints per audience and scope set, so burning it would force a
+  fresh credential exchange — an audited mint on accounts — several times per
+  page. The credential's five-minute life is the bound.
+
+The backend half's own registration response echoes `runtimeBoundary`, which is
+how the half that mints learns it. The `_registry` snapshot never carries one.
+
 ## Composed-module REST federation
 
 A composed module that serves its own `/v1/<module>/*` surface is federated

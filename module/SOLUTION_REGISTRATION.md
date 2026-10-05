@@ -222,3 +222,61 @@ keeps renewing its record after the upgrade. A pre-contract row whose publisher
 was self-asserted as anything else was never authenticated; it stays as it is,
 and who owns it is an operator's decision — delete the row (or `DELETE` the
 registration) and let the credentialed publisher register it afresh.
+
+## 6. The registration carries the solution's runtime boundary
+
+A runtime task is reachable only under the boundary of the Work Context that
+admitted it: the context's `task_id`. A solution's page therefore needs a
+boundary that outlives one context — when a cached context renews, or a call
+with another scope set mints its own, the next request carries a fresh
+`task_id` and the run the page admitted is gone from view while it keeps
+executing.
+
+So the registration record carries one. `solution_registrations.runtime_boundary`
+is an opaque id **the host assigns when the record is created**, and every Work
+Context minted for that solution is sealed under it.
+
+**It is assigned, never named.** The column defaults to `gen_random_uuid()` on
+insert, the registry's upsert omits it from its update list, and no request
+field anywhere reaches it. It is stable across both halves, across a lease
+renewal, across a replaced half, and across a tombstone and a reactivation —
+the record is the same solution under the same publisher, so the runs it already
+admitted stay the ones it can read.
+
+**Why it could not be the solution's to choose.** If a solution named its
+boundary, solution B could mint for A's and read, answer and recover A's runs
+for the same viewer: exactly the cross-boundary access the registration
+contract exists to prevent. Naming it is the one thing a registrant may not do,
+which is why this is the host's field and not a registration input.
+
+**Who may learn one.** The solution, its own, through its registration: the
+**backend half's** `POST /solutions/_register` response carries
+`runtimeBoundary`. That half is authenticated by the solution's own
+solution-bound credential and is the half that mints. The frontend half does
+not mint and is not told; `GET /solutions/_registry` and every other registry
+read carry no boundary at all, because a consumer holding the whole registry
+would otherwise hold every solution's.
+
+**How a mint proves which solution is asking.** The solution presents the same
+registration credential on
+`POST /saas.accounts.v1.WorkContextService/StartTask`. The gateway verifies it
+exactly as it does on a registration — alg-locked EdDSA against the published
+JWKS, issuer, `solution-registration` audience, expiry — and stamps the id its
+`solution` claim names as `X-Codefly-Solution-Id`, a forwarded identity header
+accounts believes only beside the gateway credential and strips from every other
+caller. On such a mint accounts seals that solution's boundary and **refuses a
+caller-supplied `task_id`**; the credential is accepted on no other procedure,
+and one that does not verify is a `401` rather than a mint under some other
+boundary. A mint presenting no credential is unchanged in every respect.
+
+Two limits worth stating. The boundary is **per solution, not per viewer**: the
+person is the capability's owner, and separating two people's runs under one
+boundary stays the consuming module's own owner check. And the `jti` is not
+burned on a mint (see `services/auth-gateway/AGENTS.md`), so one credential can
+seal several mints inside its five-minute life.
+
+Tracked as
+[#1015](https://github.com/codefly-dev/module-saas-starter/issues/1015); the
+page half — a solution's passthrough presenting its credential and no longer
+naming a `task_id` — belongs to `codefly-dev/solution-runtime-go` and is not
+done here.
