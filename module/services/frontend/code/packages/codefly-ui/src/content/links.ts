@@ -12,12 +12,21 @@
  * - `{ unavailable }`: the link's text, not live, with the reason as its title.
  *   For a target the caller cannot show: not in the viewer's readable set, or
  *   not there at all. The reason must not say which.
+ * - `{ href, external }`: where the link actually goes, which only the caller
+ *   knows — a corpus page's `../decisions/x.md#why` is a path in a repository,
+ *   not a URL. `external` opens it in a new browsing context with
+ *   `rel="noopener noreferrer"`; otherwise it opens in place. The href is held
+ *   to the SAME allowlist as one the content wrote (`safeLinkUrl`, resolved
+ *   against `linkBase` when there is one), so a resolver cannot make
+ *   `javascript:` into a link: give an absolute http, https or mailto URL, or
+ *   return `{ open }` to navigate inside the product without one.
  * - `undefined`: the kit's own rule applies (an absolute http, https or mailto
  *   URL is live in a new tab; `linkBase` resolves a relative one first).
  */
 export type LinkTarget =
 	| { open: () => void; title?: string }
 	| { unavailable: string }
+	| { href: string; external: boolean }
 	| undefined;
 
 /** Decides, from a link's href exactly as written, what the link does. */

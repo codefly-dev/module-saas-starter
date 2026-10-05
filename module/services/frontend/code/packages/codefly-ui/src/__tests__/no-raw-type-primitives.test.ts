@@ -75,8 +75,11 @@ const files = sourceFiles(srcDir);
 // when its file reaches zero. Anything else in that package is default-deny.
 const SAAS_UI_BASELINE: Record<string, number> = {
 	"datasources/collection-access.tsx": 2,
-	"datasources/connect-github-form.tsx": 16,
-	"datasources/datasources-panel.tsx": 17,
+	// Lowered from 16 when the credential block moved into
+	// `datasources/credential-mode.tsx`, which carries none: the shared copy
+	// names its slots, so the debt left behind shrank rather than moving.
+	"datasources/connect-github-form.tsx": 11,
+	"datasources/datasources-panel.tsx": 15,
 };
 const saasUiDir = resolve(srcDir, "../../saas-ui/src");
 const saasUiFiles = existsSync(saasUiDir) ? sourceFiles(saasUiDir) : [];

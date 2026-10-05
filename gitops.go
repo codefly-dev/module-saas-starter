@@ -135,10 +135,15 @@ type bundleIngressRoute struct {
 }
 
 type managedServiceHandoff struct {
-	Service                string   `json:"service"`
-	Kind                   string   `json:"kind"`
-	ExternalName           string   `json:"externalName"`
-	AuthMode               string   `json:"authMode,omitempty"`
+	Service      string `json:"service"`
+	Kind         string `json:"kind"`
+	ExternalName string `json:"externalName"`
+	AuthMode     string `json:"authMode,omitempty"`
+	// EgressNamespace is the in-cluster namespace that holds this dependency,
+	// set only for a kind the cell runs inside the same cluster. It is what the
+	// caller's egress policy selects on; such a dependency has no stable address
+	// to write a CIDR for, and the pod CIDR would authorize the whole cluster.
+	EgressNamespace        string   `json:"egressNamespace,omitempty"`
 	InstanceConnectionName string   `json:"instanceConnectionName,omitempty"`
 	SecretReferences       []string `json:"secretReferences,omitempty"`
 }
@@ -167,6 +172,7 @@ type managedServiceConfig struct {
 	AuthMode               string                   `yaml:"auth-mode,omitempty"`
 	InstanceConnectionName string                   `yaml:"instance-connection-name,omitempty"`
 	EgressCIDRs            []string                 `yaml:"egress-cidrs,omitempty"`
+	EgressNamespace        string                   `yaml:"egress-namespace,omitempty"`
 	SecretReferences       []managedSecretReference `yaml:"secret-references,omitempty"`
 }
 
@@ -809,7 +815,7 @@ func validateManagedServices(
 			return fmt.Errorf("environment %q declares unexpected managed service %q", environment.Name, service)
 		}
 		switch config.Kind {
-		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible", "cloud-sql-postgres":
+		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible", "cloud-sql-postgres", managedKindCellVault:
 		default:
 			return fmt.Errorf("environment %q managed service %q kind %q is not supported", environment.Name, service, config.Kind)
 		}
@@ -820,11 +826,16 @@ func validateManagedServices(
 		if err != nil {
 			return err
 		}
+		egressNamespace, err := validateManagedEgress(environment.Name, service, config)
+		if err != nil {
+			return err
+		}
 		// Store what was validated rather than what was written: the renderer and
 		// the bundle both read these back, so a padded or defaulted spelling must
 		// not survive past the one place that checked it.
 		config.AuthMode = authMode
 		config.InstanceConnectionName = instanceConnection
+		config.EgressNamespace = egressNamespace
 		for _, cidr := range config.EgressCIDRs {
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
 				return fmt.Errorf("environment %q managed service %q egress CIDR %q is invalid", environment.Name, service, cidr)
@@ -835,6 +846,7 @@ func validateManagedServices(
 			Service:                service,
 			Kind:                   config.Kind,
 			ExternalName:           config.ExternalName,
+			EgressNamespace:        egressNamespace,
 			InstanceConnectionName: instanceConnection,
 		}
 		// Only a non-default mode earns a key: every consumer already reads an
@@ -868,6 +880,47 @@ func validateManagedServices(
 	return validateManagedDependencyCIDRs(environment.Name, topology, plan.managed)
 }
 
+// managedKindCellVault names a Vault the cell runs beside this module rather
+// than one this module composes. It exists because the module's own `vault`
+// service is a development convenience whose state is the product's secrets: a
+// cell that holds the signing key and the Transit key wants its own durable
+// Vault, and the product must reach that one by name rather than inherit
+// whatever the composition happened to render.
+//
+// Everything about the kind follows from being in-cluster. The destination is
+// selected by namespace, because no egress CIDR can describe a pod whose
+// address moves. And this handoff projects no connection secret of its own: the
+// caller authenticates with a credential the configuration plane delivers into
+// its own secret group, which is why the mode must be stated rather than
+// inherited from the password default — a default would have the promotion
+// driver project a secret nothing issued.
+const managedKindCellVault = "cell-vault"
+
+// validateManagedEgress resolves how a caller is granted reach to a managed
+// dependency. An out-of-cluster dependency has a stable address, so it is named
+// by exact CIDR; an in-cluster one does not, and the pod CIDR that would cover
+// it covers every other workload too — so those are selected by namespace, and
+// mixing the two spellings is an error rather than a union.
+func validateManagedEgress(environment, service string, config managedServiceConfig) (namespace string, err error) {
+	namespace = strings.TrimSpace(config.EgressNamespace)
+	if config.Kind != managedKindCellVault {
+		if namespace != "" {
+			return "", fmt.Errorf("environment %q managed service %q kind %q does not take an egress-namespace: it is reached by exact egress-cidrs", environment, service, config.Kind)
+		}
+		return "", nil
+	}
+	if namespace == "" {
+		return "", fmt.Errorf("environment %q managed service %q kind %q requires an egress-namespace: the namespace holding the cell's Vault, which is what the caller's egress policy selects on", environment, service, config.Kind)
+	}
+	if err := validateDNSLabel("managed service egress namespace", namespace); err != nil {
+		return "", fmt.Errorf("environment %q managed service %q: %w", environment, service, err)
+	}
+	if len(config.EgressCIDRs) > 0 {
+		return "", fmt.Errorf("environment %q managed service %q kind %q is in-cluster and declares egress-cidrs: a pod address is not stable and the pod CIDR would authorize every workload in the cluster", environment, service, config.Kind)
+	}
+	return namespace, nil
+}
+
 // validateManagedAuth resolves how callers authenticate to a managed service.
 // An unset auth-mode keeps the password-backed shape the password-bearing kinds
 // have always had; external-identity means the workload authenticates as itself,
@@ -875,6 +928,17 @@ func validateManagedServices(
 func validateManagedAuth(environment, service string, config managedServiceConfig) (mode, instance string, err error) {
 	instance = strings.TrimSpace(config.InstanceConnectionName)
 	mode = strings.TrimSpace(config.AuthMode)
+	if config.Kind == managedKindCellVault {
+		// A long-lived Vault token rendered beside the Service is the shape this
+		// kind exists to replace: it is the same credential for every replica and
+		// it outlives the pod that read it. The caller logs in for a short-lived
+		// token of its own instead, with a credential delivered through its own
+		// secret group, so this handoff renders none and the mode is stated
+		// rather than inherited from the password default.
+		if mode != "external-identity" {
+			return "", "", fmt.Errorf("environment %q managed service %q kind %q requires auth-mode: external-identity — this handoff projects no connection secret, because the caller logs in with a credential the configuration plane delivers into its own secret group", environment, service, config.Kind)
+		}
+	}
 	if config.Kind == "cloud-sql-postgres" {
 		// A silent password default here would have the driver project a
 		// connection secret an IAM-only instance never issued, so the choice is
@@ -904,7 +968,16 @@ func validateManagedDependencyCIDRs(environment string, topology deploymentTopol
 	for _, service := range topology.Services {
 		for _, dependency := range service.Dependencies {
 			config, exists := managed[dependency.Service]
-			if exists && len(config.EgressCIDRs) == 0 {
+			if !exists {
+				continue
+			}
+			// An in-cluster kind is reached by namespace, which
+			// validateManagedEgress already required; demanding a CIDR as well
+			// would make the kind undeclarable.
+			if config.EgressNamespace != "" {
+				continue
+			}
+			if len(config.EgressCIDRs) == 0 {
 				return fmt.Errorf(
 					"environment %q managed service %q requires at least one exact egress CIDR for caller %q",
 					environment,
@@ -2064,6 +2137,14 @@ func topologyNetworkPolicies(
 		if !managed {
 			return nil, fmt.Errorf("dependency %s -> %s has no in-cluster service or managed handoff", current.caller, current.target)
 		}
+		if config.EgressNamespace != "" {
+			// An in-cluster dependency the cell owns: the caller reaches the
+			// namespace that holds it. Its credential is delivered as a secret,
+			// so there is no workload-identity token to fetch and no
+			// metadata-endpoint reach is granted.
+			policies = append(policies, managedNamespaceEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressNamespace))
+			continue
+		}
 		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressCIDRs))
 		if config.AuthMode == "external-identity" {
 			if _, rendered := tokenEgress[current.caller]; !rendered {
@@ -2289,6 +2370,36 @@ func managedEgressPolicy(
 			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
 			"policyTypes": []string{"Egress"},
 			"egress":      []any{map[string]any{"to": destinations, "ports": networkPorts(ports)}},
+		},
+	}
+}
+
+// managedNamespaceEgressPolicy grants a caller reach to a dependency the cell
+// runs in another namespace of the same cluster, on the declared ports only. The
+// destination is selected by namespace rather than by address because a pod's
+// address is not stable and the CIDR that would cover it covers the cluster.
+func managedNamespaceEgressPolicy(
+	namespace string,
+	labels map[string]string,
+	caller,
+	callerApp,
+	target string,
+	ports []uint32,
+	targetNamespace string,
+) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "to", target), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
+			"policyTypes": []string{"Egress"},
+			"egress": []any{map[string]any{
+				"to": []any{map[string]any{
+					"namespaceSelector": map[string]any{"matchLabels": map[string]string{"kubernetes.io/metadata.name": targetNamespace}},
+				}},
+				"ports": networkPorts(ports),
+			}},
 		},
 	}
 }

@@ -72,6 +72,7 @@ describe("@codefly-dev/ui public subpaths", () => {
 		"./chat",
 		"./layout",
 		"./content",
+		"./board",
 	]) {
 		it(`exports ${subpath} to a typed dist entry`, () => {
 			const entry = exportsMap[subpath];
@@ -129,7 +130,7 @@ describe("@codefly-dev/ui peer-free solution surface", () => {
 // checks above cannot see. Guard the source directly.
 describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 	const srcDir = codeflyUiSrcDir();
-	for (const subpath of ["layout", "dashboard", "chat", "content"]) {
+	for (const subpath of ["layout", "dashboard", "chat", "content", "board"]) {
 		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {
 			for (const file of sourceFiles(join(srcDir, subpath))) {
 				const source = readFileSync(file, "utf8");

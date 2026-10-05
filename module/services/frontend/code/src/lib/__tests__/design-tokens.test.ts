@@ -61,7 +61,7 @@ describe("optional design tokens are projected only when decided", () => {
 
 	it("derives the interaction states in the stylesheet, in both themes", () => {
 		const css = readFileSync(
-			join(process.cwd(), "src/app/globals.css"),
+			join(process.cwd(), "packages/codefly-ui/src/skin/theme.css"),
 			"utf8",
 		);
 		for (const mode of ["light", "dark"]) {

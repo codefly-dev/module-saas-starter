@@ -3,6 +3,11 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "../layout/cn.js";
 import { CopyButton } from "./copy-button.js";
+import {
+	SOURCE_IGNORE,
+	type SourceRange,
+	sourceAttributes,
+} from "./source-offsets.js";
 
 export interface CodeBlockProps {
 	code: string;
@@ -14,6 +19,15 @@ export interface CodeBlockProps {
 	copyable?: boolean;
 	/** Wrap long lines instead of scrolling horizontally. Default false. */
 	wrap?: boolean;
+	/**
+	 * The bytes of the source this block was rendered from, for a reader that
+	 * annotates it — the whole block, fence delimiters and language included, so
+	 * it is never byte-exact. Set by `Markdown` under `sourceOffsets`; a direct
+	 * caller leaves both ranges unset and the block carries no offsets.
+	 */
+	source?: SourceRange;
+	/** The bytes of the code itself, which the `<code>` renders verbatim. */
+	bodySource?: SourceRange;
 	className?: string;
 }
 
@@ -34,6 +48,8 @@ export function CodeBlock({
 	highlight = true,
 	copyable = true,
 	wrap = false,
+	source,
+	bodySource,
 	className,
 }: CodeBlockProps) {
 	const lang = language?.trim().toLowerCase() || undefined;
@@ -69,7 +85,13 @@ export function CodeBlock({
 			)}
 		>
 			{copyable && (
-				<div className="absolute top-1 right-1 opacity-100 sm:opacity-0 sm:group-hover/code:opacity-100 sm:group-focus-within/code:opacity-100">
+				// Chrome, not content: a block inside a marked region (a fence in a
+				// list item) would otherwise lend the copy control's announcement to
+				// the source it sits in. The attribute is inert without one.
+				<div
+					{...{ [SOURCE_IGNORE]: "" }}
+					className="absolute top-1 right-1 opacity-100 sm:opacity-0 sm:group-hover/code:opacity-100 sm:group-focus-within/code:opacity-100"
+				>
 					<CopyButton text={code} label="code" />
 				</div>
 			)}
@@ -79,8 +101,11 @@ export function CodeBlock({
 					wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
 					copyable && "pr-10",
 				)}
+				{...sourceAttributes(source)}
 			>
-				<code data-language={lang}>{body}</code>
+				<code data-language={lang} {...sourceAttributes(bodySource)}>
+					{body}
+				</code>
 			</pre>
 		</div>
 	);

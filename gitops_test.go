@@ -2445,3 +2445,209 @@ func writeTestFile(t *testing.T, file, content string) {
 	}
 }
 
+
+// cellVaultFixture builds a two-service module whose accounts depends on vault,
+// and points its hosted environment at a Vault the cell runs in a namespace of
+// its own. accounts' vault dependency is what makes the egress policy render at
+// all, so it is written in rather than inherited from the shared fixture.
+func cellVaultFixture(t *testing.T, name string, vault managedServiceConfig) (string, *workspaceManifest) {
+	t.Helper()
+	root, moduleDir := writeModuleFixture(t, name, "identity", []string{"accounts", "vault"})
+	replaceInServiceManifest(t, moduleDir, "accounts",
+		"endpoints:\n",
+		"service-dependencies:\n  - name: vault\n    endpoints:\n      - name: http\nendpoints:\n")
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Name = "gke"
+	workspace.Environments[1].Cluster.Kind = "gke"
+	workspace.Environments[1].ManagedServices = map[string]managedServiceConfig{"vault": vault}
+	return moduleDir, workspace
+}
+
+func cellVault() managedServiceConfig {
+	return managedServiceConfig{
+		Kind:            managedKindCellVault,
+		ExternalName:    "vault.vault.svc.cluster.local",
+		AuthMode:        "external-identity",
+		EgressNamespace: "vault",
+	}
+}
+
+func readBundle(t *testing.T, moduleDir string) moduleBundle {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle moduleBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	return bundle
+}
+
+// The whole point of the kind: the hosted environment renders no Vault of this
+// module's own — no StatefulSet to hold the signing key in memory, no token to
+// project — and the product reaches the one the cell runs.
+func TestCellVaultLeavesNoModuleVaultAndProjectsNoToken(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := cellVaultFixture(t, "cell-vault", cellVault())
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	gke := readBundle(t, moduleDir).Environments[1]
+	if slices.Contains(gke.Services, "vault") {
+		t.Fatalf("the module's own vault is still an in-cluster workload: %v", gke.Services)
+	}
+	if len(gke.ManagedServiceHandoffs) != 1 {
+		t.Fatalf("managed handoffs = %#v", gke.ManagedServiceHandoffs)
+	}
+	handoff := gke.ManagedServiceHandoffs[0]
+	if handoff.Kind != managedKindCellVault ||
+		handoff.AuthMode != "external-identity" ||
+		handoff.EgressNamespace != "vault" ||
+		handoff.ExternalName != "vault.vault.svc.cluster.local" {
+		t.Fatalf("cell vault handoff = %#v", handoff)
+	}
+	if len(handoff.SecretReferences) != 0 {
+		t.Fatalf("cell vault handoff carries secret references: %#v", handoff.SecretReferences)
+	}
+
+	rendered, err := os.ReadFile(filepath.Join(
+		moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays/gke/base/handoffs/vault.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rendered), "externalName: vault.vault.svc.cluster.local") {
+		t.Fatalf("cell vault handoff is missing its ExternalName Service:\n%s", rendered)
+	}
+	// The caller logs in as its own ServiceAccount, so no Vault token of any
+	// shape may be projected into the namespace.
+	for _, forbidden := range []string{"ExternalSecret", "secretKeyRef", "stringData:"} {
+		if strings.Contains(string(rendered), forbidden) {
+			t.Errorf("cell vault handoff rendered %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
+// The Vault is in another namespace of the same cluster, so reach is granted by
+// namespace. A CIDR cannot describe it: the pod address moves on every
+// reschedule and the pod CIDR covers every workload in the cluster. And the
+// credential is a projected ServiceAccount token read off disk, so unlike the
+// cloud passwordless kinds this one gets no metadata-endpoint reach.
+func TestCellVaultEgressIsNamespaceSelectedAndNeedsNoMetadataEndpoint(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := cellVaultFixture(t, "cell-vault-egress", cellVault())
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(
+		moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays/gke/base/network-policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	// The assertion is on the caller's own policy, not on the whole file: the
+	// entry service's public-egress rule legitimately carries an ipBlock, so a
+	// file-wide search would pass while saying nothing about this edge.
+	var edge string
+	for _, document := range strings.Split(rendered, "\n---\n") {
+		if strings.Contains(document, "name: allow-accounts-to-vault") {
+			edge = document
+		}
+	}
+	if edge == "" {
+		t.Fatalf("no allow-accounts-to-vault egress policy was rendered:\n%s", rendered)
+	}
+	if !strings.Contains(edge, "kubernetes.io/metadata.name: vault") {
+		t.Errorf("cell vault egress does not select the Vault's namespace:\n%s", edge)
+	}
+	if strings.Contains(edge, "ipBlock") {
+		t.Errorf("cell vault egress names an address block:\n%s", edge)
+	}
+	for _, forbidden := range []string{"workload-identity-token", "169.254.169.254"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Errorf("cell vault caller was granted %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
+// Each of these, left to a default, reproduces a failure the kind exists to
+// prevent — so each must be refused, and the refusal must name the field, or the
+// reader is sent to the wrong file.
+func TestCellVaultRefusesEveryBindingThatIsNotIdentityAndNamespace(t *testing.T) {
+	t.Parallel()
+	for name, expect := range map[string]struct {
+		config managedServiceConfig
+		names  string
+	}{
+		"password auth": {
+			managedServiceConfig{Kind: managedKindCellVault, ExternalName: "vault.vault.svc.cluster.local", AuthMode: "password", EgressNamespace: "vault"},
+			"auth-mode: external-identity",
+		},
+		"defaulted auth": {
+			managedServiceConfig{Kind: managedKindCellVault, ExternalName: "vault.vault.svc.cluster.local", EgressNamespace: "vault"},
+			"auth-mode: external-identity",
+		},
+		"no egress namespace": {
+			managedServiceConfig{Kind: managedKindCellVault, ExternalName: "vault.vault.svc.cluster.local", AuthMode: "external-identity"},
+			"requires an egress-namespace",
+		},
+		"egress cidrs instead": {
+			managedServiceConfig{Kind: managedKindCellVault, ExternalName: "vault.vault.svc.cluster.local", AuthMode: "external-identity", EgressNamespace: "vault", EgressCIDRs: []string{"10.42.0.0/24"}},
+			"authorize every workload in the cluster",
+		},
+		"secret references": {
+			managedServiceConfig{Kind: managedKindCellVault, ExternalName: "vault.vault.svc.cluster.local", AuthMode: "external-identity", EgressNamespace: "vault",
+				SecretReferences: []managedSecretReference{{Name: "vault-token", RemoteKey: "vault/token", SecretStore: secretStoreRef{Name: "cell", Kind: "ClusterSecretStore"}}}},
+			"declares secret references",
+		},
+	} {
+		moduleDir, workspace := cellVaultFixture(t, "cell-vault-refuse", expect.config)
+		err := generateDeploymentBundle(moduleDir, workspace)
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), expect.names) {
+			t.Errorf("%s: refusal does not name %q: %v", name, expect.names, err)
+		}
+	}
+}
+
+// egress-namespace belongs to the one in-cluster kind. Accepting it on an
+// out-of-cluster kind would read as a second, silently ignored way of granting
+// reach beside the CIDRs that actually gate it.
+func TestEgressNamespaceIsRefusedOnAnOutOfClusterKind(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := cellVaultFixture(t, "ns-on-cloud-kind", managedServiceConfig{
+		Kind:            "secrets-manager",
+		ExternalName:    "vault.internal.example.com",
+		EgressNamespace: "vault",
+		EgressCIDRs:     []string{"10.42.0.0/24"},
+	})
+	err := generateDeploymentBundle(moduleDir, workspace)
+	if err == nil {
+		t.Fatal("egress-namespace accepted on an out-of-cluster kind")
+	}
+	if !strings.Contains(err.Error(), "does not take an egress-namespace") {
+		t.Fatalf("refusal does not name the field: %v", err)
+	}
+}
+
+// A local environment composes this module's own vault; the kind is only
+// meaningful where the cell runs one beside it.
+func TestCellVaultIsRefusedOnALocalEnvironment(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "cell-vault-local", "identity", []string{"accounts", "vault"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[0].ManagedServices = map[string]managedServiceConfig{"vault": cellVault()}
+	if err := generateDeploymentBundle(moduleDir, workspace); err == nil {
+		t.Fatal("a local environment accepted a managed cell Vault")
+	}
+}

@@ -421,6 +421,14 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
+	if solution := firstMetadataValue(md, strings.ToLower(solutionIdentityHeader)); solution != "" {
+		ctx, err = auth.WithVerifiedSolution(
+			ctx, solution, firstMetadataValue(md, strings.ToLower(solutionPublisherHeader)),
+		)
+		if err != nil {
+			return ctx, err
+		}
+	}
 	return withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true"), nil
 }
 

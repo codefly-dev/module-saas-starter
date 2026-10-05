@@ -29,14 +29,22 @@ from the package root and from `@codefly-dev/saas-ui/solution`, which imports
 React, Connect and the SDK's service descriptors but none of the datasource
 components:
 
-- `SolutionBinding` — the backend half of the props the host injects into every
-  solution page (`solutionId`, `apiBase`, `getAccessToken`, `subscribeToken`,
-  `refreshAccessToken`, `authedFetch`). The host's `SolutionPageProps` extends
-  it, so a remote types its props against the one definition. `subscribeToken`
+- `SolutionBinding` — the props the host injects into every solution page: the
+  backend half (`solutionId`, `apiBase`, `getAccessToken`, `subscribeToken`,
+  `refreshAccessToken`, `authedFetch`) plus `declaredSources`. The host's
+  `SolutionPageProps` extends it, so a remote types its props against the one
+  definition. `subscribeToken`
   is optional but a host that can notify should pass it: the getter stays stable
   while the token rotates underneath it, so without a subscription the kit
   re-reads on a short interval — one timer per observer, for as long as the page
   is open.
+- `declaredSources: DeclaredSource[]` — what this solution declared it is built
+  on (`sources:` in its registration manifest), validated by the host at
+  registration and handed straight back, so the repository is stated once
+  rather than once in the manifest an operator reads and again in the bundle.
+  Feed an entry to `<DeclaredSourceCard>`. Optional, and absent from an older
+  host: treat absence as "the host does not tell me", never as "this solution
+  declares nothing".
 - `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
   a request to the solution's own backend at `apiBase + path`, same-origin,
   through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer
@@ -72,6 +80,80 @@ components:
   `useViewerEpoch(getAccessToken)` — who the current credential speaks for,
   stable across a refresh and changing with the viewer. They partition local UI
   state; they never authorize anything (the claims are read unverified).
+- `viewerPrincipal(token)` — the principal reading (the token's `sub`). On an
+  impersonation token it is still the real actor, never the user being viewed
+  as. It decides what reads as "You", nothing else.
+
+### Who did something: principal names
+
+Every module records who did something as a principal id. The host holds the
+directory that names them, so a solution asks the kit rather than listing the
+directory itself:
+
+```tsx
+<PrincipalNamesProvider binding={props}>
+  <Page />
+</PrincipalNamesProvider>
+
+// anywhere beneath it
+<PrincipalName principal={comment.author.principal} />
+const names = usePrincipalNames(ids); // Record<id, PrincipalName | undefined>
+const nameOf = useNameOf();           // (id) => string | undefined, for a kit's `nameOf` prop
+const directory = usePrincipalDirectory(); // loading | ready | refused | failed
+```
+
+- **One read per page.** `<PrincipalNamesProvider>` reads the viewer's
+  organization directory (`DirectoryService.ListOrganizationMembers`) the first
+  time anything beneath it asks, once however many cards ask, and keeps the
+  answer until the viewer changes (the change `useViewerEpoch` counts). A new
+  viewer's page never sees the last viewer's names, not for one render, and an
+  answer that arrives after the switch is dropped. Its binding needs
+  `getAccessToken`: names are kept per viewer, and a binding that cannot say who
+  the viewer is cannot keep them apart.
+- **Only the viewer's organization.** The host answers the directory only for
+  an organization the viewer belongs to, and the kit also ignores any row naming
+  another one. A principal outside it resolves to `undefined`, never to another
+  tenant's member.
+- **`PrincipalName = { display, email?, avatarUrl?, you }`.** `display` is the
+  directory's label for the member. The host's tenant directory carries a
+  member's email and no display name or avatar, so today `display` is the email
+  and `avatarUrl` is never set; a richer directory changes what is shown without
+  changing a consumer. A member the directory gives no label (a deleted
+  account) is unknown, never `""`. `you` is an exact match with
+  `viewerPrincipal`: a near match (another case, the same email) is never "You".
+  `you` is set only on a listed principal, so the viewer is `undefined` from
+  `usePrincipalNames` whenever the directory does not list them (while it loads,
+  when it was refused, or when an administrator views as someone outside it). A
+  caller deciding "You" compares against `viewerPrincipal` itself, as
+  `<PrincipalName>` does.
+- **States are said once.** A name is `undefined` while loading, when the read
+  was refused, or when the principal is not listed. Which of those it is,
+  `usePrincipalDirectory()` says once for the page:
+  - `refused` is kept for the viewer. It means the host answered permission
+    denied, the credential names no organization, or there is no credential at
+    all (a signed-out viewer).
+  - `failed` is anything else, and it stays `failed` while a retry is in flight.
+    A page never goes back to `loading` once the read has settled, so a page that
+    renders names only after it settles cannot remount itself into a request
+    loop. When a later read happens depends on the failure:
+    - unauthenticated: on the next token the host hands over;
+    - a gateway or network failure: by the next component that asks after a
+      backoff (1 s, doubling, at most a minute);
+    - invalid argument, not found, unimplemented, or failed precondition: not
+      again for this viewer, because the request itself is wrong.
+- **Late answers are dropped.** An answer is stored only if the host's current
+  token still names the viewer who asked, so a switch the page has not noticed
+  yet (a host without `subscribeToken` is polled every 250 ms) never shows the
+  previous viewer's names.
+- **`<PrincipalName principal>`** renders "You" on an exact match, the
+  directory's label once known, and otherwise the id shortened to its ends
+  (`0000…00a1`). The full id is always its `title`, and `data-state` (`you`,
+  `named`, `loading`, `unknown`, `refused`, `failed`) says which it is. An empty
+  principal reads "someone", with `data-state="none"` and a title saying no
+  principal is recorded.
+- **`useNameOf()`** is the function form a module kit takes as a prop. It
+  answers the directory's label or `undefined`, never "You" — a kit decides that
+  from the viewer it is given — and never `""`.
 
 ## Datasources
 
@@ -151,6 +233,57 @@ components:
   GitHub's unauthenticated limit of 60 requests an hour per IP address. When the
   App is installed on that repository for the organization, the host uses the
   App instead.
+- `<DeclaredSourceCard gateway={{ apiBase, getAccessToken }} orgId={…}
+  declared={binding.declaredSources[0]} />` — one source a solution **declares**
+  it is built on, in one of three states. A solution built on one known
+  repository must not ask the person which repository: it declares it, and all
+  that is left to supply is the credential.
+  - **Set up** — nothing connected serves the declaration. The three credential
+    modes (App / public / PAT) and nothing else; `repo`, `paths` and `ref` come
+    from the declaration, are rendered as text, and are submitted unedited to
+    `AddGitHubSource`. There is no repository control at all, which is the
+    point: a field for it would let the person connect something other than
+    what the solution reads. The entries land in a collection named by the
+    declaration's `label`, falling back to the repository.
+  - **Connected** — the matched source is `ACTIVE`: its last ingest and commit,
+    how live updates reach it, the reconcile interval that bounds its
+    staleness, **Sync now**, and the same `renderSourceDetail` slot the panel
+    offers so the consumer can show the ingesting module's progress.
+  - **Error** — `DEGRADED` or `PAUSED`: the host's `status_reason` verbatim,
+    and Reconnect, which asks for the credential again (a replacement PAT, or
+    nothing on the App and public paths) and enqueues a sync.
+  There is no fourth state. A source whose status an **older host does not
+  report** (the field decodes to its proto default, which the gateway maps to
+  `unknown` rather than guessing) reads as **Connected** and says its state is
+  not reported: it matched the declaration, so it *is* connected, and calling
+  the absence of a status an error would paint a healthy source red with no
+  `status_reason` to show for it and offer to Reconnect — asking a person for a
+  credential again to fix nothing. Sync is still offered; Reconnect is not.
+  A viewer without `canManage` still sees the state and the reason, and is told
+  who acts; the host refuses the calls either way. The card takes no query or
+  auth context of its own — the same `client | gateway` binding
+  `DatasourcesPanel` takes — and adds **no RPC**: it reads `ListSources` for the
+  org and matches on `provider` + `repo` (case-insensitively, as GitHub treats
+  `owner/name`) plus `paths` when the declaration names any.
+  Two connected sources matching one declaration are **reported, never silently
+  picked**: they can disagree about credential, branch, scope and health, so
+  rendering the first would sync one and leave the other ingesting invisibly.
+  `matchDeclaredSources(declared, sources)` is that rule as a pure function, for
+  a consumer rendering the states in its own shell; `declaredCollectionLabel`
+  resolves where connected entries land.
+- `CredentialMethodField` / `AccessTokenField` / `WebhookSecretField` /
+  `AppInstallPrompt` (with `CredentialMethod`, `credentialMethodFrom`,
+  `fieldErrorClass`) — the credential block `ConnectGitHubForm` and
+  `<DeclaredSourceCard>` both render, presentational and controlled, exported
+  so a consumer building its own shell around `matchDeclaredSources` can **ask
+  for the credential without copying the form**. Compose these; do not copy
+  `ConnectGitHubForm` — `solutions/README.md` refuses a copied capability
+  wrapped in a shared card, and these three modes are the whole of what a
+  person decides between, so two surfaces that word them differently teach two
+  different products.
+  Do not mount this and `<DatasourcesPanel>` on the same page: both redeem the
+  GitHub App's single-use return state, and the loser reports a rejection for an
+  installation that in fact succeeded.
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a

@@ -78,11 +78,12 @@ import { CardRoot, CardContent, TabsRoot, TabsList, TabsTrigger, TabsContent, Pa
 import { MetricCard, MetricLineChart } from "@codefly-dev/ui/dashboard";
 import { DataTable } from "@codefly-dev/ui/table";
 import { Content } from "@codefly-dev/ui/content";
+import { Board } from "@codefly-dev/ui/board";
 import { ConnectGitHubForm, type DatasourceClient } from "@codefly-dev/saas-ui";
 const client: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},syncSource:async()=>"example-job",deleteSource:async()=>{}};
 const html=renderToStaticMarkup(<SidebarProvider><PageHeader title="Example workspace" /><CardRoot><CardContent><Button>Save</Button></CardContent></CardRoot><TabsRoot defaultValue="one"><TabsList><TabsTrigger value="one">Overview</TabsTrigger></TabsList><TabsContent value="one">Workspace content</TabsContent></TabsRoot><MetricCard metric={{label:"Requests",value:3}} /><MetricLineChart title="Requests" series={[]} /><Content value={"**Rendered** answer"} /></SidebarProvider>);
 if (!html.includes("Workspace content") || !html.includes("Save") || !html.includes("<strong>Rendered</strong>")) throw new Error("Packed UI did not render");
-if (typeof DataTable !== "function" || typeof ConnectGitHubForm !== "function") throw new Error("Missing public component export");
+if (typeof DataTable !== "function" || typeof ConnectGitHubForm !== "function" || typeof Board !== "function") throw new Error("Missing public component export");
 
 console.log("Packed UI declarations and generic consumer rendering passed");
 `,
@@ -112,6 +113,26 @@ console.log("Packed UI declarations and generic consumer rendering passed");
 		{ cwd: temporary, stdio: "inherit" },
 	);
 	execFileSync(process.execPath, ["consumer.cjs"], {
+		cwd: temporary,
+		stdio: "inherit",
+	});
+	// A solution previews itself from the published package alone, so the
+	// stylesheets must resolve through its exports and arrive compiled.
+	writeFileSync(
+		join(temporary, "styles.mjs"),
+		`
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const read = (specifier) => readFileSync(fileURLToPath(import.meta.resolve(specifier)), "utf8");
+const preview = read("@codefly-dev/ui/preview.css");
+for (const needle of [".text-success", "--appearance-light-success:", ".type-chip"])
+	if (!preview.includes(needle)) throw new Error(\`published preview.css lacks \${needle}\`);
+if (preview.includes("@tailwind") || preview.includes("@utility ")) throw new Error("published preview.css is not compiled");
+if (!read("@codefly-dev/ui/theme.css").includes("--color-success: var(--success)")) throw new Error("published theme.css lacks the status tokens");
+console.log("Packed kit stylesheets resolve and are complete");
+`,
+	);
+	execFileSync(process.execPath, ["styles.mjs"], {
 		cwd: temporary,
 		stdio: "inherit",
 	});

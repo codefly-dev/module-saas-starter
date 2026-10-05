@@ -112,6 +112,60 @@ survives a restart and reaches every replica, and is only served when it is
   convergence after any write is bounded: the gateway reconciles about every 10s
   plus an on-demand refresh on a cache miss, the frontend holds a 5s snapshot TTL.
 
+## The record carries the solution's runtime boundary seed
+
+A runtime task is reachable only under the boundary of the Work Context that
+admitted it — the context's `task_id`.
+`solution_registrations.runtime_boundary` (migration
+`17_solution_runtime_boundary`) is the **seed** that boundary is derived from,
+so a run a page admits stays reachable across the mints of one session rather
+than only under the one context that admitted it.
+
+**The boundary is derived per organization**, not stored: a UUIDv5 of the seed
+and the org id (`business.SolutionRuntimeBoundary`). A run is filed under
+(tenant, boundary), so a single per-solution value would make every tenant of a
+solution share one. The seed never leaves this host.
+
+**The host assigns it and nothing else can.** The column's `gen_random_uuid()`
+default fires on insert; the registry's upsert deliberately omits the column
+from its `ON CONFLICT … DO UPDATE`, and `RETURNING` makes the stored value the
+one the caller gets back. A UNIQUE constraint keeps two registrations from
+sharing a seed. So no request field reaches it, no write replaces it, and it
+survives a tombstone — a reactivated registration keeps naming the runs it
+already admitted.
+
+**No response carries a seed.** `solutionRegistrationProto` never sets the
+field, on any path: not a listing, not a deregistration, not either half's own
+write. Nothing above this service needs one, because accounts derives and seals
+the boundary itself. `TestSolutionRegistrationResponsesCarryNoRuntimeBoundary`
+holds every response to that.
+
+**The mint** reads the seed through
+`business.SolutionRuntimeBoundarySeedStore`, which also reports the publisher of
+record and whether the backend half is serving, and refuses a missing record and
+a tombstone separately. Which solution is asking comes from
+`auth.VerifiedSolution`, stamped from the `X-Codefly-Solution-Id` and
+`X-Codefly-Solution-Publisher` the gateway proved from that solution's
+registration credential (`../auth-gateway/AGENTS.md`); both are forwarded
+identity headers, so they are stripped from any caller arriving without a valid
+gateway token. Before deriving anything the mint checks the publisher equals the
+credential's and the backend half is serving — the half that mints — and a
+caller-supplied `task_id` is **refused**, not ignored.
+
+**And every other mint refuses a `task_id` that is somebody's boundary.** A
+boundary is not a secret a consumer keeps: a consuming module that serves
+durable runs reports, on a run it lets a person read, the Work Context task it
+was admitted under, so one read any caller is entitled to would otherwise hand
+them a stable value to name on an ordinary mint. `StartTask`'s ordinary path and
+`StartInstallationTask` both run `refuseRegisteredBoundary`, which compares the
+caller's `task_id` against every stored seed and the boundary derived from each
+for the organization named in the request — tombstones included, because a
+removed solution's runs may still be executing. It fails **closed**: a registry
+that cannot answer refuses the mint, because the capability cannot then be shown
+not to be a solution's. Otherwise mints are unchanged: a request with no
+verified solution must name its own `task_id`, exactly as the schema used to
+require.
+
 ## The composed-module service principal
 
 A module consuming the module-facing capability surface

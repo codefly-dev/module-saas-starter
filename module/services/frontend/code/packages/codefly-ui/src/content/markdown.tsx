@@ -14,7 +14,9 @@
 //   3. Images are OFF unless the caller opts in, because rendering one fetches
 //      it: an untrusted document could otherwise make every reader's browser
 //      call a URL of its choosing. Off, an image renders as its alt text.
-//   4. The only id that reaches the page is one the kit minted, under this
+//   4. A link the caller RESOLVES is held to the same allowlist as one the
+//      content wrote, so `resolveLink` cannot turn `javascript:` into a link.
+//   5. The only id that reaches the page is one the kit minted, under this
 //      block's own `clobberPrefix` namespace (`useOwnId`). That is what makes a
 //      GFM footnote's anchor work without letting a document write an id that
 //      collides with, or shadows, the host's own — or another block's.
@@ -32,6 +34,7 @@ import ReactMarkdown, {
 	type Components,
 	type ExtraProps,
 } from "react-markdown";
+import type { PluggableList } from "unified";
 import { cn } from "../layout/cn.js";
 import { CodeBlock } from "./code-block.js";
 import { remarkGfmParse } from "./gfm.js";
@@ -42,6 +45,13 @@ import {
 	remarkLineBreaks,
 	remarkReferences,
 } from "./references.js";
+import {
+	readSourceRange,
+	rehypeSourceOffsets,
+	SOURCE_IGNORE,
+	type SourceAttributes,
+	sourceProps,
+} from "./source-offsets.js";
 import { safeImageUrl, safeLinkUrl } from "./url.js";
 
 /** A heading level, for mapping markdown's `#` onto the page's outline. */
@@ -88,8 +98,32 @@ export interface MarkdownProps {
 	 * citation marker. Only the listed numbers are references; any other `[n]`
 	 * stays markdown. See references.ts for how a model's `[n](url)` and
 	 * `[n]: url` forms are handled.
+	 *
+	 * Ignored under `sourceOffsets`: protecting a marker rewrites the source
+	 * before it is parsed, which would move every offset after it. Citations are
+	 * an answer's affordance, a byte range a stored document's.
 	 */
 	references?: MarkdownReferences;
+	/**
+	 * Mark what was rendered with the bytes it came from: `data-source-start` and
+	 * `data-source-end` on every block and every text run, and
+	 * `data-source-exact="false"` where markdown rewrote the text (a heading's
+	 * `#`, emphasis, a link, a list bullet, a code fence). Plain runs are
+	 * byte-exact, so an annotation layer maps a selection character for
+	 * character inside them and to the whole element elsewhere.
+	 *
+	 * The offsets are UTF-8, half-open, and counted in the version's bytes — the
+	 * contract of the annotations kit's text-range locator, not the kit's own
+	 * invention. Default off: it adds a `<span>` around every text run.
+	 */
+	sourceOffsets?: boolean;
+	/**
+	 * The byte offset at which `children` starts inside the version it is part
+	 * of. A document rendered without its front matter passes the front matter's
+	 * byte length, so the offsets still name the version's bytes rather than the
+	 * slice's. Default 0. Only read under `sourceOffsets`.
+	 */
+	sourceStart?: number;
 	/** Show a copy button on each fenced code block. Default true. */
 	copyable?: boolean;
 	className?: string;
@@ -131,15 +165,13 @@ function headingFor(depth: number, base: HeadingLevel) {
 	const level = Math.min(6, base + depth - 1);
 	const Tag = `h${level}` as HeadingTag;
 	const slot = HEADING_SLOT[Math.min(depth, HEADING_SLOT.length) - 1];
-	return function Heading({
-		id,
-		className,
-		children,
-	}: ComponentPropsWithoutRef<"h1"> & ExtraProps) {
+	return function Heading(props: ComponentPropsWithoutRef<"h1"> & ExtraProps) {
+		const { id, className, children } = props;
 		return (
 			<Tag
 				id={useOwnId(id)}
 				className={cn("mt-4 mb-2 first:mt-0", slot, className)}
+				{...sourceProps(props)}
 			>
 				{children}
 			</Tag>
@@ -202,8 +234,15 @@ const LINK_CLASS =
 function SafeLink({
 	href,
 	id,
+	source,
 	children,
-}: { href: unknown; id?: unknown; children?: ReactNode }) {
+}: {
+	href: unknown;
+	id?: unknown;
+	/** The bytes this link was rendered from, when the caller asked for them. */
+	source?: SourceAttributes;
+	children?: ReactNode;
+}) {
 	const { base, resolve, anchorPrefix } = useContext(LinkContext);
 	const ownId = useOwnId(id);
 	// An anchor the kit generated for this block — a GFM footnote's marker and
@@ -224,6 +263,7 @@ function SafeLink({
 				id={ownId}
 				data-slot="content-link-anchor"
 				className={LINK_CLASS}
+				{...source}
 			>
 				{children}
 			</a>
@@ -238,6 +278,7 @@ function SafeLink({
 				id={ownId}
 				data-slot="content-link-internal"
 				title={target.title}
+				{...source}
 				onClick={() => target.open()}
 				className={cn(
 					LINK_CLASS,
@@ -255,62 +296,84 @@ function SafeLink({
 				data-slot="content-link-unavailable"
 				title={target.unavailable}
 				className="underline decoration-dotted underline-offset-2"
+				{...source}
 			>
 				{children}
-				<span className="sr-only"> ({target.unavailable})</span>
+				{/* The kit's words about the link, not the document's: inside a marked
+				    element it would read as text of the source, so a selection on it
+				    would map to the link's bytes. */}
+				<span className="sr-only" {...{ [SOURCE_IGNORE]: "" }}>
+					{" "}
+					({target.unavailable})
+				</span>
 			</span>
 		);
 	}
-	const safe = safeLinkUrl(href, base);
+	// A resolved href is the caller's answer to "where does this actually go",
+	// and it is held to the same allowlist as one the content wrote: the caller
+	// is trusted to know the destination, not to bypass the scheme rule.
+	const resolved =
+		target && "href" in target ? safeLinkUrl(target.href, base) : undefined;
+	const safe = resolved ?? (target ? undefined : safeLinkUrl(href, base));
 	if (!safe)
 		return (
-			<span id={ownId} data-slot="content-link-inert">
+			<span id={ownId} data-slot="content-link-inert" {...source}>
 				{children}
 			</span>
 		);
+	const external = target && "href" in target ? target.external : true;
 	return (
 		<a
 			href={safe}
 			id={ownId}
-			target="_blank"
-			rel="noopener noreferrer"
+			{...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
 			className={LINK_CLASS}
+			{...source}
 		>
 			{children}
 		</a>
 	);
 }
 
-function Fence({ node }: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
+function Fence(props: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
 	const { copyable } = useContext(CodeContext);
-	const code = node?.children.find(
+	const code = props.node?.children.find(
 		(child): child is Element =>
 			child.type === "element" && child.tagName === "code",
 	);
 	if (!code) return null;
 	// The fence's text ends with the newline that closed it.
-	const text = textOf(code).replace(/\n$/, "");
+	const raw = textOf(code);
+	const text = raw.replace(/\n$/, "");
+	// `<code>` carries the body's range and `<pre>` the whole fence (see
+	// markCode in source-offsets.ts). The newline stripped above is one byte of
+	// that body: dropped from the text but not from the range, the reading layer
+	// would find the text a byte short of its bytes and map the block as a whole
+	// rather than character for character.
+	const body = readSourceRange(code.properties ?? {});
 	return (
 		<CodeBlock
 			code={text}
 			language={codeLanguage(code)}
 			copyable={copyable}
 			className="my-2"
+			source={readSourceRange(props)}
+			bodySource={
+				body && raw.endsWith("\n") ? { ...body, end: body.end - 1 } : body
+			}
 		/>
 	);
 }
 
 // Named (and capitalised) so `useOwnId` is called from something the rules of
 // hooks recognise as a component; the entry in the map below is the tag.
-function ListItem({
-	id,
-	className,
-	children,
-}: ComponentPropsWithoutRef<"li"> & ExtraProps) {
+function ListItem(props: ComponentPropsWithoutRef<"li"> & ExtraProps) {
+	const { id, className, children } = props;
 	return (
 		<li
 			id={useOwnId(id)}
 			className={cn(className === "task-list-item" && "flex items-start gap-2")}
+			{...sourceProps(props)}
 		>
 			{children}
 		</li>
@@ -331,23 +394,27 @@ function buildComponents(
 		h4: headingFor(4, headingLevel),
 		h5: headingFor(5, headingLevel),
 		h6: headingFor(6, headingLevel),
-		p: ({ children }) => (
-			<p className="my-2 first:mt-0 last:mb-0">{children}</p>
+		p: (props) => (
+			<p className="my-2 first:mt-0 last:mb-0" {...sourceProps(props)}>
+				{props.children}
+			</p>
 		),
 		// `id` is forwarded only when the kit minted it: a footnote's marker is
 		// the target of its own back-reference.
-		a: ({ href, id, children }) => (
-			<SafeLink href={href} id={id}>
-				{children}
+		a: (props) => (
+			<SafeLink href={props.href} id={props.id} source={sourceProps(props)}>
+				{props.children}
 			</SafeLink>
 		),
-		img: ({ src, alt }) => {
+		img: (props) => {
+			const { src, alt } = props;
 			const safe = allowImages ? safeImageUrl(src) : undefined;
 			if (!safe) {
 				return alt ? (
 					<span
 						data-slot="content-image-inert"
 						className="text-muted-foreground"
+						{...sourceProps(props)}
 					>
 						[{alt}]
 					</span>
@@ -361,22 +428,28 @@ function buildComponents(
 					decoding="async"
 					referrerPolicy="no-referrer"
 					className="my-2 h-auto max-w-full rounded-md"
+					{...sourceProps(props)}
 				/>
 			);
 		},
-		ul: ({ className, children }) => (
+		ul: (props) => (
 			<ul
 				className={cn(
 					"my-2 list-disc space-y-1 pl-5",
-					className === "contains-task-list" && "list-none pl-1",
+					props.className === "contains-task-list" && "list-none pl-1",
 				)}
+				{...sourceProps(props)}
 			>
-				{children}
+				{props.children}
 			</ul>
 		),
-		ol: ({ start, children }) => (
-			<ol start={start} className="my-2 list-decimal space-y-1 pl-5">
-				{children}
+		ol: (props) => (
+			<ol
+				start={props.start}
+				className="my-2 list-decimal space-y-1 pl-5"
+				{...sourceProps(props)}
+			>
+				{props.children}
 			</ol>
 		),
 		li: ListItem,
@@ -391,39 +464,62 @@ function buildComponents(
 					className="mt-1 accent-primary"
 				/>
 			) : null,
-		blockquote: ({ children }) => (
-			<blockquote className="my-2 border-l-2 border-border pl-3 text-muted-foreground">
-				{children}
+		blockquote: (props) => (
+			<blockquote
+				className="my-2 border-l-2 border-border pl-3 text-muted-foreground"
+				{...sourceProps(props)}
+			>
+				{props.children}
 			</blockquote>
 		),
-		hr: () => <hr className="my-4 border-border" />,
-		table: ({ children }) => (
+		hr: (props) => (
+			<hr className="my-4 border-border" {...sourceProps(props)} />
+		),
+		table: (props) => (
 			<div className="my-2 max-w-full overflow-x-auto">
-				<table className="w-full border-collapse type-table">{children}</table>
+				<table
+					className="w-full border-collapse type-table"
+					{...sourceProps(props)}
+				>
+					{props.children}
+				</table>
 			</div>
 		),
 		// GFM column alignment arrives as `style.textAlign`; nothing else does.
-		th: ({ style, children }) => (
+		th: (props) => (
 			<th
-				style={style?.textAlign ? { textAlign: style.textAlign } : undefined}
+				style={
+					props.style?.textAlign
+						? { textAlign: props.style.textAlign }
+						: undefined
+				}
 				className="border-b border-border px-2 py-1 text-left type-table-head"
+				{...sourceProps(props)}
 			>
-				{children}
+				{props.children}
 			</th>
 		),
-		td: ({ style, children }) => (
+		td: (props) => (
 			<td
-				style={style?.textAlign ? { textAlign: style.textAlign } : undefined}
+				style={
+					props.style?.textAlign
+						? { textAlign: props.style.textAlign }
+						: undefined
+				}
 				className="border-b border-border px-2 py-1 align-top"
+				{...sourceProps(props)}
 			>
-				{children}
+				{props.children}
 			</td>
 		),
 		// Inline code. A fenced block is taken over whole by `pre` below, so this
 		// only ever sees code inside a line.
-		code: ({ children }) => (
-			<code className="rounded bg-muted px-1 py-0.5 font-mono [overflow-wrap:anywhere]">
-				{children}
+		code: (props) => (
+			<code
+				className="rounded bg-muted px-1 py-0.5 font-mono [overflow-wrap:anywhere]"
+				{...sourceProps(props)}
+			>
+				{props.children}
 			</code>
 		),
 		pre: Fence,
@@ -469,6 +565,7 @@ const URL_TRANSFORMS = {
 	false: transformUrl(false),
 } as const;
 // Plugin lists are stable per combination, like the components.
+const NO_REHYPE_PLUGINS: PluggableList = [];
 const PLUGINS = {
 	plain: [remarkGfmParse],
 	breaks: [remarkGfmParse, remarkLineBreaks],
@@ -488,6 +585,8 @@ export function Markdown({
 	linkBase,
 	resolveLink,
 	references,
+	sourceOffsets = false,
+	sourceStart = 0,
 	copyable,
 	className,
 }: MarkdownProps) {
@@ -508,10 +607,23 @@ export function Markdown({
 	);
 	const code = useMemo(() => ({ copyable }), [copyable]);
 	const markers = references?.markers;
-	const cited = useMemo(() => (markers ? new Set(markers) : null), [markers]);
+	// Offsets name the bytes of the source as given, so under `sourceOffsets` the
+	// source is never rewritten: protecting a reference marker deletes a `[n]: url`
+	// definition line, and every offset after it would be wrong by its length.
+	const cited = useMemo(
+		() => (markers && !sourceOffsets ? new Set(markers) : null),
+		[markers, sourceOffsets],
+	);
 	const source = useMemo(
 		() => (cited ? protectReferences(children, cited) : children),
 		[children, cited],
+	);
+	const rehypePlugins = useMemo<PluggableList>(
+		() =>
+			sourceOffsets
+				? [[rehypeSourceOffsets, { source, base: sourceStart }]]
+				: NO_REHYPE_PLUGINS,
+		[sourceOffsets, source, sourceStart],
 	);
 	const plugins = cited
 		? lineBreaks
@@ -523,22 +635,23 @@ export function Markdown({
 	return (
 		<ReferenceContext.Provider value={references?.render ?? null}>
 			<CodeContext.Provider value={code}>
-			<LinkContext.Provider value={links}>
-				<div
-					data-slot="content-markdown"
-					className={cn("min-w-0 break-words", className)}
-				>
-					<ReactMarkdown
-						remarkPlugins={[...plugins]}
-						remarkRehypeOptions={rehypeOptions}
-						skipHtml
-						urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
-						components={componentsFor(headingLevel, allowImages)}
+				<LinkContext.Provider value={links}>
+					<div
+						data-slot="content-markdown"
+						className={cn("min-w-0 break-words", className)}
 					>
-						{source}
-					</ReactMarkdown>
-				</div>
-			</LinkContext.Provider>
+						<ReactMarkdown
+							remarkPlugins={[...plugins]}
+							rehypePlugins={rehypePlugins}
+							remarkRehypeOptions={rehypeOptions}
+							skipHtml
+							urlTransform={URL_TRANSFORMS[allowImages ? "true" : "false"]}
+							components={componentsFor(headingLevel, allowImages)}
+						>
+							{source}
+						</ReactMarkdown>
+					</div>
+				</LinkContext.Provider>
 			</CodeContext.Provider>
 		</ReferenceContext.Provider>
 	);

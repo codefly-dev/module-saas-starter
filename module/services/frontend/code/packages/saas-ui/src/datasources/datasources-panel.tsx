@@ -13,6 +13,7 @@ import {
 	Input,
 	Label,
 	Spinner,
+	type StatusTone,
 	Table,
 	TableBody,
 	TableCell,
@@ -21,8 +22,6 @@ import {
 	TableRow,
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
-
-import { ConnectError } from "@connectrpc/connect";
 
 import {
 	QueryClient,
@@ -40,7 +39,9 @@ import {
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
+import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
+import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
 import {
 	useAccessibleScopes,
 	useAddGitHubSource,
@@ -61,6 +62,8 @@ import {
 	cn,
 	formatGrants,
 	formatIngest,
+	formatLiveDelivery,
+	formatReconcileInterval,
 	formatSyncedAt,
 	parsePaths,
 	shortBoundaryId,
@@ -550,7 +553,10 @@ function DatasourcesPanelView({
 					</div>
 				) : null}
 				{appSetupUnredeemed && (
-					<Banner title="Repositories are waiting to be connected">
+					<Banner
+						tone="warning"
+						title="Repositories are waiting to be connected"
+					>
 						The GitHub App installation finished, but only an organization
 						administrator can connect the repositories it granted. Ask one to
 						connect them in Admin → Data sources; the installation itself is
@@ -590,6 +596,7 @@ function DatasourcesPanelView({
 				    it announced. */}
 				{syncNotice && (
 					<Banner
+						tone="info"
 						title="Sync queued"
 						onDismiss={() => setSyncNotice(null)}
 						dismissLabel="Dismiss the sync notice"
@@ -598,22 +605,12 @@ function DatasourcesPanelView({
 					</Banner>
 				)}
 				{actionError && (
-					<Card className="border-destructive/40 bg-destructive/10">
-						<div
-							role="alert"
-							className="flex items-center justify-between gap-3 type-body text-destructive"
-						>
-							<span>{actionError}</span>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={() => setActionError(null)}
-							>
-								Dismiss
-							</Button>
-						</div>
-					</Card>
+					<Banner
+						tone="danger"
+						title={actionError}
+						onDismiss={() => setActionError(null)}
+						dismissLabel="Dismiss the error"
+					/>
 				)}
 
 				{/* One card per source whose sync is worth watching, above the table so
@@ -752,13 +749,13 @@ function DatasourcesPanelView({
 														Read permission unresolved
 													</span>
 												) : readable ? (
-													<Badge variant="secondary">
+													<Badge tone="success">
 														{asPlatformAdministrator
 															? "You can read this collection (platform administrator)"
 															: "You can read this collection"}
 													</Badge>
 												) : (
-													<Badge variant="outline">
+													<Badge tone="neutral">
 														You do not have read access
 													</Badge>
 												)}
@@ -895,59 +892,10 @@ function PanelMessage({
 	);
 }
 
-/**
- * The parameters GitHub appends to the App's configured setup URL when it sends
- * the browser back: the installation it claims was installed, and the state we
- * minted. Both are required — `setup_action` is deliberately not consulted, so
- * an existing installation gaining repositories (`update`) lands here exactly as
- * a first install does.
- *
- * Returns null under SSR, where the panel renders before any address exists.
- */
-function readAppSetupReturn(): {
-	state: string;
-	installationId: string;
-	code: string;
-} | null {
-	if (typeof window === "undefined") return null;
-	const params = new URLSearchParams(window.location.search);
-	const state = params.get("state");
-	const installationId = params.get("installation_id");
-	// `code` is deliberately not part of the trigger. It is absent when the App
-	// was registered without "Request user authorization (OAuth) during
-	// installation", and the host answers that with the error naming the setting
-	// — which an operator can act on, where ignoring the return says nothing.
-	return state && installationId
-		? { state, installationId, code: params.get("code") ?? "" }
-		: null;
-}
-
-function scrubAppSetupReturn(): void {
-	const params = new URLSearchParams(window.location.search);
-	for (const key of ["state", "installation_id", "setup_action", "code"])
-		params.delete(key);
-	const query = params.toString();
-	window.history.replaceState(
-		null,
-		"",
-		`${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
-	);
-}
-
 function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
 	const next = new Set(set);
 	next.delete(id);
 	return next;
-}
-
-function messageOf(error: unknown): string {
-	const message =
-		error instanceof ConnectError
-			? error.rawMessage
-			: error instanceof Error
-				? error.message
-				: "unexpected error";
-	return message.replace(/^rpc error: code = \w+ desc = /, "");
 }
 
 /**
@@ -1004,12 +952,7 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
 			</>
 		);
 	}
-	const label =
-		source.liveDelivery === "source_webhook"
-			? "On push, through this source's webhook"
-			: source.liveDelivery === "app_webhook"
-				? "On push, through the GitHub App"
-				: "No live updates";
+	const label = formatLiveDelivery(source.liveDelivery);
 	return (
 		<>
 			<div>{label}</div>
@@ -1021,35 +964,19 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
 }
 
 /**
- * The reconcile schedule in words. Undefined when the host does not report it;
- * an interval of 0 means the periodic reconcile is off for this source, which
- * — with no live delivery — leaves "Sync now" as the only thing that ever
- * refreshes it, and is worth saying rather than leaving blank.
- */
-function formatReconcileInterval(seconds: number | undefined): string {
-	if (seconds === undefined) return "";
-	if (seconds <= 0) return "No periodic reconcile; refreshed by Sync now only";
-	if (seconds % 3600 === 0) {
-		const hours = seconds / 3600;
-		return `Otherwise reconciled every ${hours} ${hours === 1 ? "hour" : "hours"}`;
-	}
-	const minutes = Math.max(1, Math.round(seconds / 60));
-	return `Otherwise reconciled every ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
-}
-
-/**
  * How each status that is not `active` presents. Active is deliberately absent:
  * it is the state of nearly every row, so badging it too would bury the states
  * that need a reader under a column of noise — and it and `unknown` would then
- * differ by their label alone.
+ * differ by their label alone. Paused waits on someone and is not a fault, so
+ * it is a warning, not the destructive red of a degraded source.
  */
 const statusPresentation: Record<
 	Exclude<DatasourceStatusName, "active">,
-	{ label: string; variant: "outline" | "secondary" | "destructive" }
+	{ label: string; tone: StatusTone }
 > = {
-	paused: { label: "Paused", variant: "secondary" },
-	degraded: { label: "Degraded", variant: "destructive" },
-	unknown: { label: "Unknown", variant: "outline" },
+	paused: { label: "Paused", tone: "warning" },
+	degraded: { label: "Degraded", tone: "danger" },
+	unknown: { label: "Unknown", tone: "neutral" },
 };
 
 /**
@@ -1078,18 +1005,22 @@ function StatusCell({ source }: { source: DatasourceView }) {
 	return (
 		<div className="space-y-0.5">
 			{presentation && (
-				<Badge variant={presentation.variant}>{presentation.label}</Badge>
+				<Badge tone={presentation.tone} dot>
+					{presentation.label}
+				</Badge>
 			)}
-			{source.statusReason && <p className="text-xs">{source.statusReason}</p>}
+			{source.statusReason && (
+				<p className="type-caption-plain">{source.statusReason}</p>
+			)}
 			{source.status === "degraded" && (
-				<p className="text-xs text-muted-foreground">
+				<p className="type-caption-plain text-muted-foreground">
 					Scheduled pulls have stopped; use Sync to retry once the cause is
 					fixed. Content already ingested stays readable.
 				</p>
 			)}
 			{source.conformant === false && (
 				<>
-					<Badge variant="outline">Non-conformant provider</Badge>
+					<Badge tone="warning">Non-conformant provider</Badge>
 					<p className="type-caption-plain text-muted-foreground">
 						This source keeps syncing, but new sources of its provider cannot be
 						connected until it meets the datasource connector requirements.

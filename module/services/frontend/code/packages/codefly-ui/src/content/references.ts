@@ -28,8 +28,8 @@ export const REFERENCE_ELEMENT = "content-reference";
 const MARKER = /\[(\d+)\]/g;
 const OPEN = String.fromCharCode(0xe000);
 const CLOSE = String.fromCharCode(0xe001);
-const SENTINEL = new RegExp("\\uE000(\\d+)\\uE001", "g");
-const SENTINEL_CHARS = new RegExp("[\\uE000\\uE001]", "g");
+const SENTINEL = /\uE000(\d+)\uE001/g;
+const SENTINEL_CHARS = /[\uE000\uE001]/g;
 const DEFINITION_LINE = /^[ \t]*\[(\d+)\]:[ \t]+\S.*$/gm;
 const INLINE_LINK = /\[(\d+)\]\([^\s()]*(?:[ \t]+"[^"]*")?\)/g;
 
@@ -179,12 +179,47 @@ export function remarkReferences() {
 	};
 }
 
+/** The source range a node covers, when the parser recorded one. */
+function sourceSpan(node: MdNode): [number, number] | undefined {
+	const at = node.position as
+		| { start?: { offset?: number }; end?: { offset?: number } }
+		| undefined;
+	const start = at?.start?.offset;
+	const end = at?.end?.offset;
+	return typeof start === "number" && typeof end === "number" && start <= end
+		? [start, end]
+		: undefined;
+}
+
+// Only the offsets are read downstream, but a unist point is 1-based and
+// `mdast-util-to-hast` drops a position whose line is 0 wholesale — taking the
+// offsets with it. So the line and column are the smallest valid pair rather
+// than a recount of where the break landed.
+const span = (start: number, end: number) => ({
+	position: {
+		start: { line: 1, column: 1, offset: start },
+		end: { line: 1, column: 1, offset: end },
+	},
+});
+
 /**
  * Remark plugin: a single newline inside a paragraph is a line break, the way
  * chat and model output are written, rather than CommonMark's soft wrap.
+ *
+ * Each piece keeps the bytes of the source it came from. A split that dropped
+ * them would leave the renderer unable to say which bytes a run was rendered
+ * from (`Markdown`'s `sourceOffsets`), and a run with no position maps to
+ * nothing — so the whole paragraph would silently lose its anchor the moment a
+ * caller asked for line breaks.
  */
 export function remarkLineBreaks() {
-	return (tree: MdNode) => {
+	return (tree: MdNode, file?: unknown) => {
+		// The source the parser read. Each piece is LOCATED in it rather than
+		// counted along the parsed text: a text node's value is not its source —
+		// the parser drops a line's indentation and a soft break's trailing space,
+		// and decodes `&amp;` to one character — so counting along the value puts
+		// every piece after the first difference on bytes that are not its text.
+		const source = file === undefined || file === null ? "" : String(file);
 		const visit = (node: MdNode) => {
 			if (!node.children) return;
 			const next: MdNode[] = [];
@@ -194,11 +229,40 @@ export function remarkLineBreaks() {
 					next.push(child);
 					continue;
 				}
-				const lines = child.value.split(/\r?\n/);
-				lines.forEach((line, index) => {
-					if (index > 0) next.push({ type: "break" });
-					if (line !== "") next.push({ type: "text", value: line });
-				});
+				const at = sourceSpan(child);
+				// Split keeping the separators, so a `\r\n` is one break like a `\n`.
+				const pieces = child.value.split(/(\r?\n)/);
+				let cursor = at?.[0] ?? 0;
+				// Once a piece cannot be found, no later one can be trusted either:
+				// the cursor never advanced past it, so a search could match BEFORE
+				// the piece's real place and claim bytes earlier in the node. From
+				// there on every piece gets the whole node's range, which the
+				// renderer then marks inexact — coarse, and true.
+				let located = at !== undefined && source !== "";
+				for (const [index, piece] of pieces.entries()) {
+					if (index % 2 === 1) {
+						next.push({ type: "break" });
+						continue;
+					}
+					if (piece === "") continue;
+					let found = -1;
+					if (located) {
+						found = source.indexOf(piece, cursor);
+						if (found < 0 || !at || found + piece.length > at[1]) {
+							located = false;
+							found = -1;
+						} else cursor = found + piece.length;
+					}
+					next.push({
+						type: "text",
+						value: piece,
+						...(found >= 0
+							? span(found, found + piece.length)
+							: at
+								? span(at[0], at[1])
+								: {}),
+					});
+				}
 			}
 			node.children = next;
 		};

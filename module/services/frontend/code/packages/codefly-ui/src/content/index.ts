@@ -5,7 +5,8 @@
 // content from one instance, with one copy of the markdown parser.
 //
 // Security posture (see markdown.tsx and url.ts): no raw HTML, links only for
-// http/https/mailto, images off unless opted in, no innerHTML anywhere.
+// http/https/mailto (a resolved href included), images off unless opted in, no
+// innerHTML anywhere.
 
 export { CodeBlock, type CodeBlockProps } from "./code-block.js";
 export { Content, type ContentProps, type ContentVariant } from "./content.js";
@@ -39,5 +40,19 @@ export {
 	type PlainTextOptions,
 	toPlainText,
 } from "./plain.js";
+export {
+	byteOffsets,
+	readSourceRange,
+	rehypeSourceOffsets,
+	SOURCE_END,
+	SOURCE_EXACT,
+	SOURCE_IGNORE,
+	SOURCE_START,
+	type SourceAttributes,
+	type SourceOffsetsOptions,
+	type SourceRange,
+	sourceAttributes,
+	sourceProps,
+} from "./source-offsets.js";
 export { TextBlock, type TextBlockProps } from "./text-block.js";
 export { safeImageUrl, safeLinkUrl } from "./url.js";
