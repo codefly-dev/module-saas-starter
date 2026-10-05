@@ -5,15 +5,19 @@
 //
 // Usage:
 //
-//	role-catalog-import -catalog roles.json -database-url "$DATABASE_URL" [-audit-sink "$AUDIT_SINK"] [-dry-run] [-force]
+//	role-catalog-import -catalog roles.json -database-url "$DATABASE_URL" [-audit-sink postgres|both|bigquery|clickhouse] [-dry-run] [-force]
 //
 // The connection principal must be a member of app_control_plane (the same
 // authority migrations run under); built-in roles cannot be written otherwise.
 // See AUTHZ.md ("Built-in role catalog import") for the format and workflow.
 //
-// -audit-sink must be the deployment's AUDIT_SINK: under a swap value
-// (ADR 0009) the import's audit events go to the transactional queue, which
-// the accounts relay delivers, rather than to audit_events.
+// The import must run under the deployment's AUDIT_SINK, read through the same
+// auditsink package the accounts service reads it with (-audit-sink, else
+// $AUDIT_SINK): under a swap value (ADR 0009) the import's audit events go to
+// the transactional queue, which the accounts relay delivers, rather than to
+// audit_events. Unlike the service, the import has no default: a deploy step that
+// did not receive the setting stops, because guessing postgres would write its
+// events where a warehouse deployment never reads them.
 package main
 
 import (
@@ -23,6 +27,7 @@ import (
 	"io"
 	"os"
 
+	"accounts/pkg/auditstore/auditsink"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
 	"accounts/pkg/rolecatalog"
@@ -48,14 +53,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	databaseURL := fs.String("database-url", os.Getenv("DATABASE_URL"), "Postgres connection URL (defaults to $DATABASE_URL)")
 	dryRun := fs.Bool("dry-run", false, "print the plan without applying it")
 	force := fs.Bool("force", false, "apply removals even when they would delete assignments or wipe the whole catalog")
-	auditSink := fs.String("audit-sink", os.Getenv("AUDIT_SINK"), "the deployment's AUDIT_SINK (defaults to $AUDIT_SINK; empty is postgres)")
+	auditSink := fs.String("audit-sink", "", "the deployment's AUDIT_SINK: postgres, both, bigquery or clickhouse (defaults to $AUDIT_SINK, which must then be set)")
 	if err := fs.Parse(args); err != nil {
 		return 2
-	}
-	sinkMode, err := business.ParseAuditSinkMode(*auditSink)
-	if err != nil {
-		line(stderr, "role-catalog-import:", err)
-		return 1
 	}
 
 	if *catalogPath == "" {
@@ -64,6 +64,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if *databaseURL == "" {
 		line(stderr, "role-catalog-import: -database-url (or $DATABASE_URL) is required")
+		return 1
+	}
+
+	// The flag, when given, stands in for the environment variable the service
+	// reads; either way the value is read and checked by auditsink, and a value
+	// that was never set is refused rather than defaulted.
+	lookup := os.LookupEnv
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "audit-sink" {
+			lookup = func(string) (string, bool) { return *auditSink, true }
+		}
+	})
+	sinkMode, err := auditsink.RequireMode(lookup)
+	if err != nil {
+		line(stderr, "role-catalog-import:", err)
 		return 1
 	}
 

@@ -136,7 +136,7 @@ const (
 // transactional queue. "external" is refused: no destination outside Postgres
 // can join the transaction a change commits in.
 func Load(getenv func(string) string) (Config, error) {
-	mode, err := business.ParseAuditSinkMode(getenv(EnvSink))
+	mode, err := Mode(getenv)
 	if err != nil {
 		return Config{}, err
 	}
@@ -151,6 +151,31 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	return config, nil
+}
+
+// Mode reads AUDIT_SINK alone: the one place the setting is read, which Load and
+// every process that must agree with the service go through. An unset value is
+// the default, postgres, as it is for the service.
+func Mode(getenv func(string) string) (business.AuditSinkMode, error) {
+	return business.ParseAuditSinkMode(getenv(EnvSink))
+}
+
+// RequireMode is Mode for a process that writes audit events apart from the
+// service — the role catalog import, run as a deploy step — where an unset
+// AUDIT_SINK is not the default but a lost setting. The service's value reaches
+// such a process only because the deployment passes it on; when that does not
+// happen, defaulting to postgres would write its events to audit_events on a
+// deployment whose store of record is a warehouse, where nothing reads them. So
+// it refuses, and says how to set it. lookup reports whether the variable is
+// set at all (os.LookupEnv); a blank value is as good as none.
+func RequireMode(lookup func(string) (string, bool)) (business.AuditSinkMode, error) {
+	raw, set := lookup(EnvSink)
+	if !set || strings.TrimSpace(raw) == "" {
+		return "", fmt.Errorf("%s is not set. This process records audit events, and where they go depends on it: "+
+			"under bigquery or clickhouse they must reach the queue the audit relay delivers, not audit_events. "+
+			"Pass the deployment's value (postgres, both, bigquery or clickhouse); it will not guess", EnvSink)
+	}
+	return Mode(func(string) string { return raw })
 }
 
 func loadExternal(getenv func(string) string) (business.ExternalAuditSink, error) {
@@ -246,11 +271,10 @@ func loadSwap(mode business.AuditSinkMode, getenv func(string) string) (*Swap, e
 		return nil, fmt.Errorf("AUDIT_SINK=%s requires %s", mode, strings.Join(missing, ", "))
 	}
 
-	days, err := strconv.Atoi(retentionDays)
-	if err != nil || days < 1 {
-		return nil, fmt.Errorf("%s must be a whole number of days, at least 1; got %q", EnvContentRetentionDays, retentionDays)
+	var err error
+	if swap.ContentRetention, err = retentionDuration(EnvContentRetentionDays, retentionDays); err != nil {
+		return nil, err
 	}
-	swap.ContentRetention = time.Duration(days) * 24 * time.Hour
 	if swap.ClickHouse != nil {
 		if err := loadClickHouse(swap, eventsRetentionDays); err != nil {
 			return nil, err
@@ -272,12 +296,27 @@ func loadSwap(mode business.AuditSinkMode, getenv func(string) string) (*Swap, e
 	}
 	if raw := strings.TrimSpace(getenv(EnvRelayMaxWait)); raw != "" {
 		wait, err := time.ParseDuration(raw)
-		if err != nil || wait <= 0 || wait > time.Hour {
-			return nil, fmt.Errorf("%s must be a positive duration of at most an hour, like 5s; got %q", EnvRelayMaxWait, raw)
+		if err != nil || wait <= 0 || wait > business.MaxAuditRelayMaxWait {
+			return nil, fmt.Errorf("%s must be a positive duration of at most %s, like 5s; got %q", EnvRelayMaxWait, business.MaxAuditRelayMaxWait, raw)
 		}
 		swap.RelayMaxWait = wait
 	}
 	return swap, nil
+}
+
+// maxRetentionDays bounds a retention setting at a century. A duration counts
+// nanoseconds in an int64, which overflows to a negative value past about
+// 106,751 days, and a retention that long is a mistake in the setting.
+const maxRetentionDays = 36500
+
+// retentionDuration reads a retention setting in whole days, bounding the count
+// before it is multiplied into a duration.
+func retentionDuration(name, raw string) (time.Duration, error) {
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < 1 || days > maxRetentionDays {
+		return 0, fmt.Errorf("%s must be a whole number of days, at least 1 and at most %d; got %q", name, maxRetentionDays, raw)
+	}
+	return time.Duration(days) * 24 * time.Hour, nil
 }
 
 // loadClickHouse validates the ClickHouse settings: a DSN the driver parses
@@ -286,14 +325,14 @@ func loadSwap(mode business.AuditSinkMode, getenv func(string) string) (*Swap, e
 // outliving their event would be details of an event the store no longer has.
 func loadClickHouse(swap *Swap, eventsRetentionDays string) error {
 	settings := swap.ClickHouse
-	days, err := strconv.Atoi(eventsRetentionDays)
-	if err != nil || days < 1 {
-		return fmt.Errorf("%s must be a whole number of days, at least 1; got %q", EnvEventsRetentionDays, eventsRetentionDays)
+	retention, err := retentionDuration(EnvEventsRetentionDays, eventsRetentionDays)
+	if err != nil {
+		return err
 	}
-	settings.EventsRetention = time.Duration(days) * 24 * time.Hour
+	settings.EventsRetention = retention
 	if settings.EventsRetention < swap.ContentRetention {
 		return fmt.Errorf("%s (%d) must be at least %s (%d): content details are kept no longer than their events",
-			EnvEventsRetentionDays, days, EnvContentRetentionDays, int(swap.ContentRetention/(24*time.Hour)))
+			EnvEventsRetentionDays, int(retention/(24*time.Hour)), EnvContentRetentionDays, int(swap.ContentRetention/(24*time.Hour)))
 	}
 	options, err := clickhouse.ParseDSN(settings.DSN)
 	if err != nil {

@@ -15,7 +15,13 @@ deploy_jobs:
   # service's AUDIT_SINK: under a swap value (ADR 0009) its events go to the
   # queue the accounts relay delivers, not to audit_events. AUDIT_SINK is the one
   # audit setting the importer reads; the rest name destinations only the relay
-  # writes to.
+  # writes to. The importer reads it through the same auditsink package as the
+  # service but, unlike the service, has no default: if the Job does not receive
+  # the variable it exits before touching the store, rather than guess postgres
+  # and write its events where a warehouse deployment never reads them. A
+  # deployment that leaves AUDIT_SINK unset on the service (the default,
+  # postgres) must set AUDIT_SINK=postgres explicitly so that the step has a
+  # value to inherit.
   - name: role-catalog-import
     service: accounts
     command: role-catalog-import

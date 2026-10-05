@@ -96,6 +96,15 @@ func TestConfiguredAuditSinkBigQuery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, sink.Swap.RelayBatchSize)
 	require.Equal(t, 750*time.Millisecond, sink.Swap.RelayMaxWait)
+
+	t.Setenv("AUDIT_RELAY_MAX_WAIT", "60s")
+	sink, err = Load(os.Getenv)
+	require.NoError(t, err, "a minute is the longest a partial batch may wait")
+	require.Equal(t, time.Minute, sink.Swap.RelayMaxWait)
+	t.Setenv("AUDIT_CONTENT_RETENTION_DAYS", "36500")
+	sink, err = Load(os.Getenv)
+	require.NoError(t, err, "a century is the longest retention")
+	require.Equal(t, 36500*24*time.Hour, sink.Swap.ContentRetention)
 }
 
 func TestConfiguredAuditSinkBigQueryNamesEveryMissingSetting(t *testing.T) {
@@ -138,6 +147,12 @@ func TestConfiguredAuditSinkBigQueryRejectsInvalidSettings(t *testing.T) {
 		{"AUDIT_RELAY_MAX_WAIT", "5", "AUDIT_RELAY_MAX_WAIT"},
 		{"AUDIT_RELAY_MAX_WAIT", "-1s", "AUDIT_RELAY_MAX_WAIT"},
 		{"AUDIT_RELAY_MAX_WAIT", "2h", "AUDIT_RELAY_MAX_WAIT"},
+		// The lag alert fires at five minutes, so a longer wait would page on a healthy relay.
+		{"AUDIT_RELAY_MAX_WAIT", "5m", "AUDIT_RELAY_MAX_WAIT"},
+		{"AUDIT_RELAY_MAX_WAIT", "61s", "AUDIT_RELAY_MAX_WAIT"},
+		// Beyond about 106,751 days a duration in nanoseconds overflows and goes negative.
+		{"AUDIT_CONTENT_RETENTION_DAYS", "106752", "AUDIT_CONTENT_RETENTION_DAYS"},
+		{"AUDIT_CONTENT_RETENTION_DAYS", "36501", "AUDIT_CONTENT_RETENTION_DAYS"},
 	} {
 		t.Run(tc.name+"="+tc.value, func(t *testing.T) {
 			setBigQuerySwap(t)
@@ -229,6 +244,7 @@ func TestConfiguredAuditSinkClickHouseRejectsInvalidSettings(t *testing.T) {
 		{"AUDIT_EVENTS_RETENTION_DAYS", "0", "AUDIT_EVENTS_RETENTION_DAYS must be a whole number of days"},
 		{"AUDIT_EVENTS_RETENTION_DAYS", "7y", "AUDIT_EVENTS_RETENTION_DAYS must be a whole number of days"},
 		{"AUDIT_EVENTS_RETENTION_DAYS", "30", "AUDIT_EVENTS_RETENTION_DAYS (30) must be at least AUDIT_CONTENT_RETENTION_DAYS (90)"},
+		{"AUDIT_EVENTS_RETENTION_DAYS", "106752", "AUDIT_EVENTS_RETENTION_DAYS must be a whole number of days"},
 		{"AUDIT_CONTENT_RETENTION_DAYS", "0", "AUDIT_CONTENT_RETENTION_DAYS"},
 		{"AUDIT_CLICKHOUSE_DSN", "clickhouse://audit:s3cr3t-value@clickhouse.example:9440", "must name the database"},
 		{"AUDIT_CLICKHOUSE_DSN", "clickhouse://audit:s3cr3t-value@/audit", "not a valid ClickHouse DSN"},
@@ -256,4 +272,41 @@ func TestClickHouseSettingsNeverPrintTheDSN(t *testing.T) {
 		require.NotContains(t, fmt.Sprintf(format, *sink.Swap.ClickHouse), "s3cr3t-value", format)
 		require.NotContains(t, fmt.Sprintf(format, sink.Swap.ClickHouse), "s3cr3t-value", format)
 	}
+}
+
+// A process that records audit events apart from the service learns the sink
+// only if the deployment passes it on. When that fails, "unset" must not read as
+// the default: it would write to audit_events where the warehouse is the store.
+func TestRequireModeRefusesASinkThatWasNeverSet(t *testing.T) {
+	env := func(values map[string]string) func(string) (string, bool) {
+		return func(name string) (string, bool) { v, ok := values[name]; return v, ok }
+	}
+	for name, values := range map[string]map[string]string{
+		"unset": {},
+		"blank": {"AUDIT_SINK": "  "},
+		"empty": {"AUDIT_SINK": ""},
+	} {
+		_, err := RequireMode(env(values))
+		require.ErrorContains(t, err, "AUDIT_SINK is not set", name)
+	}
+
+	for value, want := range map[string]business.AuditSinkMode{
+		"postgres":    business.AuditSinkPostgres,
+		"both":        business.AuditSinkBoth,
+		"bigquery":    business.AuditSinkBigQuery,
+		" ClickHouse": business.AuditSinkClickHouse,
+	} {
+		mode, err := RequireMode(env(map[string]string{"AUDIT_SINK": value}))
+		require.NoError(t, err, value)
+		require.Equal(t, want, mode, value)
+	}
+
+	_, err := RequireMode(env(map[string]string{"AUDIT_SINK": "external"}))
+	require.ErrorContains(t, err, "not permitted", "a set value is read by the service's own rules")
+}
+
+func TestModeIsTheServicesDefaultWhenUnset(t *testing.T) {
+	mode, err := Mode(func(string) string { return "" })
+	require.NoError(t, err)
+	require.Equal(t, business.AuditSinkPostgres, mode)
 }

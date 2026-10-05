@@ -86,6 +86,27 @@ survives a restart and reaches every replica, and is only served when it is
   does (`pkg/auditstore/clickhousestore/reader.go` lists where);
   `pkg/business/audit_store_parity_test.go` holds every store to one fixture
   (ClickHouse joins when `AUDIT_CLICKHOUSE_TEST_DSN` names a server).
+- **Audit relay and queue** (ADR 0009, `pkg/business/audit_relay.go`,
+  `pkg/infra/postgres_audit_queue.go`, migrations 18 and 21). Under a swap value
+  `EmitTx` writes a short-lived `audit_event_queue` row on the caller's
+  transaction; the relay drains it to the archive and then the warehouse and
+  deletes the row only after both acknowledged. It is at-least-once, so every
+  read dedupes by event id. Four rules a change must keep. (1) The archive object
+  is written once per batch, whole, under a name no other set of rows ever uses
+  — the object-store writers take a precondition failure on a name to mean "this
+  batch, already written" — so only the *warehouse* write is split when a batch
+  fails. (2) A row is set aside into `audit_event_quarantine` only after the
+  warehouse refused it alone, accepted another row afterwards, and refused it
+  again; an outage sets nothing aside. The move from queue to quarantine is one
+  statement, and nothing in the kit ever deletes a queue or quarantine row (the
+  down migrations refuse while either holds rows). (3) The queue is observed
+  under every `AUDIT_SINK` (`saas.audit_queue.{depth,oldest_age,quarantined,
+  snapshot_errors}`): a failed read makes the gauges absent, never stale, and
+  rows left in the queue under `postgres`/`both` are logged at startup with their
+  count — startup never refuses, because that would take login down. (4) A
+  process that records audit events outside the service (the role catalog
+  import) resolves `AUDIT_SINK` through `auditsink.RequireMode` and refuses an
+  unset value. Replaying quarantined rows is not built yet.
 - **History copy** (`cmd/audit-history-copy`, `pkg/business/audit_history.go`):
   a deployment switching to a swap value copies its `audit_events` rows into the
   store of record and the archive — classified and hashed as the relay does a
