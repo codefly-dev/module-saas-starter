@@ -2,8 +2,10 @@ package bigquerystore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,6 +144,82 @@ func TestAppendAuditBatchSendsAtMostFiveHundredRowsPerRequest(t *testing.T) {
 		}
 		require.Equal(t, []int{500, 500, 200}, sizes, name)
 	}
+}
+
+// largeRecord is a content-class record whose details are about size bytes.
+func largeRecord(t *testing.T, size int) business.AuditRecord {
+	t.Helper()
+	r, err := business.NewAuditRecord(business.AuditEntry{
+		ID: business.NewIDString(), ActorType: business.ActorTypeUser, EventType: business.EventAuthLogin, SchemaVersion: 1,
+		Resource: "session", CreatedAt: occurredAt,
+		Payload: map[string]any{"blob": strings.Repeat("x", size)},
+	}, business.RetentionContent)
+	require.NoError(t, err)
+	return r
+}
+
+// requestBytes is what a request carries: its rows as the streaming insert
+// encodes them.
+func requestBytes(t *testing.T, request []Row) int {
+	t.Helper()
+	total := 0
+	for _, row := range request {
+		encoded, err := json.Marshal(row.Values)
+		require.NoError(t, err)
+		total += len(encoded) + len(row.InsertID)
+	}
+	return total
+}
+
+func TestAppendAuditBatchSplitsRequestsBySizeAsWellAsByRowCount(t *testing.T) {
+	events, details := &fakeInserter{}, &fakeInserter{}
+	store := &Store{events: events, details: details}
+	batch := business.AuditBatch{DeploymentID: "deployment-1"}
+	// Thirty rows of about 600 KB: 18 MB, over one request however few the rows.
+	for range 30 {
+		batch.Records = append(batch.Records, largeRecord(t, 600<<10))
+	}
+	require.NoError(t, store.AppendAuditBatch(context.Background(), batch))
+
+	require.Greater(t, len(details.requests), 1, "the batch is too large for one request")
+	var sent []string
+	for _, request := range details.requests {
+		require.LessOrEqual(t, requestBytes(t, request), maxRequestBytes)
+		for _, row := range request {
+			sent = append(sent, row.InsertID)
+		}
+	}
+	var want []string
+	for _, record := range batch.Records {
+		want = append(want, record.Entry.ID)
+	}
+	require.Equal(t, want, sent, "every row once, in batch order")
+	require.Equal(t, want, events.ids(), "the events table carries no content details and still holds every row")
+	require.Len(t, events.requests, 1)
+}
+
+func TestAppendAuditBatchRefusesARowThatCannotFitARequestAndSendsNothing(t *testing.T) {
+	events, details := &fakeInserter{}, &fakeInserter{}
+	store := &Store{events: events, details: details}
+	small, huge := largeRecord(t, 1<<10), largeRecord(t, maxRequestBytes)
+
+	err := store.AppendAuditBatch(context.Background(), business.AuditBatch{
+		DeploymentID: "deployment-1", Records: []business.AuditRecord{small, huge, small},
+	})
+	require.ErrorIs(t, err, ErrRowTooLarge)
+	require.ErrorContains(t, err, huge.Entry.ID, "the error names the event whose row cannot be sent")
+	var tooLarge *RowTooLargeError
+	require.ErrorAs(t, err, &tooLarge)
+	require.Equal(t, huge.Entry.ID, tooLarge.EventID)
+	require.Equal(t, DetailsTable, tooLarge.Table)
+	require.Greater(t, tooLarge.Size, maxRequestBytes)
+	require.Empty(t, events.requests, "nothing is sent of a batch with a row that cannot be, so a retry of the rest never half-writes it")
+	require.Empty(t, details.requests)
+
+	// Alone, the rest of the batch goes through.
+	require.NoError(t, store.AppendAuditBatch(context.Background(), business.AuditBatch{
+		DeploymentID: "deployment-1", Records: []business.AuditRecord{small},
+	}))
 }
 
 func TestAppendAuditBatchFailsWholeAndNamesTheRejectedRow(t *testing.T) {

@@ -14,10 +14,10 @@ package bigquerystore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +36,42 @@ const (
 // maxRowsPerInsert is BigQuery's recommended streaming request size; a relay
 // batch larger than it is sent as several requests.
 const maxRowsPerInsert = 500
+
+// maxRequestBytes bounds the rows one request carries, as BigQuery encodes
+// them. BigQuery refuses a request over 10 MB (and, with the same limit, a
+// single row over it), and a row count says nothing of that: a few hundred
+// content-class events with large details are many megabytes. The bound sits
+// under the limit to leave room for the request's own envelope and for the
+// difference between this estimate and the encoding.
+const maxRequestBytes = 8 << 20
+
+// rowEnvelopeBytes is what a row adds to a request beyond its values and its
+// insert id: the keys and punctuation around them.
+const rowEnvelopeBytes = 64
+
+// ErrRowTooLarge is the error of a row that cannot be sent in any request.
+var ErrRowTooLarge = errors.New("bigquery audit store: row exceeds the request size limit")
+
+// RowTooLargeError names the event whose row cannot be sent: alone it is more
+// than a request carries. Retrying cannot help, so a caller that delivers
+// batches in order sets that event aside rather than retry the batch forever.
+type RowTooLargeError struct {
+	// Table is the table the row was for.
+	Table string
+	// EventID is the event the row is of.
+	EventID string
+	// Size is the row's size, as BigQuery encodes it, and Limit is what one
+	// request carries.
+	Size, Limit int
+}
+
+func (e *RowTooLargeError) Error() string {
+	return fmt.Sprintf("bigquery audit store: append to %s: the row of event %s is %d bytes, over the %d bytes one request carries",
+		e.Table, e.EventID, e.Size, e.Limit)
+}
+
+// Unwrap makes errors.Is(err, ErrRowTooLarge) true.
+func (e *RowTooLargeError) Unwrap() error { return ErrRowTooLarge }
 
 // timestampLayout is BigQuery's canonical TIMESTAMP text at its microsecond
 // precision, which is also Postgres's.
@@ -297,29 +333,71 @@ func BatchRows(batch business.AuditBatch) (events, details []Row) {
 }
 
 // AppendAuditBatch implements business.AuditStoreWriter: the batch's rows
-// (BatchRows) streamed to the events and details tables.
+// (BatchRows) streamed to the events and details tables, each table in as few
+// requests as hold at most maxRowsPerInsert rows and maxRequestBytes bytes.
+// Every request is planned before the first is sent, so a row too large for a
+// request (a *RowTooLargeError, naming its event) fails the batch before
+// anything of it is written.
 func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
 	eventRows, detailRows := BatchRows(batch)
-	events := make([]bigquery.ValueSaver, len(eventRows))
-	for i, row := range eventRows {
-		events[i] = row
+	events, err := planRequests(EventsTable, eventRows)
+	if err != nil {
+		return err
 	}
-	details := make([]bigquery.ValueSaver, len(detailRows))
-	for i, row := range detailRows {
-		details[i] = row
+	details, err := planRequests(DetailsTable, detailRows)
+	if err != nil {
+		return err
 	}
-	if err := putInChunks(ctx, s.events, events); err != nil {
+	if err := put(ctx, s.events, events); err != nil {
 		return fmt.Errorf("bigquery audit store: append to %s: %w", EventsTable, err)
 	}
-	if err := putInChunks(ctx, s.details, details); err != nil {
+	if err := put(ctx, s.details, details); err != nil {
 		return fmt.Errorf("bigquery audit store: append to %s: %w", DetailsTable, err)
 	}
 	return nil
 }
 
-func putInChunks(ctx context.Context, inserter rowInserter, rows []bigquery.ValueSaver) error {
-	for chunk := range slices.Chunk(rows, maxRowsPerInsert) {
-		if err := inserter.Put(ctx, chunk); err != nil {
+// rowBytes is the size a row adds to a request: its values as BigQuery encodes
+// them, its insert id, and the envelope around them.
+func rowBytes(row Row) (int, error) {
+	encoded, err := json.Marshal(row.Values)
+	if err != nil {
+		return 0, fmt.Errorf("encode the row of event %s: %w", row.InsertID, err)
+	}
+	return len(encoded) + len(row.InsertID) + rowEnvelopeBytes, nil
+}
+
+// planRequests splits rows, in order, into requests of at most maxRowsPerInsert
+// rows and maxRequestBytes bytes each. A row that does not fit a request alone
+// is a *RowTooLargeError.
+func planRequests(table string, rows []Row) ([][]bigquery.ValueSaver, error) {
+	var requests [][]bigquery.ValueSaver
+	var current []bigquery.ValueSaver
+	currentBytes := 0
+	for _, row := range rows {
+		size, err := rowBytes(row)
+		if err != nil {
+			return nil, fmt.Errorf("bigquery audit store: append to %s: %w", table, err)
+		}
+		if size > maxRequestBytes {
+			return nil, &RowTooLargeError{Table: table, EventID: row.InsertID, Size: size, Limit: maxRequestBytes}
+		}
+		if len(current) == maxRowsPerInsert || currentBytes+size > maxRequestBytes {
+			requests = append(requests, current)
+			current, currentBytes = nil, 0
+		}
+		current = append(current, row)
+		currentBytes += size
+	}
+	if len(current) > 0 {
+		requests = append(requests, current)
+	}
+	return requests, nil
+}
+
+func put(ctx context.Context, inserter rowInserter, requests [][]bigquery.ValueSaver) error {
+	for _, request := range requests {
+		if err := inserter.Put(ctx, request); err != nil {
 			return describePutError(err)
 		}
 	}
