@@ -471,6 +471,9 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
 	}
+	if isRuntimeRegisteredRoute(entry) {
+		removePersonsSessionCredential(r.Header)
+	}
 	if entry != nil && entry.UpstreamPath != "" {
 		r.URL.Path = entry.UpstreamPath
 		r.URL.RawPath = ""
@@ -487,6 +490,35 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// removePersonsSessionCredential strips the person's own session from a request
+// before it reaches a runtime-registered upstream — a composed module's federated
+// prefix, or a solution.
+//
+// The host access token IS the person's whole session: a host-wide audience, the
+// person's full authority, and valid at every other upstream and at the host's own
+// API. Forwarding it verbatim meant a compromised module or solution pod — or one
+// logged request header, or one upstream that redeems it to mint contexts for
+// other audiences — yielded replayable full-authority sessions for every viewer
+// who had used it. The Cookie goes with it for the same reason and one more: the
+// gateway has already resolved identity from it by this point, so an upstream
+// reading it learns nothing it is not told, and nothing legitimately needs the
+// host's session cookie.
+//
+// What an upstream receives instead is what it should have been receiving: the
+// identity headers ext_authz stamped (the subject, the tenant, the session, the
+// credential kind, the scope ceiling), which name the person without carrying
+// their authority. An upstream that needs to ACT on the person's behalf needs a
+// host-minted capability bound to its own audience, which is the Work Context
+// surface, not a bearer it borrowed.
+//
+// Catalog routes are untouched: accounts is the host's own API, where the session
+// is the credential.
+func removePersonsSessionCredential(h http.Header) {
+	h.Del("Authorization")
+	h.Del("Cookie")
+	h.Del("Proxy-Authorization")
 }
 
 // removeCallerConnectionOptions applies the caller's Connection header to the

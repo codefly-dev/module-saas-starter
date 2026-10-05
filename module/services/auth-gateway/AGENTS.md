@@ -78,6 +78,30 @@ needing less authority.
 
 Module identity exchanges are described below; accounts owns their authority.
 
+## A runtime-registered upstream never receives the person's session
+
+The gateway removes `Authorization`, `Cookie` and `Proxy-Authorization` from every
+request it forwards to a runtime-registered upstream — a federated module prefix or
+a solution. A catalog route is untouched: accounts is the host's own API, where the
+session IS the credential.
+
+A host access token is the person's whole session: one host-wide audience, the
+person's full authority, valid at every other upstream and at the host's own API.
+Forwarding it meant a compromised module or solution pod — or a single logged
+request header, or an upstream that redeems it to mint contexts for further
+audiences — yielded replayable full-authority sessions for every viewer who had
+used it. The cookie went the same way, and the gateway has already resolved
+identity from it by the time it forwards, so an upstream reading it learns nothing
+it is not told.
+
+An upstream receives the identity `ext_authz` stamped: the subject, the tenant, the
+session, the credential kind and the scope ceiling. That names the person without
+carrying their authority. **An upstream that needs to act on the person's behalf
+needs a host-minted capability bound to its own audience** — the Work Context
+surface — not a bearer it borrowed. A consumer written against the old behaviour
+has to change: the two consumer repositories that read the forwarded bearer own
+their half of this.
+
 ## A registered client calls without a proxy
 
 The host's own frontend reaches this gateway through a server-side proxy, so it

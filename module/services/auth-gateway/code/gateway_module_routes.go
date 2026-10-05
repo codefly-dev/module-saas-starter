@@ -170,9 +170,12 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
 	// Forward the full /v1/<alias>/... path unchanged: the module owns and serves
-	// its own /v1/<alias> surface. The caller's bearer is preserved so the module
-	// can call back through the gateway on the user's behalf, exactly as solution
-	// passthrough does.
+	// its own /v1/<alias> surface. The caller's session credential does NOT travel
+	// with it — proxyTo withholds it for every declared upstream
+	// (removePersonsSessionCredential) — exactly as solution passthrough does. A
+	// module that acts on the person's behalf does so with the Work Context
+	// verified above, which is bound to this route's audience rather than good
+	// everywhere the person is.
 	//
 	// rateLimitThenProxy, not proxyTo: a module data endpoint must consume the
 	// same per-org/per-IP budget an equivalent catalog route does, or /v1/<alias>/*

@@ -53,12 +53,217 @@ case remain supported. A changed DNS answer cannot bypass the transport check.
 
 ## 3. Runtime compatibility
 
+<<<<<<< HEAD
 The Module-Federation host checks compatibility before activating a remote.
 The manifest parser validates the snapshot's shape. Runtime requirements include
 `schemaVersion`, `frontend.hostContract`, `frontend.reactRange`,
 `frontend.shared` and `frontend.exposedModule`; host versions live in
 `services/frontend/code/src/solutions/host-runtime.ts`. A failed check leaves the
 remote unavailable and reports the cause in the server log.
+||||||| parent of a3090094 (fix(auth-gateway): a module or solution upstream receives the person's identity, not their session (SA-F-BEARER))
+   **What that does not yet give you, stated plainly because a revocation
+   depends on it.** accounts reads the declaration through the Codefly SDK,
+   which resolves it from the process environment and the runtime's injected
+   carrier. Both are live reads — an edit is observed the moment it reaches
+   them — but **no runtime component updates either one under a running
+   process** (`codefly-dev/cli#740`). So in a deployment that delivers this key
+   as a container environment variable, an edit does not reach accounts at all,
+   and withdrawing a publisher still requires restarting the service. Until that
+   issue closes, treat a revocation as taking effect on restart, not on edit,
+   and do not rely on removing a digest to lock out a publisher whose secret you
+   believe is compromised — delete its registration and restart accounts.
+3. The solution presents that token in `X-Codefly-Solution-Registration` to both
+   `POST /solutions/_register` (gateway, `{id, upstream}`) and
+   `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
+   withdraws it.
+
+The exchange keeps three outcomes apart, because a registrant acts differently
+on each: `401` means accounts refused the secret — the only answer that means
+"check `SOLUTION_REGISTRATION_SECRETS` and the provisioned secret"; `503` with
+`Retry-After` means accounts could not be reached or did not answer in time (a
+rollout, a restart) and the next attempt may succeed; `502` means accounts
+answered with an error that is neither. The frontend likewise answers `503`, not
+`401`, when it cannot reach the key set it verifies the token against. A
+registrant must not read any 5xx — including a `502` from an ingress or mesh in
+front of a restarting gateway — as a provisioning fault.
+
+`SOLUTION_REGISTRATION_SECRETS` is declared **separately** from
+`MODULE_REGISTRATION_SECRETS`, and the two credentials carry different
+audiences. A module credential federates a REST prefix; a solution credential
+additionally publishes host-origin code. Holding one must never confer the
+other, so neither the configuration nor the token is shared.
+
+### What each half enforces
+
+| Check | Gateway | Frontend |
+| --- | --- | --- |
+| Ed25519 signature against the published JWKS, alg-locked to EdDSA | yes | yes |
+| Issuer, `solution-registration` audience, expiry (with skew leeway) | yes | yes |
+| `solution` claim equals the id in the request | yes (403) | yes (403) |
+| First registration binds the id to `sub`; a different `sub` is refused | yes (409) | yes (409) |
+| Same publisher may move its own endpoint | yes | yes |
+| Delete is owner-bound, and a non-owner's delete is indistinguishable from an unknown id | yes | yes |
+| `jti` burned on use, so a captured credential cannot be replayed | yes | yes |
+| Request body bounded before parsing | yes (256 KiB; the separate token exchange bounds at 4 KiB) | no bound of its own — the manifest is bounded where the gateway accepts it |
+| Id is one catalog-identity segment, so reserved `_…` sub-paths cannot be shadowed | yes | n/a (id comes from the manifest and must equal the claim) |
+| Upstream host must be composition-local; resolved address re-checked at dial time | yes | n/a |
+
+The gateway deliberately allows a solution to **move** its upstream, which
+module federation does not. That is safe only because the publisher is proven on
+every call: an endpoint legitimately changes on a redeploy or a new dev port,
+while a credential holder for one solution can neither claim another's id nor
+redirect it.
+
+### Upstream constraints and the development exception
+
+A solution upstream receives forwarded user bearers, so it is held to the same
+rule as a federated module upstream: loopback and private ranges (the dev and
+in-cluster cases), mesh short names and cluster suffixes — and nothing globally
+routable, no link-local, no cloud-metadata address. The register-time host string
+is only half of it: the **resolved address is re-checked at dial time**, so a
+mesh-looking name whose DNS answer later points off-mesh never receives a
+forwarded bearer. Loopback is an explicit development exception and is tested as
+such.
+
+## 3. Runtime compatibility is enforced, not stored
+
+A declared requirement the host does not check is not a compatibility contract.
+Every requirement is checked **before activation**, so an incompatible remote is
+never handed to a browser. An undeclared major defaults to `1` — the major in
+force when the field was introduced, which is what silence actually asserts — and
+never to the host's current major, which would make every silent manifest
+compatible by definition at exactly the upgrade this check exists for:
+
+| Manifest field | Checked against | Default when absent |
+| --- | --- | --- |
+| `schemaVersion` | `SOLUTION_MANIFEST_SCHEMA_MAJOR` | `1` |
+| `frontend.hostContract` | `SOLUTION_HOST_CONTRACT_MAJOR` (the `SolutionPageProps` the host injects and the `./Page` default it expects) | `1` |
+| `frontend.reactRange` | the host's real React version | unconstrained |
+| `frontend.shared` (per package) | the versions the host publishes into the sealed scope | unconstrained |
+| `frontend.exposedModule` | must be a `./Name` key | — |
+
+Ranges use a deliberately small semver subset (`||` alternatives of
+space-separated `^ ~ >= > <= < =`, a bare version, or `*`). A range outside the
+grammar is **refused**, never approximated: a requirement the host cannot
+evaluate is not one it can honour. The host values live in
+`services/frontend/code/src/solutions/host-runtime.ts`, which the register route
+and the Module-Federation host both read, so the numbers cannot diverge.
+
+A refused registration is refused **whole**. If the id already had a valid
+registration, that registration keeps serving — the last known valid one is never
+replaced by a rejected update. The reasons are returned to the registrant (HTTP
+409, `{"error":"incompatible_runtime","reasons":[…]}`) and logged for the
+operator. If the id has no valid registration to fall back on, its page renders a
+plain "temporarily unavailable" panel instead of a 404, and the technical cause
+stays in the server log.
+=======
+   **What that does not yet give you, stated plainly because a revocation
+   depends on it.** accounts reads the declaration through the Codefly SDK,
+   which resolves it from the process environment and the runtime's injected
+   carrier. Both are live reads — an edit is observed the moment it reaches
+   them — but **no runtime component updates either one under a running
+   process** (`codefly-dev/cli#740`). So in a deployment that delivers this key
+   as a container environment variable, an edit does not reach accounts at all,
+   and withdrawing a publisher still requires restarting the service. Until that
+   issue closes, treat a revocation as taking effect on restart, not on edit,
+   and do not rely on removing a digest to lock out a publisher whose secret you
+   believe is compromised — delete its registration and restart accounts.
+3. The solution presents that token in `X-Codefly-Solution-Registration` to both
+   `POST /solutions/_register` (gateway, `{id, upstream}`) and
+   `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
+   withdraws it.
+
+The exchange keeps three outcomes apart, because a registrant acts differently
+on each: `401` means accounts refused the secret — the only answer that means
+"check `SOLUTION_REGISTRATION_SECRETS` and the provisioned secret"; `503` with
+`Retry-After` means accounts could not be reached or did not answer in time (a
+rollout, a restart) and the next attempt may succeed; `502` means accounts
+answered with an error that is neither. The frontend likewise answers `503`, not
+`401`, when it cannot reach the key set it verifies the token against. A
+registrant must not read any 5xx — including a `502` from an ingress or mesh in
+front of a restarting gateway — as a provisioning fault.
+
+`SOLUTION_REGISTRATION_SECRETS` is declared **separately** from
+`MODULE_REGISTRATION_SECRETS`, and the two credentials carry different
+audiences. A module credential federates a REST prefix; a solution credential
+additionally publishes host-origin code. Holding one must never confer the
+other, so neither the configuration nor the token is shared.
+
+### What each half enforces
+
+| Check | Gateway | Frontend |
+| --- | --- | --- |
+| Ed25519 signature against the published JWKS, alg-locked to EdDSA | yes | yes |
+| Issuer, `solution-registration` audience, expiry (with skew leeway) | yes | yes |
+| `solution` claim equals the id in the request | yes (403) | yes (403) |
+| First registration binds the id to `sub`; a different `sub` is refused | yes (409) | yes (409) |
+| Same publisher may move its own endpoint | yes | yes |
+| Delete is owner-bound, and a non-owner's delete is indistinguishable from an unknown id | yes | yes |
+| `jti` burned on use, so a captured credential cannot be replayed | yes | yes |
+| Request body bounded before parsing | yes (256 KiB; the separate token exchange bounds at 4 KiB) | no bound of its own — the manifest is bounded where the gateway accepts it |
+| Id is one catalog-identity segment, so reserved `_…` sub-paths cannot be shadowed | yes | n/a (id comes from the manifest and must equal the claim) |
+| Upstream host must be composition-local; resolved address re-checked at dial time | yes | n/a |
+
+The gateway deliberately allows a solution to **move** its upstream, which
+module federation does not. That is safe only because the publisher is proven on
+every call: an endpoint legitimately changes on a redeploy or a new dev port,
+while a credential holder for one solution can neither claim another's id nor
+redirect it.
+
+### Upstream constraints and the development exception
+
+A solution upstream is a host the registrant chose that receives requests made on
+a person's behalf, so it is held to the same rule as a federated module upstream:
+loopback and private ranges (the dev and in-cluster cases), mesh short names and
+cluster suffixes — and nothing globally routable, no link-local, no cloud-metadata
+address. The register-time host string is only half of it: the **resolved address
+is re-checked at dial time**, so a mesh-looking name whose DNS answer later points
+off-mesh never receives one. Loopback is an explicit development exception and is
+tested as such.
+
+A solution upstream does **not** receive the viewer's session credential. The
+gateway removes `Authorization` and `Cookie` from every request it forwards to a
+runtime-registered upstream, module or solution, and the upstream receives the
+identity headers `ext_authz` stamped instead — the subject, the tenant, the
+session, the credential kind and the scope ceiling, which name the person without
+carrying their authority. A host access token is the person's whole session at a
+single host-wide audience, so forwarding it made every upstream that held one, or
+logged one, a source of replayable full-authority sessions. An upstream that needs
+to act on a person's behalf needs a host-minted capability bound to its own
+audience, which is the Work Context surface.
+
+## 3. Runtime compatibility is enforced, not stored
+
+A declared requirement the host does not check is not a compatibility contract.
+Every requirement is checked **before activation**, so an incompatible remote is
+never handed to a browser. An undeclared major defaults to `1` — the major in
+force when the field was introduced, which is what silence actually asserts — and
+never to the host's current major, which would make every silent manifest
+compatible by definition at exactly the upgrade this check exists for:
+
+| Manifest field | Checked against | Default when absent |
+| --- | --- | --- |
+| `schemaVersion` | `SOLUTION_MANIFEST_SCHEMA_MAJOR` | `1` |
+| `frontend.hostContract` | `SOLUTION_HOST_CONTRACT_MAJOR` (the `SolutionPageProps` the host injects and the `./Page` default it expects) | `1` |
+| `frontend.reactRange` | the host's real React version | unconstrained |
+| `frontend.shared` (per package) | the versions the host publishes into the sealed scope | unconstrained |
+| `frontend.exposedModule` | must be a `./Name` key | — |
+
+Ranges use a deliberately small semver subset (`||` alternatives of
+space-separated `^ ~ >= > <= < =`, a bare version, or `*`). A range outside the
+grammar is **refused**, never approximated: a requirement the host cannot
+evaluate is not one it can honour. The host values live in
+`services/frontend/code/src/solutions/host-runtime.ts`, which the register route
+and the Module-Federation host both read, so the numbers cannot diverge.
+
+A refused registration is refused **whole**. If the id already had a valid
+registration, that registration keeps serving — the last known valid one is never
+replaced by a rejected update. The reasons are returned to the registrant (HTTP
+409, `{"error":"incompatible_runtime","reasons":[…]}`) and logged for the
+operator. If the id has no valid registration to fall back on, its page renders a
+plain "temporarily unavailable" panel instead of a 404, and the technical cause
+stays in the server log.
+>>>>>>> a3090094 (fix(auth-gateway): a module or solution upstream receives the person's identity, not their session (SA-F-BEARER))
 
 ## 4. Registration, installation, and entitlement are three different things
 

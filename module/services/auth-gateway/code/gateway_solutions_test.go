@@ -211,8 +211,9 @@ func TestGateway_Solution_ValidJWT_ForwardsWithIdentity(t *testing.T) {
 	require.NotEmpty(t, fake.lastHeaders.Get("x-user-id"))
 	require.NotEmpty(t, fake.lastHeaders.Get("x-org-id"))
 	require.Equal(t, "admin", fake.lastHeaders.Get("x-org-role"))
-	// The caller's bearer is preserved for the solution's own downstream calls.
-	require.Equal(t, "Bearer "+token, fake.lastHeaders.Get("authorization"))
+	// The caller's session credential does NOT travel to the solution: the
+	// identity headers above name the person without carrying their authority.
+	require.Empty(t, fake.lastHeaders.Get("authorization"))
 	// The gateway token is an accounts-only capability and must not leak to a
 	// solution upstream.
 	require.Empty(t, fake.lastHeaders.Get("x-codefly-gateway-token"))
