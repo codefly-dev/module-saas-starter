@@ -222,3 +222,118 @@ keeps renewing its record after the upgrade. A pre-contract row whose publisher
 was self-asserted as anything else was never authenticated; it stays as it is,
 and who owns it is an operator's decision — delete the row (or `DELETE` the
 registration) and let the credentialed publisher register it afresh.
+
+**That recovery has a cost, since §6.** Deleting the row discards the solution's
+runtime-boundary seed, so the registration that replaces it draws a new one and
+every run still executing under a boundary derived from the old seed becomes
+unreachable from any page. Deregistering (`DELETE`) does not: it leaves a
+tombstone, which keeps the seed, so a reactivation keeps naming the runs it
+already admitted. Prefer the tombstone whenever the solution may have work in
+flight, and treat deleting the row as what it is — a reset that orphans running
+work, not a reassignment.
+
+## 6. The registration carries the solution's runtime boundary
+
+A runtime task is reachable only under the boundary of the Work Context that
+admitted it: the context's `task_id`. A solution's page therefore needs a
+boundary that outlives one context — when a cached context renews, or a call
+with another scope set mints its own, the next request carries a fresh
+`task_id` and the run the page admitted is gone from view while it keeps
+executing.
+
+So the registration record carries a **seed**.
+`solution_registrations.runtime_boundary` is an opaque id **the host assigns
+when the record is created**, and the boundary a Work Context is sealed under is
+derived from it **per organization** — a UUIDv5 of the seed and the org id
+(`business.SolutionRuntimeBoundary`). The seed itself never leaves this host.
+
+**Per organization, because a run is filed under (tenant, boundary).** One
+per-solution value would make every tenant of a solution share one, and an
+organization administrator who can read a single execution would then hold the
+boundary every *other* tenant's runs are filed under. Deriving puts a different
+boundary in each tenant without a second table to keep consistent with the
+registration it belongs to.
+
+**It is assigned, never named.** The column defaults to `gen_random_uuid()` on
+insert, the registry's upsert omits it from its update list, and no request
+field anywhere reaches it. A UNIQUE constraint keeps two registrations from
+sharing a seed. It is stable across both halves, a lease renewal, a replaced
+half, and a tombstone and reactivation — the record is the same solution under
+the same publisher, so the runs it already admitted stay the ones it can read.
+
+**Why it could not be the solution's to choose.** If a solution named its
+boundary, solution B could mint for A's and read, answer and recover A's runs
+for the same viewer: exactly the cross-boundary access the registration
+contract exists to prevent.
+
+**And why no *other* caller may name one either.** A boundary is not a secret a
+consumer keeps. A consuming module that serves durable runs reports, on a run it
+lets a person read, the Work Context task that run was admitted under — so one
+read any caller is entitled to hands them a value that is now stable for the
+life of the registration — and a solution's passthrough forwards the viewer's bearer to its
+own backend, so that caller can mint. Accounts therefore **refuses** any
+caller-named `task_id` that is a registered solution's seed, or the boundary
+derived from it for the organization the mint names, on the ordinary mint and on
+the headless installation mint alike. Tombstoned registrations are included: a
+removed solution's runs may still be executing. The refusal does not say which
+solution; the caller learns only that the value is not theirs to name. Only the
+organization named in the request is checked, because a capability is sealed
+with its tenant and a consumer scopes a run by (tenant, boundary), so naming
+another tenant's boundary yields a context that reaches nothing.
+
+**Nobody is told a seed.** No response carries one — not a listing, not a
+deregistration, not either half's own registration. A solution has no use for
+it: accounts derives and seals the boundary from the credential the solution
+already presents, so nothing above accounts reads, sends or stores one. This
+deliberately departs from the wording of
+[#1015](https://github.com/codefly-dev/module-saas-starter/issues/1015), which
+said a solution's boundary should be "readable by the solution (its own) through
+the registration". Echoing it widened who could see a value that is now stable
+for the life of the registration and bought nothing, so the registration answer
+withholds it.
+
+**How a mint proves which solution is asking.** The solution presents the same
+registration credential on
+`POST /saas.accounts.v1.WorkContextService/StartTask`. The gateway verifies it
+exactly as it does on a registration — alg-locked EdDSA against the published
+JWKS, issuer, `solution-registration` audience, expiry — and stamps the id its
+`solution` claim names and the publisher its `sub` names, as
+`X-Codefly-Solution-Id` and `X-Codefly-Solution-Publisher`: forwarded identity
+headers accounts believes only beside the gateway credential and strips from
+every other caller. Accounts then checks three things before it derives
+anything — the registration exists and is not tombstoned, its publisher of
+record **equals the credential's**, and its **backend half is serving** (that is
+the half that mints, and the gateway has already stopped routing to one whose
+lease lapsed). A caller-supplied `task_id` is **refused**. The credential is
+accepted on no other procedure, and one that does not verify is a `401` rather
+than a mint under some other boundary.
+
+**What rotation costs.** The seed is the only input to the derivation, so there
+is no per-organization rotation: replacing it moves every organization's
+boundary at once, and every run still executing under an old one becomes
+unreachable from a page. Three things replace it — deleting the row (§5), the
+down migration, and nothing else. A tombstone and reactivation deliberately do
+not. Plan a rotation as an outage for in-flight work, not a key roll.
+
+**What this migration does not break.** Runs admitted *before* it were reachable
+only under their own admitting context, which lived at most 900 s; none of them
+had a boundary that outlived it. So nothing that was reachable becomes
+unreachable here.
+
+Two limits worth stating. The boundary is **per solution and organization, not
+per viewer**: the person is the capability's owner, and separating two people's
+runs under one boundary stays the consuming module's own owner check. A sealed
+solution claim that the consumer scoped by would remove that caveat, and
+narrowing the read that exposes a boundary would remove the need for the
+collision refusal above; both are tracked on the consuming module's own tracker
+(its #228 and #227 — this repository may not name it, by the naming and
+confidentiality rule in the repository-root `AGENTS.md`). And the `jti` is not
+burned on a mint (see `services/auth-gateway/AGENTS.md`), so one credential
+can seal several mints inside its five-minute life.
+
+Tracked as
+[#1015](https://github.com/codefly-dev/module-saas-starter/issues/1015). The
+page half — a solution's passthrough presenting its credential and no longer
+naming a `task_id` — belongs to `codefly-dev/solution-runtime-go` and
+`codefly-dev/solution-runtime-python` and is not done here, so **no
+page-admitted run keeps its boundary across a renewal yet**.

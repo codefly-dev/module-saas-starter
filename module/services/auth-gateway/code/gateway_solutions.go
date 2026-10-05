@@ -528,6 +528,12 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 // a registrant can hold it and drive its own compare-and-swap next time, and
 // the status, so it learns immediately that its half alone is not yet serving.
 func (g *Gateway) writeSolutionRegistrationResult(w http.ResponseWriter, record *accountsv1.SolutionRegistration) {
+	// A registration answer deliberately carries NO runtime boundary (issue
+	// #1015). A solution never needs one: accounts seals it into the capability
+	// from the solution's own credential, so nothing in a solution reads, sends
+	// or stores it, and echoing it here would widen who can see a value that is
+	// now stable for the life of the registration. The registry does not send
+	// one either — see solutionRegistrationProto in accounts.
 	writeSolutionJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
 		"id":       record.GetSolutionId(),

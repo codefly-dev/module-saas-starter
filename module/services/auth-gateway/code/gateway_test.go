@@ -71,6 +71,16 @@ func testRouteEntries() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/app/webhook", Protected: false, RateLimitClass: edgeRateLimitClassWebhook},
 		// Public status surface (GET, no auth)
 		{Service: "accounts", Method: "GET", Path: "/v1/status", Protected: false},
+		// The Work Context mint. It carries a Procedure because that is what
+		// decides whether a solution's registration credential means anything on
+		// a request (issue #1015).
+		{
+			Service:   "accounts",
+			Method:    "POST",
+			Path:      "/saas.accounts.v1.WorkContextService/StartTask",
+			Procedure: "/saas.accounts.v1.WorkContextService/StartTask",
+			Protected: true,
+		},
 		// Health checks
 		{Service: "self", Method: "GET", Path: "/health", Protected: false},
 		{Service: "self", Method: "GET", Path: "/healthz", Protected: false},
