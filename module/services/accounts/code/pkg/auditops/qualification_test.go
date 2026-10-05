@@ -17,12 +17,17 @@ import (
 var probeNow = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
 func probeOptions() qualificationOptions {
-	return qualificationOptions{orgs: organizations{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}, runID: uuid.MustParse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"), from: probeNow, to: probeNow.Add(5 * time.Minute), timeout: time.Minute}
+	return qualificationOptions{orgs: organizations{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}, runID: uuid.MustParse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"), from: probeNow, to: probeNow.Add(5 * time.Minute), timeout: time.Minute,
+		clock: func() time.Time { return probeNow.Add(2 * time.Second) }}
 }
 
 type probeDB struct {
 	exists bool
 	count  int64
+	// rows are the created_at of the audit_events rows the database holds; the
+	// count of an interval is how many fall in [from, to).
+	rows   []time.Time
+	calls  [][2]time.Time
 	writes []business.AuditEntry
 }
 
@@ -35,8 +40,15 @@ func (d *probeDB) WithControlPlane(ctx context.Context, fn func(context.Context)
 	return err
 }
 func (d *probeDB) OrganizationIDExists(context.Context, string) (bool, error) { return d.exists, nil }
-func (d *probeDB) CountAuditHistory(context.Context, time.Time, time.Time) (map[string]int64, error) {
-	return map[string]int64{"": d.count}, nil
+func (d *probeDB) CountAuditHistory(_ context.Context, from, to time.Time) (map[string]int64, error) {
+	d.calls = append(d.calls, [2]time.Time{from, to})
+	n := d.count
+	for _, at := range d.rows {
+		if !at.Before(from) && at.Before(to) {
+			n++
+		}
+	}
+	return map[string]int64{"": n}, nil
 }
 func (d *probeDB) RecordTx(_ context.Context, e business.AuditEntry) error {
 	d.writes = append(d.writes, e)
@@ -126,6 +138,80 @@ func TestQualificationCommitsOnlyIntoExistingOrganizationsAndRefusesNewPostgresR
 	require.Equal(t, "passed", r.Checks["transaction_queue"])
 	require.Equal(t, "pending", r.Checks["warehouse_readback"])
 }
+
+// postgres_no_new_rows vouches for one interval of audit_events.created_at and
+// the receipt names it. Prepare starts the interval and checks it up to the end
+// of its fixture transaction; verify checks from that same start to its own run
+// time, wherever that falls against the five-minute event window.
+func TestQualificationPostgresCheckCoversExactlyTheIntervalItReports(t *testing.T) {
+	prepare := func(t *testing.T, db *probeDB, o qualificationOptions) (QualificationReceipt, error) {
+		records, err := qualificationRecords(o)
+		require.NoError(t, err)
+		r := probeReceipt(t, o, records)
+		return r, prepareQualification(context.Background(), o, db, db, records, &r)
+	}
+	t.Run("prepare checks from its start to the end of its fixture transaction", func(t *testing.T) {
+		db := &probeDB{exists: true}
+		o := probeOptions()
+		r, err := prepare(t, db, o)
+		require.NoError(t, err)
+		require.Equal(t, "passed", r.Checks["postgres_no_new_rows"])
+		require.Equal(t, [][2]time.Time{{probeNow, probeNow.Add(2 * time.Second)}}, db.calls,
+			"the interval read is the one from the start to now, not the five-minute window ahead")
+		require.Equal(t, probeNow, *r.PostgresCheckedFrom)
+		require.Equal(t, probeNow.Add(2*time.Second), *r.PostgresCheckedTo)
+	})
+	t.Run("a row created in that interval fails prepare and aborts its fixtures", func(t *testing.T) {
+		db := &probeDB{exists: true, rows: []time.Time{probeNow.Add(time.Second)}}
+		r, err := prepare(t, db, probeOptions())
+		require.Error(t, err)
+		require.Equal(t, "failed", r.Checks["transaction_queue"])
+		require.Empty(t, db.writes)
+	})
+	t.Run("the interval is half open: before its start and at its end are outside it", func(t *testing.T) {
+		db := &probeDB{exists: true, rows: []time.Time{probeNow.Add(-time.Second), probeNow.Add(2 * time.Second)}}
+		_, err := prepare(t, db, probeOptions())
+		require.NoError(t, err)
+	})
+	t.Run("a clock that has not moved leaves nothing to check and fails", func(t *testing.T) {
+		o := probeOptions()
+		o.clock = func() time.Time { return probeNow }
+		_, err := prepare(t, &probeDB{exists: true}, o)
+		require.ErrorContains(t, err, "interval is empty")
+	})
+
+	records, err := qualificationRecords(probeOptions())
+	require.NoError(t, err)
+	verify := func(t *testing.T, db *probeDB, at time.Duration) (QualificationReceipt, error) {
+		o := probeOptions()
+		o.clock = func() time.Time { return probeNow.Add(at) }
+		store := &probeWarehouse{records: records}
+		r := probeReceipt(t, o, records)
+		return r, verifyQualification(context.Background(), o, db, store, store, records, &r)
+	}
+	t.Run("verify after the event window checks all the way to its own run time", func(t *testing.T) {
+		db := &probeDB{exists: true}
+		r, err := verify(t, db, 20*time.Minute)
+		require.NoError(t, err)
+		require.Equal(t, probeNow, *r.PostgresCheckedFrom)
+		require.Equal(t, probeNow.Add(20*time.Minute), *r.PostgresCheckedTo, "past window_to, and reported as such")
+		require.True(t, r.PostgresCheckedTo.After(r.WindowTo))
+	})
+	t.Run("a row after the five-minute window but before verify ran fails verify", func(t *testing.T) {
+		r, err := verify(t, &probeDB{exists: true, rows: []time.Time{probeNow.Add(10 * time.Minute)}}, 20*time.Minute)
+		require.Error(t, err)
+		require.Equal(t, "failed", r.Checks["postgres_no_new_rows"])
+		require.Equal(t, probeNow.Add(20*time.Minute), *r.PostgresCheckedTo)
+	})
+	t.Run("verify inside the window claims only the part of it that has happened", func(t *testing.T) {
+		r, err := verify(t, &probeDB{exists: true}, time.Minute)
+		require.NoError(t, err)
+		require.Equal(t, "passed", r.Checks["postgres_no_new_rows"])
+		require.Equal(t, probeNow.Add(time.Minute), *r.PostgresCheckedTo)
+		require.True(t, r.PostgresCheckedTo.Before(r.WindowTo), "the receipt does not claim the window's future")
+	})
+}
+
 func TestQualificationChecksHashesAndOrganizationIsolationWithoutClaimingOtherAcceptance(t *testing.T) {
 	o := probeOptions()
 	records, err := qualificationRecords(o)

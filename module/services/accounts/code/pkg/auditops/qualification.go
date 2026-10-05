@@ -20,17 +20,25 @@ import (
 // actually observed. Gateway, archive, alert and controlled outage acceptance
 // need separate observers and remain pending here.
 type QualificationReceipt struct {
-	Schema        string               `json:"schema"`
-	DeploymentID  string               `json:"deployment_id"`
-	Sink          string               `json:"sink"`
-	Configuration map[string]string    `json:"configuration"`
-	RunID         string               `json:"run_id"`
-	ObservedAt    time.Time            `json:"observed_at"`
-	WindowFrom    time.Time            `json:"window_from"`
-	WindowTo      time.Time            `json:"window_to"`
-	Events        []QualificationEvent `json:"events"`
-	Checks        map[string]string    `json:"checks"`
-	ErrorCode     string               `json:"error_code"`
+	Schema        string            `json:"schema"`
+	DeploymentID  string            `json:"deployment_id"`
+	Sink          string            `json:"sink"`
+	Configuration map[string]string `json:"configuration"`
+	RunID         string            `json:"run_id"`
+	ObservedAt    time.Time         `json:"observed_at"`
+	WindowFrom    time.Time         `json:"window_from"`
+	WindowTo      time.Time         `json:"window_to"`
+	// PostgresCheckedFrom and PostgresCheckedTo are the interval of
+	// audit_events.created_at the postgres_no_new_rows check covered: rows with
+	// created_at in [from, to), where to is the instant the check ran. Prepare
+	// starts the interval (window_from) and verify extends it to its own run
+	// time, so a verify run after prepare covers everything in between. They are
+	// absent until the check has run.
+	PostgresCheckedFrom *time.Time           `json:"postgres_checked_from,omitempty"`
+	PostgresCheckedTo   *time.Time           `json:"postgres_checked_to,omitempty"`
+	Events              []QualificationEvent `json:"events"`
+	Checks              map[string]string    `json:"checks"`
+	ErrorCode           string               `json:"error_code"`
 }
 type QualificationEvent struct {
 	ID            string                       `json:"id"`
@@ -56,6 +64,16 @@ type qualificationOptions struct {
 	prepare  bool
 	from, to time.Time
 	timeout  time.Duration
+	// clock reads the time the Postgres check ends its interval at; nil is
+	// time.Now. A seam for tests.
+	clock func() time.Time
+}
+
+func (o qualificationOptions) now() time.Time {
+	if o.clock != nil {
+		return o.clock()
+	}
+	return time.Now()
 }
 
 func parseQualification(args []string, stderr io.Writer, now time.Time) (qualificationOptions, bool, error) {
@@ -234,17 +252,33 @@ type qualificationDB interface {
 	CountAuditHistory(context.Context, time.Time, time.Time) (map[string]int64, error)
 }
 
-func postgresProbe(ctx context.Context, o qualificationOptions, db qualificationDB) error {
-	counts, err := db.CountAuditHistory(ctx, o.from, o.to)
+// postgresProbe counts the audit_events rows whose created_at lies in
+// [o.from, now): the interval it reports, and the only one it vouches for. Rows
+// are created at their transaction's start, so a row from a transaction still
+// open at the probe, or one written with an explicit earlier created_at, is not
+// in what it saw; the receipt says what interval was read, not that no row can
+// exist.
+func postgresProbe(ctx context.Context, o qualificationOptions, db qualificationDB) (checkedTo time.Time, err error) {
+	checkedTo = o.now().UTC().Truncate(time.Microsecond)
+	if !checkedTo.After(o.from) {
+		return checkedTo, errors.New("postgres probe interval is empty")
+	}
+	counts, err := db.CountAuditHistory(ctx, o.from, checkedTo)
 	if err != nil {
-		return err
+		return checkedTo, err
 	}
 	for _, n := range counts {
 		if n != 0 {
-			return errors.New("postgres received new audit rows")
+			return checkedTo, errors.New("postgres received new audit rows")
 		}
 	}
-	return nil
+	return checkedTo, nil
+}
+
+// recordPostgresCheck puts the interval a probe covered on the receipt.
+func recordPostgresCheck(r *QualificationReceipt, from, to time.Time) {
+	from, to = from.UTC(), to.UTC()
+	r.PostgresCheckedFrom, r.PostgresCheckedTo = &from, &to
 }
 func prepareQualification(ctx context.Context, o qualificationOptions, db qualificationDB, recorder business.AuditRecorder, records []business.AuditRecord, r *QualificationReceipt) error {
 	err := db.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -259,7 +293,9 @@ func prepareQualification(ctx context.Context, o qualificationOptions, db qualif
 				return err
 			}
 		}
-		return postgresProbe(ctx, o, db)
+		checkedTo, err := postgresProbe(ctx, o, db)
+		recordPostgresCheck(r, o.from, checkedTo)
+		return err
 	})
 	if err != nil {
 		r.Checks["transaction_queue"] = "failed"
@@ -319,7 +355,13 @@ func verifyQualification(ctx context.Context, o qualificationOptions, db qualifi
 		case <-time.After(2 * time.Second):
 		}
 	}
-	if err := db.WithControlPlane(ctx, func(ctx context.Context) error { return postgresProbe(ctx, o, db) }); err != nil {
+	// From the start prepare recorded to now, not the five-minute window: the
+	// check covers everything created since prepare began, and says so.
+	if err := db.WithControlPlane(ctx, func(ctx context.Context) error {
+		checkedTo, err := postgresProbe(ctx, o, db)
+		recordPostgresCheck(r, o.from, checkedTo)
+		return err
+	}); err != nil {
 		r.Checks["postgres_no_new_rows"] = "failed"
 		return err
 	}

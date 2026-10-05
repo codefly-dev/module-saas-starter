@@ -35,8 +35,16 @@ func TestAuditQualificationPrepareUsesRuntimeAuthorityAndTransactionalQueue(t *t
 	var n int
 	require.NoError(t, pool.QueryRow(testCtx, `SELECT count(*) FROM audit_event_queue WHERE id=ANY($1::uuid[])`, ids).Scan(&n))
 	require.Equal(t, 6, n)
+	// The Postgres check names the interval it read: from the start prepare
+	// recorded to the end of the fixture transaction, not the five minutes ahead.
+	require.Equal(t, "passed", receipt.Checks["postgres_no_new_rows"])
+	require.NotNil(t, receipt.PostgresCheckedFrom)
+	require.NotNil(t, receipt.PostgresCheckedTo)
+	require.Equal(t, receipt.WindowFrom, *receipt.PostgresCheckedFrom)
+	require.True(t, receipt.PostgresCheckedTo.After(receipt.WindowFrom))
+	require.True(t, receipt.PostgresCheckedTo.Before(receipt.WindowTo), "a prepare run has not yet lived through the window")
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		counts, err := testStore.CountAuditHistory(ctx, receipt.WindowFrom, receipt.WindowTo)
+		counts, err := testStore.CountAuditHistory(ctx, *receipt.PostgresCheckedFrom, *receipt.PostgresCheckedTo)
 		require.NoError(t, err)
 		for _, count := range counts {
 			require.Zero(t, count)
