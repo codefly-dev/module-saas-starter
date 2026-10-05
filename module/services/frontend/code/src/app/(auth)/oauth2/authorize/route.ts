@@ -10,7 +10,6 @@ import {
 } from "@/features/auth/model/oauth-authorization";
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
-import { requestPublicOrigin } from "@/lib/public-origin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -66,13 +65,14 @@ export async function GET(request: Request): Promise<Response> {
 	}
 
 	const headers = new Headers({ "content-type": "application/json" });
-	// The authorization server needs to know which origin it is being reached
-	// at, because every URL it publishes names it. That claim is only trusted
-	// beside the cluster-internal token, which this process holds and a browser
-	// does not — the same pair src/proxy.ts stamps on product API traffic.
-	const gatewayContext = resolveCodeflyGatewayContext(
-		requestPublicOrigin(request),
-	);
+	// The authorization server needs to know which origin it is being reached at,
+	// because every URL it publishes names it — the issuer in its metadata, the
+	// redirect it binds a code to, the link it emails. That origin is OPERATOR
+	// CONFIGURATION and is resolved from it here, never read off this request: the
+	// internal token stamped beside it proves which PROCESS is asking, which is
+	// not the same as the origin being this host's, so a caller-supplied host
+	// travelling under that token would have been published as the issuer's.
+	const gatewayContext = resolveCodeflyGatewayContext();
 	if (gatewayContext) {
 		headers.set(INTERNAL_TOKEN_HEADER, gatewayContext.internalToken);
 		headers.set(PUBLIC_ORIGIN_HEADER, gatewayContext.publicOrigin);

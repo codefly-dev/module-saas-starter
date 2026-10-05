@@ -1,8 +1,11 @@
 import { getEndpoints } from "codefly";
 
-import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
+import {
+	resolveCodeflyGatewayContext,
+	resolveVerifiedPublicOrigin,
+} from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
-import { requestPublicOrigin } from "@/lib/public-origin";
+
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -19,14 +22,23 @@ interface RouteContext {
 // internal token, so it must reject cross-site requests itself — cookies ride
 // along automatically on a forged cross-origin call, and the gateway cannot tell
 // a CSRF-driven request from a legitimate one once the internal token is
-// attached. The browser's Origin is compared with the request's PUBLIC origin:
-// behind a TLS-terminating ingress the pod-local request URL is plaintext http,
-// so comparing with it rejected every same-origin write a deployed cell served.
-function sameOrigin(request: Request): boolean {
+// attached.
+//
+// The browser's Origin is compared with this deployment's CONFIGURED public
+// origin. It used to be compared with an origin derived from the request's own
+// forwarded headers, which made the check self-referential: a non-browser caller
+// supplying `Origin: https://evil.example` and `X-Forwarded-Host: evil.example`
+// matched itself and passed. The comparison is only a check when one side is not
+// the caller's to choose.
+//
+// A deployment with no verified public origin refuses: there is nothing to compare
+// against, and admitting on that basis is the same defect by omission.
+function sameOrigin(request: Request, hostOrigin: string | undefined): boolean {
+	if (!hostOrigin) return false;
 	const origin = request.headers.get("origin");
 	if (origin) {
 		try {
-			if (new URL(origin).origin !== requestPublicOrigin(request)) return false;
+			if (new URL(origin).origin !== hostOrigin) return false;
 		} catch {
 			return false;
 		}
@@ -74,7 +86,11 @@ async function handler(
 ): Promise<Response> {
 	const { id, path } = await context.params;
 
-	if (!sameOrigin(request)) {
+	// The origin is resolved on its own, not off the trust context: a deployment
+	// missing the internal token is a different condition from one with no verified
+	// origin, and refusing a same-origin request for the first would be answering a
+	// question nobody asked.
+	if (!sameOrigin(request, resolveVerifiedPublicOrigin())) {
 		return new Response("cross-origin request rejected", { status: 403 });
 	}
 
@@ -119,9 +135,7 @@ async function handler(
 	// First-party trust headers, resolved server-side from Codefly config — the
 	// gateway rejects solution traffic that lacks them even with a valid user
 	// identity. Set from a fresh Headers so a caller can never spoof them.
-	const gatewayContext = resolveCodeflyGatewayContext(
-		requestPublicOrigin(request),
-	);
+	const gatewayContext = resolveCodeflyGatewayContext();
 	if (gatewayContext) {
 		headers.set(INTERNAL_TOKEN_HEADER, gatewayContext.internalToken);
 		headers.set(PUBLIC_ORIGIN_HEADER, gatewayContext.publicOrigin);

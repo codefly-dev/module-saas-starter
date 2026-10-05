@@ -69,3 +69,17 @@ func TestPerimeterCredentialsCoverEveryTrustDecidingKey(t *testing.T) {
 		"gateway-trust/CODEFLY_GATEWAY_TOKEN_PREVIOUS":  true,
 	}, names)
 }
+
+// A cell without a pinned public origin is a cell whose verified origin is a
+// request parameter: unset, an OAuth redirect, the authenticator relying-party
+// origin and every emailed link were bound to whatever origin the request's trusted
+// hop forwarded — which that hop derived from the caller's own forwarding header.
+func TestDeployedRequiresTheApplicationBaseURL(t *testing.T) {
+	err := requireApplicationBaseURL(false)
+	require.Error(t, err, "a deployed runtime must refuse an unset APP_BASE_URL")
+	require.Contains(t, err.Error(), "APP_BASE_URL",
+		"the refusal must name the key an operator has to set")
+
+	require.NoError(t, requireApplicationBaseURL(true),
+		"local development pins no runtime port")
+}

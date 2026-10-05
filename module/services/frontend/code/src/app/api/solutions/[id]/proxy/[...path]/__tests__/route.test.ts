@@ -3,19 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 // The route resolves the gateway base (getEndpoints) and the first-party trust
-// context (getCurrentModule/getCurrentService/getWorkspaceSecret, via
-// resolveCodeflyGatewayContext). vi.mock is hoisted above module init, so the
-// stubs are created with vi.hoisted.
+// context (getCurrentModule/getCurrentService/getWorkspaceSecret/
+// getWorkspaceConfiguration, via resolveCodeflyGatewayContext). vi.mock is
+// hoisted above module init, so the stubs are created with vi.hoisted.
 const {
 	getEndpoints,
 	getCurrentModule,
 	getCurrentService,
 	getWorkspaceSecret,
+	getWorkspaceConfiguration,
 } = vi.hoisted(() => ({
 	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(),
 	getCurrentModule: vi.fn<() => string>(() => ""),
 	getCurrentService: vi.fn<() => string>(() => ""),
 	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
+	getWorkspaceConfiguration:
 		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
 vi.mock("codefly", () => ({
@@ -23,6 +26,7 @@ vi.mock("codefly", () => ({
 	getCurrentModule,
 	getCurrentService,
 	getWorkspaceSecret,
+	getWorkspaceConfiguration,
 }));
 
 // The registry is a durable, gateway-brokered record rather than a map in this
@@ -48,16 +52,19 @@ function withGateway() {
 	]);
 }
 
-// Resolve the first-party trust context the way a real runtime does: no
-// discoverable own endpoint, so resolveCodeflyGatewayContext falls back to the
-// request origin for the public origin and reads the internal token from config.
-function withTrustContext() {
+// Resolve the first-party trust context the way a real runtime does: the public
+// origin comes from the deployment's own configuration and from nothing else, so a
+// test that wants a different one configures it rather than sending a header.
+function withTrustContext(publicOrigin = "http://frontend") {
 	getCurrentModule.mockReturnValue("");
 	getCurrentService.mockReturnValue("");
 	getWorkspaceSecret.mockImplementation((name, key) =>
 		name === "internal-auth" && key === "CODEFLY_INTERNAL_TOKEN"
 			? INTERNAL_TOKEN
 			: undefined,
+	);
+	getWorkspaceConfiguration.mockImplementation((name, key) =>
+		name === "application" && key === "APP_BASE_URL" ? publicOrigin : undefined,
 	);
 }
 
@@ -113,6 +120,14 @@ beforeEach(() => {
 	getCurrentModule.mockReturnValue("");
 	getCurrentService.mockReturnValue("");
 	getWorkspaceSecret.mockReturnValue(undefined);
+	// The public origin is operator configuration, and the same-origin check is made
+	// against it, so every fixture pins the one these requests arrive on. A test
+	// about the origin itself overrides it (withTrustContext).
+	getWorkspaceConfiguration.mockImplementation((name, key) =>
+		name === "application" && key === "APP_BASE_URL"
+			? "http://frontend"
+			: undefined,
+	);
 	findSolution.mockResolvedValue(null);
 	fetchMock = vi.fn(
 		async () =>
@@ -128,6 +143,7 @@ afterEach(() => {
 	findSolution.mockReset();
 	getEndpoints.mockReset();
 	getCurrentModule.mockReset();
+	getWorkspaceConfiguration.mockReset();
 	getCurrentService.mockReset();
 	getWorkspaceSecret.mockReset();
 	vi.unstubAllGlobals();
@@ -354,10 +370,12 @@ describe("solution proxy passthrough", () => {
 
 	// Behind a TLS-terminating ingress the pod sees plaintext http and its own
 	// host, while the browser's Origin is the public https origin. A same-origin
-	// write (every Connect call and chat turn is a POST) must still pass.
+	// write (every Connect call and chat turn is a POST) must still pass — on the
+	// strength of the CONFIGURED origin, which is the only thing that knows what
+	// the browser sees.
 	it("allows a same-origin POST behind a TLS-terminating ingress", async () => {
 		withGateway();
-		withTrustContext();
+		withTrustContext("https://app.example.com");
 		registerAudit();
 
 		const res = await POST(
@@ -365,8 +383,6 @@ describe("solution proxy passthrough", () => {
 				authorization: "Bearer caller-token",
 				origin: "https://app.example.com",
 				"sec-fetch-site": "same-origin",
-				"x-forwarded-proto": "https",
-				"x-forwarded-host": "app.example.com",
 			}),
 			context("audit", ["records"]),
 		);
@@ -377,14 +393,54 @@ describe("solution proxy passthrough", () => {
 
 	it("rejects a cross-site Origin behind a TLS-terminating ingress", async () => {
 		withGateway();
-		withTrustContext();
+		withTrustContext("https://app.example.com");
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				origin: "https://evil.example",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// The defect this closes: the comparison used to be made against an origin
+	// derived from the request's own forwarding headers, so a caller that supplied
+	// both sides matched itself. A check is only a check when one side is not the
+	// caller's to choose.
+	it("rejects a forged cross-site request that supplies its own forwarded host", async () => {
+		withGateway();
+		withTrustContext("https://app.example.com");
 		registerAudit();
 
 		const res = await POST(
 			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
 				origin: "https://evil.example",
 				"x-forwarded-proto": "https",
-				"x-forwarded-host": "app.example.com",
+				"x-forwarded-host": "evil.example",
+			}),
+			context("audit", ["records"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// And with no configured origin there is nothing to compare against, so the
+	// route refuses rather than admitting on an absent comparison.
+	it("refuses every request when the deployment has no configured public origin", async () => {
+		withGateway();
+		withTrustContext();
+		getWorkspaceConfiguration.mockReturnValue(undefined);
+		registerAudit();
+
+		const res = await POST(
+			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
+				authorization: "Bearer caller-token",
+				"sec-fetch-site": "same-origin",
 			}),
 			context("audit", ["records"]),
 		);
@@ -411,8 +467,8 @@ describe("solution proxy passthrough", () => {
 
 		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
 		expect(forwarded.has("x-secret-smuggle")).toBe(false);
-		// x-forwarded-host is consumed to derive the public origin, never relayed
-		// to the upstream as a raw header.
+		// x-forwarded-host decides nothing here any more, and is never relayed to the
+		// upstream as a raw header either.
 		expect(forwarded.has("x-forwarded-host")).toBe(false);
 	});
 
@@ -437,15 +493,17 @@ describe("solution proxy passthrough", () => {
 
 	it("attaches the first-party trust headers resolved from config", async () => {
 		withGateway();
-		withTrustContext();
+		withTrustContext("https://app.example");
 		registerAudit();
 
 		await GET(
 			proxyRequest("http://frontend/api/solutions/audit/proxy/records", {
 				headers: {
 					authorization: "Bearer caller-token",
+					// Offered by the caller and ignored: the stamped origin is the
+					// configured one, whatever the request says.
 					"x-forwarded-proto": "https",
-					"x-forwarded-host": "app.example",
+					"x-forwarded-host": "evil.example",
 				},
 			}),
 			context("audit", ["records"]),

@@ -919,6 +919,11 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The one origin this deployment treats as its own: what binds an OAuth
+	// redirect, an authenticator's relying party and every emailed link. From here
+	// on a forwarded origin is honoured only when it equals this one, so no hop can
+	// substitute a caller's choice (pkg/auth.WithVerifiedPublicOrigin).
+	auth.SetConfiguredPublicOrigin(appBase)
 	var workerEmailOutbox *email.Outbox
 	var emailWorker *jobs.Worker
 	if emailConfig.sender == nil {
@@ -2556,7 +2561,36 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
 		return err
 	}
-	return requirePerimeterCredentials(isLocal)
+	if err := requirePerimeterCredentials(isLocal); err != nil {
+		return err
+	}
+	return requireApplicationBaseURL(isLocal)
+}
+
+// requireApplicationBaseURL refuses to start a deployed runtime without the
+// origin it treats as its own.
+//
+// It is the value that binds an OAuth redirect, an authenticator's relying party
+// and every emailed link. Unset, each of those was bound to whatever origin the
+// request's trusted hop forwarded — which that hop derived from the caller's own
+// forwarding header — so a caller chose the host a sign-in returned to and the host
+// an emailed link pointed at. A cell without it is a cell whose verified origin is
+// a request parameter, so it refuses here, where a deployment can still be fixed,
+// rather than serving a sign-in bound to somewhere else.
+func requireApplicationBaseURL(isLocal bool) error {
+	if isLocal {
+		return nil
+	}
+	configured, err := configuredApplicationBaseURL()
+	if err != nil {
+		return err
+	}
+	if configured == "" {
+		return fmt.Errorf("application: APP_BASE_URL is required outside the local environment: " +
+			"set it in the `application` configuration group to this cell's public origin, which is " +
+			"what binds an OAuth redirect, the authenticator relying-party origin and every emailed link")
+	}
+	return nil
 }
 
 // requireKeyCustody refuses to start outside the local environment without the

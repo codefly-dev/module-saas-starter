@@ -5,12 +5,21 @@ vi.mock("server-only", () => ({}));
 // The registry reaches the gateway through service discovery and reads the
 // cluster-internal secret through the Codefly SDK; vi.mock is hoisted above
 // module init, so the stubs must be created with vi.hoisted.
-const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
-	getWorkspaceSecret:
-		vi.fn<(name: string, key: string) => string | undefined>(),
-	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
+const { getWorkspaceSecret, getEndpoints, getWorkspaceConfiguration } =
+	vi.hoisted(() => ({
+		getWorkspaceSecret:
+			vi.fn<(name: string, key: string) => string | undefined>(),
+		getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
+		getWorkspaceConfiguration:
+			vi.fn<(name: string, key: string) => string | undefined>(),
+	}));
+vi.mock("codefly", () => ({
+	getWorkspaceSecret,
+	getEndpoints,
+	getWorkspaceConfiguration,
+	getCurrentModule: () => "",
+	getCurrentService: () => "",
 }));
-vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
 
 import { GET } from "@/app/api/solutions/surfaces/route";
 

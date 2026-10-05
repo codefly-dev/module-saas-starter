@@ -565,12 +565,15 @@ func (s *Service) SetEmailOutbox(outbox *email.Outbox, appBaseURL string) {
 // publicBaseURL is the origin baked into interactive links — magic-link,
 // invitation, and waitlist emails, and Stripe redirect targets. Those links are
 // delivered out of band and never re-validated downstream, so the origin must be
-// operator-trusted. A configured APP_BASE_URL wins; the frontend-supplied
-// verified public origin is a per-request, caller-influenced value (the frontend
-// derives it from the browser request when its own endpoint is a placeholder),
-// so it is only a fallback for deployments that have not pinned a canonical
-// origin. Without either, callers fail closed rather than mint a link on an
-// unverified host.
+// operator-trusted.
+//
+// A configured APP_BASE_URL wins, and outside local development boot requires one
+// (requireApplicationBaseURL). The verified public origin behind it is no longer a
+// caller-influenced value: a forwarded origin is recorded as verified only when it
+// equals the configured one (auth.WithVerifiedPublicOrigin), so where both exist
+// they are the same string and where only the second does, nothing is pinned and
+// the runtime is local. Without either, callers fail closed rather than mint a link
+// on an unverified host.
 func (s *Service) publicBaseURL(ctx context.Context) string {
 	if base := strings.TrimSuffix(strings.TrimSpace(s.appBaseURL), "/"); base != "" {
 		return base
