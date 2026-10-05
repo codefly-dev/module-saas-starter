@@ -25,6 +25,9 @@ type fakeUpstream struct {
 	lastBody    string
 	statusCode  int
 	body        string
+	// responseHeaders let a test give the upstream its own answer about
+	// cross-origin access, which is what accounts' generated CORS handler does.
+	responseHeaders http.Header
 }
 
 func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +36,11 @@ func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.lastMethod = r.Method
 	if body, err := io.ReadAll(r.Body); err == nil {
 		f.lastBody = string(body)
+	}
+	for key, values := range f.responseHeaders {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
 	}
 	code := f.statusCode
 	if code == 0 {

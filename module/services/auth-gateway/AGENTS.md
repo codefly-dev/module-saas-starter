@@ -111,6 +111,17 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   internal-token path still establishes it too; the registration is the stronger
   claim, since it names the client rather than only the process that forwarded.
 
+**The grant on a forwarded response is this gateway's, and only this gateway's.**
+Every proxied response has its `access-control-*` headers stripped before the
+gateway stamps whatever it granted — including when it granted nothing. An
+upstream may answer CORS itself, and accounts does: its generated handler hands an
+empty allowlist to a library that reads empty as allow-all, so it answers a
+wildcard origin with credentials true. Forwarded verbatim, that made the public
+surface grant a cross-origin read the gateway had granted nobody, and made an
+empty allowlist grant everything. The generated handler is the `go-grpc` agent's
+to fix; what the gateway owns is that nothing leaves it claiming a grant it did not
+make.
+
 Two deliberate limits. **Credentials are never allowed**: a registered client
 authenticates with its bearer, and echoing `access-control-allow-credentials`
 would additionally let a cross-origin page ride the host's session cookie.

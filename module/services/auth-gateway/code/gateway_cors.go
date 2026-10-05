@@ -136,9 +136,22 @@ func requestsAuthorizationHeader(requested string) bool {
 // matched it, so a client cannot reach the solution passthrough, a federated
 // module prefix, or a catalog route from an origin it did not register.
 func (g *Gateway) authorizeCrossOrigin(w http.ResponseWriter, r *http.Request) (http.ResponseWriter, bool) {
+	// Every forwarded response is wrapped, granted or not. An upstream may answer
+	// CORS itself, and accounts does: its generated handler hands an empty
+	// allowlist to a library that reads empty as allow-all, so it answered a
+	// wildcard origin with credentials true. Those headers used to reach the
+	// browser unchanged on every path where this gateway granted nothing, which
+	// means the public surface granted a cross-origin read the gateway had
+	// refused to grant — and an empty allowlist, which should grant nothing,
+	// granted everything.
+	//
+	// What this gateway granted is the only answer that leaves here. The wrapper
+	// with no origin strips and stamps nothing; with one it replaces.
+	stripping := &corsResponseWriter{ResponseWriter: w}
+
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return w, true
+		return stripping, true
 	}
 
 	if clientID := r.Header.Get(clientIDHeader); clientID != "" {
@@ -170,10 +183,10 @@ func (g *Gateway) authorizeCrossOrigin(w http.ResponseWriter, r *http.Request) (
 	// to ever read its token. The origin is the only thing such a request can
 	// be judged on, and it is the same thing the preflight was judged on.
 	if credentialPresented(r) {
-		return w, true
+		return stripping, true
 	}
 	if !g.clients.originRegistered(r.Context(), origin) {
-		return w, true
+		return stripping, true
 	}
 	return &corsResponseWriter{ResponseWriter: w, origin: origin}, true
 }
@@ -187,13 +200,17 @@ func credentialPresented(r *http.Request) bool {
 	return r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != ""
 }
 
-// corsResponseWriter stamps the grant on the way out. It has to run at
-// WriteHeader rather than up front because the reverse proxy copies the
-// upstream's own response headers into this map first, and an upstream that
-// answers CORS itself — a solution serving its origin permissively — would
-// otherwise leave two access-control-allow-origin values, which every browser
-// rejects. The gateway is the authority for what it granted, so it replaces
-// whatever the upstream said.
+// corsResponseWriter makes this gateway the only author of the cross-origin grant
+// on a forwarded response. It has to run at WriteHeader rather than up front
+// because the reverse proxy copies the upstream's own response headers into this
+// map first.
+//
+// With an origin it replaces whatever the upstream said — two
+// access-control-allow-origin values is a response every browser rejects. With NO
+// origin it still strips, which is the load-bearing half: an upstream that answers
+// CORS permissively (a solution serving its own origin, or accounts' generated
+// handler reading an empty allowlist as allow-all) would otherwise have its grant
+// forwarded verbatim as though this gateway had made it.
 type corsResponseWriter struct {
 	http.ResponseWriter
 	origin  string
@@ -220,6 +237,12 @@ func (w *corsResponseWriter) stamp() {
 		if strings.HasPrefix(strings.ToLower(key), "access-control-") {
 			h.Del(key)
 		}
+	}
+	if w.origin == "" {
+		// Nothing was granted, so nothing is claimed. Vary is not added: the
+		// response does not differ by origin, and saying it does would needlessly
+		// fragment every cache entry on the public surface.
+		return
 	}
 	h.Set("Access-Control-Allow-Origin", w.origin)
 	h.Set("Access-Control-Expose-Headers", corsExposeHeaders)
