@@ -95,13 +95,17 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 		}
 	case *gen.AuthenticateRequest_HeaderJwt:
 		authenticationMethod = auth.AuthenticationMethodHeaderJWT
-		if s.validator == nil {
+		// The header-jwt validator, never the code-exchange one. A deployment in
+		// any other provider mode leaves this nil, so the credential is refused
+		// rather than handed to a validator that asks no nonce — see
+		// SetHeaderJWTTokenValidator.
+		if s.headerJWTValidator == nil {
 			return nil, w.Wrapf(auth.ErrInvalidOAuthRequest, "header-jwt authentication is not enabled")
 		}
 		if credentials.HeaderJwt == nil || credentials.HeaderJwt.Token == "" {
 			return nil, w.Wrapf(auth.ErrMissingClaims, "header-jwt token missing")
 		}
-		claims, err = s.validator.Validate(ctx, credentials.HeaderJwt.Token)
+		claims, err = s.headerJWTValidator.Validate(ctx, credentials.HeaderJwt.Token)
 		if err != nil {
 			return nil, w.Wrapf(err, "header-jwt authentication")
 		}

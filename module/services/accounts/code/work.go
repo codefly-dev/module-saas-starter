@@ -641,7 +641,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		if !hasConfiguredValue(headerName) {
 			return nil, fmt.Errorf("identity provider header-jwt requires IDENTITY_HEADER_NAME")
 		}
-		service.SetTokenValidator(v)
+		service.SetHeaderJWTTokenValidator(v)
 		adapters.SetHeaderJWTLoginHeader(headerName)
 	default:
 		// user_identities.provider is a foreign key into the identity_providers

@@ -28,6 +28,7 @@ type Service struct {
 	store                     Store
 	hasher                    KeyHasher
 	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	headerJWTValidator        auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
 	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
 	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
 	resolver                  auth.IdentityResolver
@@ -509,6 +510,25 @@ func (s *Service) JWTMinter() auth.JWTMinter {
 // validator never enables caller-supplied identities as a fallback.
 func (s *Service) SetTokenValidator(v auth.TokenValidator) {
 	s.validator = v
+}
+
+// SetHeaderJWTTokenValidator enables the header-jwt login path, where the
+// identity assertion arrives as a token the trusted gateway injected rather than
+// through an authorization-code exchange.
+//
+// It is a SEPARATE field from the code-exchange validator on purpose. Both are
+// built from the same configured provider's key set, so sharing one field made
+// the two paths indistinguishable: a body carrying `header_jwt` reached the
+// code-exchange validator, which checks a signature, an issuer, an audience and
+// an expiry — and no nonce, because a nonce is the code exchange's binding to a
+// single authorize request and lives in the state the exchange holds. The result
+// was an id_token admitted with no state, no proof-of-possession verifier and no
+// nonce: exactly the injection and replay the nonce exists to stop.
+//
+// Only work.go's header-jwt branch calls this, so in every other provider mode
+// the field is nil and the body credential is refused by name.
+func (s *Service) SetHeaderJWTTokenValidator(v auth.TokenValidator) {
+	s.headerJWTValidator = v
 }
 
 // SetDevelopmentTokenValidator explicitly enables fixture authentication.
