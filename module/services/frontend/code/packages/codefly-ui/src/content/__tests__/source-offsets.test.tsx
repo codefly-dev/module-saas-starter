@@ -1,5 +1,11 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Markdown } from "../markdown.js";
 import { byteOffsets } from "../source-offsets.js";
@@ -265,6 +271,177 @@ describe("Markdown emits the bytes it rendered, in the version's byte space", ()
 		}
 	});
 
+	// A text comparison cannot catch this one: the body's text can occur inside
+	// the opening line, so a range pointing into the info string reads back as the
+	// right text while naming the wrong bytes. Only the offset tells them apart.
+	it.each([
+		{ source: "```python\nn\n```\n", start: 10, end: 11 },
+		{ source: "~~~\n~\n~~~\n", start: 4, end: 5 },
+		{ source: "```ts\nconst a = 1;\n```\n", start: 6, end: 18 },
+	])(
+		"puts a fence's body after its opening line, not inside it ($source)",
+		({ source, start, end }) => {
+			const { container } = render(<Markdown sourceOffsets>{source}</Markdown>);
+			const code = container.querySelector("code") as HTMLElement;
+			expect(Number(code.getAttribute("data-source-start"))).toBe(start);
+			expect(Number(code.getAttribute("data-source-end"))).toBe(end);
+			expect(code.getAttribute("data-source-exact")).toBe(null);
+			expect(at(source, start, end)).toBe(code.textContent);
+			// Belt and braces: whatever the text says, the body cannot begin before
+			// the newline that closed the opening fence.
+			expect(start).toBeGreaterThan(source.indexOf("\n"));
+		},
+	);
+
+	it("counts bytes rather than characters, so the accents do not shift it", () => {
+		const { container } = renderVersion();
+		// `# Té` is four characters and five bytes. A renderer emitting string
+		// indices would end this heading one byte early, and every block after the
+		// front matter's `Ça` two bytes early — which is why the fixture has both.
+		const heading = container.querySelector("h1") as HTMLElement;
+		expect(Number(heading.getAttribute("data-source-start"))).toBe(BODY_BASE);
+		expect(Number(heading.getAttribute("data-source-end"))).toBe(BODY_BASE + 5);
+		// The front matter's own accent already makes the byte offset differ from
+		// the string index the parser counts in.
+		expect(BODY_BASE).toBe(BODY_AT + 1);
+
+		// Two accents in one byte-exact paragraph: 21 characters, 23 bytes.
+		const quoted = container.querySelector("blockquote p") as HTMLElement;
+		const start = Number(quoted.getAttribute("data-source-start"));
+		const end = Number(quoted.getAttribute("data-source-end"));
+		expect(quoted.textContent).toBe("Une citation éclairée");
+		expect(end - start).toBe(23);
+		expect(at(VERSION, start, end)).toBe(quoted.textContent);
+	});
+
+	it("offsets name the version, not the slice, under sourceStart", () => {
+		const { container } = render(
+			<Markdown headingLevel={1} sourceOffsets>
+				{BODY}
+			</Markdown>,
+		);
+		const first = Number(
+			container.querySelector("h1")?.getAttribute("data-source-start"),
+		);
+		expect(first).toBe(0);
+		const { container: shifted } = renderVersion();
+		expect(
+			Number(shifted.querySelector("h1")?.getAttribute("data-source-start")),
+		).toBe(BODY_BASE);
+	});
+
+	it("emits nothing when the caller did not ask", () => {
+		const { container } = render(<Markdown>{BODY}</Markdown>);
+		expect(container.querySelectorAll("[data-source-start]")).toHaveLength(0);
+	});
+
+	it("keeps a run's bytes when a single newline is a line break", () => {
+		const source = "Première ligne\nseconde ligne\n";
+		const { container } = render(
+			<Markdown sourceOffsets lineBreaks>
+				{source}
+			</Markdown>,
+		);
+		expect(container.querySelectorAll("br")).toHaveLength(1);
+		const spans = Array.from(
+			container.querySelectorAll("span[data-source-start]"),
+		);
+		expect(spans).toHaveLength(2);
+		for (const span of spans)
+			expect(
+				at(
+					source,
+					Number(span.getAttribute("data-source-start")),
+					Number(span.getAttribute("data-source-end")),
+				),
+			).toBe(span.textContent);
+	});
+
+	// A text node's value is NOT its source: the parser drops a line's
+	// indentation and a soft break's trailing space, and decodes `&amp;` to one
+	// character. Counting each piece along the value therefore puts every piece
+	// after the first difference on bytes that are not its text — and marking it
+	// inexact does not save it, because an inexact run's own range is what a
+	// comment is written against. Each piece is located in the source instead.
+	describe.each([
+		{
+			name: "a list item's continuation line, whose indent the parser dropped",
+			source: "- first line\n  second line\n",
+			exact: ["first line", "second line"],
+			fallback: undefined,
+		},
+		{
+			name: "a soft break whose trailing space the parser dropped",
+			source: "foo \nbar\n",
+			exact: ["foo", "bar"],
+			fallback: undefined,
+		},
+		{
+			// `&amp;` is five bytes rendered as one character, so the first piece is
+			// nowhere in the source as written. Nothing after it can be located
+			// either — a search from a cursor that never advanced past it could match
+			// BEFORE the piece's real place — so every piece falls back to the whole
+			// text node, which the reader widens to anyway.
+			name: "a decoded entity, which no run can be located past",
+			source: "a &amp; b\nc d\n",
+			exact: [],
+			fallback: [0, 13] as [number, number],
+		},
+	])("a line break in $name", ({ source, exact, fallback }) => {
+		it("gives every run bytes that are its text, or one honest coarse range", () => {
+			const { container } = render(
+				<Markdown sourceOffsets lineBreaks>
+					{source}
+				</Markdown>,
+			);
+			const spans = Array.from(
+				container.querySelectorAll("span[data-source-start]"),
+			);
+			expect(spans.length).toBeGreaterThan(1);
+			const exactly: string[] = [];
+			const coarse = new Set<string>();
+			for (const span of spans) {
+				const from = Number(span.getAttribute("data-source-start"));
+				const to = Number(span.getAttribute("data-source-end"));
+				if (span.getAttribute("data-source-exact") === "false") {
+					coarse.add(`${from},${to}`);
+					continue;
+				}
+				expect(at(source, from, to)).toBe(span.textContent);
+				exactly.push(span.textContent ?? "");
+			}
+			expect(exactly).toEqual(exact);
+			// The bug this replaced gave each piece its own WRONG range. The fallback
+			// gives them all the same one, so a comment is coarse rather than
+			// misplaced: one range, and it is the whole node.
+			expect([...coarse]).toEqual(
+				fallback ? [`${fallback[0]},${fallback[1]}`] : [],
+			);
+		});
+	});
+
+	// A text comparison cannot catch this one: the body's text can occur inside
+	// the opening line, so a range pointing into the info string reads back as the
+	// right text while naming the wrong bytes. Only the offset tells them apart.
+	it.each([
+		{ source: "```python\nn\n```\n", start: 10, end: 11 },
+		{ source: "~~~\n~\n~~~\n", start: 4, end: 5 },
+		{ source: "```ts\nconst a = 1;\n```\n", start: 6, end: 18 },
+	])(
+		"puts a fence's body after its opening line, not inside it ($source)",
+		({ source, start, end }) => {
+			const { container } = render(<Markdown sourceOffsets>{source}</Markdown>);
+			const code = container.querySelector("code") as HTMLElement;
+			expect(Number(code.getAttribute("data-source-start"))).toBe(start);
+			expect(Number(code.getAttribute("data-source-end"))).toBe(end);
+			expect(code.getAttribute("data-source-exact")).toBe(null);
+			expect(at(source, start, end)).toBe(code.textContent);
+			// Belt and braces: whatever the text says, the body cannot begin before
+			// the newline that closed the opening fence.
+			expect(start).toBeGreaterThan(source.indexOf("\n"));
+		},
+	);
+
 	it("counts bytes rather than characters, so the accents do not shift it", () => {
 		const { container } = renderVersion();
 		// `# Té` is four characters and five bytes. A renderer emitting string
@@ -449,5 +626,54 @@ describe("source offsets change nothing about the untrusted-content rules", () =
 		expect(container.querySelectorAll("b")).toHaveLength(0);
 		expect(container.querySelectorAll("a")).toHaveLength(0);
 		expect(container.innerHTML).not.toContain("onerror");
+	});
+});
+
+describe("chrome the renderer added belongs to no source", () => {
+	it("leaves a code block's copy control outside every range the reader reads", async () => {
+		// Inside a list item the control DOES have a marked ancestor, so without
+		// `data-source-ignore` its announcement would be read as text of the source
+		// and lend the item's bytes to a word the document never wrote.
+		const source = "- the code:\n\n  ```ts\n  const a = 1;\n  ```\n";
+		const { container } = render(<Markdown sourceOffsets>{source}</Markdown>);
+		const control = container.querySelector(
+			"[data-slot=content-code] [data-source-ignore]",
+		) as HTMLElement;
+		expect(control).not.toBeNull();
+		expect(control.closest("li")).not.toBeNull();
+
+		// Make it say something, so there is text to exclude rather than an empty
+		// node a passing test could not tell from an excluded one.
+		await act(async () => {
+			fireEvent.click(
+				control.querySelector("[data-slot=content-copy]") as HTMLElement,
+			);
+		});
+		expect(control.textContent).toMatch(/Cop/);
+
+		const root = container.querySelector(
+			"[data-slot=content-markdown]",
+		) as Element;
+		for (const run of runs(root, bytes(source)))
+			expect(run.text).not.toMatch(/Cop/);
+	});
+
+	it("leaves an unavailable link's reason outside the link's range", () => {
+		const source = "See [the guide](../guide.md).\n";
+		const { container } = render(
+			<Markdown sourceOffsets resolveLink={() => ({ unavailable: "not here" })}>
+				{source}
+			</Markdown>,
+		);
+		const link = container.querySelector(
+			"[data-slot=content-link-unavailable]",
+		) as HTMLElement;
+		expect(link.getAttribute("data-source-start")).not.toBeNull();
+		expect(link.textContent).toContain("not here");
+		const root = container.querySelector(
+			"[data-slot=content-markdown]",
+		) as Element;
+		for (const run of runs(root, bytes(source)))
+			expect(run.text).not.toContain("not here");
 	});
 });

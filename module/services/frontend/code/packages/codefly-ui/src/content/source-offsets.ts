@@ -230,12 +230,28 @@ function markCode(pre: Element, marking: Marking): void {
 	if (code) {
 		const span = offsetsOf(code) ?? fence;
 		const body = textOf(code);
-		const at = span ? marking.source.indexOf(body, span[0]) : -1;
+		// The search starts after the OPENING LINE of a fence, never at its first
+		// backtick: the body of ```python\nn\n``` is "n", and a search from the
+		// backticks finds the `n` of `python` first — a range whose text happens to
+		// match, so the comparison below cannot catch it and the block would claim
+		// to be exact while pointing into its own info string. An indented block has
+		// no opening line to skip, so it is searched from its start.
+		const from = span ? bodyStart(marking.source, span) : 0;
+		const at = span ? marking.source.indexOf(body, from) : -1;
 		if (span && body !== "" && at >= 0 && at + body.length <= span[1]) {
 			setRange(code, at, at + body.length, true, marking);
 		} else if (span) setRange(code, span[0], span[1], false, marking);
 	}
 	if (fence) setRange(pre, fence[0], fence[1], false, marking);
+}
+
+/** Where a code block's body may start: after the fence's opening line, or at the block. */
+function bodyStart(source: string, span: [number, number]): number {
+	const newline = source.indexOf("\n", span[0]);
+	const fenced = /^(?:`{3,}|~{3,})/.test(
+		source.slice(span[0], newline < 0 ? span[1] : newline),
+	);
+	return fenced && newline >= 0 && newline + 1 <= span[1] ? newline + 1 : span[0];
 }
 
 function annotate(parent: Root | Element, marking: Marking): void {

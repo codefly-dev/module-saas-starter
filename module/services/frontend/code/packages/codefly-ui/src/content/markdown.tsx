@@ -48,6 +48,7 @@ import {
 import {
 	readSourceRange,
 	rehypeSourceOffsets,
+	SOURCE_IGNORE,
 	type SourceAttributes,
 	sourceProps,
 } from "./source-offsets.js";
@@ -298,7 +299,13 @@ function SafeLink({
 				{...source}
 			>
 				{children}
-				<span className="sr-only"> ({target.unavailable})</span>
+				{/* The kit's words about the link, not the document's: inside a marked
+				    element it would read as text of the source, so a selection on it
+				    would map to the link's bytes. */}
+				<span className="sr-only" {...{ [SOURCE_IGNORE]: "" }}>
+					{" "}
+					({target.unavailable})
+				</span>
 			</span>
 		);
 	}

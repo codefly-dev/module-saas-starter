@@ -131,6 +131,13 @@ from the public registry with no extra config.
 
 ## Consuming from a solution
 
+**A remote's declared range has to admit the version that has what it uses.** The
+kit is versioned in 0.x and an additive release is a patch, so `^0.12.0` is
+satisfied by 0.12.0 — which carries neither `Markdown`'s `sourceOffsets` nor
+`@codefly-dev/ui/board`. A remote using either declares `^0.12.1`. (Registration
+checks the declared range against the version the host publishes, so a range that
+is too loose fails at runtime rather than at install.)
+
 A solution fe-remote imports `@codefly-dev/ui/layout` + `@codefly-dev/ui/dashboard` and
 shares them as Module-Federation singletons served by the host. Because the
 plugin peers are optional, the solution only needs an `.npmrc` pointing the
@@ -343,6 +350,13 @@ cannot show, or `undefined` to leave the kit's own rule in place. **A resolved
 href is held to exactly the same allowlist as one the content wrote** — http,
 https or mailto, no credentials in the authority — so no resolver can turn
 `javascript:` into a link.
+
+That allowlist refuses a **relative** result too, so `{ href: "#p=guide" }` or
+`{ href: "/pages/guide" }` renders as inert text rather than a link: a resolver
+returning an in-product route must give `{ open }` (the kit navigates nowhere by
+itself) or an absolute URL. The one exception is `linkBase`, which resolves a
+relative result against the caller's own trusted location first and then applies
+the same rules.
 
 ## A board commits no move
 

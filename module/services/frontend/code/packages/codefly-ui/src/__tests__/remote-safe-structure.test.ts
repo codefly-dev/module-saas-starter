@@ -31,17 +31,28 @@ import { describe, expect, it } from "vitest";
 // components written against the rule keeps them from drifting back meanwhile.
 const REMOTE_SAFE = ["board/board.tsx"];
 
-// Quoted strings only, so this file's own explanation of what it refuses — and
-// a component's header comment — is prose rather than a breach. Unlike the
-// raw-type guard beside it, every quoted string is scanned rather than only the
-// ones that look like a class list: an arbitrary value holds `(`, `,` and `_`,
-// which that filter drops, and a guard that cannot see
-// `grid-cols-[minmax(0,1fr)_18rem]` is a guard that would have missed the exact
-// failure it exists for.
-function quotedStrings(source: string): string[] {
-	return [...source.matchAll(/"([^"\n]*)"|'([^'\n]*)'/g)].map(
-		(match) => match[1] ?? match[2] ?? "",
-	);
+// String literals only, so this file's own explanation of what it refuses — and
+// a component's header comment — is prose rather than a breach. Three things this
+// gets right that are easy to get wrong:
+//
+//   - **Template literals count.** A class list written in backticks is still a
+//     class list; a guard that reads only `"` and `'` lets `md:flex` through the
+//     moment someone interpolates a variable into the list.
+//   - Every literal is scanned, not only the ones that look like a class list.
+//     An arbitrary value holds `(`, `,` and `_`, which the raw-type guard's
+//     "looks like a class" filter drops — so that filter would have missed
+//     `grid-cols-[minmax(0,1fr)_18rem]`, the exact failure this exists for.
+//   - `${…}` holes are blanked rather than read, so an interpolated CSS length
+//     inside an inline style is not mistaken for a utility.
+function stringLiterals(source: string): string[] {
+	const out: string[] = [];
+	for (const match of source.matchAll(/"([^"\n]*)"|'([^'\n]*)'/g)) {
+		out.push(match[1] ?? match[2] ?? "");
+	}
+	for (const match of source.matchAll(/`((?:[^`\\]|\\.)*)`/g)) {
+		out.push((match[1] ?? "").replace(/\$\{[^}]*\}/g, " "));
+	}
+	return out;
 }
 
 // Any class carrying a bracketed group, wherever it sits: an arbitrary value
@@ -54,7 +65,7 @@ const BREAKPOINT =
 
 export function hostCompiledOnly(source: string): string[] {
 	const found: string[] = [];
-	for (const value of quotedStrings(source)) {
+	for (const value of stringLiterals(source)) {
 		for (const match of value.matchAll(ARBITRARY))
 			found.push(match[1] as string);
 		for (const match of value.matchAll(BREAKPOINT))
@@ -123,6 +134,9 @@ describe("host-compiled-only detector (self-test)", () => {
 			'<div className="data-[side=bottom]:slide-in-from-top-2" />',
 			"data-[side=bottom]:slide-in-from-top-2",
 		],
+		// A class list in backticks, with a hole in it: the form that slipped past
+		// the first version of this guard.
+		["const x = `md:flex ${gap}`;", "md:flex"],
 	])("flags %s", (source, utility) => {
 		expect(hostCompiledOnly(source)).toContain(utility);
 	});
@@ -131,6 +145,7 @@ describe("host-compiled-only detector (self-test)", () => {
 		'<div className="bg-muted p-3 rounded-lg border border-border" />',
 		'<div className="type-card-title-sm text-muted-foreground" />',
 		'<div className="control-sm w-full text-left" />',
+		"style={{ gridTemplateColumns: `repeat(auto-fit, minmax(16rem, 1fr))` }}",
 	])("allows %s", (source) => {
 		expect(hostCompiledOnly(source)).toEqual([]);
 	});
