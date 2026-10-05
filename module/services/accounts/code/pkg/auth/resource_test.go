@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"strings"
 	"testing"
 
 	"accounts/pkg/auth"
@@ -137,4 +138,36 @@ func TestTheResourceShapeThisHostAcceptsIsTheOneASolutionRuntimePublishes(t *tes
 	// outside, so an identifier naming it could never be one a client dialled.
 	_, err = auth.ParseResourceIndicator(origin + "/solutions/example/mcp")
 	require.ErrorIs(t, err, auth.ErrResourceRejected)
+}
+
+// R54-04, the issuance half. The authorization server mints an audience only for
+// the EXACT identifier, by code-point equality — a variant is not "the same
+// resource spelled differently", it is a different string that the client it was
+// issued for would reject.
+//
+// The pair matters: the gateway holds the same rule on admission, so neither
+// side can admit a spelling the other refuses. A host that accepted several
+// spellings of one resource would have several resources, and the audience
+// binding would mean less than it says.
+func TestOnlyTheExactResourceIdentifierIsIssuedAnAudience(t *testing.T) {
+	const origin = "https://app.example.com"
+	exact := auth.SolutionMCPResource(origin, "example")
+
+	indicator, err := auth.RequireResourceAtOrigin(exact, origin)
+	require.NoError(t, err)
+	// Used as given (RFC 8707): the value that goes in `aud` is the request's
+	// own string, never re-rendered from parsed parts.
+	require.Equal(t, exact, indicator.Value)
+
+	for _, variant := range []string{
+		strings.Replace(exact, "app.example.com", "APP.example.com", 1),
+		strings.Replace(exact, "app.example.com", "App.Example.Com", 1),
+		strings.Replace(exact, "https://", "HTTPS://", 1),
+		strings.Replace(exact, "/example/", "/Example/", 1),
+		strings.Replace(exact, "app.example.com", "app.example.com:443", 1),
+		exact + "/",
+	} {
+		_, err := auth.RequireResourceAtOrigin(variant, origin)
+		require.ErrorIs(t, err, auth.ErrResourceRejected, "must refuse %q", variant)
+	}
 }

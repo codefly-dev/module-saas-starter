@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -118,21 +117,27 @@ const (
 )
 
 func resourceAudienceAdmits(resource, solutionID, publicBase string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(resource))
-	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
-		return false
-	}
-	// The resource names the PUBLIC proxy path a client can reach; this request
-	// arrived on this gateway's own internal path. Both carry the solution id,
-	// which is what the comparison turns on.
-	if parsed.EscapedPath() != solutionProxyBase+solutionID+solutionProxyMid+"/"+solutionMCPSegment {
-		return false
-	}
 	if publicBase == "" {
-		return true
+		// Without a configured public address this process cannot say what the
+		// expected identifier IS, so it cannot find anything equal to it.
+		// Accounts refuses to issue a resource-bound token in the same state,
+		// so the two sides agree rather than one minting what the other rejects.
+		return false
 	}
-	origin := strings.ToLower(parsed.Scheme) + "://" + parsed.Host
-	return strings.EqualFold(origin, publicBase)
+	// EXACT, code-point equality on the whole identifier.
+	//
+	// Not a parsed comparison of components, and not a case-folded origin. The
+	// resource URL IS the audience value this host mints, the runtime publishes
+	// that same string as its `resource`, and RFC 9728 §3.3 has the client
+	// require the document's `resource` to equal the URL it dialled — no step in
+	// that chain folds case or re-renders the URL. A host that treats several
+	// spellings as one resource has several resources, and the audience binding
+	// means less than it says.
+	//
+	// The request arrived on this gateway's INTERNAL path; what is compared is
+	// the token's audience against the public identifier for the solution that
+	// path addresses.
+	return resource == publicBase+solutionProxyBase+solutionID+solutionProxyMid+"/"+solutionMCPSegment
 }
 
 // solutionIDFromPath extracts the solution a request path addresses, for the

@@ -159,7 +159,20 @@ func RequireResourceAtOrigin(candidate, origin string) (ResourceIndicator, error
 	if err != nil {
 		return ResourceIndicator{}, fmt.Errorf("%w: no trusted public origin", ErrResourceRejected)
 	}
-	if !strings.EqualFold(resource.Origin, expected) {
+	// EXACT, code-point equality, on the WHOLE identifier — not a case-folded
+	// comparison of a reconstructed origin.
+	//
+	// The identifier is used as given (see ResourceIndicator.Value): this string
+	// goes into `aud`, the runtime publishes the same string as its `resource`,
+	// and RFC 9728 §3.3 has the client require the document's `resource` to
+	// equal the URL it dialled. Nothing in that chain folds case, so a variant
+	// admitted here would be minted into an audience that the very client it was
+	// issued for then rejects — and a host that accepts several spellings of one
+	// resource has several resources.
+	//
+	// Compared against SolutionMCPResource, the single place the string is
+	// composed, so issuance and admission cannot drift apart.
+	if resource.Value != SolutionMCPResource(expected, resource.SolutionID) {
 		return ResourceIndicator{}, ErrResourceRejected
 	}
 	return resource, nil

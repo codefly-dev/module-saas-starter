@@ -288,6 +288,17 @@ person whose session token names no resource; a resource-bound token is still
 confined there to the solution it names, so one solution's token never reads
 another's data.
 
+**The resource identifier is compared EXACTLY, by code-point equality, at both
+issuance and admission.** The resource URL is itself the audience value this host
+mints; a solution's runtime publishes that same string as its `resource`; and RFC
+9728 §3.3 has the client require the document's `resource` to equal the URL it
+dialled. No step in that chain folds case or re-renders the URL, so a host that
+accepted several spellings of one resource would have several resources — and a
+variant it minted would be rejected by the very client it was issued for. Both
+sides compare against `auth.SolutionMCPResource`, the single place the string is
+composed. A deployment with no configured public address cannot state what the
+expected identifier is, so it refuses to issue one and refuses to admit one.
+
 **A token's audience set has three readings, not two.** Bound to nothing, bound
 to one valid resource, or unreadable — and the third is refused on every path. It
 cannot be carried as an empty resource, because empty means "bound to nothing",

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -302,42 +303,87 @@ func TestGateway_MCPToken_MustNameThisHostsOrigin(t *testing.T) {
 	require.Empty(t, example.lastPath)
 }
 
-// Without a configured public origin the origin cannot be checked, so on the
-// product's own API surface only the solution the resource names is — which
-// still stops one solution's token reaching another.
+// Without a configured public address a resource-bound token is refused at every
+// solution path, the tool endpoint included.
 //
-// The TOOL endpoint does not share this leniency: it fails closed instead (see
-// TestGateway_TheToolEndpointFailsClosedWithoutAConfiguredPublicAddress). The
-// difference is deliberate. Here the check is a narrowing of a token that was
-// already accepted; there it is the whole admission rule, and a rule that
-// cannot be evaluated must refuse rather than wave the request through.
-func TestGateway_WithNoConfiguredOrigin_OnlyTheSolutionIsChecked(t *testing.T) {
+// This replaces a test that asserted the origin simply went unchecked there. The
+// comparison is now exact agreement with one composed identifier, and a process
+// that cannot say what that identifier IS cannot find anything equal to it.
+// Accounts refuses to ISSUE a resource-bound token in the same state, so the two
+// sides agree rather than one minting what the other rejects — which is why this
+// is fail-closed rather than a gap.
+func TestGateway_WithNoConfiguredAddressAResourceBoundTokenIsRefused(t *testing.T) {
 	withPublicBase(t, "")
 	gw, _, _, priv := newGatewayHarness(t)
 	example := registerSolutionUpstream(t, gw, "example")
-	audit := registerSolutionUpstream(t, gw, "audit")
 
 	token := signResourceToken(t, priv, "http://localhost:3000/api/solutions/example/proxy/mcp")
 
+	for _, path := range []string{"/solutions/example/mcp", "/solutions/example/v1/items"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, 401, w.Code, path)
+	}
+	require.Empty(t, example.lastPath)
+
+	// An unbound session token still reaches the product's own API surface, so
+	// the refusal above is about the resource binding and not about this
+	// deployment having no configured address.
 	req := httptest.NewRequest(http.MethodPost, "/solutions/example/v1/items", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, 200, w.Code)
-	require.Equal(t, "/v1/items", example.lastPath)
-
-	req = httptest.NewRequest(http.MethodPost, "/solutions/audit/v1/items", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w = httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-	require.Equal(t, 401, w.Code)
-	require.Empty(t, audit.lastPath)
 }
 
-// The discovery chain an MCP client runs, in order: 401 with a challenge →
-// protected-resource metadata → the authorization server's own metadata. The
-// first two links are this gateway's; the third is the accounts document the
-// frontend publishes at /.well-known/oauth-authorization-server.
+// R54-04. The audience must EQUAL this endpoint's resource identifier by
+// code-point equality — not match a parsed, case-folded reconstruction of it.
+//
+// The resource URL is itself the audience value, the runtime publishes that same
+// string as its `resource`, and RFC 9728 §3.3 has the client require the
+// document's `resource` to equal the URL it dialled. No step in that chain folds
+// case or re-renders the URL, so a variant admitted here is one the client it was
+// issued for would reject — and a host treating several spellings as one resource
+// has several resources.
+func TestTheAudienceMustEqualThisEndpointsResourceExactly(t *testing.T) {
+	const exact = testPublicBase + "/api/solutions/example/proxy/mcp"
+
+	withPublicBase(t, testPublicBase)
+	gw, _, _, priv := newGatewayHarness(t)
+	example := registerSolutionUpstream(t, gw, "example")
+
+	call := func(resource string) int {
+		req := httptest.NewRequest(http.MethodPost, "/solutions/example/mcp", nil)
+		req.Header.Set("Authorization", "Bearer "+signResourceToken(t, priv, resource))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	require.Equal(t, 200, call(exact), "the exact identifier must be admitted")
+	require.Equal(t, "/mcp", example.lastPath)
+
+	for _, variant := range []string{
+		// Case-only differences, in the host and in the scheme. url.Parse and a
+		// case-folded origin comparison call these equal; code-point equality
+		// does not, and neither does the client.
+		strings.Replace(exact, "host.example.com", "HOST.example.com", 1),
+		strings.Replace(exact, "host.example.com", "Host.Example.Com", 1),
+		strings.Replace(exact, "https://", "HTTPS://", 1),
+		// Case in the path, which names the solution.
+		strings.Replace(exact, "/example/", "/Example/", 1),
+		// Shapes that differ by more than case.
+		exact + "/",
+		strings.Replace(exact, "host.example.com", "host.example.com:443", 1),
+		exact + "/extra",
+		strings.Replace(exact, "/proxy/mcp", "/mcp", 1),
+	} {
+		require.Equal(t, 401, call(variant), "must refuse %q", variant)
+	}
+}
+
 func TestGateway_MCPDiscoveryChain_401ThenProtectedResourceMetadata(t *testing.T) {
 	withPublicBase(t, testPublicBase)
 	gw, _, _, _ := newGatewayHarness(t)
