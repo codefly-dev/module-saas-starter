@@ -94,3 +94,47 @@ func TestAValidCodeChallengeIsBase64URLInTheS256Band(t *testing.T) {
 	require.False(t, auth.ValidCodeChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw+cM"))
 	require.False(t, auth.ValidCodeChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw/cM"))
 }
+
+// The cross-repository contract, stated where a change to either side will trip
+// over it.
+//
+// This host ACCEPTS exactly one resource shape, and a solution's runtime DERIVES
+// the identifier it publishes. Both halves must spell the same URL or discovery
+// cannot establish resource identity: RFC 9728 §3.3 has the client compare the
+// `resource` in the runtime's metadata document against the URL it dialled, and
+// RFC 8707 makes that identifier the audience its token is bound to — so a
+// mismatch is rejected by the client, before a token is ever requested.
+//
+// The two live in different repositories and no compiler relates them, so this
+// records the agreed string and names the other side. The runtime's derivation
+// is `PUBLIC_URL + "/api/solutions/" + id + "/proxy" + "/mcp"`
+// (codefly-dev/solution-runtime-go, resolveMCPPublicURL).
+//
+// A deployment whose host routes solutions differently overrides the runtime's
+// derivation with its `mcp/public-url` configuration value; this host still
+// accepts only the shape below, so such an override has to name it.
+func TestTheResourceShapeThisHostAcceptsIsTheOneASolutionRuntimePublishes(t *testing.T) {
+	const origin = "https://app.example.com"
+
+	// What this host composes, which is what it requires on the way in.
+	require.Equal(t,
+		origin+"/api/solutions/example/proxy/mcp",
+		auth.SolutionMCPResource(origin, "example"))
+
+	// Spelled out rather than built from the same constants, so a change to
+	// those constants fails here instead of agreeing with itself.
+	indicator, err := auth.ParseResourceIndicator(origin + "/api/solutions/example/proxy/mcp")
+	require.NoError(t, err, "the runtime's derived identifier must be one this host accepts")
+	require.Equal(t, "example", indicator.SolutionID)
+
+	// And the metadata path the challenge names is that URL's sibling, which is
+	// where the runtime serves its document.
+	require.Equal(t,
+		"/api/solutions/example/proxy/.well-known/oauth-protected-resource",
+		auth.SolutionResourceMetadataPath("example"))
+
+	// The gateway's own internal route is NOT accepted. It is unreachable from
+	// outside, so an identifier naming it could never be one a client dialled.
+	_, err = auth.ParseResourceIndicator(origin + "/solutions/example/mcp")
+	require.ErrorIs(t, err, auth.ErrResourceRejected)
+}
