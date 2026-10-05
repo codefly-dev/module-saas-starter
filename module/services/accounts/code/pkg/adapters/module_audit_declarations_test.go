@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"strings"
 	"testing"
 
 	"accounts/pkg/business"
@@ -81,5 +82,41 @@ func TestModuleAuditRetentions_CoverEveryWireClass(t *testing.T) {
 		if d.Retention != want[d.Type] {
 			t.Errorf("%s retention = %q, want %q", d.Type, d.Retention, want[d.Type])
 		}
+	}
+}
+
+// A wire enum is open: a newer client can send a value this build has never
+// heard of. Reading it as UNSPECIFIED would file a type its author meant to
+// keep for the compliance window under the shorter content window — evidence
+// that expires early with no refusal anywhere. A manifest that misspells its
+// retention is refused, and so is the wire.
+func TestModuleAuditDeclarations_RefuseAnEnumValueThisBuildDoesNotKnow(t *testing.T) {
+	unknownRetention := gen.ModuleAuditEventRetention(99)
+	_, err := business.ValidateAuditEventTypeDeclarations("acme", moduleAuditDeclarations([]*gen.ModuleAuditEventTypeDeclaration{
+		{Type: "acme.access.granted", Retention: unknownRetention},
+	}))
+	if err == nil {
+		t.Fatal("an unknown retention class was filed under the default")
+	}
+	if !strings.Contains(err.Error(), "retention") {
+		t.Errorf("the refusal does not name the retention: %v", err)
+	}
+
+	unknownVisibility := gen.ModuleAuditEventVisibility(99)
+	_, err = business.ValidateAuditEventTypeDeclarations("acme", moduleAuditDeclarations([]*gen.ModuleAuditEventTypeDeclaration{
+		{Type: "acme.access.granted", Visibility: unknownVisibility},
+	}))
+	if err == nil {
+		t.Fatal("an unknown visibility was filed under the default")
+	}
+	if !strings.Contains(err.Error(), "visibility") {
+		t.Errorf("the refusal does not name the visibility: %v", err)
+	}
+
+	// UNSPECIFIED stays the default it is documented to be.
+	if _, err := business.ValidateAuditEventTypeDeclarations("acme", moduleAuditDeclarations([]*gen.ModuleAuditEventTypeDeclaration{
+		{Type: "acme.access.granted"},
+	})); err != nil {
+		t.Errorf("an undeclared retention and visibility are refused: %v", err)
 	}
 }

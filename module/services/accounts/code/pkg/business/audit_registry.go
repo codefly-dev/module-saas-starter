@@ -288,6 +288,24 @@ func contentRetained(d AuditEventDefinition) AuditEventDefinition {
 }
 
 func str(name string) PayloadField { return PayloadField{Name: name, Kind: FieldString} }
+
+// catalogCount is a count the built-in role catalog import records, carried as
+// the decimal string the importer writes, so a row written before this field was
+// declared reads the same as one written after.
+func catalogCount(name string) PayloadField {
+	return PayloadField{Name: name, Kind: FieldString, MaxLen: 10}
+}
+
+// withCatalogProvenance adds the provenance the role catalog import stamps onto
+// every event it records — the catalog's fingerprint and, when the operator
+// named one, where it came from — to a role event's own fields. A role changed
+// by a person carries neither.
+func withCatalogProvenance(fields ...PayloadField) []PayloadField {
+	return append(fields,
+		PayloadField{Name: "catalog_sha256", Kind: FieldString, MaxLen: 64},
+		PayloadField{Name: "catalog_source", Kind: FieldString, MaxLen: 1024},
+	)
+}
 func strs(name string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldStringArray}
 }
@@ -619,9 +637,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	securityRetained(mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}, strs("audit_namespaces_taken_over"))),
 	securityRetained(mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt})),
 	securityRetained(mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id"))),
-	securityRetained(mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name"))),
-	securityRetained(mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions"))),
-	securityRetained(mutation(EventRoleDeleted, CategoryAccess, "A role was deleted.")),
+	securityRetained(mutation(EventRoleCreated, CategoryAccess, "A role was created.",
+		withCatalogProvenance(str("name"), catalogCount("permissions_added"))...)),
+	securityRetained(mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.",
+		withCatalogProvenance(str("name"), strs("permissions"), catalogCount("permissions_added"), catalogCount("permissions_removed"))...)),
+	securityRetained(mutation(EventRoleDeleted, CategoryAccess, "A role was deleted.",
+		withCatalogProvenance(str("name"), catalogCount("assignments_removed"))...)),
 	securityRetained(mutation(EventRoleAssigned, CategoryAccess, "A role was assigned to a principal.", uid("role_id"), uid("subject_id"))),
 	securityRetained(mutation(EventRoleRevoked, CategoryAccess, "A role assignment was revoked.", uid("role_id"))),
 	securityRetained(mutation(EventSessionRevoked, CategoryAccess, "A session was revoked.")),

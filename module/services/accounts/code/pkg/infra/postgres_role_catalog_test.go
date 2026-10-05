@@ -346,6 +346,44 @@ func TestImportRoleCatalogStampsProvenanceOnAudit(t *testing.T) {
 	require.Equal(t, "catalog-test:provenance", metadata["name"])
 }
 
+// validatingRecorder holds every payload the import records to the audit
+// registry's schema for its type, as the emitter would, and keeps the
+// complaints: the emitter only logs them, so drift between what the import
+// writes and what the registry declares stays silent until someone reads a log.
+type validatingRecorder struct {
+	inner    business.AuditRecorder
+	problems []string
+}
+
+func (v *validatingRecorder) RecordTx(ctx context.Context, entry business.AuditEntry) error {
+	if err := business.ValidatePayload(entry.EventType, entry.Payload); err != nil {
+		v.problems = append(v.problems, err.Error())
+	}
+	return v.inner.RecordTx(ctx, entry)
+}
+
+func TestImportRoleCatalogRecordsOnlyPayloadsTheRegistryDeclares(t *testing.T) {
+	resetCatalogRoles(t)
+	recorder := &validatingRecorder{inner: catalogAudit(t)}
+	options := infra.ImportOptions{Audit: recorder, Source: "roles.json"}
+
+	created := parseCatalog(t, `{"version":1,"roles":[
+		{"name":"catalog-test:payloads","description":"d","scope":"m","permissions":[{"resource":"x","action":"read"},{"resource":"y","action":"read"}]}]}`)
+	_, err := testStore.ImportRoleCatalog(testCtx, created, options)
+	require.NoError(t, err)
+
+	updated := parseCatalog(t, `{"version":1,"roles":[
+		{"name":"catalog-test:payloads","description":"d","scope":"m","permissions":[{"resource":"x","action":"read"},{"resource":"z","action":"read"}]}]}`)
+	_, err = testStore.ImportRoleCatalog(testCtx, updated, options)
+	require.NoError(t, err)
+
+	options.Force = true
+	_, err = testStore.ImportRoleCatalog(testCtx, parseCatalog(t, `{"version":1,"roles":[]}`), options)
+	require.NoError(t, err)
+
+	require.Empty(t, recorder.problems, "created, updated and deleted events each carry only fields their registered type declares")
+}
+
 func TestBuiltinRoleNamesAreUnique(t *testing.T) {
 	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := storetx.Tx(ctx)
