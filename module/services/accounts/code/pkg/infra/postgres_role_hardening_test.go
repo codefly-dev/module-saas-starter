@@ -62,6 +62,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"approval_decisions":                   {selectRows: true, insertRows: true}, // append-only, like actor_chain_journal
 	"approval_requests":                    {selectRows: true, insertRows: true, updateRows: true},
 	"audit_event_idempotency":              {selectRows: true, insertRows: true}, // append-only guard, like audit_events
+	"audit_event_quarantine":               {},                                   // only the audit relay's role reaches it; no request-traffic authority at all
 	"audit_event_queue":                    {insertRows: true},                   // a writer never reads, changes or removes a queued event
 	"audit_events":                         {selectRows: true, insertRows: true},
 	"connector_credentials":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -366,6 +367,11 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// worker, reads and deletes queued events.
 			if relation == "audit_event_queue" {
 				want = relationPrivileges{insertRows: true}
+			}
+			// audit_event_quarantine holds the audit events the relay set aside; only
+			// the relay's role, as the job worker, reads or writes it.
+			if relation == "audit_event_quarantine" {
+				want = relationPrivileges{}
 			}
 			// actor_chain_journal / actor_chain_revocations are append-only
 			// like audit_events: the control plane reads and inserts but never
