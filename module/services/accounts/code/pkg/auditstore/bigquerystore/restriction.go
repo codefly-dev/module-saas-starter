@@ -45,9 +45,24 @@ func (r *restriction) in(field string, values []string) {
 	r.add(field + " IN (" + strings.Join(literals, ", ") + ")")
 }
 
-// timeBound adds field op timestamp, for op one of >=, <, <=.
+// The range of a BigQuery TIMESTAMP: 0001-01-01 to 9999-12-31, at microseconds.
+var (
+	timestampMin = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
+	timestampMax = time.Date(9999, 12, 31, 23, 59, 59, 999999000, time.UTC)
+)
+
+// timeBound adds field op timestamp, for op one of >=, <, <=. A time beyond
+// the range of a TIMESTAMP is the edge it clamps to, which no stored value lies
+// beyond, so the comparison keeps its answer.
 func (r *restriction) timeBound(field, op string, at time.Time) {
-	r.add(fmt.Sprintf("%s %s CAST(%q AS TIMESTAMP)", field, op, at.UTC().Format(restrictionTimestampLayout)))
+	at = at.UTC()
+	switch {
+	case at.Before(timestampMin):
+		at = timestampMin
+	case at.After(timestampMax):
+		at = timestampMax
+	}
+	r.add(fmt.Sprintf("%s %s CAST(%q AS TIMESTAMP)", field, op, at.Format(restrictionTimestampLayout)))
 }
 
 func (r *restriction) fail(field string, err error) {

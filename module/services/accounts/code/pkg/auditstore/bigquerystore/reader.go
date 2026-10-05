@@ -130,12 +130,23 @@ type window struct {
 	hiExclusive bool
 }
 
+// readClockSkew is how far ahead of this replica's clock an event another
+// replica wrote may be stamped, and so how far past the present the newest
+// window reaches.
+const readClockSkew = 5 * time.Minute
+
 // newestFirst yields the windows a newest-first read walks, from upper
 // (inclusive, or open when nil) down to floor (inclusive, or open when nil),
 // until visit says the answer is complete.
+//
+// The windows are anchored at the present (plus readClockSkew), or at upper
+// when that is earlier. An upper bound in the far future is no place to start
+// walking: anchored there, every bounded window would be empty and the last,
+// which takes everything older, would read the whole table. The first window
+// still reaches up to upper itself, so nothing at or before it is missed.
 func (r *Reader) newestFirst(upper, floor *time.Time, visit func(window) (bool, error)) error {
-	anchor := r.now()
-	if upper != nil {
+	anchor := r.now().Add(readClockSkew)
+	if upper != nil && upper.Before(anchor) {
 		anchor = *upper
 	}
 	current := window{hi: upper}

@@ -366,3 +366,38 @@ func TestAStreamThatFailsAtOnePlaceStopsAfterItsRetries(t *testing.T) {
 	require.ErrorContains(t, err, "after 5 attempts")
 	require.Equal(t, 5, attempts)
 }
+
+// A "to" in the far future is no reason to start reading there: the windows
+// are anchored at the present (with a little allowance for a clock that runs
+// ahead), so the newest day is still the first read and the last window never
+// spans a whole table.
+func TestAFarFutureUpperBoundStillReadsTheNewestDayFirst(t *testing.T) {
+	w := newWarehouse(t)
+	ages := []time.Duration{time.Hour, 2 * time.Hour, 72 * time.Hour, 100 * 24 * time.Hour}
+	for i, age := range ages {
+		w.append(t, deployment, event(t, i+1, orgA, business.EventAuthLogin, business.RetentionSecurity, now.Add(-age), nil))
+	}
+	// An event a few minutes ahead of this replica's clock, written by another.
+	w.append(t, deployment, event(t, 5, orgA, business.EventAuthLogin, business.RetentionSecurity, now.Add(2*time.Minute), nil))
+
+	for name, to := range map[string]time.Time{
+		"year 9999":    time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
+		"next century": now.Add(100 * 365 * 24 * time.Hour),
+	} {
+		before := len(w.fake.Sessions())
+		entries, next, err := w.reader.ListAuditEvents(context.Background(), orgRead(business.AuditQuery{To: &to, PageSize: 2}))
+		require.NoError(t, err, name)
+		require.Equal(t, []string{"005", "001"}, ids(entries), name)
+		require.NotEmpty(t, next, name)
+		sessions := w.fake.Sessions()[before:]
+		require.Len(t, sessions, 1, "%s: the newest day held a page and the proof of another", name)
+		require.Contains(t, sessions[0].GetReadSession().GetReadOptions().GetRowRestriction(),
+			`occurred_at >= CAST("2026-10-02 12:05:00.000000+00:00" AS TIMESTAMP)`, "%s: anchored at the present plus the allowance, not at the bound", name)
+
+		// And the rest of the history still comes, windows reaching back from the present.
+		entries, next, err = w.reader.ListAuditEvents(context.Background(), orgRead(business.AuditQuery{To: &to, PageSize: 10, PageToken: next}))
+		require.NoError(t, err, name)
+		require.Equal(t, []string{"002", "003", "004"}, ids(entries), name)
+		require.Empty(t, next, name)
+	}
+}

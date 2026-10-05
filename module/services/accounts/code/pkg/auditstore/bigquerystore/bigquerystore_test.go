@@ -211,6 +211,25 @@ func TestNewValidatesItsConfiguration(t *testing.T) {
 	}
 }
 
+// A time bound beyond the range of a TIMESTAMP is written as the edge of the
+// range, never as a literal BigQuery cannot cast.
+func TestATimeBoundBeyondTheTimestampRangeIsClamped(t *testing.T) {
+	for name, tc := range map[string]struct {
+		at   time.Time
+		want string
+	}{
+		"in range":   {occurredAt, `occurred_at >= CAST("2026-10-02 14:30:05.123456+00:00" AS TIMESTAMP)`},
+		"year 0":     {time.Date(0, 6, 1, 0, 0, 0, 0, time.UTC), `occurred_at >= CAST("0001-01-01 00:00:00.000000+00:00" AS TIMESTAMP)`},
+		"year -300":  {time.Date(-300, 6, 1, 0, 0, 0, 0, time.UTC), `occurred_at >= CAST("0001-01-01 00:00:00.000000+00:00" AS TIMESTAMP)`},
+		"year 10000": {time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC), `occurred_at >= CAST("9999-12-31 23:59:59.999999+00:00" AS TIMESTAMP)`},
+		"zero time":  {time.Time{}, `occurred_at >= CAST("0001-01-01 00:00:00.000000+00:00" AS TIMESTAMP)`},
+	} {
+		where := &restriction{}
+		where.timeBound("occurred_at", ">=", tc.at)
+		require.Equal(t, tc.want, where.String(), name)
+	}
+}
+
 func ExampleEventRow() {
 	r, _ := business.NewAuditRecord(business.AuditEntry{
 		ID: "00000000-0000-0000-0000-000000000001", ActorType: "system", EventType: business.EventRoleCreated,
