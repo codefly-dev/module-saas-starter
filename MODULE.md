@@ -209,11 +209,14 @@ out, so a challenge it dropped was one nobody could read. The host serves no
 second copy of that document — two for one resource are two places to disagree,
 and a client follows whichever URL the challenge names.
 
-**Every `/.well-known/` path is public, served or not.** A well-known URI is
-public metadata by construction (RFC 8615) and every discovery chain begins by
-fetching one with no credential, so the page middleware's login redirect must
-never reach them — including the ones this host does not answer, which must get
-the 404 that says so. A browser follows a 307 and looks fine; a non-browser
+**Every `/.well-known/` path is public, served or not, matched as a path
+SEGMENT.** A well-known URI is a reserved metadata namespace (RFC 8615) and every
+discovery chain begins by fetching one with no credential, so the page
+middleware's login redirect must never reach them — including the ones this host
+does not answer, which must get the 404 that says so. A segment test rather than
+a root prefix, because these documents are not all at the root: a solution's
+protected-resource metadata sits beneath its own route, and `/solutions/<id>/` is
+a page of the frontend. A browser follows a 307 and looks fine; a non-browser
 client follows it, parses a login page as JSON, and concludes that this host is
 not an authorization server, which is a report pointing nowhere near the
 middleware that caused it. The predicate is `isPublic` in `frontend/src/proxy.ts`
@@ -284,6 +287,30 @@ solution's other routes are the product's own API surface, reached by a signed-i
 person whose session token names no resource; a resource-bound token is still
 confined there to the solution it names, so one solution's token never reads
 another's data.
+
+**A token's audience set has three readings, not two.** Bound to nothing, bound
+to one valid resource, or unreadable — and the third is refused on every path. It
+cannot be carried as an empty resource, because empty means "bound to nothing",
+which is the reading admitted most widely. Two resource audiences, or one that is
+not shaped like a resource identifier (userinfo, a query, a fragment, a
+non-loopback `http` origin), are refused. The verifier's shape rule is the
+issuer's own `auth.ParseResourceIndicator`, so verification cannot drift looser
+than issuance; the gateway spells the identical rule on its own side of the
+module boundary because nothing crosses it.
+
+**A sign-in state that cannot be recorded as used is refused** (handbook
+SP-IDENT-04). While the consumption store is unavailable, "has this state been
+used before?" has no answer, and admitting on no answer means the single-use
+property does not hold for the duration of the outage. The refusal carries its
+own error so an operator can tell a failing dependency from a replayed state; the
+caller maps both to one sentinel before answering.
+
+**RFC 8252 §7.3 is unconditional for loopback.** A native client takes an
+ephemeral port from the operating system at the moment of the request, so it
+cannot have registered the port it will listen on, and any port is allowed at
+request time whether or not the registration named one. The port is the only
+component relaxed — scheme, host, path and query must match, and userinfo and a
+fragment are refused.
 
 **A session cookie is not a credential at this perimeter.** The gateway verifies
 a bearer — an access token or an API key — and reads no cookie anywhere; a cookie
