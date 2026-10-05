@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -38,6 +39,37 @@ type Event struct {
 	decoded    map[string]any
 	decodeErr  error
 	decodedSet bool
+}
+
+// eventOverheadBytes is what an event holds beyond its text: the struct, the
+// entry's fixed-size fields and the headers of its strings.
+const eventOverheadBytes = 512
+
+// Size approximates the bytes the event holds in memory: a fixed overhead and
+// the text of its envelope and details. A store that buffers events counts
+// them by it against a budget, so its memory is a number it chose, not a
+// function of how much history it reads.
+func (e *Event) Size() int {
+	entry := &e.Entry
+	return eventOverheadBytes + len(entry.ID) + len(entry.OrgID) + len(entry.ActorID) + len(entry.ActorType) +
+		len(entry.EventType) + len(entry.Resource) + len(entry.ResourceID) + len(entry.IPAddress) +
+		len(entry.ImpersonatedBy) + len(entry.ClientID) + len(e.Details) + len(e.DetailsSHA256)
+}
+
+// Detach copies the text of the event, so that an event kept does not keep
+// alive what it was decoded from. A store that decodes rows out of a shared
+// buffer (an Arrow record batch) hands back strings that point into it: one
+// event kept for the page would hold the whole batch of thousands of rows it
+// came in, and a window's worth of kept events every batch of the window.
+func (e *Event) Detach() {
+	entry := &e.Entry
+	for _, text := range []*string{
+		&entry.ID, &entry.OrgID, &entry.ActorID, &entry.ActorType, &entry.Resource, &entry.ResourceID,
+		&entry.IPAddress, &entry.ImpersonatedBy, &entry.ClientID, &e.Details, &e.DetailsSHA256,
+	} {
+		*text = strings.Clone(*text)
+	}
+	entry.EventType = business.EventType(strings.Clone(string(entry.EventType)))
 }
 
 // payload is the details decoded with json.Number, or nil when there are none.
@@ -323,6 +355,6 @@ func (d *Dedupe) First(id string) bool {
 	if _, seen := d.other[id]; seen {
 		return false
 	}
-	d.other[id] = struct{}{}
+	d.other[strings.Clone(id)] = struct{}{}
 	return true
 }

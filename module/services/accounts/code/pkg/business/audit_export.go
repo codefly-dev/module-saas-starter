@@ -5,12 +5,29 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+// AuditExportMaxBytes bounds the events one export of a store of record
+// holds: the text of their envelopes and details, 32 MiB — some tens of
+// thousands of events. The export is one unary response, so the whole of it
+// is in memory twice over (the events, then the file serialized from them)
+// however the store reads it; without a bound a long history is a pod's
+// memory, and the pod is every tenant's. A store reads in windows and gives
+// up as soon as the events it has gathered pass the bound.
+const AuditExportMaxBytes = 32 << 20
+
+// ErrAuditExportTooLarge is the refusal of an export whose events pass
+// AuditExportMaxBytes. Narrowing the export (an actor, an event type) is the
+// way past it.
+var ErrAuditExportTooLarge = errors.New("audit export: more events match than one download holds; narrow it by actor or event type")
 
 // ExportAuditLog queries all matching audit events and serializes them to CSV or
 // JSON. eventTypes is the set form of eventType, applied together with it, so a
@@ -36,6 +53,9 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 		return nil, "", "", w.Wrapf(err, "query audit log for export")
 	}
 	all, err := s.auditReads().ExportAuditEvents(ctx, read)
+	if errors.Is(err, ErrAuditExportTooLarge) {
+		return nil, "", "", status.Error(codes.ResourceExhausted, ErrAuditExportTooLarge.Error())
+	}
 	if err != nil {
 		return nil, "", "", w.Wrapf(err, "query audit log for export")
 	}

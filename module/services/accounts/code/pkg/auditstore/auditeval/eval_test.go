@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"accounts/pkg/business"
 
@@ -203,4 +204,48 @@ func TestMatcherReadsAnOrganizationInItsCanonicalForm(t *testing.T) {
 	require.ErrorContains(t, err, "not a uuid")
 	_, err = CanonicalScope(business.AuditReadScope{})
 	require.ErrorIs(t, err, business.ErrAuditReadUnscoped)
+}
+
+// An event decoded out of a shared buffer holds strings that point into it;
+// kept as it is, it would keep every row of the buffer alive.
+func TestDetachGivesAnEventItsOwnText(t *testing.T) {
+	buffer := []byte("0123456789abcdefghijklmnopqrstuvwxyz-details-hash")
+	view := func(from, to int) string { return unsafe.String(&buffer[from], to-from) }
+	event := &Event{
+		Entry: business.AuditEntry{
+			ID: view(0, 10), OrgID: view(1, 11), ActorID: view(2, 12), ActorType: view(3, 13), EventType: business.EventType(view(4, 14)),
+			Resource: view(5, 15), ResourceID: view(6, 16), IPAddress: view(7, 17), ImpersonatedBy: view(8, 18), ClientID: view(9, 19),
+		},
+		Details: view(10, 30), DetailsSHA256: view(20, 40),
+	}
+	before := *event
+	event.Detach()
+	require.Equal(t, before.Entry, event.Entry, "the same text")
+	require.Equal(t, before.Details, event.Details)
+	for name, pair := range map[string][2]string{
+		"id": {before.Entry.ID, event.Entry.ID}, "org": {before.Entry.OrgID, event.Entry.OrgID}, "actor": {before.Entry.ActorID, event.Entry.ActorID},
+		"type": {string(before.Entry.EventType), string(event.Entry.EventType)}, "resource": {before.Entry.Resource, event.Entry.Resource},
+		"ip": {before.Entry.IPAddress, event.Entry.IPAddress}, "client": {before.Entry.ClientID, event.Entry.ClientID},
+		"details": {before.Details, event.Details}, "hash": {before.DetailsSHA256, event.DetailsSHA256},
+	} {
+		require.NotEqual(t, uintptr(unsafe.Pointer(unsafe.StringData(pair[0]))), uintptr(unsafe.Pointer(unsafe.StringData(pair[1]))), "%s: its own copy", name)
+	}
+}
+
+func TestPageReportsWhetherItKeptAnEvent(t *testing.T) {
+	base := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
+	page, err := NewPage(business.AuditQuery{PageSize: 1})
+	require.NoError(t, err)
+	require.True(t, page.Offer(&Event{Entry: entryAt(2, base.Add(2*time.Minute))}))
+	require.True(t, page.Offer(&Event{Entry: entryAt(1, base.Add(time.Minute))}), "the proof of a next page")
+	require.False(t, page.Offer(&Event{Entry: entryAt(1, base.Add(time.Minute))}), "an event it holds")
+	require.False(t, page.Offer(&Event{Entry: entryAt(0, base)}), "older than everything kept")
+	require.True(t, page.Offer(&Event{Entry: entryAt(3, base.Add(3*time.Minute))}), "newer evicts the oldest")
+}
+
+func TestEventSizeCountsItsText(t *testing.T) {
+	small := &Event{Entry: entryAt(1, time.Time{})}
+	large := &Event{Entry: entryAt(1, time.Time{}), Details: strings.Repeat("x", 1000), DetailsSHA256: strings.Repeat("h", 64)}
+	require.Equal(t, small.Size()+1064, large.Size())
+	require.GreaterOrEqual(t, small.Size(), len(small.Entry.ID))
 }

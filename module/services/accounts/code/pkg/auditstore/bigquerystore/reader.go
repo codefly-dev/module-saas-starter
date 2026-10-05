@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"accounts/pkg/auditstore/auditeval"
@@ -37,6 +38,12 @@ import (
 // (so partitions outside it are pruned) and the event types when the read
 // names them — and the service sorts, pages, deduplicates by event id, joins
 // content details and aggregates the rows it streams back (auditeval).
+//
+// None of that grows with the history. A read walks time in windows, newest
+// first, and a window that needs the whole of itself in memory (the details a
+// payload filter joins, the events an aggregation deduplicates, an export's
+// events) is counted against a byte budget and read again as halves when it
+// passes it; see Reader.
 
 // ReadSessionClient is the Storage Read API surface the reader uses.
 // *storage.BigQueryReadClient (cloud.google.com/go/bigquery/storage/apiv1)
@@ -58,12 +65,23 @@ type ReadConfig struct {
 	// MaxStreams bounds the streams one read session is split into and read in
 	// parallel. Zero is DefaultReadStreams.
 	MaxStreams int
+	// WindowBytes bounds what one window of a read holds in memory at once: the
+	// content details it joins and the events it buffers, counted by their
+	// text (Reader's doc says what the bound covers). Zero is
+	// DefaultReadWindowBytes.
+	WindowBytes int64
+	// ExportMaxBytes bounds the events one export gathers, counted the same
+	// way. Zero is business.AuditExportMaxBytes.
+	ExportMaxBytes int64
 	// Now is a seam for tests; nil is the clock.
 	Now func() time.Time
 }
 
 // DefaultReadStreams is the parallelism of one read session.
 const DefaultReadStreams = 4
+
+// DefaultReadWindowBytes is the default of ReadConfig.WindowBytes.
+const DefaultReadWindowBytes = 64 << 20
 
 // Newest-first windows: the activity list and the readable-source query read
 // the newest day first, then windows growing eightfold (8, 64 and 512 days
@@ -76,14 +94,39 @@ const (
 	readRowsRetryAttempts = 5
 )
 
+// What a window retains is counted, not measured, so the bound is one number
+// the deployment chose: a joined details row costs its text and the map entry
+// around it; an event the window buffers costs auditeval.Event.Size plus its
+// entry in the set that deduplicates it.
+const (
+	detailRowOverheadBytes = 160
+	dedupeEntryBytes       = 64
+)
+
 // Reader reads the events and details tables.
+//
+// Its memory does not grow with the history it reads. A read walks the time
+// axis in windows, newest first, and holds at most WindowBytes of one window
+// at a time — the details it joins to the window's events and, for a read that
+// must see every event of the window before it can answer (an aggregation, an
+// export), the events themselves with the set that deduplicates them. A window
+// that would hold more is abandoned and read again as two halves of its span,
+// newer first, so a day of a million events is read as the several pieces that
+// fit. What outlives a window is the answer alone: a page and the proof of the
+// next, an aggregation's buckets, an export's events (up to ExportMaxBytes).
 type Reader struct {
-	client       ReadSessionClient
-	project      string
-	dataset      string
-	deploymentID string
-	maxStreams   int
-	now          func() time.Time
+	client         ReadSessionClient
+	project        string
+	dataset        string
+	deploymentID   string
+	maxStreams     int
+	windowBytes    int64
+	exportMaxBytes int64
+	now            func() time.Time
+
+	// windowPeak is the most bytes any one attempt at a window has counted, the
+	// attempt that overflowed included, since the reader was built.
+	windowPeak atomic.Int64
 }
 
 // NewReader validates cfg and builds a reader.
@@ -96,21 +139,76 @@ func NewReader(cfg ReadConfig) (*Reader, error) {
 			return nil, fmt.Errorf("bigquery audit store: %s is required to read", name)
 		}
 	}
+	if cfg.WindowBytes < 0 || cfg.ExportMaxBytes < 0 {
+		return nil, errors.New("bigquery audit store: read budgets cannot be negative")
+	}
 	reader := &Reader{
-		client:       cfg.Client,
-		project:      cfg.Project,
-		dataset:      cfg.Dataset,
-		deploymentID: cfg.DeploymentID,
-		maxStreams:   cfg.MaxStreams,
-		now:          cfg.Now,
+		client:         cfg.Client,
+		project:        cfg.Project,
+		dataset:        cfg.Dataset,
+		deploymentID:   cfg.DeploymentID,
+		maxStreams:     cfg.MaxStreams,
+		windowBytes:    cfg.WindowBytes,
+		exportMaxBytes: cfg.ExportMaxBytes,
+		now:            cfg.Now,
 	}
 	if reader.maxStreams <= 0 {
 		reader.maxStreams = DefaultReadStreams
+	}
+	if reader.windowBytes == 0 {
+		reader.windowBytes = DefaultReadWindowBytes
+	}
+	if reader.exportMaxBytes == 0 {
+		reader.exportMaxBytes = business.AuditExportMaxBytes
 	}
 	if reader.now == nil {
 		reader.now = time.Now
 	}
 	return reader, nil
+}
+
+// errWindowTooLarge is the signal of a window attempt that counted more than
+// its budget: the window is read again as halves (settle).
+var errWindowTooLarge = errors.New("bigquery audit store: window exceeds the read budget")
+
+// ErrReadTooDense is the failure of a read whose events at one instant alone
+// pass the window budget, which no narrower window can split.
+var ErrReadTooDense = errors.New("bigquery audit store: more events share one instant than a read window holds")
+
+// budget counts what one attempt at a window retains.
+type budget struct {
+	limit int64
+	held  int64
+	peak  *atomic.Int64
+}
+
+func (r *Reader) newBudget() *budget {
+	return &budget{limit: r.windowBytes, peak: &r.windowPeak}
+}
+
+// take counts n more bytes, and reports errWindowTooLarge once they pass the
+// limit. A nil budget counts nothing: the caller has bounded what it retains
+// some other way.
+func (b *budget) take(n int) error {
+	if b == nil {
+		return nil
+	}
+	if b.held > b.limit {
+		// Already over: the rows other streams are still handing over are not
+		// counted, nor kept, so an attempt overshoots by one row at most.
+		return errWindowTooLarge
+	}
+	b.held += int64(n)
+	for {
+		peak := b.peak.Load()
+		if b.held <= peak || b.peak.CompareAndSwap(peak, b.held) {
+			break
+		}
+	}
+	if b.held > b.limit {
+		return errWindowTooLarge
+	}
+	return nil
 }
 
 var (
@@ -130,6 +228,31 @@ type window struct {
 	hiExclusive bool
 }
 
+// split halves a window at the middle of its span: the newer half keeps the
+// window's upper bound, the older half is closed below the middle, so the two
+// cover exactly the window. An open upper bound reaches no further than
+// ceiling when the middle is chosen. A window with no lower bound, or no span
+// left to halve, does not split.
+func (w window) split(ceiling time.Time) (newer, older window, ok bool) {
+	if w.lo == nil {
+		return window{}, window{}, false
+	}
+	top := ceiling
+	if w.hi != nil && w.hi.Before(top) {
+		top = *w.hi
+	}
+	if !top.After(*w.lo) {
+		return window{}, window{}, false
+	}
+	// In microseconds since the epoch, which span the whole TIMESTAMP range; a
+	// time.Duration saturates at about 292 years.
+	middle := time.UnixMicro(w.lo.UnixMicro() + (top.UnixMicro()-w.lo.UnixMicro())/2).UTC()
+	if !middle.After(*w.lo) {
+		return window{}, window{}, false
+	}
+	return window{lo: &middle, hi: w.hi, hiExclusive: w.hiExclusive}, window{lo: w.lo, hi: &middle, hiExclusive: true}, true
+}
+
 // readClockSkew is how far ahead of this replica's clock an event another
 // replica wrote may be stamped, and so how far past the present the newest
 // window reaches.
@@ -137,17 +260,27 @@ const readClockSkew = 5 * time.Minute
 
 // newestFirst yields the windows a newest-first read walks, from upper
 // (inclusive, or open when nil) down to floor (inclusive, or open when nil),
-// until visit says the answer is complete.
+// until visit says the answer is complete. A visit that reports a window too
+// large is given its halves instead (settle).
 //
 // The windows are anchored at the present (plus readClockSkew), or at upper
 // when that is earlier. An upper bound in the far future is no place to start
 // walking: anchored there, every bounded window would be empty and the last,
 // which takes everything older, would read the whole table. The first window
 // still reaches up to upper itself, so nothing at or before it is missed.
-func (r *Reader) newestFirst(upper, floor *time.Time, visit func(window) (bool, error)) error {
+//
+// A bounded walk is one whose visits can overflow and be halved, so none of its
+// windows is open below: the last reaches down to floor, or to the earliest
+// instant a TIMESTAMP holds.
+func (r *Reader) newestFirst(upper, floor *time.Time, bounded bool, visit func(window) (bool, error)) error {
 	anchor := r.now().Add(readClockSkew)
 	if upper != nil && upper.Before(anchor) {
 		anchor = *upper
+	}
+	oldest := floor
+	if oldest == nil && bounded {
+		earliest := timestampMin
+		oldest = &earliest
 	}
 	current := window{hi: upper}
 	span := firstReadWindow
@@ -158,12 +291,12 @@ func (r *Reader) newestFirst(upper, floor *time.Time, visit func(window) (bool, 
 		case floor != nil && !lo.After(*floor):
 			current.lo, last = floor, true
 		case step >= boundedReadWindows+1:
-			current.lo, last = floor, true
+			current.lo, last = oldest, true
 		default:
 			bound := lo
 			current.lo = &bound
 		}
-		done, err := visit(current)
+		done, err := r.settle(current, visit)
 		if err != nil || done || last {
 			return err
 		}
@@ -172,6 +305,24 @@ func (r *Reader) newestFirst(upper, floor *time.Time, visit func(window) (bool, 
 		span *= readWindowGrowth
 		lo = next.Add(-span)
 	}
+}
+
+// settle visits a window; when the visit counts more than the window budget
+// holds, it visits the window's newer half and then its older half instead,
+// each of which may be halved again.
+func (r *Reader) settle(w window, visit func(window) (bool, error)) (bool, error) {
+	done, err := visit(w)
+	if !errors.Is(err, errWindowTooLarge) {
+		return done, err
+	}
+	newer, older, ok := w.split(r.now().Add(readClockSkew))
+	if !ok {
+		return false, ErrReadTooDense
+	}
+	if done, err := r.settle(newer, visit); done || err != nil {
+		return done, err
+	}
+	return r.settle(older, visit)
 }
 
 // scope adds the read's scope to a restriction: this deployment always, and
@@ -230,29 +381,13 @@ func (r *Reader) candidates(m *auditeval.Matcher, q business.AuditQuery, w windo
 }
 
 // readEvents streams the events in a window that the read could match, each
-// joined to its content details when withDetails, and hands each to visit
-// (serially). A row of another deployment is never handed on, whatever the
-// session returned.
-func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q business.AuditQuery, w window, withDetails bool, visit func(*auditeval.Event) error) error {
+// joined to its content details from details (when it is not nil) and handed to
+// visit (serially). A row of another deployment is never handed on, whatever
+// the session returned.
+func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q business.AuditQuery, w window, details map[string]storedDetail, visit func(*auditeval.Event) error) error {
 	where, ok := r.candidates(m, q, w)
 	if !ok {
 		return nil
-	}
-	var details map[string]storedDetail
-	if withDetails {
-		detailsWhere := r.scope(m.Scope())
-		w.restrict(detailsWhere)
-		if types, restricted := m.EventTypes(); restricted {
-			if len(types) == 1 {
-				detailsWhere.eq("event_type", types[0])
-			} else {
-				detailsWhere.in("event_type", types)
-			}
-		}
-		var err error
-		if details, err = r.readDetails(ctx, detailsWhere); err != nil {
-			return err
-		}
 	}
 	return r.scan(ctx, EventsTable, eventFields, where, func(row arrowRow) error {
 		stored, err := decodeEventRow(row)
@@ -263,13 +398,31 @@ func (r *Reader) readEvents(ctx context.Context, m *auditeval.Matcher, q busines
 			return nil
 		}
 		event := stored.event()
-		if withDetails && stored.retentionClass != string(business.RetentionSecurity) {
+		if details != nil && stored.retentionClass != string(business.RetentionSecurity) {
 			if detail, ok := details[event.Entry.ID]; ok && detail.sha256 == stored.detailsSHA256 {
 				event.Details, event.HasDetails = detail.details, true
 			}
 		}
 		return visit(event)
 	})
+}
+
+// windowDetails reads the content details of every candidate event in a
+// window, counting them against b: errWindowTooLarge when they pass it.
+func (r *Reader) windowDetails(ctx context.Context, m *auditeval.Matcher, w window, b *budget) (map[string]storedDetail, error) {
+	where := r.scope(m.Scope())
+	w.restrict(where)
+	if types, restricted := m.EventTypes(); restricted {
+		if len(types) == 0 {
+			return map[string]storedDetail{}, nil
+		}
+		if len(types) == 1 {
+			where.eq("event_type", types[0])
+		} else {
+			where.in("event_type", types)
+		}
+	}
+	return r.readDetails(ctx, where, b)
 }
 
 // storedDetail is one details-table row: the canonical details of a
@@ -279,7 +432,10 @@ type storedDetail struct {
 	details string
 }
 
-func (r *Reader) readDetails(ctx context.Context, where *restriction) (map[string]storedDetail, error) {
+// readDetails reads the details rows a restriction admits, counting each
+// against b (nil counts nothing, for a read the caller has bounded by the ids
+// it names).
+func (r *Reader) readDetails(ctx context.Context, where *restriction, b *budget) (map[string]storedDetail, error) {
 	details := map[string]storedDetail{}
 	err := r.scan(ctx, DetailsTable, detailFields, where, func(row arrowRow) error {
 		eventID, err := row.str("event_id")
@@ -301,10 +457,51 @@ func (r *Reader) readDetails(ctx context.Context, where *restriction) (map[strin
 		if err != nil {
 			return err
 		}
-		details[eventID] = storedDetail{sha256: sha, details: text}
+		if err := b.take(detailRowOverheadBytes + len(eventID) + len(sha) + len(text)); err != nil {
+			return err
+		}
+		// Copies, so what is kept is the text alone and not the record batch
+		// it was decoded from.
+		details[strings.Clone(eventID)] = storedDetail{sha256: strings.Clone(sha), details: strings.Clone(text)}
 		return nil
 	})
 	return details, err
+}
+
+// loadWindow reads the events of a window that the read matches, each once by
+// event id and joined to its content details when withDetails, holding no more
+// than the window budget: errWindowTooLarge when the window has more. Nothing
+// is handed on before the whole window is in hand, so a caller whose answer
+// cannot be unwound (an aggregation) sees a window either whole or not at all.
+// Duplicates share their occurrence, so one window holds all of an event's
+// copies.
+func (r *Reader) loadWindow(ctx context.Context, m *auditeval.Matcher, q business.AuditQuery, w window, withDetails bool) ([]*auditeval.Event, error) {
+	b := r.newBudget()
+	var details map[string]storedDetail
+	if withDetails {
+		var err error
+		if details, err = r.windowDetails(ctx, m, w, b); err != nil {
+			return nil, err
+		}
+	}
+	seen := auditeval.NewDedupe()
+	var events []*auditeval.Event
+	err := r.readEvents(ctx, m, q, w, details, func(event *auditeval.Event) error {
+		ok, err := m.Match(event)
+		if err != nil || !ok || !seen.First(event.Entry.ID) {
+			return err
+		}
+		if err := b.take(event.Size() + dedupeEntryBytes); err != nil {
+			return err
+		}
+		event.Detach()
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 // joinDetails reads the details of the given events that have none yet — the
@@ -333,7 +530,8 @@ func (r *Reader) joinDetails(ctx context.Context, scope business.AuditReadScope,
 	where := r.scope(scope)
 	window{lo: &lo, hi: &hi}.restrict(where)
 	where.in("event_id", ids)
-	details, err := r.readDetails(ctx, where)
+	// Bounded by the ids it names, which are a page's.
+	details, err := r.readDetails(ctx, where, nil)
 	if err != nil {
 		return err
 	}
@@ -363,16 +561,29 @@ func (r *Reader) ListAuditEvents(ctx context.Context, read business.AuditRead) (
 	if before := page.Before(); before != nil && (upper == nil || before.Before(*upper)) {
 		upper = before
 	}
-	// A payload filter needs every candidate's details to decide; otherwise
-	// only the settled page's content details are read, afterwards.
+	// A payload filter needs every candidate's details to decide, so the walk is
+	// one whose windows hold them (and are halved when they hold too many);
+	// otherwise only the settled page's content details are read, afterwards,
+	// and nothing but the page is held at all.
 	withDetails := m.NeedsPayload()
-	err = r.newestFirst(upper, m.From(), func(w window) (bool, error) {
-		err := r.readEvents(ctx, m, read.Query, w, withDetails, func(event *auditeval.Event) error {
+	err = r.newestFirst(upper, m.From(), withDetails, func(w window) (bool, error) {
+		var details map[string]storedDetail
+		if withDetails {
+			var err error
+			if details, err = r.windowDetails(ctx, m, w, r.newBudget()); err != nil {
+				return false, err
+			}
+		}
+		// Offering an event twice changes nothing, so a window abandoned after
+		// part of it was offered is read again from its halves without harm.
+		err := r.readEvents(ctx, m, read.Query, w, details, func(event *auditeval.Event) error {
 			ok, err := m.Match(event)
 			if err != nil || !ok {
 				return err
 			}
-			page.Offer(event)
+			if page.Offer(event) {
+				event.Detach()
+			}
 			return nil
 		})
 		return page.Full(), err
@@ -419,8 +630,10 @@ func needsPayload(m *auditeval.Matcher, spec business.AuditAggregationSpec) bool
 	return false
 }
 
-// AggregateAuditEvents implements business.AuditReader: one read of the
-// query's window, deduplicated and aggregated in the service.
+// AggregateAuditEvents implements business.AuditReader: the query's span read
+// window by window, each window deduplicated and aggregated whole before the
+// next is read. Copies of an event share its occurrence, so a window holds all
+// of them and the deduplication needs no memory of the windows before it.
 func (r *Reader) AggregateAuditEvents(ctx context.Context, read business.AuditRead, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
 	m, err := auditeval.NewMatcher(read)
 	if err != nil {
@@ -430,14 +643,18 @@ func (r *Reader) AggregateAuditEvents(ctx context.Context, read business.AuditRe
 	if err != nil {
 		return nil, err
 	}
-	seen := auditeval.NewDedupe()
-	w := window{lo: m.From(), hi: m.To()}
-	err = r.readEvents(ctx, m, read.Query, w, needsPayload(m, spec), func(event *auditeval.Event) error {
-		ok, err := m.Match(event)
-		if err != nil || !ok || !seen.First(event.Entry.ID) {
-			return err
+	withDetails := needsPayload(m, spec)
+	err = r.newestFirst(m.To(), m.From(), true, func(w window) (bool, error) {
+		events, err := r.loadWindow(ctx, m, read.Query, w, withDetails)
+		if err != nil {
+			return false, err
 		}
-		return aggregator.Add(event)
+		for _, event := range events {
+			if err := aggregator.Add(event); err != nil {
+				return false, err
+			}
+		}
+		return false, nil
 	})
 	if err != nil {
 		return nil, err
@@ -446,28 +663,37 @@ func (r *Reader) AggregateAuditEvents(ctx context.Context, read business.AuditRe
 }
 
 // ExportAuditEvents implements business.AuditReader: every matching event of
-// the query's window, once each, newest first, with its payload.
+// the query's span, once each, newest first, with its payload. The windows are
+// read newest first and each is sorted whole, so their events follow one
+// another in order. The export is the one read whose answer is as large as the
+// history it matches; it gives up with business.ErrAuditExportTooLarge when the
+// events gathered pass the reader's export bound, never holding more than that
+// and one window.
 func (r *Reader) ExportAuditEvents(ctx context.Context, read business.AuditRead) ([]business.AuditEntry, error) {
 	m, err := auditeval.NewMatcher(read)
 	if err != nil {
 		return nil, err
 	}
-	seen := auditeval.NewDedupe()
-	var events []*auditeval.Event
-	w := window{lo: m.From(), hi: m.To()}
-	err = r.readEvents(ctx, m, read.Query, w, true, func(event *auditeval.Event) error {
-		ok, err := m.Match(event)
-		if err != nil || !ok || !seen.First(event.Entry.ID) {
-			return err
+	var out []business.AuditEntry
+	var gathered int64
+	err = r.newestFirst(m.To(), m.From(), true, func(w window) (bool, error) {
+		events, err := r.loadWindow(ctx, m, read.Query, w, true)
+		if err != nil {
+			return false, err
 		}
-		events = append(events, event)
-		return nil
+		auditeval.SortNewestFirst(events)
+		for _, event := range events {
+			if gathered += int64(event.Size()); gathered > r.exportMaxBytes {
+				return false, business.ErrAuditExportTooLarge
+			}
+		}
+		out = append(out, results(events)...)
+		return false, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	auditeval.SortNewestFirst(events)
-	return results(events), nil
+	return out, nil
 }
 
 // LatestSourceSyncEvents implements business.AuditSourceSyncReader: the newest
@@ -495,7 +721,7 @@ func (r *Reader) LatestSourceSyncEvents(ctx context.Context, scope business.Audi
 	}
 	newestIDs := map[string]string{}
 	eventType := string(business.EventDatasourceSourceSynced)
-	err = r.newestFirst(nil, nil, func(w window) (bool, error) {
+	err = r.newestFirst(nil, nil, false, func(w window) (bool, error) {
 		where := r.scope(scope)
 		w.restrict(where)
 		where.eq("event_type", eventType)
@@ -514,8 +740,9 @@ func (r *Reader) LatestSourceSyncEvents(ctx context.Context, scope business.Audi
 			current, found := out[entry.ResourceID]
 			if !found || entry.CreatedAt.After(current.RequestedAt) ||
 				(entry.CreatedAt.Equal(current.RequestedAt) && entry.ID > newestIDs[entry.ResourceID]) {
-				out[entry.ResourceID] = business.AuditSourceSyncEvent{RequestedAt: entry.CreatedAt, ActorID: entry.ActorID}
-				newestIDs[entry.ResourceID] = entry.ID
+				// Copies of the text kept, not what it was decoded from.
+				out[entry.ResourceID] = business.AuditSourceSyncEvent{RequestedAt: entry.CreatedAt, ActorID: strings.Clone(entry.ActorID)}
+				newestIDs[entry.ResourceID] = strings.Clone(entry.ID)
 			}
 			return nil
 		})

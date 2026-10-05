@@ -128,27 +128,46 @@ func TestEveryEventsReadIsBoundedInTimeWhenTheQueryIs(t *testing.T) {
 	from, to := now.Add(-48*time.Hour), now.Add(-time.Hour)
 	fromBound := `occurred_at >= CAST("2026-10-01 12:00:00.000000+00:00" AS TIMESTAMP)`
 	toBound := `occurred_at <= CAST("2026-10-03 11:00:00.000000+00:00" AS TIMESTAMP)`
-	_, err := w.reader.AggregateAuditEvents(context.Background(), orgRead(business.AuditQuery{From: &from, To: &to}), business.AuditAggregationSpec{})
-	require.NoError(t, err)
-	_, err = w.reader.ExportAuditEvents(context.Background(), orgRead(business.AuditQuery{From: &from, To: &to}))
-	require.NoError(t, err)
-	for _, session := range w.fake.Sessions() {
-		restriction := session.GetReadSession().GetReadOptions().GetRowRestriction()
-		require.Contains(t, restriction, fromBound, "partitions before the window are pruned")
-		require.Contains(t, restriction, toBound, "partitions after the window are pruned")
-	}
+	q := business.AuditQuery{From: &from, To: &to}
 
-	sessions := len(w.fake.Sessions())
-	_, _, err = w.reader.ListAuditEvents(context.Background(), orgRead(business.AuditQuery{From: &from, To: &to}))
-	require.NoError(t, err)
-	list := w.fake.Sessions()[sessions:]
-	require.Len(t, list, 2, "the newest day, then the rest of the window")
-	require.Contains(t, list[0].GetReadSession().GetReadOptions().GetRowRestriction(), toBound)
-	require.Contains(t, list[1].GetReadSession().GetReadOptions().GetRowRestriction(), fromBound)
-	for _, session := range list {
-		restriction := session.GetReadSession().GetReadOptions().GetRowRestriction()
-		require.Contains(t, restriction, "occurred_at >=")
-		require.Contains(t, restriction, "occurred_at <")
+	// Every read walks the span in windows, newest first: the newest day, then
+	// the rest of it. The first window ends at the query's end, the last begins
+	// at its beginning, and each is bounded on both sides.
+	reads := map[string]func() error{
+		"list": func() error {
+			_, _, err := w.reader.ListAuditEvents(context.Background(), orgRead(q))
+			return err
+		},
+		"aggregate": func() error {
+			_, err := w.reader.AggregateAuditEvents(context.Background(), orgRead(q), business.AuditAggregationSpec{})
+			return err
+		},
+		"export": func() error {
+			_, err := w.reader.ExportAuditEvents(context.Background(), orgRead(q))
+			return err
+		},
+	}
+	// The tables a read touches: the events always, and the content details too
+	// when it needs them (an export carries every event's payload).
+	tables := map[string][]string{"list": {bigquerystore.EventsTable}, "aggregate": {bigquerystore.EventsTable}, "export": {bigquerystore.EventsTable, bigquerystore.DetailsTable}}
+	for name, read := range reads {
+		before := len(w.fake.Sessions())
+		require.NoError(t, read(), name)
+		for _, table := range tables[name] {
+			var sessions []string
+			for _, session := range w.fake.Sessions()[before:] {
+				if strings.HasSuffix(session.GetReadSession().GetTable(), "/"+table) {
+					sessions = append(sessions, session.GetReadSession().GetReadOptions().GetRowRestriction())
+				}
+			}
+			require.Len(t, sessions, 2, "%s %s: the newest day, then the rest of the window", name, table)
+			require.Contains(t, sessions[0], toBound, "%s %s: partitions after the window are pruned", name, table)
+			require.Contains(t, sessions[1], fromBound, "%s %s: partitions before the window are pruned", name, table)
+			for _, restriction := range sessions {
+				require.Contains(t, restriction, "occurred_at >=", name)
+				require.Regexp(t, `occurred_at <=? CAST`, restriction, name)
+			}
+		}
 	}
 }
 

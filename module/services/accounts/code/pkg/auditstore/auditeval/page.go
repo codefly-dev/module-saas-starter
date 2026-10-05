@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -75,24 +76,29 @@ func (p *Page) Before() *time.Time {
 	return &at
 }
 
-// Offer considers an event that matched the read.
-func (p *Page) Offer(event *Event) {
+// Offer considers an event that matched the read, and reports whether the page
+// kept it. A store that decodes events out of a shared buffer detaches (Event.
+// Detach) the ones that were kept, and only those.
+func (p *Page) Offer(event *Event) bool {
 	entry := event.Entry
 	if p.after != nil && !newer(business.AuditEntry{CreatedAt: p.after.at, ID: p.after.id}, entry) {
-		return
+		return false
 	}
 	if p.keptIDs[entry.ID] {
-		return
+		return false
 	}
 	if len(p.kept) == p.size+1 {
 		if !newer(entry, p.kept[0].Entry) {
-			return
+			return false
 		}
 		evicted := heap.Pop(&p.kept).(*Event)
 		delete(p.keptIDs, evicted.Entry.ID)
 	}
 	heap.Push(&p.kept, event)
-	p.keptIDs[entry.ID] = true
+	// The key is its own copy: the event's id may point into a buffer the event
+	// is about to be detached from.
+	p.keptIDs[strings.Clone(entry.ID)] = true
+	return true
 }
 
 // Full reports whether the page holds a whole page and the proof of another:

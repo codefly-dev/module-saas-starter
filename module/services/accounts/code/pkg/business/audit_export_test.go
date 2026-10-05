@@ -1,11 +1,16 @@
 package business
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // The downloadable export is the surface a compliance review actually leaves
@@ -68,5 +73,41 @@ func TestAuditExportCarriesTheClientTheCallCameThrough(t *testing.T) {
 	}
 	if _, present := decoded[1]["client_id"]; present {
 		t.Errorf("a call from the host's own session must name no client, got %v", decoded[1]["client_id"])
+	}
+}
+
+// exportingStore is a store of record whose export is whatever the test says.
+type exportingStore struct {
+	AuditStore
+	entries []AuditEntry
+	err     error
+}
+
+func (s exportingStore) ExportAuditEvents(context.Context, AuditRead) ([]AuditEntry, error) {
+	return s.entries, s.err
+}
+
+// A store that gives up an export for its size is a request the caller can
+// narrow, not a server fault: the refusal reaches the caller as such, and an
+// export within the bound is served as before.
+func TestAuditExportTooLargeIsARefusalNotAFault(t *testing.T) {
+	service := &Service{auditStore: exportingStore{err: fmt.Errorf("read: %w", ErrAuditExportTooLarge)}}
+	_, _, _, err := service.ExportAuditLog(t.Context(), "org-1", "json", "", "", nil)
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("code = %v (%v), want ResourceExhausted", status.Code(err), err)
+	}
+	if !strings.Contains(err.Error(), "narrow it by actor or event type") {
+		t.Errorf("the refusal says how to get past it, got %q", err)
+	}
+
+	service = &Service{auditStore: exportingStore{entries: []AuditEntry{
+		{ID: "evt-1", EventType: EventTeamCreated, SchemaVersion: 1, OrgID: "org-1", CreatedAt: time.Unix(0, 0).UTC()},
+	}}}
+	body, contentType, _, err := service.ExportAuditLog(t.Context(), "org-1", "json", "", "", nil)
+	if err != nil {
+		t.Fatalf("ExportAuditLog: %v", err)
+	}
+	if contentType != "application/json" || !strings.Contains(string(body), "evt-1") {
+		t.Errorf("export = %s (%s)", body, contentType)
 	}
 }

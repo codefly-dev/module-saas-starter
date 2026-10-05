@@ -78,6 +78,9 @@ type Config struct {
 	// ContentDetailRetention is the details table's TTL: how long a
 	// content-class event's full details are kept, in whole days.
 	ContentDetailRetention time.Duration
+	// ExportMaxBytes bounds the events one export gathers, counted by their
+	// text (auditeval.Event.Size). Zero is business.AuditExportMaxBytes.
+	ExportMaxBytes int64
 }
 
 // clusterPattern is a cluster name as remote_servers declares one, or a macro
@@ -97,6 +100,8 @@ type Store struct {
 	eventsDays   int
 	detailDays   int
 	readSettings clickhouse.Settings
+	// exportMaxBytes is the most an export gathers before it gives up.
+	exportMaxBytes int64
 	// writeSettings are sent with every insert: on a cluster, the quorum that
 	// makes an acknowledgement durable.
 	writeSettings clickhouse.Settings
@@ -127,13 +132,21 @@ func New(conn Conn, cfg Config) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.ExportMaxBytes < 0 {
+		return nil, errors.New("clickhouse audit store: export bound cannot be negative")
+	}
+	exportMaxBytes := cfg.ExportMaxBytes
+	if exportMaxBytes == 0 {
+		exportMaxBytes = business.AuditExportMaxBytes
+	}
 	store := &Store{
-		conn:         conn,
-		database:     cfg.Database,
-		cluster:      cfg.Cluster,
-		deploymentID: cfg.DeploymentID,
-		eventsDays:   eventsDays,
-		detailDays:   detailDays,
+		conn:           conn,
+		database:       cfg.Database,
+		cluster:        cfg.Cluster,
+		deploymentID:   cfg.DeploymentID,
+		eventsDays:     eventsDays,
+		detailDays:     detailDays,
+		exportMaxBytes: exportMaxBytes,
 		// Pinned per read, whatever the user's profile says, because each one
 		// changes an answer.
 		readSettings: clickhouse.Settings{

@@ -295,14 +295,21 @@ func (s *Store) joined(ctx context.Context, m *auditeval.Matcher, pl plan, order
 }
 
 // ExportAuditEvents implements business.AuditReader: every matching event,
-// once each, newest first, with its payload.
+// once each, newest first, with its payload. ClickHouse streams the events
+// and the service holds none but those it returns; it gives up with
+// business.ErrAuditExportTooLarge as soon as they pass the export bound, so
+// an export's memory is the bound and not the history.
 func (s *Store) ExportAuditEvents(ctx context.Context, read business.AuditRead) ([]business.AuditEntry, error) {
 	m, err := auditeval.NewMatcher(read)
 	if err != nil {
 		return nil, err
 	}
 	var events []*auditeval.Event
+	var gathered int64
 	err = s.joined(ctx, m, newPlan(m, read.Query), true, func(event *auditeval.Event) error {
+		if gathered += int64(event.Size()); gathered > s.exportMaxBytes {
+			return business.ErrAuditExportTooLarge
+		}
 		events = append(events, event)
 		return nil
 	})

@@ -491,6 +491,42 @@ func TestServerReadsATimeBoundOutsideTheColumnRange(t *testing.T) {
 	require.Equal(t, 3, copies)
 }
 
+// An export is as large as the history it matches, and the one read that
+// holds its answer: past the bound it gives up instead of holding the history.
+func TestServerExportGivesUpPastItsBound(t *testing.T) {
+	conn, database := serverDatabase(t)
+	ctx := context.Background()
+	org, actor := uuid.NewString(), uuid.NewString()
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	var records []business.AuditRecord
+	for i := range 200 {
+		records = append(records, newRecord(t, org, actor, business.EventDocumentRead, "doc", base.Add(-time.Duration(i)*time.Minute),
+			business.RetentionContent, map[string]any{"pad": strings.Repeat("p", 900), "n": i}))
+	}
+	store := serverStore(t, conn, database)
+	require.NoError(t, store.Ensure(ctx))
+	appendBatch(t, store, testDeployment, records...)
+	read := business.AuditRead{Scope: business.OrganizationAuditScope(org), Query: business.AuditQuery{OrgID: org}}
+
+	all, err := store.ExportAuditEvents(ctx, read)
+	require.NoError(t, err)
+	require.Len(t, all, 200)
+
+	bounded := serverStore(t, conn, database, func(cfg *Config) { cfg.ExportMaxBytes = 64 << 10 })
+	_, err = bounded.ExportAuditEvents(ctx, read)
+	require.ErrorIs(t, err, business.ErrAuditExportTooLarge, "200 events of about 1.5 KB are over 64 KiB")
+	recent := base.Add(-10 * time.Minute)
+	read.Query.From = &recent
+	few, err := bounded.ExportAuditEvents(ctx, read)
+	require.NoError(t, err)
+	require.Len(t, few, 11, "a narrower export fits the same bound")
+	require.Equal(t, all[:11], few)
+
+	_, err = New(conn, Config{Database: database, DeploymentID: testDeployment, EventsRetention: 2555 * 24 * time.Hour,
+		ContentDetailRetention: 30 * 24 * time.Hour, ExportMaxBytes: -1})
+	require.ErrorContains(t, err, "export bound cannot be negative")
+}
+
 // Decimal texts whose nearest double a fast parser misses: ClickHouse reads
 // each — as a JSON number and as a JSON string — to the double Postgres's
 // float8in reads, so the metrics over them run in ClickHouse and agree.
