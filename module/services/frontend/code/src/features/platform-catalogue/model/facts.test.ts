@@ -40,15 +40,35 @@ function entry(
 	});
 }
 
+// An observation that carries the evidence a verdict rests on: a dated
+// execution. An affirmative verdict is a claim about NOW, and the renderer
+// refuses to paint one green beside an undated or absent observation — so a
+// fixture that omits the date is not "an observation", it is the contradiction.
 function observedWith(verdict: CatalogueObservedVerdict) {
 	return {
 		observedExecutionValue: {
 			case: "observedExecution" as const,
 			value: { imageDigest: "sha256:bbb", buildIncarnation: BigInt(3) },
 		},
+		observationFreshnessValue: {
+			case: "observedAt" as const,
+			value: { seconds: BigInt(1_700_000_000), nanos: 0 },
+		},
 		verdictValue: { case: "verdict" as const, value: verdict },
 	};
 }
+
+// A current approval, so an affirmative verdict has something to be judged
+// against.
+const currentAuthorization = {
+	authorizationValue: {
+		case: "authorization" as const,
+		value: {
+			authorizedRevision: BigInt(4),
+			approvedExecution: { imageDigest: "sha256:bbb", buildIncarnation: BigInt(3) },
+		},
+	},
+};
 
 describe("the state model", () => {
 	it("is the registry's six states, in order", () => {
@@ -194,10 +214,11 @@ describe("authorization", () => {
 });
 
 describe("observedVerdictView", () => {
-	it("states running authorized only when the server judged it so", () => {
+	it("states running authorized only when the server judged it so, with the evidence beside it", () => {
 		expect(
 			observedVerdictView(
 				entry({
+					authorized: currentAuthorization,
 					observed: observedWith(CatalogueObservedVerdict.RUNNING_AUTHORIZED),
 				}),
 			),
@@ -206,6 +227,28 @@ describe("observedVerdictView", () => {
 			text: "Running authorized",
 			tone: "success",
 		});
+	});
+
+	// The reviewer's finding: the renderer once painted "Running authorized"
+	// green beside "Not observed". The host enforces consistency at its read
+	// boundary; this is the second line, and it must hold on its own. An
+	// operator reads the green and stops, so a contradiction is shown as
+	// unknown, never as success.
+	it("refuses an authorized verdict whose evidence is missing", () => {
+		const authorizedVerdict = observedWith(CatalogueObservedVerdict.RUNNING_AUTHORIZED);
+
+		const undated = { ...authorizedVerdict, observationFreshnessValue: { case: undefined } };
+		expect(
+			observedVerdictView(entry({ authorized: currentAuthorization, observed: undated })),
+		).toMatchObject({ kind: "gap", label: "Inconsistent" });
+
+		const noAuthorization = entry({ observed: authorizedVerdict });
+		expect(observedVerdictView(noAuthorization)).toMatchObject({ kind: "gap", label: "Inconsistent" });
+
+		const noExecution = { ...authorizedVerdict, observedExecutionValue: { case: undefined } };
+		expect(
+			observedVerdictView(entry({ authorized: currentAuthorization, observed: noExecution })),
+		).toMatchObject({ kind: "gap", label: "Inconsistent" });
 	});
 
 	it("flags an execution that differs from the approved one", () => {

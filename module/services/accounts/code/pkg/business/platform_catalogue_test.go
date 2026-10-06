@@ -1,6 +1,7 @@
 package business
 
 import (
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"testing"
 	"time"
 
@@ -28,9 +29,44 @@ func TestCatalogueObservedVerdict(t *testing.T) {
 		name       string
 		authorized *gen.CatalogueAuthorized
 		observed   *gen.CatalogueExecution
-		verdict    gen.CatalogueObservedVerdict
-		gap        gen.CatalogueGapReason
+		// stale leaves observation_freshness unset: an execution reported
+		// with no time it was seen at.
+		stale   bool
+		verdict gen.CatalogueObservedVerdict
+		gap     gen.CatalogueGapReason
 	}{
+		{
+			// The reviewer's construction: the approved digest and incarnation,
+			// identical on both sides, but the observation carries no freshness.
+			// The renderer once showed "Running authorized" beside "Not
+			// observed" for exactly this; an affirmative verdict is a claim
+			// about NOW and an undated observation cannot make it.
+			name:       "the approved execution, observed at no known time",
+			authorized: authorized,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
+			stale:      true,
+			gap:        gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED,
+		},
+		{
+			// The reviewer's second construction: same digest, both
+			// incarnations omitted. Two zero defaults compare equal, which is
+			// how a page says "authorized" about nothing.
+			name: "same digest, neither side carries an incarnation",
+			authorized: &gen.CatalogueAuthorized{AuthorizationValue: &gen.CatalogueAuthorized_Authorization{
+				Authorization: &gen.CatalogueAuthorization{AuthorizedRevision: 4, ApprovedExecution: &gen.CatalogueExecution{ImageDigest: "sha256:aaa"}},
+			}},
+			observed: &gen.CatalogueExecution{ImageDigest: "sha256:aaa"},
+			verdict:  gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS,
+		},
+		{
+			// A stale observation of an UNAUTHORIZED execution still condemns:
+			// something ran without approval, and that fact does not expire.
+			name:       "observed with no current authorization, at no known time",
+			authorized: notAuthorized,
+			observed:   &gen.CatalogueExecution{ImageDigest: "sha256:aaa", BuildIncarnation: 3},
+			stale:      true,
+			verdict:    gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED,
+		},
 		{name: "authorized, nothing observed", authorized: authorized, gap: gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED},
 		{name: "not authorized, nothing observed", authorized: notAuthorized, gap: gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED},
 		{
@@ -81,6 +117,9 @@ func TestCatalogueObservedVerdict(t *testing.T) {
 			observed := &gen.CatalogueObserved{}
 			if tc.observed != nil {
 				observed.ObservedExecutionValue = &gen.CatalogueObserved_ObservedExecution{ObservedExecution: tc.observed}
+				if !tc.stale {
+					observed.ObservationFreshnessValue = &gen.CatalogueObserved_ObservedAt{ObservedAt: timestamppb.Now()}
+				}
 			}
 			judgeCatalogueObserved(tc.authorized, observed)
 			if tc.gap != gen.CatalogueGapReason_CATALOGUE_GAP_REASON_UNSPECIFIED {

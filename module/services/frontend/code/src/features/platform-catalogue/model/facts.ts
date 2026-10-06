@@ -201,6 +201,23 @@ export function observedVerdictView(entry: CatalogueEntry): FactView {
 			? observed.observedExecutionValue.value
 			: undefined;
 	const detail = `Observed ${executionText(running)}.`;
+	// The host enforces this at its read boundary; this is the second line,
+	// not the only one. An affirmative verdict rendered beside an absent
+	// observation, an undated one, or an absent authorization is a contradiction
+	// the server must never emit — and if it ever does, the page says so
+	// rather than painting the row green. An operator reads the green and stops.
+	if (v.value === CatalogueObservedVerdict.RUNNING_AUTHORIZED) {
+		const dated = observed?.observationFreshnessValue.case === "observedAt";
+		const authorized = entry.authorized?.authorizationValue.case === "authorization";
+		if (!running || !dated || !authorized) {
+			return {
+				kind: "gap",
+				label: "Inconsistent",
+				detail:
+					"The host reported an authorized execution without the evidence that supports it; treat this row as unknown.",
+			};
+		}
+	}
 	switch (v.value) {
 		case CatalogueObservedVerdict.RUNNING_AUTHORIZED:
 			return {

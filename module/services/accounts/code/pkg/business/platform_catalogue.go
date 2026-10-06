@@ -49,19 +49,20 @@ type PlatformCatalogue struct {
 }
 
 const (
-	catalogueNoDeclaration   = "This host holds no applied presence document for this entry, which is what records what the composition declares."
-	catalogueNoApplication   = "This host has applied no presence generation for this entry."
-	catalogueNoApproval      = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
-	catalogueNotObserved     = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
-	catalogueNoVerdict       = "There is no approval record to judge the observed execution against."
-	catalogueNoWithdrawal    = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
-	catalogueNoRevocation    = "This host holds no credential-revocation record for this entry."
-	catalogueNoRetirement    = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
-	catalogueNoBuildSize     = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
-	catalogueModulePublisher = "A composed module is known by its principal prefix alone; the composition records no publisher."
-	catalogueUnregistered    = "No registration exists under this identifier; it is named only by its installations."
-	catalogueNoRevision      = "Installations carry no revision of their own on this host."
-	catalogueNoAgentRelease  = "The installation's agent principal carries no publisher/name:version identifier."
+	catalogueNoDeclaration    = "This host holds no applied presence document for this entry, which is what records what the composition declares."
+	catalogueNoApplication    = "This host has applied no presence generation for this entry."
+	catalogueNoApproval       = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
+	catalogueStaleObservation = "an execution was reported without a time it was observed at, so it cannot be judged current"
+	catalogueNotObserved      = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
+	catalogueNoVerdict        = "There is no approval record to judge the observed execution against."
+	catalogueNoWithdrawal     = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
+	catalogueNoRevocation     = "This host holds no credential-revocation record for this entry."
+	catalogueNoRetirement     = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
+	catalogueNoBuildSize      = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
+	catalogueModulePublisher  = "A composed module is known by its principal prefix alone; the composition records no publisher."
+	catalogueUnregistered     = "No registration exists under this identifier; it is named only by its installations."
+	catalogueNoRevision       = "Installations carry no revision of their own on this host."
+	catalogueNoAgentRelease   = "The installation's agent principal carries no publisher/name:version identifier."
 )
 
 // ListPlatformCatalogue reads the Catalogue for a super administrator.
@@ -184,13 +185,20 @@ func newCatalogueEntry(kind gen.CatalogueEntryKind, name string) *gen.CatalogueE
 
 // judgeCatalogueObserved sets the observed verdict from the authorized and
 // observed states the entry already carries. It judges what runs against what
-// is authorized, never against what is declared, and gives a verdict only when
-// both are known:
+// is authorized, never against what is declared, and an AFFIRMATIVE verdict is
+// constructible only from fresh, complete evidence:
 //
-//   - no observation: NOT_OBSERVED, never a match;
+//   - no observation, or an observation whose freshness is unknown or stale:
+//     NOT_OBSERVED, never a match. An observation nobody can date is not
+//     evidence that anything runs now;
 //   - an observation, but the host cannot tell what is authorized: NOT_RECORDED;
-//   - an observation with no current authorization: RUNNING_UNAUTHORIZED;
-//   - an observation of the approved digest and incarnation: RUNNING_AUTHORIZED;
+//   - an observation with no current authorization: RUNNING_UNAUTHORIZED --
+//     this one needs no freshness, because something ran without approval and
+//     that fact does not expire;
+//   - an observation of the approved digest and a POSITIVE matching
+//     incarnation: RUNNING_AUTHORIZED. An incarnation of zero on either side is
+//     an absent incarnation, not a matching one -- two defaults comparing equal
+//     is exactly how a page says "authorized" about nothing;
 //   - anything else: RUNNING_DIFFERS.
 func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.CatalogueObserved) {
 	running := observed.GetObservedExecution()
@@ -201,15 +209,27 @@ func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.C
 		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED}
 	case authorized.GetAuthorization() == nil:
 		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueNoVerdict)}
+	case observed.GetObservedAt() == nil:
+		// An execution was reported but nobody can say when. Without a date it
+		// cannot be CURRENT, and an affirmative verdict is a claim about now.
+		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, catalogueStaleObservation)}
 	default:
 		approved := authorized.GetAuthorization().GetApprovedExecution()
 		verdict := gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS
-		if approved.GetImageDigest() != "" && approved.GetImageDigest() == running.GetImageDigest() &&
+		if completeExecution(approved) && completeExecution(running) &&
+			approved.GetImageDigest() == running.GetImageDigest() &&
 			approved.GetBuildIncarnation() == running.GetBuildIncarnation() {
 			verdict = gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED
 		}
 		observed.VerdictValue = &gen.CatalogueObserved_Verdict{Verdict: verdict}
 	}
+}
+
+// completeExecution reports whether an execution carries both facts a match
+// needs. A missing digest or a zero incarnation is absent evidence; comparing
+// absent against absent and calling it equal is the defect this guards.
+func completeExecution(e *gen.CatalogueExecution) bool {
+	return e.GetImageDigest() != "" && e.GetBuildIncarnation() > 0
 }
 
 func catalogueInstallation(record *CatalogueInstallationRecord) *gen.CatalogueInstallation {
