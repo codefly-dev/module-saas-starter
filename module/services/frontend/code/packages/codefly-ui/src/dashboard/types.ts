@@ -52,7 +52,7 @@ export interface DashboardView {
 	layout?: DashboardLayoutKind;
 	/** Grid column count (default 2); ignored in a stack. */
 	columns?: 1 | 2 | 3 | 4;
-	/** Optional accent (any CSS color) applied to charts via the primary and first chart tokens. */
+	/** Optional accent (any CSS color) applied to charts via the primary token and a lone series' chart token. */
 	accent?: string;
 	widgets: DashboardWidgetView[];
 }

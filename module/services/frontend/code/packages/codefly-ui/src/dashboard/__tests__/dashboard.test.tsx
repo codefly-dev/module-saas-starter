@@ -50,11 +50,11 @@ describe("Dashboard", () => {
 		const { container } = render(<Dashboard data={data} />);
 		const section = container.querySelector("section") as HTMLElement;
 		expect(section.style.getPropertyValue("--primary")).toBe("hotpink");
-		// A line or area chart's one series colours from the first chart token.
-		expect(section.style.getPropertyValue("--chart-1")).toBe("hotpink");
+		// A line or area chart's one series colours from the palette's last token.
+		expect(section.style.getPropertyValue("--chart-5")).toBe("hotpink");
 	});
 
-	it("draws a line widget's series in the first chart colour, which the accent sets", () => {
+	it("draws a line widget's series in the palette's last colour, which the accent sets", () => {
 		const { container } = render(
 			<Dashboard
 				data={{
@@ -77,7 +77,7 @@ describe("Dashboard", () => {
 			/>,
 		);
 		expect(
-			container.querySelector('path[stroke="var(--chart-1)"]'),
+			container.querySelector('path[stroke="var(--chart-5)"]'),
 		).toBeTruthy();
 	});
 });
