@@ -7,6 +7,15 @@
 -- The check reads as the relay's role: the queue forces row level security, and
 -- that role's policy admits every row, so the count is the real one rather than
 -- whatever the migrating session's own policies happen to show it.
+--
+-- The table is locked first, before anything is counted. A writer that has
+-- inserted but not committed is invisible to the count, and DROP TABLE waits for
+-- it and then drops the table beneath the row it committed. Taking the lock
+-- first makes this wait for that writer instead, and the count that follows sees
+-- what it committed; nothing can insert between the count and the drop, because
+-- the lock is held until this transaction ends. The lock is taken as the
+-- migrating role, which owns the table, before the role switch below.
+LOCK TABLE public.audit_event_queue IN ACCESS EXCLUSIVE MODE;
 SET LOCAL ROLE app_job_worker;
 DO $$
 DECLARE
