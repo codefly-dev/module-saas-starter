@@ -45,7 +45,6 @@ func (s *catalogueStore) ListCatalogueInstallations(context.Context) ([]*busines
 // boundary every response withholds — while keeping what the derived status is
 // read from.
 func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
-	lease := time.Now().UTC().Add(time.Minute)
 	store := &catalogueStore{
 		role: "super_admin",
 		registrations: []*business.SolutionRegistration{{
@@ -54,16 +53,25 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 			Revision:        12,
 			RuntimeBoundary: boundaryStoredSeed,
 			Frontend: &business.SolutionFrontendHalf{
-				Revision: 11, Manifest: `{"id":"example-solution"}`, ContractVersion: "v1", LeaseExpiresAt: lease,
+				Revision: 11, Manifest: `{"id":"example-solution"}`, ContractVersion: "v1",
 			},
 			Backend: &business.SolutionBackendHalf{
 				Revision: 12, Upstream: "http://upstream.example:8080", ServiceAlias: "example-solution",
-				ContractVersion: "v1", LeaseExpiresAt: lease,
+				ContractVersion: "v1",
+			},
+			// An installation names the immutable target, so the declared
+			// record is what maps it back to this solution. Without it the
+			// installation resolves to no solution and is keyed by its target
+			// id instead — which is correct behaviour, and not what this test
+			// is about.
+			Declared: &business.SolutionDeclaredBinding{
+				BindingID: "acme.test.example-solution", Generation: 1,
+				Release: "acme/example-solution@1.0.0", TargetID: platformTargetD,
 			},
 			UpdatedAt: time.Now().UTC(),
 		}},
 		installations: []*business.CatalogueInstallationRecord{{
-			Installation: &gen.Installation{Id: platformTargetD, SolutionIdentifier: "example-solution"},
+			Installation: &gen.Installation{Id: platformTargetD, TargetId: platformTargetD},
 			OrgName:      "Acme",
 		}},
 	}
@@ -83,11 +91,19 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 
 	registration := entry.GetRegistration()
 	require.Equal(t, gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE, registration.GetStatus())
-	require.Empty(t, registration.GetRuntimeBoundary())
+	// THE BOUNDARY IS WITHHELD STRUCTURALLY, not emptied. This asserted
+	// `GetRuntimeBoundary()` was empty; the wire message has no such field at
+	// all, so there is no getter to call and nothing a future change could
+	// accidentally populate. Asserted over the DESCRIPTOR rather than a value,
+	// because "the field does not exist" is the guarantee — a seed is the one
+	// thing that must never leave this host, and an absent field cannot leak.
+	require.Nil(t, registration.ProtoReflect().Descriptor().Fields().ByName("runtime_boundary"),
+		"saas.accounts.v1.SolutionRegistration must carry no runtime_boundary field: "+
+			"the seed selects the boundary a Work Context is sealed under, so a response that could "+
+			"carry it lets one solution learn another's")
 	require.Empty(t, registration.GetFrontend().GetManifest())
 	require.Empty(t, registration.GetBackend().GetUpstream())
 	require.Empty(t, registration.GetBackend().GetServiceAlias())
 	require.Equal(t, int64(11), registration.GetFrontend().GetRevision())
 	require.Equal(t, "v1", registration.GetBackend().GetContractVersion())
-	require.NotNil(t, registration.GetBackend().GetLeaseExpiresAt())
 }
