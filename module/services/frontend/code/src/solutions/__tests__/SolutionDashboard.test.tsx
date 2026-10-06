@@ -326,6 +326,17 @@ describe("SolutionDashboards", () => {
 		expect(tile("Total logins").classList).not.toContain("row-span-2");
 	});
 
+	it("titles a number tile as the audit log labels its numbers, and a chart as a card", () => {
+		renderDashboards();
+
+		const title = (name: string) =>
+			tile(name).querySelector('[data-slot="card-title"]')?.classList;
+		// The label StatTile writes above a headline number.
+		expect(title("Total logins")).toContain("type-metric-label");
+		expect(title("Total logins")).toContain("text-muted-foreground");
+		expect(title("Logins over time")).not.toContain("type-metric-label");
+	});
+
 	it("reads as loading until the org context resolves, never as empty", () => {
 		authState.organizationId = undefined;
 

@@ -262,7 +262,16 @@ function WidgetCard({
 		<Card className="h-full">
 			<CardHeader className="flex flex-row items-center gap-1 pb-2">
 				{grip}
-				<CardTitle className="min-w-0 flex-1 text-base">
+				<CardTitle
+					className={
+						// A number tile is titled as the kit's StatTile labels its
+						// number: the small, muted body text above the figure, not a
+						// card heading.
+						widget.visualization === "number"
+							? "min-w-0 flex-1 font-sans font-normal type-metric-label text-muted-foreground"
+							: "min-w-0 flex-1 text-base"
+					}
+				>
 					{widget.title ?? widget.metric}
 				</CardTitle>
 				{info}
