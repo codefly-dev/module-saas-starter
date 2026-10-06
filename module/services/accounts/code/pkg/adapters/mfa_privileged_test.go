@@ -48,7 +48,10 @@ const (
 	mfaOrgID   = "00000000-0000-4000-8000-0000000000b1"
 )
 
-func installMFAPolicyStore(t *testing.T, store *mfaPolicyStore) {
+// The parameter is the Store interface rather than this file's fake, so a test that
+// needs another store method — a principal lookup, say — supplies its own fake instead
+// of growing this one past what its own cases need.
+func installMFAPolicyStore(t *testing.T, store business.Store) {
 	t.Helper()
 	previous := service
 	t.Cleanup(func() { service = previous })

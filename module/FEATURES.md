@@ -516,7 +516,7 @@ starters, and large-scale enterprise SaaS expectations.
 | OAuth login (multiple providers)           | ✅          | Same               |
 | Email/password login                       | ❌          | ✅ (most starters keep both) |
 | Magic-link login                           | 🟡          | ✅ (one-click)     |
-| MFA enforced on sensitive ops              | ✅          | 🟡 `requireMFA` gates billing, GDPR delete, impersonation, organization deletion, waitlist review, the role/scope/principal grants and the platform-admin mutations (suspend, session revoke, entitlement override). Fail-closed for a privileged actor — any platform role, or ownership of the request's organization — where not being enrolled is a refusal, not a pass; opt-in per user for every other member. **The method policy still declares `MFA_REQUIREMENT_NONE` for the newly gated methods, so the policy/handler lockstep gate does not yet demand it** — see the note below |
+| MFA enforced on sensitive ops              | ✅          | 🟡 `requireMFA` gates billing, GDPR delete, impersonation, organization deletion, waitlist review, the role/scope/principal grants (creation and revocation) and the platform-admin mutations (suspend, unsuspend, session revoke, entitlement override). Fail-closed for a privileged actor — any platform role, or ownership of the request's organization — where not being enrolled is a refusal, not a pass; opt-in per user for every other member, which an ENROLLED organization admin now meets on the grant paths (see below). **The method policy still declares `MFA_REQUIREMENT_NONE` for the newly gated methods, so the policy/handler lockstep gate does not yet demand it** — see the note below |
 | Multi-org tenancy                          | ✅          | Same               |
 | Org invitations                            | ✅          | Same               |
 | RBAC (built-in roles)                      | ✅          | Same               |
@@ -545,6 +545,23 @@ and wants its own verified regeneration.
 Ordinary tenant mutations — dashboards, teams, invitations, notifications, user
 settings — are deliberately NOT gated. Whether a second factor belongs there is a
 product decision about an operator's whole roster, not a property of this host.
+
+**Who the gated set actually reaches, which is wider than "privileged actor".** The
+role, scope and principal grants admit an organization ADMIN as well as an owner, and
+`requireMFA` is fail-closed only for a privileged actor — for everyone else it keeps
+the pre-existing opt-in rule, which refuses an ENROLLED member without recent
+evidence. So an enrolled org admin who has not stepped up recently is now refused on
+`AssignRole`, `RevokeRole`, `GrantScope`, `RevokeScope`, the role CRUD and
+`CreateAgentPrincipal`, where before this change nothing asked. That is intended —
+granting authority inside a tenant is not an ordinary tenant mutation, whoever does
+it — and it is stated here because an operator reading only the paragraph above would
+not predict the refusal. An admin who has enrolled nothing is still admitted, so no
+roster is forced to enrol by this change alone.
+
+Containment actions carry the same requirement: `SuspendUser`, `RevokeSession` and
+`RevokePrincipal` need fresh factor evidence, so a responder acting on a compromise
+steps up first. A runbook for those operations should say so, because the refusal
+arrives at the least convenient moment by design.
 
 ### Nice-to-have (differentiators)
 
