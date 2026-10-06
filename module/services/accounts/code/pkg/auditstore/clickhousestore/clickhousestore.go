@@ -69,8 +69,10 @@ type Config struct {
 	// coordinated by ClickHouse Keeper under the servers' default replica path
 	// and name. Every insert then waits for a majority of the replicas before
 	// it is acknowledged, and every read is served only by a replica that holds
-	// all of them (insert_quorum, select_sequential_consistency). Empty creates
-	// the tables as MergeTree on the one server and sends neither setting.
+	// all of them (insert_quorum, select_sequential_consistency). A table that
+	// already exists must be a Replicated*MergeTree too: Ensure refuses a
+	// MergeTree one, which holds its rows on one node. Empty creates the tables
+	// as MergeTree on the one server and sends neither setting.
 	Cluster string
 	// DeploymentID confines every read to this deployment's events.
 	DeploymentID string
@@ -330,7 +332,10 @@ const unknownDatabase = 81
 // and refuses a table it finds that does not match: the service's user holds
 // no ALTER, so a mismatch is the deployment's to fix, and a table expiring at
 // a window other than the configured one would keep events or content longer
-// or shorter than the deployment declared.
+// or shorter than the deployment declared. On a cluster it also refuses a table
+// that is not a Replicated*MergeTree, whatever its columns and window: a table
+// on one node cannot hold a quorum insert, and the relay deletes its queue rows
+// on the insert's acknowledgement.
 func (s *Store) Ensure(ctx context.Context) error {
 	var current string
 	var found uint64
@@ -361,6 +366,11 @@ func (s *Store) Ensure(ctx context.Context) error {
 				return fmt.Errorf("clickhouse audit store: table %s.%s was not created", s.database, spec.name)
 			}
 		}
+		if s.cluster != "" {
+			if err := replicated(s.cluster, existing); err != nil {
+				return fmt.Errorf("clickhouse audit store: table %s.%s: %w", s.database, spec.name, err)
+			}
+		}
 		if err := conforms(spec, existing); err != nil {
 			return fmt.Errorf("clickhouse audit store: table %s.%s: %w", s.database, spec.name, err)
 		}
@@ -378,22 +388,25 @@ func (s *Store) ensureError(doing string, err error) error {
 	return fmt.Errorf("clickhouse audit store: %s: %w", doing, err)
 }
 
-// tableShape is what system.tables and system.columns say of a table.
+// tableShape is what system.tables and system.columns say of a table: its
+// engine (system.tables.engine), the full engine clause with its partitioning,
+// ordering and TTL (engine_full), and its columns.
 type tableShape struct {
+	engine     string
 	engineFull string
 	columns    map[string]string
 }
 
 func (s *Store) describe(ctx context.Context, table string) (*tableShape, error) {
 	p := &sqlParams{}
-	rows, err := s.conn.Query(ctx, "SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = "+p.text(table), p.args...)
+	rows, err := s.conn.Query(ctx, "SELECT engine, engine_full FROM system.tables WHERE database = currentDatabase() AND name = "+p.text(table), p.args...)
 	if err != nil {
 		return nil, err
 	}
 	var shape *tableShape
 	for rows.Next() {
 		shape = &tableShape{columns: map[string]string{}}
-		if err := rows.Scan(&shape.engineFull); err != nil {
+		if err := rows.Scan(&shape.engine, &shape.engineFull); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -418,6 +431,21 @@ func (s *Store) describe(ctx context.Context, table string) (*tableShape, error)
 		return nil, err
 	}
 	return shape, nil
+}
+
+// replicated reports why an existing table cannot serve a cluster: its engine
+// is not one of the Replicated*MergeTree engines (ReplicatedMergeTree,
+// ReplicatedReplacingMergeTree, ...). A MergeTree table lives on the one node
+// that holds it, so insert_quorum has no replicas to wait for and an
+// acknowledged insert is stored once; the relay deletes its queue row on that
+// acknowledgement. The service's user holds no DROP or ALTER, so the
+// deployment replaces the table; the store creates it replicated when it is
+// missing.
+func replicated(cluster string, existing *tableShape) error {
+	if strings.HasPrefix(existing.engine, "Replicated") && strings.HasSuffix(existing.engine, "MergeTree") {
+		return nil
+	}
+	return fmt.Errorf("engine %s is not replicated, and cluster %q is configured: a cluster needs a Replicated*MergeTree table, because a quorum insert cannot be made durable on one node; replace the table with a ReplicatedMergeTree one", existing.engine, cluster)
 }
 
 // ttlClause is the TTL clause of an engine_full, up to its SETTINGS.

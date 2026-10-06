@@ -296,7 +296,11 @@ Postgres transaction.
    - A single-node deployment uses MergeTree and sends neither the quorum nor
      the sequential-read setting below. When `AUDIT_CLICKHOUSE_CLUSTER` is set,
      tables are created `ON CLUSTER` as `ReplicatedMergeTree` with ClickHouse
-     Keeper; the cluster must exist before the adapter starts. Every insert then
+     Keeper; the cluster must exist before the adapter starts, and a table that
+     already exists must be a `Replicated*MergeTree` as well: a `MergeTree` table
+     lives on one node, where no quorum can make an insert durable, so startup
+     refuses it by naming the table and its engine rather than accepting it for
+     its columns and TTL. Every insert then
      carries `insert_quorum=auto` (a majority of the replicas must hold it),
      `insert_quorum_parallel=0` (one quorum insert at a time) and a 60-second
      `insert_quorum_timeout`, and every read carries

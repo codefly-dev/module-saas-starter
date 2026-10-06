@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -423,5 +424,179 @@ func TestAClusterInsertsWithAQuorumAndReadsSequentially(t *testing.T) {
 	require.Less(t, time.Duration(timeout)*time.Millisecond, 2*time.Minute, "the quorum gives up before the relay's own attempt does")
 	for name, value := range single.readSettings {
 		require.Equal(t, value, clustered.readSettings[name], "the pinned reading settings are the same on a cluster: %s", name)
+	}
+}
+
+// catalogueConn answers what Ensure asks of a server's system tables from a
+// fixed catalogue, so the engines Ensure accepts and refuses are pinned without
+// a server: the database it reports, each table's engine and engine_full, and
+// each table's columns. It records every statement Ensure executes, since a
+// table found must never be created over.
+type catalogueConn struct {
+	Conn
+	database string
+	tables   map[string]catalogueTable
+	executed []string
+}
+
+type catalogueTable struct {
+	engine, engineFull string
+	columns            map[string]string
+}
+
+func (c *catalogueConn) Exec(_ context.Context, query string, _ ...any) error {
+	c.executed = append(c.executed, query)
+	return nil
+}
+
+func (c *catalogueConn) Query(_ context.Context, query string, args ...any) (driver.Rows, error) {
+	table := func() (catalogueTable, bool) {
+		if len(args) != 1 {
+			return catalogueTable{}, false
+		}
+		named, ok := args[0].(driver.NamedValue)
+		if !ok {
+			return catalogueTable{}, false
+		}
+		found, ok := c.tables[named.Value.(string)]
+		return found, ok
+	}
+	switch {
+	case strings.Contains(query, "system.databases"):
+		return &catalogueRows{rows: [][]any{{c.database, uint64(1)}}}, nil
+	case strings.Contains(query, "system.tables"):
+		found, ok := table()
+		if !ok {
+			return &catalogueRows{}, nil
+		}
+		return &catalogueRows{rows: [][]any{{found.engine, found.engineFull}}}, nil
+	case strings.Contains(query, "system.columns"):
+		found, _ := table()
+		var rows [][]any
+		for name, typ := range found.columns {
+			rows = append(rows, []any{name, typ})
+		}
+		return &catalogueRows{rows: rows}, nil
+	}
+	return nil, errors.New("catalogueConn: unexpected query: " + query)
+}
+
+// catalogueRows scans a row into its destinations from the right: system.tables
+// is read as (engine, engine_full) or as engine_full alone, whichever the store
+// asks for.
+type catalogueRows struct {
+	driver.Rows
+	rows [][]any
+	next int
+}
+
+func (r *catalogueRows) Next() bool {
+	r.next++
+	return r.next <= len(r.rows)
+}
+
+func (r *catalogueRows) Scan(dest ...any) error {
+	row := r.rows[r.next-1]
+	if len(dest) > len(row) {
+		return errors.New("catalogueRows: more destinations than columns")
+	}
+	for i, d := range dest {
+		value := row[len(row)-len(dest)+i]
+		switch d := d.(type) {
+		case *string:
+			*d = value.(string)
+		case *uint64:
+			*d = value.(uint64)
+		default:
+			return errors.New("catalogueRows: unsupported destination")
+		}
+	}
+	return nil
+}
+
+func (r *catalogueRows) Err() error   { return nil }
+func (r *catalogueRows) Close() error { return nil }
+
+// existingTables is a catalogue holding both audit tables exactly as the store
+// writes them, with the given engine for each.
+func existingTables(store *Store, engineFor func(table string) string) *catalogueConn {
+	conn := &catalogueConn{database: store.database, tables: map[string]catalogueTable{}}
+	for _, spec := range store.tableSpecs() {
+		columns := map[string]string{}
+		for _, column := range spec.columns {
+			columns[column.Name] = column.Type
+		}
+		engine := engineFor(spec.name)
+		engineFull := engine
+		if strings.HasPrefix(engine, "Replicated") {
+			engineFull += "('/clickhouse/tables/{uuid}/{shard}', '{replica}')"
+		}
+		engineFull += " PARTITION BY toYYYYMM(occurred_at) ORDER BY (deployment_id, org_id, occurred_at, event_id) " +
+			"TTL occurred_at + toIntervalDay(" + strconv.Itoa(spec.days) + ") SETTINGS index_granularity = 8192"
+		conn.tables[spec.name] = catalogueTable{engine: engine, engineFull: engineFull, columns: columns}
+	}
+	return conn
+}
+
+func same(engine string) func(string) string { return func(string) string { return engine } }
+
+// A cluster's inserts are made durable by insert_quorum, which counts replicas;
+// a MergeTree table lives on one node and has none to count. The relay deletes
+// its queue rows on the acknowledgement, so a table found on a cluster that is
+// not a Replicated*MergeTree is refused, naming the table and its engine, rather
+// than accepted for having the right columns and TTL.
+func TestEnsureOnAClusterRequiresEveryTableToBeReplicated(t *testing.T) {
+	clustered := validConfig()
+	clustered.Cluster = "audit_cluster"
+
+	for name, tc := range map[string]struct {
+		cfg     Config
+		engines func(table string) string
+		refuse  []string
+	}{
+		"a cluster refuses a MergeTree events table": {
+			cfg: clustered, engines: same("MergeTree"),
+			refuse: []string{"table audit.audit_events", "engine MergeTree", `cluster "audit_cluster"`, "Replicated*MergeTree"},
+		},
+		"a cluster refuses a MergeTree details table beside a replicated events table": {
+			cfg: clustered,
+			engines: func(table string) string {
+				if table == DetailsTable {
+					return "MergeTree"
+				}
+				return "ReplicatedMergeTree"
+			},
+			refuse: []string{"table audit.audit_event_details", "engine MergeTree"},
+		},
+		"a cluster refuses a MergeTree variant that is not replicated": {
+			cfg: clustered, engines: same("ReplacingMergeTree"),
+			refuse: []string{"table audit.audit_events", "engine ReplacingMergeTree"},
+		},
+		"a cluster refuses an engine that is not a MergeTree at all": {
+			cfg: clustered, engines: same("Memory"),
+			refuse: []string{"table audit.audit_events", "engine Memory"},
+		},
+		"a cluster accepts ReplicatedMergeTree":          {cfg: clustered, engines: same("ReplicatedMergeTree")},
+		"a cluster accepts another Replicated MergeTree": {cfg: clustered, engines: same("ReplicatedReplacingMergeTree")},
+		"one server accepts MergeTree":                   {cfg: validConfig(), engines: same("MergeTree")},
+		"one server keeps accepting a replicated table":  {cfg: validConfig(), engines: same("ReplicatedMergeTree")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, err := New(panicConn{}, tc.cfg)
+			require.NoError(t, err)
+			conn := existingTables(store, tc.engines)
+			store.conn = conn
+
+			err = store.Ensure(context.Background())
+			if tc.refuse == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				for _, want := range tc.refuse {
+					require.ErrorContains(t, err, want)
+				}
+			}
+			require.Empty(t, conn.executed, "a table that exists is never created over")
+		})
 	}
 }
