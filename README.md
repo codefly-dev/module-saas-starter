@@ -73,7 +73,7 @@ not this list, is the enumeration.
 
 Beyond the API, the module ships the authenticated product frontend (whose
 routes and navigation modules contribute to), a separately deployable public
-marketing site, and the cache, store, vault, telemetry, and gateway services
+marketing site, and the cache, store, vault, and gateway services
 the above runs on.
 
 ## What it does not own

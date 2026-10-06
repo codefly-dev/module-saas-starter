@@ -29,5 +29,4 @@ services:
     - name: frontend
     - name: marketing
     - name: store
-    - name: telemetry
     - name: vault

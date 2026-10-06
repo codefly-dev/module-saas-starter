@@ -47,7 +47,7 @@ func runRedisIntegrationTests(m *testing.M) int {
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
 		sdk.WithSharedControlChannel(),
-		sdk.WithExcludedDependencies("vault", "telemetry"),
+		sdk.WithExcludedDependencies("vault"),
 		sdk.WithNamingScope("redis-integration"),
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store", "cache"),

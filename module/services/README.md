@@ -1,6 +1,6 @@
 # Module services
 
-The module contains eight first-class Codefly services. `marketing` and
+The module contains seven first-class Codefly services. `marketing` and
 `frontend` are separate Next.js applications: marketing owns public
 apex/`www` content, while frontend remains the authenticated product behind
 `auth-gateway`.
