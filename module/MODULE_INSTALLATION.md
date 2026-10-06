@@ -386,3 +386,8 @@ A success is a current observation, not a durable liveness proof or approval to
 execute anything. Consumers retain their own operation authorization and re-read
 on subsequent requests. This read neither consumes nor extends a parent replay
 witness and never substitutes a viewer bearer or remints missing authority.
+
+The TypeScript SDK includes this contract starting with package version
+`0.3.17`. Artifact decision events are also part of the declared module
+generator chain: regenerate the complete package projections when changing
+these authority contracts, including the event catalog and communication docs.

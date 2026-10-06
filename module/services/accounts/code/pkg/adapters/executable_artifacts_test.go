@@ -3,14 +3,15 @@ package adapters
 import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
-	"connectrpc.com/connect"
 	"context"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 	"strings"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 type artifactTransportStore struct {

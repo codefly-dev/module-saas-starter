@@ -5,6 +5,7 @@ import (
 	"accounts/pkg/business"
 	"context"
 	"errors"
+
 	"github.com/jackc/pgx/v5"
 )
 

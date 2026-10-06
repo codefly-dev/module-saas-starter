@@ -8,11 +8,12 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra/storetx"
 	"context"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T) {

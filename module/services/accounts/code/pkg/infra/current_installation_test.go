@@ -8,6 +8,7 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
+
 	"github.com/stretchr/testify/require"
 )
 

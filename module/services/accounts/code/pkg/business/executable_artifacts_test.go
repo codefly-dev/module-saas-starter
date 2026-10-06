@@ -4,11 +4,12 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func artifactTestPolicy() ExecutableArtifactPolicy {
