@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
@@ -64,12 +65,24 @@ func TestGateway_WorkContextMint_StripsACallerAssertedSolution(t *testing.T) {
 // the SNAPSHOT every consumer reads carries no boundary: the seed is the one
 // thing that must never leave this host, and the snapshot is what leaves it.
 func TestGateway_SolutionRegistry_SnapshotEchoesNoBoundary(t *testing.T) {
+	// A snapshot that has actually LOADED, reached through the declared path.
+	// This test used to POST to `/solutions/_frontend` and `/solutions/_register`
+	// to populate the registry; those are the runtime registration writer and
+	// are deleted. `refresh` is the seam that remains — without it the handler
+	// answers 503 "solution registry unavailable" and the boundary assertion
+	// would pass because there is nothing to leak.
 	gw, _, _, _ := newGatewayHarness(t)
+	registry := solutionRegistryFake(t, gw)
+	registry.seedDeclared("audit", "http://audit.svc")
+	require.NoError(t, gw.solutions.refresh(context.Background()))
 
-	snapshot := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
-	snapshot.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	req := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, snapshot)
-	require.Equal(t, http.StatusOK, w.Code)
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code,
+		"the snapshot must actually be served, or the assertion below is vacuous")
+	require.Contains(t, w.Body.String(), "audit",
+		"the snapshot must carry the declared record, or there is nothing a boundary could leak through")
 	require.NotContains(t, strings.ToLower(w.Body.String()), "boundary")
 }

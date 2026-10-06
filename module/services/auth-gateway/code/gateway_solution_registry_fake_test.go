@@ -36,6 +36,40 @@ func newFakeSolutionRegistry() *fakeSolutionRegistry {
 // binding now serves this alias", which no derivation can express.
 func fakeSolutionTarget(alias string) string { return "target-" + alias }
 
+// seedDeclared creates a fully declared record, which is how a test gets one
+// now that the runtime registration writer is deleted.
+//
+// Record CREATION in this fake used to come only from the writer's helpers
+// (registerSolutionUpstream / registerSolutionHalves), so with those gone there
+// was no way to put a record in front of the handlers at all — declareTarget
+// below only REPLACES the declaration on a record that already exists. That gap
+// is what item 4 left behind in the test infrastructure, and this closes it on
+// the declared side: delivery is what brings a record into being, so the fake
+// needs a way to say so without pretending a runtime registered itself.
+func (f *fakeSolutionRegistry) seedDeclared(alias, upstream string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.revision++
+	f.records[alias] = &accountsv1.SolutionRegistration{
+		SolutionId: alias,
+		Publisher:  "solution:" + alias,
+		Revision:   f.revision,
+		Declared: &accountsv1.SolutionDeclaredBinding{
+			BindingId:  "acme.test." + alias,
+			Generation: 1,
+			Release:    "acme/" + alias + "@1.0.0",
+			TargetId:   fakeSolutionTarget(alias),
+		},
+		Frontend: &accountsv1.SolutionFrontendBinding{
+			Revision: f.revision, Manifest: `{"id":"` + alias + `"}`, ContractVersion: "v1",
+		},
+		Backend: &accountsv1.SolutionBackendBinding{
+			Revision: f.revision, Upstream: upstream,
+			ServiceAlias: alias, ContractVersion: "v1",
+		},
+	}
+}
+
 // declareTarget replaces the declaration on an existing record, so a test can
 // model a REPLACEMENT presence: the same route alias, served by a different
 // binding, under a target that is not the one any earlier installation named.
