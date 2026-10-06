@@ -59,11 +59,15 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
 /**
  * Render a resolved dashboard. Pass a `DashboardView` (from your own data or via
  * `fromDashboardData(runDashboard(...))`). `accent` overrides the `--primary`
- * token for this dashboard's subtree only, so every chart picks it up.
+ * token for this dashboard's subtree only, so every chart picks it up: the bar
+ * list colours from `--primary`, and a line or area chart's single series from
+ * `--chart-1`, so both are set.
  */
 export function Dashboard({ data, className }: { data: DashboardView; className?: string }) {
 	const columns = data.columns ?? 2;
-	const style = data.accent ? ({ "--primary": data.accent } as React.CSSProperties) : undefined;
+	const style = data.accent
+		? ({ "--primary": data.accent, "--chart-1": data.accent } as React.CSSProperties)
+		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
 
 	return (
