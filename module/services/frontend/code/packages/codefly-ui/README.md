@@ -618,3 +618,7 @@ setup failure, retirement, retained outcomes and ownership errors.
 Use `Disclosure keepMounted` when closing a section must preserve descendant drafts or nested expansion state. The default lazily unmounts the content; `keepMounted` is forwarded to the panel, not the root.
 
 Version 0.12.3 refreshes the default preview palette from appearance contract 2.4.1: small muted captions now meet 4.5:1 on the default muted surface. This supersedes the 0.12.2 development candidate without changing the new component APIs.
+
+Version 0.12.4 also makes destructive/danger Badge text mix 30% toward the active
+foreground, retaining its status hue while meeting small-text contrast on its
+tinted background in the tested default and supplied light/dark skins.

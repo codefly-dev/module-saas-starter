@@ -2703,6 +2703,16 @@
     white-space: pre-wrap;
   }
 
+  .\[color\:color-mix\(in_oklab\,var\(--destructive\)_70\%\,var\(--foreground\)\)\] {
+    color: var(--destructive);
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .\[color\:color-mix\(in_oklab\,var\(--destructive\)_70\%\,var\(--foreground\)\)\] {
+      color: color-mix(in oklab,var(--destructive) 70%,var(--foreground));
+    }
+  }
+
   .text-\[color-mix\(in_oklab\,var\(--chart-1\)_55\%\,var\(--foreground\)\)\] {
     color: var(--chart-1);
   }
