@@ -41,8 +41,8 @@ for years, locked, and queried heavily:
    the job platform admits a global-scope job only from the privileged worker
    pool, which cannot enqueue on the caller's transaction, so `work.go` warns
    that these stay Postgres-only. It also lacks the rows the auth resolver
-   writes with raw SQL (`pkg/auth/pg/resolver.go`), which never pass through the
-   emitter. Postgres lacks everything older than its window. Every reader has
+   records on its resolution transaction (`pkg/auth/pg/resolver.go`), which carry
+   no tee job. Postgres lacks everything older than its window. Every reader has
    to know which copy answers which question.
 
 The requirement ADR 0006 refused to trade away still stands: no state change
@@ -68,9 +68,14 @@ Postgres transaction.
    - `AUDIT_CONTENT_RETENTION_DAYS` — the details window of item 5;
    - `AUDIT_DEPLOYMENT_ID`, stamped on every record;
    - optionally, the relay's tuning: `AUDIT_RELAY_BATCH_SIZE` (the most events
-     one delivery carries; default 500) and `AUDIT_RELAY_MAX_WAIT` (how long a
-     partial batch waits for more events before it is delivered anyway;
-     default 5s, at most 60s).
+     one delivery carries; default 500, at most 5000) and `AUDIT_RELAY_MAX_WAIT`
+     (how long a partial batch waits for more events before it is delivered
+     anyway; default 5s, at most 60s).
+
+   The role-catalog importer, a deploy step that records audit events apart from
+   the service, is the one process with no default: it refuses to run when
+   `AUDIT_SINK` is unset or blank. A deployment on the `postgres` default
+   therefore sets `AUDIT_SINK=postgres` explicitly wherever the importer runs.
 
    A missing required setting fails startup. `AUDIT_EVENTS_RETENTION_DAYS` is a
    ClickHouse setting only — BigQuery's events table has no expiry the kit sets
@@ -103,32 +108,55 @@ Postgres transaction.
    is what keeps the append-only guarantee intact for every `postgres` and
    `both` deployment: no trigger is relaxed to make room for a delete.
 
-   A relay drains the queue:
-   - in **batches**;
+   A relay drains the queue, one relay at a time under a lease:
+   - in **batches**, taken oldest queue row first;
    - **at-least-once, keyed by event id** — a batch redelivered after a crash
      may leave an event in the warehouse twice, as it may in the archive, and
      every read returns each event once by event id (item 4);
-   - **ordered per organization** (platform-level events form one more ordering
-     key);
+   - **in no guaranteed order.** The relay reads a row only when its writing
+     transaction took its id before the oldest transaction still running, so it
+     never reads a row that has not committed. That gate is transaction
+     visibility, not sequence number: a row can be delivered ahead of a lower
+     sequence number whose transaction has yet to commit. Nothing depends on
+     delivery order: both stores key a record by event id, and every read sorts
+     by event time;
    - each batch is **written as one object to the locked archive first, then
      appended to the warehouse** (item 5) — the archive copy is written within
      the batch, not filled in later, and a failure between the two writes
-     repeats the archive write, not the warehouse's. The relay remembers which
-     writes the batch at the head of the queue has had acknowledged, so an
-     outage of one side does not write that batch to the other side again; only
-     a restart forgets, which is the redelivery above;
+     repeats the archive write, not the warehouse's. The relay keeps, for each
+     queued row, which of the two writes has acknowledged it and what it decided
+     about it, so an outage of one side does not write that row to the other side
+     again; only a restart forgets, which is the redelivery above;
    - the batch's queue rows are **deleted only after both writes are
      acknowledged**;
-   - a row the warehouse **permanently rejects** — one that fails alone while
-     the other rows of the same attempt succeed — does not stall the queue. It
-     moves, in one transaction, to an `audit_event_quarantine` table beside the
-     queue and is counted in `saas.audit_queue.quarantined`. The kit never
-     deletes a quarantined row; replaying one is future work.
+   - a row is **set aside only on the store's own word.** The relay quarantines
+     a row only when the store reports that it permanently refused that row
+     (`business.PermanentRowRejection`), or when the row's details cannot be
+     serialized. BigQuery reports a row it lists as `invalid` in a streaming
+     insert, a row too large for any request, and a value that cannot be
+     encoded; ClickHouse reports a value its driver cannot encode, and a row
+     refused with an error code that says the row's own content is malformed,
+     found by splitting the refused block down to single rows. Every other
+     failure — a transport or server error, a throttle, a quota, a timeout, a
+     failed quorum, an error the store does not recognize — is retried with
+     backoff and sets nothing aside, and the relay infers nothing from how often a
+     row failed or from what else the store accepted. After a write that names
+     refused rows, the relay sets those aside and writes the rest again;
+   - a set-aside row does not stall the queue. It moves, whole, in the same
+     transaction that deletes the delivered rows, to an `audit_event_quarantine`
+     table beside the queue, and is counted in `saas.audit_queue.quarantined`.
+     The reason kept with it starts with a class: `warehouse_rejected_archived:`
+     (the store refused the row; the archive already holds a copy, and so does the
+     quarantine) or `unserializable_not_archived:` (the details cannot be
+     serialized, so the archive's line for the event cannot be written and the
+     quarantine holds the only copy). The kit never deletes a quarantined row;
+     replaying one is not built.
 
-   The queue is monitored: `saas.audit_queue.depth` and
-   `saas.audit_queue.oldest_age` report how much is waiting and for how long.
-   When the queue cannot be read they go absent rather than staying at their
-   last value, and each failed read counts in
+   The queue is monitored: `saas.audit_queue.depth`, `saas.audit_queue.oldest_age`
+   and `saas.audit_queue.quarantined` report how much is waiting, for how long,
+   and how many rows are set aside. When the queue cannot be read — the latest
+   read failed, or none succeeded within twice the read interval — the three go
+   absent rather than staying at their last value, and each failed read counts in
    `saas.audit_queue.snapshot_errors`. The monitoring runs under every sink, not
    only a swap value: under a non-warehouse sink a non-empty queue — rows left
    by an earlier swap, which nothing drains — is logged at startup.
@@ -140,8 +168,8 @@ Postgres transaction.
    one `AuditStore` interface carrying both halves:
    - **write** — append a batch;
    - **read** — list (keyset-paginated, as `QueryAuditLog` is), aggregate (as
-     `AggregateAuditLog`), export, and the readable-source queries
-     (`LatestSourceSyncRequests`).
+     `AggregateAuditLog`), export, and the readable-source query
+     (`LatestSourceSyncEvents`, which feeds `LatestSourceSyncRequests`).
 
    Two adapters ship: **BigQuery** (managed, Google Cloud) and **ClickHouse**
    (self-hosted or managed, any cloud or on-premises). The existing Postgres
@@ -165,19 +193,38 @@ Postgres transaction.
    the per-event hash makes the copies provably identical.
 
    BigQuery reads run no query job. They go through the BigQuery Storage Read
-   API. Each read session carries a server-side row restriction: the
-   deployment, the caller's organization (unless the read is the platform
-   read), the time window, so partitions outside it are pruned, and the event
-   types when the read names them. The service then sorts, pages,
+   API. Each read session carries a server-side row restriction: the deployment,
+   the caller's organization (unless the read is the platform read), the time
+   window, so partitions outside it are pruned, and the envelope filters the read
+   names — event types, actor, resource, client. The service then sorts, pages,
    deduplicates, joins content details and aggregates the rows it streams back,
-   with the semantics of the Postgres reads, in bounded memory whatever the size
-   of the history in the window.
+   with the semantics of the Postgres reads.
+
+   What is bounded is a read window, not a read. A read walks time in windows,
+   newest first, and counts what one window holds in memory — the content details
+   it joins and, for a read that must see every event of the window before it can
+   answer (an aggregation, an export), the events and the set that deduplicates
+   them — against a byte budget, `ReadConfig.WindowBytes` (64 MiB by default; the
+   service exposes no setting for it). A window that passes the budget is read
+   again as two halves. What outlives a window is the answer: a page, an
+   aggregation's buckets, an export's events. Three limits remain:
+   - A read whose events at a single instant alone pass the budget cannot be
+     split further and fails (`ErrReadTooDense`).
+   - An export is the one answer as large as the history it matches. One export
+     gathers at most 32 MiB of event text from either warehouse
+     (`AuditExportMaxBytes`) and is refused with `ResourceExhausted` past it. The
+     export request carries no time range, so an actor or an event type is all
+     that narrows it.
+   - The history copy (item 7) reads and holds a whole window of the store at a
+     time outside this budget.
 
    The reason is the grants. The service that reads is the service that
    appends, so it holds `bigquery.tables.updateData`. With
    `bigquery.jobs.create` beside it, that identity could run DELETE, UPDATE and
    MERGE against the store of record. So the identity is granted
-   `bigquery.datasets.get`, `bigquery.tables.get`, `bigquery.tables.getData`,
+   `bigquery.datasets.get`, `bigquery.tables.create` (the adapter creates its two
+   tables when they are missing), `bigquery.tables.get`,
+   `bigquery.tables.updateData` (the append), `bigquery.tables.getData`,
    `bigquery.tables.list`, and `bigquery.readsessions.create`, `.getData` and
    `.update`, and no job permission at all.
 
@@ -211,8 +258,9 @@ Postgres transaction.
      is today: in the event type's name (`saas.approval.denied`) or in the
      payload's `outcome` field. How long the table keeps a row depends on the
      warehouse. On ClickHouse, `AUDIT_EVENTS_RETENTION_DAYS` sets the table's
-     TTL. On BigQuery the kit sets no expiry on the events table; a deployment
-     that wants one sets a table or partition expiration on its dataset;
+     TTL. On BigQuery the kit creates the events table with no partition
+     expiration, and refuses at startup an events table whose partitions expire,
+     since its identity holds no `bigquery.tables.update` to change one;
    - a **details** table holding the full details of content-class types, kept
      for the shorter content window, `AUDIT_CONTENT_RETENTION_DAYS` — a
      partition expiration on BigQuery, a table TTL on ClickHouse.
@@ -228,8 +276,9 @@ Postgres transaction.
    still need a writer; an on-premises S3-compatible lock must be qualified
    before use.
 
-   Archive objects are named per batch. A retried batch writes a new object, so
-   the archive may hold an event more than once. Every archive reader —
+   Archive objects are named per batch and created only if absent. A batch
+   delivered again after a restart is composed anew and written as a new object,
+   so the archive may hold an event more than once. Every archive reader —
    including the history-copy verification (item 7) and any compliance export —
    deduplicates by event id, and the per-event hash makes duplicates provably
    identical.
@@ -238,12 +287,28 @@ Postgres transaction.
    period of the archive bucket, and the events TTL on ClickHouse.
 
 6. **ClickHouse operating requirements.**
-   - Inserts are batched — the relay's batches, `async_insert`, or both. A
-     single-row insert creates a data part per insert and ends in
-     too-many-parts errors.
-   - A single-node deployment uses MergeTree. When
-     `AUDIT_CLICKHOUSE_CLUSTER` is set, tables use `ReplicatedMergeTree` with
-     ClickHouse Keeper; the cluster must exist before the adapter starts.
+   - Inserts are batched: one insert per table per relay batch. A single-row
+     insert creates a data part per insert and ends in too-many-parts errors.
+     `async_insert` is not used and must not be enabled for the adapter's user or
+     profile: the relay deletes a queue row on the insert's acknowledgement, and
+     an insert acknowledged before its data is stored would let the relay delete
+     the only copy.
+   - A single-node deployment uses MergeTree and sends neither the quorum nor
+     the sequential-read setting below. When `AUDIT_CLICKHOUSE_CLUSTER` is set,
+     tables are created `ON CLUSTER` as `ReplicatedMergeTree` with ClickHouse
+     Keeper; the cluster must exist before the adapter starts. Every insert then
+     carries `insert_quorum=auto` (a majority of the replicas must hold it),
+     `insert_quorum_parallel=0` (one quorum insert at a time) and a 60-second
+     `insert_quorum_timeout`, and every read carries
+     `select_sequential_consistency=1`, so a read is served only by a replica that
+     holds every acknowledged insert; a replica that has not caught up fails the
+     read, which the caller retries. A majority of two replicas is both of them,
+     so on a two-replica cluster one replica down stops appends: the insert fails
+     at the quorum timeout, the relay retries with backoff, and the queue grows
+     until the replica returns.
+   - The adapter's ClickHouse user holds `CREATE TABLE`, `INSERT` and `SELECT` on
+     the database and no `ALTER`, `DELETE`, `UPDATE`, `TRUNCATE` or `DROP`, so it
+     cannot rewrite the store of record.
    - Tables are partitioned by month, and a table TTL expires each table at its
      window: `AUDIT_EVENTS_RETENTION_DAYS` for events,
      `AUDIT_CONTENT_RETENTION_DAYS` for details.
@@ -259,16 +324,19 @@ Postgres transaction.
    database function (migration 20) that takes an explicit list of the
    verified partitions, locks them, re-counts each against the count that was
    verified, and refuses on any mismatch — a partition that gained a row since
-   verification is never dropped. `--through`, the cutoff of the copy, accepts
-   completed months only. From then on `audit_events` receives no new rows, and
-   Postgres holds only the queue.
+   verification is never dropped. `-through`, the cutoff of the copy, accepts
+   completed months (UTC) only. The copy and its read-back hold one UTC day of
+   the deployment's events in memory at a time, outside the read budget of
+   item 4. From then on `audit_events` receives no new rows, and Postgres holds
+   only the queue.
 
 8. **Conformance.** Every adapter passes one shared test suite: read
    deduplication (after a batch is appended twice, every read returns each
-   event once by event id), batch append, list and aggregate parity with the Postgres implementation over the
-   same fixture, refusal of a query without tenant scope, and retention-class
-   routing (a content-class event's full details land only in the details table,
-   and only its content-free form in the archive).
+   event once by event id), batch append, list, aggregate, export and
+   readable-source parity with the Postgres implementation over the same
+   fixture, refusal of a query without tenant scope, and retention-class routing
+   (a content-class event's full details land only in the details table, and
+   only its content-free form in the archive).
 
 ## Alternatives considered
 
@@ -282,7 +350,7 @@ The queue between the transaction and the warehouse (item 2):
 | Change data capture on the Postgres WAL | Still needs the Postgres row in order to capture it, and replication slots plus a connector are heavier to run than a relay over a table. |
 | Queue rows in `audit_events`, with the no-delete trigger relaxed for them | Weakens the append-only guarantee on the table every `postgres` and `both` deployment keeps its history in, to serve a mode those deployments do not use. |
 | Fill the archive from the warehouse later, on a schedule | Opens a window in which the compliance copy lags the store of record, and adds a second job to watch. |
-| Conditional create-if-absent archive object names, so a retry cannot duplicate | Needs the same batch composition on every retry — more moving parts for no compliance gain. |
+| Archive object names fixed by a batch's content, so a redelivery after a restart cannot duplicate | Needs the same batch composition on every redelivery — more moving parts for no compliance gain. |
 | Committed write streams with offsets, so a redelivery cannot duplicate in the warehouse | Stream state the relay must carry across restarts and recover on every one — more machinery for no compliance gain, since every read already deduplicates by event id, as archive readers do. |
 
 Where the adapters live (item 3):
@@ -313,10 +381,13 @@ The sink shape itself:
   `auditsink.Open` builds the adapter and the archive writer; `audit_sink.go`
   starts the relay on them. The `external` refusal stays; its message, which
   today says Postgres is the source of truth under every value, is reworded.
-  The one-time history copy and the role-catalog importer resolve the sink
-  through the same `auditsink.Load` as the service, so a deployment configures
-  the swap once and neither tool writes to a different store than the service
-  reads; the importer never falls back silently to `audit_events`.
+  The one-time history copy resolves the sink through the same
+  `auditsink.Load` as the service, so a deployment configures the swap once and
+  the copy never writes to a different store than the service reads. The
+  role-catalog importer reads `AUDIT_SINK` alone, through
+  `auditsink.RequireMode`, and refuses an unset or blank value rather than
+  defaulting to `postgres`: under a swap value a default would write its events
+  to `audit_events`, where nothing reads them.
 - `pkg/business/audit.go` — under a swap value, the emitter's write inserts into
   the queue table in place of `audit_events`, for org-scoped and platform-level
   entries alike. `EmitTx`'s transaction contract, `VerifyAuditWiring` and the
@@ -324,10 +395,11 @@ The sink shape itself:
   reader's grant check and the aggregate in one tenant transaction today; under
   a swap value it becomes grant check in Postgres, then the aggregate in the
   warehouse — two steps, no shared snapshot.
-- `pkg/auth/pg/resolver.go` — `emitSsoJitAudit` and `emitUserRegistered` insert
-  into `audit_events` with raw SQL on the resolution transaction, bypassing the
-  emitter. Under a swap value they must go through the queue, or the swap loses
-  them.
+- `pkg/auth/pg/resolver.go` — `emitSsoJitAudit` and `emitUserRegistered` record
+  their events on the resolution transaction through the emitter's `RecordTx`
+  rather than inserting into `audit_events` themselves. `RecordTx` writes the
+  record alone — the `audit_events` row, or under a swap value the queue row —
+  with no domain event and no tee job, so the swap does not lose them.
 - `pkg/infra/postgres_audit.go` — `QueryAuditLog` and `AggregateAuditLog` become
   the Postgres implementation of `AuditStore`. The aggregate's category
   dimension reads `audit_event_types` in SQL; an adapter takes it from the
@@ -346,17 +418,19 @@ The sink shape itself:
   as well, through its own verified-partition function. Under a swap value,
   expiry belongs to the warehouse where it sets one — the details table on
   both, the events table on ClickHouse only — and to the archive's lock.
-- `store/migrations` — a new queue table, under the same tenant row-level
-  security as `audit_events` (`audit_events_tenant`, in `1_baseline.up.sql`),
-  with delete granted to the relay; its down migration refuses to drop a
-  non-empty queue, since the rows in it are audit records no warehouse holds
-  yet. A second migration (21) adds the `audit_event_quarantine` table of item
-  2, and migration 20 the partition-removal function of item 7. `audit_events`
-  itself is untouched: its
-  `audit_events_no_delete` and `audit_events_no_update` triggers and its
-  `SELECT`/`INSERT`-only grants stay as they are. Stored history in the
-  warehouse is guarded by the service-side scope of item 4, not by these
-  policies.
+- `store/migrations` — migration 18 adds the queue table, under the same tenant
+  row-level security as `audit_events` (`audit_events_tenant`, in
+  `1_baseline.up.sql`), with insert granted to the writers and select and delete
+  to the relay; its down migration refuses to drop a non-empty queue, since the
+  rows in it are audit records no warehouse holds yet. Migration 19 adds the
+  retention class to `audit_event_types`. Migration 20 adds the
+  verified-partition removal function of item 7. Migration 21 adds the
+  `audit_event_quarantine` table of item 2, which only the relay's role can read
+  or insert into; its down migration refuses to drop a non-empty quarantine.
+  `audit_events` itself is untouched: its `audit_events_no_delete` and
+  `audit_events_no_update` triggers and its `SELECT`/`INSERT`-only grants stay as
+  they are. Stored history in the warehouse is guarded by the service-side scope
+  of item 4, not by these policies.
 
 **What stays:**
 
@@ -376,8 +450,8 @@ The sink shape itself:
   delivered it, not when its mutation commits.
 - A deployment that opts in runs two more systems — the warehouse and the
   archive bucket — and a relay whose lag and quarantine table need watching.
-- On BigQuery the events table is never expired by the kit and grows until the
-  deployment sets an expiry on its dataset; the locked archive, not that table,
-  is the compliance record.
+- On BigQuery the kit never expires the events table, and refuses to start on
+  one whose partitions expire, so the table grows with the history; the locked
+  archive, not that table, is the compliance record.
 - Each adapter must stay at parity with the Postgres implementation; the
   conformance suite is what holds it there.
