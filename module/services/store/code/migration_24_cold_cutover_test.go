@@ -52,6 +52,18 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 	execColdCutoverSQL(t, db, `INSERT INTO public.solution_registrations
 		(solution_id,publisher,revision,tombstoned_at,declared_binding_id,declared_generation,declared_release,declared_target_id)
 		VALUES ('removed','solution:removed',nextval('public.solution_registry_revision_sequence'),now(),'acme.test.removed',2,'acme/example@1.0.0',(SELECT id FROM public.solution_targets WHERE binding_id='acme.test.removed'))`)
+	// The seed, read BEFORE the cutover. The whole point of withdrawing rather
+	// than deleting is that this value survives, so it has to be compared
+	// against itself across the migration rather than merely asserted non-empty.
+	var seedBefore string
+	if err := db.QueryRow(`SELECT runtime_boundary::text FROM public.solution_registrations
+		WHERE solution_id='runtime'`).Scan(&seedBefore); err != nil {
+		t.Fatalf("read the runtime registration's seed before the cutover: %v", err)
+	}
+	if seedBefore == "" {
+		t.Fatal("migration 17 must have seeded runtime_boundary; an empty seed makes the comparison below vacuous")
+	}
+
 	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 23), raw); err != nil {
 		t.Fatalf("apply migration 24: %v", err)
 	}
@@ -69,7 +81,45 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 		AND table_name='solution_registrations' AND column_name LIKE '%lease%'`, 0)
 	assertCount(`SELECT count(*) FROM pg_indexes WHERE schemaname='public'
 		AND tablename='solution_registrations' AND indexdef LIKE '%lease%'`, 0)
-	assertCount(`SELECT count(*) FROM public.solution_registrations WHERE solution_id='runtime'`, 0)
+	// WITHDRAWN, NOT DESTROYED. A runtime-registered row with no declared
+	// binding is a solution the new registry has not authorized — a registry
+	// state, not a row to delete. Deleting it would take its seed with it, and
+	// a later approval would mint a fresh one, making every run that solution
+	// had already admitted unreachable.
+	assertCount(`SELECT count(*) FROM public.solution_registrations WHERE solution_id='runtime'`, 1)
+	assertCount(`SELECT count(*) FROM public.solution_registrations WHERE solution_id='runtime'
+		AND tombstoned_at IS NOT NULL AND declared_binding_id IS NULL
+		AND frontend_revision IS NULL AND backend_revision IS NULL`, 1)
+
+	// AND THE SEED IS THE SAME ONE. This is the assertion the delete silently
+	// broke: it compiles, it passes every other check here, and the only thing
+	// that shows the loss is comparing the value across the migration.
+	var seedAfter string
+	if err := db.QueryRow(`SELECT runtime_boundary::text FROM public.solution_registrations
+		WHERE solution_id='runtime'`).Scan(&seedAfter); err != nil {
+		t.Fatalf("read the seed after the cutover: %v", err)
+	}
+	if seedAfter != seedBefore {
+		t.Fatalf("the cutover changed a solution's runtime boundary seed: %s -> %s; "+
+			"every run it already admitted is now unreachable under its old boundary",
+			seedBefore, seedAfter)
+	}
+
+	// A re-approval through the declared path reactivates the SAME seed.
+	execColdCutoverSQL(t, db, `UPDATE public.solution_registrations
+		SET declared_binding_id='acme.test.removed', declared_generation=3,
+		    declared_release='acme/example@1.0.0',
+		    declared_target_id=(SELECT id FROM public.solution_targets WHERE binding_id='acme.test.removed'),
+		    tombstoned_at=NULL
+		WHERE solution_id='runtime'`)
+	var seedAfterApproval string
+	if err := db.QueryRow(`SELECT runtime_boundary::text FROM public.solution_registrations
+		WHERE solution_id='runtime'`).Scan(&seedAfterApproval); err != nil {
+		t.Fatalf("read the seed after re-approval: %v", err)
+	}
+	if seedAfterApproval != seedBefore {
+		t.Fatalf("approval through the declared path changed the seed: %s -> %s", seedBefore, seedAfterApproval)
+	}
 	assertCount(`SELECT count(*) FROM public.solution_registrations WHERE solution_id='declared'
 		AND declared_binding_id='acme.test.example' AND frontend_revision IS NULL AND backend_revision IS NULL`, 1)
 	assertCount(`SELECT count(*) FROM public.solution_registrations WHERE solution_id='removed' AND tombstoned_at IS NOT NULL`, 1)
@@ -87,7 +137,7 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 			t.Fatalf("invalid registry state accepted: %s", query)
 		}
 	}
-	t.Log("migration 24 deleted runtime presence and lease columns; declared presence, tombstones and whole-half constraints verified")
+	t.Log("migration 24 withdrew the runtime registration keeping its seed, dropped the lease columns, and kept declared presence, tombstones and the whole-half constraints")
 }
 
 func execColdCutoverSQL(t *testing.T, db *sql.DB, statement string) {
