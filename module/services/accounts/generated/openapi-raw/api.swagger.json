@@ -7021,13 +7021,20 @@
         "revisionGap": {
           "$ref": "#/definitions/v1CatalogueGap"
         },
-        "exposedTeams": {
+        "grantedTeams": {
           "type": "array",
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1CollectionReadGrant"
           },
-          "description": "Active team grants at the installation's authority root or above it, so\nevery team whose members the grant reaches inside this installation."
+          "description": "Every team an active grant reaches inside this installation, in two kinds\nthat are never merged: granted at this installation's authority root, and\ninherited from a grant above it. Both reach; only the first is exposure\ngranted to this installation, so a reader is never shown inherited reach\nas if it had been granted here."
+        },
+        "inheritedTeams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionReadGrant"
+          }
         }
       },
       "description": "CatalogueInstallation is one organization's installation of a solution."

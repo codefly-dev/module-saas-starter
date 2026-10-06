@@ -423,9 +423,13 @@ message CatalogueInstallation {
   oneof revision_value {
     CatalogueGap revision_gap = 5;
   }
-  // Active team grants at the installation's authority root or above it, so
-  // every team whose members the grant reaches inside this installation.
-  repeated CollectionReadGrant exposed_teams = 6;
+  // Every team an active grant reaches inside this installation, in two kinds
+  // that are never merged: granted at this installation's authority root, and
+  // inherited from a grant above it. Both reach; only the first is exposure
+  // granted to this installation, so a reader is never shown inherited reach
+  // as if it had been granted here.
+  repeated CollectionReadGrant granted_teams = 6;
+  repeated CollectionReadGrant inherited_teams = 7;
 }
 
 // CatalogueEntry is one module or solution, placed in the registry's state

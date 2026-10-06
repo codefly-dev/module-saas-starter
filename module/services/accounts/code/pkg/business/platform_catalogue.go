@@ -24,12 +24,14 @@ import (
 
 // CatalogueInstallationRecord is one active installation as the Catalogue reads
 // it: the installation, its organization's name, the identifier of the agent
-// principal it was installed as, and the team grants that reach inside it.
+// principal it was installed as, and the team grants that reach inside it —
+// those made at its authority root apart from those inherited from above it.
 type CatalogueInstallationRecord struct {
 	Installation    *gen.Installation
 	OrgName         string
 	AgentIdentifier string
-	ExposedTeams    []*gen.CollectionReadGrant
+	GrantedTeams    []*gen.CollectionReadGrant
+	InheritedTeams  []*gen.CollectionReadGrant
 }
 
 // PlatformCatalogueEntry is one Catalogue row. Registration is kept as the
@@ -47,19 +49,19 @@ type PlatformCatalogue struct {
 }
 
 const (
-	catalogueNoDeclaration    = "This host holds no applied presence document for this entry, which is what records what the composition declares."
-	catalogueNoApplication    = "This host has applied no presence generation for this entry."
-	catalogueNoApproval       = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
-	catalogueNotObserved      = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
-	catalogueNoVerdict        = "There is no approval record to judge the observed execution against."
-	catalogueNoWithdrawal     = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
-	catalogueNoRevocation     = "This host holds no credential-revocation record for this entry."
-	catalogueNoRetirement     = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
-	catalogueNoBuildSize      = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
-	catalogueModulePublisher  = "A composed module is known by its principal prefix alone; the composition records no publisher."
-	catalogueUnregistered     = "No registration exists under this identifier; it is named only by its installations."
-	catalogueNoRevision       = "Installations carry no revision of their own on this host."
-	catalogueNoAgentRelease   = "The installation's agent principal carries no publisher/name:version identifier."
+	catalogueNoDeclaration   = "This host holds no applied presence document for this entry, which is what records what the composition declares."
+	catalogueNoApplication   = "This host has applied no presence generation for this entry."
+	catalogueNoApproval      = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
+	catalogueNotObserved     = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
+	catalogueNoVerdict       = "There is no approval record to judge the observed execution against."
+	catalogueNoWithdrawal    = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
+	catalogueNoRevocation    = "This host holds no credential-revocation record for this entry."
+	catalogueNoRetirement    = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
+	catalogueNoBuildSize     = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
+	catalogueModulePublisher = "A composed module is known by its principal prefix alone; the composition records no publisher."
+	catalogueUnregistered    = "No registration exists under this identifier; it is named only by its installations."
+	catalogueNoRevision      = "Installations carry no revision of their own on this host."
+	catalogueNoAgentRelease  = "The installation's agent principal carries no publisher/name:version identifier."
 )
 
 // ListPlatformCatalogue reads the Catalogue for a super administrator.
@@ -217,7 +219,8 @@ func catalogueInstallation(record *CatalogueInstallationRecord) *gen.CatalogueIn
 		RevisionValue: &gen.CatalogueInstallation_RevisionGap{
 			RevisionGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueNoRevision),
 		},
-		ExposedTeams: record.ExposedTeams,
+		GrantedTeams:   record.GrantedTeams,
+		InheritedTeams: record.InheritedTeams,
 	}
 	if release, ok := parseAgentRelease(record.AgentIdentifier); ok {
 		out.AgentReleaseValue = &gen.CatalogueInstallation_AgentRelease{AgentRelease: release}

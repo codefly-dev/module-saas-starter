@@ -3701,6 +3701,7 @@
         "@bufbuild/protobuf/wkt",
         "lucide-react",
         "react",
+        "@/gen/saas/accounts/v1/authorization_pb",
         "@/gen/saas/accounts/v1/platform_admin_pb",
         "@/shared/lib/read-outcome",
         "@/shared/lib/utils",

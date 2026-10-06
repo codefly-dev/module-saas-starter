@@ -3,6 +3,7 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { Fragment, useState } from "react";
+import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type {
 	CatalogueEntry,
 	CatalogueInstallation,
@@ -96,6 +97,47 @@ function StateFacts({ state, facts }: { state: string; facts: StateFact[] }) {
 				</div>
 			))}
 		</dl>
+	);
+}
+
+/**
+ * The teams a grant reaches inside an installation, in the two kinds the server
+ * keeps apart: granted at this installation, and inherited from a grant above
+ * it. Inherited reach is real reach, but it was never granted here, so it is
+ * never shown as if it had been.
+ */
+export function TeamGrants({
+	granted,
+	inherited,
+}: {
+	granted: CollectionReadGrant[];
+	inherited: CollectionReadGrant[];
+}) {
+	if (granted.length === 0 && inherited.length === 0) {
+		return <span className="text-sm text-muted-foreground">No team</span>;
+	}
+	const group = (label: string, teams: CollectionReadGrant[]) =>
+		teams.length > 0 && (
+			<div>
+				<p className="text-xs text-muted-foreground">{label}</p>
+				<div className="flex flex-wrap gap-1">
+					{teams.map((team) => (
+						<Badge
+							key={team.grant?.id}
+							variant="secondary"
+							title={`${team.roleName} at ${team.grant?.scopePath || "the organization root"}`}
+						>
+							{team.subjectLabel}
+						</Badge>
+					))}
+				</div>
+			</div>
+		);
+	return (
+		<div className="space-y-1">
+			{group("Granted at this installation", granted)}
+			{group("Inherited from above", inherited)}
+		</div>
 	);
 }
 
@@ -314,21 +356,10 @@ function InstallationsTable({
 							<Fact view={installationRevisionView(item)} />
 						</TableCell>
 						<TableCell>
-							{item.exposedTeams.length === 0 ? (
-								<span className="text-sm text-muted-foreground">No team</span>
-							) : (
-								<div className="flex flex-wrap gap-1">
-									{item.exposedTeams.map((team) => (
-										<Badge
-											key={team.grant?.id}
-											variant="secondary"
-											title={`${team.roleName} at ${team.grant?.scopePath}`}
-										>
-											{team.subjectLabel}
-										</Badge>
-									))}
-								</div>
-							)}
+							<TeamGrants
+								granted={item.grantedTeams}
+								inherited={item.inheritedTeams}
+							/>
 						</TableCell>
 						<TableCell className="text-sm text-muted-foreground">
 							{formatDate(

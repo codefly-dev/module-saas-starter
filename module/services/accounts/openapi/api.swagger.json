@@ -1001,8 +1001,15 @@
         "agentReleaseGap": {
           "$ref": "#/definitions/v1CatalogueGap"
         },
-        "exposedTeams": {
-          "description": "Active team grants at the installation's authority root or above it, so\nevery team whose members the grant reaches inside this installation.",
+        "grantedTeams": {
+          "description": "Every team an active grant reaches inside this installation, in two kinds\nthat are never merged: granted at this installation's authority root, and\ninherited from a grant above it. Both reach; only the first is exposure\ngranted to this installation, so a reader is never shown inherited reach\nas if it had been granted here.",
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "inheritedTeams": {
           "items": {
             "$ref": "#/definitions/v1CollectionReadGrant",
             "type": "object"

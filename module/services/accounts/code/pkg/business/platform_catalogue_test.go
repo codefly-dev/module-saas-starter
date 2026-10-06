@@ -103,9 +103,13 @@ func catalogueTestInstallation(id, solution, org, agent string) *CatalogueInstal
 		},
 		OrgName:         org,
 		AgentIdentifier: agent,
-		ExposedTeams: []*gen.CollectionReadGrant{{
+		GrantedTeams: []*gen.CollectionReadGrant{{
 			Grant:        &gen.ScopeGrant{SubjectId: "team-" + id, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM},
 			SubjectLabel: "Team " + id,
+		}},
+		InheritedTeams: []*gen.CollectionReadGrant{{
+			Grant:        &gen.ScopeGrant{SubjectId: "org-team-" + id, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM},
+			SubjectLabel: "Org team " + id,
 		}},
 	}
 }
@@ -195,7 +199,8 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 	require.Equal(t, "Acme", first.GetOrgName())
 	require.Equal(t, &gen.CatalogueRelease{Publisher: "example", Name: "installed", Version: "1.2.0"}, first.GetAgentRelease())
 	require.Equal(t, gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, first.GetRevisionGap().GetReason())
-	require.Equal(t, "Team i1", first.GetExposedTeams()[0].GetSubjectLabel())
+	require.Equal(t, "Team i1", first.GetGrantedTeams()[0].GetSubjectLabel())
+	require.Equal(t, "Org team i1", first.GetInheritedTeams()[0].GetSubjectLabel(), "inherited reach is carried apart from what was granted here")
 	require.Equal(t, "1.3.0", installed.Entry.GetInstallations()[1].GetAgentRelease().GetVersion())
 
 	unregistered := byName["unregistered"]

@@ -95,10 +95,17 @@ const catalogue = {
 						version: "1.2.0",
 					},
 					revisionGap: notRecorded("No installation revision."),
-					exposedTeams: [
+					grantedTeams: [
 						{
 							grant: { id: "g1", scopePath: "root" },
 							subjectLabel: "Finance Team",
+							roleName: "Viewer",
+						},
+					],
+					inheritedTeams: [
+						{
+							grant: { id: "g2", scopePath: "" },
+							subjectLabel: "Everyone Team",
 							roleName: "Viewer",
 						},
 					],
@@ -222,7 +229,18 @@ describe("PlatformCataloguePage admin container", () => {
 		expect(
 			within(installations).getByText("example/drifted@1.2.0"),
 		).toBeTruthy();
-		expect(within(installations).getByText("Finance Team")).toBeTruthy();
+		// Granted here and inherited from above are listed apart, each named.
+		const granted = within(installations)
+			.getByText("Granted at this installation")
+			.closest("div");
+		const inherited = within(installations)
+			.getByText("Inherited from above")
+			.closest("div");
+		if (!granted || !inherited) throw new Error("team groups missing");
+		expect(within(granted).getByText("Finance Team")).toBeTruthy();
+		expect(within(granted).queryByText("Everyone Team")).toBeNull();
+		expect(within(inherited).getByText("Everyone Team")).toBeTruthy();
+		expect(within(inherited).queryByText("Finance Team")).toBeNull();
 		expect(within(installations).getByText("Not recorded")).toBeTruthy();
 	});
 

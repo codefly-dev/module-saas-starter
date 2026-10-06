@@ -2970,11 +2970,15 @@ type CatalogueInstallation struct {
 	//
 	//	*CatalogueInstallation_RevisionGap
 	RevisionValue isCatalogueInstallation_RevisionValue `protobuf_oneof:"revision_value"`
-	// Active team grants at the installation's authority root or above it, so
-	// every team whose members the grant reaches inside this installation.
-	ExposedTeams  []*CollectionReadGrant `protobuf:"bytes,6,rep,name=exposed_teams,json=exposedTeams,proto3" json:"exposed_teams,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Every team an active grant reaches inside this installation, in two kinds
+	// that are never merged: granted at this installation's authority root, and
+	// inherited from a grant above it. Both reach; only the first is exposure
+	// granted to this installation, so a reader is never shown inherited reach
+	// as if it had been granted here.
+	GrantedTeams   []*CollectionReadGrant `protobuf:"bytes,6,rep,name=granted_teams,json=grantedTeams,proto3" json:"granted_teams,omitempty"`
+	InheritedTeams []*CollectionReadGrant `protobuf:"bytes,7,rep,name=inherited_teams,json=inheritedTeams,proto3" json:"inherited_teams,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CatalogueInstallation) Reset() {
@@ -3062,9 +3066,16 @@ func (x *CatalogueInstallation) GetRevisionGap() *CatalogueGap {
 	return nil
 }
 
-func (x *CatalogueInstallation) GetExposedTeams() []*CollectionReadGrant {
+func (x *CatalogueInstallation) GetGrantedTeams() []*CollectionReadGrant {
 	if x != nil {
-		return x.ExposedTeams
+		return x.GrantedTeams
+	}
+	return nil
+}
+
+func (x *CatalogueInstallation) GetInheritedTeams() []*CollectionReadGrant {
+	if x != nil {
+		return x.InheritedTeams
 	}
 	return nil
 }
@@ -3586,14 +3597,15 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"!credential_revocation_state_value\"\x80\x01\n" +
 	"\x10CatalogueRetired\x12R\n" +
 	"\x14retirement_state_gap\x18\x01 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x00R\x12retirementStateGapB\x18\n" +
-	"\x16retirement_state_value\"\xc9\x03\n" +
+	"\x16retirement_state_value\"\x99\x04\n" +
 	"\x15CatalogueInstallation\x12B\n" +
 	"\finstallation\x18\x01 \x01(\v2\x1e.saas.accounts.v1.InstallationR\finstallation\x12\x19\n" +
 	"\borg_name\x18\x02 \x01(\tR\aorgName\x12I\n" +
 	"\ragent_release\x18\x03 \x01(\v2\".saas.accounts.v1.CatalogueReleaseH\x00R\fagentRelease\x12L\n" +
 	"\x11agent_release_gap\x18\x04 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x00R\x0fagentReleaseGap\x12C\n" +
 	"\frevision_gap\x18\x05 \x01(\v2\x1e.saas.accounts.v1.CatalogueGapH\x01R\vrevisionGap\x12J\n" +
-	"\rexposed_teams\x18\x06 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\fexposedTeamsB\x15\n" +
+	"\rgranted_teams\x18\x06 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\fgrantedTeams\x12N\n" +
+	"\x0finherited_teams\x18\a \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\x0einheritedTeamsB\x15\n" +
 	"\x13agent_release_valueB\x10\n" +
 	"\x0erevision_value\"\xf1\x06\n" +
 	"\x0eCatalogueEntry\x128\n" +
@@ -3797,70 +3809,71 @@ var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
 	36, // 34: saas.accounts.v1.CatalogueInstallation.agent_release:type_name -> saas.accounts.v1.CatalogueRelease
 	35, // 35: saas.accounts.v1.CatalogueInstallation.agent_release_gap:type_name -> saas.accounts.v1.CatalogueGap
 	35, // 36: saas.accounts.v1.CatalogueInstallation.revision_gap:type_name -> saas.accounts.v1.CatalogueGap
-	56, // 37: saas.accounts.v1.CatalogueInstallation.exposed_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	0,  // 38: saas.accounts.v1.CatalogueEntry.kind:type_name -> saas.accounts.v1.CatalogueEntryKind
-	35, // 39: saas.accounts.v1.CatalogueEntry.publisher_gap:type_name -> saas.accounts.v1.CatalogueGap
-	38, // 40: saas.accounts.v1.CatalogueEntry.desired:type_name -> saas.accounts.v1.CatalogueDesired
-	41, // 41: saas.accounts.v1.CatalogueEntry.authorized:type_name -> saas.accounts.v1.CatalogueAuthorized
-	42, // 42: saas.accounts.v1.CatalogueEntry.applied:type_name -> saas.accounts.v1.CatalogueApplied
-	43, // 43: saas.accounts.v1.CatalogueEntry.observed:type_name -> saas.accounts.v1.CatalogueObserved
-	44, // 44: saas.accounts.v1.CatalogueEntry.withdrawing:type_name -> saas.accounts.v1.CatalogueWithdrawing
-	45, // 45: saas.accounts.v1.CatalogueEntry.retired:type_name -> saas.accounts.v1.CatalogueRetired
-	35, // 46: saas.accounts.v1.CatalogueEntry.build_size_gap:type_name -> saas.accounts.v1.CatalogueGap
-	57, // 47: saas.accounts.v1.CatalogueEntry.registration:type_name -> saas.accounts.v1.SolutionRegistration
-	46, // 48: saas.accounts.v1.CatalogueEntry.installations:type_name -> saas.accounts.v1.CatalogueInstallation
-	47, // 49: saas.accounts.v1.ListPlatformCatalogueResponse.entries:type_name -> saas.accounts.v1.CatalogueEntry
-	3,  // 50: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
-	10, // 51: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
-	11, // 52: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
-	12, // 53: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
-	14, // 54: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
-	16, // 55: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
-	19, // 56: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
-	20, // 57: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
-	23, // 58: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
-	25, // 59: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
-	26, // 60: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
-	27, // 61: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
-	5,  // 62: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:input_type -> saas.accounts.v1.ListAllOrganizationsRequest
-	8,  // 63: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:input_type -> saas.accounts.v1.GetOrganizationRosterRequest
-	30, // 64: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
-	33, // 65: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
-	58, // 66: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
-	59, // 67: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
-	60, // 68: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
-	61, // 69: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
-	62, // 70: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
-	63, // 71: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
-	48, // 72: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:input_type -> saas.accounts.v1.ListPlatformCatalogueRequest
-	4,  // 73: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
-	64, // 74: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
-	64, // 75: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
-	13, // 76: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
-	15, // 77: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
-	18, // 78: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
-	64, // 79: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
-	21, // 80: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
-	24, // 81: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
-	64, // 82: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
-	64, // 83: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
-	29, // 84: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
-	7,  // 85: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:output_type -> saas.accounts.v1.ListAllOrganizationsResponse
-	9,  // 86: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:output_type -> saas.accounts.v1.GetOrganizationRosterResponse
-	32, // 87: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
-	34, // 88: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
-	65, // 89: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
-	66, // 90: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
-	67, // 91: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
-	68, // 92: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
-	69, // 93: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
-	70, // 94: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
-	49, // 95: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:output_type -> saas.accounts.v1.ListPlatformCatalogueResponse
-	73, // [73:96] is the sub-list for method output_type
-	50, // [50:73] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	56, // 37: saas.accounts.v1.CatalogueInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	56, // 38: saas.accounts.v1.CatalogueInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	0,  // 39: saas.accounts.v1.CatalogueEntry.kind:type_name -> saas.accounts.v1.CatalogueEntryKind
+	35, // 40: saas.accounts.v1.CatalogueEntry.publisher_gap:type_name -> saas.accounts.v1.CatalogueGap
+	38, // 41: saas.accounts.v1.CatalogueEntry.desired:type_name -> saas.accounts.v1.CatalogueDesired
+	41, // 42: saas.accounts.v1.CatalogueEntry.authorized:type_name -> saas.accounts.v1.CatalogueAuthorized
+	42, // 43: saas.accounts.v1.CatalogueEntry.applied:type_name -> saas.accounts.v1.CatalogueApplied
+	43, // 44: saas.accounts.v1.CatalogueEntry.observed:type_name -> saas.accounts.v1.CatalogueObserved
+	44, // 45: saas.accounts.v1.CatalogueEntry.withdrawing:type_name -> saas.accounts.v1.CatalogueWithdrawing
+	45, // 46: saas.accounts.v1.CatalogueEntry.retired:type_name -> saas.accounts.v1.CatalogueRetired
+	35, // 47: saas.accounts.v1.CatalogueEntry.build_size_gap:type_name -> saas.accounts.v1.CatalogueGap
+	57, // 48: saas.accounts.v1.CatalogueEntry.registration:type_name -> saas.accounts.v1.SolutionRegistration
+	46, // 49: saas.accounts.v1.CatalogueEntry.installations:type_name -> saas.accounts.v1.CatalogueInstallation
+	47, // 50: saas.accounts.v1.ListPlatformCatalogueResponse.entries:type_name -> saas.accounts.v1.CatalogueEntry
+	3,  // 51: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
+	10, // 52: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
+	11, // 53: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
+	12, // 54: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
+	14, // 55: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
+	16, // 56: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
+	19, // 57: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
+	20, // 58: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
+	23, // 59: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
+	25, // 60: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
+	26, // 61: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
+	27, // 62: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
+	5,  // 63: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:input_type -> saas.accounts.v1.ListAllOrganizationsRequest
+	8,  // 64: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:input_type -> saas.accounts.v1.GetOrganizationRosterRequest
+	30, // 65: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
+	33, // 66: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
+	58, // 67: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
+	59, // 68: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
+	60, // 69: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
+	61, // 70: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
+	62, // 71: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
+	63, // 72: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
+	48, // 73: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:input_type -> saas.accounts.v1.ListPlatformCatalogueRequest
+	4,  // 74: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
+	64, // 75: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
+	64, // 76: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
+	13, // 77: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
+	15, // 78: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
+	18, // 79: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
+	64, // 80: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
+	21, // 81: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
+	24, // 82: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
+	64, // 83: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
+	64, // 84: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
+	29, // 85: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
+	7,  // 86: saas.accounts.v1.PlatformAdminService.ListAllOrganizations:output_type -> saas.accounts.v1.ListAllOrganizationsResponse
+	9,  // 87: saas.accounts.v1.PlatformAdminService.GetOrganizationRoster:output_type -> saas.accounts.v1.GetOrganizationRosterResponse
+	32, // 88: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
+	34, // 89: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
+	65, // 90: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
+	66, // 91: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
+	67, // 92: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
+	68, // 93: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
+	69, // 94: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
+	70, // 95: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
+	49, // 96: saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue:output_type -> saas.accounts.v1.ListPlatformCatalogueResponse
+	74, // [74:97] is the sub-list for method output_type
+	51, // [51:74] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_platform_admin_proto_init() }
