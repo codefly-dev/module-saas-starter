@@ -5281,6 +5281,7 @@
     "@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
     "@codefly-dev/ui/content": "packages/codefly-ui/src/content/index.ts",
     "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts",
-    "@codefly-dev/ui/board": "packages/codefly-ui/src/board/index.ts"
+    "@codefly-dev/ui/board": "packages/codefly-ui/src/board/index.ts",
+    "@codefly-dev/ui/lifecycle": "packages/codefly-ui/src/lifecycle/index.ts"
   }
 }
