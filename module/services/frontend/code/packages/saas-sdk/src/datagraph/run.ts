@@ -2,6 +2,7 @@ import type {
 	DataGraph,
 	DerivedMetric,
 	Metric,
+	MetricAggregation,
 	MetricBucket,
 	MetricGroupBy,
 	SourceMetric,
@@ -40,6 +41,10 @@ export function assertAuditScopeContract(
 	}
 }
 
+// The zeros put on buckets the RPC returned none for: no event matched there.
+// A derived metric tells them apart from a returned bucket by this mark.
+const noEvents = new WeakSet<MetricPoint>();
+
 function toSeries(
 	metricId: string,
 	points: MetricPoint[],
@@ -57,19 +62,112 @@ function toSeries(
 		// suppressing on partial blanked the stat tile of every metric over one.
 		// A non-additive scalar (avg, min, max, percentile, ratio) is only defined
 		// for a single complete group — if any group was dropped, the surviving
-		// one is not the series' value, so it stays null.
-		total:
-			points.length === 0
-				? null
-				: additive
-					? points.reduce((sum, point) => sum + point.value, 0)
-					: partial || points.length !== 1
-						? null
-						: points[0].value,
+		// one is not the series' value, so it stays null. The zeros put on days
+		// with no events observe nothing, so a series of only those has no total.
+		total: points.every((point) => noEvents.has(point))
+			? null
+			: additive
+				? points.reduce((sum, point) => sum + point.value, 0)
+				: partial || points.length !== 1
+					? null
+					: points[0].value,
 		coverage: partial ? "partial" : points.length === 0 ? "empty" : "complete",
 		groupBy,
 		bucket,
 	};
+}
+
+// The aggregations whose value over no events is 0. An avg, min, max or
+// percentile has no value without events, so a bucket with none stays out.
+const ZERO_OVER_NO_EVENTS: readonly MetricAggregation[] = [
+	"count",
+	"count_distinct",
+	"sum",
+];
+
+// A time bucket's key: the date the server truncated to, then whatever follows
+// it ("T00:00:00+00"), which a filled bucket copies so its key reads the same.
+const TIME_KEY = /^(\d{4})-(\d{2})-(\d{2})(.*)$/;
+
+// A filled series stops growing here: years of days is a few thousand
+// buckets, and two keys far apart must not balloon one series.
+const MAX_FILLED_BUCKETS = 100_000;
+
+function bucketDate(key: string): { date: Date; rest: string } | null {
+	const match = TIME_KEY.exec(key);
+	if (!match) return null;
+	const [, year, month, day, rest] = match;
+	const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+	// Date.UTC rolls an impossible date over (Feb 30 is Mar 2), so a date that
+	// does not read back the same is not one.
+	return Number.isNaN(date.getTime()) ||
+		date.toISOString().slice(0, 10) !== `${year}-${month}-${day}`
+		? null
+		: { date, rest };
+}
+
+function nextBucket(date: Date, bucket: MetricBucket): Date {
+	const year = date.getUTCFullYear();
+	const month = date.getUTCMonth();
+	const day = date.getUTCDate();
+	switch (bucket) {
+		case "week":
+			return new Date(Date.UTC(year, month, day + 7));
+		case "month":
+			return new Date(Date.UTC(year, month + 1, day));
+		default:
+			return new Date(Date.UTC(year, month, day + 1));
+	}
+}
+
+/**
+ * The audit RPC returns no bucket for a time bucket with no events, and a
+ * chart spaces its points evenly, so a day with none vanished and the line ran
+ * straight over it. This puts a 0 at every bucket between the first and the
+ * last one the RPC returned that it did not return. A bucket it did return,
+ * whose value was dropped as unknown, stays out: that is not a bucket with no
+ * events. A key that does not read as a date, or one off the bucket's step
+ * from the first, leaves the points as they are.
+ */
+export function fillEmptyBuckets(
+	points: readonly MetricPoint[],
+	returnedKeys: readonly string[],
+	bucket: MetricBucket,
+): MetricPoint[] {
+	const unchanged = [...points];
+	const returned = returnedKeys.map(bucketDate);
+	if (returned.length === 0 || returned.includes(null)) return unchanged;
+	const parsed = returned as { date: Date; rest: string }[];
+	const day = (date: Date) => date.toISOString().slice(0, 10);
+	const seen = new Set(parsed.map(({ date }) => day(date)));
+	const times = parsed.map(({ date }) => date.getTime());
+	const first = parsed[times.indexOf(Math.min(...times))];
+	const last = Math.max(...times);
+
+	const grid: string[] = [];
+	for (let at = first.date; at.getTime() <= last; at = nextBucket(at, bucket)) {
+		if (grid.length === MAX_FILLED_BUCKETS) return unchanged;
+		grid.push(day(at));
+	}
+	const onGrid = new Set(grid);
+	if ([...seen].some((date) => !onGrid.has(date))) return unchanged;
+
+	const valueAt = new Map<string, MetricPoint>();
+	for (const point of points) {
+		const at = bucketDate(point.key);
+		if (!at) return unchanged;
+		valueAt.set(day(at.date), point);
+	}
+	if (valueAt.size !== points.length) return unchanged;
+
+	return grid.flatMap((date): MetricPoint[] => {
+		const point = valueAt.get(date);
+		if (point) return [point];
+		if (seen.has(date)) return [];
+		const zero = { key: `${date}${first.rest}`, value: 0 };
+		noEvents.add(zero);
+		return [zero];
+	});
 }
 
 /** Resolve a single source metric against the audit RPC. */
@@ -110,7 +208,14 @@ export async function runMetric(
 	}
 	return toSeries(
 		metric.id,
-		points,
+		metric.groupBy === "time" &&
+			ZERO_OVER_NO_EVENTS.includes(metric.aggregation)
+			? fillEmptyBuckets(
+					points,
+					response.buckets.map((bucket) => bucket.key),
+					metric.bucket ?? "day",
+				)
+			: points,
 		metric.groupBy,
 		metric.bucket,
 		metric.aggregation === "count" || metric.aggregation === "sum",
@@ -120,9 +225,13 @@ export async function runMetric(
 
 // Combine the resolved series of a derived metric's inputs. Inputs are aligned
 // on the union of their point keys (first-seen order). Missing operands
-// remain unknown and are never substituted with zero. Combining series grouped by different dimensions is
-// meaningless — the keyspaces don't line up — so it is rejected rather than
-// silently producing a series of stray values.
+// remain unknown and are never substituted with zero. A key no input has an
+// event on (each operand there is a filled zero or missing) is not missing
+// telemetry: before the zeros, no input returned it. Its zeros still sum, to a
+// filled zero in turn, and a ratio of them has no value. Combining series
+// grouped by different dimensions is meaningless — the keyspaces don't line
+// up — so it is rejected rather than silently producing a series of stray
+// values.
 function combineDerived(
 	metric: DerivedMetric,
 	inputs: MetricSeries[],
@@ -162,14 +271,18 @@ function combineDerived(
 			}
 		}
 	}
-	const valueAt = (input: MetricSeries, key: string): number | undefined =>
-		input.points.find((point) => point.key === key)?.value;
+	const pointAt = (input: MetricSeries, key: string): MetricPoint | undefined =>
+		input.points.find((point) => point.key === key);
 	let partial = inputs.some((input) => input.coverage === "partial");
 	const points: MetricPoint[] = [];
 	for (const key of keys) {
-		const values = inputs.map((input) => valueAt(input, key));
+		const operands = inputs.map((input) => pointAt(input, key));
+		const empty = operands.every(
+			(point) => point === undefined || noEvents.has(point),
+		);
+		const values = operands.map((point) => point?.value);
 		if (values.some((value) => value === undefined)) {
-			partial = true;
+			if (!empty) partial = true;
 			continue;
 		}
 		const present = values as number[];
@@ -183,7 +296,7 @@ function combineDerived(
 				break;
 			case "ratio":
 				if (present[1] === 0) {
-					partial = true;
+					if (!empty) partial = true;
 					continue;
 				}
 				value = present[0] / present[1];
@@ -197,7 +310,9 @@ function combineDerived(
 			partial = true;
 			continue;
 		}
-		points.push({ key, value });
+		const point = { key, value };
+		if (empty) noEvents.add(point);
+		points.push(point);
 	}
 
 	return toSeries(

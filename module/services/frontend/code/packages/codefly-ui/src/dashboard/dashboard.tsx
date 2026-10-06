@@ -10,9 +10,9 @@
 import type * as React from "react";
 import { Card } from "../layout/card.js";
 import { Section } from "../layout/page.js";
-import { AreaChart, BarList, LineChart, StatChart } from "./charts.js";
 import { cn } from "./cn.js";
 import type { DashboardView, DashboardWidgetView } from "./types.js";
+import { WidgetChart } from "./widget-chart.js";
 
 // Column-span utility classes, matching the responsive grid below so a spanning
 // card widens in step with it. A span is clamped to the grid's column count by
@@ -36,37 +36,10 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	if (series.points.length === 0) {
 		return <div className="py-6 type-body text-muted-foreground">No data yet.</div>;
 	}
-	switch (visualization) {
-		case "line":
-			return <LineChart points={series.points} className="text-primary" axes />;
-		case "area":
-			return <AreaChart points={series.points} className="text-primary" axes />;
-		case "bar":
-			return <BarList points={series.points} />;
-		case "number":
-			return series.total === null ? (
-				<p className="type-body text-muted-foreground">Total unavailable</p>
-			) : (
-				<StatChart total={series.total} points={series.points} />
-			);
-		case "table":
-			return (
-				<div className="overflow-x-auto">
-					<table className="w-full type-body">
-						<tbody>
-							{series.points.map((p) => (
-								<tr key={p.key} className="border-b last:border-0">
-									<td className="py-1 pr-4 text-muted-foreground">{p.key}</td>
-									<td className="py-1 text-right tabular-nums">{p.value.toLocaleString()}</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-			);
-		default:
-			return null;
+	if (visualization === "number" && series.total === null) {
+		return <p className="type-body text-muted-foreground">Total unavailable</p>;
 	}
+	return <WidgetChart widget={widget} />;
 }
 
 function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns: 1 | 2 | 3 | 4 }) {
@@ -86,11 +59,15 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
 /**
  * Render a resolved dashboard. Pass a `DashboardView` (from your own data or via
  * `fromDashboardData(runDashboard(...))`). `accent` overrides the `--primary`
- * token for this dashboard's subtree only, so every chart picks it up.
+ * token for this dashboard's subtree only, so every chart picks it up: the bar
+ * list colours from `--primary`, and a line or area chart's single series from
+ * the palette's last colour, `--chart-5`, so both are set.
  */
 export function Dashboard({ data, className }: { data: DashboardView; className?: string }) {
 	const columns = data.columns ?? 2;
-	const style = data.accent ? ({ "--primary": data.accent } as React.CSSProperties) : undefined;
+	const style = data.accent
+		? ({ "--primary": data.accent, "--chart-5": data.accent } as React.CSSProperties)
+		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
 
 	return (

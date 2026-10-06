@@ -228,6 +228,21 @@ export const Menu = {
 		</DropdownMenu>
 	),
 };
+// An item can say something about itself after its label, muted: a state worth
+// knowing before choosing it. The label alone stays its accessible name.
+export const MenuHints = {
+	render: () => (
+		<DropdownMenu>
+			<DropdownMenuTrigger render={<Button />}>
+				Add a report
+			</DropdownMenuTrigger>
+			<DropdownMenuContent>
+				<DropdownMenuItem>Weekly requests</DropdownMenuItem>
+				<DropdownMenuItem hint="Empty">Monthly invoices</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	),
+};
 export const Empty = {
 	render: () => (
 		<EmptyState

@@ -53,8 +53,14 @@ const fullFormat = new Intl.NumberFormat("en-US");
  * Categorical series colour in fixed order from the appearance palette. The kit
  * ships five chart tokens; a dashboard with more than five series should
  * aggregate the tail into an "Other" bucket rather than lean on a sixth hue.
+ *
+ * A chart of one series (`count` 1) draws it in the palette's last colour: the
+ * one a full stack's topmost series, and so its total outline, takes. The first
+ * colour is the lightest in a palette ordered light to dark, too faint to carry
+ * a chart alone.
  */
-export function chartSeriesColor(index: number): string {
+export function chartSeriesColor(index: number, count?: number): string {
+	if (count === 1) return `var(--chart-${PALETTE_SIZE})`;
 	return `var(--chart-${(index % PALETTE_SIZE) + 1})`;
 }
 
@@ -332,7 +338,9 @@ function Tooltip({
 					>
 						<span
 							className="inline-block h-0.5 w-3 rounded-full"
-							style={{ backgroundColor: chartSeriesColor(i) }}
+							style={{
+								backgroundColor: chartSeriesColor(i, geo.resolved.length),
+							}}
 							aria-hidden
 						/>
 						<span className="text-muted-foreground">{s.name}</span>
@@ -493,7 +501,7 @@ function LineOverlay(geo: FrameGeometry, index: number) {
 						key={s.name}
 						x={geo.xs[index]}
 						y={geo.scaleY(s.values[index] as number)}
-						color={chartSeriesColor(i)}
+						color={chartSeriesColor(i, geo.resolved.length)}
 					/>
 				),
 			)}
@@ -510,7 +518,7 @@ export function LineChart(props: MetricChartProps) {
 				geo.resolved.map((s, i) => {
 					const points = seriesPoints(s.values, geo);
 					if (points.length === 0) return <g key={s.name} />;
-					const color = chartSeriesColor(i);
+					const color = chartSeriesColor(i, geo.resolved.length);
 					const last = points[points.length - 1];
 					return (
 						<g key={s.name}>
@@ -548,7 +556,7 @@ export function AreaChart(props: MetricChartProps) {
 						const tops = seriesPoints(s.top, geo);
 						const bases = seriesPoints(s.base, geo);
 						if (tops.length === 0) return <g key={s.name} />;
-						const color = chartSeriesColor(i);
+						const color = chartSeriesColor(i, geo.resolved.length);
 						const last = tops[tops.length - 1];
 						return (
 							<g key={s.name}>
@@ -573,7 +581,7 @@ export function AreaChart(props: MetricChartProps) {
 				return geo.resolved.map((s, i) => {
 					const points = seriesPoints(s.values, geo);
 					if (points.length === 0) return <g key={s.name} />;
-					const color = chartSeriesColor(i);
+					const color = chartSeriesColor(i, geo.resolved.length);
 					const last = points[points.length - 1];
 					return (
 						<g key={s.name}>
@@ -655,7 +663,7 @@ export function BarChart(props: MetricChartProps) {
 				);
 				const baseY = geo.scaleY(0);
 				return geo.resolved.map((s, si) => {
-					const color = chartSeriesColor(si);
+					const color = chartSeriesColor(si, geo.resolved.length);
 					return (
 						<g key={s.name}>
 							{geo.labels.map((label, i) => {

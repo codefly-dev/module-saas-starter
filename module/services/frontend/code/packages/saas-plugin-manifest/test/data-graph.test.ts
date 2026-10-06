@@ -276,6 +276,123 @@ describe("assertDataGraph", () => {
 	});
 });
 
+describe("metric value format", () => {
+	it("accepts a percent format on a derived and a source metric", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => {
+					metric(g, 2).format = "percent";
+					metric(g, 0).format = "number";
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("accepts a metric with no format", () => {
+		expect(() => assertDataGraph(graph())).not.toThrow();
+	});
+
+	it.each([
+		["source", 0],
+		["derived", 2],
+	])("rejects an unsupported format on a %s metric", (_kind, index) => {
+		expect(() =>
+			assertDataGraph(mutated((g) => (metric(g, index).format = "currency"))),
+		).toThrow(/format 'currency' is unsupported/);
+	});
+});
+
+describe("dashboard sections", () => {
+	// The reference graph with its dashboard split into an overview band and an
+	// activity band, and a third section no widget is in yet.
+	function sectioned(mutate: (g: Record<string, unknown>) => void = () => {}) {
+		return mutated((g) => {
+			rec(arr(g.dashboards)[0]).sections = [
+				{
+					id: "overview",
+					title: "Overview",
+					description: "The headline numbers.",
+				},
+				{ id: "activity", title: "Activity" },
+				{ id: "later", title: "Later" },
+			];
+			widget(g, 0).section = "activity";
+			widget(g, 1).section = "overview";
+			mutate(g);
+		});
+	}
+	const section = (g: Record<string, unknown>, index: number) =>
+		rec(arr(rec(arr(g.dashboards)[0]).sections)[index]);
+
+	it("accepts widgets grouped into declared sections, one of them empty", () => {
+		expect(() => assertDataGraph(sectioned())).not.toThrow();
+	});
+
+	it("accepts a dashboard with no sections and no widget naming one", () => {
+		expect(() => assertDataGraph(graph())).not.toThrow();
+	});
+
+	it("rejects a widget naming a section on a dashboard that declares none", () => {
+		expect(() =>
+			assertDataGraph(mutated((g) => (widget(g, 0).section = "overview"))),
+		).toThrow(
+			/widget 'trend' names section 'overview', but the dashboard declares no sections/,
+		);
+	});
+
+	it("rejects a widget naming no section on a dashboard that declares some", () => {
+		expect(() =>
+			assertDataGraph(sectioned((g) => delete widget(g, 1).section)),
+		).toThrow(/widget 'rate' must name one of the dashboard's sections/);
+	});
+
+	it("rejects a widget naming an undeclared section", () => {
+		expect(() =>
+			assertDataGraph(sectioned((g) => (widget(g, 1).section = "elsewhere"))),
+		).toThrow(/widget 'rate' names unknown section 'elsewhere'/);
+	});
+
+	it("rejects a duplicate section id", () => {
+		expect(() =>
+			assertDataGraph(sectioned((g) => (section(g, 2).id = "activity"))),
+		).toThrow(
+			/section id in dashboard 'overview' 'activity' is declared more than once/,
+		);
+	});
+
+	it("rejects a section id that is not a logical id", () => {
+		expect(() =>
+			assertDataGraph(sectioned((g) => (section(g, 2).id = "Later On"))),
+		).toThrow(/section id 'Later On' is not a valid logical id/);
+	});
+
+	it("rejects a section with an empty or missing title", () => {
+		expect(() =>
+			assertDataGraph(sectioned((g) => (section(g, 1).title = " "))),
+		).toThrow(/section 'activity' title must be a non-empty string/);
+		expect(() =>
+			assertDataGraph(sectioned((g) => delete section(g, 1).title)),
+		).toThrow(/section 'activity' title must be a non-empty string/);
+	});
+
+	it("rejects an empty section description and an unknown section field", () => {
+		expect(() =>
+			assertDataGraph(sectioned((g) => (section(g, 0).description = ""))),
+		).toThrow(/section 'overview' description must be a non-empty string/);
+		expect(() =>
+			assertDataGraph(sectioned((g) => (section(g, 0).order = 1))),
+		).toThrow(/section has unknown field 'order'/);
+	});
+
+	it("rejects an empty sections list", () => {
+		expect(() =>
+			assertDataGraph(
+				mutated((g) => (rec(arr(g.dashboards)[0]).sections = [])),
+			),
+		).toThrow(/sections must declare at least one section/);
+	});
+});
+
 it("accepts real catalog names with separate major versions and scoped filters", async () => {
 	const { readFileSync } = await import("node:fs");
 	const catalog = JSON.parse(

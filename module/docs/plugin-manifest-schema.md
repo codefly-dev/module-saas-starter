@@ -92,29 +92,49 @@ has three node kinds:
 - **`metrics`** — a `source` metric filters one event and compiles to an
   `AuditService.AggregateAuditLog` query (its `groupBy`/`bucket`/`aggregation`
   are exactly that RPC's dimensions); a `derived` metric combines other metrics
-  (`sum`, `ratio`, `difference`).
+  (`sum`, `ratio`, `difference`). Either kind may name a `format`: `number`
+  (the default) writes its value as it is, and `percent` reads it as a share
+  from 0 to 1 and writes it as a percentage (0.4 reads 40%) on every widget
+  that draws it. A ratio is not always a share, so the host never infers one.
 - **`dashboards`** — a `layout` of `widgets`, each binding a `visualization` to
   one metric. These metric-bound widgets are distinct from `ui.widgets`, which
   are presentation slots contributed to host surfaces; the two never mix.
+  A dashboard may group its widgets into `sections` — each an `id`, a `title`
+  and an optional `description`, drawn in declared order — in which case every
+  widget names its `section`. A section may hold no widgets. A dashboard that
+  declares no sections draws its widgets as one untitled group, and no widget
+  may name a section.
 
 On a registered solution's page the host renders every declared dashboard in a
 **Dashboard** tab beside the solution's own **App** tab, never stacked above
 the solution; the solution stays mounted while the dashboard is open. A
 solution that declares no dashboard gets no tab bar. Each viewer can arrange a
 dashboard for themselves: reorder its declared widgets, remove
-them, and re-add the ones they removed. The declared widgets, in declared order,
-are where every viewer starts, and a widget declared later reaches viewers who
-already rearranged. A viewer's arrangement is a preference (ADR 0007): it never
-adds a metric the dashboard does not draw, so a metric declared only as a
-derived metric's input stays off the page.
+them, and re-add the ones they removed. The declared widgets, in declared order
+and in their declared sections, are where every viewer starts, and a widget
+declared later reaches viewers who already rearranged, in its declared section.
+A viewer's arrangement is a preference (ADR 0007): it never adds a metric the
+dashboard does not draw, so a metric declared only as a derived metric's input
+stays off the page.
 
-The schema owns the per-node field formats — including the two shape rules that
-cross fields: a metric carries a `bucket` exactly when it groups by `time`, and
-a `ratio`/`difference` takes exactly two inputs (`sum` takes two or more). The
+Sections are declared by the solution; a viewer only groups and arranges the
+tiles. A viewer can move a tile into another section, rename, reorder and
+remove sections, and add sections of their own, which start empty and are
+filled by dragging tiles in. A removed section's tiles move to the section
+above it (below, for the first), and a section's + puts a removed widget back
+into that section. A section the solution declares later still appears for a
+viewer who rearranged; one the viewer removed stays removed. None of this
+reaches other viewers or the declaration.
+
+The schema owns the per-node field formats — including the shape rules that
+cross fields: a metric carries a `bucket` exactly when it groups by `time`, a
+`ratio`/`difference` takes exactly two inputs (`sum` takes two or more), and a
+widget names a `section` exactly when its dashboard declares `sections`. The
 host validator adds only what a JSON Schema cannot express: referential
 integrity — every metric filter names a declared event, every derived-metric
-input and every widget names a declared metric — and that the derived-metric
-reference graph is acyclic.
+input and every widget names a declared metric, every widget's section is one
+its dashboard declares, and section ids are unique within their dashboard — and
+that the derived-metric reference graph is acyclic.
 
 What neither layer checks is **dimensional coherence** — whether a metric's
 `groupBy` is meaningful for its data, or whether a derived metric's inputs have

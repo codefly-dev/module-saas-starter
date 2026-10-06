@@ -58,3 +58,29 @@ describe("the metric chart's x-axis labels", () => {
 		expect(texts).not.toContain("Sep 29");
 	});
 });
+
+describe("the metric chart's series colours", () => {
+	const strokes = (container: HTMLElement) =>
+		[...container.querySelectorAll("path[stroke]")].map((path) =>
+			path.getAttribute("stroke"),
+		);
+
+	// The palette runs light to dark, so a lone series in the first colour was
+	// a faint grey line; the audit log's stacked chart reads dark because its
+	// topmost series, the total outline, takes the last colour.
+	it("draws a lone series in the palette's last colour", () => {
+		const { container } = render(
+			<LineChart series={[series[0]]} title="Identity" />,
+		);
+		expect(strokes(container)).toContain("var(--chart-5)");
+		expect(strokes(container)).not.toContain("var(--chart-1)");
+	});
+
+	it("keeps the palette order for two series or more", () => {
+		const { container } = render(<LineChart series={series} title="Events" />);
+		expect(strokes(container)).toEqual(
+			expect.arrayContaining(["var(--chart-1)", "var(--chart-2)"]),
+		);
+		expect(strokes(container)).not.toContain("var(--chart-5)");
+	});
+});

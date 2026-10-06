@@ -3,6 +3,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
+import { useId } from "react";
 import { cn } from "./cn.js";
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
@@ -79,22 +80,46 @@ function DropdownMenuItem({
 	className,
 	inset,
 	variant = "default",
+	hint,
+	children,
 	...props
 }: MenuPrimitive.Item.Props & {
 	inset?: boolean;
 	variant?: "default" | "destructive";
+	/**
+	 * Short muted text after the label: something worth knowing about the item
+	 * before choosing it, such as its state. It describes the item rather than
+	 * naming it, so the label alone stays the item's accessible name.
+	 */
+	hint?: React.ReactNode;
 }) {
+	const hintId = useId();
 	return (
 		<MenuPrimitive.Item
 			data-slot="dropdown-menu-item"
 			data-inset={inset}
 			data-variant={variant}
+			aria-describedby={hint ? hintId : undefined}
 			className={cn(
 				"group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 type-dropdown-menu-item outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+			{/* Hidden from the item's name, which is computed from its content;
+			    `aria-describedby` still reads it, as it reads a hidden element. */}
+			{hint && (
+				<span
+					id={hintId}
+					aria-hidden="true"
+					data-slot="dropdown-menu-item-hint"
+					className="ml-auto text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground"
+				>
+					{hint}
+				</span>
+			)}
+		</MenuPrimitive.Item>
 	);
 }
 

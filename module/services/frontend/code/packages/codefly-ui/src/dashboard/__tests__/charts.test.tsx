@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Axis, Svg } from "../atoms.js";
-import { AreaChart, LineChart, StatChart } from "../charts.js";
+import { AreaChart, BarList, LineChart, StatChart } from "../charts.js";
 import type { SeriesPoint } from "../types.js";
 
 type ElementLike = { type?: unknown; props?: { children?: unknown } & Record<string, unknown> };
@@ -93,5 +93,40 @@ describe("StatChart", () => {
 	it("draws the trend line for two points or more", () => {
 		const el = StatChart({ total: 5, points: pts });
 		expect(byType(el, LineChart)).toHaveLength(1);
+	});
+});
+
+// A caller that knows what a value means writes it; without one each chart
+// writes the number as it always has.
+describe("value formatting", () => {
+	const percent = (value: number) => `${Math.round(value * 100)}%`;
+
+	// Every string a tree renders as text, in order.
+	function texts(node: unknown): string[] {
+		if (typeof node === "string") return [node];
+		if (Array.isArray(node)) return node.flatMap(texts);
+		if (!node || typeof node !== "object") return [];
+		return texts((node as ElementLike).props?.children);
+	}
+
+	it("StatChart writes its total with the caller's formatter", () => {
+		expect(texts(StatChart({ total: 0.4, points: [{ key: "all", value: 0.4 }], formatValue: percent }))).toContain("40%");
+		expect(texts(StatChart({ total: 1234, points: [{ key: "all", value: 1234 }] }))).toContain((1234).toLocaleString());
+	});
+
+	it("BarList writes each value with the caller's formatter", () => {
+		const bars = [
+			{ key: "won", value: 0.4 },
+			{ key: "lost", value: 0.6 },
+		];
+		const written = texts(BarList({ points: bars, formatValue: percent }));
+		expect(written).toContain("40%");
+		expect(written).toContain("60%");
+	});
+
+	it("LineChart hands the formatter to its y axis", () => {
+		const [axis] = byType(LineChart({ points: pts, axes: true, formatValue: percent }), Axis);
+		const y = axis?.props?.y as { format?: (value: number) => string } | undefined;
+		expect(y?.format?.(0.5)).toBe("50%");
 	});
 });

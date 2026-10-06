@@ -255,9 +255,9 @@
         "react",
         "../layout/card.js",
         "../layout/page.js",
-        "./charts.js",
         "./cn.js",
-        "./types.js"
+        "./types.js",
+        "./widget-chart.js"
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
@@ -374,10 +374,14 @@
         {
           "file": "packages/codefly-ui/stories/composites.stories.tsx",
           "export": "SortableTiles"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "SortableGroups"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
-      "remaining": "Verify dragging in the explorer with a mouse and on touch, and visual baselines under external skins."
+      "remaining": "Verify dragging in the explorer with a mouse and on touch, across groups too, reordering groups by their handle, and visual baselines under external skins."
     },
     {
       "source": "packages/codefly-ui/src/dashboard/sparkline.tsx",
@@ -410,6 +414,28 @@
         {
           "file": "packages/codefly-ui/stories/metrics.stories.tsx",
           "export": "IndexedTrend"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/widget-chart.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation: draws a resolved widget with the metric charts, for the kit Dashboard and the host's solution dashboards.",
+      "imports": [
+        "./charts.js",
+        "./format.js",
+        "./metric-chart.js",
+        "./metric-geometry.js",
+        "./metric-tiles.js",
+        "./types.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "DashboardCharts"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -766,6 +792,10 @@
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
           "export": "Menu"
+        },
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "MenuHints"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
