@@ -186,6 +186,29 @@ var ErrNoApprovedBuild = errors.New("principal bears no approved build")
 // of at all.
 var ErrUnknownExecutionPrincipal = errors.New("principal is not known to the execution authority")
 
+// ErrExecutionAuthorityUnreconciled reports that this host has an authority
+// question to answer and has not yet established an answer: a ceiling is
+// delivered, and no reconciliation pass has installed a view.
+//
+// It refuses exactly as the others do — nothing is minted — and exists because
+// the alternative was to answer ErrUnknownExecutionPrincipal, which is a
+// statement ABOUT THE PRINCIPAL ("never heard of it") and was being returned
+// for a state that says nothing about the principal at all. An operator
+// debugging a cold start was told their principal did not exist. This file
+// argues at length that those two answers must not read alike; reusing one for
+// the other contradicted that in the one place it is most expensive, because
+// the natural response to "unknown principal" is to go and change the
+// declaration that was already correct.
+//
+// It is NOT returned by a host that answers no authority question at all (no
+// envelope, or no delivery inbox wired). That host is a correct, complete
+// deployment whose every principal genuinely is unknown and always will be, so
+// ErrUnknownExecutionPrincipal is the accurate answer there and activation
+// already names the configuration with
+// ErrSolutionAuthorityCeilingUnavailable.
+var ErrExecutionAuthorityUnreconciled = errors.New(
+	"the execution authority has completed no reconciliation pass")
+
 // executionTokenAudience is the audience a caller's token must be minted for.
 //
 // A token minted for the API server's own audience would authenticate the same

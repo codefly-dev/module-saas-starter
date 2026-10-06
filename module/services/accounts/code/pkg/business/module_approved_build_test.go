@@ -97,6 +97,63 @@ func TestApprovedBuildHasThreeDistinctStates(t *testing.T) {
 	require.Equal(t, uint64(2), incarnation)
 }
 
+// A COLD START says "no pass has completed", not "I have never heard of this
+// principal".
+//
+// Both refuse, so nothing is admitted either way and this is purely about what
+// the operator is told. It matters because the two answers prompt opposite
+// actions: "unknown principal" sends them to change a declaration that is
+// already correct, while the host was simply still starting. The reconciler
+// installs an empty view at construction, and an empty view answers
+// ErrUnknownExecutionPrincipal for everyone — so every mint between process
+// start and the first pass accused the declaration.
+//
+// The third state is the one that must NOT be reported this way: a host with no
+// ceiling delivered answers no authority question at all, is a correct and
+// complete deployment, and its principals genuinely are unknown forever.
+//
+// Mutation-verified, and one claim I had to withdraw: deleting the
+// approvedBuildNoPassYet branch from ApprovedBuild fails the first assertion
+// (it reverts to ErrUnknownExecutionPrincipal), and dropping the
+// recordNothingToAnswer call from the zero-envelope early return fails the
+// second (a host that answers nothing then reports "unreconciled" forever,
+// which is the inverse error). The third assertion, that the state never
+// regresses, is NOT verified by a mutation: I first wrote a guard in the setter
+// and claimed this caught it, then found removing that guard changed no test,
+// because both callers pass the same value. The guard was deleted as
+// unreachable and monotonicity is structural instead — approvedBuildNoPassYet
+// is written at construction and nowhere else. The assertion stays as a
+// regression tripwire for a future third caller, and it is honest that nothing
+// currently exercises it.
+func TestAColdStartIsNotAnUnknownPrincipal(t *testing.T) {
+	// A zero-revision envelope: no ceiling delivered. Accepted at construction
+	// deliberately — see newSolutionAuthorityActivation.
+	reconciler, err := NewApprovedBuildReconciler(&SolutionAuthorityActivation{})
+	require.NoError(t, err)
+
+	_, _, err = reconciler.ApprovedBuild(context.Background(), "declared-principal")
+	require.ErrorIs(t, err, ErrExecutionAuthorityUnreconciled,
+		"before any pass the host has established nothing, which is not a statement about the principal")
+	require.NotErrorIs(t, err, ErrUnknownExecutionPrincipal,
+		"reporting a cold start as an unknown principal sends the operator to a declaration that is correct")
+
+	// A pass runs. This host answers no authority question, so it establishes
+	// nothing — and from here "unknown" is the ACCURATE answer, because no
+	// ceiling will ever name this principal.
+	require.NoError(t, reconciler.RunOnce(context.Background()))
+	_, _, err = reconciler.ApprovedBuild(context.Background(), "declared-principal")
+	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal,
+		"a host with no ceiling delivered is complete, and its principals are unknown rather than pending")
+	require.NotErrorIs(t, err, ErrExecutionAuthorityUnreconciled,
+		"it must not report 'no pass has completed' forever: a pass did complete and established nothing")
+
+	// And it never regresses: a second pass cannot take the host back to
+	// reporting that nothing has run.
+	require.NoError(t, reconciler.RunOnce(context.Background()))
+	_, _, err = reconciler.ApprovedBuild(context.Background(), "declared-principal")
+	require.NotErrorIs(t, err, ErrExecutionAuthorityUnreconciled)
+}
+
 // An empty authority means every principal is UNKNOWN, not that every principal
 // bears no build — so a host that resolved nothing refuses rather than minting
 // unbound capabilities for everyone.

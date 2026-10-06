@@ -94,6 +94,9 @@ type ApprovedBuildReconciler struct {
 	// authority is withdrawn keeps its mark, because re-delivering the
 	// withdrawn generation must not become acceptable again.
 	marks map[string]uint64
+	// outcome is what the last pass established, and it affects only how an
+	// unestablished principal is REPORTED — never whether one is admitted.
+	outcome approvedBuildOutcome
 }
 
 // NewApprovedBuildReconciler builds the reconciler over the activation reader.
@@ -116,8 +119,28 @@ func NewApprovedBuildReconciler(activation *SolutionAuthorityActivation) (*Appro
 		// between process start and the first successful pass.
 		view:  NewMonotonicApprovedBuilds(),
 		marks: map[string]uint64{},
+		// outcome stays approvedBuildNoPassYet until RunOnce says otherwise,
+		// which is what lets a cold start be told apart from a principal this
+		// host has no declaration for.
+		outcome: approvedBuildNoPassYet,
 	}, nil
 }
+
+// What the last reconciliation pass established, which decides how an
+// unestablished principal is REPORTED (never whether it is admitted — all three
+// refuse).
+//
+// Three states and not two, because "no answer yet" and "no question to answer"
+// are different deployments: the first is a host between boot and its first
+// pass, the second is a host with no ceiling delivered, which is correct and
+// complete and whose principals genuinely are unknown forever.
+type approvedBuildOutcome int
+
+const (
+	approvedBuildNoPassYet approvedBuildOutcome = iota
+	approvedBuildNothingToAnswer
+	approvedBuildEstablished
+)
 
 // ApprovedBuild serves from the installed view.
 //
@@ -127,8 +150,13 @@ func (r *ApprovedBuildReconciler) ApprovedBuild(
 	ctx context.Context, principalID string,
 ) (ApprovedDigest, uint64, error) {
 	r.mutex.RLock()
-	view := r.view
+	view, outcome := r.view, r.outcome
 	r.mutex.RUnlock()
+	if outcome == approvedBuildNoPassYet {
+		// Refused, as the empty view would have refused — but named for what it
+		// is. See ErrExecutionAuthorityUnreconciled.
+		return "", 0, fmt.Errorf("%w: %s", ErrExecutionAuthorityUnreconciled, principalID)
+	}
 	return view.ApprovedBuild(ctx, principalID)
 }
 
@@ -162,6 +190,7 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	// and cannot change under a running process, so there is no case where a
 	// host had a ceiling and this skipped a refresh it owed.
 	if r.activation.envelope.Revision == 0 {
+		r.recordNothingToAnswer()
 		return nil
 	}
 
@@ -170,6 +199,7 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	case errors.Is(err, ErrSolutionAuthorityCeilingUnavailable):
 		// No delivery inbox wired: the same "answers nothing" posture as no
 		// envelope, reached through the other half of the configuration.
+		r.recordNothingToAnswer()
 		return nil
 	case err != nil:
 		// An inbox that EXISTS and could not be read is a real failure, and the
@@ -287,8 +317,27 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	r.mutex.Lock()
 	r.view = next
 	r.marks = marks
+	r.outcome = approvedBuildEstablished
 	r.mutex.Unlock()
 	return errors.Join(failures...)
+}
+
+// recordNothingToAnswer notes that a pass ran against a host with no ceiling
+// delivered, for reporting only.
+//
+// It takes no argument on purpose. The first draft took an outcome and guarded
+// `!= approvedBuildNoPassYet` so a pass could never move the host BACK to
+// reporting that nothing had run — and that guard was unreachable, because the
+// only two callers pass approvedBuildNothingToAnswer. Mutation-verified:
+// removing the guard changed no test, which is the signature of a branch no
+// test can establish. It is deleted rather than kept with an untestable claim
+// beside it, for the same reason the unbound-mint branch was. Monotonicity is
+// now structural: approvedBuildNoPassYet is written at construction and by
+// nothing else, so there is no path that regresses to it.
+func (r *ApprovedBuildReconciler) recordNothingToAnswer() {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.outcome = approvedBuildNothingToAnswer
 }
 
 var _ ExecutionAuthority = (*ApprovedBuildReconciler)(nil)
