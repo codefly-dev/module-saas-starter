@@ -3,6 +3,7 @@ import {
 	Building2,
 	CreditCard,
 	Flag,
+	Layers,
 	ListChecks,
 	ShieldCheck,
 	Workflow,
@@ -13,6 +14,13 @@ import { readPublicRuntimeConfig } from "@/lib/read-public-runtime-config";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/shared/ui";
 
 const sections = [
+	{
+		title: "Catalogue",
+		description:
+			"Every deployed module and solution: what it declares, what runs, where it is installed.",
+		href: "/admin/platform/catalogue",
+		icon: Layers,
+	},
 	{
 		title: "Organizations",
 		description:

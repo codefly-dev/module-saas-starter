@@ -46,7 +46,7 @@ func (f *platformAdminAuthzStore) HasVerifiedMFA(context.Context, string) (bool,
 	return true, nil
 }
 
-// platformAdminHandler names one of the 14 PlatformAdminService methods and the
+// platformAdminHandler names one PlatformAdminService method and the
 // minimum platform role its business layer enforces, so the handler-layer gate
 // can be checked against the same bar.
 type platformAdminHandler struct {
@@ -113,6 +113,10 @@ func platformAdminHandlers() []platformAdminHandler {
 			_, err := srv.ReplayJob(ctx, &jobsv1.ReplayJobRequest{SourceJobId: platformTargetD, IdempotencyKey: "replay-key"})
 			return err
 		}},
+		{"ListPlatformCatalogue", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
+			_, err := srv.ListPlatformCatalogue(ctx, &gen.ListPlatformCatalogueRequest{})
+			return err
+		}},
 	}
 }
 
@@ -133,8 +137,15 @@ func TestPlatformAdminHandlersRejectNonAdmin(t *testing.T) {
 }
 
 // The handler gate enforces the same minimum role as its business method, so a
-// lower-privileged platform admin is denied at the handler for super_admin-only
-// endpoints even if the business-layer check were removed.
+// lower-privileged platform admin is denied for a super_admin-only endpoint.
+//
+// What this does not establish: which of the two gates did the denying. Both read
+// the same stored role and return the same code, so removing either one on its own
+// leaves this test green. The business half is proved on its own where it can be —
+// in pkg/business, with no handler in the call (TestListPlatformCatalogueRequires
+// SuperAdminInBusiness for the Catalogue). The handler half cannot be isolated the
+// same way, and claiming otherwise here would be a test that reads as proof of
+// defence in depth while proving one layer twice.
 func TestPlatformAdminHandlersEnforceMinimumRole(t *testing.T) {
 	for _, h := range platformAdminHandlers() {
 		if h.minRole != "super_admin" {

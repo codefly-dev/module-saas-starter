@@ -2242,6 +2242,19 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/platform/catalogue/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/platform-catalogue"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/platform/events/page.tsx",
       "imports": [
         "@/components/auth/role-gate",
@@ -3678,6 +3691,27 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the datasources workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform-catalogue/ui/platform-catalogue-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/gen/saas/accounts/v1/authorization_pb",
+        "@/gen/saas/accounts/v1/platform_admin_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/facts",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform Catalogue workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

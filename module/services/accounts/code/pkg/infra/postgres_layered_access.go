@@ -735,6 +735,42 @@ func (s *PostgresStore) ListShares(ctx context.Context, orgID, resourceType, res
 	return out, nil
 }
 
+// labelledGrantColumns and labelledGrantJoins select one scope grant, aliased g,
+// with the labels an administrator reads it by: the subject's team or display
+// name, the role's name, and who granted it. scanLabelledGrant reads them, after
+// any columns a caller selects ahead of them.
+const labelledGrantColumns = `g.id, g.subject_id, g.subject_kind, g.scope_path::text, g.role_id,
+   COALESCE(g.granted_by::text, ''), g.expires_at, g.created_at,
+   COALESCE(t.name, p.display_name, g.subject_id::text), r.name,
+   COALESCE(a.display_name, g.granted_by::text, 'Unknown actor')`
+
+const labelledGrantJoins = `JOIN roles r ON r.id = g.role_id
+   LEFT JOIN principals p ON g.subject_kind = 'principal' AND p.id = g.subject_id
+   LEFT JOIN teams t ON g.subject_kind = 'team' AND t.id = g.subject_id
+   LEFT JOIN principals a ON a.id = g.granted_by`
+
+func scanLabelledGrant(row rowScanner, orgID string, leading ...any) (*gen.CollectionReadGrant, error) {
+	view := &gen.CollectionReadGrant{Grant: &gen.ScopeGrant{OrgId: orgID}}
+	g := view.Grant
+	var kind string
+	var expires *time.Time
+	var created time.Time
+	dest := append(leading, &g.Id, &g.SubjectId, &kind, &g.ScopePath, &g.RoleId, &g.GrantedBy,
+		&expires, &created, &view.SubjectLabel, &view.RoleName, &view.ActorLabel)
+	if err := row.Scan(dest...); err != nil {
+		return nil, err
+	}
+	g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
+	if kind == "team" {
+		g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
+	}
+	g.CreatedAt = timestamppb.New(created)
+	if expires != nil {
+		g.ExpiresAt = timestamppb.New(*expires)
+	}
+	return view, nil
+}
+
 // ListCollectionAccess lists collection boundaries with the grants that confer
 // read on their content. readResources names the permission resource types that
 // content is governed by; it comes from the composition's declared module
@@ -769,14 +805,8 @@ func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPa
 		return nil, err
 	}
 	for _, collection := range collections {
-		grants, err := executor.Query(ctx, `SELECT g.id, g.subject_id, g.subject_kind, g.scope_path::text, g.role_id,
-   COALESCE(g.granted_by::text, ''), g.expires_at, g.created_at,
-   COALESCE(t.name, p.display_name, g.subject_id::text), r.name,
-   COALESCE(a.display_name, g.granted_by::text, 'Unknown actor')
-   FROM scope_grants g JOIN roles r ON r.id = g.role_id
-   LEFT JOIN principals p ON g.subject_kind = 'principal' AND p.id = g.subject_id
-   LEFT JOIN teams t ON g.subject_kind = 'team' AND t.id = g.subject_id
-   LEFT JOIN principals a ON a.id = g.granted_by
+		grants, err := executor.Query(ctx, `SELECT `+labelledGrantColumns+`
+   FROM scope_grants g `+labelledGrantJoins+`
    WHERE g.org_id = $1 AND g.scope_path @> $2::ltree
    AND (g.expires_at IS NULL OR g.expires_at > NOW())
    AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = g.role_id
@@ -786,23 +816,10 @@ func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPa
 			return nil, err
 		}
 		for grants.Next() {
-			view := &gen.CollectionReadGrant{Grant: &gen.ScopeGrant{OrgId: orgID}}
-			g := view.Grant
-			var kind string
-			var expires *time.Time
-			var created time.Time
-			if err := grants.Scan(&g.Id, &g.SubjectId, &kind, &g.ScopePath, &g.RoleId, &g.GrantedBy,
-				&expires, &created, &view.SubjectLabel, &view.RoleName, &view.ActorLabel); err != nil {
+			view, err := scanLabelledGrant(grants, orgID)
+			if err != nil {
 				grants.Close()
 				return nil, err
-			}
-			g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
-			if kind == "team" {
-				g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
-			}
-			g.CreatedAt = timestamppb.New(created)
-			if expires != nil {
-				g.ExpiresAt = timestamppb.New(*expires)
 			}
 			collection.ReadGrants = append(collection.ReadGrants, view)
 		}

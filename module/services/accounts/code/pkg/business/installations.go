@@ -54,6 +54,10 @@ type InstallationStore interface {
 	// The bool reports whether this call actually flipped an active installation
 	// to revoked, so the caller emits the audit event exactly once.
 	UninstallSolution(ctx context.Context, orgID, installationID string) (*gen.Installation, bool, error)
+	// ListCatalogueInstallations reads every organization's active
+	// installations for the platform Catalogue (platform_catalogue.go). Unlike
+	// the methods above it runs under the control plane, not an org transaction.
+	ListCatalogueInstallations(ctx context.Context) ([]*CatalogueInstallationRecord, error)
 }
 
 func (s *Service) installationStore() InstallationStore {
