@@ -39,8 +39,9 @@ func (c *authMetricCapture) Export(
 func TestAuthGatewayTelemetryExportsGatewayAndGRPCRED(t *testing.T) {
 	endpoint, capture := startAuthMetricCapture(t)
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=auth-test-instance")
+	t.Setenv("OTEL_SERVICE_NAME", "named-by-the-platform")
 	previousMeterProvider := otel.GetMeterProvider()
-	metrics, err := enableOTELMetrics(t.Context(), "test-auth-gateway", endpoint)
+	metrics, err := enableOTELMetrics(t.Context(), telemetryDestination{Endpoint: endpoint, Insecure: true})
 	require.NoError(t, err)
 	require.NotNil(t, metrics)
 	t.Cleanup(func() {
@@ -57,19 +58,10 @@ func TestAuthGatewayTelemetryExportsGatewayAndGRPCRED(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, getStatus(t, httpServer.URL+"/missing"))
 	runtime.GC()
 
-	response, err := http.Get(httpServer.URL + "/metrics")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = response.Body.Close() })
-	require.Equal(t, http.StatusOK, response.StatusCode)
-	prometheusBody, err := io.ReadAll(response.Body)
-	require.NoError(t, err)
-	require.Contains(t, string(prometheusBody), "http_server_request_duration_seconds_count")
-	require.Contains(t, string(prometheusBody), `http_route="/health"`)
-	require.Contains(t, string(prometheusBody), `service_name="test-auth-gateway"`)
-
 	require.NoError(t, metrics.provider.ForceFlush(t.Context()))
 	request := receiveAuthMetrics(t, capture.requests)
 	require.Equal(t, "auth-test-instance", authResourceAttribute(request, "service.instance.id"))
+	require.Equal(t, "named-by-the-platform", authResourceAttribute(request, "service.name"))
 	metricNames := authExportedMetricNames(request)
 	require.Contains(t, metricNames, "go.goroutine.count")
 	require.Contains(t, metricNames, "go.gc.cycle.count")
@@ -88,19 +80,26 @@ func TestAuthGatewayTelemetryExportsGatewayAndGRPCRED(t *testing.T) {
 	require.Equal(t, uint64(2), httpRoutes["/health"])
 }
 
-func TestGatewayHandlerHasNoMetricsRouteWhenTelemetryIsDisabled(t *testing.T) {
+// Metrics leave by OTLP push alone: the gateway's listener serves its own routes
+// and no scrape endpoint, whether or not telemetry is on.
+func TestGatewayHandlerHasNoMetricsRoute(t *testing.T) {
 	matcher := NewRouteMatcher([]*RouteEntry{{
 		Service: "self",
 		Method:  http.MethodGet,
 		Path:    "/health",
 	}}, nil)
 	gateway := NewGateway(nil, matcher, nil, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
-	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	recorder := httptest.NewRecorder()
 
-	newGatewayHTTPHandler(gateway, nil).ServeHTTP(recorder, request)
-
-	require.Equal(t, http.StatusNotFound, recorder.Code)
+	for name, metrics := range map[string]*otelMetrics{
+		"telemetry disabled": nil,
+		"telemetry enabled":  {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			newGatewayHTTPHandler(gateway, metrics).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+			require.Equal(t, http.StatusNotFound, recorder.Code)
+		})
+	}
 }
 
 func authInt64SumValue(request *collectormetricsv1.ExportMetricsServiceRequest, name string) int64 {
