@@ -188,10 +188,11 @@ that delivery aggregate the entry is, plus the host's own `build_incarnation`,
 which is not an inventory field. The inventory's canonical bytes travel once per
 response in `approved_inventories`, and the host reads them only through the
 contract: `Check` accepts the inventory's intrinsic form, its digest must be the
-approved one, and the containers are the contract's own seven-key projection
-(`Rows`) — no traversal of workload templates is written here. No proto here re-describes an inventory
-field; a second description would be the first thing to disagree with what is
-deployed.
+approved one, and the containers are the contract's own projection, selected by
+member binding and workload name (`Projections`, codefly-dev/cli#902) — never
+paired by position, and no traversal of workload templates is written here. No
+proto here re-describes an inventory field; a second description would be the
+first thing to disagree with what is deployed.
 
 **The observed verdict judges against the authorization, never the
 declaration** (`judgeCatalogueObserved`). An observation is each container's image
@@ -199,17 +200,50 @@ digest, keyed `<workload id>/<container name>` in the approved inventory's names
 plus the presented incarnation:
 
 - `RUNNING_AUTHORIZED` only when every container of the approved member (init
-  containers included) runs its approved digest, nothing else runs, and the
-  incarnation is the approved one;
+  containers included) runs its approved digest, nothing else runs, the
+  incarnation is the approved one, **and the observation that says so is dated
+  and current**;
 - `RUNNING_DIFFERS` for any other digest, an extra container, or another
   incarnation;
 - `RUNNING_UNAUTHORIZED` for an observation with no current authorization — the
   row the retirement sweep exists to stop;
-- `NOT_OBSERVED` with no observation, or one missing an approved container (an
-  incomplete observation is never counted as approved);
-- `NOT_RECORDED` when there is no authorization to read, or the approved
-  inventory is not held, does not hash to its digest, is refused by the
-  contract, or has no such member.
+- `NOT_OBSERVED` with no observation, one missing an approved container (an
+  incomplete observation is never counted as approved), or a match the host
+  cannot date: no `observed_at`, a stamp older than
+  `catalogueObservationValidity`, or one further ahead of this host's clock than
+  `catalogueObservationSkew`;
+- `NOT_RECORDED` when there is no authorization to read, the approval carries no
+  `build_incarnation`, or the approved inventory is not held, does not hash to
+  its digest, is refused by the contract, or has no such member.
+
+**Only the affirmative verdict carries that burden, and deliberately so.** It is
+the one cell a reader acts on by doing nothing, so it needs an approval complete
+enough to judge against — a non-zero `build_incarnation`, since this host assigns
+incarnations from one and zero therefore means *none*, which would otherwise match
+an observation that also carries none — and an observation that is complete and
+current. The two verdicts that report trouble need neither: a stale report of
+something running unauthorized is still worth showing, while "Running authorized"
+beside "Not observed" is worse than nothing. Withholding the alarming verdict for
+want of freshness would hide the risk the page exists to surface.
+
+The window is this host's own, named once in `catalogueObservationValidity`
+(`pkg/business/platform_catalogue.go`), because the observing producer declares no
+validity of its own yet; when its record carries one, that bound replaces the
+constant and this host stops choosing.
+
+**The invariant is enforced twice and asserted in the contract.**
+`judgeCatalogueObserved` is the only author of a verdict, and
+`enforceCatalogueVerdictEvidence` re-checks every affirmative verdict at the read
+boundary before the response leaves, replacing one its own evidence does not
+support with a gap and logging it. Nothing should reach the second check — but the
+state messages are to be filled from records that do not exist yet (#953's applied
+presence, the signed approval, cluster observation), and a filler that set a value
+case without re-judging would otherwise publish a green cell. `platform_admin.proto`
+states the rule on the `verdict` oneof so a consumer reads it from the contract; it
+is Go, not protovalidate, that enforces it, since nothing validates a response on
+the wire. The browser does not re-derive the judgement either: `facts.ts` shows the
+affirmative cell only when the evidence is present beside it, and never reproduces
+the validity window, which would drift from the host's.
 
 Withdrawal, credential revocation, retirement and build size have gap-only
 `oneof`s: their value vocabularies are later spec items' and core#708's to define,

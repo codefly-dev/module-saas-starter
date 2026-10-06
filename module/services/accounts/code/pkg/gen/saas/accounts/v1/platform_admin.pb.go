@@ -146,7 +146,10 @@ type CatalogueObservedVerdict int32
 const (
 	CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED CatalogueObservedVerdict = 0
 	// Every container of the approved inventory member runs its approved image
-	// digest, no other container runs, and the incarnation is the approved one.
+	// digest, no other container runs, the incarnation is the approved one, and
+	// the observation that says so is dated and current. This is the only verdict
+	// a reader acts on by doing nothing, so it is the only one that requires
+	// complete, current evidence: see the verdict field below.
 	CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED CatalogueObservedVerdict = 1
 	// Something other than the approved execution is running: what cluster
 	// admission refuses.
@@ -2241,6 +2244,11 @@ type CatalogueAuthorization struct {
 	// incarnation, which is the same host-assigned value as presented by the
 	// running workload; an incarnation from any other assigner would make that
 	// comparison meaningless, not merely wrong.
+	//
+	// Assigned from one, so zero is an approval that carries no incarnation
+	// rather than one approving incarnation zero. An approval at zero cannot
+	// produce an affirmative verdict: left uncompared, it would match any
+	// observation that also carries none.
 	BuildIncarnation uint64 `protobuf:"varint,4,opt,name=build_incarnation,json=buildIncarnation,proto3" json:"build_incarnation,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -2615,6 +2623,19 @@ type CatalogueObserved struct {
 	// A verdict exists only when both a complete observation and a readable
 	// authorization do; anything less is a gap, and an unobserved or
 	// incompletely observed entry is never a match.
+	//
+	// RUNNING_AUTHORIZED is constructible only from an approval complete enough
+	// to judge against (an inventory this host holds at the digest approval
+	// signed, and a non-zero build_incarnation) and an observation that is
+	// complete, carries observed_at, and is within the validity this host treats
+	// as current. Any of those missing leaves a gap. The two verdicts that report
+	// trouble carry no such burden: a partly evidenced report of something wrong
+	// is still worth showing, while "Running authorized" beside "Not observed" is
+	// worse than nothing, because a reader sees it and stops looking.
+	//
+	// The rule is enforced where the verdict is made and again at the read
+	// boundary that serves it, so a reader of this response never has to re-derive
+	// it from the fields beside it.
 	//
 	// Types that are valid to be assigned to VerdictValue:
 	//

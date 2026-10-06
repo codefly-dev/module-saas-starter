@@ -855,7 +855,7 @@
           "type": "string"
         },
         "buildIncarnation": {
-          "description": "The build incarnation this host assigned to the approved execution. Not an\ninventory field: this host, and only this host, assigns it — advancing it\nwhenever the approved execution changes — and a Work Context seals it beside\nthe image digest. The verdict compares it with an observation's\nincarnation, which is the same host-assigned value as presented by the\nrunning workload; an incarnation from any other assigner would make that\ncomparison meaningless, not merely wrong.",
+          "description": "The build incarnation this host assigned to the approved execution. Not an\ninventory field: this host, and only this host, assigns it — advancing it\nwhenever the approved execution changes — and a Work Context seals it beside\nthe image digest. The verdict compares it with an observation's\nincarnation, which is the same host-assigned value as presented by the\nrunning workload; an incarnation from any other assigner would make that\ncomparison meaningless, not merely wrong.\n\nAssigned from one, so zero is an approval that carries no incarnation\nrather than one approving incarnation zero. An approval at zero cannot\nproduce an affirmative verdict: left uncompared, it would match any\nobservation that also carries none.",
           "format": "uint64",
           "type": "string"
         },
@@ -1084,7 +1084,7 @@
     },
     "v1CatalogueObservedVerdict": {
       "default": "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
-      "description": "CatalogueObservedVerdict judges what runs against what is authorized —\nnever against what is declared, because only authorization admits execution.\n\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED: Every container of the approved inventory member runs its approved image\ndigest, no other container runs, and the incarnation is the approved one.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS: Something other than the approved execution is running: what cluster\nadmission refuses.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED: Something is running with no current authorization at all: what the\nretirement sweep exists to stop.",
+      "description": "CatalogueObservedVerdict judges what runs against what is authorized —\nnever against what is declared, because only authorization admits execution.\n\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED: Every container of the approved inventory member runs its approved image\ndigest, no other container runs, the incarnation is the approved one, and\nthe observation that says so is dated and current. This is the only verdict\na reader acts on by doing nothing, so it is the only one that requires\ncomplete, current evidence: see the verdict field below.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS: Something other than the approved execution is running: what cluster\nadmission refuses.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED: Something is running with no current authorization at all: what the\nretirement sweep exists to stop.",
       "enum": [
         "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
         "CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",

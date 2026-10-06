@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	deployment "github.com/codefly-dev/cli/contracts/deployment"
 	"github.com/codefly-dev/core/wool"
@@ -71,6 +72,20 @@ const (
 	catalogueNoAgentRelease  = "The installation's agent principal carries no publisher/name:version identifier."
 )
 
+// catalogueObservationValidity is how long an observation may be used to say
+// what runs *now*, and catalogueObservationSkew how far ahead of this host's
+// clock an observer's stamp may be before it stops being evidence at all.
+//
+// Only the affirmative verdict needs either: a reassuring answer read off an
+// observation that no longer describes the present is the one failure this page
+// cannot afford, while an answer that reports trouble is worth showing whatever
+// its age. The observing producer declares no validity of its own yet; when its
+// record carries one, that bound replaces these and this host stops choosing.
+const (
+	catalogueObservationValidity = 5 * time.Minute
+	catalogueObservationSkew     = 30 * time.Second
+)
+
 // ListPlatformCatalogue reads the Catalogue for a super administrator.
 func (s *Service) ListPlatformCatalogue(ctx context.Context, actorID string, includeTombstoned bool) (*PlatformCatalogue, error) {
 	w := wool.Get(ctx).In("ListPlatformCatalogue")
@@ -94,10 +109,52 @@ func (s *Service) ListPlatformCatalogue(ctx context.Context, actorID string, inc
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot read the platform catalogue")
 	}
+	now := time.Now()
+	entries := projectPlatformCatalogue(s.modulePrincipals, registrations, installations, includeTombstoned, now)
+	enforceCatalogueVerdictEvidence(ctx, entries, now)
 	return &PlatformCatalogue{
-		Entries:          projectPlatformCatalogue(s.modulePrincipals, registrations, installations, includeTombstoned),
+		Entries:          entries,
 		RegistryRevision: revision,
 	}, nil
+}
+
+// enforceCatalogueVerdictEvidence is the read boundary refusing to serve an
+// affirmative verdict that the evidence beside it does not support. Nothing
+// should reach it: judgeCatalogueObserved is the only author of a verdict, and
+// it applies the same rule. But the states are filled from records this host
+// does not hold yet — applied presence (#953), the deployment contract's signed
+// approval, cluster observation — and any of those fillers could set a value
+// case without re-judging. An operator reads the green and stops looking, so the
+// boundary fails closed: the verdict becomes a gap naming what was missing, and
+// the inconsistency is logged as the defect it is rather than rendered.
+func enforceCatalogueVerdictEvidence(ctx context.Context, entries []*PlatformCatalogueEntry, now time.Time) {
+	for _, row := range entries {
+		observed := row.Entry.GetObserved()
+		if observed.GetVerdict() != gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED {
+			continue
+		}
+		var reason string
+		switch approval := row.Entry.GetAuthorized().GetAuthorization(); {
+		case approval == nil:
+			reason = "It carries no approval for an observation to be authorized against."
+		case approval.GetBuildIncarnation() == 0:
+			reason = "Its approval carries no build incarnation."
+		case observed.GetObservedExecution() == nil:
+			reason = "It carries no observed execution."
+		default:
+			reason = catalogueObservationNotCurrent(observed, now)
+		}
+		if reason == "" {
+			continue
+		}
+		wool.Get(ctx).In("ListPlatformCatalogue").Error(
+			"withholding an affirmative catalogue verdict the entry's own evidence does not support",
+			wool.Field("entry", row.Entry.GetName()),
+			wool.Field("reason", reason))
+		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(
+			gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED,
+			"This host withheld an affirmative verdict that its own evidence does not support. "+reason)}
+	}
 }
 
 // projectPlatformCatalogue builds the Catalogue's rows: one per composed module,
@@ -109,10 +166,11 @@ func projectPlatformCatalogue(
 	registrations []*SolutionRegistration,
 	installations []*CatalogueInstallationRecord,
 	includeTombstoned bool,
+	now time.Time,
 ) []*PlatformCatalogueEntry {
 	var moduleEntries []*PlatformCatalogueEntry
 	for _, grant := range modules {
-		entry := newCatalogueEntry(gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE, grant.Prefix)
+		entry := newCatalogueEntry(gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE, grant.Prefix, now)
 		entry.PublisherValue = &gen.CatalogueEntry_PublisherGap{PublisherGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueModulePublisher)}
 		moduleEntries = append(moduleEntries, &PlatformCatalogueEntry{Entry: entry})
 	}
@@ -122,7 +180,7 @@ func projectPlatformCatalogue(
 		if existing, ok := solutions[name]; ok {
 			return existing
 		}
-		entry := newCatalogueEntry(gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_SOLUTION, name)
+		entry := newCatalogueEntry(gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_SOLUTION, name, now)
 		entry.PublisherValue = &gen.CatalogueEntry_PublisherGap{PublisherGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueUnregistered)}
 		solutions[name] = &PlatformCatalogueEntry{Entry: entry}
 		return solutions[name]
@@ -155,7 +213,7 @@ func projectPlatformCatalogue(
 // this host carries a declaration, an approval, an applied generation, an
 // observation, a withdrawal, a retirement or a build size yet. When one does,
 // the entry reads it here and the gap gives way to the value.
-func newCatalogueEntry(kind gen.CatalogueEntryKind, name string) *gen.CatalogueEntry {
+func newCatalogueEntry(kind gen.CatalogueEntryKind, name string, now time.Time) *gen.CatalogueEntry {
 	notRecorded := gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED
 	notObserved := gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED
 	entry := &gen.CatalogueEntry{
@@ -185,27 +243,38 @@ func newCatalogueEntry(kind gen.CatalogueEntryKind, name string) *gen.CatalogueE
 		},
 		BuildSizeValue: &gen.CatalogueEntry_BuildSizeGap{BuildSizeGap: catalogueGap(notRecorded, catalogueNoBuildSize)},
 	}
-	judgeCatalogueObserved(entry.Authorized, entry.Observed, nil)
+	judgeCatalogueObserved(entry.Authorized, entry.Observed, nil, now)
 	return entry
 }
 
 // judgeCatalogueObserved sets the observed verdict from the authorized and
 // observed states the entry already carries. It judges what runs against what
-// is authorized, never against what is declared, and gives a verdict only when
-// both are known:
+// is authorized, never against what is declared.
+//
+// The asymmetry here is deliberate. An affirmative verdict is constructible only
+// from a complete, readable approval and a complete observation whose age is
+// known and current, because an operator reads the green and stops looking. A
+// verdict that reports trouble is never withheld for want of freshness: a stale
+// report of something running unauthorized is still worth seeing.
 //
 //   - no observation: NOT_OBSERVED, never a match;
-//   - an observation with no current authorization: RUNNING_UNAUTHORIZED;
+//   - an observation with a known absence of authorization: RUNNING_UNAUTHORIZED;
 //   - an observation, but no authorization this host can read: NOT_RECORDED;
+//   - an approval there is nothing to judge against — no build incarnation, an
+//     inventory this host does not hold or the contract refuses, or a member the
+//     inventory approves no container for: NOT_RECORDED. A defect in the
+//     evidence is not a statement about what runs, so it is never DIFFERS;
 //   - an observation missing an approved container: NOT_OBSERVED, because an
 //     incomplete observation is never counted as approved execution;
-//   - every approved container on its approved digest, nothing else running,
-//     and the approved incarnation: RUNNING_AUTHORIZED;
+//   - the approved execution exactly, but an observation whose age is unknown or
+//     past catalogueObservationValidity: NOT_OBSERVED. A match this host cannot
+//     date is not a match now;
+//   - the approved execution exactly, currently observed: RUNNING_AUTHORIZED;
 //   - anything else: RUNNING_DIFFERS.
 //
 // The approved execution is read from the approved inventory through the
 // deployment contract, keyed by the inventory's digest in inventories.
-func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.CatalogueObserved, inventories map[string][]byte) {
+func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.CatalogueObserved, inventories map[string][]byte, now time.Time) {
 	gap := func(reason gen.CatalogueGapReason, detail string) {
 		observed.VerdictValue = &gen.CatalogueObserved_VerdictGap{VerdictGap: catalogueGap(reason, detail)}
 	}
@@ -225,30 +294,75 @@ func judgeCatalogueObserved(authorized *gen.CatalogueAuthorized, observed *gen.C
 		return
 	}
 	approval := authorized.GetAuthorization()
+	// This host assigns the incarnation, starting at one, so zero is an approval
+	// that carries none rather than one approving incarnation zero. Comparing an
+	// observation against it would make any observation that also carries none
+	// into a match, which is the whole class of false green this guard closes.
+	if approval.GetBuildIncarnation() == 0 {
+		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED,
+			"The approval carries no build incarnation, so there is nothing for an observed incarnation to match.")
+		return
+	}
 	approved, err := approvedContainerImageDigests(inventories[approval.GetInventoryDigest()], approval.GetInventoryDigest(), approval.GetMemberBinding())
 	if err != nil {
 		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, "The approved inventory cannot be read: "+err.Error())
 		return
 	}
+	// Unreachable through an inventory the contract accepts: it refuses a
+	// workload with no application container (CONTAINER_REQUIRED), which
+	// TestExecutionInventoryContractRequiresAContainer pins. The guard is here
+	// because the day that changes, an approved member with no container would
+	// match an observation with none — the empty-equals-empty green this whole
+	// function exists to refuse.
+	if len(approved) == 0 {
+		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED,
+			"The approved inventory approves no container for member "+approval.GetMemberBinding()+", so nothing observed can match it.")
+		return
+	}
 	observedDigests := running.GetContainerImageDigests()
-	for key := range approved {
+	for _, key := range slices.Sorted(maps.Keys(approved)) {
 		if _, ok := observedDigests[key]; !ok {
 			gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, "The observation is incomplete: approved container "+key+" was not observed.")
 			return
 		}
 	}
-	if maps.Equal(approved, observedDigests) && running.GetBuildIncarnation() == approval.GetBuildIncarnation() {
-		verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED)
+	if !maps.Equal(approved, observedDigests) || running.GetBuildIncarnation() != approval.GetBuildIncarnation() {
+		verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS)
 		return
 	}
-	verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS)
+	if reason := catalogueObservationNotCurrent(observed, now); reason != "" {
+		gap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_OBSERVED, reason)
+		return
+	}
+	verdict(gen.CatalogueObservedVerdict_CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED)
+}
+
+// catalogueObservationNotCurrent says why an observation cannot speak for what
+// runs now, or "" when it can. It is the one definition of observation currency:
+// the verdict's author and the read boundary that enforces the invariant both
+// read it here, so neither can drift from the other.
+func catalogueObservationNotCurrent(observed *gen.CatalogueObserved, now time.Time) string {
+	at := observed.GetObservedAt()
+	if at == nil {
+		return "The observation carries no time, so this host cannot tell whether it describes what runs now."
+	}
+	switch age := now.Sub(at.AsTime()); {
+	case age > catalogueObservationValidity:
+		return fmt.Sprintf("The observation is %s old, past the %s this host treats as current.",
+			age.Round(time.Second), catalogueObservationValidity)
+	case age < -catalogueObservationSkew:
+		return fmt.Sprintf("The observation is stamped %s ahead of this host's clock, past the %s of skew it tolerates.",
+			(-age).Round(time.Second), catalogueObservationSkew)
+	}
+	return ""
 }
 
 // approvedContainerImageDigests reads one member's approved containers out of
 // an approved inventory, as "<workload id>/<container name>" → image manifest
 // digest. Everything comes from the deployment contract: Check accepts the
 // inventory's intrinsic form, its digest must be the one approval signed, and
-// the containers are the contract's own seven-key projection (Rows), never a
+// the containers are the contract's own projection, selected by member and
+// workload name (Projections) — never paired by position, and never a
 // traversal of the workload templates written here.
 func approvedContainerImageDigests(canonical []byte, digest, member string) (map[string]string, error) {
 	if len(canonical) == 0 {
@@ -261,34 +375,23 @@ func approvedContainerImageDigests(canonical []byte, digest, member string) (map
 	if got := checked.Digest(); got != digest {
 		return nil, fmt.Errorf("its canonical bytes hash to %s, not the approved %s", got, digest)
 	}
-	inventory := checked.Inventory()
-	var workloads []string
-	for _, candidate := range inventory.Members {
-		if candidate.Binding == member {
-			workloads = candidate.Workloads
-		}
-	}
-	if workloads == nil {
-		return nil, fmt.Errorf("it has no member %q", member)
-	}
-	// The projection is one row per workload, in the inventory's workload
-	// order; a row does not name its workload, so the pairing is by position.
-	rows := checked.Rows()
-	if len(rows) != len(inventory.Workloads) {
-		return nil, fmt.Errorf("the contract projected %d rows for %d workloads", len(rows), len(inventory.Workloads))
-	}
 	out := make(map[string]string)
-	for i, workload := range inventory.Workloads {
-		if !slices.Contains(workloads, workload.ID) {
+	found := false
+	for _, projection := range checked.Projections() {
+		if projection.MemberBinding != member {
 			continue
 		}
-		for name, reference := range rows[i].Images {
+		found = true
+		for name, reference := range projection.Row.Images {
 			_, imageDigest, ok := strings.Cut(reference, "@")
 			if !ok {
-				return nil, fmt.Errorf("container %s/%s has no image digest", workload.ID, name)
+				return nil, fmt.Errorf("container %s/%s has no image digest", projection.Workload, name)
 			}
-			out[workload.ID+"/"+name] = imageDigest
+			out[projection.Workload+"/"+name] = imageDigest
 		}
+	}
+	if !found {
+		return nil, fmt.Errorf("it has no member %q", member)
 	}
 	return out, nil
 }

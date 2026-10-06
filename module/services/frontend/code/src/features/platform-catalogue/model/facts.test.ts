@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 import {
 	CatalogueEntryKind,
@@ -40,7 +41,22 @@ function entry(
 	});
 }
 
-function observedWith(verdict: CatalogueObservedVerdict) {
+// The evidence an affirmative verdict rests on. A verdict reporting trouble
+// needs none of it, which is why each piece is a separate argument here rather
+// than baked into one fixture.
+const approvedAt = (buildIncarnation = BigInt(3)) => ({
+	authorizationValue: {
+		case: "authorization" as const,
+		value: {
+			authorizedRevision: BigInt(4),
+			inventoryDigest: "sha256:aaa",
+			memberBinding: "member",
+			buildIncarnation,
+		},
+	},
+});
+
+function observedWith(verdict: CatalogueObservedVerdict, observedAt?: Date) {
 	return {
 		observedExecutionValue: {
 			case: "observedExecution" as const,
@@ -49,6 +65,14 @@ function observedWith(verdict: CatalogueObservedVerdict) {
 				buildIncarnation: BigInt(3),
 			},
 		},
+		...(observedAt
+			? {
+					observationFreshnessValue: {
+						case: "observedAt" as const,
+						value: timestampFromDate(observedAt),
+					},
+				}
+			: {}),
 		verdictValue: { case: "verdict" as const, value: verdict },
 	};
 }
@@ -201,11 +225,15 @@ describe("authorization", () => {
 });
 
 describe("observedVerdictView", () => {
-	it("states running authorized only when the server judged it so", () => {
+	it("states running authorized when the server judged it so beside the evidence", () => {
 		expect(
 			observedVerdictView(
 				entry({
-					observed: observedWith(CatalogueObservedVerdict.RUNNING_AUTHORIZED),
+					authorized: approvedAt(),
+					observed: observedWith(
+						CatalogueObservedVerdict.RUNNING_AUTHORIZED,
+						new Date("2026-10-06T12:00:00Z"),
+					),
 				}),
 			),
 		).toMatchObject({
@@ -213,6 +241,81 @@ describe("observedVerdictView", () => {
 			text: "Running authorized",
 			tone: "success",
 		});
+	});
+
+	// A page that says "Running authorized" beside "Not observed" is worse than
+	// one that says nothing, because a reader sees the green and stops. The server
+	// will not send that combination; if one arrives, it is a defect and must read
+	// as a fact this host cannot state.
+	it.each([
+		[
+			"no approval to be authorized against",
+			{
+				observed: observedWith(
+					CatalogueObservedVerdict.RUNNING_AUTHORIZED,
+					new Date("2026-10-06T12:00:00Z"),
+				),
+			},
+			"no approval",
+		],
+		[
+			"an approval carrying no build incarnation",
+			{
+				authorized: approvedAt(BigInt(0)),
+				observed: observedWith(
+					CatalogueObservedVerdict.RUNNING_AUTHORIZED,
+					new Date("2026-10-06T12:00:00Z"),
+				),
+			},
+			"no build incarnation",
+		],
+		[
+			"no time the observation was made",
+			{
+				authorized: approvedAt(),
+				observed: observedWith(CatalogueObservedVerdict.RUNNING_AUTHORIZED),
+			},
+			"without the time the observation was made",
+		],
+		[
+			"no observed execution",
+			{
+				authorized: approvedAt(),
+				observed: {
+					observationFreshnessValue: {
+						case: "observedAt" as const,
+						value: timestampFromDate(new Date("2026-10-06T12:00:00Z")),
+					},
+					verdictValue: {
+						case: "verdict" as const,
+						value: CatalogueObservedVerdict.RUNNING_AUTHORIZED,
+					},
+				},
+			},
+			"no observed execution",
+		],
+	])(
+		"refuses to show an affirmative verdict with %s",
+		(_name, init, missing) => {
+			const view = observedVerdictView(entry(init));
+			expect(view.kind).toBe("gap");
+			expect(view.kind === "gap" && view.label).toBe("Not observed");
+			expect(view.kind === "gap" && view.detail).toContain(missing);
+		},
+	);
+
+	// The asymmetry: the evidence an affirmative verdict needs is not demanded of
+	// one that reports trouble, which is still worth showing.
+	it.each([
+		["Differs from authorized", CatalogueObservedVerdict.RUNNING_DIFFERS],
+		[
+			"Running without authorization",
+			CatalogueObservedVerdict.RUNNING_UNAUTHORIZED,
+		],
+	])("still reports %s without that evidence", (text, verdict) => {
+		expect(
+			observedVerdictView(entry({ observed: observedWith(verdict) })),
+		).toMatchObject({ kind: "value", text, tone: "danger" });
 	});
 
 	it("flags an execution that differs from the approved one", () => {

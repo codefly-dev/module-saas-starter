@@ -44,10 +44,19 @@ const unknownStates = {
 	buildSizeGap: notRecorded("Build size is codefly-dev/core#708."),
 };
 
-function observedRunning(verdict: string, imageDigest: string) {
+// observedAt is what dates an observation. A verdict that reports trouble is
+// shown without it; the affirmative one is not, so each caller below states
+// whether its observation carries a time.
+function observedRunning(
+	verdict: string,
+	imageDigest: string,
+	observedAt?: string,
+) {
 	return {
 		observedRevisionGap: notObserved("No cluster state."),
-		observationFreshnessGap: notObserved("No cluster state."),
+		...(observedAt
+			? { observedAt }
+			: { observationFreshnessGap: notObserved("No cluster state.") }),
 		observedExecution: {
 			containerImageDigests: { "worker/worker": imageDigest },
 			buildIncarnation: "3",
@@ -134,6 +143,20 @@ const catalogue = {
 			observed: observedRunning(
 				"CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",
 				"sha256:aaa",
+				"2026-10-06T11:59:00Z",
+			),
+		}),
+		// A response that contradicts itself: the approved execution reported
+		// running, and no time the observation was made. The server will not send
+		// this — it withholds the verdict at its read boundary — so if one arrives
+		// it is a defect, and the page must not turn it into green.
+		solution("undated-solution", {
+			authorized: {
+				authorization: approved,
+			},
+			observed: observedRunning(
+				"CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",
+				"sha256:aaa",
 			),
 		}),
 	],
@@ -196,6 +219,14 @@ describe("PlatformCataloguePage admin container", () => {
 				"Not authorized",
 			),
 		).toBeTruthy();
+
+		// "Running authorized" beside an undated observation is the one cell an
+		// operator reads and stops at, so it is never shown.
+		const undated = stateOf("undated-solution", "Observed");
+		expect(within(undated).queryByText("Running authorized")).toBeNull();
+		expect(within(undated).getAllByText("Not observed").length).toBeGreaterThan(
+			0,
+		);
 
 		const moduleObserved = stateOf("billing-module", "Observed");
 		expect(

@@ -202,9 +202,45 @@ export function authorizationView(entry: CatalogueEntry): FactView {
 }
 
 /**
+ * Why an affirmative verdict may not be shown, or undefined when it may.
+ *
+ * "Running authorized" is the one cell a reader acts on by doing nothing, so the
+ * page shows it only beside the evidence it rests on: an approval complete enough
+ * to judge against, an observed execution, and the time that observation was
+ * made. The server applies the same rule where the verdict is made and again at
+ * its read boundary, so a response that arrives contradicting itself is a defect
+ * — and a defect must read as a fact this host cannot state, never as green.
+ *
+ * It is the presence of each piece of evidence that is checked here, never its
+ * age: how long an observation speaks for the present is the host's to decide,
+ * and a second copy of that window in a browser would drift from it. The
+ * observation's own time is shown beside the verdict, so an operator reads the
+ * age for themselves.
+ */
+function affirmativeVerdictUnsupported(
+	entry: CatalogueEntry,
+): string | undefined {
+	const unsupported = (missing: string) =>
+		`The server reported the approved execution running, ${missing}. Without that evidence this host cannot say what runs, so it is not shown as a match.`;
+	const authorization = entry.authorized?.authorizationValue;
+	if (authorization?.case !== "authorization")
+		return unsupported("with no approval beside it to be authorized against");
+	if (authorization.value.buildIncarnation === BigInt(0))
+		return unsupported("against an approval that carries no build incarnation");
+	const observed = entry.observed;
+	if (observed?.observedExecutionValue.case !== "observedExecution")
+		return unsupported("with no observed execution beside it");
+	if (observed.observationFreshnessValue.case !== "observedAt")
+		return unsupported("without the time the observation was made");
+	return undefined;
+}
+
+/**
  * What runs, judged against what is authorized. Both failures carry the danger
  * tone: a different execution is what admission refuses, and an execution with
- * no current authorization is what the retirement sweep exists to stop.
+ * no current authorization is what the retirement sweep exists to stop. Neither
+ * is withheld for want of the evidence an affirmative verdict needs: a partly
+ * evidenced report of trouble is still a report of trouble.
  */
 export function observedVerdictView(entry: CatalogueEntry): FactView {
 	const observed = entry.observed;
@@ -216,13 +252,21 @@ export function observedVerdictView(entry: CatalogueEntry): FactView {
 			: undefined;
 	const detail = observationText(running);
 	switch (v.value) {
-		case CatalogueObservedVerdict.RUNNING_AUTHORIZED:
+		case CatalogueObservedVerdict.RUNNING_AUTHORIZED: {
+			const unsupported = affirmativeVerdictUnsupported(entry);
+			if (unsupported)
+				return {
+					kind: "gap",
+					label: gapLabel(CatalogueGapReason.NOT_OBSERVED),
+					detail: unsupported,
+				};
 			return {
 				kind: "value",
 				text: "Running authorized",
 				tone: "success",
 				detail,
 			};
+		}
 		case CatalogueObservedVerdict.RUNNING_DIFFERS:
 			return {
 				kind: "value",
