@@ -22,10 +22,12 @@ import (
 // relay delivers is deleted, what it sets aside moves to the quarantine, and
 // the rest stays.
 type memQueue struct {
-	mu     sync.Mutex
-	rows   []QueuedAuditEvent
-	held   []QueuedAuditEvent // the quarantine
-	leased bool               // another relay holds the lease
+	mu   sync.Mutex
+	rows []QueuedAuditEvent
+	held []QueuedAuditEvent // the quarantine
+	// reasons is the error kept with each quarantined row, by sequence number.
+	reasons map[int64]string
+	leased  bool // another relay holds the lease
 	// crashes makes the next n removals fail before their commit, the way a
 	// crash or a lost connection between the writes and the delete would.
 	crashes int
@@ -72,6 +74,10 @@ func (q *memQueue) Drain(ctx context.Context, limit int, deliver func(context.Co
 	}
 	for _, set := range outcome.Quarantined {
 		gone[set.Seq] = true
+		if q.reasons == nil {
+			q.reasons = map[int64]string{}
+		}
+		q.reasons[set.Seq] = set.Reason
 	}
 	var kept []QueuedAuditEvent
 	for _, row := range q.rows {
@@ -90,6 +96,18 @@ func (q *memQueue) quarantined() []QueuedAuditEvent {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return slices.Clone(q.held)
+}
+
+// reasonOf is the error kept with the quarantined row of the event.
+func (q *memQueue) reasonOf(eventID string) string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, row := range q.held {
+		if row.Entry.ID == eventID {
+			return q.reasons[row.Seq]
+		}
+	}
+	return ""
 }
 
 func (q *memQueue) deadlines() []time.Time {

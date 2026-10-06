@@ -194,7 +194,11 @@ func (q *PostgresAuditQueue) Drain(
 		seqs := make([]int64, len(outcome.Quarantined))
 		reasons := make([]string, len(outcome.Quarantined))
 		for i, set := range outcome.Quarantined {
-			seqs[i], reasons[i] = set.Seq, set.Reason
+			// The relay bounds a reason already; the queue holds the constraint
+			// (text without NUL, valid UTF-8), so it does not trust any caller to,
+			// and a reason it cannot store would roll back the delivered rows too,
+			// on every pass.
+			seqs[i], reasons[i] = set.Seq, business.AuditQuarantineReason(set.Reason)
 		}
 		tag, err := tx.Exec(bookkeeping, auditQueueQuarantineSQL, seqs, reasons)
 		if err != nil {

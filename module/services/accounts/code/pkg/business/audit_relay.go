@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -35,9 +36,10 @@ type AuditDeliveryOutcome struct {
 	// Delivered are the rows the archive and the store both acknowledged. The
 	// queue deletes them.
 	Delivered []int64
-	// Quarantined are the rows the relay set aside because the store refused
-	// them while it was accepting others. The queue moves them, whole, into the
-	// quarantine; it never deletes them.
+	// Quarantined are the rows the relay set aside because they can never be
+	// delivered: the store reported a permanent refusal of the row
+	// (PermanentRowRejection), or its details cannot be serialized. The queue
+	// moves them, whole, into the quarantine; it never deletes them.
 	Quarantined []QuarantinedAuditEvent
 	// Pending is why any other row stays queued, nil when none does.
 	Pending error
@@ -93,15 +95,29 @@ const (
 	// writes are done. It runs on a context of its own so a delivery that used
 	// its whole batch budget still gets to record what it delivered.
 	AuditRelayBookkeepingTimeout = 30 * time.Second
-	// auditRelayMaxSplitWrites bounds the store writes one batch spends
-	// isolating the rows a refused batch write holds.
-	auditRelayMaxSplitWrites = 64
-	// auditRelayProbeWrites is how many store writes in a row may fail, with none
-	// accepted, before the relay concludes that the store is unreachable rather
-	// than refusing rows, and stops searching.
-	auditRelayProbeWrites = 16
-	// auditRelayMaxReasonLength bounds the error text kept with a quarantined row.
+	// auditRelayMaxAppendWrites bounds the store writes one batch spends setting
+	// aside the rows the store reports it refused for good: each write that
+	// reports refusals removes at least one row, and a store that reports every
+	// refused row of a write needs a few. A batch that still holds rows after
+	// that stays queued and continues on the next pass.
+	auditRelayMaxAppendWrites = 64
+	// auditRelayMaxReasonLength bounds, in bytes, the error text kept with a
+	// quarantined row.
 	auditRelayMaxReasonLength = 1000
+)
+
+// The class a quarantined row's reason starts with, as "<class>: <cause>", so a
+// responder can tell what the quarantine holds without reading the cause.
+const (
+	// QuarantineWarehouseRejectedArchived is a row the store refused for good. It
+	// was written to the archive, whole, before the store was tried: the archive
+	// holds a copy of it, and the quarantine holds another.
+	QuarantineWarehouseRejectedArchived = "warehouse_rejected_archived"
+	// QuarantineUnserializableNotArchived is a row whose details cannot be
+	// serialized. The archive records each event with the SHA-256 of its
+	// canonical details, which such a row does not have, so it was never
+	// archived: the quarantine holds the only copy, payload included.
+	QuarantineUnserializableNotArchived = "unserializable_not_archived"
 )
 
 // AuditRelayConfig wires a relay.
@@ -137,15 +153,21 @@ type AuditRelayConfig struct {
 // repeats the archive write, not the store's. The archive object is written
 // whole and once: an archive treats a precondition failure on an object name as
 // "this batch, already written", so a name must never be written again with
-// different rows. Only the store write is split when the store refuses a batch;
-// it keys each record by event id and has no use for a batch's name.
+// different rows. Only the store write is repeated without the rows the store
+// refused for good; it keys each record by event id and has no use for a
+// batch's name.
 //
-// A row the store refuses must not hold the rest of the queue behind it. When a
-// batch write fails the relay splits the batch and retries the halves, down to
-// single rows. A single row is set aside — moved whole to the quarantine,
-// never deleted — only when the store refused it alone, accepted another row
-// afterwards, and refused it again on a second try: during an outage every
-// write fails and nothing is set aside.
+// A row the store refuses for good must not hold the rest of the queue behind
+// it, and a store that is merely failing must not cost a row its place. The
+// relay sets a row aside — moves it whole to the quarantine, never deletes it —
+// only when the store itself reports that it refused that row for the row's own
+// content (a PermanentRowRejection naming the event). Every other failure is
+// retried with backoff and sets nothing aside: a transport error, a server
+// error, a throttle, a quota, a timeout, a failed quorum, and any error the
+// store did not classify. The relay never infers a refusal from what else a
+// store accepted, or from how often a row failed. When a write reports
+// refusals, the relay sets those rows aside and writes the rest again, so a
+// batch of one is judged exactly as a batch of five thousand.
 //
 // While it runs, the relay remembers what each queued row has had acknowledged
 // and what it decided about it, so retrying a batch during an outage of one
@@ -365,21 +387,17 @@ func oldestEnqueued(events []QueuedAuditEvent) time.Time {
 
 // compose classifies and hashes each row it has not composed. A registry that
 // cannot be read is an error, retried with the batch — never mistaken for an
-// unregistered type. A row whose own details cannot be serialized is set aside,
-// but only when another row composed: with none composing, nothing shows that
-// the rows, not the relay, are at fault.
+// unregistered type. A row whose own details cannot be serialized is set aside
+// with its own error: serializing is a function of the row alone, so the same
+// row fails the same way every time, whatever else is queued with it. It cannot
+// be archived either, since the archive's line for an event carries the hash of
+// its canonical details; the quarantine holds its only copy, and its reason says
+// so (QuarantineUnserializableNotArchived).
 func (r *AuditRelay) compose(ctx context.Context, rows []*queuedRow) error {
 	resolver := NewAuditEventResolver(r.types)
-	composed := false
-	var unreadable []*queuedRow
-	var first error
 	for _, row := range rows {
 		state := row.state
-		if state.refused != "" {
-			continue
-		}
-		if state.composed {
-			composed = true
+		if state.refused != "" || state.composed {
 			continue
 		}
 		resolved, err := resolver.Resolve(ctx, row.event.Entry.EventType)
@@ -388,23 +406,10 @@ func (r *AuditRelay) compose(ctx context.Context, rows []*queuedRow) error {
 		}
 		record, err := NewAuditRecord(row.event.Entry, resolved.RetentionClass())
 		if err != nil {
-			if first == nil {
-				first = err
-			}
-			unreadable = append(unreadable, row)
+			r.setAside(ctx, row, QuarantineUnserializableNotArchived, err)
 			continue
 		}
 		state.record, state.composed = record, true
-		composed = true
-	}
-	if len(unreadable) == 0 {
-		return nil
-	}
-	if !composed {
-		return first
-	}
-	for _, row := range unreadable {
-		r.setAside(ctx, row, first)
 	}
 	return nil
 }
@@ -446,126 +451,99 @@ func (r *AuditRelay) archiveRows(ctx context.Context, rows []*queuedRow) error {
 	return nil
 }
 
-// appendRows writes the archived rows the store has not acknowledged. The
-// whole run goes first; when the store refuses it, the run is split and the
-// halves retried, so a row the store cannot take does not hold the rest back.
-func (r *AuditRelay) appendRows(ctx context.Context, rows []*queuedRow) error {
+// awaitingAppend is the archived rows the store has neither acknowledged nor
+// refused for good.
+func awaitingAppend(rows []*queuedRow) []*queuedRow {
 	var todo []*queuedRow
 	for _, row := range rows {
 		if row.state.archive != nil && !row.state.appended && row.state.refused == "" {
 			todo = append(todo, row)
 		}
 	}
-	if len(todo) == 0 {
-		return nil
-	}
+	return todo
+}
 
-	writes := 0
-	write := func(run []*queuedRow) error {
-		writes++
-		first := run[0].state.archive
-		batch := AuditBatch{ID: first.id, DeploymentID: r.deploymentID, ComposedAt: first.composedAt, Records: make([]AuditRecord, len(run))}
-		for i, row := range run {
+// appendRows writes the archived rows the store has not acknowledged, whole.
+// When the store reports rows it refused for good, those are set aside and the
+// rest is written again; when it fails any other way, nothing is set aside and
+// the rows stay queued for the next attempt. Rows an earlier write of this call
+// may have stored are written again: the store keys a record by event id.
+func (r *AuditRelay) appendRows(ctx context.Context, rows []*queuedRow) error {
+	var failure error
+	for writes := 0; writes < auditRelayMaxAppendWrites; writes++ {
+		todo := awaitingAppend(rows)
+		if len(todo) == 0 {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("audit relay: append %d rows of batch %s: %w", len(todo), todo[0].state.archive.id, err)
+		}
+		first := todo[0].state.archive
+		batch := AuditBatch{ID: first.id, DeploymentID: r.deploymentID, ComposedAt: first.composedAt, Records: make([]AuditRecord, len(todo))}
+		for i, row := range todo {
 			batch.Records[i] = row.state.record
 		}
-		if err := r.store.AppendAuditBatch(ctx, batch); err != nil {
-			return err
-		}
-		for _, row := range run {
-			row.state.appended = true
-		}
-		return nil
-	}
-
-	err := write(todo)
-	if err == nil {
-		return nil
-	}
-	failure := fmt.Errorf("audit relay: append %d rows of batch %s: %w", len(todo), todo[0].state.archive.id, err)
-	if len(todo) == 1 {
-		return failure
-	}
-
-	var alone []*queuedRow
-	accepted := 0
-	// Search breadth-first, so the first accepted run turns up within a write or
-	// two when only one row is bad, and an outage ends after a bounded number of
-	// writes instead of after one per row.
-	failed := [][]*queuedRow{todo}
-search:
-	for len(failed) > 0 {
-		var next [][]*queuedRow
-		for _, run := range failed {
-			middle := len(run) / 2
-			for _, half := range [][]*queuedRow{run[:middle], run[middle:]} {
-				if ctx.Err() != nil || writes >= auditRelayMaxSplitWrites || (accepted == 0 && writes >= auditRelayProbeWrites) {
-					break search
-				}
-				switch err := write(half); {
-				case err == nil:
-					accepted++
-				case len(half) == 1:
-					alone = append(alone, half[0])
-				default:
-					next = append(next, half)
-				}
+		err := r.store.AppendAuditBatch(ctx, batch)
+		if err == nil {
+			for _, row := range todo {
+				row.state.appended = true
 			}
+			return nil
 		}
-		failed = next
-	}
-
-	// A row is set aside only on this chain of evidence: the store refused it
-	// alone; afterwards the store took a row it had already acknowledged, again
-	// (so it was reachable after the refusal, and a duplicate is something every
-	// read already discards); and it refuses the row alone once more. Without a
-	// row to write as that witness nothing is set aside.
-	if witness := lastAppended(rows); len(alone) > 0 && witness != nil && ctx.Err() == nil {
-		if write([]*queuedRow{witness}) == nil {
-			for _, refused := range alone {
-				if ctx.Err() != nil {
-					break
-				}
-				if err := write([]*queuedRow{refused}); err != nil && ctx.Err() == nil {
-					r.setAside(ctx, refused, err)
-				}
-			}
+		failure = fmt.Errorf("audit relay: append %d rows of batch %s: %w", len(todo), first.id, err)
+		if !r.setAsideRefused(ctx, todo, err) {
+			return failure
 		}
 	}
-
-	unresolved := 0
-	for _, row := range todo {
-		if !row.state.appended && row.state.refused == "" {
-			unresolved++
-		}
-	}
-	if unresolved == 0 {
+	if len(awaitingAppend(rows)) == 0 {
 		return nil
 	}
 	return failure
 }
 
-// lastAppended is the last row the store has acknowledged, nil when none has.
-func lastAppended(rows []*queuedRow) *queuedRow {
-	for i := len(rows) - 1; i >= 0; i-- {
-		if rows[i].state.appended {
-			return rows[i]
+// setAsideRefused sets aside every row of todo that err says the store refused
+// for good, and reports whether it set any aside. A refusal that names an event
+// that is not among todo is not evidence about any of them.
+func (r *AuditRelay) setAsideRefused(ctx context.Context, todo []*queuedRow, err error) bool {
+	byEvent := make(map[string][]*queuedRow, len(todo))
+	for _, row := range todo {
+		byEvent[row.event.Entry.ID] = append(byEvent[row.event.Entry.ID], row)
+	}
+	set := false
+	for _, rejection := range PermanentRowRejections(err) {
+		for _, row := range byEvent[rejection.EventID] {
+			r.setAside(ctx, row, QuarantineWarehouseRejectedArchived, rejection)
+			set = true
 		}
 	}
-	return nil
+	return set
 }
 
-// setAside records the decision that row cannot be delivered. The decision is
-// kept until the row leaves the queue, so a lost commit does not turn it back
-// into doubt.
-func (r *AuditRelay) setAside(ctx context.Context, row *queuedRow, cause error) {
-	reason := cause.Error()
-	if len(reason) > auditRelayMaxReasonLength {
-		reason = reason[:auditRelayMaxReasonLength]
+// AuditQuarantineReason is text as the quarantine keeps it: valid UTF-8 with no
+// NUL, because that is all PostgreSQL stores in a text column and a store's
+// error can hold anything; and at most 1000 bytes, cut between characters. An
+// invalid sequence or a NUL becomes U+FFFD.
+func AuditQuarantineReason(text string) string {
+	text = strings.ToValidUTF8(text, "\uFFFD")
+	text = strings.ReplaceAll(text, "\x00", "\uFFFD")
+	if len(text) <= auditRelayMaxReasonLength {
+		return text
 	}
-	row.state.refused = reason
-	wool.Get(ctx).In("audit.relay").Error("audit event set aside: the store refused it while accepting others; it stays in the quarantine and is not delivered",
+	cut := auditRelayMaxReasonLength
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
+}
+
+// setAside records the decision that row cannot be delivered, with its class
+// and the error that decided it. The decision is kept until the row leaves the
+// queue, so a lost commit does not turn it back into doubt.
+func (r *AuditRelay) setAside(ctx context.Context, row *queuedRow, class string, cause error) {
+	row.state.refused = AuditQuarantineReason(class + ": " + cause.Error())
+	wool.Get(ctx).In("audit.relay").Error("audit event set aside: it cannot be delivered now or later; it stays in the quarantine",
 		wool.Field("event_id", row.event.Entry.ID), wool.Field("event_type", string(row.event.Entry.EventType)),
-		wool.Field("queue_seq", strconv.FormatInt(row.event.Seq, 10)), wool.ErrField(cause))
+		wool.Field("queue_seq", strconv.FormatInt(row.event.Seq, 10)), wool.Field("reason_class", class), wool.ErrField(cause))
 }
 
 // pollInterval is how often the loop looks for due events: a fifth of MaxWait,

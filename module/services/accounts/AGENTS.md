@@ -94,11 +94,16 @@ survives a restart and reaches every replica, and is only served when it is
   read dedupes by event id. Four rules a change must keep. (1) The archive object
   is written once per batch, whole, under a name no other set of rows ever uses
   — the object-store writers take a precondition failure on a name to mean "this
-  batch, already written" — so only the *warehouse* write is split when a batch
-  fails. (2) A row is set aside into `audit_event_quarantine` only after the
-  warehouse refused it alone, accepted another row afterwards, and refused it
-  again; an outage sets nothing aside. The move from queue to quarantine is one
-  statement, and nothing in the kit ever deletes a queue or quarantine row (the
+  batch, already written" — so only the *warehouse* write is repeated, without
+  the rows it refused for good, when a batch fails. (2) A row is set aside into `audit_event_quarantine` only when the
+  warehouse adapter reports a permanent refusal of that row
+  (`business.PermanentRowRejection`, carrying the event id) or the row's details
+  cannot be serialized; every other failure — transport, 5xx, 429, quota,
+  timeout, quorum or replica, or an error the adapter cannot classify — is
+  retried and sets nothing aside, and no decision is drawn from what else the
+  warehouse accepted. The reason starts with its class
+  (`warehouse_rejected_archived` or `unserializable_not_archived`) and is bounded
+  valid text. The move from queue to quarantine is one statement, and nothing in the kit ever deletes a queue or quarantine row (the
   down migrations refuse while either holds rows). (3) The queue is observed
   under every `AUDIT_SINK` (`saas.audit_queue.{depth,oldest_age,quarantined,
   snapshot_errors}`): a failed read makes the gauges absent, never stale, and

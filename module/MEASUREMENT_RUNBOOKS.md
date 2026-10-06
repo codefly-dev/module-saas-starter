@@ -60,21 +60,58 @@ readers deduplicate by event id.
 ### A row the warehouse refuses (`saas.audit_queue.quarantined`)
 
 One row the warehouse rejects for its own content must not hold every other
-organization's events behind it. When a batch write fails, the relay splits the
-batch and retries the halves, down to single rows. A single row is set aside only
-when the warehouse refused it alone, accepted other rows afterwards, and refused
-it again on a second try; during an outage every write fails and nothing is set
-aside. The archive is written once, whole, before any of this, so a set-aside row
-is already in the archive.
+organization's events behind it, and a warehouse that is merely failing must not
+cost a good row its place. So the relay sets a row aside only on what the
+warehouse says about that row: a permanent refusal the adapter attributes to the
+event. Every other failure is retried with backoff and sets nothing aside: a
+transport error, a server error, a throttle (429), a quota, a timeout, a
+ClickHouse quorum or replica failure, and any error the adapter does not
+recognize. A flapping or unreachable warehouse grows `saas.audit_queue.depth` and
+`oldest_age`, never the quarantine. The relay draws no conclusion from what else
+the warehouse accepted or from how often a row failed.
+
+What the adapters report as a permanent refusal:
+
+- **BigQuery**: a row that `insertAll` lists with the reason `invalid` (a value
+  that does not fit its column), and a row too large for any request, which is
+  found before anything is sent. A row listed as `stopped` (fine, but sent beside
+  an invalid one), and every failure of the request as a whole, are retried.
+- **ClickHouse**: a value the driver cannot encode as its column's type, named
+  before anything is sent, and a block the server refuses with an exception code
+  that means a row's content is malformed (the parsing codes 6, 26, 27, 38, 41, 72
+  and 117; the type and range codes 53, 70 and 321; 131 for a string over what the
+  column holds; and 469 for a table CHECK constraint). The adapter splits a block
+  refused that way down to single rows to find the row; the rows around it are
+  written meanwhile. Network, socket, timeout, memory, too-many-parts, quorum,
+  replica, Keeper, access and missing-table codes, and any code not listed, are
+  retried and never searched.
+
+When a write names refused rows, the relay sets exactly those aside and writes the
+rest again, so a batch of one is judged as a batch of five thousand. The archive
+is written once, whole, before the warehouse is tried, so a row the warehouse
+refused is already in the archive. A row whose own details cannot be serialized is
+the exception: the archive's line for an event carries the hash of its canonical
+details, which such a row does not have, so it is never archived and the
+quarantine holds its only copy.
 
 A set-aside row moves, whole and with the error, into `audit_event_quarantine`
-in the same transaction that deletes the delivered rows. The relay logs each at
-error level (event id, type and queue sequence number, never the payload).
-`saas.audit_queue.quarantined` counts the rows there and the
-`audit_relay_quarantine` alert fires while it is above zero. The kit never
+in the same transaction that deletes the delivered rows. The `error` column starts
+with the class, then the cause (bounded to 1000 bytes, valid text):
+
+| `error` starts with | what it means | where else the row is |
+|---|---|---|
+| `warehouse_rejected_archived:` | the warehouse refused the row for good | the archive, whole |
+| `unserializable_not_archived:` | the row's details cannot be serialized | nowhere: the quarantine holds the only copy |
+
+The relay logs each at error level (event id, type, queue sequence number and
+class, never the payload). `saas.audit_queue.quarantined` counts the rows there
+and the `audit_relay_quarantine` alert fires while it is above zero. The kit never
 deletes a quarantined row. Replaying or resolving quarantined rows is not built
 yet: until it is, read the table as the database owner (the relay's role may read
-it), fix the cause, and keep the rows.
+it), fix the cause, and keep the rows. Read the causes before concluding that the
+rows are at fault: reasons that agree across events of different organizations
+point at the warehouse's table, which someone changed under the relay, not at the
+events.
 
 ### Switching `AUDIT_SINK` back to `postgres` (or `both`)
 

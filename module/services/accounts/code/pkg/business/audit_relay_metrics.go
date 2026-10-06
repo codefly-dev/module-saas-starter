@@ -74,7 +74,7 @@ func NewAuditRelayMonitor(source AuditQueueMetricsSource, meter metric.Meter, in
 		return nil, err
 	}
 	if m.quarantined, err = meter.Int64ObservableGauge("saas.audit_queue.quarantined",
-		metric.WithDescription("Audit events the relay set aside because the store refused them. Nothing deletes them. Absent while the queue cannot be read.")); err != nil {
+		metric.WithDescription("Audit events the relay set aside because the store refused them for good or their details cannot be serialized. Nothing deletes them. Absent while the queue cannot be read.")); err != nil {
 		return nil, err
 	}
 	if m.snapshotErrors, err = meter.Int64Counter("saas.audit_queue.snapshot_errors",
