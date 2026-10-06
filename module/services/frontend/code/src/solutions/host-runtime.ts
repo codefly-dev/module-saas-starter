@@ -1,5 +1,7 @@
 import { version as reactVersion } from "react";
 import { version as kitVersion } from "../../packages/codefly-ui/package.json";
+import { version as pluginContractVersion } from "../../packages/saas-plugin-contract/package.json";
+import { version as pluginReactVersion } from "../../packages/saas-plugin-react/package.json";
 import { version as saasSdkVersion } from "../../packages/saas-sdk/package.json";
 import { version as saasUiVersion } from "../../packages/saas-ui/package.json";
 
@@ -44,6 +46,8 @@ export const CODEFLY_SAAS_UI_VERSION = saasUiVersion;
  * shared constant).
  */
 export const CODEFLY_SAAS_SDK_VERSION = saasSdkVersion;
+export const CODEFLY_PLUGIN_CONTRACT_VERSION = pluginContractVersion;
+export const CODEFLY_PLUGIN_REACT_VERSION = pluginReactVersion;
 
 /**
  * The exact versions this host publishes into the Module-Federation shared
@@ -52,6 +56,12 @@ export const CODEFLY_SAAS_SDK_VERSION = saasSdkVersion;
  * restated, so a dependency bump cannot leave a stale number here.
  */
 export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
+	"@codefly-dev/saas-plugin-contract": CODEFLY_PLUGIN_CONTRACT_VERSION,
+	"@codefly-dev/saas-plugin-contract/capabilities":
+		CODEFLY_PLUGIN_CONTRACT_VERSION,
+	"@codefly-dev/saas-plugin-react": CODEFLY_PLUGIN_REACT_VERSION,
+	"@codefly-dev/saas-plugin-react/runtime": CODEFLY_PLUGIN_REACT_VERSION,
+	"@codefly-dev/saas-plugin-react/ui": CODEFLY_PLUGIN_REACT_VERSION,
 	react: reactVersion,
 	"react-dom": reactVersion,
 	"react/jsx-runtime": reactVersion,

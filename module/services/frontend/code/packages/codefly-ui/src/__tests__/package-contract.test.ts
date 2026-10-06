@@ -87,13 +87,13 @@ describe("@codefly-dev/ui public subpaths", () => {
 // The kit is the dedupe surface for the host and its Module-Federation remotes.
 // The stateful, context-bearing platform packages must be peers so exactly one
 // instance is resolved by the consumer. Bundling them as `dependencies` lets a
-// remote pull a second copy of @codefly/saas-plugin-react — a second
+// remote pull a second copy of @codefly-dev/saas-plugin-react — a second
 // PluginRuntime React context — and `usePluginRuntime` breaks in that remote.
 describe("@codefly-dev/ui dependency contract", () => {
 	for (const shared of [
 		"react",
-		"@codefly/saas-plugin-react",
-		"@codefly/saas-plugin-contract",
+		"@codefly-dev/saas-plugin-react",
+		"@codefly-dev/saas-plugin-contract",
 	]) {
 		it(`declares ${shared} as a peer, not a bundled dependency`, () => {
 			expect(peers).toHaveProperty(shared);
@@ -102,41 +102,30 @@ describe("@codefly-dev/ui dependency contract", () => {
 	}
 });
 
-// The solution-facing subpaths (`./layout`, `./dashboard`, `./chat`) are pure React
-// presentation and never touch the plugin runtime. Marking the plugin packages
-// optional peers lets a solution install `@codefly-dev/ui` for those subpaths alone
-// without npm auto-resolving the host-internal (unpublished) plugin packages —
-// while the host, which imports `.`/`./plugin-host`/`./skin`, still provides
-// them. `react` stays a required peer: every subpath needs it deduped.
-describe("@codefly-dev/ui peer-free solution surface", () => {
-	for (const optional of [
-		"@codefly/saas-plugin-react",
-		"@codefly/saas-plugin-contract",
+// GitHub Packages omits optional-peer metadata. All runtime peers are now
+// published in the same scope and required, so fresh installs need no bypass.
+describe("@codefly-dev/ui installable plugin peers", () => {
+	for (const shared of [
+		"react",
+		"@codefly-dev/saas-plugin-react",
+		"@codefly-dev/saas-plugin-contract",
 	]) {
-		it(`marks ${optional} as an optional peer`, () => {
-			expect(peersMeta[optional]?.optional).toBe(true);
+		it(`keeps ${shared} a required peer`, () => {
+			expect(peersMeta[shared]?.optional).not.toBe(true);
 		});
 	}
-
-	it("keeps react a required peer", () => {
-		expect(peersMeta.react?.optional).not.toBe(true);
-	});
 });
 
-// Marking the plugin peers optional only carves a peer-free surface if the
-// solution-facing subpaths actually stay plugin-free. If a `@codefly/saas-plugin-*`
-// import creeps into ./layout, ./dashboard, or ./chat, a solution that installs only those
-// subpaths would resolve the (unpublished) plugin package at build time and 404 —
-// the exact failure the optional peers exist to prevent, and one the manifest
-// checks above cannot see. Guard the source directly.
+// Generic presentation imports must stay independent of the plugin runtime,
+// even though npm installs its small published peers alongside the full kit.
 describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 	const srcDir = codeflyUiSrcDir();
 	for (const subpath of ["layout", "dashboard", "chat", "content", "board"]) {
-		it(`./${subpath} imports no @codefly/saas-plugin-* package`, () => {
+		it(`./${subpath} imports no plugin package package`, () => {
 			for (const file of sourceFiles(join(srcDir, subpath))) {
 				const source = readFileSync(file, "utf8");
 				expect(source, `${file} imports the plugin runtime`).not.toMatch(
-					/from\s+["']@codefly\/saas-plugin/,
+					/from\s+["']@codefly(?:-dev)?\/saas-plugin/,
 				);
 			}
 		});

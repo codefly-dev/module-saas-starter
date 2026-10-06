@@ -102,9 +102,9 @@ The packaging and compatibility decisions are frozen in
 `docs/adr/0001-frontend-plugin-packaging.md`. The exact supported imports are in
 `docs/frontend-plugin-public-api.md` and mechanically checked against
 `frontend-plugin-public-api.json`. Product code imports the package root of
-`@codefly/saas-plugin-contract`, its `./capabilities` backend entry point, and
+`@codefly-dev/saas-plugin-contract`, its `./capabilities` backend entry point, and
 the active root, `./runtime`, or `./ui` entry point of
-`@codefly/saas-plugin-react`; starter-private `src/` paths are not SDK APIs. The
+`@codefly-dev/saas-plugin-react`; starter-private `src/` paths are not SDK APIs. The
 host supplies the current bearer through a closure-backed runtime, while
 products select only an installed plugin/alias and safe relative path. They do
 not construct deployment URLs or import the host token store.

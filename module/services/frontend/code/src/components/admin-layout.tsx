@@ -1,6 +1,9 @@
 "use client";
 
-import type { NavItem, PluginNavSection } from "@codefly/saas-plugin-contract";
+import type {
+	NavItem,
+	PluginNavSection,
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	Boxes,
 	ChevronRight,

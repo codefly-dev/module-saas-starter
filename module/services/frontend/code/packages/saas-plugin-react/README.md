@@ -1,4 +1,4 @@
-# @codefly/saas-plugin-react
+# @codefly-dev/saas-plugin-react
 
 Product-neutral React contribution composition and runtime adapters for trusted
 compile-time plugins in the Codefly SaaS frontend host.
@@ -10,8 +10,8 @@ components to the manifest's stable route and widget IDs:
 import {
   definePlugin,
   FRONTEND_PLUGIN_CONTRACT_VERSION,
-} from "@codefly/saas-plugin-contract";
-import { defineReactPlugin } from "@codefly/saas-plugin-react";
+} from "@codefly-dev/saas-plugin-contract";
+import { defineReactPlugin } from "@codefly-dev/saas-plugin-react";
 import { lazy } from "react";
 
 const manifest = definePlugin({
@@ -33,7 +33,7 @@ Product controllers use the injected service transport rather than importing
 host auth state or constructing a backend URL:
 
 ```tsx
-import { usePluginService } from "@codefly/saas-plugin-react/runtime";
+import { usePluginService } from "@codefly-dev/saas-plugin-react/runtime";
 
 export function useTrafficRepository() {
   const service = usePluginService("example", "api");
@@ -56,7 +56,7 @@ availability model before they enter a route or widget boundary:
 import {
   pluginErrorFromResponse,
   usePluginService,
-} from "@codefly/saas-plugin-react/runtime";
+} from "@codefly-dev/saas-plugin-react/runtime";
 
 const service = usePluginService("example", "api");
 const response = await service.request("traffic");
@@ -72,7 +72,7 @@ becomes `incompatible`; an unresolved endpoint remains `unavailable`.
 The host contains each contribution with the styling-neutral public boundary:
 
 ```tsx
-import { PluginErrorBoundary } from "@codefly/saas-plugin-react/ui";
+import { PluginErrorBoundary } from "@codefly-dev/saas-plugin-react/ui";
 
 <PluginErrorBoundary fallback={({ failure, retry }) => (
   <HostOwnedFailureView failure={failure} onRetry={retry} />

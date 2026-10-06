@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
 	DEFAULT_FRONTEND_APPEARANCE,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -68,7 +68,14 @@ describe("preview.css is regenerated whenever an input moves", () => {
 
 describe("preview.css paints the kit without a host", () => {
 	it("is plain CSS, with nothing left for a Tailwind build to resolve", () => {
-		for (const directive of ["@import", "@theme", "@utility", "@apply", "@source", "@custom-variant"])
+		for (const directive of [
+			"@import",
+			"@theme",
+			"@utility",
+			"@apply",
+			"@source",
+			"@custom-variant",
+		])
 			expect(preview, `${directive} survived the compile`).not.toContain(
 				`${directive} `,
 			);
@@ -143,9 +150,10 @@ const storyAuthored = new Set(
 		"table",
 	].flatMap((name) =>
 		[
-			...readFileSync(join(KIT, `stories/${name}.stories.tsx`), "utf8").matchAll(
-				/className="([^"]*)"/g,
-			),
+			...readFileSync(
+				join(KIT, `stories/${name}.stories.tsx`),
+				"utf8",
+			).matchAll(/className="([^"]*)"/g),
 		].flatMap((match) => match[1].split(/\s+/)),
 	),
 );

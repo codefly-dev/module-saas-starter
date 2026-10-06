@@ -93,8 +93,18 @@ const expectedShares = published.flatMap((manifest) =>
 );
 
 describe("shared kit versions match their published packages", () => {
+	it("shares the same plugin runtime through direct and UI entry points", () => {
+		const direct =
+			CODEFLY_KIT_SHARED["@codefly-dev/saas-plugin-react/runtime"].lib();
+		const wrapper =
+			CODEFLY_KIT_SHARED["@codefly-dev/ui/plugin-host/runtime"].lib();
+		expect(direct.PluginRuntimeProvider).toBe(wrapper.PluginRuntimeProvider);
+		expect(direct.usePluginRuntime).toBe(wrapper.usePluginRuntime);
+	});
 	it("finds the published kit packages to derive from", () => {
 		expect(published.map(({ name }) => name).sort()).toEqual([
+			"@codefly-dev/saas-plugin-contract",
+			"@codefly-dev/saas-plugin-react",
 			"@codefly-dev/saas-sdk",
 			"@codefly-dev/saas-ui",
 			"@codefly-dev/ui",
