@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:3919dfbbb9056ef1a97954e2fee57210f23705b99daddb2b087f7fb2c0f97a65",
+      "digest": "sha256:6e7facb4e1e7ca5ac2dd7bdcc4cf1b76a62c82bc81f71b8eb3b08104a56db63c",
       "services": [
         {
           "name": "APIKeyService",
@@ -329,6 +329,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+            "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",

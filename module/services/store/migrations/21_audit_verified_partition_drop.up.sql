@@ -1,4 +1,4 @@
--- Migration 20: drop the audit_events partitions a history copy verified, and
+-- Migration 21: drop the audit_events partitions a history copy verified, and
 -- exactly those, atomically with a last check of what they hold.
 --
 -- The one-time history copy of a deployment switching to a warehouse store of

@@ -15,7 +15,7 @@ import (
 	"accounts/pkg/business"
 )
 
-// The queue's and the quarantine's down migrations (18 and 21) drop the only
+// The queue's and the quarantine's down migrations (19 and 22) drop the only
 // copy of whatever rows they hold, so they refuse while any row is there.
 
 // migrationOwner runs fn on a connection with the authority migrations run
@@ -60,7 +60,7 @@ func asRole(t *testing.T, ctx context.Context, tx pgx.Tx, role, sql string, args
 // Rolling the queue's migration back drops the only copy of every event the
 // relay has not delivered, so it must refuse while any row is queued.
 func TestRollingBackTheQueueRefusesWhileEventsAreQueued(t *testing.T) {
-	down := readMigration(t, "18_audit_event_queue.down.sql")
+	down := readMigration(t, "19_audit_event_queue.down.sql")
 	orgID := seedOrg(t, seedUser(t))
 
 	migrationOwner(t, func(ctx context.Context, tx pgx.Tx) {
@@ -87,7 +87,7 @@ func TestRollingBackTheQueueRefusesWhileEventsAreQueued(t *testing.T) {
 }
 
 func TestRollingBackTheQuarantineRefusesWhileRowsAreSetAside(t *testing.T) {
-	down := readMigration(t, "21_audit_event_quarantine.down.sql")
+	down := readMigration(t, "22_audit_event_quarantine.down.sql")
 
 	migrationOwner(t, func(ctx context.Context, tx pgx.Tx) {
 		countQuarantine := func() int {

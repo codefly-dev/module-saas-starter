@@ -602,7 +602,7 @@ four hours are September's events, unverified. It also drops without looking: a
 row committed into a partition after the copy's last recount, before the `DROP`,
 was destroyed with the table.
 
-Migration `20_audit_verified_partition_drop` adds
+Migration `21_audit_verified_partition_drop` adds
 `audit_events_drop_verified_partitions(cutoff, names, expected_rows)`, which takes
 the explicit list of verified partition names with the row count each held when
 verified, and in one transaction:

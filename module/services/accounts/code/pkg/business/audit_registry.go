@@ -689,7 +689,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	securityRetained(observation(EventAuthOrgSwitched, CategorySecurity, "A user switched active organization.")),
 	securityRetained(observation(EventAuthMFAChallengeStart, CategorySecurity, "An MFA challenge was started.")),
 	securityRetained(observation(EventAuthMFAChallengeDone, CategorySecurity, "An MFA challenge was completed.", enum("factor", "totp", "webauthn", "backup_code"))),
-	securityRetained(observation(EventAuthClientAuthorized, CategorySecurity, "A person authorized a registered client to act for them.", str("client_id"))),
+	securityRetained(observation(EventAuthClientAuthorized, CategorySecurity, "A person authorized a registered client to act for them.", str("client_id"), str("resource"), str("client_registration"))),
 	securityRetained(mutation(EventMFATOTPSetupStarted, CategorySecurity, "TOTP enrollment was started.")),
 	securityRetained(mutation(EventMFATOTPVerified, CategorySecurity, "A TOTP device was verified.")),
 	securityRetained(mutation(EventMFAWebAuthnRegStarted, CategorySecurity, "WebAuthn registration was started.")),

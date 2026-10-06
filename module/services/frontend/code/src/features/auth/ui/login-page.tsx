@@ -71,10 +71,14 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 		}
 		let cancelled = false;
 		validateClientAuthorization(clientRequest)
-			.then((name) => {
+			.then((resolution) => {
 				if (cancelled) return;
-				rememberClientAuthorization(clientRequest);
-				setClientName(name);
+				// The host's answer is remembered alongside the request, because
+				// the consent page must render what the HOST said about this
+				// client — its validated name and origin, the resource — and never
+				// what the query string claimed.
+				rememberClientAuthorization(clientRequest, resolution);
+				setClientName(resolution.clientName || clientRequest.clientId);
 			})
 			.catch((err) => {
 				if (cancelled) return;

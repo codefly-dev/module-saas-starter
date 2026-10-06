@@ -400,13 +400,32 @@ func doWork(ctx context.Context) (Clean, error) {
 	if revocationFailOpen {
 		wool.Get(ctx).Warn("ACCOUNTS_REVOCATION_FAIL_OPEN enabled: a revocation-store outage will admit possibly-revoked access tokens on the direct verify path until they expire")
 	}
+	// One issuer, resolved once, for the published RFC 8414 metadata AND for the
+	// `iss` of every token minted — the only way the two can be proved equal. A
+	// deployment with no configured base URL keeps the pre-metadata literal and
+	// publishes no metadata, so the two cannot disagree there either.
+	tokenIssuer, err := configuredTokenIssuer()
+	if err != nil {
+		return nil, err
+	}
+	var migratingIssuers []string
+	if tokenIssuer != business.LegacyTokenIssuer {
+		// Accepted, not minted: every unexpired token and every session about to
+		// rotate into one still carries the literal, so refusing it at the moment
+		// the URL starts being minted would sign out every live session.
+		migratingIssuers = []string{business.LegacyTokenIssuer}
+		wool.Get(ctx).Info("access tokens now name the host's own URL as issuer; the previous literal stays accepted until outstanding tokens expire",
+			wool.Field("issuer", tokenIssuer))
+	}
 	minter := ed25519minter.New(ed25519minter.Config{
-		Issuer:                     "saas-starter",
+		Issuer:                     tokenIssuer,
 		Audience:                   "saas-starter",
+		AdditionalAcceptedIssuers:  migratingIssuers,
 		SessionPolicy:              sessionPolicy,
 		AdditionalVerificationKeys: previousSigningKeys(ctx),
 		RevocationFailOpen:         revocationFailOpen,
 	}, priv, sessionStore)
+	service.SetOAuthIssuer(oauthIssuerOf(tokenIssuer))
 
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
@@ -482,6 +501,35 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure registered clients: %w", err)
 	}
 	service.SetClientRegistry(clientRegistry)
+
+	// Client ID Metadata Document clients (issue #1003). A client whose
+	// client_id is an https URL publishes its own registration there; the host
+	// fetches and validates it, and writes nothing durable. Whether this host
+	// trusts that mechanism is a DEPLOYMENT decision, not a per-tenant one —
+	// see the handbook's decisions/registered-clients.md — and an unset
+	// declaration refuses every such client, exactly as an unset registry
+	// registers none.
+	clientMetadataPolicy, err := auth.NewClientMetadataPolicy(
+		identityEnv("IDENTITY_CLIENT_METADATA_DOCUMENTS"))
+	if err != nil {
+		return nil, fmt.Errorf("configure client metadata documents: %w", err)
+	}
+	service.SetClientMetadataResolver(auth.NewClientMetadataResolver(clientMetadataPolicy))
+
+	// The OAuth 2.1 / MCP authorization-server surface. Raw HTTP rather than
+	// transcoded RPCs because the token endpoint's form encoding and error
+	// bodies are the contract a standards-written client reads; see
+	// pkg/adapters/oauth_http.go.
+	// Each path on its own, spelled out rather than looped: RegisterHTTPRoute
+	// matches by prefix, so registering the `/v1/oauth2/` namespace would claim
+	// every path under it and promise the gateway routes something below it —
+	// and the correspondence gate in module/tools can only check a call site it
+	// can resolve statically, which a loop over a slice is not.
+	oauthHandler := adapters.NewOAuthHTTPHandler(service)
+	adapters.RegisterHTTPRoute(adapters.OAuthMetadataPath, oauthHandler)
+	adapters.RegisterHTTPRoute(adapters.OAuthAuthorizeValidatePath, oauthHandler)
+	adapters.RegisterHTTPRoute(adapters.OAuthAuthorizeGrantPath, oauthHandler)
+	adapters.RegisterHTTPRoute(adapters.OAuthTokenPath, oauthHandler)
 
 	// Authentication mode is explicit in the Codefly identity configuration.
 	// A selected fixture is an optional data seed and cannot replace the
@@ -1520,6 +1568,38 @@ func configuredSessionPolicy() (auth.SessionPolicy, error) {
 		return auth.SessionPolicy{}, fmt.Errorf("SESSION_MAX_ACTIVE_DEVICES must not exceed 100")
 	}
 	return policy, nil
+}
+
+// configuredTokenIssuer is the `iss` every access token carries: the
+// operator-configured public base URL, or the pre-metadata literal when no base
+// URL is configured.
+//
+// RFC 8414 §2 requires an authorization server's issuer to be an https URL, so
+// a deployment that publishes metadata must mint that URL — otherwise a client
+// that discovered the metadata and then verified `iss` against it refuses every
+// token. A deployment with no base URL publishes no metadata (the document
+// would name URLs it cannot vouch for), so the literal is safe there: there is
+// no published issuer for it to contradict.
+func configuredTokenIssuer() (string, error) {
+	base, err := configuredApplicationBaseURL()
+	if err != nil {
+		return "", err
+	}
+	if base == "" {
+		return business.LegacyTokenIssuer, nil
+	}
+	return base, nil
+}
+
+// oauthIssuerOf is the issuer the authorization server PUBLISHES, which is the
+// token issuer unless that is the literal — a literal is not a usable RFC 8414
+// issuer, and publishing one would send a conforming client to
+// `saas-starter/.well-known/...`. Empty means no metadata is published at all.
+func oauthIssuerOf(tokenIssuer string) string {
+	if tokenIssuer == business.LegacyTokenIssuer {
+		return ""
+	}
+	return tokenIssuer
 }
 
 func configuredApplicationBaseURL() (string, error) {

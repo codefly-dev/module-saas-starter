@@ -15,7 +15,7 @@ import (
 	"accounts/pkg/infra/storetx"
 )
 
-// The audit relay's quarantine (migration 21): who may touch it, and that moving
+// The audit relay's quarantine (migration 22): who may touch it, and that moving
 // a row into it is one transaction.
 
 func enqueueN(t *testing.T, orgID string, n int) []business.AuditEntry {

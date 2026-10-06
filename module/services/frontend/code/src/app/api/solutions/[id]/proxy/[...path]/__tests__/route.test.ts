@@ -615,6 +615,60 @@ describe("solution proxy passthrough", () => {
 		expect(res.headers.get("x-internal-trace")).toBeNull();
 	});
 
+	// A1007B-01. This route is the only public way to a solution's backend, so a
+	// challenge it drops is a challenge nobody can read: an MCP client sees a
+	// bare 401 and reports "unauthorized" with nowhere to go. Probed on a live
+	// cell before this fix: `POST /api/solutions/<id>/proxy/mcp` answered 401
+	// with NO WWW-Authenticate, while the gateway had emitted one.
+	it("passes the gateway's authentication challenge through on a 401", async () => {
+		withGateway();
+		registerAudit();
+		const challenge =
+			'Bearer error="invalid_token", ' +
+			'resource_metadata="https://host.example.com/api/solutions/audit/proxy/.well-known/oauth-protected-resource"';
+		fetchMock.mockResolvedValueOnce(
+			new Response("authentication required", {
+				status: 401,
+				headers: {
+					"content-type": "text/plain",
+					"www-authenticate": challenge,
+					// Still not forwarded: the allowlist stays an allowlist.
+					"set-cookie": "upstream=leak",
+				},
+			}),
+		);
+
+		const res = await POST(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/mcp", {
+				method: "POST",
+			}),
+			context("audit", ["mcp"]),
+		);
+
+		expect(res.status).toBe(401);
+		expect(res.headers.get("www-authenticate")).toBe(challenge);
+		expect(res.headers.get("set-cookie")).toBeNull();
+	});
+
+	// And nothing invents one: a response the gateway sent without a challenge
+	// must not acquire one here, or a client would chase metadata for a refusal
+	// that was never about its credential.
+	it("adds no challenge the gateway did not send", async () => {
+		withGateway();
+		registerAudit();
+		fetchMock.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
+
+		const res = await POST(
+			proxyRequest("http://frontend/api/solutions/audit/proxy/mcp", {
+				method: "POST",
+			}),
+			context("audit", ["mcp"]),
+		);
+
+		expect(res.status).toBe(403);
+		expect(res.headers.get("www-authenticate")).toBeNull();
+	});
+
 	it("returns 502 when the resolved gateway is unreachable", async () => {
 		withGateway();
 		registerAudit();

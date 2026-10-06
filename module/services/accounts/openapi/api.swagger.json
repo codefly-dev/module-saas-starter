@@ -834,6 +834,301 @@
       },
       "type": "object"
     },
+    "v1CatalogueApplied": {
+      "description": "CatalogueApplied is what delivery actually wrote.",
+      "properties": {
+        "appliedRevision": {
+          "format": "int64",
+          "type": "string"
+        },
+        "appliedRevisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueAuthorization": {
+      "description": "CatalogueAuthorization is a current platform approval. What it approves is an\nexecution inventory, `codefly/execution-inventory/v1`, whose one definition is\nthe deployment contract module (github.com/codefly-dev/cli/contracts/deployment).\nThe host does not re-describe that document: it names the approved inventory\nby the digest approval signs, carries the inventory's canonical bytes once per\nresponse (ListPlatformCatalogueResponse.approved_inventories), and reads them\nonly through the contract.",
+      "properties": {
+        "authorizedRevision": {
+          "format": "int64",
+          "type": "string"
+        },
+        "buildIncarnation": {
+          "description": "The build incarnation this host assigned to the approved execution. Not an\ninventory field: this host, and only this host, assigns it — advancing it\nwhenever the approved execution changes — and a Work Context seals it beside\nthe image digest. The verdict compares it with an observation's\nincarnation, which is the same host-assigned value as presented by the\nrunning workload; an incarnation from any other assigner would make that\ncomparison meaningless, not merely wrong.\n\nAssigned from one, so zero is an approval that carries no incarnation\nrather than one approving incarnation zero. An approval at zero cannot\nproduce an affirmative verdict: left uncompared, it would match any\nobservation that also carries none.",
+          "format": "uint64",
+          "type": "string"
+        },
+        "inventoryDigest": {
+          "description": "The approved inventory's digest, as the contract computes it over its\ncanonical bytes.",
+          "type": "string"
+        },
+        "memberBinding": {
+          "description": "Which member of that inventory's delivery aggregate this entry is.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueAuthorized": {
+      "description": "CatalogueAuthorized is what the platform has approved to execute.",
+      "properties": {
+        "authorization": {
+          "$ref": "#/definitions/v1CatalogueAuthorization"
+        },
+        "authorizationGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "notAuthorized": {
+          "$ref": "#/definitions/v1CatalogueNotAuthorized"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueDesired": {
+      "description": "CatalogueDesired is what the composition declares.",
+      "properties": {
+        "declaredRelease": {
+          "$ref": "#/definitions/v1CatalogueRelease"
+        },
+        "declaredReleaseGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "declaredRevision": {
+          "format": "int64",
+          "type": "string"
+        },
+        "declaredRevisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueEntry": {
+      "description": "CatalogueEntry is one module or solution, placed in the registry's state\nmodel: desired, authorized, applied, observed, withdrawing and physically\nretired are distinct, and a row shows each separately, so an entry desired\nbut not authorized, or observed but no longer authorized, reads as exactly\nthat.",
+      "properties": {
+        "applied": {
+          "$ref": "#/definitions/v1CatalogueApplied"
+        },
+        "authorized": {
+          "$ref": "#/definitions/v1CatalogueAuthorized"
+        },
+        "buildSizeGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "desired": {
+          "$ref": "#/definitions/v1CatalogueDesired"
+        },
+        "installations": {
+          "items": {
+            "$ref": "#/definitions/v1CatalogueInstallation",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/definitions/v1CatalogueEntryKind"
+        },
+        "name": {
+          "description": "A module's principal prefix, or a solution's registry id — the identifier\nits installations name.",
+          "type": "string"
+        },
+        "observed": {
+          "$ref": "#/definitions/v1CatalogueObserved"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "publisherGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "registration": {
+          "$ref": "#/definitions/v1SolutionRegistration",
+          "description": "The solution's self-registration, with deployment topology withheld: the\nfrontend manifest, backend upstream and service alias are always empty\nhere, as on every browser-facing projection of the registry. Absent for a\nmodule, which does not self-register, and for a solution known only from\nits installations."
+        },
+        "retired": {
+          "$ref": "#/definitions/v1CatalogueRetired"
+        },
+        "withdrawing": {
+          "$ref": "#/definitions/v1CatalogueWithdrawing"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueEntryKind": {
+      "default": "CATALOGUE_ENTRY_KIND_UNSPECIFIED",
+      "description": "CatalogueEntryKind distinguishes a composed module from a solution.\n\n - CATALOGUE_ENTRY_KIND_MODULE: A module composed into this deployment, known by its module principal.\n - CATALOGUE_ENTRY_KIND_SOLUTION: A solution, known by its registration, its installations, or both.",
+      "enum": [
+        "CATALOGUE_ENTRY_KIND_UNSPECIFIED",
+        "CATALOGUE_ENTRY_KIND_MODULE",
+        "CATALOGUE_ENTRY_KIND_SOLUTION"
+      ],
+      "type": "string"
+    },
+    "v1CatalogueGap": {
+      "description": "CatalogueGap is a Catalogue fact this host cannot state, with the reason.",
+      "properties": {
+        "detail": {
+          "description": "Operator-facing: names the record or producer that would supply the fact.",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/definitions/v1CatalogueGapReason"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueGapReason": {
+      "default": "CATALOGUE_GAP_REASON_UNSPECIFIED",
+      "description": "CatalogueGapReason says why a Catalogue fact has no value.\n\n - CATALOGUE_GAP_REASON_NOT_RECORDED: This host keeps no record that carries the fact.\n - CATALOGUE_GAP_REASON_NOT_REPORTED: The fact is a section of the producer's document, and the document this\nhost holds carries no such section (an older producer).\n - CATALOGUE_GAP_REASON_NOT_OBSERVED: The fact needs observed cluster state, and this host has none to read —\na local run with no cluster, or an observation that is missing or stale.",
+      "enum": [
+        "CATALOGUE_GAP_REASON_UNSPECIFIED",
+        "CATALOGUE_GAP_REASON_NOT_RECORDED",
+        "CATALOGUE_GAP_REASON_NOT_REPORTED",
+        "CATALOGUE_GAP_REASON_NOT_OBSERVED"
+      ],
+      "type": "string"
+    },
+    "v1CatalogueInstallation": {
+      "description": "CatalogueInstallation is one organization's installation of a solution.",
+      "properties": {
+        "agentRelease": {
+          "$ref": "#/definitions/v1CatalogueRelease"
+        },
+        "agentReleaseGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "grantedTeams": {
+          "description": "Every team an active grant reaches inside this installation, in two kinds\nthat are never merged: granted at this installation's authority root, and\ninherited from a grant above it. Both reach; only the first is exposure\ngranted to this installation, so a reader is never shown inherited reach\nas if it had been granted here.",
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "inheritedTeams": {
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "orgName": {
+          "type": "string"
+        },
+        "revisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueNotAuthorized": {
+      "description": "CatalogueNotAuthorized is a known absence of current authorization —\nnever approved, or approval withdrawn. It is a statement the approval record\nmakes, distinct from a CatalogueGap, where the host cannot tell.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueObserved": {
+      "description": "CatalogueObserved is what is actually running.",
+      "properties": {
+        "observationFreshnessGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "observedExecution": {
+          "$ref": "#/definitions/v1CatalogueObservedExecution"
+        },
+        "observedExecutionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "observedRevision": {
+          "format": "int64",
+          "type": "string"
+        },
+        "observedRevisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "verdict": {
+          "$ref": "#/definitions/v1CatalogueObservedVerdict"
+        },
+        "verdictGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueObservedExecution": {
+      "description": "CatalogueObservedExecution is what an observation found running for an entry:\neach container's image manifest digest, keyed \"<workload id>/<container\nname>\" in the approved inventory's own names, and the build incarnation the\nrunning workload presents — the incarnation this host assigned, sealed into\nits Work Context, never one the workload or another party chose.\nObservation is the observing consumer's record, not the inventory's, so its\nshape is the host's.",
+      "properties": {
+        "buildIncarnation": {
+          "format": "uint64",
+          "type": "string"
+        },
+        "containerImageDigests": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueObservedVerdict": {
+      "default": "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
+      "description": "CatalogueObservedVerdict judges what runs against what is authorized —\nnever against what is declared, because only authorization admits execution.\n\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED: Every container of the approved inventory member runs its approved image\ndigest, no other container runs, the incarnation is the approved one, and\nthe observation that says so is dated and current. This is the only verdict\na reader acts on by doing nothing, so it is the only one that requires\ncomplete, current evidence: see the verdict field below.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS: Something other than the approved execution is running: what cluster\nadmission refuses.\n - CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED: Something is running with no current authorization at all: what the\nretirement sweep exists to stop.",
+      "enum": [
+        "CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED",
+        "CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED",
+        "CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS",
+        "CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED"
+      ],
+      "type": "string"
+    },
+    "v1CatalogueRelease": {
+      "description": "CatalogueRelease is a release, publisher/name@version.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueRetired": {
+      "description": "CatalogueRetired is whether the workload is physically stopped. Retired\nrequires stop or fence evidence; until a retirement controller reports to\nthis host, the field holds only its gap and nothing reads as retired.",
+      "properties": {
+        "retirementStateGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "type": "object"
+    },
+    "v1CatalogueWithdrawing": {
+      "description": "CatalogueWithdrawing is approval withdrawn and retirement not yet complete,\nacknowledged separately from retirement itself. The value cases are the\ndeployment contract's withdrawal and revocation records; until they exist\neach field holds only its gap.",
+      "properties": {
+        "credentialRevocationStateGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "withdrawalStateGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        }
+      },
+      "type": "object"
+    },
     "v1ClientAuthorizationRequest": {
       "description": "ClientAuthorizationRequest is the authorization request a client encodes into\nthe host's login-page URL. code_challenge is the S256 hash of a verifier the\nclient keeps, so an intercepted code cannot be redeemed by anyone else.",
       "properties": {
@@ -2827,6 +3122,32 @@
       },
       "type": "object"
     },
+    "v1ListPlatformCatalogueResponse": {
+      "properties": {
+        "approvedInventories": {
+          "additionalProperties": {
+            "format": "byte",
+            "type": "string"
+          },
+          "description": "Every approved execution inventory an entry's authorization names, keyed by\nits digest, in the deployment contract's canonical bytes (codefly-json-v1).\nCarried once per response because one delivery aggregate is approved as a\nwhole and several entries can be members of it.",
+          "type": "object"
+        },
+        "entries": {
+          "description": "Modules first, then solutions, each ordered by name.",
+          "items": {
+            "$ref": "#/definitions/v1CatalogueEntry",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "registryRevision": {
+          "description": "The registry revision the solution entries were read at.",
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1ListPrincipalsResponse": {
       "properties": {
         "nextPageToken": {
@@ -4249,6 +4570,100 @@
         }
       },
       "type": "object"
+    },
+    "v1SolutionBackendBinding": {
+      "description": "SolutionBackendBinding is the stored backend half: the upstream the gateway\nproxies to and the logical service alias it is addressed by.",
+      "properties": {
+        "contractVersion": {
+          "type": "string"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "revision": {
+          "format": "int64",
+          "type": "string"
+        },
+        "serviceAlias": {
+          "type": "string"
+        },
+        "upstream": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SolutionFrontendBinding": {
+      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validated before handing it over; this service persists it\nverbatim and never reinterprets it, so the host keeps sole ownership of what\na manifest may contain.",
+      "properties": {
+        "contractVersion": {
+          "type": "string"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "manifest": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SolutionRegistration": {
+      "description": "SolutionRegistration is the canonical record. revision is drawn from one\nregistry-wide sequence, so revisions are comparable across records and a\nconsumer can order two snapshots without a wall clock.",
+      "properties": {
+        "backend": {
+          "$ref": "#/definitions/v1SolutionBackendBinding"
+        },
+        "frontend": {
+          "$ref": "#/definitions/v1SolutionFrontendBinding"
+        },
+        "publisher": {
+          "description": "Owner of record. First claim binds it; a registration naming a different\npublisher is refused rather than overwriting.",
+          "type": "string"
+        },
+        "revision": {
+          "format": "int64",
+          "type": "string"
+        },
+        "runtimeBoundary": {
+          "description": "The seed a solution's runtime boundary is derived from (issue #1015).\n\nALWAYS EMPTY on the wire, on every response, deliberately. The seed is\nassigned by this service when the record is created and never again, and it\nis the only input to the per-organization boundary every Work Context\nminted for that solution is sealed under — so it is what stands between one\nsolution's runs and another's. No registrant needs it: accounts derives and\nseals the boundary from the credential the solution already presents.\n\nThe field is kept rather than removed so this promise is testable: a change\nthat starts populating it fails a test instead of shipping.",
+          "type": "string"
+        },
+        "solutionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1SolutionRegistrationStatus"
+        },
+        "tombstonedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SolutionRegistrationStatus": {
+      "default": "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
+      "description": "SolutionRegistrationStatus is derived at read time from the stored record; it\nis never a stored column. It is what lets an operator tell a registration\nthat was never completed from one whose publisher stopped renewing, and both\nfrom one that was deliberately removed.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present, their leases are live, and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has never registered. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_EXPIRED: Both halves registered, but at least one lease lapsed: the deployment that\nowns it stopped renewing. The intent survives; the endpoint is not live.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: The registration was deregistered. The row survives as a tombstone so a\ndelayed heartbeat from a retiring deployment cannot recreate it.",
+      "enum": [
+        "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
+        "SOLUTION_REGISTRATION_STATUS_ACTIVE",
+        "SOLUTION_REGISTRATION_STATUS_PENDING",
+        "SOLUTION_REGISTRATION_STATUS_EXPIRED",
+        "SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE",
+        "SOLUTION_REGISTRATION_STATUS_TOMBSTONED"
+      ],
+      "type": "string"
     },
     "v1StartChildSessionWorkContextRequest": {
       "properties": {
@@ -8220,6 +8635,38 @@
             }
           }
         },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/catalogue": {
+      "get": {
+        "operationId": "PlatformAdminService_ListPlatformCatalogue",
+        "parameters": [
+          {
+            "description": "Include deregistered solutions. Their installations are listed either way.",
+            "in": "query",
+            "name": "includeTombstoned",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPlatformCatalogueResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "ListPlatformCatalogue lists every composed module and solution with what\nit declares, what runs, and which organizations have it installed.",
         "tags": [
           "PlatformAdminService"
         ]

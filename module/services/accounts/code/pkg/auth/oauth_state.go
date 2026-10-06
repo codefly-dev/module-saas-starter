@@ -190,17 +190,36 @@ func (s *OAuthStateSigner) Verify(ctx context.Context, state, provider, redirect
 	}
 	firstUse, err := s.consumer.Consume(ctx, claims.Nonce, remaining)
 	if err != nil {
-		// Fail open on a store outage: the IdP's own single-use authorization
-		// code is the authoritative anti-replay, so a Redis blip must not break
-		// every OAuth login. Observable so an outage isn't silent.
-		log.Printf("oauth-state: nonce consume failed, admitting (fail-open): %v", err)
-		return nil
+		// REFUSE when single use cannot be recorded (handbook SP-IDENT-04).
+		//
+		// This check is what makes a state single-use. If the store cannot
+		// record the consumption, the question "has this state been used
+		// before?" has no answer — and admitting on no answer means that for
+		// the duration of the outage the single-use property simply does not
+		// hold, which is indistinguishable from not having the check.
+		//
+		// Not delegated to the provider's own code single-use either. That is a
+		// second anti-replay living in another system, and "someone else
+		// probably also checks" is not a property this host can state about
+		// itself. A sign-in that cannot be made single-use is refused, and the
+		// outage is the operator's to fix.
+		log.Printf("oauth-state: nonce consume failed, refusing: %v", err)
+		return ErrOAuthStateNotVerifiable
 	}
 	if !firstUse {
 		return ErrInvalidOAuthState
 	}
 	return nil
 }
+
+// ErrOAuthStateNotVerifiable is returned when the single-use record could not
+// be written, so the state could be neither accepted nor shown to be a replay.
+//
+// Separate from ErrInvalidOAuthState because the two are different facts and an
+// operator needs to tell them apart: one is a bad or replayed state, the other
+// is this host's own dependency failing. The caller maps both to the canonical
+// sentinel before answering, so the distinction never reaches the client.
+var ErrOAuthStateNotVerifiable = errors.New("oauth state single-use cannot be recorded")
 
 // ErrInvalidOAuthState is the single error returned for any state
 // validation failure (signature, expiry, provider mismatch, redirect
