@@ -80,6 +80,16 @@ type AuditStoreWriter interface {
 	// id and may hold an event more than once after a redelivery; every read of
 	// the store returns each event once by event id, exactly as every reader of
 	// the archive does.
+	//
+	// A failure is retryable unless it says otherwise. A store says otherwise
+	// only for a row it itself refused for that row's own content, one it will
+	// refuse every time, by returning a *PermanentRowRejection naming the event
+	// (alone, wrapped, or joined with others and with the failure of the rest).
+	// The relay sets exactly those rows aside and appends the others again, so
+	// the store makes no claim about the other rows of the batch. A transport
+	// error, a server error, a throttle, a quota, a timeout, a quorum or replica
+	// failure, and any error the store cannot classify are not a rejection: the
+	// relay retries them and sets nothing aside.
 	AppendAuditBatch(ctx context.Context, batch AuditBatch) error
 }
 

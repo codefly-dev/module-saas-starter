@@ -21,7 +21,8 @@
 //
 // Inserts are batched: one insert per table per relay batch, never a row at a
 // time (a single-row insert creates a data part per insert and ends in
-// too-many-parts errors). On a cluster an insert returns only once a majority
+// too-many-parts errors). The one exception is a block the server refuses for a
+// row's content: it is split to find the row (rejection.go). On a cluster an insert returns only once a majority
 // of the replicas hold it, because the relay deletes its queue rows on the
 // acknowledgement. Reads run in ClickHouse wherever ClickHouse computes
 // exactly what the Postgres reads compute, and in the service (auditeval)
@@ -33,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -505,39 +507,128 @@ func DetailRow(deploymentID string, record business.AuditRecord) []any {
 // written atomically; a failure between the two leaves the events without
 // their details until the relay delivers the batch again, and every read
 // returns each event once by event id.
+//
+// What a failure says about the batch is what the relay acts on, so it is
+// classified here (rejection.go): a row ClickHouse refuses for its own content is
+// returned as a business.PermanentRowRejection naming its event, found by
+// splitting the refused block down to single rows; every other failure is
+// returned as it came and the relay retries the batch whole. The rows around a
+// refused one are written while it is found, so the relay's retry of them is a
+// redelivery, which every read discards.
 func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
 	events, details := BatchRows(batch)
-	if err := s.insert(ctx, EventsTable, EventsColumns(), events); err != nil {
-		return err
+	refused, err := s.insert(ctx, EventsTable, EventsColumns(), events)
+	if err != nil {
+		return failure(refused, err)
 	}
-	return s.insert(ctx, DetailsTable, DetailsColumns(), details)
+	// An event whose events row was refused is not given a details row: the relay
+	// sets it aside, and its details would outlive the event they belong to.
+	details = withoutRefused(details, refused)
+	more, err := s.insert(ctx, DetailsTable, DetailsColumns(), details)
+	return failure(append(refused, more...), err)
 }
 
-func (s *Store) insert(ctx context.Context, table string, columns []Column, rows [][]any) error {
+// failure is what an append returns: the refusals it found beside the failure
+// that stopped it, either of which may be absent.
+func failure(refused []error, err error) error {
+	return errors.Join(append(refused, err)...)
+}
+
+// withoutRefused is rows less those of the events refused. Every row's first
+// value is its event id.
+func withoutRefused(rows [][]any, refused []error) [][]any {
+	if len(refused) == 0 {
+		return rows
+	}
+	gone := map[string]bool{}
+	for _, rejection := range business.PermanentRowRejections(errors.Join(refused...)) {
+		gone[rejection.EventID] = true
+	}
+	var kept [][]any
+	for _, row := range rows {
+		if id, _ := row[0].(string); !gone[id] {
+			kept = append(kept, row)
+		}
+	}
+	return kept
+}
+
+// insert writes rows to table. It returns the rows ClickHouse refused for their
+// own content, as business.PermanentRowRejection, and the failure that stopped
+// it when the rest could not be written; the rows it did not refuse are
+// written when it returns no failure.
+func (s *Store) insert(ctx context.Context, table string, columns []Column, rows [][]any) ([]error, error) {
 	if len(rows) == 0 {
-		return nil
+		return nil, nil
 	}
 	if len(s.writeSettings) > 0 {
 		ctx = clickhouse.Context(ctx, clickhouse.WithSettings(s.writeSettings))
 	}
+	return s.isolate(ctx, table, columns, rows)
+}
+
+// isolate sends rows as one block. When the block is refused it finds the rows
+// to blame: a row the driver cannot encode names itself (the block is sent
+// again without it); a block the server refuses with a code that says a row's
+// content is malformed (rowDefectCodes) is split in halves, and so on down to
+// single rows, and a single row refused that way is the one. Any other failure
+// — a network error, a quorum or replica failure, a timeout, a code not in the
+// list — stops the search and is returned, so a store that is merely failing is
+// never searched for rows to blame.
+func (s *Store) isolate(ctx context.Context, table string, columns []Column, rows [][]any) ([]error, error) {
+	var refused []error
+	for len(rows) > 0 {
+		bad, err := s.send(ctx, table, columns, rows)
+		switch {
+		case err == nil:
+			return refused, nil
+		case bad >= 0:
+			refused = append(refused, refusal(table, rows[bad], err))
+			rows = slices.Delete(slices.Clone(rows), bad, bad+1)
+			continue
+		case !isRowDefect(err):
+			return refused, err
+		case len(rows) == 1:
+			return append(refused, refusal(table, rows[0], err)), nil
+		}
+		middle := len(rows) / 2
+		for _, half := range [][][]any{rows[:middle], rows[middle:]} {
+			found, err := s.isolate(ctx, table, columns, half)
+			refused = append(refused, found...)
+			if err != nil {
+				return refused, err
+			}
+		}
+		return refused, nil
+	}
+	return refused, nil
+}
+
+// send writes rows as one block. When the driver cannot encode a row it returns
+// that row's index, with nothing sent; otherwise the index is -1.
+func (s *Store) send(ctx context.Context, table string, columns []Column, rows [][]any) (int, error) {
 	batch, err := s.conn.PrepareBatch(ctx, insertStatement(table, columns))
 	if err != nil {
-		return fmt.Errorf("clickhouse audit store: append to %s: %w", table, err)
+		return -1, fmt.Errorf("clickhouse audit store: append to %s: %w", table, err)
 	}
 	defer func() {
 		if !batch.IsSent() {
 			_ = batch.Abort()
 		}
 	}()
-	for _, row := range rows {
+	for i, row := range rows {
 		if err := batch.Append(row...); err != nil {
-			return fmt.Errorf("clickhouse audit store: append to %s: event %v: %w", table, row[0], err)
+			err = fmt.Errorf("clickhouse audit store: append to %s: event %v: %w", table, row[0], err)
+			if isUnencodableRow(err) {
+				return i, err
+			}
+			return -1, err
 		}
 	}
 	if err := batch.Send(); err != nil {
-		return fmt.Errorf("clickhouse audit store: append to %s: %w", table, err)
+		return -1, fmt.Errorf("clickhouse audit store: append to %s: %w", table, err)
 	}
-	return nil
+	return -1, nil
 }
 
 // queryRow runs a statement expected to return at most one row and scans it.

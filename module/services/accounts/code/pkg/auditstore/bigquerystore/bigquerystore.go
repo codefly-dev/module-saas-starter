@@ -53,8 +53,9 @@ const rowEnvelopeBytes = 64
 var ErrRowTooLarge = errors.New("bigquery audit store: row exceeds the request size limit")
 
 // RowTooLargeError names the event whose row cannot be sent: alone it is more
-// than a request carries. Retrying cannot help, so a caller that delivers
-// batches in order sets that event aside rather than retry the batch forever.
+// than a request carries. Retrying cannot help, so AppendAuditBatch returns it
+// inside a business.PermanentRowRejection, which is what the relay sets a row
+// aside on.
 type RowTooLargeError struct {
 	// Table is the table the row was for.
 	Table string
@@ -335,18 +336,29 @@ func BatchRows(batch business.AuditBatch) (events, details []Row) {
 // AppendAuditBatch implements business.AuditStoreWriter: the batch's rows
 // (BatchRows) streamed to the events and details tables, each table in as few
 // requests as hold at most maxRowsPerInsert rows and maxRequestBytes bytes.
-// Every request is planned before the first is sent, so a row too large for a
-// request (a *RowTooLargeError, naming its event) fails the batch before
-// anything of it is written.
+//
+// What a failure says about the batch is what the relay acts on, so the error
+// is classified here, where BigQuery's answer is known:
+//
+//   - A row that cannot be sent in any request (a *RowTooLargeError), or whose
+//     values cannot be encoded, is returned as a business.PermanentRowRejection
+//     naming its event. Every request is planned before the first is sent, so
+//     such a row fails the batch before anything of it is written.
+//   - A row BigQuery reports back with the reason "invalid" (insertAll lists
+//     each row it refused, with the reason) is returned the same way: the value
+//     is wrong for its column, and sending it again gives the same answer. The
+//     batch's other rows, which BigQuery reports as "stopped", are not refused;
+//     the relay sends them again without the refused rows.
+//   - Every other failure is returned as it came — a request that failed (any
+//     HTTP error, a throttle, a quota, a timeout, a dead backend), a row
+//     reported with any other reason, an error of a kind not known here — and
+//     the relay retries the batch.
 func (s *Store) AppendAuditBatch(ctx context.Context, batch business.AuditBatch) error {
 	eventRows, detailRows := BatchRows(batch)
-	events, err := planRequests(EventsTable, eventRows)
-	if err != nil {
-		return err
-	}
-	details, err := planRequests(DetailsTable, detailRows)
-	if err != nil {
-		return err
+	events, eventsRefused := planRequests(EventsTable, eventRows)
+	details, detailsRefused := planRequests(DetailsTable, detailRows)
+	if refused := append(eventsRefused, detailsRefused...); len(refused) > 0 {
+		return errors.Join(refused...)
 	}
 	if err := put(ctx, s.events, events); err != nil {
 		return fmt.Errorf("bigquery audit store: append to %s: %w", EventsTable, err)
@@ -369,18 +381,26 @@ func rowBytes(row Row) (int, error) {
 
 // planRequests splits rows, in order, into requests of at most maxRowsPerInsert
 // rows and maxRequestBytes bytes each. A row that does not fit a request alone
-// is a *RowTooLargeError.
-func planRequests(table string, rows []Row) ([][]bigquery.ValueSaver, error) {
-	var requests [][]bigquery.ValueSaver
+// (a *RowTooLargeError) and a row whose values cannot be encoded are returned
+// as refusals of that row, and left out of every request.
+func planRequests(table string, rows []Row) (requests [][]bigquery.ValueSaver, refused []error) {
 	var current []bigquery.ValueSaver
 	currentBytes := 0
 	for _, row := range rows {
-		size, err := rowBytes(row)
-		if err != nil {
-			return nil, fmt.Errorf("bigquery audit store: append to %s: %w", table, err)
+		size, encodeErr := rowBytes(row)
+		if encodeErr != nil {
+			refused = append(refused, &business.PermanentRowRejection{
+				EventID: row.InsertID,
+				Cause:   fmt.Errorf("bigquery audit store: append to %s: %w", table, encodeErr),
+			})
+			continue
 		}
 		if size > maxRequestBytes {
-			return nil, &RowTooLargeError{Table: table, EventID: row.InsertID, Size: size, Limit: maxRequestBytes}
+			refused = append(refused, &business.PermanentRowRejection{
+				EventID: row.InsertID,
+				Cause:   &RowTooLargeError{Table: table, EventID: row.InsertID, Size: size, Limit: maxRequestBytes},
+			})
+			continue
 		}
 		if len(current) == maxRowsPerInsert || currentBytes+size > maxRequestBytes {
 			requests = append(requests, current)
@@ -392,16 +412,67 @@ func planRequests(table string, rows []Row) ([][]bigquery.ValueSaver, error) {
 	if len(current) > 0 {
 		requests = append(requests, current)
 	}
-	return requests, nil
+	return requests, refused
 }
 
 func put(ctx context.Context, inserter rowInserter, requests [][]bigquery.ValueSaver) error {
 	for _, request := range requests {
 		if err := inserter.Put(ctx, request); err != nil {
-			return describePutError(err)
+			return classifyPutError(err)
 		}
 	}
 	return nil
+}
+
+// reasonInvalid is the reason BigQuery gives a streamed row whose own content
+// it refuses: a value that does not fit its column. The other reasons a row
+// carries — "stopped" for a row that was fine but sent beside an invalid one,
+// "timeout", "backendError", "internalError", "rateLimitExceeded",
+// "quotaExceeded" — say nothing against the row.
+const reasonInvalid = "invalid"
+
+// classifyPutError turns what Put returned into what the relay needs. A
+// PutMultiError lists every row BigQuery refused with the reasons it gave; each
+// row it gave the reason "invalid" is a *business.PermanentRowRejection, and the
+// error also carries the original, so the rows that were merely stopped, and any
+// that failed for another reason, are described and retried. Every other error is
+// the request's, not a row's, and is returned as it came.
+func classifyPutError(err error) error {
+	var multi bigquery.PutMultiError
+	if !errors.As(err, &multi) || len(multi) == 0 {
+		return err
+	}
+	failures := []error{describePutError(err)}
+	var refused []error
+	for _, row := range multi {
+		if row.InsertID == "" || !rowIsInvalid(row) {
+			continue
+		}
+		refused = append(refused, &business.PermanentRowRejection{
+			EventID: row.InsertID,
+			Cause:   fmt.Errorf("bigquery audit store: the row at index %d was refused as invalid: %v", row.RowIndex, row.Errors),
+		})
+	}
+	return errors.Join(append(refused, failures...)...)
+}
+
+// rowIsInvalid reports whether BigQuery gave the row the reason "invalid".
+func rowIsInvalid(row bigquery.RowInsertionError) bool {
+	for _, rowErr := range row.Errors {
+		var byPointer *bigquery.Error
+		var byValue bigquery.Error
+		switch {
+		case errors.As(rowErr, &byPointer):
+			if byPointer.Reason == reasonInvalid {
+				return true
+			}
+		case errors.As(rowErr, &byValue):
+			if byValue.Reason == reasonInvalid {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // describePutError names the first rejected row: a PutMultiError's own message
