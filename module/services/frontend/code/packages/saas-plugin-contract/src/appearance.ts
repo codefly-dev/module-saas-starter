@@ -25,7 +25,8 @@ const light: FrontendThemeTokens = {
 	secondary: "oklch(0.97 0 0)",
 	secondaryForeground: "oklch(0.205 0 0)",
 	muted: "oklch(0.97 0 0)",
-	mutedForeground: "oklch(0.556 0 0)",
+	// Small captions must remain AA-readable even on the muted surface.
+	mutedForeground: "oklch(0.54 0 0)",
 	accent: "oklch(0.97 0 0)",
 	accentForeground: "oklch(0.205 0 0)",
 	destructive: "oklch(0.577 0.245 27.325)",

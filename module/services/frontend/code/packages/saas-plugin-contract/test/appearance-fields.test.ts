@@ -15,9 +15,9 @@ describe("FRONTEND_APPEARANCE_FIELD_NAMES is the validator's own vocabulary", ()
 	it("names exactly the fields a resolved appearance carries", () => {
 		const required = FRONTEND_APPEARANCE_FIELD_NAMES.filter(
 			(field) =>
-				!(FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES as readonly string[]).includes(
-					field,
-				),
+				!(
+					FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES as readonly string[]
+				).includes(field),
 		);
 		expect([...required].sort()).toEqual(
 			Object.keys(DEFAULT_FRONTEND_APPEARANCE).sort(),
@@ -51,4 +51,31 @@ describe("FRONTEND_APPEARANCE_FIELD_NAMES is the validator's own vocabulary", ()
 			} as unknown as Parameters<typeof resolveFrontendAppearance>[0]),
 		).toThrow(/unknown field 'buttonHeight'/);
 	});
+});
+
+// For achromatic OKLCH, relative luminance is L cubed. This checks the actual
+// default token pairs used by small captions, not a rounded hex approximation.
+it("default muted captions meet 4.5:1 on their supported surfaces in both modes", () => {
+	const luminance = (value: string) => {
+		const match = /^oklch\(([0-9.]+) 0 0\)$/.exec(value);
+		if (!match)
+			throw new Error("Recalculate contrast for a chromatic default token");
+		return Number(match[1]) ** 3;
+	};
+	for (const mode of ["light", "dark"] as const) {
+		const tokens = DEFAULT_FRONTEND_APPEARANCE[mode];
+		const foreground = luminance(tokens.mutedForeground);
+		for (const surface of [
+			tokens.background,
+			tokens.card,
+			tokens.muted,
+			tokens.accent,
+		]) {
+			const background = luminance(surface);
+			expect(
+				(Math.max(foreground, background) + 0.05) /
+					(Math.min(foreground, background) + 0.05),
+			).toBeGreaterThanOrEqual(4.5);
+		}
+	}
 });

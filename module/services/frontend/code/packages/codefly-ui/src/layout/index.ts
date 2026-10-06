@@ -6,6 +6,13 @@
 // mirroring `@codefly-dev/ui/dashboard`. No host context, no SDK — React only.
 
 export {
+	Accordion,
+	AccordionContent,
+	AccordionHeader,
+	AccordionItem,
+	AccordionTrigger,
+} from "./accordion.js";
+export {
 	AlertDialog,
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -31,12 +38,10 @@ export {
 export { Badge, badgeVariants, type StatusTone } from "./badge.js";
 export { Banner, type BannerProps } from "./banner.js";
 export {
-	Chip,
-	ChipGroup,
-	type ChipGroupProps,
-	type ChipProps,
-} from "./chip.js";
-
+	Breadcrumb,
+	type BreadcrumbItem,
+	type BreadcrumbProps,
+} from "./breadcrumb.js";
 // Actions
 export { Button, buttonVariants } from "./button.js";
 // Page containers
@@ -53,6 +58,12 @@ export {
 	CardTitle,
 } from "./card-root.js";
 export { Checkbox } from "./checkbox.js";
+export {
+	Chip,
+	ChipGroup,
+	type ChipGroupProps,
+	type ChipProps,
+} from "./chip.js";
 export {
 	Command,
 	CommandDialog,
@@ -96,6 +107,7 @@ export {
 	DialogTitle,
 	DialogTrigger,
 } from "./dialog.js";
+export { Disclosure, type DisclosureProps } from "./disclosure.js";
 export {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
@@ -173,6 +185,7 @@ export {
 	PopoverTrigger,
 } from "./popover.js";
 export { Progress, type ProgressProps } from "./progress.js";
+export { Radio, RadioGroup } from "./radio-group.js";
 export {
 	SegmentedControl,
 	type SegmentedControlOption,
@@ -229,6 +242,7 @@ export {
 } from "./sidebar.js";
 export { Skeleton } from "./skeleton.js";
 export { Toaster, toast } from "./sonner.js";
+export { Surface } from "./surface.js";
 export { Switch } from "./switch.js";
 export {
 	Table,
@@ -251,10 +265,20 @@ export {
 	tabsListVariants,
 } from "./tabs-root.js";
 export { Textarea } from "./textarea.js";
+export { Timeline, type TimelineEntry } from "./timeline.js";
 export {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
 	TooltipTrigger,
 } from "./tooltip.js";
+export { Tree, type TreeNode, type TreeProps } from "./tree.js";
 export { useIsMobile } from "./use-mobile.js";
+
+export {
+	ViewportOverlay,
+	type ViewportOverlayAttributes,
+	type ViewportOverlayItem,
+	type ViewportOverlayProps,
+	type ViewportRegion,
+} from "./viewport-overlay.js";

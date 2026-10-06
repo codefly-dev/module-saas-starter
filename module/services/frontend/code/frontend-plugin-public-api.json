@@ -4,7 +4,7 @@
 	"packages": {
 		"@codefly/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.4.0",
+			"packageVersion": "2.4.1",
 			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
@@ -113,7 +113,7 @@
 		},
 		"@codefly/saas-plugin-react": {
 			"status": "active",
-			"packageVersion": "0.4.1",
+			"packageVersion": "0.4.2",
 			"entrypoints": [".", "./runtime", "./ui"],
 			"entrypointExports": {
 				".": [
