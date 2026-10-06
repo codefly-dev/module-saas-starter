@@ -268,6 +268,27 @@ plain "temporarily unavailable" panel instead of a 404, and the technical cause
 stays in the server log.
 >>>>>>> a3090094 (fix(auth-gateway): a module or solution upstream receives the person's identity, not their session (SA-F-BEARER))
 
+## 4a. The host cannot yet require an installation at the proxy
+
+The frontend's solution proxy admits a registered solution to any signed-in viewer
+whose request is same-origin. It does not require that the viewer's organization has
+INSTALLED the solution, so installation governs what an agent may do headlessly but
+not whether a person's browser may reach a solution's endpoints through the host.
+
+This is not a judgement that it should not; it is a missing contract.
+`InstallationService` offers `InstallSolution`, `UninstallSolution`,
+`TransferInstallationOwnership` and `GetInstallation` — and `GetInstallation` takes an
+installation UUID. Nothing answers "does this organization have an installation of the
+solution with this id", which is the question the proxy has to ask. Adding it is a
+descriptor change (contract digests, published clients, a verified regeneration), and
+it is the condition the solution/module lifecycle rework owns.
+
+Until it lands, what bounds the surface is: a registered solution only (404
+otherwise), a same-origin request against the configured public origin (403
+otherwise), the per-viewer projection of the registry, and the gateway's own solution
+admission. None of those is an installation check, and this document should not be
+read as claiming one.
+
 ## 4. Registration, installation, and entitlement are three different things
 
 They are frequently conflated. In this module they are not the same, and the

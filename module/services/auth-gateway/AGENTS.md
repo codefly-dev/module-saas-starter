@@ -100,6 +100,22 @@ receives the stamped identity headers and no audience-bound context, so the
 credential is no longer over-broad but the positive half is absent. Minting it at
 the edge is open work here; it cannot be supplied by a consumer.
 
+What is missing is specific, so that the next person does not have to rediscover it.
+`WorkContextService` already exposes `ExchangeAudience`, which re-binds an existing
+Work Context to a different audience — and that is not the operation this needs. The
+caller here holds a browser SESSION, which is not a Work Context, so the edge would
+need a mint that takes a verified session and returns a context bound to one
+upstream's audience, with that person's authority narrowed to what the upstream may
+do on their behalf. No RPC does that today, and adding one is a descriptor change
+(contract digests, published clients, a verified regeneration), which is why the
+stripping half shipped alone.
+
+Two things to settle with it, because they are the reason it is not a small change:
+the mint is per request on the proxy path, so its latency and its failure mode become
+the failure mode of all federated traffic; and the authority to narrow TO is the
+installation's ceiling, which the host cannot currently look up from a solution id
+either (see `module/SOLUTION_REGISTRATION.md`).
+
 **A consumer written against the old behaviour has to change**: anything that read
 the forwarded bearer needs a host-minted capability bound to its own audience
 instead.
