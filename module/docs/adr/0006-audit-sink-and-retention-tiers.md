@@ -1,6 +1,6 @@
 # ADR 0006: Audit sink and retention tiers — a swappable compliance backend, Postgres as the atomic hot source of truth
 
-- Status: Proposed
+- Status: Proposed; superseded in part by [ADR 0009](./0009-audit-store-swap.md) — the sink/tee decision ("a tee, not a swap": Decision item 2; option C of Options considered)
 - Date: 2026-09-02
 - Task: prepares the audit performance/size and compliance workstreams (see
   #430). Refines — for the **sink and retention dimension only** — the
