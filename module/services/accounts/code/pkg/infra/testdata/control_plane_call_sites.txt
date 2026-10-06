@@ -100,6 +100,8 @@ pkg/business/platform_admin.go: (*Service).UnsuspendUser: WithControlPlane
 pkg/business/platform_catalogue.go: (*Service).ListPlatformCatalogue: WithControlPlane
 pkg/business/policy_log.go: (*Service).MayServe: WithControlPlane
 pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
+pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
+pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/principals.go: (*Service).GetPrincipal: As(System())
 pkg/business/principals.go: (*Service).principalOrgID: As(System())
