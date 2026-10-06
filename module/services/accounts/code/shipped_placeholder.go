@@ -60,12 +60,15 @@ func looksLikeShippedPlaceholder(value string) bool {
 // deployed runtime, or nil. name is the group-qualified key, so the refusal says
 // what an operator has to provision rather than that something was wrong.
 //
-// It never includes the value. An empty value is not refused here: whether a
-// credential is REQUIRED is each loader's own question, and answering it twice
-// would make an optional group's absence read as a placeholder.
-func refusePerimeterCredential(name, value string) error {
+// It never includes the value.
+func refusePerimeterCredential(name, value string, current bool) error {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
+		if current {
+			return fmt.Errorf(
+				"%s is absent; a deployed cell must provision it before this service can "+
+					"decide that a caller is inside the perimeter", name)
+		}
 		return nil
 	}
 	if looksLikeShippedPlaceholder(trimmed) {
@@ -81,15 +84,28 @@ func refusePerimeterCredential(name, value string) error {
 	return nil
 }
 
+// perimeterCredential is one value this service trusts to decide that a caller is
+// inside the perimeter. Current distinguishes the two cases a single list was
+// conflating: a CURRENT credential the deployment must carry, and the PREVIOUS
+// half of a rotation, which is absent on every cell that is not mid-rotation.
+// Refusing both alike would make the ordinary state an outage; refusing neither
+// let a cell start with no perimeter credential at all, which is what R1019-N17
+// found. The flag is the distinction, so each answer is given once.
+type perimeterCredential struct {
+	Name    string
+	Value   string
+	Current bool
+}
+
 // perimeterCredentials are the values this service trusts to decide that a caller
 // is inside the perimeter: the cluster-internal token both halves of a rotation,
 // and the gateway-provenance token this service believes forwarded identity on.
-func perimeterCredentials() []struct{ Name, Value string } {
-	return []struct{ Name, Value string }{
-		{"internal-auth/CODEFLY_INTERNAL_TOKEN", workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")},
-		{"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS")},
-		{"gateway-trust/CODEFLY_GATEWAY_TOKEN", workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN")},
-		{"gateway-trust/CODEFLY_GATEWAY_TOKEN_PREVIOUS", workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN_PREVIOUS")},
+func perimeterCredentials() []perimeterCredential {
+	return []perimeterCredential{
+		{"internal-auth/CODEFLY_INTERNAL_TOKEN", workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"), true},
+		{"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"), false},
+		{"gateway-trust/CODEFLY_GATEWAY_TOKEN", workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN"), true},
+		{"gateway-trust/CODEFLY_GATEWAY_TOKEN_PREVIOUS", workspaceEnv("gateway-trust", "CODEFLY_GATEWAY_TOKEN_PREVIOUS"), false},
 	}
 }
 
@@ -105,7 +121,7 @@ func requirePerimeterCredentials(isLocal bool) error {
 	}
 	var problems []string
 	for _, credential := range perimeterCredentials() {
-		if err := refusePerimeterCredential(credential.Name, credential.Value); err != nil {
+		if err := refusePerimeterCredential(credential.Name, credential.Value, credential.Current); err != nil {
 			problems = append(problems, err.Error())
 		}
 	}

@@ -17,7 +17,7 @@ func TestDeployedRefusesShippedPlaceholders(t *testing.T) {
 		"LOCAL-DEV-GATEWAY-ONLY-REPLACE-ME",
 		"prefixed-changeme-suffixed-and-long-enough-to-pass-the-length-floor",
 	} {
-		err := refusePerimeterCredential("gateway-trust/CODEFLY_GATEWAY_TOKEN", value)
+		err := refusePerimeterCredential("gateway-trust/CODEFLY_GATEWAY_TOKEN", value, true)
 		require.Error(t, err, "%q carries a shipped marker and must be refused", value)
 		require.Contains(t, err.Error(), "gateway-trust/CODEFLY_GATEWAY_TOKEN")
 		require.NotContains(t, err.Error(), value, "a refusal never prints the value")
@@ -25,7 +25,7 @@ func TestDeployedRefusesShippedPlaceholders(t *testing.T) {
 }
 
 func TestDeployedRefusesAShortPerimeterCredential(t *testing.T) {
-	err := refusePerimeterCredential("internal-auth/CODEFLY_INTERNAL_TOKEN", "7Kq2Xp9Vb4Nf")
+	err := refusePerimeterCredential("internal-auth/CODEFLY_INTERNAL_TOKEN", "7Kq2Xp9Vb4Nf", true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "at least 32")
 	require.NotContains(t, err.Error(), "7Kq2Xp9Vb4Nf")
@@ -33,9 +33,9 @@ func TestDeployedRefusesAShortPerimeterCredential(t *testing.T) {
 
 func TestPerimeterCredentialChecksAdmitWhatTheyShould(t *testing.T) {
 	require.NoError(t, refusePerimeterCredential(
-		"gateway-trust/CODEFLY_GATEWAY_TOKEN", strings.Repeat("7Kq2Xp9Vb4Nf", 4)))
+		"gateway-trust/CODEFLY_GATEWAY_TOKEN", strings.Repeat("7Kq2Xp9Vb4Nf", 4), true))
 	require.NoError(t, refusePerimeterCredential(
-		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", ""))
+		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", "", false))
 }
 
 func TestLocalRuntimeKeepsTheShippedDefaults(t *testing.T) {
@@ -101,4 +101,64 @@ func TestR1019InProcessLimiterIsNotTheProductionWiring(t *testing.T) {
 		"production must not hard-enable the per-replica limiter")
 	require.NotContains(t, string(source), "newInProcessRateLimiter(",
 		"the per-replica constructor is for tests and local development only")
+}
+
+// R1019-N17: a CURRENT perimeter credential that is absent is refused by name, and
+// over the real carriers rather than only through the pure comparison. The gateway
+// decides perimeter membership on these, so starting without one admits whoever
+// reaches the internal endpoints.
+//
+// The PREVIOUS half is asserted in the same test rather than a separate one,
+// because the property is the DISTINCTION: a check that refuses both is as wrong
+// as a check that refuses neither, and only one assertion catches each direction.
+func TestR1019AbsentCurrentPerimeterCredentialRefusesDeployedStartup(t *testing.T) {
+	for _, absent := range []struct{ group, key string }{
+		{"internal-auth", "CODEFLY_INTERNAL_TOKEN"},
+		{"gateway-trust", "CODEFLY_GATEWAY_TOKEN"},
+	} {
+		t.Run(absent.key, func(t *testing.T) {
+			for _, credential := range perimeterCredentials() {
+				group, key, _ := strings.Cut(credential.Name, "/")
+				if key == absent.key {
+					blankWorkspaceKey(t, group, key)
+					continue
+				}
+				provisionWorkspaceKey(t, group, key, strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+			}
+			err := requirePerimeterCredentials(false)
+			require.Error(t, err, "%s is absent and a deployed gateway must refuse to start", absent.key)
+			require.Contains(t, err.Error(), absent.group+"/"+absent.key,
+				"the refusal must name the key an operator has to provision")
+		})
+	}
+
+	t.Run("the rotation half stays optional", func(t *testing.T) {
+		for _, credential := range perimeterCredentials() {
+			group, key, _ := strings.Cut(credential.Name, "/")
+			if strings.HasSuffix(key, "_PREVIOUS") {
+				blankWorkspaceKey(t, group, key)
+				continue
+			}
+			provisionWorkspaceKey(t, group, key, strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+		}
+		require.NoError(t, requirePerimeterCredentials(false),
+			"a cell that is not mid-rotation carries no PREVIOUS value and must still start")
+	})
+}
+
+// blankWorkspaceKey and provisionWorkspaceKey write the carriers workspaceEnv
+// actually reads. Both have to be set: codefly CI injects the configuration group,
+// a bare `go test` does not, and a shipped .secret.env default reaching either
+// carrier would otherwise decide the result instead of the test.
+func blankWorkspaceKey(t *testing.T, group, key string) {
+	t.Helper()
+	provisionWorkspaceKey(t, group, key, "")
+}
+
+func provisionWorkspaceKey(t *testing.T, group, key, value string) {
+	t.Helper()
+	upper := strings.ReplaceAll(strings.ToUpper(group), "-", "_")
+	t.Setenv(key, value)
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__"+upper+"__"+key, value)
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__"+upper+"__"+key, value)
 }

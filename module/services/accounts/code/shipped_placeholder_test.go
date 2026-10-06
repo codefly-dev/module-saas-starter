@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"accounts/pkg/keyservice"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +21,7 @@ func TestDeployedRefusesShippedPlaceholders(t *testing.T) {
 		"prefixed-changeme-suffixed-and-long-enough-to-pass-the-length-floor",
 		"a-placeholder-value-long-enough-to-pass-the-length-floor",
 	} {
-		err := refusePerimeterCredential("internal-auth/CODEFLY_INTERNAL_TOKEN", value)
+		err := refusePerimeterCredential("internal-auth/CODEFLY_INTERNAL_TOKEN", value, true)
 		require.Error(t, err, "%q carries a shipped marker and must be refused", value)
 		require.Contains(t, err.Error(), "internal-auth/CODEFLY_INTERNAL_TOKEN",
 			"the refusal must name the key an operator has to provision")
@@ -30,7 +32,7 @@ func TestDeployedRefusesShippedPlaceholders(t *testing.T) {
 // The length floor refuses a short value that carries no marker at all, so the
 // two checks are not one check spelled twice.
 func TestDeployedRefusesAShortPerimeterCredential(t *testing.T) {
-	err := refusePerimeterCredential("gateway-trust/CODEFLY_GATEWAY_TOKEN", "7Kq2Xp9Vb4Nf")
+	err := refusePerimeterCredential("gateway-trust/CODEFLY_GATEWAY_TOKEN", "7Kq2Xp9Vb4Nf", true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "gateway-trust/CODEFLY_GATEWAY_TOKEN")
 	require.Contains(t, err.Error(), "at least 32")
@@ -39,14 +41,17 @@ func TestDeployedRefusesAShortPerimeterCredential(t *testing.T) {
 
 // The controls. A provisioned credential passes, and an ABSENT one is not refused
 // here: whether a credential is required is each loader's own question, and
-// answering it twice would make an optional group's absence read as a placeholder.
+// a rotation's PREVIOUS half is absent on every cell that is not mid-rotation, so
+// refusing it would make the ordinary state an outage. A CURRENT credential's
+// absence is the opposite answer, and R1019-N17 is what giving both the same one
+// cost: a deployed cell started with no perimeter credential at all.
 func TestPerimeterCredentialChecksAdmitWhatTheyShould(t *testing.T) {
 	require.NoError(t, refusePerimeterCredential(
-		"internal-auth/CODEFLY_INTERNAL_TOKEN", strings.Repeat("7Kq2Xp9Vb4Nf", 4)))
+		"internal-auth/CODEFLY_INTERNAL_TOKEN", strings.Repeat("7Kq2Xp9Vb4Nf", 4), true))
 	require.NoError(t, refusePerimeterCredential(
-		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", ""))
+		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", "", false))
 	require.NoError(t, refusePerimeterCredential(
-		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", "   "))
+		"internal-auth/CODEFLY_INTERNAL_TOKEN_PREVIOUS", "   ", false))
 }
 
 // Local development runs on the shipped defaults, so the gate is the deployed
@@ -113,19 +118,76 @@ func TestDeployedPerimeterCheckReadsTheConfigurationGroup(t *testing.T) {
 		blankWorkspaceKey(t, "gateway-trust", key)
 	}
 
-	// Nothing provisioned: each loader's own required-or-optional question, not
-	// this one's.
-	require.NoError(t, requirePerimeterCredentials(false))
+	// Nothing provisioned. This asserted NoError until R1019-N17: deferring the
+	// required-or-optional question to "each loader" meant no loader asked it, and a
+	// deployed cell started holding no perimeter credential at all. The CURRENT keys
+	// are refused by name here; the rotation halves stay optional below.
+	err := requirePerimeterCredentials(false)
+	require.Error(t, err, "a deployed cell with no perimeter credential must refuse to start")
+	require.Contains(t, err.Error(), "internal-auth/CODEFLY_INTERNAL_TOKEN")
+	require.Contains(t, err.Error(), "gateway-trust/CODEFLY_GATEWAY_TOKEN")
+	require.NotContains(t, err.Error(), "CODEFLY_INTERNAL_TOKEN_PREVIOUS",
+		"a rotation half is absent on every cell that is not mid-rotation")
 
 	// The value this module ships in its public local defaults.
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__INTERNAL_AUTH__CODEFLY_INTERNAL_TOKEN",
 		"local-dev-only-replace-me")
-	err := requirePerimeterCredentials(false)
+	err = requirePerimeterCredentials(false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "internal-auth/CODEFLY_INTERNAL_TOKEN")
 
-	// A provisioned one.
+	// Provisioned values for both CURRENT keys, and still no rotation halves.
 	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__INTERNAL_AUTH__CODEFLY_INTERNAL_TOKEN",
 		strings.Repeat("7Kq2Xp9Vb4Nf", 4))
+	t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__GATEWAY_TRUST__CODEFLY_GATEWAY_TOKEN",
+		strings.Repeat("9Zr4Lm7Td2Wc", 4))
 	require.NoError(t, requirePerimeterCredentials(false))
+}
+
+// R1019-N17, through the whole startup path rather than the perimeter check alone:
+// with key custody and the public origin provisioned, an absent CURRENT perimeter
+// credential still has to stop the service. requireStartupConfiguration is what
+// main calls, so a refusal that exists only in the helper is not a refusal.
+func TestR1019StartupRefusesAnAbsentCurrentPerimeterCredential(t *testing.T) {
+	provision := func(t *testing.T, absentKey string) {
+		t.Helper()
+		// Everything a hosted startup requires BEFORE the perimeter credentials,
+		// so the refusal under test is the one that answers. requireStartupConfiguration
+		// resolves the key service first and then its custody, and each refuses a
+		// hosted boot by name — so without these the subject is never reached and
+		// every case below would pass on somebody else's refusal.
+		keyServiceBackend(t, string(keyservice.BackendVault))
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", "make seed-signing-key")
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL", "https://app.example")
+		for _, credential := range perimeterCredentials() {
+			group, key, _ := strings.Cut(credential.Name, "/")
+			upper := strings.ReplaceAll(strings.ToUpper(group), "-", "_")
+			value := strings.Repeat("7Kq2Xp9Vb4Nf", 4)
+			if key == absentKey || strings.HasSuffix(key, "_PREVIOUS") {
+				value = ""
+			}
+			t.Setenv(key, value)
+			t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__"+upper+"__"+key, value)
+			t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__"+upper+"__"+key, value)
+		}
+	}
+
+	for _, absent := range []struct{ group, key string }{
+		{"internal-auth", "CODEFLY_INTERNAL_TOKEN"},
+		{"gateway-trust", "CODEFLY_GATEWAY_TOKEN"},
+	} {
+		t.Run(absent.key, func(t *testing.T) {
+			provision(t, absent.key)
+			err := requireStartupConfiguration(t.Context(), false)
+			require.Error(t, err, "%s is absent and startup must refuse", absent.key)
+			require.Contains(t, err.Error(), absent.group+"/"+absent.key)
+		})
+	}
+
+	// The positive control: the same provisioning with nothing absent starts. Without
+	// it, a startup path that refused unconditionally would pass every case above.
+	t.Run("provisioned startup proceeds", func(t *testing.T) {
+		provision(t, "")
+		require.NoError(t, requireStartupConfiguration(t.Context(), false))
+	})
 }
