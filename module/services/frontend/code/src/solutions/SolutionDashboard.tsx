@@ -264,11 +264,11 @@ function WidgetCard({
 				{grip}
 				<CardTitle
 					className={
-						// A number tile is titled as the kit's StatTile labels its
-						// number: the small, muted body text above the figure, not a
-						// card heading.
+						// A number tile is titled at the size the kit's StatTile labels
+						// its number, the small body text above the figure, not a card
+						// heading; in the foreground colour, so it reads at a glance.
 						widget.visualization === "number"
-							? "min-w-0 flex-1 font-sans font-normal type-metric-label text-muted-foreground"
+							? "min-w-0 flex-1 font-sans font-normal type-metric-label"
 							: "min-w-0 flex-1 text-base"
 					}
 				>

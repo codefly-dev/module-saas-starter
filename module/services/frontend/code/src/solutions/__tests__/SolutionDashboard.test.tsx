@@ -331,9 +331,9 @@ describe("SolutionDashboards", () => {
 
 		const title = (name: string) =>
 			tile(name).querySelector('[data-slot="card-title"]')?.classList;
-		// The label StatTile writes above a headline number.
+		// The size StatTile labels a headline number at, not muted.
 		expect(title("Total logins")).toContain("type-metric-label");
-		expect(title("Total logins")).toContain("text-muted-foreground");
+		expect(title("Total logins")).not.toContain("text-muted-foreground");
 		expect(title("Logins over time")).not.toContain("type-metric-label");
 	});
 
