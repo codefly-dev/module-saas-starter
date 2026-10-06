@@ -1,6 +1,6 @@
 {
 	"name": "@codefly/saas-plugin-react",
-	"version": "0.4.1",
+	"version": "0.4.2",
 	"description": "Product-neutral React contribution composition and runtime adapters for the Codefly SaaS frontend plugin host.",
 	"type": "module",
 	"sideEffects": false,
@@ -30,11 +30,11 @@
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"peerDependencies": {
-		"@codefly/saas-plugin-contract": "2.4.0",
+		"@codefly/saas-plugin-contract": "2.4.1",
 		"react": ">=19.2 <20"
 	},
 	"devDependencies": {
-		"@codefly/saas-plugin-contract": "2.4.0",
+		"@codefly/saas-plugin-contract": "2.4.1",
 		"@testing-library/react": "^16.1.0",
 		"@types/react": "19.2.17",
 		"happy-dom": "^20.8.9",

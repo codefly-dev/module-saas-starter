@@ -40,6 +40,17 @@ source_delegation.go:sourceDelegationShape
 service.go:ModulePrincipals
 layered_access.go:ListCollectionAccess
 module_capabilities.go:ModuleContentResources
+# ListPlatformCatalogue reads the registry to LIST the modules it knows, for a
+# platform administrator's catalogue. It is group C's shape — an accessor, not a
+# decision — and it is authorised upstream as a platform-admin RPC.
+#
+# It is on this list because of a change, not a regression: main read
+# `s.modulePrincipals` as a bare field, which this gate does not watch, and the
+# merge moved it to the `declaredModules()` accessor so the atomic pointer is
+# loaded safely. The gate saw it for the first time as a result. That is the gate
+# working — a direct field read was a way past it — and the honest disposition is
+# to list the path rather than go back to the spelling that hid it.
+platform_catalogue.go:ListPlatformCatalogue
 #
 # D. AUTHENTICATION, which runs BEFORE any capability decision and reads an
 #    IDENTITY fact rather than an authority one. Routing it through

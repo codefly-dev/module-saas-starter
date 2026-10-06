@@ -68,7 +68,7 @@ variables read — it does not layer one over the other.
 | `secondary` | `--secondary` | Secondary surface / fill | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
 | `secondaryForeground` | `--secondary-foreground` | Text on the secondary fill | `oklch(0.205 0 0)` | `oklch(0.985 0 0)` |
 | `muted` | `--muted` | Low-emphasis surface | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
-| `mutedForeground` | `--muted-foreground` | Low-emphasis / secondary text | `oklch(0.556 0 0)` | `oklch(0.708 0 0)` |
+| `mutedForeground` | `--muted-foreground` | Low-emphasis / secondary text | `oklch(0.54 0 0)` | `oklch(0.708 0 0)` |
 | `accent` | `--accent` | Hover / accent surface | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
 | `accentForeground` | `--accent-foreground` | Text on the accent surface | `oklch(0.205 0 0)` | `oklch(0.985 0 0)` |
 | `destructive` | `--destructive` | Destructive action / error | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` |

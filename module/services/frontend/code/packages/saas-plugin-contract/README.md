@@ -152,3 +152,5 @@ codefly generate proto --proto ./proto --output . --local --template buf.gen.loc
 ```
 
 The package root and `./capabilities` are public.
+
+The default light muted foreground uses achromatic OKLCH lightness 0.54 so small captions meet WCAG AA 4.5:1 on background, card, muted and accent surfaces. The default dark pair also satisfies this check. Custom appearances own their chosen contrast; clients should use these semantic tokens rather than inventing local caption colors.

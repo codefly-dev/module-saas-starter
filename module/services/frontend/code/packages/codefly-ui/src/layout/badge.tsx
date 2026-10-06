@@ -21,14 +21,15 @@ const badgeVariants = cva(
 				secondary:
 					"bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
 				destructive:
-					"bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
+					"bg-destructive/10 [color:color-mix(in_oklab,var(--destructive)_70%,var(--foreground))] focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
 				outline:
 					"border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
 				ghost:
 					"hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
 				link: "text-primary underline-offset-4 hover:underline",
 			},
-			// A tint of the tone's own colour under text in it, the shape
+			// Danger text mixes toward foreground to retain small-text contrast
+			// on its own tint in both modes. A tint of the tone's own colour, the shape
 			// `destructive` already had, so every tone reads at the same weight
 			// and none of them is mistaken for the primary action.
 			tone: {
@@ -38,7 +39,7 @@ const badgeVariants = cva(
 				warning:
 					"bg-warning/10 text-warning dark:bg-warning/20 [a]:hover:bg-warning/20",
 				danger:
-					"bg-destructive/10 text-destructive dark:bg-destructive/20 [a]:hover:bg-destructive/20",
+					"bg-destructive/10 [color:color-mix(in_oklab,var(--destructive)_70%,var(--foreground))] dark:bg-destructive/20 [a]:hover:bg-destructive/20",
 				info: "bg-info/10 text-info dark:bg-info/20 [a]:hover:bg-info/20",
 			},
 			size: {

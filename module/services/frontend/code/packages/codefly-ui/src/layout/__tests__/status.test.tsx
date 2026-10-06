@@ -27,7 +27,9 @@ describe("Badge tone", () => {
 		);
 		expect(classesOf("Set up")).toContain("text-muted-foreground");
 		expect(classesOf("Connected")).toContain("text-success");
-		expect(classesOf("Error")).toContain("text-destructive");
+		expect(classesOf("Error")).toContain(
+			"[color:color-mix(in_oklab,var(--destructive)_70%,var(--foreground))]",
+		);
 	});
 
 	it.each([
@@ -136,14 +138,15 @@ describe("Banner tone", () => {
 		expect(container.querySelector("[data-slot=banner-icon]")).toBeNull();
 	});
 
-	it.each(
-		TONES.filter((tone) => tone !== "neutral"),
-	)("gives %s a glyph, so it is told apart by shape", (tone) => {
-		const { container } = render(<Banner tone={tone} title="Heads up" />);
-		const icon = container.querySelector("[data-slot=banner-icon]");
-		expect(icon?.querySelector("svg")).toBeTruthy();
-		expect(icon?.getAttribute("aria-hidden")).toBe("true");
-	});
+	it.each(TONES.filter((tone) => tone !== "neutral"))(
+		"gives %s a glyph, so it is told apart by shape",
+		(tone) => {
+			const { container } = render(<Banner tone={tone} title="Heads up" />);
+			const icon = container.querySelector("[data-slot=banner-icon]");
+			expect(icon?.querySelector("svg")).toBeTruthy();
+			expect(icon?.getAttribute("aria-hidden")).toBe("true");
+		},
+	);
 
 	it("gives each status tone a different glyph", () => {
 		const glyphs = TONES.filter((tone) => tone !== "neutral").map((tone) => {
