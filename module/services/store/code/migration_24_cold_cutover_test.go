@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// Like the migration-20 replay, install the proposed ledger from zero, stage
+// Like the migration-21 replay, install the proposed ledger from zero, stage
 // pre-cutover rows, then apply only the new version. The URL must name a fresh,
 // disposable PostgreSQL 16+ cluster: migration 1 also requires absent app roles.
-func TestMigration23ColdCutoverFromZero(t *testing.T) {
+func TestMigration24ColdCutoverFromZero(t *testing.T) {
 	raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL")
 	if raw == "" {
 		t.Skip("ACCOUNTS_INSTALLER_TEST_DATABASE_URL is unset; PostgreSQL replay not run")
@@ -53,7 +53,7 @@ func TestMigration23ColdCutoverFromZero(t *testing.T) {
 		(solution_id,publisher,revision,tombstoned_at,declared_binding_id,declared_generation,declared_release,declared_target_id)
 		VALUES ('removed','solution:removed',nextval('public.solution_registry_revision_sequence'),now(),'acme.test.removed',2,'acme/example@1.0.0',(SELECT id FROM public.solution_targets WHERE binding_id='acme.test.removed'))`)
 	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 23), raw); err != nil {
-		t.Fatalf("apply migration 23: %v", err)
+		t.Fatalf("apply migration 24: %v", err)
 	}
 	assertCount := func(query string, want int) {
 		t.Helper()
@@ -87,7 +87,7 @@ func TestMigration23ColdCutoverFromZero(t *testing.T) {
 			t.Fatalf("invalid registry state accepted: %s", query)
 		}
 	}
-	t.Log("migration 23 deleted runtime presence and lease columns; declared presence, tombstones and whole-half constraints verified")
+	t.Log("migration 24 deleted runtime presence and lease columns; declared presence, tombstones and whole-half constraints verified")
 }
 
 func execColdCutoverSQL(t *testing.T, db *sql.DB, statement string) {

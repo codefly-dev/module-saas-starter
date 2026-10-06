@@ -95,7 +95,7 @@ type AvailableSolutionTarget struct {
 }
 
 // SolutionGenerationDecision is one entry in the generation history: a generation
-// this host decided about, and what it decided (migration 19).
+// this host decided about, and what it decided (migration 20).
 //
 // It exists because nothing else can answer "what did this component move
 // through". The binding row holds one desired and one applied generation, and its

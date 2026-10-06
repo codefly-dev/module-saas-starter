@@ -3,5 +3,5 @@
 -- those observations or their provenance. Restore a pre-cutover database backup
 -- with its matching application release to recover that state.
 DO $$ BEGIN
-    RAISE EXCEPTION 'migration 23 is irreversible: runtime registrations and lease observations cannot be recovered';
+    RAISE EXCEPTION 'migration 24 is irreversible: runtime registrations and lease observations cannot be recovered';
 END $$;

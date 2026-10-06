@@ -12,7 +12,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// Migration 20's backfill, replayed from zero against staged pre-cutover rows.
+// Migration 21's backfill, replayed from zero against staged pre-cutover rows.
 //
 // WHY THIS CANNOT BE TESTED THE ORDINARY WAY. The store's runner keys on
 // migration VERSION with no content checksum (`main.go` reads the applied
@@ -49,13 +49,13 @@ import (
 // into it. Erring the other way (a carry that should have been a revoke) is not
 // detectable from this schema at all, and the fail-closed second statement is
 // the only answer to it.
-func TestMigration20DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
+func TestMigration21DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 	db, url := throwawayPostgres(t)
 
 	// Two ledgers: 1..19, then 1..20. The second CONTAINS the first, because the
 	// runner reads the database's current version and requires that migration's
 	// file to be present in the source — a directory holding only 20 is refused
-	// with "database is at migration 19, which this ledger does not contain",
+	// with "database is at migration 20, which this ledger does not contain",
 	// which the third run of this test discovered. Containing it is also what a
 	// real upgrade looks like: the runner skips what is applied and runs 20.
 	//
@@ -98,7 +98,7 @@ func TestMigration20DoesNotTransferConsentAcrossAnAliasReuse(t *testing.T) {
 		lateOrg, lateAgent, lateOwner, lateNode)
 
 	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 20), url); err != nil {
-		t.Fatalf("apply migration 20: %v", err)
+		t.Fatalf("apply migration 21: %v", err)
 	}
 
 	// `kept` carries over to the live target it was created under.
@@ -252,7 +252,7 @@ func stageInstallationParents(t *testing.T, db *sql.DB, email, slug string) (org
 func stageInstallation(t *testing.T, db *sql.DB, alias, createdAt, org, agent, owner, node string) string {
 	t.Helper()
 	var id string
-	// The columns migration 20 reads, on real parent rows.
+	// The columns migration 21 reads, on real parent rows.
 	mustQuery(t, db, `
 		INSERT INTO public.installations
 			(org_id, agent_principal_id, solution_identifier, owner_principal_id, root_scope_node_id, status, created_at)

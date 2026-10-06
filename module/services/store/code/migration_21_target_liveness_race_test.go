@@ -37,7 +37,7 @@ import (
 // attribution is settled by mutation rather than by that argument: with
 // `FOR UPDATE` removed from the function, step 2 returns immediately and the
 // insert succeeds.
-func TestMigration20TargetLivenessTriggerSerialisesAgainstAWithdrawal(t *testing.T) {
+func TestMigration21TargetLivenessTriggerSerialisesAgainstAWithdrawal(t *testing.T) {
 	db, url := throwawayPostgres(t)
 	// The whole cutover, applied as a release applies it. Nothing is staged
 	// before 20 here: this is about the trigger the migration installs, not about

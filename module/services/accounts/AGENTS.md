@@ -41,9 +41,9 @@ briefly: gateway reconciliation is approximately 10 seconds with a refresh on
 cache miss; frontend snapshots expire after 5 seconds and a failed refresh
 reports unavailable. An incomplete record stays pending and is not served.
 
-Migration 23 destructively removes runtime-only state and makes declaration
-ownership mandatory. Its from-zero proof is `TestMigration23FromZero` in the
-store module; `TestMigration20FromZero` separately proves immutable installation
+Migration 24 destructively removes runtime-only state and makes declaration
+ownership mandatory. Its from-zero proof is `TestMigration24FromZero` in the
+store module; `TestMigration21FromZero` separately proves immutable installation
 targets and withdrawal serialization using a freshly created package database.
 
 Audit type admission remains available through

@@ -718,7 +718,7 @@ type Store interface {
 	//     organisation already holds an active installation.
 	ListAvailableSolutionTargets(ctx context.Context, query AvailableSolutionQuery) ([]*AvailableSolutionTarget, error)
 
-	// The generation history (migration 19), append-only: the control plane holds
+	// The generation history (migration 20), append-only: the control plane holds
 	// SELECT and INSERT and nothing else, because a decision is a fact about the
 	// past.
 	//
