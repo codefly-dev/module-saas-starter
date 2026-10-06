@@ -616,3 +616,5 @@ setup failure, retirement, retained outcomes and ownership errors.
 `ViewportOverlay` draws decorative rectangles and polygons in its positioned parent’s CSS-pixel frame, with pointer events disabled. It leaves selection, geometry and content ownership to the caller. Its authored source was recovered from the same archive identified in the lifecycle provenance above. Stacked `DescriptionList` bounds its grid track so long values wrap within narrow containers.
 
 Use `Disclosure keepMounted` when closing a section must preserve descendant drafts or nested expansion state. The default lazily unmounts the content; `keepMounted` is forwarded to the panel, not the root.
+
+Version 0.12.3 refreshes the default preview palette from appearance contract 2.4.1: small muted captions now meet 4.5:1 on the default muted surface. This supersedes the 0.12.2 development candidate without changing the new component APIs.

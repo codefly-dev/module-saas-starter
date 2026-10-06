@@ -5584,7 +5584,7 @@ body {
   --appearance-light-secondary: oklch(97% 0 0);
   --appearance-light-secondary-foreground: oklch(20.5% 0 0);
   --appearance-light-muted: oklch(97% 0 0);
-  --appearance-light-muted-foreground: oklch(55.6% 0 0);
+  --appearance-light-muted-foreground: oklch(54% 0 0);
   --appearance-light-accent: oklch(97% 0 0);
   --appearance-light-accent-foreground: oklch(20.5% 0 0);
   --appearance-light-destructive: oklch(57.7% .245 27.325);
