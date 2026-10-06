@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:4b71d34bfccf54f2d734ad31023c08c7a00154c3067f69954924cbbb07337565",
+      "digest": "sha256:44c93a13bf9ed87229fb66b60ffae0f34711bc13e3953ea1321c77db6074f360",
       "services": [
         {
           "name": "APIKeyService",
@@ -216,6 +216,8 @@
           "fullName": "saas.accounts.v1.ModuleCapabilitiesService",
           "procedures": [
             "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+            "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
             "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
@@ -243,6 +245,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
           ]
@@ -476,7 +479,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:4b71d34bfccf54f2d734ad31023c08c7a00154c3067f69954924cbbb07337565",
+      "digest": "sha256:44c93a13bf9ed87229fb66b60ffae0f34711bc13e3953ea1321c77db6074f360",
       "services": [
         {
           "name": "APIKeyService",
@@ -682,6 +685,8 @@
           "fullName": "saas.accounts.v1.ModuleCapabilitiesService",
           "procedures": [
             "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+            "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
             "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
@@ -709,6 +714,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
           ]

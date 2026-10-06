@@ -32,6 +32,8 @@ spec:
               - /saas.accounts.v1.ClientRegistryService/ListRegisteredClients
               - /saas.accounts.v1.IdentityService/ResolveIdentity
               - /saas.accounts.v1.ModuleCapabilitiesService/AckJob
+              - /saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact
+              - /saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact
               - /saas.accounts.v1.ModuleCapabilitiesService/CancelApproval
               - /saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess
               - /saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs
@@ -59,6 +61,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/PublishEvent
               - /saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents
               - /saas.accounts.v1.ModuleCapabilitiesService/RequestApproval
+              - /saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact
               - /saas.accounts.v1.ModuleCapabilitiesService/Subscribe
               - /saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe
               - /saas.accounts.v1.PermissionService/CheckAccess

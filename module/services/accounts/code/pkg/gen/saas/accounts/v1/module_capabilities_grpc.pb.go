@@ -21,6 +21,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact"
+	ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact"
+	ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact"
 	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
 	ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
 	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
@@ -57,6 +60,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(ctx context.Context, in *ModuleRevokeExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
@@ -171,6 +180,36 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) ApproveExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) AuthorizeExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) RevokeExecutableArtifact(ctx context.Context, in *ModuleRevokeExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
@@ -496,6 +535,12 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
+	// Explicit current-admin consent, never inferred from an execution request.
+	ApproveExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
+	// Read existing exact approval; check live authority and revocation each time.
+	AuthorizeExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
+	// Terminal revocation of the exact approved identity.
+	RevokeExecutableArtifact(context.Context, *ModuleRevokeExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error)
@@ -612,6 +657,15 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) ApproveExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApproveExecutableArtifact not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) AuthorizeExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeExecutableArtifact not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) RevokeExecutableArtifact(context.Context, *ModuleRevokeExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeExecutableArtifact not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedReadAudience not implemented")
 }
@@ -722,6 +776,60 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_ApproveExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExecutableArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ApproveExecutableArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ApproveExecutableArtifact(ctx, req.(*ModuleExecutableArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_AuthorizeExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExecutableArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).AuthorizeExecutableArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).AuthorizeExecutableArtifact(ctx, req.(*ModuleExecutableArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_RevokeExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleRevokeExecutableArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).RevokeExecutableArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).RevokeExecutableArtifact(ctx, req.(*ModuleRevokeExecutableArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1257,6 +1365,18 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ApproveExecutableArtifact",
+			Handler:    _ModuleCapabilitiesService_ApproveExecutableArtifact_Handler,
+		},
+		{
+			MethodName: "AuthorizeExecutableArtifact",
+			Handler:    _ModuleCapabilitiesService_AuthorizeExecutableArtifact_Handler,
+		},
+		{
+			MethodName: "RevokeExecutableArtifact",
+			Handler:    _ModuleCapabilitiesService_RevokeExecutableArtifact_Handler,
+		},
 		{
 			MethodName: "ExchangeDelegatedReadAudience",
 			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler,

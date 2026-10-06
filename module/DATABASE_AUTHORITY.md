@@ -913,3 +913,15 @@ the Postgres agent's `runtime-logins` capability; a deployment that cannot yet
 provision it must not compensate with a public endpoint, superuser credential,
 shared credential or application-settable policy flag — accounts refuses to
 start instead.
+
+### Executable artifact approvals
+
+`executable_artifact_approvals` (migration 19) is organization-scoped consent
+metadata. It stores exact exported identities and their approved contract policy,
+not executable content. FORCE RLS admits only `app_tenant` with matching
+`app.current_org_id`; there is no control-plane read policy. Tenant callers may
+select/insert and update only `revoked_at`/`revoked_by`; they cannot change the
+approved identity, approver, installation or policy. A trigger makes revocation
+terminal. The service uses `As(verified tenant and current user).Within` and explicit tenant/installation/module
+predicates, serializing exact-identity decisions with revocation. Down migration
+refuses to discard any retained approval.
