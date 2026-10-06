@@ -163,16 +163,23 @@ type ExecutionAuthority interface {
 // Distinct from an unknown principal and from an unreadable authority, and the
 // three-state distinction is the point:
 //
-//   - no approved build → the principal is known and bears none. A capability
-//     may still be minted, carrying NO execution, if the caller is one that may
-//     act unbound. It is not a refusal.
+//   - no approved build → the principal is known and bears none. REFUSED.
+//     Execution binding is unconditional: a capability carrying no execution is
+//     one no verifier can hold against a running image, so it is not minted.
 //   - unknown principal → refused. Nothing is known about it, so nothing can be
 //     approved for it.
 //   - unreadable authority → ErrExecutionUnbound. Not a verdict.
 //
-// Collapsing the first two is the dangerous direction: an unknown principal
-// would then mint an unbound capability, which is a capability for an identity
-// the host has never heard of.
+// All three refuse; the three sentinels stay separate because they send an
+// operator to three different places, not because one of them admits.
+//
+// This comment previously said a capability "may still be minted, carrying NO
+// execution" for a caller permitted to act unbound. That posture does not exist
+// here, and stating it in a doc comment is itself the hazard: prose describing a
+// permissive path is an instruction to build one. If a principal that may act
+// unbound is ever genuinely required, it does not arrive by relaxing this —
+// it arrives as a principal that is not a module, through its own surface, with
+// its own test.
 var ErrNoApprovedBuild = errors.New("principal bears no approved build")
 
 // ErrUnknownExecutionPrincipal reports a principal the authority has no record
@@ -284,20 +291,25 @@ func (s *Service) BindExecution(
 	case errors.Is(err, ErrUnknownExecutionPrincipal):
 		return nil, fmt.Errorf("%w: %s", ErrUnknownExecutionPrincipal, principalID)
 	case errors.Is(err, ErrNoApprovedBuild):
-		// Known, and bears none. The caller's execution was established; there
-		// is simply nothing to hold it against. Returned WITHOUT a running
-		// digest so a seal built from this carries no execution rather than an
-		// unapproved one — and the pair stays whole-or-absent, which is what
-		// core's optional-and-paired seal fields require.
-		return &ExecutionIdentity{
-			PrincipalID:    principalID,
-			Namespace:      reviewed.Namespace,
-			ServiceAccount: reviewed.ServiceAccount,
-			PodName:        reviewed.PodName,
-			PodUID:         reviewed.PodUID,
-			ContainerName:  containerName,
-			Declared:       DeclaredDigest(running.DeclaredImage),
-		}, nil
+		// Known, and bears none: REFUSED. Execution binding is unconditional,
+		// so there is no such thing as a module capability carrying no
+		// execution.
+		//
+		// This branch used to return an identity with no running digest, for "a
+		// caller that may act unbound". Nothing could reach it — the only
+		// production ExecutionAuthority never calls Declare(), so the view
+		// answers a record or ErrUnknownExecutionPrincipal and never this. It
+		// was a fully built permissive path waiting for a trigger: adding the
+		// one Declare() call that the next legitimate requirement (a human
+		// session, say) obviously wants would have converted this refusal into
+		// a mintable capability, for a principal whose running build nothing
+		// checked, with no test failing. Deleting it is the point, not tidiness.
+		//
+		// The sentinel stays distinct from ErrUnknownExecutionPrincipal because
+		// the two are different operator problems — "declared but not yet
+		// approved" against "never heard of it" — and collapsing them would
+		// send the operator to the wrong place. Both refuse.
+		return nil, fmt.Errorf("%w: %s", ErrNoApprovedBuild, principalID)
 	case err != nil:
 		return nil, fmt.Errorf("%w: %w", ErrExecutionUnbound, err)
 	}

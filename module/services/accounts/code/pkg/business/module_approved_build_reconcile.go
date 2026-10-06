@@ -217,8 +217,12 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 	}
 
 	next := NewMonotonicApprovedBuilds()
-	marks := make(map[string]uint64, len(r.marks))
 	r.mutex.RLock()
+	// len(r.marks) INSIDE the lock. Sizing the map before taking it reads the
+	// map header while another pass may be assigning r.marks, which -race
+	// reports; RunOnce is exported and a test calling it twice concurrently
+	// would flake with the cause in neither test.
+	marks := make(map[string]uint64, len(r.marks))
 	for principal, mark := range r.marks {
 		marks[principal] = mark
 	}
@@ -229,9 +233,14 @@ func (r *ApprovedBuildReconciler) RunOnce(ctx context.Context) error {
 		for _, principal := range document.Principals {
 			id := principal.Principal
 			if authorities := grantedBy[id]; len(authorities) > 1 {
-				sort.Strings(authorities)
+				// A COPY. Sorting in place mutates the slice the map still
+				// holds, during the loop that reads that map, purely to make a
+				// message deterministic — harmless only until the map is read
+				// again.
+				named := append([]string(nil), authorities...)
+				sort.Strings(named)
 				failures = append(failures, fmt.Errorf("%w: principal %q is granted by authorities %v",
-					ErrApprovedBuildAmbiguous, id, authorities))
+					ErrApprovedBuildAmbiguous, id, named))
 				continue
 			}
 			if mark, had := marks[id]; had && document.Generation < mark {

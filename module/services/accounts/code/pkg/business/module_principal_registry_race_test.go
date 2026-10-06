@@ -27,7 +27,21 @@ func TestModulePrincipalRegistryIsReplacedWithoutRacingItsReaders(t *testing.T) 
 		ModulePrincipalID("example"): {Prefix: "example", Queues: []string{"a", "b"}},
 		ModulePrincipalID("other"):   {Prefix: "other"},
 	}
-	withCurrentAuthority(service)
+	// BOOT WIRING, and it belongs HERE rather than inside the goroutines below.
+	//
+	// This test could not pass under `-race` whatever the registry did, which is
+	// the one outcome it must never have: its whole claim is "fails against the
+	// bare field, passes against the pointer". The loops below used to call
+	// withCurrentAuthority, which calls SetModuleAuthorityReads, which assigns
+	// two BARE fields — correctly, because its production contract is boot-only
+	// (one call in work.go, before the service listens). Eight goroutines
+	// calling it therefore raced on fields that are NOT this test's subject, and
+	// `-race` reported those instead of the registry. A test that fails for a
+	// reason unrelated to its subject reports nothing about its subject.
+	//
+	// The readers below need no live authority read at all — they call
+	// declaredModules(), which reads only the registry — so hoisting it loses
+	// no coverage.
 	withCurrentAuthority(service)
 	service.SetModulePrincipals(narrow)
 
@@ -38,13 +52,9 @@ func TestModulePrincipalRegistryIsReplacedWithoutRacingItsReaders(t *testing.T) 
 			defer wg.Done()
 			for i := range 500 {
 				if i%2 == 0 {
-					withCurrentAuthority(service)
-					withCurrentAuthority(service)
 					service.SetModulePrincipals(wide)
 					continue
 				}
-				withCurrentAuthority(service)
-				withCurrentAuthority(service)
 				service.SetModulePrincipals(narrow)
 			}
 		}()

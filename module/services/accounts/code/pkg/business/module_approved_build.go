@@ -153,7 +153,8 @@ func (m *MonotonicApprovedBuilds) Approve(principalID string, record ApprovedBui
 // Three states, each a different answer:
 //
 //   - a record → the approved digest and its incarnation;
-//   - known, no record → ErrNoApprovedBuild. The principal may act unbound.
+//   - known, no record → ErrNoApprovedBuild. Refused by BindExecution:
+//     execution binding is unconditional, so there is nothing to mint.
 //   - unknown → ErrUnknownExecutionPrincipal. Refused.
 //
 // It takes NO attributes of the workload, which is core's rule and the reason it

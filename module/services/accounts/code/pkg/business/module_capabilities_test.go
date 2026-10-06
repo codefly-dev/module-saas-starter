@@ -1514,3 +1514,55 @@ func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
 		t.Fatalf("the parsed workload must be carried through verbatim, or it reads as undeclared later: got %+v want %+v", got, want)
 	}
 }
+
+// A workload whose three values are PRESENT but malformed is refused at parse,
+// naming the entry and the field.
+//
+// The test above covers absence. This covers the case that used to boot
+// cleanly: a value that cannot name a Kubernetes object parsed, and the failure
+// surfaced at the mint as ErrExecutionIdentityMismatch — "declared to run as
+// A/B, the presented token authenticates C/D" — which accuses the CALLER. A
+// trailing space in a declaration was reported as an impersonation attempt, so
+// the operator audited the module instead of reading the one line that was
+// wrong.
+//
+// Mutation-verified: removing the grant.Workload.validateForm(prefix) call from
+// the parse guard makes every row below fail (each fixture parses and the test
+// demands a refusal), and dropping the field-name assertion alone still leaves
+// the rows failing — so the rows test the refusal and the extra assertion tests
+// that the refusal is findable. Replacing the DNS-1123 check with a bare
+// non-emptiness test fails every row except the two whitespace ones, which is
+// what distinguishes this check from declared().
+func TestAMalformedModuleWorkloadIsRefusedAtParseNotAtTheMint(t *testing.T) {
+	const tenant = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
+	for name, fixture := range map[string]struct{ workload, field string }{
+		"trailing space in service account": {
+			`"workload":{"service_account":"documents ","namespace":"acme-prod","container":"app"},`, "service_account"},
+		"leading space in namespace": {
+			`"workload":{"service_account":"documents","namespace":" acme-prod","container":"app"},`, "namespace"},
+		"uppercase namespace is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents","namespace":"Acme-Prod","container":"app"},`, "namespace"},
+		"underscore is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents_api","namespace":"acme-prod","container":"app"},`, "service_account"},
+		"leading hyphen is not a DNS-1123 label": {
+			`"workload":{"service_account":"documents","namespace":"-acme-prod","container":"app"},`, "namespace"},
+		"uppercase container": {
+			`"workload":{"service_account":"documents","namespace":"acme-prod","container":"App"},`, "container"},
+		"label longer than 63 characters": {
+			`"workload":{"service_account":"documents","namespace":"acme-prod","container":"` +
+				strings.Repeat("a", 64) + `"},`, "container"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := business.ParseModulePrincipalRegistry(
+				`{"documents":{` + fixture.workload + `"tenant":"` + tenant + `"}}`)
+			if err == nil {
+				t.Fatal("a workload that can never name a real object must not parse: " +
+					"every mint for it would be refused as an identity mismatch, accusing the caller")
+			}
+			if !strings.Contains(err.Error(), "documents") || !strings.Contains(err.Error(), fixture.field) {
+				t.Fatalf("the refusal must name the entry and the offending field %q, "+
+					"or the operator goes looking at the caller: %v", fixture.field, err)
+			}
+		})
+	}
+}

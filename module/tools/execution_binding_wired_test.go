@@ -98,14 +98,62 @@ func TestExecutionBindingIsWiredInProduction(t *testing.T) {
 	if enclosing == "init" {
 		return
 	}
-	source := readFileOrFail(t, work)
-	// The call must be in a function that something else in work.go calls, so a
-	// dead helper cannot satisfy this gate.
-	if !strings.Contains(source, enclosing+"(") || countOccurrences(source, enclosing+"(") < 2 {
+	// The call must be in a function something else in work.go CALLS, so a dead
+	// helper cannot satisfy this gate.
+	if !callsFunction(parsed, enclosing) {
 		t.Fatalf("SetExecutionBinding is wired inside %q, which nothing else in work.go calls.\n\n"+
 			"A call in a function the startup path never reaches is the same hole as no call at all, and it "+
 			"passes an AST check identically.", enclosing)
 	}
+}
+
+// callsFunction reports whether any call in the file names `function` from
+// OUTSIDE that function's own declaration.
+//
+// A CallExpr walk, because the substring count this replaced asserted the wrong
+// thing. It required `enclosing+"("` to appear at least twice in work.go, which
+// is satisfied by a doc comment mentioning `wireLater(`, or by a second
+// declaration sharing the name as a prefix — so it checked "the name appears
+// twice", not "something calls this", while the gate's entire purpose is the
+// second claim. It survived its mutations and held for the tree as it stood,
+// which is exactly why it was worth replacing rather than trusting.
+//
+// A call from inside the function itself does not count: recursion says nothing
+// about whether anything reaches it.
+func callsFunction(file *ast.File, function string) bool {
+	var own *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		if declared, ok := declaration.(*ast.FuncDecl); ok && declared.Name.Name == function {
+			own = declared
+			break
+		}
+	}
+	called := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		if called {
+			return false
+		}
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		var named string
+		switch invoked := call.Fun.(type) {
+		case *ast.Ident:
+			named = invoked.Name
+		case *ast.SelectorExpr:
+			named = invoked.Sel.Name
+		}
+		if named != function {
+			return true
+		}
+		if own != nil && own.Pos() <= call.Pos() && call.Pos() <= own.End() {
+			return true
+		}
+		called = true
+		return false
+	})
+	return called
 }
 
 // TestTheExecutionReviewerAndAuthorityAreDifferentSources is the gate on the
@@ -162,10 +210,6 @@ func enclosingFunction(file *ast.File, position token.Pos) string {
 		}
 	}
 	return ""
-}
-
-func countOccurrences(haystack, needle string) int {
-	return strings.Count(haystack, needle)
 }
 
 // expressionText returns the source text of an expression, which is what makes

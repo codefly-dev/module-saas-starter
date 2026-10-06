@@ -388,7 +388,18 @@ func TestNoContainerDeclaredReadsNoPodAtAll(t *testing.T) {
 // Both fields absent together is what core's optional-and-paired seal requires:
 // a digest with no incarnation, or an incarnation with no digest, is refused by
 // its schema.
-func TestPrincipalBearingNoApprovedBuildBindsWithoutAnExecution(t *testing.T) {
+// A principal the host knows but has approved no build for is REFUSED, and is
+// told apart from a principal the host has never heard of.
+//
+// This test asserted the opposite until the branch was deleted: it required
+// NoError and an empty Running digest, locking in "a capability may still be
+// minted, carrying NO execution". Nothing in production could reach that answer
+// — the only ExecutionAuthority never calls Declare() — so the permissive path
+// sat fully built and unit-tested, one Declare() call away from being live. The
+// test is ADAPTED rather than deleted, because the input it drives is still a
+// real answer from the authority and the question "what happens to it" still
+// needs one.
+func TestPrincipalBearingNoApprovedBuildIsRefusedNotMintedUnbound(t *testing.T) {
 	service := boundService(
 		&fakeExecutionReviewer{
 			reviewed: reviewedPod(),
@@ -397,13 +408,59 @@ func TestPrincipalBearingNoApprovedBuildBindsWithoutAnExecution(t *testing.T) {
 		&fakeExecutionAuthority{err: ErrNoApprovedBuild})
 
 	identity, err := service.BindExecution(context.Background(), "principal-1", "token")
-	require.NoError(t, err, "bearing no approved build is not a refusal")
-	require.Empty(t, identity.Running, "no execution is claimed")
-	require.Zero(t, identity.Incarnation,
-		"the pair is whole-or-absent: an incarnation without a digest would be refused by core's schema")
-	// The identity was still established, which is what makes this different
-	// from an unbound answer.
-	require.Equal(t, "uid-alpha", identity.PodUID)
+	require.Error(t, err, "execution binding is unconditional: there is nothing to mint")
+	require.Nil(t, identity, "no identity is returned, so none can be sealed")
+	require.ErrorIs(t, err, ErrNoApprovedBuild,
+		"and NOT ErrUnknownExecutionPrincipal: declared-but-unapproved and never-heard-of are "+
+			"different operator problems, so the sentinels stay separate even though both refuse")
+	require.NotErrorIs(t, err, ErrUnknownExecutionPrincipal)
+}
+
+// THE INVARIANT, over every answer the authority can give: if BindExecution
+// returns an identity at all, that identity carries a running digest.
+//
+// Stated as a property rather than as another example, because the failure this
+// guards is someone re-introducing a "may act unbound" path — and a path like
+// that arrives with its own passing example test. What it cannot do is satisfy
+// this: a mintable identity with an empty Running digest fails here whatever
+// route produced it.
+//
+// Mutation-verified: making the ErrNoApprovedBuild case return
+// &ExecutionIdentity{...} with no Running digest (the code exactly as it was
+// before this fix) fails this test on that row, and returning one with a
+// Running digest copied from the pod's status fails the approved-digest
+// comparison instead. Removing the require.NotEmpty makes the whole test pass
+// against the old permissive branch, which is how I know the assertion is the
+// load-bearing line and not the table.
+func TestEveryBoundExecutionCarriesARunningDigest(t *testing.T) {
+	for _, answer := range []struct {
+		name      string
+		authority *fakeExecutionAuthority
+	}{
+		{"approved", &fakeExecutionAuthority{digest: approvedBare, incarnation: 3}},
+		{"known, no approved build", &fakeExecutionAuthority{err: ErrNoApprovedBuild}},
+		{"unknown principal", &fakeExecutionAuthority{err: ErrUnknownExecutionPrincipal}},
+		{"authority unreadable", &fakeExecutionAuthority{err: errors.New("authority is unreadable")}},
+	} {
+		t.Run(answer.name, func(t *testing.T) {
+			service := boundService(
+				&fakeExecutionReviewer{
+					reviewed: reviewedPod(),
+					running:  &RunningContainerStatus{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+				},
+				answer.authority)
+
+			identity, err := service.BindExecution(context.Background(), "principal-1", "token")
+			if err != nil {
+				require.Nil(t, identity,
+					"a refusal returns no identity, or a caller could seal the one it was handed anyway")
+				return
+			}
+			require.NotEmpty(t, identity.Running,
+				"a minted execution identity with no running digest is a capability no verifier can "+
+					"hold against a running image: execution binding is unconditional")
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

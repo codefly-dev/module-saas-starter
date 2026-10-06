@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"accounts/pkg/datasource/github"
@@ -88,6 +89,60 @@ type ModuleWorkload struct {
 // which is the whole-or-absent trap.
 func (w ModuleWorkload) declared() bool {
 	return w.ServiceAccount != "" && w.Namespace != "" && w.Container != ""
+}
+
+// dns1123LabelPattern is Kubernetes' DNS-1123 label rule, which a service
+// account, a namespace and a container name must each satisfy to name a real
+// object.
+//
+// Deliberately NOT registrationIdentityPattern, which has the same shape today.
+// That one mirrors the gateway's catalog-identity rule and is free to change
+// with the router; this one is Kubernetes' and changes only when Kubernetes
+// does. Sharing them would let a routing decision silently redefine what can
+// name a pod.
+var dns1123LabelPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
+
+const dns1123LabelMaxLength = 63
+
+// validateForm refuses a workload whose three values are PRESENT but cannot
+// name a real Kubernetes object.
+//
+// declared() catches absence; this catches malformation, and the difference
+// matters because of where the second one used to surface. A trailing space or
+// an uppercase letter parsed cleanly and the host booted; then every mint
+// compared the declared value against the TokenReview's real one and returned
+// ErrExecutionIdentityMismatch — "X is declared to run as A/B, the presented
+// token authenticates C/D". That is a verdict that the CALLER is lying, so a
+// one-character typo in a declaration sent the operator to audit the module.
+// Caught here, they read one line naming the entry and the field.
+//
+// Trim-difference is REFUSED rather than trimmed. Silently trimming would make
+// the value the host compares differ from the value the composition rendered,
+// which is a drift nothing downstream can see — the same reason a canonicalized
+// tenant is parsed rather than patched.
+func (w ModuleWorkload) validateForm(prefix string) error {
+	for _, field := range []struct{ name, value string }{
+		{"service_account", w.ServiceAccount},
+		{"namespace", w.Namespace},
+		{"container", w.Container},
+	} {
+		if trimmed := strings.TrimSpace(field.value); trimmed != field.value {
+			return fmt.Errorf(
+				"module principal %q declares workload %s %q with leading or trailing whitespace: "+
+					"it is refused rather than trimmed, because a trimmed value no longer equals what "+
+					"the composition rendered and every mint would then be denied as an identity mismatch",
+				prefix, field.name, field.value)
+		}
+		if len(field.value) > dns1123LabelMaxLength || !dns1123LabelPattern.MatchString(field.value) {
+			return fmt.Errorf(
+				"module principal %q declares workload %s %q, which is not a DNS-1123 label "+
+					"(lowercase alphanumerics and hyphens, starting and ending alphanumeric, "+
+					"at most %d characters): it can never name a real Kubernetes object, so every "+
+					"mint for this principal would be denied as an identity mismatch",
+				prefix, field.name, field.value, dns1123LabelMaxLength)
+		}
+	}
+	return nil
 }
 
 type ModulePrincipalGrant struct {
@@ -294,6 +349,9 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 					"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
 					"from any other caller holding a valid token",
 				prefix)
+		}
+		if err := grant.Workload.validateForm(prefix); err != nil {
+			return nil, err
 		}
 		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
 			return nil, err
