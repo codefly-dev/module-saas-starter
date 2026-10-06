@@ -802,6 +802,22 @@ describe("a time series with days that have no events", () => {
 		expect(series.coverage).toBe("partial");
 	});
 
+	it("keeps the total unavailable when every day with events has an unknown value", async () => {
+		const { client } = fakeAuditClient(() => [
+			// Events on both days, none with the field: the RPC omits the value.
+			{ key: day("2026-09-02"), count: 2, samples: { value: BigInt(0) } },
+			{ key: day("2026-09-04"), count: 1, samples: { value: BigInt(0) } },
+		]);
+
+		const series = await runMetric(client, perDay("sum"), (n) => n, context);
+
+		// The day between gets its 0, but that 0 observed nothing, so the sum
+		// of what was observed is unavailable rather than 0.
+		expect(series.points).toEqual([{ key: day("2026-09-03"), value: 0 }]);
+		expect(series.total).toBeNull();
+		expect(series.coverage).toBe("partial");
+	});
+
 	it("steps a week and a month bucket by a week and a month", async () => {
 		const weeks = await runMetric(
 			fakeAuditClient(() => [

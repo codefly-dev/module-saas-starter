@@ -41,6 +41,10 @@ export function assertAuditScopeContract(
 	}
 }
 
+// The zeros put on buckets the RPC returned none for: no event matched there.
+// A derived metric tells them apart from a returned bucket by this mark.
+const noEvents = new WeakSet<MetricPoint>();
+
 function toSeries(
 	metricId: string,
 	points: MetricPoint[],
@@ -58,15 +62,15 @@ function toSeries(
 		// suppressing on partial blanked the stat tile of every metric over one.
 		// A non-additive scalar (avg, min, max, percentile, ratio) is only defined
 		// for a single complete group — if any group was dropped, the surviving
-		// one is not the series' value, so it stays null.
-		total:
-			points.length === 0
-				? null
-				: additive
-					? points.reduce((sum, point) => sum + point.value, 0)
-					: partial || points.length !== 1
-						? null
-						: points[0].value,
+		// one is not the series' value, so it stays null. The zeros put on days
+		// with no events observe nothing, so a series of only those has no total.
+		total: points.every((point) => noEvents.has(point))
+			? null
+			: additive
+				? points.reduce((sum, point) => sum + point.value, 0)
+				: partial || points.length !== 1
+					? null
+					: points[0].value,
 		coverage: partial ? "partial" : points.length === 0 ? "empty" : "complete",
 		groupBy,
 		bucket,
@@ -88,10 +92,6 @@ const TIME_KEY = /^(\d{4})-(\d{2})-(\d{2})(.*)$/;
 // A filled series stops growing here: years of days is a few thousand
 // buckets, and two keys far apart must not balloon one series.
 const MAX_FILLED_BUCKETS = 100_000;
-
-// The zeros put on buckets the RPC returned none for: no event matched there.
-// A derived metric tells them apart from a returned bucket by this mark.
-const noEvents = new WeakSet<MetricPoint>();
 
 function bucketDate(key: string): { date: Date; rest: string } | null {
 	const match = TIME_KEY.exec(key);
