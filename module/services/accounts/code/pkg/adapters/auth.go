@@ -890,12 +890,11 @@ func parseUnixTimestamp(raw string) time.Time {
 // There are two populations, and the difference is what enrolment means for each.
 //
 // For a PRIVILEGED actor — any platform role, or ownership of the organization
-// the request names — not being enrolled is not a pass. It used to be: the check
-// looked for a device, found none, and admitted, so the one principal whose
-// compromise is the whole platform or the whole tenant was the one the gate could
-// not touch. A privileged actor without recent AAL2 evidence is refused, which
-// also makes "a privileged principal holds a second factor" enforceable at all:
-// the alternative to enrolling is not reaching these operations.
+// the request names — not being enrolled is not a pass. A privileged actor without
+// recent AAL2 evidence is refused, which is what makes "a privileged principal
+// holds a second factor" enforceable at all: for these operations the alternative
+// to enrolling is not reaching them. The principal whose compromise is the whole
+// platform or the whole tenant is the one that must not be able to opt out.
 //
 // For every other member the gate stays opt-in per user: enrolled means a recent
 // factor is required, unenrolled means the operation proceeds and the audit row

@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -237,4 +238,85 @@ func TestR1019RefreshKeepsADeliberateStatus(t *testing.T) {
 
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Equal(t, "device session is no longer active", status.Convert(err).Message())
+}
+
+// R1019-N10: being a status does not establish that its message is public-safe. A
+// code that answers "this host failed" carries whatever the failing layer said, so
+// the pass-through is restricted to codes that answer the CALLER. Each case here is
+// a typed status whose message is exactly the internal detail a caller must not see.
+func TestR1019RefreshSanitizesATypedHostFailure(t *testing.T) {
+	internal := "pgx: dial tcp 10.4.0.9:5432 failed in session_store.RotateRefresh"
+	for _, injected := range []struct {
+		name string
+		err  error
+	}{
+		{"Internal", status.Error(codes.Internal, internal)},
+		{"Unavailable", status.Error(codes.Unavailable, internal)},
+		{"Unknown", status.Error(codes.Unknown, internal)},
+		{"DataLoss", status.Error(codes.DataLoss, internal)},
+		{"Aborted", status.Error(codes.Aborted, internal)},
+		{"DeadlineExceeded", status.Error(codes.DeadlineExceeded, internal)},
+		{"wrapped Internal", fmt.Errorf("rotate refresh: %w", status.Error(codes.Internal, internal))},
+	} {
+		t.Run(injected.name, func(t *testing.T) {
+			installRefusingRefreshMinter(t, injected.err)
+
+			_, err := (&AuthServer{}).RefreshToken(context.Background(),
+				&gen.RefreshTokenRequest{RefreshToken: "a-refresh-token"})
+
+			require.Error(t, err)
+			require.Equal(t, codes.Unavailable, status.Code(err))
+			message := status.Convert(err).Message()
+			require.Equal(t, "refresh temporarily unavailable", message)
+			for _, leak := range []string{"10.4.0.9", "5432", "session_store", "pgx", "dial tcp"} {
+				require.NotContains(t, message, leak,
+					"a typed host failure must not carry its own message out")
+			}
+		})
+	}
+}
+
+// Every code the pass-through admits, so narrowing the set to one code — or widening
+// it back to "any status" — is detected. A refusal's own reason is the answer to the
+// caller, and flattening these into one message would make a real policy refusal
+// unreadable.
+func TestR1019RefreshKeepsEveryCallerFacingRefusal(t *testing.T) {
+	for _, admitted := range []codes.Code{
+		codes.Unauthenticated, codes.PermissionDenied, codes.FailedPrecondition,
+		codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.OutOfRange,
+	} {
+		t.Run(admitted.String(), func(t *testing.T) {
+			installRefusingRefreshMinter(t, status.Error(admitted, "the session is no longer active"))
+
+			_, err := (&AuthServer{}).RefreshToken(context.Background(),
+				&gen.RefreshTokenRequest{RefreshToken: "a-refresh-token"})
+
+			require.Equal(t, admitted, status.Code(err))
+			require.Equal(t, "the session is no longer active", status.Convert(err).Message())
+		})
+	}
+}
+
+// An OK-coded status is a failure that must not read as a success.
+// (*status.Status).Err() returns nil for OK, so admitting one would return a nil error
+// beside a nil response and the caller would act on a refresh that never happened.
+//
+// status.Error(codes.OK, "") is itself nil and cannot be injected, so the carrier is
+// written out: errors.As matches any type implementing GRPCStatus(), which is what
+// makes the degenerate case reachable at all.
+type okStatusError struct{}
+
+func (okStatusError) Error() string { return "a failure whose status is OK" }
+
+func (okStatusError) GRPCStatus() *status.Status { return status.New(codes.OK, "") }
+
+func TestR1019RefreshDoesNotTurnAFailureIntoASuccess(t *testing.T) {
+	installRefusingRefreshMinter(t, okStatusError{})
+
+	resp, err := (&AuthServer{}).RefreshToken(context.Background(),
+		&gen.RefreshTokenRequest{RefreshToken: "a-refresh-token"})
+
+	require.Error(t, err, "a failure must never leave the handler as a nil error")
+	require.Nil(t, resp)
+	require.Equal(t, codes.Unavailable, status.Code(err))
 }

@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 type verifiedPublicOriginKey struct{}
@@ -59,29 +62,77 @@ func CanonicalPublicOrigin(candidate string) (string, error) {
 		return "", fmt.Errorf("public origin must not contain credentials, path, query, or fragment")
 	}
 	scheme := strings.ToLower(parsed.Scheme)
+	host, err := canonicalPublicOriginHost(parsed.Hostname())
+	if err != nil {
+		return "", err
+	}
 	switch scheme {
 	case "https":
 	case "http":
-		if !isPublicOriginLoopback(parsed.Hostname()) {
+		if !isPublicOriginLoopback(host) {
 			return "", fmt.Errorf("non-loopback public origin must use HTTPS")
 		}
 	default:
 		return "", fmt.Errorf("public origin must use HTTP(S)")
 	}
-	// An explicit DEFAULT port is the same origin as none, and the two sides of the
-	// comparison spell it differently: the browser and the frontend both drop it
-	// (URL.origin does), while a configured value may carry it. Retaining it here
-	// made an operator's `https://app.example:443` refuse the equivalent origin the
-	// frontend forwards. Dropping it is the same rule both sides then follow.
-	host := parsed.Host
-	if port := parsed.Port(); port != "" &&
-		((scheme == "https" && port == "443") || (scheme == "http" && port == "80")) {
-		host = parsed.Hostname()
-		if strings.Contains(host, ":") {
-			host = "[" + host + "]" // an IPv6 literal keeps its brackets
-		}
+	port, err := canonicalPublicOriginPort(parsed.Port(), scheme)
+	if err != nil {
+		return "", err
 	}
-	return scheme + "://" + host, nil
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]" // an IPv6 literal keeps its brackets
+	}
+	return scheme + "://" + host + port, nil
+}
+
+// canonicalPublicOriginHost renders a host the one way the browser renders it, so
+// two spellings of one origin cannot compare unequal (SP-GW-08, R1019-N12).
+//
+// The frontend half of this comparison is `new URL(...).origin`, the WHATWG parser.
+// Go's net/url is laxer than that parser in four ways that each produced a
+// browser-equivalent spelling this function used to refuse: it preserves host case,
+// leaves an IPv6 literal in whatever form it was written, leaves a Unicode hostname
+// un-encoded, and treats a host-less authority as a host. Each is settled here —
+// lowercase, the compressed IPv6 form, IDNA/punycode, and a refusal — rather than at
+// the comparison, because a comparison can only reject what reaches it in one shape.
+func canonicalPublicOriginHost(hostname string) (string, error) {
+	if hostname == "" {
+		// `https://:443` parses in Go with an empty hostname. A browser rejects it,
+		// so there is no origin it could be equivalent to.
+		return "", fmt.Errorf("public origin must name a host")
+	}
+	if ip := net.ParseIP(hostname); ip != nil {
+		// The compressed form: an expanded literal and its compression are one address,
+		// and net.IP.String() picks the same representation the browser does.
+		return ip.String(), nil
+	}
+	ascii, err := idna.Lookup.ToASCII(hostname)
+	if err != nil {
+		return "", fmt.Errorf("public origin host is not a usable hostname")
+	}
+	return strings.ToLower(ascii), nil
+}
+
+// canonicalPublicOriginPort renders the port as the ":NNN" suffix of a canonical
+// origin, or "" when the origin carries the scheme's default.
+//
+// An explicit DEFAULT port is the same origin as none, and the two sides spell it
+// differently: the browser and the frontend both drop it, while a configured value may
+// carry it. A leading-zero port, and an empty explicit port, are likewise the same
+// origin the browser renders without them. Anything outside the one-to-65535 range is
+// not a port at all, and the browser refuses the whole URL rather than ignoring it.
+func canonicalPublicOriginPort(port, scheme string) (string, error) {
+	if port == "" {
+		return "", nil // including `https://app.example:`, which Go reports as no port
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 {
+		return "", fmt.Errorf("public origin port must be between 1 and 65535")
+	}
+	if (scheme == "https" && number == 443) || (scheme == "http" && number == 80) {
+		return "", nil
+	}
+	return ":" + strconv.Itoa(number), nil // decimal, so a leading zero cannot survive
 }
 
 // WithVerifiedPublicOrigin records the origin only after the gateway credential

@@ -1165,21 +1165,44 @@ func innerStatus(err error) *status.Status {
 	return nil
 }
 
+// callerFacingRefusal reports whether a status is a DECISION ABOUT THE CALLER, whose
+// message was therefore written for the caller to read.
+//
+// Being a status does not make a message public-safe (R1019-N10). A code in this set
+// answers "you may not" or "that input is wrong", and the reason is the answer. The
+// codes outside it — Internal, Unavailable, Unknown, DataLoss, Aborted, DeadlineExceeded
+// — answer "this host failed", and their messages carry whatever the failing layer
+// happened to say: a DSN, a host name, a driver's text. Those are logged and replaced.
+//
+// OK is outside the set deliberately. (*status.Status).Err() returns nil for an OK
+// status, so passing one through would turn a failure into a nil error beside a nil
+// response, and the caller would read a success that never happened.
+func callerFacingRefusal(st *status.Status) bool {
+	switch st.Code() {
+	case codes.Unauthenticated, codes.PermissionDenied, codes.FailedPrecondition,
+		codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.OutOfRange:
+		return true
+	default:
+		return false
+	}
+}
+
 func refreshStatusError(ctx context.Context, err error) error {
+	inner := innerStatus(err)
 	switch {
 	case errors.Is(err, auth.ErrRefreshReuse), errors.Is(err, auth.ErrRefreshRevoked):
 		wool.Get(ctx).In("RefreshToken").Warn("refresh refused", wool.ErrField(err))
 		return status.Error(codes.Unauthenticated, "invalid refresh token")
-	case innerStatus(err) != nil:
-		// A deliberate status from further in — a session that is no longer active, a
+	case inner != nil && callerFacingRefusal(inner):
+		// A deliberate refusal from further in — a session that is no longer active, a
 		// policy refusal. Its reason was chosen for the caller, so it is returned
 		// WITHOUT the wrapper: the wrapping is what names the internal call chain,
 		// and returning err unchanged would carry it out with the good reason.
-		return innerStatus(err).Err()
+		return inner.Err()
 	default:
-		// Anything else is this host failing, and the wrapped chain names the
-		// internal call path and the store's address. SP-GW-13: a refused or failed
-		// request carries a stable public reason and the cause is logged, not
+		// Anything else is this host failing, and the chain — status-carrying or not —
+		// names the internal call path and the store's address. SP-GW-13: a refused or
+		// failed request carries a stable public reason and the cause is logged, not
 		// returned. Unavailable rather than Internal because a refresh is worth
 		// retrying.
 		wool.Get(ctx).In("RefreshToken").Error("refresh failed", wool.ErrField(err))

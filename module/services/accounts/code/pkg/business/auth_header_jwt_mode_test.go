@@ -39,10 +39,10 @@ func (*headerJWTModeStore) ResolveIdentity(context.Context, string, string) (*Re
 }
 
 // In OIDC mode the header-jwt login path is inactive, and a body carrying an
-// identity assertion is refused rather than validated. It used to be handed to
-// the OIDC validator, which admitted any unexpired id_token for the configured
-// client with no state, no proof-of-possession verifier and no nonce — a full
-// session from an assertion that completed none of the handoff.
+// identity assertion is refused rather than validated. The two modes verify
+// different things, and only the configured mode's verifier may decide: an
+// assertion that completed none of this mode's handoff is not an identity here,
+// whatever another mode's validator would make of it.
 func TestL1VHeaderJWTBodyRefusedInOIDCMode(t *testing.T) {
 	validator := &recordingValidator{}
 	service, err := NewService(&headerJWTModeStore{})

@@ -276,7 +276,7 @@ func (r *impersonationRig) start(t *testing.T, subjectID string) (string, string
 	// reaches impersonation only behind a recent second factor, and
 	// Assurance.HasRecentMFA requires the level and the method as well as the
 	// time. The fixture carried the time alone and passed only because an
-	// unenrolled privileged actor used to be admitted.
+	// a privileged actor's factor evidence is required, not merely consulted.
 	adminCtx := stampVerifiedIdentity(context.Background(), supportActorID, "", auth.Assurance{
 		Level:                 auth.AssuranceLevelAAL2,
 		AuthenticationMethods: []string{auth.AuthenticationMethodWebAuthn},

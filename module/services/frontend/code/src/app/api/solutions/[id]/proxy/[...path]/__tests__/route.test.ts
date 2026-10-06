@@ -407,10 +407,9 @@ describe("solution proxy passthrough", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	// The defect this closes: the comparison used to be made against an origin
-	// derived from the request's own forwarding headers, so a caller that supplied
-	// both sides matched itself. A check is only a check when one side is not the
-	// caller's to choose.
+	// A comparison is only a check when one side is not the caller's to choose: the
+	// origin compared against is the configured one, so supplying forwarding headers
+	// alongside an Origin changes nothing about the answer.
 	it("rejects a forged cross-site request that supplies its own forwarded host", async () => {
 		withGateway();
 		withTrustContext("https://app.example.com");

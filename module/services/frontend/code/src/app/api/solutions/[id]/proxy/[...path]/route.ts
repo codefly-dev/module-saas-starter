@@ -25,11 +25,9 @@ interface RouteContext {
 // attached.
 //
 // The browser's Origin is compared with this deployment's CONFIGURED public
-// origin. It used to be compared with an origin derived from the request's own
-// forwarded headers, which made the check self-referential: a non-browser caller
-// supplying `Origin: https://evil.example` and `X-Forwarded-Host: evil.example`
-// matched itself and passed. The comparison is only a check when one side is not
-// the caller's to choose.
+// origin, which comes from operator configuration. The comparison is only a check
+// when one side is not the caller's to choose, so the side it compares against is
+// never taken from the request.
 //
 // A deployment with no verified public origin refuses: there is nothing to compare
 // against, and admitting on that basis is the same defect by omission.

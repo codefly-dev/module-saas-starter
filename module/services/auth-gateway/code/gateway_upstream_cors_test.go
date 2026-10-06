@@ -11,9 +11,9 @@ import (
 
 // accounts' generated CORS handler hands an empty allowlist to a library that
 // reads empty as allow-all, so it answers a wildcard origin with credentials
-// true. Those headers used to be forwarded verbatim, which made the public
-// surface grant a cross-origin read this gateway had granted nobody — and made an
-// empty allowlist, which should grant nothing, grant everything.
+// true. A grant on a response this gateway serves is this gateway's grant, so an
+// upstream's own grant never reaches the public surface, and an empty allowlist
+// grants nothing.
 //
 // The generated handler is the go-grpc agent's to fix. What this gateway owns is
 // that the grant on its own responses is the one it made.

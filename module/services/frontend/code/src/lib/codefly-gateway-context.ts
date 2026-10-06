@@ -37,6 +37,18 @@ const runtimeSDK: CodeflyRuntimeReader = {
 	isDeployedBuild: () => process.env.NODE_ENV === "production",
 };
 
+/**
+ * The one spelling of an origin, shared with the accounts service.
+ *
+ * `URL.origin` is the agreement: host case, a default or leading-zero port, an
+ * expanded IPv6 literal and a Unicode hostname all settle here, and the Go half
+ * reproduces exactly these answers (R1019-N12). The vectors are asserted on both
+ * sides and held identical by module/tools/public_origin_vectors_lockstep_test.go.
+ *
+ * Port 0 is the one place this is deliberately stricter than the parser, which
+ * accepts and keeps it: no origin can be served on port 0, and the same range check
+ * on both sides is worth more than matching the parser on a value that cannot occur.
+ */
 function canonicalOrigin(candidate: string): string | undefined {
 	try {
 		const parsed = new URL(candidate);
@@ -49,6 +61,12 @@ function canonicalOrigin(candidate: string): string | undefined {
 			parsed.hash
 		) {
 			return undefined;
+		}
+		if (parsed.port !== "") {
+			const port = Number(parsed.port);
+			if (!Number.isInteger(port) || port < 1 || port > 65535) {
+				return undefined;
+			}
 		}
 		return parsed.origin;
 	} catch {
@@ -76,14 +94,11 @@ const PUBLIC_ORIGIN_CONFIGURATION = "application/APP_BASE_URL";
  * private auth gateway. Codefly's injected representation remains entirely
  * behind sdk-js; this library only consumes typed SDK values.
  *
- * The public origin is OPERATOR CONFIGURATION and is never derived from a
- * request. It used to be: when the own rendered endpoint was a loopback
- * placeholder — which is what the render produces, so on every cell — this fell
- * back to the caller's own `X-Forwarded-Host` and stamped it, under the internal
- * token, as the verified public origin. accounts then bound an OAuth redirect,
- * the authenticator relying-party origin, and emailed links to a host the caller
- * had chosen, and the solution proxy's same-origin check compared against the
- * same caller-supplied value.
+ * The public origin is OPERATOR CONFIGURATION and is never derived from a request.
+ * It is what binds an OAuth redirect, the authenticator relying-party origin, every
+ * emailed link and the solution proxy's same-origin comparison, and none of those is
+ * safe to bind to a value a caller can name — so this resolves the origin from
+ * configuration or refuses, and never from the request.
  *
  * The order is: the configured origin; then the SDK-discovered own endpoint when
  * the render carries a real host; and on a deployed build, nothing else — a
