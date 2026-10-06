@@ -9,7 +9,7 @@ values behind the names in one place and everything above re-themes for free.
 The vocabulary is the shadcn semantic token set (`--muted-foreground`,
 `--destructive`, `--accent`, `--border`, …). The names and their light/dark
 default values are enumerated in
-[`@codefly/saas-plugin-contract`](../saas-plugin-contract) —
+[`@codefly-dev/saas-plugin-contract`](../saas-plugin-contract) —
 `FRONTEND_APPEARANCE_TOKEN_NAMES` and `DEFAULT_FRONTEND_APPEARANCE`. They live
 there, one layer down, because the compile-time appearance validator
 (`resolveFrontendAppearance`) consumes them and that contract package must not
@@ -25,7 +25,7 @@ package at all.
 
 The chain is one direction, top to bottom — a skin is *data*, never CSS:
 
-1. **Contract** — `DEFAULT_FRONTEND_APPEARANCE` in `@codefly/saas-plugin-contract`
+1. **Contract** — `DEFAULT_FRONTEND_APPEARANCE` in `@codefly-dev/saas-plugin-contract`
    holds the canonical names and the default (host) `light`/`dark` values.
 2. **Skin** — `resolveSkin` (`@codefly-dev/ui/skin`) overlays a validated skin
    descriptor onto that default. Only the tokens a skin declares are overridden;
@@ -68,7 +68,7 @@ variables read — it does not layer one over the other.
 | `secondary` | `--secondary` | Secondary surface / fill | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
 | `secondaryForeground` | `--secondary-foreground` | Text on the secondary fill | `oklch(0.205 0 0)` | `oklch(0.985 0 0)` |
 | `muted` | `--muted` | Low-emphasis surface | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
-| `mutedForeground` | `--muted-foreground` | Low-emphasis / secondary text | `oklch(0.556 0 0)` | `oklch(0.708 0 0)` |
+| `mutedForeground` | `--muted-foreground` | Low-emphasis / secondary text | `oklch(0.54 0 0)` | `oklch(0.708 0 0)` |
 | `accent` | `--accent` | Hover / accent surface | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
 | `accentForeground` | `--accent-foreground` | Text on the accent surface | `oklch(0.205 0 0)` | `oklch(0.985 0 0)` |
 | `destructive` | `--destructive` | Destructive action / error | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` |

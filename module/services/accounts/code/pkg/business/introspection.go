@@ -256,6 +256,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/SearchUsers":                             "Search across all users.",
 	"PlatformAdminService/ListAllOrganizations":                    "List every organization on the platform, with member counts.",
 	"PlatformAdminService/GetOrganizationRoster":                   "List any organization's members for the platform view.",
+	"PlatformAdminService/ListPlatformCatalogue":                   "List every composed module and solution with its declared, running and installed state.",
 	"PlatformAdminService/StopImpersonation":                       "End the caller's own impersonation session.",
 	"PlatformAdminService/SuspendUser":                             "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":                           "Restore a suspended user.",

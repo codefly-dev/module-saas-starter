@@ -75,6 +75,28 @@ activating a remote.
   token.
 - The dashboard graph is on none of them: the solution page reads it in-process
   through `findSolution`.
+- The platform Catalogue (`/admin/platform/catalogue`) is not one of them either:
+  it reads accounts' `PlatformAdminService.ListPlatformCatalogue`, super
+  administrators only, and that response carries each registration's status,
+  revisions, contract versions and leases with the manifest, upstream and service
+  alias withheld (`../accounts/AGENTS.md`). Each entry shows the registry's six
+  states — desired, authorized, applied, observed, withdrawing, retired — one
+  column each, and a fact the host has no record of is rendered as its gap
+  reason ("Not recorded", "Not observed"), never as an empty cell, a zero or a
+  match.
+- **"Running authorized" is shown only beside the evidence it rests on.** The
+  server judges the verdict and re-checks it at its read boundary, so a response
+  that still arrives claiming the approved execution runs with no approval, no
+  build incarnation, no observed execution or no time of observation is a defect —
+  and `features/platform-catalogue/model/facts.ts` renders it as **"Inconsistent"**
+  rather than a green cell. That label is deliberately not one of the server's gap
+  reasons: the server did not say it could not tell, it said something its own
+  response contradicts, and conflating the two would hide a defect among the facts
+  this host simply does not hold yet. A reader sees green and stops looking, which
+  is why that one cell is checked and the two that report trouble are not.
+  The browser checks only that each piece of evidence is *present*: how long an
+  observation speaks for the present is the host's to decide, and a copy of that
+  window here would drift from it.
 
 ## Loading a remote, and its CSP
 
@@ -116,7 +138,13 @@ release. The package's `exports` map may not name a subpath into the generated
 tree: a consumer imports the SDK's own surface, never a stub path
 (`publish-frontend-kit.test.mjs` enforces it). See the `cut-a-release` skill.
 
-`@codefly-dev/ui` and `@codefly-dev/saas-ui` publish beside it. The kit owns its
+`@codefly-dev/ui`, `@codefly-dev/saas-ui`, `@codefly-dev/saas-plugin-contract`
+and `@codefly-dev/saas-plugin-react` publish beside it, in dependency order. Plugin
+peers use required semver ranges: GitHub Packages omits optional-peer metadata.
+Every plugin entry point is a host-shared singleton; UI wrapper imports and
+direct plugin imports must resolve the same runtime context. The release runs
+`node scripts/test-registry-ui.mjs --registry` from a fresh consumer after
+publication; the pre-release proof simulates the registry metadata omission. The kit owns its
 token layer (`packages/codefly-ui/src/skin/theme.css`: token → utility, the
 light/dark binding, the custom variants); `src/app/globals.css` only imports it,
 so a new appearance token is bound there, not here. The kit also ships

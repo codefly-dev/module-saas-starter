@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **248 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **249 RPCs** across **35 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -186,6 +186,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PlatformAdminService/ListFeatureFlags` | unary | `GET /v1/platform/feature-flags` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List the legacy feature-flag migration inventory. |
 | `/saas.accounts.v1.PlatformAdminService/ListJobs` | unary | `GET /v1/platform/jobs` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Seek-paginated payload-free job operations view. |
 | `/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins` | unary | `GET /v1/platform/admins` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List the platform administrators and their granted roles. |
+| `/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue` | unary | `GET /v1/platform/catalogue` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List every composed module and solution with its declared, running and installed state. |
 | `/saas.accounts.v1.PlatformAdminService/OverrideEntitlement` | unary | `POST /v1/platform/organizations/{org_id}/entitlements` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=ANY; impersonation=FORBIDDEN | — | — | SUCCESS: saas.entitlement.override | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Override one entitlement limit for a single organization. |
 | `/saas.accounts.v1.PlatformAdminService/ReplayJob` | unary | `POST /v1/platform/jobs/{source_job_id}:replay` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=RECENT_STEP_UP | — | — | SUCCESS: saas.job.replayed | REQUIRED / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Idempotently copy dead-lettered work for another attempt. |
 | `/saas.accounts.v1.PlatformAdminService/RevokePlatformRole` | unary | `DELETE /v1/platform/admins/{user_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP; impersonation=FORBIDDEN | — | — | SUCCESS: saas.platform.role_revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Revoke a platform role. |
@@ -264,5 +265,5 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `mfa`: 4
 - `org_admin`: 56
 - `org_member`: 49
-- `platform_admin`: 26
+- `platform_admin`: 27
 - `public`: 18

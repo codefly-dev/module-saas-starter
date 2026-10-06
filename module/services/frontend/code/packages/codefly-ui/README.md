@@ -15,7 +15,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 ## What ships here
 
 - **Plugin host** (`@codefly-dev/ui/plugin-host`) — product-neutral React
-  contribution composition, re-exported from `@codefly/saas-plugin-react` so
+  contribution composition, re-exported from `@codefly-dev/saas-plugin-react` so
   host and remotes resolve one instance. Client adapters are on the
   `./plugin-host/runtime` and `./plugin-host/ui` subpaths.
 - **Skin mechanism** (`@codefly-dev/ui/skin`) — the tokens-as-data resolver: it
@@ -114,20 +114,19 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/theme.css`       | The token layer: token → utility, light/dark binding, custom variants (Tailwind source) |
 | `@codefly-dev/ui/preview.css`     | The kit compiled with the default skin, for previews only — see below |
 
-`react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
+`react`, `@codefly-dev/saas-plugin-react`, and `@codefly-dev/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
 remotes resolve one shared instance each. This matters most for
-`@codefly/saas-plugin-react`, which carries the plugin-runtime React context: a
+`@codefly-dev/saas-plugin-react`, which carries the plugin-runtime React context: a
 second copy would split that context and break `usePluginRuntime` in a remote.
 
-The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
-`./plugin-host`, and `./skin` touch them, and the host supplies them. The
-`./layout`, `./dashboard`, `./chat`, `./content` and `./board` subpaths reference neither, so a consumer
-of just those subpaths installs the kit without pulling the host-internal plugin
-packages. `./layout` does pull the primitives' public runtime deps
-(`@base-ui/react`, `lucide-react`, `class-variance-authority`, `clsx`,
-`tailwind-merge`), declared as ordinary `dependencies` so a consumer resolves them
-from the public registry with no extra config.
+The plugin peers are published alongside the kit under `@codefly-dev` and are
+required. GitHub Packages omits `peerDependenciesMeta` from version metadata;
+marking unpublished peers optional therefore does not make a registry install
+work. Normal npm resolution now installs a complete published peer graph.
+The `./layout`, `./dashboard`, `./chat`, `./content`, `./board` and `./lifecycle`
+entry points still do not import the plugin runtime; installing its peers does
+not bundle them into those presentation entry points.
 
 ## Consuming from a solution
 
@@ -139,8 +138,8 @@ checks the declared range against the version the host publishes, so a range tha
 is too loose fails at runtime rather than at install.)
 
 A solution fe-remote imports `@codefly-dev/ui/layout` + `@codefly-dev/ui/dashboard` and
-shares them as Module-Federation singletons served by the host. Because the
-plugin peers are optional, the solution only needs an `.npmrc` pointing the
+shares them as Module-Federation singletons served by the host.
+The solution needs an `.npmrc` pointing the
 `@codefly-dev` scope at the GitHub Packages registry (with a read token) plus a
 `react` peer it already has:
 
@@ -149,8 +148,20 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 //npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
 ```
 
-`npm ci` then resolves `@codefly-dev/ui` with no reference to the unpublished
-`@codefly/saas-plugin-*` packages.
+`npm ci` resolves the UI kit and its published plugin peers from the same scope.
+UI imports are unchanged. A plugin author importing the former unpublished
+`@codefly/saas-plugin-contract` or `@codefly/saas-plugin-react` must migrate both
+imports and dependency keys to `@codefly-dev/saas-plugin-contract` and
+`@codefly-dev/saas-plugin-react`; do not mix old and new runtime packages. Remotes
+share the kit entry points they use as singletons. Direct plugin imports must
+also share their exact entry points; the host publishes every entry point of
+both plugin packages in the same sealed scope.
+
+`node scripts/test-registry-ui.mjs` checks a fresh version-based install against
+packed registry metadata that omits optional-peer flags. Release CI repeats it
+with `--registry` against GitHub Packages after publication. Both proofs check
+peer auto-installation, declarations, public exports, rendering, CSS and shared
+plugin context without workspace links or peer-resolution bypasses.
 
 **Styling.** The kit's components name their type slots and control rungs as
 classes (`type-card-title`, `control-sm`) that the kit defines, not Tailwind. A
@@ -538,3 +549,87 @@ makes the alternative impossible to write rather than a matter of review:
 What no type or test can see is an `escape` a caller keeps disabled forever, or
 an `onOpenChange` that refuses every close. Those stay the caller's to get
 right.
+
+## Navigation, selection and expandable sections
+
+Available from `@codefly-dev/ui/layout` in **0.12.2**:
+
+- `Disclosure title headingLevel` renders one expandable section. It accepts
+  Base UI Collapsible state props (`open`, `defaultOpen`, `onOpenChange`).
+  `Accordion`, `AccordionItem`, `AccordionHeader`, `AccordionTrigger` and
+  `AccordionContent` expose Base UI's grouped behavior, including `multiple`.
+- `Breadcrumb items` takes stable `id`, `label`, optional `href` and
+  `onNavigate` per item. The last item is the current page, never a control.
+  Long trails wrap. A callback intercepts the supplied link; it owns routing.
+- `RadioGroup` and `Radio` retain Base UI's controlled values, form naming,
+  validation, disabled behavior and keyboard selection. Give the group a name
+  for assistive technology and associate each radio with a label.
+- `Surface` paints the card surface and border without padding, flex direction,
+  gap or shadow. It is the primitive for a caller-owned layout inside a border.
+- `Timeline entries label` preserves the caller's sequence. Each entry has an
+  `id`, `title`, optional `description`, `icon`, `actions`, and optional
+  `time: { dateTime, label }`. Missing time stays absent; distance never encodes
+  duration. The caller owns event meanings and timestamp formatting.
+
+`Tree` takes `items` and an accessible `label`. Nodes carry unique `id`, `label`
+(non-interactive content), and `textValue` for naming and typeahead, with optional
+`children`, `hasChildren`, `loading` and `disabled`. Arrow keys navigate and
+expand/collapse, Home/End move to the extremes, and Enter/Space invoke `onSelect`.
+Focus does not imply selection. Disabled nodes remain discoverable but cannot
+be selected or expanded. `selectedId` is controlled; the tree commits nothing.
+
+Expansion can be uncontrolled (`defaultExpandedIds`) or controlled
+(`expandedIds`/`onExpandedChange`). `onLoadChildren` asks the owner for missing
+children on expansion; it does not fetch them. `loading` sets busy semantics and
+uses the kit's delayed indicator. A changed `focusedId` reveals an externally
+requested node once it becomes visible without stealing browser focus; callers
+must expand its ancestors. Rows expose `data-node-id` for owner integration.
+
+For large collections, `virtualize: { height, rowHeight, overscan? }` enables
+fixed-height windowing. All visible rows must fit the chosen height. The active
+row remains in the DOM even if pointer scrolling moves it outside the viewport,
+so `aria-activedescendant` never names an unmounted item. Hierarchy levels,
+positions and set sizes describe the complete collection. A collapsed focused
+branch returns the active descendant to its nearest visible ancestor.
+
+Owner stories in `stories/navigation.stories.tsx` demonstrate these controls
+and a searchable multi-selection composition using the existing Popover,
+Input, Checkbox and Chip primitives. The composition does not infer permissions
+or interpret the selected values.
+
+## Owning asynchronous viewer lifetimes
+
+`@codefly-dev/ui/lifecycle`, first available from this release line at **0.12.2**,
+exports `mountIsolated` and `createTaskTracker`. These are framework-independent
+lifetime helpers, with no service client, domain data, authentication or network
+access. The host shares this subpath as a versioned federation singleton too.
+
+`mountIsolated(host, mount, { onReady, onError })` gives each asynchronous mount
+its own child element and AbortSignal. `retire()` aborts and removes only that
+child; a handle that arrives after retirement is disposed instead of presented.
+Disposal happens once. Errors include whether that mount was already retired.
+The caller remains responsible for its own error-reporting callback.
+
+`createTaskTracker<Context, Outcome>()` captures immutable context identity when
+work begins. Replacing or invalidating current presentation does not cancel
+pending work or discard its eventual outcome. Settle each owned task once;
+release outcome resources before `forget`. Pending tasks cannot be forgotten.
+Enumeration uses explicit, validated offset and limit values.
+
+These authored helpers recover the contract carried in a prior source archive
+identified as `246c3905cc157c96abe0ab48bdb0af54ef15c8dd`, whose version label was
+also 0.12.0. That archive is not evidence that the published 0.12.0 exports this
+subpath. Consumers must require **0.12.2 or later**, and a PR tested against a
+source-packed candidate must record its commit and archive hash without claiming
+that candidate has been published. The lifecycle tests cover stale completion,
+setup failure, retirement, retained outcomes and ownership errors.
+
+`ViewportOverlay` draws decorative rectangles and polygons in its positioned parent’s CSS-pixel frame, with pointer events disabled. It leaves selection, geometry and content ownership to the caller. Its authored source was recovered from the same archive identified in the lifecycle provenance above. Stacked `DescriptionList` bounds its grid track so long values wrap within narrow containers.
+
+Use `Disclosure keepMounted` when closing a section must preserve descendant drafts or nested expansion state. The default lazily unmounts the content; `keepMounted` is forwarded to the panel, not the root.
+
+Version 0.12.3 refreshes the default preview palette from appearance contract 2.4.1: small muted captions now meet 4.5:1 on the default muted surface. This supersedes the 0.12.2 development candidate without changing the new component APIs.
+
+Version 0.12.4 also makes destructive/danger Badge text mix 30% toward the active
+foreground, retaining its status hue while meeting small-text contrast on its
+tinted background in the tested default and supplied light/dark skins.

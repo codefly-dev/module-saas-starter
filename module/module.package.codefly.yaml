@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:44c93a13bf9ed87229fb66b60ffae0f34711bc13e3953ea1321c77db6074f360
+        digest: sha256:1af0a70b864962f6ce9bbb6e03bab51e4819647710b66cb51d96914138cef9be
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:44c93a13bf9ed87229fb66b60ffae0f34711bc13e3953ea1321c77db6074f360
+        digest: sha256:1af0a70b864962f6ce9bbb6e03bab51e4819647710b66cb51d96914138cef9be
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -102,15 +102,16 @@ breaking-changes:
   - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
 reserved-namespaces:
   - "@codefly/saas-"
+  - "@codefly-dev/saas-"
   - saas
 claims:
   - {kind: package, key: "@base-ui/react", owner: base}
   - {kind: package, key: "@biomejs/biome", owner: base}
   - {kind: package, key: "@bufbuild/protobuf", owner: base}
   - {kind: package, key: "@bufbuild/protoc-gen-es", owner: base}
-  - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-plugin-contract", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-manifest", owner: base}
-  - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-plugin-react", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
   - {kind: package, key: "@codefly-dev/saas-sdk", owner: base}
   - {kind: package, key: "@codefly-dev/saas-ui", owner: base}

@@ -40,11 +40,73 @@ func TestFrontendPluginCatalogIsDeterministicAndCurrent(t *testing.T) {
 func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	routes, err := cataloggen.DiscoverNextPageRoutes(filepath.Clean("../../../../frontend/code"))
 	require.NoError(t, err)
-	require.Len(t, routes, 55)
+	// The route SET, not its size: two branches that each add a different page
+	// change one shared count to the same number and merge silently with the
+	// wrong value, while each adds its own line to this list and merges both.
 	byPath := make(map[string]*catalogv1.FrontendRoute, len(routes))
+	paths := make([]string, 0, len(routes))
 	for _, route := range routes {
 		byPath[route.GetPath()] = route
+		paths = append(paths, route.GetPath())
 	}
+	require.ElementsMatch(t, []string{
+		"/",
+		"/admin",
+		"/admin/api-keys",
+		"/admin/audit-log",
+		"/admin/billing",
+		"/admin/billing/success",
+		"/admin/datasources",
+		"/admin/entitlements",
+		"/admin/invitations",
+		"/admin/organizations",
+		"/admin/organizations/settings",
+		"/admin/permissions",
+		"/admin/platform",
+		"/admin/platform/admins",
+		"/admin/platform/catalogue",
+		"/admin/platform/events",
+		"/admin/platform/feature-flags",
+		"/admin/platform/jobs",
+		"/admin/platform/organizations",
+		"/admin/platform/waitlist",
+		"/admin/roles",
+		"/admin/roles/{roleId}",
+		"/admin/sessions",
+		"/admin/sso",
+		"/admin/teams",
+		"/admin/teams/{teamId}",
+		"/admin/users",
+		"/admin/users/{userId}",
+		"/admin/webhooks",
+		"/admin/{*slug}",
+		"/auth/callback",
+		"/auth/login",
+		"/auth/logout",
+		"/auth/magic-link",
+		"/auth/mfa",
+		"/dashboards",
+		"/docs",
+		"/docs/compliance",
+		"/docs/sdks",
+		"/insights",
+		"/invitations/accept",
+		"/legal/privacy",
+		"/legal/terms",
+		"/notifications",
+		"/oauth2/consent",
+		"/onboarding",
+		"/s/{solutionId}",
+		"/security",
+		"/settings",
+		"/settings/data",
+		"/settings/mfa",
+		"/settings/notifications",
+		"/settings/privacy",
+		"/status",
+		"/waitlist",
+		"/waitlist/verify",
+	}, paths)
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_PUBLIC, byPath["/auth/login"].GetAccess())
 	// Public so a user stuck behind a blocking surface can always end the session.
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_PUBLIC, byPath["/auth/logout"].GetAccess())
@@ -59,6 +121,7 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/jobs"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/events"].GetAccess())
+	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/catalogue"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/organizations"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteMatch_FRONTEND_ROUTE_MATCH_CATCH_ALL, byPath["/admin/{*slug}"].GetMatch())
 

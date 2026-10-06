@@ -137,7 +137,7 @@ export function DescriptionList({
 				"grid",
 				layout === "inline"
 					? "grid-cols-[minmax(0,max-content)_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2"
-					: "gap-3",
+					: "grid-cols-[minmax(0,1fr)] gap-3",
 				className,
 			)}
 		>
@@ -147,7 +147,7 @@ export function DescriptionList({
 				<div
 					key={item.key ?? index}
 					data-slot="description-item"
-					className={layout === "inline" ? "contents" : "space-y-0.5"}
+					className={layout === "inline" ? "contents" : "min-w-0 space-y-0.5"}
 				>
 					<dt
 						data-slot="description-term"

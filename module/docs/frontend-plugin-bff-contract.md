@@ -38,7 +38,7 @@ resolution, the BFF calls exactly one protocol-defined backend operation:
 | Connect | `POST /saas.frontend.plugin.v1.FrontendPluginCapabilityService/GetFrontendPluginCapabilities` with the generated empty ProtoJSON request |
 
 The source of truth is
-`@codefly/saas-plugin-contract/proto/saas/frontend/plugin/v1/capabilities.proto`.
+`@codefly-dev/saas-plugin-contract/proto/saas/frontend/plugin/v1/capabilities.proto`.
 The response is bounded to 16 KiB, must be JSON, must use schema version `1`,
 and must exactly match the installed contract ID and major. The BFF returns a
 normalized response containing only those fields and sorted capability IDs; it

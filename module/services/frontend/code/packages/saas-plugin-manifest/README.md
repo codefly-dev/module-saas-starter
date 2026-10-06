@@ -14,7 +14,7 @@ This package is the schema half of `P3-PLUGIN-002`. It ships:
 - `examples/plugin.codefly.yaml` — a reference manifest exercising every field.
 
 The frontend contribution block (`ui`) is validated by
-`@codefly/saas-plugin-contract` so the frontend plugin contract and the unified
+`@codefly-dev/saas-plugin-contract` so the frontend plugin contract and the unified
 manifest never fork.
 
 ```ts

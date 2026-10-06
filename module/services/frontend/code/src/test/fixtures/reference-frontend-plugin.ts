@@ -1,15 +1,15 @@
 import {
 	definePlugin,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
-} from "@codefly/saas-plugin-contract";
+} from "@codefly-dev/saas-plugin-contract";
 import {
 	defineReactPlugin,
 	type FrontendReactPlugin,
-} from "@codefly/saas-plugin-react";
+} from "@codefly-dev/saas-plugin-react";
 import {
 	type PluginServiceTransport,
 	usePluginService,
-} from "@codefly/saas-plugin-react/runtime";
+} from "@codefly-dev/saas-plugin-react/runtime";
 
 /** Minimal product-neutral metadata fixture proving the React-free contract. */
 export const referenceFrontendPluginManifest = definePlugin({

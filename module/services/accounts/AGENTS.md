@@ -138,6 +138,123 @@ not to be a solution's. Otherwise mints are unchanged: a request with no
 verified solution must name its own `task_id`, exactly as the schema used to
 require.
 
+## The platform Catalogue is a projection, not a registry
+
+`PlatformAdminService.ListPlatformCatalogue` (super administrators, page
+`/admin/platform/catalogue`) lists every composed module and every solution
+with what it declares, what runs and where it is installed. It **adds no store**:
+modules come from the `MODULE_PRINCIPALS` registry (`Service.modulePrincipals`),
+solutions from `solution_registrations` (read with tombstones, so an
+installation of a deregistered solution sits beside its tombstone rather than
+reading as a solution nobody registered), and installations from
+`InstallationStore.ListCatalogueInstallations` — every organization's active
+installations under the control plane, with the organization's name, the
+`publisher/name:version` of the agent principal each was installed as, and the
+team grants at its authority root or above (the same labelled-grant query
+`ListCollectionAccess` reads). An installation names its solution by its free-text
+`solution_identifier`, so that is the join; an identifier no registration carries
+becomes a solution entry known only by its installations.
+
+**Each entry is placed in the registry's state model** — desired, authorized,
+applied, observed, withdrawing, physically retired — one message per state,
+carrying the public status fields that model names: `declared_revision`,
+`authorized_revision`, `applied_revision`, `observed_revision`,
+`observation_freshness`, `withdrawal_state`, `credential_revocation_state`,
+`retirement_state`. Never one "installed" flag: an entry desired but not
+authorized, or observed but no longer authorized, must read as exactly that.
+The solution's self-registration status is shown under Desired, as the only
+record of intent this host holds today.
+
+**Absent facts are gaps, never values.** Every fact is a `oneof` of its value and
+a `CatalogueGap{reason, detail}`. Today no record on this host carries a
+declaration or an applied generation (they arrive with applied presence
+documents), an approval or a withdrawal (the deployment contract's signed
+approval, not built yet), an observation or a retirement (nothing observes the
+cluster or reports stop/fence evidence), an installation revision, or a build
+size (the presence document's `build_size` section, codefly-dev/core#708,
+computed by the CLI at build, codefly-dev/cli#901): the host counts no lines
+itself. So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
+
+**Authorization has three cases, not two**: an approval, `not_authorized` — a
+known absence the approval record states — and a gap, where the host cannot
+tell. An unrecorded approval is never shown as a refusal.
+
+**What an approval approves is the deployment contract's document, not a host
+description of it.** The execution inventory (`codefly/execution-inventory/v1`)
+has one definition, the Go module `github.com/codefly-dev/cli/contracts/deployment`
+(stdlib-only, enforced by its own boundary test). An approval in the Catalogue
+names the approved inventory by the digest approval signs, plus which member of
+that delivery aggregate the entry is, plus the host's own `build_incarnation`,
+which is not an inventory field. The inventory's canonical bytes travel once per
+response in `approved_inventories`, and the host reads them only through the
+contract: `Check` accepts the inventory's intrinsic form, its digest must be the
+approved one, and the containers are the contract's own projection, selected by
+member binding and workload name (`Projections`, codefly-dev/cli#902) — never
+paired by position, and no traversal of workload templates is written here. No
+proto here re-describes an inventory field; a second description would be the
+first thing to disagree with what is deployed.
+
+**The observed verdict judges against the authorization, never the
+declaration** (`judgeCatalogueObserved`). An observation is each container's image
+digest, keyed `<workload id>/<container name>` in the approved inventory's names,
+plus the presented incarnation:
+
+- `RUNNING_AUTHORIZED` only when every container of the approved member (init
+  containers included) runs its approved digest, nothing else runs, the
+  incarnation is the approved one, **and the observation that says so is dated
+  and current**;
+- `RUNNING_DIFFERS` for any other digest, an extra container, or another
+  incarnation;
+- `RUNNING_UNAUTHORIZED` for an observation with no current authorization — the
+  row the retirement sweep exists to stop;
+- `NOT_OBSERVED` with no observation, one missing an approved container (an
+  incomplete observation is never counted as approved), or a match the host
+  cannot date: no `observed_at`, a stamp older than
+  `catalogueObservationValidity`, or one further ahead of this host's clock than
+  `catalogueObservationSkew`;
+- `NOT_RECORDED` when there is no authorization to read, the approval carries no
+  `build_incarnation`, or the approved inventory is not held, does not hash to
+  its digest, is refused by the contract, or has no such member.
+
+**Only the affirmative verdict carries that burden, and deliberately so.** It is
+the one cell a reader acts on by doing nothing, so it needs an approval complete
+enough to judge against — a non-zero `build_incarnation`, since this host assigns
+incarnations from one and zero therefore means *none*, which would otherwise match
+an observation that also carries none — and an observation that is complete and
+current. The two verdicts that report trouble need neither: a stale report of
+something running unauthorized is still worth showing, while "Running authorized"
+beside "Not observed" is worse than nothing. Withholding the alarming verdict for
+want of freshness would hide the risk the page exists to surface.
+
+The window is this host's own, named once in `catalogueObservationValidity`
+(`pkg/business/platform_catalogue.go`), because the observing producer declares no
+validity of its own yet; when its record carries one, that bound replaces the
+constant and this host stops choosing.
+
+**The invariant is enforced twice and asserted in the contract.**
+`judgeCatalogueObserved` is the only author of a verdict, and
+`enforceCatalogueVerdictEvidence` re-checks every affirmative verdict at the read
+boundary before the response leaves, replacing one its own evidence does not
+support with a gap and logging it. Nothing should reach the second check — but the
+state messages are to be filled from records that do not exist yet (#953's applied
+presence, the signed approval, cluster observation), and a filler that set a value
+case without re-judging would otherwise publish a green cell. `platform_admin.proto`
+states the rule on the `verdict` oneof so a consumer reads it from the contract; it
+is Go, not protovalidate, that enforces it, since nothing validates a response on
+the wire. The browser does not re-derive the judgement either: `facts.ts` shows the
+affirmative cell only when the evidence is present beside it, and never reproduces
+the validity window, which would drift from the host's.
+
+Withdrawal, credential revocation, retirement and build size have gap-only
+`oneof`s: their value vocabularies are later spec items' and core#708's to define,
+and each value case joins its `oneof` when that record exists, read in
+`newCatalogueEntry`.
+
+**The registration it returns withholds topology**: `catalogueRegistrationProto`
+blanks the frontend manifest, backend upstream and service alias, as every other
+browser-facing projection of the registry does, and the runtime-boundary seed is
+withheld as on every response.
+
 ## The composed-module service principal
 
 A module consuming the module-facing capability surface
