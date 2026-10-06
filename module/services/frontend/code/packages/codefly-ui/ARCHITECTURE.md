@@ -11,6 +11,7 @@ Each tier may only compose the tier below it — never a sibling, never upward.
 
 ```
 skin        tokens (colors·spacing·type) as DATA        ← single source of truth
+lifecycle   mount disposal and captured task ownership (no presentation)
 layout      Card · Section · Tabs · Text · Input · Avatar · Button   (atoms)
 charts      Svg · Scale · Axis · Gridline                            (chart atoms)
 content     Markdown · JsonView · CodeBlock · TextBlock → Content     (text atoms)
@@ -28,7 +29,8 @@ composites compose it (`<Chat>` renders a markdown answer through it).
 #403. `chat`, `table`, `board`, and `form` are composite tiers that sit at the
 same rank as `dashboard` (they compose `layout`/`charts`, not each other).
 `plugin-host`
-is not a presentational tier — it is the host-facing plugin-runtime surface and
+and `lifecycle` (isolated asynchronous mounts and captured task ownership)
+are not presentational tiers — it is the host-facing plugin-runtime surface and
 sits outside this stack.
 
 ## Invariants

@@ -47,6 +47,10 @@ future omissions. Generic remotes must share those same exact subpath keys.
 ([#1010](https://github.com/codefly-dev/module-saas-starter/issues/1010)):
 composite rank 3, layout below it, and a declared key in the host's shared scope
 and in the behavioural contract that is checked against it.
+`@codefly-dev/ui/lifecycle` joins that shared scope at 0.12.2 as a rank-0,
+nonvisual helper for isolated mounts and captured task outcomes. Remotes using
+that subpath require 0.12.2 or later; a source-packed PR candidate is not a
+published release.
 
 The existing `dashboard` tier also owns `MetricAreaChart`, `MetricLineChart`,
 `MetricBarChart`, metric tiles, metric state and provenance, and Sparkline.

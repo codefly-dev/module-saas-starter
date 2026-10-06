@@ -485,3 +485,7 @@ GitHub connection forms accept `fileExtensions` (for example `.md, .mdx`) and
 offer a Markdown preset. The host intersects suffixes with paths for snapshots
 and incremental changes; empty keeps all file types. The filter is selected at
 connection time and does not rewrite existing sources.
+
+The SDK peer floor is **0.3.14**: principal-name resolution imports the directory
+service introduced in that release. Earlier SDK versions must be rejected during
+installation rather than accepted and then failing when the component loads.

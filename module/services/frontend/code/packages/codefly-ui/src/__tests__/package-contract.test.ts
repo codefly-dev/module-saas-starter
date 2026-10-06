@@ -73,6 +73,7 @@ describe("@codefly-dev/ui public subpaths", () => {
 		"./layout",
 		"./content",
 		"./board",
+		"./lifecycle",
 	]) {
 		it(`exports ${subpath} to a typed dist entry`, () => {
 			const entry = exportsMap[subpath];

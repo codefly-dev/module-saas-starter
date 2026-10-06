@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 // host-facing surface, not part of the presentational turtle stack.
 const TIER_RANK: Record<string, number> = {
 	skin: 0,
+	lifecycle: 0,
 	layout: 1,
 	charts: 2,
 	content: 2,
