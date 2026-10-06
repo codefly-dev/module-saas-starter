@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Migration 21's two triggers, exercised.
+// Migration 22's two triggers, exercised.
 //
 // `installations.target_id` replaced a free-text `solution_identifier`, and the
 // invariants that make the target an IDENTITY rather than a label are enforced in

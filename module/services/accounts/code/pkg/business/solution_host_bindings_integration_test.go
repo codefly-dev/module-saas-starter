@@ -956,7 +956,7 @@ func testReconcilerAcceptingDomains(
 // intended state, and the one that matters here is the one in this process.
 //
 // This repository was never exposed to the blank-domain hole core closed:
-// migration 18 carries `CHECK (applied_domain <> ”)`, so a record with a blank
+// migration 19 carries `CHECK (applied_domain <> ”)`, so a record with a blank
 // domain cannot exist in this database — ” passes `num_nonnulls`, which is why
 // the whole-or-absent group alone was not enough and the non-empty rule is
 // named separately.

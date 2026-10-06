@@ -63,22 +63,21 @@ WHERE declared_binding_id IS NOT NULL
 --
 -- THE DECLARED COLUMNS STAY NULLABLE, and that is a consequence of withdrawing
 -- rather than deleting. This migration used to `SET NOT NULL` on all four,
--- which is only possible once every undeclared row is gone — so keeping those
--- rows means the constraint has to express the real state machine instead: a
--- registration is either wholly declared (authorized) or wholly undeclared
--- (withdrawn, awaiting approval). A partial row is neither and is refused.
+-- which is only possible once every undeclared row is gone — so not setting
+-- them is the whole change here.
 --
--- That is strictly stronger than the four NOT NULLs it replaces: NOT NULL could
--- not have described the withdrawn state at all, and `num_nonnulls` refuses the
--- three-of-four row that NOT NULL would simply have rejected wholesale.
+-- Nothing replaces those NOT NULLs, because the invariant already exists:
+-- migration 22 defines `solution_registrations_declared_whole` as
+-- `num_nonnulls(...) = ANY (ARRAY[0, 4])`, which is exactly the state machine
+-- this needs — wholly declared (authorized) or wholly undeclared (withdrawn,
+-- awaiting approval), never three-of-four. An earlier draft of this migration
+-- added that constraint a second time and the replay refused it as already
+-- existing, which is the right answer: the schema already said it.
 ALTER TABLE public.solution_registrations
     DROP CONSTRAINT solution_registrations_frontend_half_whole,
     DROP CONSTRAINT solution_registrations_backend_half_whole,
     DROP COLUMN frontend_lease_expires_at,
     DROP COLUMN backend_lease_expires_at,
-    ADD CONSTRAINT solution_registrations_declared_whole
-        CHECK (num_nonnulls(declared_binding_id, declared_generation,
-                            declared_release, declared_target_id) IN (0, 4)),
     ADD CONSTRAINT solution_registrations_frontend_half_whole
         CHECK (num_nonnulls(frontend_revision, frontend_manifest) IN (0, 2)),
     ADD CONSTRAINT solution_registrations_backend_half_whole

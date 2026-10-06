@@ -131,7 +131,7 @@ organization silently lost access, and the next claimant of the old alias
 inherited the installation.
 
 A **solution target** is one continuous period of one binding's presence on this
-host (`solution_targets`, migration 19). It is opened when a present generation
+host (`solution_targets`, migration 20). It is opened when a present generation
 applies for a binding with no live target, closed by that binding's tombstone
 generation, and **never reused** — so a replacement is a different identity and
 inherits nothing. The alias lives on the target and moves with a generation that

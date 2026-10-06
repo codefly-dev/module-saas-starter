@@ -3,7 +3,7 @@
 -- Today `installations.solution_identifier` is free text, and the registry key a
 -- solution is addressed by is its route alias, which is deliberately REUSABLE: a
 -- tombstoned alias may be claimed by another binding
--- (`solution_host_bindings`, migration 18). Those two facts compose into a
+-- (`solution_host_bindings`, migration 19). Those two facts compose into a
 -- transfer of consent:
 --
 --   1. Org A installs the binding behind alias `reports` and grants a team access.
@@ -74,7 +74,7 @@ CREATE UNIQUE INDEX solution_targets_live_binding
     ON public.solution_targets USING btree (binding_id)
     WHERE (closed_generation IS NULL);
 
--- One live target per route alias, for the same reason migration 18's index
+-- One live target per route alias, for the same reason migration 19's index
 -- exists on the binding row: core refuses the collision before a generation
 -- applies, and this is the durable backstop when two replicas reconcile one pass.
 CREATE UNIQUE INDEX solution_targets_live_solution

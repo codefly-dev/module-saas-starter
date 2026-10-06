@@ -37,12 +37,12 @@ import (
 // attribution is settled by mutation rather than by that argument: with
 // `FOR UPDATE` removed from the function, step 2 returns immediately and the
 // insert succeeds.
-func TestMigration21TargetLivenessTriggerSerialisesAgainstAWithdrawal(t *testing.T) {
+func TestMigration22TargetLivenessTriggerSerialisesAgainstAWithdrawal(t *testing.T) {
 	db, url := throwawayPostgres(t)
 	// The whole cutover, applied as a release applies it. Nothing is staged
 	// before 20 here: this is about the trigger the migration installs, not about
 	// its backfill.
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 20), url); err != nil {
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 22), url); err != nil {
 		t.Fatalf("apply migrations 1..20: %v", err)
 	}
 

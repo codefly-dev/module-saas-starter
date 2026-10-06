@@ -20,12 +20,12 @@ import (
 //
 // WithOrgTx defends against this by SET LOCAL ROLE app_tenant inside
 // the tx. app_tenant is a non-superuser, non-BYPASSRLS role created
-// in migration 25. Inside the tx, current_user reports app_tenant
+// in migration 26. Inside the tx, current_user reports app_tenant
 // and RLS engages; on commit/rollback the role-switch unwinds.
 //
 // If THIS test fails, RLS-protected queries silently see other
 // tenants' rows. The ROOT cause is one of:
-//   - Migration 25 didn't run (role doesn't exist).
+//   - Migration 26 didn't run (role doesn't exist).
 //   - WithOrgTx forgot the SET LOCAL ROLE.
 //   - The codefly Postgres plugin started running as a non-superuser
 //     (a future improvement; this test wouldn't break, but the
@@ -50,7 +50,7 @@ func TestRLS_WithOrgTx_SwitchesToNonSuperuser(t *testing.T) {
 				   AND NOT rolsuper AND NOT rolbypassrls)`).Scan(&exists)
 		}))
 		require.True(t, exists,
-			"app_tenant role MUST exist as non-superuser non-BYPASSRLS — migration 25 didn't run")
+			"app_tenant role MUST exist as non-superuser non-BYPASSRLS — migration 26 didn't run")
 		return nil
 	}))
 }

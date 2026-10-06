@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// Like the migration-21 replay, install the proposed ledger from zero, stage
+// Like the migration-22 replay, install the proposed ledger from zero, stage
 // pre-cutover rows, then apply only the new version. The URL must name a fresh,
 // disposable PostgreSQL 16+ cluster: migration 1 also requires absent app roles.
-func TestMigration24ColdCutoverFromZero(t *testing.T) {
+func TestMigration25ColdCutoverFromZero(t *testing.T) {
 	raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL")
 	if raw == "" {
 		t.Skip("ACCOUNTS_INSTALLER_TEST_DATABASE_URL is unset; PostgreSQL replay not run")
@@ -35,10 +35,10 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 	if existing != 0 {
 		t.Fatal("from-zero replay refuses a database containing application tables")
 	}
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 22), raw); err != nil {
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 24), raw); err != nil {
 		t.Fatalf("apply migrations 1..22: %v", err)
 	}
-	t.Log("applied migrations 1..22 from zero")
+	t.Log("applied migrations 1..24 from zero")
 	execColdCutoverSQL(t, db, `INSERT INTO public.solution_targets (binding_id,solution_id,opened_generation)
 		VALUES ('acme.test.example','declared',1),('acme.test.removed','removed',1)`)
 	execColdCutoverSQL(t, db, `INSERT INTO public.solution_registrations
@@ -64,8 +64,8 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 		t.Fatal("migration 17 must have seeded runtime_boundary; an empty seed makes the comparison below vacuous")
 	}
 
-	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 23), raw); err != nil {
-		t.Fatalf("apply migration 24: %v", err)
+	if err := migrateStoreFrom("file://"+ledgerUpTo(t, 25), raw); err != nil {
+		t.Fatalf("apply migration 25: %v", err)
 	}
 	assertCount := func(query string, want int) {
 		t.Helper()
@@ -77,8 +77,13 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 			t.Fatalf("query %s returned %d, want %d", query, got, want)
 		}
 	}
+	// The two lease columns BY NAME. `LIKE '%lease%'` also matches
+	// `declared_rELEASE`, so the loose pattern asserted that a column this
+	// migration is supposed to KEEP had been dropped — it reported 3 where it
+	// meant 0, and would have gone on failing for a reason unrelated to leases.
 	assertCount(`SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
-		AND table_name='solution_registrations' AND column_name LIKE '%lease%'`, 0)
+		AND table_name='solution_registrations'
+		AND column_name IN ('frontend_lease_expires_at','backend_lease_expires_at')`, 0)
 	assertCount(`SELECT count(*) FROM pg_indexes WHERE schemaname='public'
 		AND tablename='solution_registrations' AND indexdef LIKE '%lease%'`, 0)
 	// WITHDRAWN, NOT DESTROYED. A runtime-registered row with no declared
@@ -137,7 +142,7 @@ func TestMigration24ColdCutoverFromZero(t *testing.T) {
 			t.Fatalf("invalid registry state accepted: %s", query)
 		}
 	}
-	t.Log("migration 24 withdrew the runtime registration keeping its seed, dropped the lease columns, and kept declared presence, tombstones and the whole-half constraints")
+	t.Log("migration 25 withdrew the runtime registration keeping its seed, dropped the lease columns, and kept declared presence, tombstones and the whole-half constraints")
 }
 
 func execColdCutoverSQL(t *testing.T, db *sql.DB, statement string) {
