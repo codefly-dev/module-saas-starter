@@ -46,7 +46,7 @@ func (f *platformAdminAuthzStore) HasVerifiedMFA(context.Context, string) (bool,
 	return true, nil
 }
 
-// platformAdminHandler names one of the 14 PlatformAdminService methods and the
+// platformAdminHandler names one PlatformAdminService method and the
 // minimum platform role its business layer enforces, so the handler-layer gate
 // can be checked against the same bar.
 type platformAdminHandler struct {
@@ -111,6 +111,10 @@ func platformAdminHandlers() []platformAdminHandler {
 		}},
 		{"ReplayJob", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
 			_, err := srv.ReplayJob(ctx, &jobsv1.ReplayJobRequest{SourceJobId: platformTargetD, IdempotencyKey: "replay-key"})
+			return err
+		}},
+		{"ListPlatformCatalogue", "super_admin", func(ctx context.Context, srv *PlatformAdminServer) error {
+			_, err := srv.ListPlatformCatalogue(ctx, &gen.ListPlatformCatalogueRequest{})
 			return err
 		}},
 	}

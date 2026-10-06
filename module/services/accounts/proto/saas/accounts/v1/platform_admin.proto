@@ -6,7 +6,10 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/authorization.proto";
 import "saas/accounts/v1/common.proto";
+import "saas/accounts/v1/installations.proto";
+import "saas/accounts/v1/solution_registry.proto";
 import "saas/events/v1/operations.proto";
 import "saas/jobs/v1/jobs.proto";
 import "saas/policy/v1/options.proto";
@@ -234,6 +237,161 @@ message UpsertFeatureFlagResponse {
   option deprecated = true;
 
   string name = 1;
+}
+
+// ============================================================================
+// Platform Catalogue (issue #1020)
+//
+// The operator's read of what is deployed: every composed module and every
+// solution, beside what it declares, what is running, and which organizations
+// have it installed. It is a projection over records this host already keeps —
+// the durable solution registry, the installations table, and the composition's
+// module principal registry — and it adds no store of its own.
+//
+// Several facts the Catalogue is specified to show are carried by records this
+// host does not hold yet: the declared release, build digest and generation
+// arrive with applied presence documents, the running incarnation needs observed
+// cluster state, and build size is a signed section of the presence document
+// (codefly-dev/core#708, computed by the CLI at build). Each such fact is a
+// oneof of its value and a CatalogueGap, so an absent fact is reported with its
+// reason and is never an empty value a reader could take for zero, unset, or a
+// match. A fact gains its value case when the record that carries it exists.
+// ============================================================================
+
+// CatalogueEntryKind distinguishes a composed module from a solution.
+enum CatalogueEntryKind {
+  CATALOGUE_ENTRY_KIND_UNSPECIFIED = 0;
+  // A module composed into this deployment, known by its module principal.
+  CATALOGUE_ENTRY_KIND_MODULE = 1;
+  // A solution, known by its registration, its installations, or both.
+  CATALOGUE_ENTRY_KIND_SOLUTION = 2;
+}
+
+// CatalogueGapReason says why a Catalogue fact has no value.
+enum CatalogueGapReason {
+  CATALOGUE_GAP_REASON_UNSPECIFIED = 0;
+  // This host keeps no record that carries the fact.
+  CATALOGUE_GAP_REASON_NOT_RECORDED = 1;
+  // The fact is a section of the producer's document, and the document this
+  // host holds carries no such section (an older producer).
+  CATALOGUE_GAP_REASON_NOT_REPORTED = 2;
+  // The fact needs observed cluster state, and this host has none to read —
+  // a local run with no cluster, or an observation that is missing or stale.
+  CATALOGUE_GAP_REASON_NOT_OBSERVED = 3;
+}
+
+// CatalogueGap is a Catalogue fact this host cannot state, with the reason.
+message CatalogueGap {
+  CatalogueGapReason reason = 1;
+  // Operator-facing: names the record or producer that would supply the fact.
+  string detail = 2;
+}
+
+// CatalogueRelease is a declared release, publisher/name@version.
+message CatalogueRelease {
+  string publisher = 1;
+  string name = 2;
+  string version = 3;
+}
+
+// CatalogueExecution is what runs: an OCI image manifest digest and the build
+// incarnation the host assigned to it, the same pair a Work Context seals.
+message CatalogueExecution {
+  string image_digest = 1;
+  uint64 build_incarnation = 2;
+}
+
+// CatalogueRunningVerdict compares the observed execution with the declared
+// one. It exists only when both are known; anything less is a CatalogueGap.
+enum CatalogueRunningVerdict {
+  CATALOGUE_RUNNING_VERDICT_UNSPECIFIED = 0;
+  // The observed image digest and incarnation are the declared ones.
+  CATALOGUE_RUNNING_VERDICT_MATCHES = 1;
+  // Something other than the declared execution is running — what cluster
+  // admission refuses.
+  CATALOGUE_RUNNING_VERDICT_DIFFERS = 2;
+}
+
+// CatalogueRunning is the running incarnation beside the declared one.
+message CatalogueRunning {
+  CatalogueExecution declared = 1;
+  CatalogueExecution observed = 2;
+  CatalogueRunningVerdict verdict = 3;
+}
+
+// CatalogueInstallation is one organization's installation of a solution.
+message CatalogueInstallation {
+  Installation installation = 1;
+  string org_name = 2;
+  // The release the installation's agent principal was created for, read from
+  // its canonical publisher/name:version identifier.
+  oneof agent_release_value {
+    CatalogueRelease agent_release = 3;
+    CatalogueGap agent_release_gap = 4;
+  }
+  // The installation revision the installed generation is pinned at.
+  oneof revision_value {
+    CatalogueGap revision_gap = 5;
+  }
+  // Active team grants at the installation's authority root or above it, so
+  // every team whose members the grant reaches inside this installation.
+  repeated CollectionReadGrant exposed_teams = 6;
+}
+
+// CatalogueEntry is one module or solution.
+message CatalogueEntry {
+  CatalogueEntryKind kind = 1;
+  // A module's principal prefix, or a solution's registry id — the identifier
+  // its installations name.
+  string name = 2;
+  // The owner of record: a solution registration's publisher.
+  oneof publisher_value {
+    string publisher = 3;
+    CatalogueGap publisher_gap = 4;
+  }
+  oneof declared_release_value {
+    CatalogueRelease declared_release = 5;
+    CatalogueGap declared_release_gap = 6;
+  }
+  // The OCI image manifest digest the entry was published at.
+  oneof build_digest_value {
+    string build_digest = 7;
+    CatalogueGap build_digest_gap = 8;
+  }
+  // The presence generation this host applied.
+  oneof generation_value {
+    int64 generation = 9;
+    CatalogueGap generation_gap = 10;
+  }
+  oneof running_value {
+    CatalogueRunning running = 11;
+    CatalogueGap running_gap = 12;
+  }
+  // Lines of code, backend and frontend, vendored paths excluded. The value
+  // case is the presence document's build_size section (codefly-dev/core#708)
+  // as delivered; this host counts nothing itself.
+  oneof build_size_value {
+    CatalogueGap build_size_gap = 13;
+  }
+  // The solution's registration, with deployment topology withheld: the
+  // frontend manifest, backend upstream and service alias are always empty
+  // here, as on every browser-facing projection of the registry. Absent for a
+  // module, which does not self-register, and for a solution known only from
+  // its installations.
+  optional SolutionRegistration registration = 14;
+  repeated CatalogueInstallation installations = 15;
+}
+
+message ListPlatformCatalogueRequest {
+  // Include deregistered solutions. Their installations are listed either way.
+  bool include_tombstoned = 1;
+}
+
+message ListPlatformCatalogueResponse {
+  // Modules first, then solutions, each ordered by name.
+  repeated CatalogueEntry entries = 1;
+  // The registry revision the solution entries were read at.
+  int64 registry_revision = 2;
 }
 
 // PlatformAdminService — cross-tenant operations for platform operators.
@@ -642,5 +800,22 @@ service PlatformAdminService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
     };
     option (google.api.http) = {get: "/v1/platform/events/subscriptions"};
+  }
+
+  // ListPlatformCatalogue lists every composed module and solution with what
+  // it declares, what runs, and which organizations have it installed.
+  rpc ListPlatformCatalogue(ListPlatformCatalogueRequest) returns (ListPlatformCatalogueResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
+    };
+    option (google.api.http) = {get: "/v1/platform/catalogue"};
   }
 }

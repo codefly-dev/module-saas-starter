@@ -75,6 +75,13 @@ activating a remote.
   token.
 - The dashboard graph is on none of them: the solution page reads it in-process
   through `findSolution`.
+- The platform Catalogue (`/admin/platform/catalogue`) is not one of them either:
+  it reads accounts' `PlatformAdminService.ListPlatformCatalogue`, super
+  administrators only, and that response carries each registration's status,
+  revisions, contract versions and leases with the manifest, upstream and service
+  alias withheld (`../accounts/AGENTS.md`). A fact the host has no record of is
+  rendered as its gap reason — "Not recorded", "Not observed" — never as an empty
+  cell, a zero or a match.
 
 ## Loading a remote, and its CSP
 

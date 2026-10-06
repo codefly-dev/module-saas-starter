@@ -2,14 +2,20 @@
 // @generated from file saas/accounts/v1/platform_admin.proto (package saas.accounts.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_empty, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { CollectionReadGrant } from "./authorization_pb";
+import { file_saas_accounts_v1_authorization } from "./authorization_pb";
 import type { Organization, OrgMembership, User } from "./common_pb";
 import { file_saas_accounts_v1_common } from "./common_pb";
+import type { Installation } from "./installations_pb";
+import { file_saas_accounts_v1_installations } from "./installations_pb";
+import type { SolutionRegistration } from "./solution_registry_pb";
+import { file_saas_accounts_v1_solution_registry } from "./solution_registry_pb";
 import type { GetEventOperationsRequestSchema, GetEventOperationsResponseSchema, ListEventSubscriptionsRequestSchema, ListEventSubscriptionsResponseSchema } from "../../events/v1/operations_pb";
 import { file_saas_events_v1_operations } from "../../events/v1/operations_pb";
 import type { GetJobOperationsRequestSchema, GetJobOperationsResponseSchema, GetJobRequestSchema, GetJobResponseSchema, ListJobsRequestSchema, ListJobsResponseSchema, ReplayJobRequestSchema, ReplayJobResponseSchema } from "../../jobs/v1/jobs_pb";
@@ -21,7 +27,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/platform_admin.proto.
  */
 export const file_saas_accounts_v1_platform_admin: GenFile = /*@__PURE__*/
-  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL3BsYXRmb3JtX2FkbWluLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIlUKElNlYXJjaFVzZXJzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJImoKE1NlYXJjaFVzZXJzUmVzcG9uc2USJQoFdXNlcnMYASADKAsyFi5zYWFzLmFjY291bnRzLnYxLlVzZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIngKG0xpc3RBbGxPcmdhbml6YXRpb25zUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJEhgKEGluY2x1ZGVfYXJjaGl2ZWQYBCABKAgiYgoUUGxhdGZvcm1Pcmdhbml6YXRpb24SNAoMb3JnYW5pemF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24SFAoMbWVtYmVyX2NvdW50GAIgASgFInYKHExpc3RBbGxPcmdhbml6YXRpb25zUmVzcG9uc2USPQoNb3JnYW5pemF0aW9ucxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuUGxhdGZvcm1Pcmdhbml6YXRpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIjgKHEdldE9yZ2FuaXphdGlvblJvc3RlclJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASJRCh1HZXRPcmdhbml6YXRpb25Sb3N0ZXJSZXNwb25zZRIwCgdtZW1iZXJzGAEgAygLMh8uc2Fhcy5hY2NvdW50cy52MS5PcmdNZW1iZXJzaGlwIj8KElN1c3BlbmRVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkiMQoUVW5zdXNwZW5kVXNlclJlcXVlc3QSGQoHdXNlcl9pZBgBIAEoCUIIukgFcgOwAQEiTwoWSW1wZXJzb25hdGVVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIaCgZyZWFzb24YAiABKAlCCrpIB3IFEAoY9AMiQwoXSW1wZXJzb25hdGVVc2VyUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiGgoYU3RvcEltcGVyc29uYXRpb25SZXF1ZXN0ImsKGVN0b3BJbXBlcnNvbmF0aW9uUmVzcG9uc2USGAoQZHVyYXRpb25fc2Vjb25kcxgBIAEoAxIcChRhY2Nlc3NfdG9rZW5fcmV2b2tlZBgCIAEoCBIWCg5hbHJlYWR5X2Nsb3NlZBgDIAEoCCJeChlMaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSHAoJcGFnZV9zaXplGAIgASgFQgm6SAYaBBhkIAASEgoKcGFnZV90b2tlbhgDIAEoCSKZAwoLU2Vzc2lvbkluZm8SCgoCaWQYASABKAkSDwoHdXNlcl9pZBgCIAEoCRISCgppcF9hZGRyZXNzGAMgASgJEkIKC2RldmljZV9pbmZvGAQgAygLMi0uc2Fhcy5hY2NvdW50cy52MS5TZXNzaW9uSW5mby5EZXZpY2VJbmZvRW50cnkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9hY3RpdmVfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2lkbGVfZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGQoRYWN0aW5nX2FzX3VzZXJfaWQYCSABKAkaMQoPRGV2aWNlSW5mb0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiZgoaTGlzdEFjdGl2ZVNlc3Npb25zUmVzcG9uc2USLwoIc2Vzc2lvbnMYASADKAsyHS5zYWFzLmFjY291bnRzLnYxLlNlc3Npb25JbmZvEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJDChRSZXZva2VTZXNzaW9uUmVxdWVzdBIbCgpzZXNzaW9uX2lkGAEgASgJQge6SARyAhABEg4KBnJlYXNvbhgCIAEoCSI1ChlHZXRPcmdFbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiaAoaR2V0T3JnRW50aXRsZW1lbnRzUmVzcG9uc2USEQoJcGxhbl9uYW1lGAEgASgJEjcKDGVudGl0bGVtZW50cxgCIAMoCzIhLnNhYXMuYWNjb3VudHMudjEuRW50aXRsZW1lbnRJbmZvIlUKD0VudGl0bGVtZW50SW5mbxIPCgdmZWF0dXJlGAEgASgJEg0KBWxpbWl0GAIgASgDEgwKBHVzZWQYAyABKAMSFAoMaGFzX292ZXJyaWRlGAQgASgIInUKGk92ZXJyaWRlRW50aXRsZW1lbnRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGAoHZmVhdHVyZRgCIAEoCUIHukgEcgIQARITCgtsaW1pdF92YWx1ZRgDIAEoAxIOCgZyZWFzb24YBCABKAkiKQobT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlEgoKAmlkGAEgASgJInIKGEdyYW50UGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARI7Cg1wbGF0Zm9ybV9yb2xlGAIgASgJQiS6SCFyH1ILc3VwZXJfYWRtaW5SB3N1cHBvcnRSB2JpbGxpbmciNgoZUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABASIbChlMaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0IoABChJQbGF0Zm9ybUFkbWluRW50cnkSDwoHdXNlcl9pZBgBIAEoCRIVCg1wbGF0Zm9ybV9yb2xlGAIgASgJEhIKCmdyYW50ZWRfYnkYAyABKAkSLgoKZ3JhbnRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiUgoaTGlzdFBsYXRmb3JtQWRtaW5zUmVzcG9uc2USNAoGYWRtaW5zGAEgAygLMiQuc2Fhcy5hY2NvdW50cy52MS5QbGF0Zm9ybUFkbWluRW50cnkiGQoXTGlzdEZlYXR1cmVGbGFnc1JlcXVlc3QidwoQRmVhdHVyZUZsYWdFbnRyeRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg8KB2VuYWJsZWQYAyABKAgSFwoPcm9sbG91dF9wZXJjZW50GAQgASgFEhYKDnRhcmdldF9vcmdfaWRzGAUgAygJIk0KGExpc3RGZWF0dXJlRmxhZ3NSZXNwb25zZRIxCgVmbGFncxgBIAMoCzIiLnNhYXMuYWNjb3VudHMudjEuRmVhdHVyZUZsYWdFbnRyeSKMAQoYVXBzZXJ0RmVhdHVyZUZsYWdSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAiABKAkSDwoHZW5hYmxlZBgDIAEoCBIXCg9yb2xsb3V0X3BlcmNlbnQYBCABKAUSFgoOdGFyZ2V0X29yZ19pZHMYBSADKAk6AhgBIi0KGVVwc2VydEZlYXR1cmVGbGFnUmVzcG9uc2USDAoEbmFtZRgBIAEoCToCGAEyvB4KFFBsYXRmb3JtQWRtaW5TZXJ2aWNlEo4BCgtTZWFyY2hVc2VycxIkLnNhYXMuYWNjb3VudHMudjEuU2VhcmNoVXNlcnNSZXF1ZXN0GiUuc2Fhcy5hY2NvdW50cy52MS5TZWFyY2hVc2Vyc1Jlc3BvbnNlIjLC8xgUCAIQATABOgIQAUABSAVQA1gDYAOC0+STAhQSEi92MS9wbGF0Zm9ybS91c2VycxKrAQoLU3VzcGVuZFVzZXISJC5zYWFzLmFjY291bnRzLnYxLlN1c3BlbmRVc2VyUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJewvMYKwgCEAEwAToXChNzYWFzLnVzZXIuc3VzcGVuZGVkEAJAAUgFUANYA2AFeAKC0+STAik6ASoiJC92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06c3VzcGVuZBKzAQoNVW5zdXNwZW5kVXNlchImLnNhYXMuYWNjb3VudHMudjEuVW5zdXNwZW5kVXNlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiYsLzGC0IAhABMAE6GQoVc2Fhcy51c2VyLnVuc3VzcGVuZGVkEAJAAUgFUANYA2AFeAKC0+STAis6ASoiJi92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06dW5zdXNwZW5kEtYBCg9JbXBlcnNvbmF0ZVVzZXISKC5zYWFzLmFjY291bnRzLnYxLkltcGVyc29uYXRlVXNlclJlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLkltcGVyc29uYXRlVXNlclJlc3BvbnNlIm7C8xg3CAIQATAEOiMKH3NhYXMucGxhdGZvcm0udXNlcl9pbXBlcnNvbmF0ZWQQAkABSAVQA1gEYAN4AoLT5JMCLToBKiIoL3YxL3BsYXRmb3JtL3VzZXJzL3t1c2VyX2lkfTppbXBlcnNvbmF0ZRLYAQoRU3RvcEltcGVyc29uYXRpb24SKi5zYWFzLmFjY291bnRzLnYxLlN0b3BJbXBlcnNvbmF0aW9uUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuU3RvcEltcGVyc29uYXRpb25SZXNwb25zZSJqwvMYPAgCEAEwAToqCiZzYWFzLnBsYXRmb3JtLnVzZXJfaW1wZXJzb25hdGlvbl9lbmRlZBACQAFIBVADWANgAYLT5JMCJDoBKiIfL3YxL3BsYXRmb3JtL2ltcGVyc29uYXRpb246c3RvcBKmAQoSTGlzdEFjdGl2ZVNlc3Npb25zEisuc2Fhcy5hY2NvdW50cy52MS5MaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QWN0aXZlU2Vzc2lvbnNSZXNwb25zZSI1wvMYFAgCEAEwAToCEAFAAUgFUANYA2ADgtPkkwIXEhUvdjEvcGxhdGZvcm0vc2Vzc2lvbnMSqQEKDVJldm9rZVNlc3Npb24SJi5zYWFzLmFjY291bnRzLnYxLlJldm9rZVNlc3Npb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IljC8xgqCAIQATABOhgKFHNhYXMuc2Vzc2lvbi5yZXZva2VkEAJAAUgFUANYA2ADgtPkkwIkKiIvdjEvcGxhdGZvcm0vc2Vzc2lvbnMve3Nlc3Npb25faWR9Es8BChJHZXRPcmdFbnRpdGxlbWVudHMSKy5zYWFzLmFjY291bnRzLnYxLkdldE9yZ0VudGl0bGVtZW50c1JlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLkdldE9yZ0VudGl0bGVtZW50c1Jlc3BvbnNlIl7C8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCMhIwL3YxL3BsYXRmb3JtL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZW50aXRsZW1lbnRzEuQBChNPdmVycmlkZUVudGl0bGVtZW50Eiwuc2Fhcy5hY2NvdW50cy52MS5PdmVycmlkZUVudGl0bGVtZW50UmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlInDC8xgxCAIQATABOh0KGXNhYXMuZW50aXRsZW1lbnQub3ZlcnJpZGUQAkABSAVQA1gDYAJ4AoLT5JMCNToBKiIwL3YxL3BsYXRmb3JtL29yZ2FuaXphdGlvbnMve29yZ19pZH0vZW50aXRsZW1lbnRzEq0BChFHcmFudFBsYXRmb3JtUm9sZRIqLnNhYXMuYWNjb3VudHMudjEuR3JhbnRQbGF0Zm9ybVJvbGVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IlTC8xgyCAIQATAEOh4KGnNhYXMucGxhdGZvcm0ucm9sZV9ncmFudGVkEAJAAUgFUANYA2AFeAKC0+STAhg6ASoiEy92MS9wbGF0Zm9ybS9hZG1pbnMStgEKElJldm9rZVBsYXRmb3JtUm9sZRIrLnNhYXMuYWNjb3VudHMudjEuUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJbwvMYMggCEAEwBDoeChpzYWFzLnBsYXRmb3JtLnJvbGVfcmV2b2tlZBACQAFIBVADWANgBXgCgtPkkwIfKh0vdjEvcGxhdGZvcm0vYWRtaW5zL3t1c2VyX2lkfRKkAQoSTGlzdFBsYXRmb3JtQWRtaW5zEisuc2Fhcy5hY2NvdW50cy52MS5MaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5MaXN0UGxhdGZvcm1BZG1pbnNSZXNwb25zZSIzwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIVEhMvdjEvcGxhdGZvcm0vYWRtaW5zEo8BChRMaXN0QWxsT3JnYW5pemF0aW9ucxItLnNhYXMuYWNjb3VudHMudjEuTGlzdEFsbE9yZ2FuaXphdGlvbnNSZXF1ZXN0Gi4uc2Fhcy5hY2NvdW50cy52MS5MaXN0QWxsT3JnYW5pemF0aW9uc1Jlc3BvbnNlIhjC8xgUCAIQATABOgIQAUABSAVQA1gDYAMSkgEKFUdldE9yZ2FuaXphdGlvblJvc3RlchIuLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uUm9zdGVyUmVxdWVzdBovLnNhYXMuYWNjb3VudHMudjEuR2V0T3JnYW5pemF0aW9uUm9zdGVyUmVzcG9uc2UiGMLzGBQIAhABMAE6AhABQAFIBVADWANgAxKlAQoQTGlzdEZlYXR1cmVGbGFncxIpLnNhYXMuYWNjb3VudHMudjEuTGlzdEZlYXR1cmVGbGFnc1JlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLkxpc3RGZWF0dXJlRmxhZ3NSZXNwb25zZSI6wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIcEhovdjEvcGxhdGZvcm0vZmVhdHVyZS1mbGFncxLSAQoRVXBzZXJ0RmVhdHVyZUZsYWcSKi5zYWFzLmFjY291bnRzLnYxLlVwc2VydEZlYXR1cmVGbGFnUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuVXBzZXJ0RmVhdHVyZUZsYWdSZXNwb25zZSJkiAIBwvMYMQgCEAEwATodChlzYWFzLmZlYXR1cmVfZmxhZy51cGRhdGVkEAJAAUgFUANYA2AFeAKC0+STAiY6ASoaIS92MS9wbGF0Zm9ybS9mZWF0dXJlLWZsYWdzL3tuYW1lfRKfAQoQR2V0Sm9iT3BlcmF0aW9ucxIlLnNhYXMuam9icy52MS5HZXRKb2JPcGVyYXRpb25zUmVxdWVzdBomLnNhYXMuam9icy52MS5HZXRKb2JPcGVyYXRpb25zUmVzcG9uc2UiPMLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCHhIcL3YxL3BsYXRmb3JtL2pvYnMvb3BlcmF0aW9ucxJ8CghMaXN0Sm9icxIdLnNhYXMuam9icy52MS5MaXN0Sm9ic1JlcXVlc3QaHi5zYWFzLmpvYnMudjEuTGlzdEpvYnNSZXNwb25zZSIxwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwITEhEvdjEvcGxhdGZvcm0vam9icxJ/CgZHZXRKb2ISGy5zYWFzLmpvYnMudjEuR2V0Sm9iUmVxdWVzdBocLnNhYXMuam9icy52MS5HZXRKb2JSZXNwb25zZSI6wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIcEhovdjEvcGxhdGZvcm0vam9icy97am9iX2lkfRKsAQoJUmVwbGF5Sm9iEh4uc2Fhcy5qb2JzLnYxLlJlcGxheUpvYlJlcXVlc3QaHy5zYWFzLmpvYnMudjEuUmVwbGF5Sm9iUmVzcG9uc2UiXsLzGCcIAhABMAM6FQoRc2Fhcy5qb2IucmVwbGF5ZWQQAkADSAVQA1gDYAWC0+STAi06ASoiKC92MS9wbGF0Zm9ybS9qb2JzL3tzb3VyY2Vfam9iX2lkfTpyZXBsYXkSqwEKEkdldEV2ZW50T3BlcmF0aW9ucxIpLnNhYXMuZXZlbnRzLnYxLkdldEV2ZW50T3BlcmF0aW9uc1JlcXVlc3QaKi5zYWFzLmV2ZW50cy52MS5HZXRFdmVudE9wZXJhdGlvbnNSZXNwb25zZSI+wvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIgEh4vdjEvcGxhdGZvcm0vZXZlbnRzL29wZXJhdGlvbnMSugEKFkxpc3RFdmVudFN1YnNjcmlwdGlvbnMSLS5zYWFzLmV2ZW50cy52MS5MaXN0RXZlbnRTdWJzY3JpcHRpb25zUmVxdWVzdBouLnNhYXMuZXZlbnRzLnYxLkxpc3RFdmVudFN1YnNjcmlwdGlvbnNSZXNwb25zZSJBwvMYFAgCEAEwAToCEAFAAUgFUANYA2AFgtPkkwIjEiEvdjEvcGxhdGZvcm0vZXZlbnRzL3N1YnNjcmlwdGlvbnNiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_common, file_saas_events_v1_operations, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
+  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL3BsYXRmb3JtX2FkbWluLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIlUKElNlYXJjaFVzZXJzUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJImoKE1NlYXJjaFVzZXJzUmVzcG9uc2USJQoFdXNlcnMYASADKAsyFi5zYWFzLmFjY291bnRzLnYxLlVzZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIngKG0xpc3RBbGxPcmdhbml6YXRpb25zUmVxdWVzdBINCgVxdWVyeRgBIAEoCRIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAMgASgJEhgKEGluY2x1ZGVfYXJjaGl2ZWQYBCABKAgiYgoUUGxhdGZvcm1Pcmdhbml6YXRpb24SNAoMb3JnYW5pemF0aW9uGAEgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5Pcmdhbml6YXRpb24SFAoMbWVtYmVyX2NvdW50GAIgASgFInYKHExpc3RBbGxPcmdhbml6YXRpb25zUmVzcG9uc2USPQoNb3JnYW5pemF0aW9ucxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuUGxhdGZvcm1Pcmdhbml6YXRpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIjgKHEdldE9yZ2FuaXphdGlvblJvc3RlclJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABASJRCh1HZXRPcmdhbml6YXRpb25Sb3N0ZXJSZXNwb25zZRIwCgdtZW1iZXJzGAEgAygLMh8uc2Fhcy5hY2NvdW50cy52MS5PcmdNZW1iZXJzaGlwIj8KElN1c3BlbmRVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkiMQoUVW5zdXNwZW5kVXNlclJlcXVlc3QSGQoHdXNlcl9pZBgBIAEoCUIIukgFcgOwAQEiTwoWSW1wZXJzb25hdGVVc2VyUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARIaCgZyZWFzb24YAiABKAlCCrpIB3IFEAoY9AMiQwoXSW1wZXJzb25hdGVVc2VyUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiGgoYU3RvcEltcGVyc29uYXRpb25SZXF1ZXN0ImsKGVN0b3BJbXBlcnNvbmF0aW9uUmVzcG9uc2USGAoQZHVyYXRpb25fc2Vjb25kcxgBIAEoAxIcChRhY2Nlc3NfdG9rZW5fcmV2b2tlZBgCIAEoCBIWCg5hbHJlYWR5X2Nsb3NlZBgDIAEoCCJeChlMaXN0QWN0aXZlU2Vzc2lvbnNSZXF1ZXN0Eg8KB3VzZXJfaWQYASABKAkSHAoJcGFnZV9zaXplGAIgASgFQgm6SAYaBBhkIAASEgoKcGFnZV90b2tlbhgDIAEoCSKZAwoLU2Vzc2lvbkluZm8SCgoCaWQYASABKAkSDwoHdXNlcl9pZBgCIAEoCRISCgppcF9hZGRyZXNzGAMgASgJEkIKC2RldmljZV9pbmZvGAQgAygLMi0uc2Fhcy5hY2NvdW50cy52MS5TZXNzaW9uSW5mby5EZXZpY2VJbmZvRW50cnkSLgoKY3JlYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9hY3RpdmVfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2lkbGVfZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGQoRYWN0aW5nX2FzX3VzZXJfaWQYCSABKAkaMQoPRGV2aWNlSW5mb0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiZgoaTGlzdEFjdGl2ZVNlc3Npb25zUmVzcG9uc2USLwoIc2Vzc2lvbnMYASADKAsyHS5zYWFzLmFjY291bnRzLnYxLlNlc3Npb25JbmZvEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJDChRSZXZva2VTZXNzaW9uUmVxdWVzdBIbCgpzZXNzaW9uX2lkGAEgASgJQge6SARyAhABEg4KBnJlYXNvbhgCIAEoCSI1ChlHZXRPcmdFbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQEiaAoaR2V0T3JnRW50aXRsZW1lbnRzUmVzcG9uc2USEQoJcGxhbl9uYW1lGAEgASgJEjcKDGVudGl0bGVtZW50cxgCIAMoCzIhLnNhYXMuYWNjb3VudHMudjEuRW50aXRsZW1lbnRJbmZvIlUKD0VudGl0bGVtZW50SW5mbxIPCgdmZWF0dXJlGAEgASgJEg0KBWxpbWl0GAIgASgDEgwKBHVzZWQYAyABKAMSFAoMaGFzX292ZXJyaWRlGAQgASgIInUKGk92ZXJyaWRlRW50aXRsZW1lbnRSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESGAoHZmVhdHVyZRgCIAEoCUIHukgEcgIQARITCgtsaW1pdF92YWx1ZRgDIAEoAxIOCgZyZWFzb24YBCABKAkiKQobT3ZlcnJpZGVFbnRpdGxlbWVudFJlc3BvbnNlEgoKAmlkGAEgASgJInIKGEdyYW50UGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABARI7Cg1wbGF0Zm9ybV9yb2xlGAIgASgJQiS6SCFyH1ILc3VwZXJfYWRtaW5SB3N1cHBvcnRSB2JpbGxpbmciNgoZUmV2b2tlUGxhdGZvcm1Sb2xlUmVxdWVzdBIZCgd1c2VyX2lkGAEgASgJQgi6SAVyA7ABASIbChlMaXN0UGxhdGZvcm1BZG1pbnNSZXF1ZXN0IoABChJQbGF0Zm9ybUFkbWluRW50cnkSDwoHdXNlcl9pZBgBIAEoCRIVCg1wbGF0Zm9ybV9yb2xlGAIgASgJEhIKCmdyYW50ZWRfYnkYAyABKAkSLgoKZ3JhbnRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiUgoaTGlzdFBsYXRmb3JtQWRtaW5zUmVzcG9uc2USNAoGYWRtaW5zGAEgAygLMiQuc2Fhcy5hY2NvdW50cy52MS5QbGF0Zm9ybUFkbWluRW50cnkiGQoXTGlzdEZlYXR1cmVGbGFnc1JlcXVlc3QidwoQRmVhdHVyZUZsYWdFbnRyeRIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEg8KB2VuYWJsZWQYAyABKAgSFwoPcm9sbG91dF9wZXJjZW50GAQgASgFEhYKDnRhcmdldF9vcmdfaWRzGAUgAygJIk0KGExpc3RGZWF0dXJlRmxhZ3NSZXNwb25zZRIxCgVmbGFncxgBIAMoCzIiLnNhYXMuYWNjb3VudHMudjEuRmVhdHVyZUZsYWdFbnRyeSKMAQoYVXBzZXJ0RmVhdHVyZUZsYWdSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESEwoLZGVzY3JpcHRpb24YAiABKAkSDwoHZW5hYmxlZBgDIAEoCBIXCg9yb2xsb3V0X3BlcmNlbnQYBCABKAUSFgoOdGFyZ2V0X29yZ19pZHMYBSADKAk6AhgBIi0KGVVwc2VydEZlYXR1cmVGbGFnUmVzcG9uc2USDAoEbmFtZRgBIAEoCToCGAEiVAoMQ2F0YWxvZ3VlR2FwEjQKBnJlYXNvbhgBIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlR2FwUmVhc29uEg4KBmRldGFpbBgCIAEoCSJEChBDYXRhbG9ndWVSZWxlYXNlEhEKCXB1Ymxpc2hlchgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB3ZlcnNpb24YAyABKAkiRQoSQ2F0YWxvZ3VlRXhlY3V0aW9uEhQKDGltYWdlX2RpZ2VzdBgBIAEoCRIZChFidWlsZF9pbmNhcm5hdGlvbhgCIAEoBCK+AQoQQ2F0YWxvZ3VlUnVubmluZxI2CghkZWNsYXJlZBgBIAEoCzIkLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlRXhlY3V0aW9uEjYKCG9ic2VydmVkGAIgASgLMiQuc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVFeGVjdXRpb24SOgoHdmVyZGljdBgDIAEoDjIpLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlUnVubmluZ1ZlcmRpY3Qi+AIKFUNhdGFsb2d1ZUluc3RhbGxhdGlvbhI0CgxpbnN0YWxsYXRpb24YASABKAsyHi5zYWFzLmFjY291bnRzLnYxLkluc3RhbGxhdGlvbhIQCghvcmdfbmFtZRgCIAEoCRI7Cg1hZ2VudF9yZWxlYXNlGAMgASgLMiIuc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVSZWxlYXNlSAASOwoRYWdlbnRfcmVsZWFzZV9nYXAYBCABKAsyHi5zYWFzLmFjY291bnRzLnYxLkNhdGFsb2d1ZUdhcEgAEjYKDHJldmlzaW9uX2dhcBgFIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlR2FwSAESPAoNZXhwb3NlZF90ZWFtcxgGIAMoCzIlLnNhYXMuYWNjb3VudHMudjEuQ29sbGVjdGlvblJlYWRHcmFudEIVChNhZ2VudF9yZWxlYXNlX3ZhbHVlQhAKDnJldmlzaW9uX3ZhbHVlIvwGCg5DYXRhbG9ndWVFbnRyeRIyCgRraW5kGAEgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVFbnRyeUtpbmQSDAoEbmFtZRgCIAEoCRITCglwdWJsaXNoZXIYAyABKAlIABI3Cg1wdWJsaXNoZXJfZ2FwGAQgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVHYXBIABI+ChBkZWNsYXJlZF9yZWxlYXNlGAUgASgLMiIuc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVSZWxlYXNlSAESPgoUZGVjbGFyZWRfcmVsZWFzZV9nYXAYBiABKAsyHi5zYWFzLmFjY291bnRzLnYxLkNhdGFsb2d1ZUdhcEgBEhYKDGJ1aWxkX2RpZ2VzdBgHIAEoCUgCEjoKEGJ1aWxkX2RpZ2VzdF9nYXAYCCABKAsyHi5zYWFzLmFjY291bnRzLnYxLkNhdGFsb2d1ZUdhcEgCEhQKCmdlbmVyYXRpb24YCSABKANIAxI4Cg5nZW5lcmF0aW9uX2dhcBgKIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlR2FwSAMSNQoHcnVubmluZxgLIAEoCzIiLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlUnVubmluZ0gEEjUKC3J1bm5pbmdfZ2FwGAwgASgLMh4uc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVHYXBIBBI4Cg5idWlsZF9zaXplX2dhcBgNIAEoCzIeLnNhYXMuYWNjb3VudHMudjEuQ2F0YWxvZ3VlR2FwSAUSQQoMcmVnaXN0cmF0aW9uGA4gASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbkgGiAEBEj4KDWluc3RhbGxhdGlvbnMYDyADKAsyJy5zYWFzLmFjY291bnRzLnYxLkNhdGFsb2d1ZUluc3RhbGxhdGlvbkIRCg9wdWJsaXNoZXJfdmFsdWVCGAoWZGVjbGFyZWRfcmVsZWFzZV92YWx1ZUIUChJidWlsZF9kaWdlc3RfdmFsdWVCEgoQZ2VuZXJhdGlvbl92YWx1ZUIPCg1ydW5uaW5nX3ZhbHVlQhIKEGJ1aWxkX3NpemVfdmFsdWVCDwoNX3JlZ2lzdHJhdGlvbiI6ChxMaXN0UGxhdGZvcm1DYXRhbG9ndWVSZXF1ZXN0EhoKEmluY2x1ZGVfdG9tYnN0b25lZBgBIAEoCCJtCh1MaXN0UGxhdGZvcm1DYXRhbG9ndWVSZXNwb25zZRIxCgdlbnRyaWVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5DYXRhbG9ndWVFbnRyeRIZChFyZWdpc3RyeV9yZXZpc2lvbhgCIAEoAyp+ChJDYXRhbG9ndWVFbnRyeUtpbmQSJAogQ0FUQUxPR1VFX0VOVFJZX0tJTkRfVU5TUEVDSUZJRUQQABIfChtDQVRBTE9HVUVfRU5UUllfS0lORF9NT0RVTEUQARIhCh1DQVRBTE9HVUVfRU5UUllfS0lORF9TT0xVVElPThACKq8BChJDYXRhbG9ndWVHYXBSZWFzb24SJAogQ0FUQUxPR1VFX0dBUF9SRUFTT05fVU5TUEVDSUZJRUQQABIlCiFDQVRBTE9HVUVfR0FQX1JFQVNPTl9OT1RfUkVDT1JERUQQARIlCiFDQVRBTE9HVUVfR0FQX1JFQVNPTl9OT1RfUkVQT1JURUQQAhIlCiFDQVRBTE9HVUVfR0FQX1JFQVNPTl9OT1RfT0JTRVJWRUQQAyqSAQoXQ2F0YWxvZ3VlUnVubmluZ1ZlcmRpY3QSKQolQ0FUQUxPR1VFX1JVTk5JTkdfVkVSRElDVF9VTlNQRUNJRklFRBAAEiUKIUNBVEFMT0dVRV9SVU5OSU5HX1ZFUkRJQ1RfTUFUQ0hFUxABEiUKIUNBVEFMT0dVRV9SVU5OSU5HX1ZFUkRJQ1RfRElGRkVSUxACMu8fChRQbGF0Zm9ybUFkbWluU2VydmljZRKOAQoLU2VhcmNoVXNlcnMSJC5zYWFzLmFjY291bnRzLnYxLlNlYXJjaFVzZXJzUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuU2VhcmNoVXNlcnNSZXNwb25zZSIywvMYFAgCEAEwAToCEAFAAUgFUANYA2ADgtPkkwIUEhIvdjEvcGxhdGZvcm0vdXNlcnMSqwEKC1N1c3BlbmRVc2VyEiQuc2Fhcy5hY2NvdW50cy52MS5TdXNwZW5kVXNlclJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiXsLzGCsIAhABMAE6FwoTc2Fhcy51c2VyLnN1c3BlbmRlZBACQAFIBVADWANgBXgCgtPkkwIpOgEqIiQvdjEvcGxhdGZvcm0vdXNlcnMve3VzZXJfaWR9OnN1c3BlbmQSswEKDVVuc3VzcGVuZFVzZXISJi5zYWFzLmFjY291bnRzLnYxLlVuc3VzcGVuZFVzZXJSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5ImLC8xgtCAIQATABOhkKFXNhYXMudXNlci51bnN1c3BlbmRlZBACQAFIBVADWANgBXgCgtPkkwIrOgEqIiYvdjEvcGxhdGZvcm0vdXNlcnMve3VzZXJfaWR9OnVuc3VzcGVuZBLWAQoPSW1wZXJzb25hdGVVc2VyEiguc2Fhcy5hY2NvdW50cy52MS5JbXBlcnNvbmF0ZVVzZXJSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5JbXBlcnNvbmF0ZVVzZXJSZXNwb25zZSJuwvMYNwgCEAEwBDojCh9zYWFzLnBsYXRmb3JtLnVzZXJfaW1wZXJzb25hdGVkEAJAAUgFUANYBGADeAKC0+STAi06ASoiKC92MS9wbGF0Zm9ybS91c2Vycy97dXNlcl9pZH06aW1wZXJzb25hdGUS2AEKEVN0b3BJbXBlcnNvbmF0aW9uEiouc2Fhcy5hY2NvdW50cy52MS5TdG9wSW1wZXJzb25hdGlvblJlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLlN0b3BJbXBlcnNvbmF0aW9uUmVzcG9uc2UiasLzGDwIAhABMAE6Kgomc2Fhcy5wbGF0Zm9ybS51c2VyX2ltcGVyc29uYXRpb25fZW5kZWQQAkABSAVQA1gDYAGC0+STAiQ6ASoiHy92MS9wbGF0Zm9ybS9pbXBlcnNvbmF0aW9uOnN0b3ASpgEKEkxpc3RBY3RpdmVTZXNzaW9ucxIrLnNhYXMuYWNjb3VudHMudjEuTGlzdEFjdGl2ZVNlc3Npb25zUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuTGlzdEFjdGl2ZVNlc3Npb25zUmVzcG9uc2UiNcLzGBQIAhABMAE6AhABQAFIBVADWANgA4LT5JMCFxIVL3YxL3BsYXRmb3JtL3Nlc3Npb25zEqkBCg1SZXZva2VTZXNzaW9uEiYuc2Fhcy5hY2NvdW50cy52MS5SZXZva2VTZXNzaW9uUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJYwvMYKggCEAEwAToYChRzYWFzLnNlc3Npb24ucmV2b2tlZBACQAFIBVADWANgA4LT5JMCJCoiL3YxL3BsYXRmb3JtL3Nlc3Npb25zL3tzZXNzaW9uX2lkfRLPAQoSR2V0T3JnRW50aXRsZW1lbnRzEisuc2Fhcy5hY2NvdW50cy52MS5HZXRPcmdFbnRpdGxlbWVudHNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5HZXRPcmdFbnRpdGxlbWVudHNSZXNwb25zZSJewvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAjISMC92MS9wbGF0Zm9ybS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L2VudGl0bGVtZW50cxLkAQoTT3ZlcnJpZGVFbnRpdGxlbWVudBIsLnNhYXMuYWNjb3VudHMudjEuT3ZlcnJpZGVFbnRpdGxlbWVudFJlcXVlc3QaLS5zYWFzLmFjY291bnRzLnYxLk92ZXJyaWRlRW50aXRsZW1lbnRSZXNwb25zZSJwwvMYMQgCEAEwATodChlzYWFzLmVudGl0bGVtZW50Lm92ZXJyaWRlEAJAAUgFUANYA2ACeAKC0+STAjU6ASoiMC92MS9wbGF0Zm9ybS9vcmdhbml6YXRpb25zL3tvcmdfaWR9L2VudGl0bGVtZW50cxKtAQoRR3JhbnRQbGF0Zm9ybVJvbGUSKi5zYWFzLmFjY291bnRzLnYxLkdyYW50UGxhdGZvcm1Sb2xlUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSJUwvMYMggCEAEwBDoeChpzYWFzLnBsYXRmb3JtLnJvbGVfZ3JhbnRlZBACQAFIBVADWANgBXgCgtPkkwIYOgEqIhMvdjEvcGxhdGZvcm0vYWRtaW5zErYBChJSZXZva2VQbGF0Zm9ybVJvbGUSKy5zYWFzLmFjY291bnRzLnYxLlJldm9rZVBsYXRmb3JtUm9sZVJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiW8LzGDIIAhABMAQ6Hgoac2Fhcy5wbGF0Zm9ybS5yb2xlX3Jldm9rZWQQAkABSAVQA1gDYAV4AoLT5JMCHyodL3YxL3BsYXRmb3JtL2FkbWlucy97dXNlcl9pZH0SpAEKEkxpc3RQbGF0Zm9ybUFkbWlucxIrLnNhYXMuYWNjb3VudHMudjEuTGlzdFBsYXRmb3JtQWRtaW5zUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuTGlzdFBsYXRmb3JtQWRtaW5zUmVzcG9uc2UiM8LzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCFRITL3YxL3BsYXRmb3JtL2FkbWlucxKPAQoUTGlzdEFsbE9yZ2FuaXphdGlvbnMSLS5zYWFzLmFjY291bnRzLnYxLkxpc3RBbGxPcmdhbml6YXRpb25zUmVxdWVzdBouLnNhYXMuYWNjb3VudHMudjEuTGlzdEFsbE9yZ2FuaXphdGlvbnNSZXNwb25zZSIYwvMYFAgCEAEwAToCEAFAAUgFUANYA2ADEpIBChVHZXRPcmdhbml6YXRpb25Sb3N0ZXISLi5zYWFzLmFjY291bnRzLnYxLkdldE9yZ2FuaXphdGlvblJvc3RlclJlcXVlc3QaLy5zYWFzLmFjY291bnRzLnYxLkdldE9yZ2FuaXphdGlvblJvc3RlclJlc3BvbnNlIhjC8xgUCAIQATABOgIQAUABSAVQA1gDYAMSpQEKEExpc3RGZWF0dXJlRmxhZ3MSKS5zYWFzLmFjY291bnRzLnYxLkxpc3RGZWF0dXJlRmxhZ3NSZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5MaXN0RmVhdHVyZUZsYWdzUmVzcG9uc2UiOsLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCHBIaL3YxL3BsYXRmb3JtL2ZlYXR1cmUtZmxhZ3MS0gEKEVVwc2VydEZlYXR1cmVGbGFnEiouc2Fhcy5hY2NvdW50cy52MS5VcHNlcnRGZWF0dXJlRmxhZ1JlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLlVwc2VydEZlYXR1cmVGbGFnUmVzcG9uc2UiZIgCAcLzGDEIAhABMAE6HQoZc2Fhcy5mZWF0dXJlX2ZsYWcudXBkYXRlZBACQAFIBVADWANgBXgCgtPkkwImOgEqGiEvdjEvcGxhdGZvcm0vZmVhdHVyZS1mbGFncy97bmFtZX0SnwEKEEdldEpvYk9wZXJhdGlvbnMSJS5zYWFzLmpvYnMudjEuR2V0Sm9iT3BlcmF0aW9uc1JlcXVlc3QaJi5zYWFzLmpvYnMudjEuR2V0Sm9iT3BlcmF0aW9uc1Jlc3BvbnNlIjzC8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAh4SHC92MS9wbGF0Zm9ybS9qb2JzL29wZXJhdGlvbnMSfAoITGlzdEpvYnMSHS5zYWFzLmpvYnMudjEuTGlzdEpvYnNSZXF1ZXN0Gh4uc2Fhcy5qb2JzLnYxLkxpc3RKb2JzUmVzcG9uc2UiMcLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCExIRL3YxL3BsYXRmb3JtL2pvYnMSfwoGR2V0Sm9iEhsuc2Fhcy5qb2JzLnYxLkdldEpvYlJlcXVlc3QaHC5zYWFzLmpvYnMudjEuR2V0Sm9iUmVzcG9uc2UiOsLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCHBIaL3YxL3BsYXRmb3JtL2pvYnMve2pvYl9pZH0SrAEKCVJlcGxheUpvYhIeLnNhYXMuam9icy52MS5SZXBsYXlKb2JSZXF1ZXN0Gh8uc2Fhcy5qb2JzLnYxLlJlcGxheUpvYlJlc3BvbnNlIl7C8xgnCAIQATADOhUKEXNhYXMuam9iLnJlcGxheWVkEAJAA0gFUANYA2AFgtPkkwItOgEqIigvdjEvcGxhdGZvcm0vam9icy97c291cmNlX2pvYl9pZH06cmVwbGF5EqsBChJHZXRFdmVudE9wZXJhdGlvbnMSKS5zYWFzLmV2ZW50cy52MS5HZXRFdmVudE9wZXJhdGlvbnNSZXF1ZXN0Giouc2Fhcy5ldmVudHMudjEuR2V0RXZlbnRPcGVyYXRpb25zUmVzcG9uc2UiPsLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCIBIeL3YxL3BsYXRmb3JtL2V2ZW50cy9vcGVyYXRpb25zEroBChZMaXN0RXZlbnRTdWJzY3JpcHRpb25zEi0uc2Fhcy5ldmVudHMudjEuTGlzdEV2ZW50U3Vic2NyaXB0aW9uc1JlcXVlc3QaLi5zYWFzLmV2ZW50cy52MS5MaXN0RXZlbnRTdWJzY3JpcHRpb25zUmVzcG9uc2UiQcLzGBQIAhABMAE6AhABQAFIBVADWANgBYLT5JMCIxIhL3YxL3BsYXRmb3JtL2V2ZW50cy9zdWJzY3JpcHRpb25zErABChVMaXN0UGxhdGZvcm1DYXRhbG9ndWUSLi5zYWFzLmFjY291bnRzLnYxLkxpc3RQbGF0Zm9ybUNhdGFsb2d1ZVJlcXVlc3QaLy5zYWFzLmFjY291bnRzLnYxLkxpc3RQbGF0Zm9ybUNhdGFsb2d1ZVJlc3BvbnNlIjbC8xgUCAIQATABOgIQAUABSAVQA1gDYAWC0+STAhgSFi92MS9wbGF0Zm9ybS9jYXRhbG9ndWViBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_google_protobuf_timestamp, file_saas_accounts_v1_authorization, file_saas_accounts_v1_common, file_saas_accounts_v1_installations, file_saas_accounts_v1_solution_registry, file_saas_events_v1_operations, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.SearchUsersRequest
@@ -826,6 +832,481 @@ export const UpsertFeatureFlagResponseSchema: GenMessage<UpsertFeatureFlagRespon
   messageDesc(file_saas_accounts_v1_platform_admin, 31);
 
 /**
+ * CatalogueGap is a Catalogue fact this host cannot state, with the reason.
+ *
+ * @generated from message saas.accounts.v1.CatalogueGap
+ */
+export type CatalogueGap = Message<"saas.accounts.v1.CatalogueGap"> & {
+  /**
+   * @generated from field: saas.accounts.v1.CatalogueGapReason reason = 1;
+   */
+  reason: CatalogueGapReason;
+
+  /**
+   * Operator-facing: names the record or producer that would supply the fact.
+   *
+   * @generated from field: string detail = 2;
+   */
+  detail: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CatalogueGap.
+ * Use `create(CatalogueGapSchema)` to create a new message.
+ */
+export const CatalogueGapSchema: GenMessage<CatalogueGap> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 32);
+
+/**
+ * CatalogueRelease is a declared release, publisher/name@version.
+ *
+ * @generated from message saas.accounts.v1.CatalogueRelease
+ */
+export type CatalogueRelease = Message<"saas.accounts.v1.CatalogueRelease"> & {
+  /**
+   * @generated from field: string publisher = 1;
+   */
+  publisher: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string version = 3;
+   */
+  version: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CatalogueRelease.
+ * Use `create(CatalogueReleaseSchema)` to create a new message.
+ */
+export const CatalogueReleaseSchema: GenMessage<CatalogueRelease> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 33);
+
+/**
+ * CatalogueExecution is what runs: an OCI image manifest digest and the build
+ * incarnation the host assigned to it, the same pair a Work Context seals.
+ *
+ * @generated from message saas.accounts.v1.CatalogueExecution
+ */
+export type CatalogueExecution = Message<"saas.accounts.v1.CatalogueExecution"> & {
+  /**
+   * @generated from field: string image_digest = 1;
+   */
+  imageDigest: string;
+
+  /**
+   * @generated from field: uint64 build_incarnation = 2;
+   */
+  buildIncarnation: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CatalogueExecution.
+ * Use `create(CatalogueExecutionSchema)` to create a new message.
+ */
+export const CatalogueExecutionSchema: GenMessage<CatalogueExecution> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 34);
+
+/**
+ * CatalogueRunning is the running incarnation beside the declared one.
+ *
+ * @generated from message saas.accounts.v1.CatalogueRunning
+ */
+export type CatalogueRunning = Message<"saas.accounts.v1.CatalogueRunning"> & {
+  /**
+   * @generated from field: saas.accounts.v1.CatalogueExecution declared = 1;
+   */
+  declared?: CatalogueExecution;
+
+  /**
+   * @generated from field: saas.accounts.v1.CatalogueExecution observed = 2;
+   */
+  observed?: CatalogueExecution;
+
+  /**
+   * @generated from field: saas.accounts.v1.CatalogueRunningVerdict verdict = 3;
+   */
+  verdict: CatalogueRunningVerdict;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CatalogueRunning.
+ * Use `create(CatalogueRunningSchema)` to create a new message.
+ */
+export const CatalogueRunningSchema: GenMessage<CatalogueRunning> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 35);
+
+/**
+ * CatalogueInstallation is one organization's installation of a solution.
+ *
+ * @generated from message saas.accounts.v1.CatalogueInstallation
+ */
+export type CatalogueInstallation = Message<"saas.accounts.v1.CatalogueInstallation"> & {
+  /**
+   * @generated from field: saas.accounts.v1.Installation installation = 1;
+   */
+  installation?: Installation;
+
+  /**
+   * @generated from field: string org_name = 2;
+   */
+  orgName: string;
+
+  /**
+   * The release the installation's agent principal was created for, read from
+   * its canonical publisher/name:version identifier.
+   *
+   * @generated from oneof saas.accounts.v1.CatalogueInstallation.agent_release_value
+   */
+  agentReleaseValue: {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueRelease agent_release = 3;
+     */
+    value: CatalogueRelease;
+    case: "agentRelease";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap agent_release_gap = 4;
+     */
+    value: CatalogueGap;
+    case: "agentReleaseGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * The installation revision the installed generation is pinned at.
+   *
+   * @generated from oneof saas.accounts.v1.CatalogueInstallation.revision_value
+   */
+  revisionValue: {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap revision_gap = 5;
+     */
+    value: CatalogueGap;
+    case: "revisionGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * Active team grants at the installation's authority root or above it, so
+   * every team whose members the grant reaches inside this installation.
+   *
+   * @generated from field: repeated saas.accounts.v1.CollectionReadGrant exposed_teams = 6;
+   */
+  exposedTeams: CollectionReadGrant[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.CatalogueInstallation.
+ * Use `create(CatalogueInstallationSchema)` to create a new message.
+ */
+export const CatalogueInstallationSchema: GenMessage<CatalogueInstallation> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 36);
+
+/**
+ * CatalogueEntry is one module or solution.
+ *
+ * @generated from message saas.accounts.v1.CatalogueEntry
+ */
+export type CatalogueEntry = Message<"saas.accounts.v1.CatalogueEntry"> & {
+  /**
+   * @generated from field: saas.accounts.v1.CatalogueEntryKind kind = 1;
+   */
+  kind: CatalogueEntryKind;
+
+  /**
+   * A module's principal prefix, or a solution's registry id — the identifier
+   * its installations name.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * The owner of record: a solution registration's publisher.
+   *
+   * @generated from oneof saas.accounts.v1.CatalogueEntry.publisher_value
+   */
+  publisherValue: {
+    /**
+     * @generated from field: string publisher = 3;
+     */
+    value: string;
+    case: "publisher";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap publisher_gap = 4;
+     */
+    value: CatalogueGap;
+    case: "publisherGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * @generated from oneof saas.accounts.v1.CatalogueEntry.declared_release_value
+   */
+  declaredReleaseValue: {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueRelease declared_release = 5;
+     */
+    value: CatalogueRelease;
+    case: "declaredRelease";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap declared_release_gap = 6;
+     */
+    value: CatalogueGap;
+    case: "declaredReleaseGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * The OCI image manifest digest the entry was published at.
+   *
+   * @generated from oneof saas.accounts.v1.CatalogueEntry.build_digest_value
+   */
+  buildDigestValue: {
+    /**
+     * @generated from field: string build_digest = 7;
+     */
+    value: string;
+    case: "buildDigest";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap build_digest_gap = 8;
+     */
+    value: CatalogueGap;
+    case: "buildDigestGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * The presence generation this host applied.
+   *
+   * @generated from oneof saas.accounts.v1.CatalogueEntry.generation_value
+   */
+  generationValue: {
+    /**
+     * @generated from field: int64 generation = 9;
+     */
+    value: bigint;
+    case: "generation";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap generation_gap = 10;
+     */
+    value: CatalogueGap;
+    case: "generationGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * @generated from oneof saas.accounts.v1.CatalogueEntry.running_value
+   */
+  runningValue: {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueRunning running = 11;
+     */
+    value: CatalogueRunning;
+    case: "running";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap running_gap = 12;
+     */
+    value: CatalogueGap;
+    case: "runningGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * Lines of code, backend and frontend, vendored paths excluded. The value
+   * case is the presence document's build_size section (codefly-dev/core#708)
+   * as delivered; this host counts nothing itself.
+   *
+   * @generated from oneof saas.accounts.v1.CatalogueEntry.build_size_value
+   */
+  buildSizeValue: {
+    /**
+     * @generated from field: saas.accounts.v1.CatalogueGap build_size_gap = 13;
+     */
+    value: CatalogueGap;
+    case: "buildSizeGap";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * The solution's registration, with deployment topology withheld: the
+   * frontend manifest, backend upstream and service alias are always empty
+   * here, as on every browser-facing projection of the registry. Absent for a
+   * module, which does not self-register, and for a solution known only from
+   * its installations.
+   *
+   * @generated from field: optional saas.accounts.v1.SolutionRegistration registration = 14;
+   */
+  registration?: SolutionRegistration;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.CatalogueInstallation installations = 15;
+   */
+  installations: CatalogueInstallation[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.CatalogueEntry.
+ * Use `create(CatalogueEntrySchema)` to create a new message.
+ */
+export const CatalogueEntrySchema: GenMessage<CatalogueEntry> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 37);
+
+/**
+ * @generated from message saas.accounts.v1.ListPlatformCatalogueRequest
+ */
+export type ListPlatformCatalogueRequest = Message<"saas.accounts.v1.ListPlatformCatalogueRequest"> & {
+  /**
+   * Include deregistered solutions. Their installations are listed either way.
+   *
+   * @generated from field: bool include_tombstoned = 1;
+   */
+  includeTombstoned: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListPlatformCatalogueRequest.
+ * Use `create(ListPlatformCatalogueRequestSchema)` to create a new message.
+ */
+export const ListPlatformCatalogueRequestSchema: GenMessage<ListPlatformCatalogueRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 38);
+
+/**
+ * @generated from message saas.accounts.v1.ListPlatformCatalogueResponse
+ */
+export type ListPlatformCatalogueResponse = Message<"saas.accounts.v1.ListPlatformCatalogueResponse"> & {
+  /**
+   * Modules first, then solutions, each ordered by name.
+   *
+   * @generated from field: repeated saas.accounts.v1.CatalogueEntry entries = 1;
+   */
+  entries: CatalogueEntry[];
+
+  /**
+   * The registry revision the solution entries were read at.
+   *
+   * @generated from field: int64 registry_revision = 2;
+   */
+  registryRevision: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ListPlatformCatalogueResponse.
+ * Use `create(ListPlatformCatalogueResponseSchema)` to create a new message.
+ */
+export const ListPlatformCatalogueResponseSchema: GenMessage<ListPlatformCatalogueResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_platform_admin, 39);
+
+/**
+ * CatalogueEntryKind distinguishes a composed module from a solution.
+ *
+ * @generated from enum saas.accounts.v1.CatalogueEntryKind
+ */
+export enum CatalogueEntryKind {
+  /**
+   * @generated from enum value: CATALOGUE_ENTRY_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A module composed into this deployment, known by its module principal.
+   *
+   * @generated from enum value: CATALOGUE_ENTRY_KIND_MODULE = 1;
+   */
+  MODULE = 1,
+
+  /**
+   * A solution, known by its registration, its installations, or both.
+   *
+   * @generated from enum value: CATALOGUE_ENTRY_KIND_SOLUTION = 2;
+   */
+  SOLUTION = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.CatalogueEntryKind.
+ */
+export const CatalogueEntryKindSchema: GenEnum<CatalogueEntryKind> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_platform_admin, 0);
+
+/**
+ * CatalogueGapReason says why a Catalogue fact has no value.
+ *
+ * @generated from enum saas.accounts.v1.CatalogueGapReason
+ */
+export enum CatalogueGapReason {
+  /**
+   * @generated from enum value: CATALOGUE_GAP_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * This host keeps no record that carries the fact.
+   *
+   * @generated from enum value: CATALOGUE_GAP_REASON_NOT_RECORDED = 1;
+   */
+  NOT_RECORDED = 1,
+
+  /**
+   * The fact is a section of the producer's document, and the document this
+   * host holds carries no such section (an older producer).
+   *
+   * @generated from enum value: CATALOGUE_GAP_REASON_NOT_REPORTED = 2;
+   */
+  NOT_REPORTED = 2,
+
+  /**
+   * The fact needs observed cluster state, and this host has none to read —
+   * a local run with no cluster, or an observation that is missing or stale.
+   *
+   * @generated from enum value: CATALOGUE_GAP_REASON_NOT_OBSERVED = 3;
+   */
+  NOT_OBSERVED = 3,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.CatalogueGapReason.
+ */
+export const CatalogueGapReasonSchema: GenEnum<CatalogueGapReason> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_platform_admin, 1);
+
+/**
+ * CatalogueRunningVerdict compares the observed execution with the declared
+ * one. It exists only when both are known; anything less is a CatalogueGap.
+ *
+ * @generated from enum saas.accounts.v1.CatalogueRunningVerdict
+ */
+export enum CatalogueRunningVerdict {
+  /**
+   * @generated from enum value: CATALOGUE_RUNNING_VERDICT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The observed image digest and incarnation are the declared ones.
+   *
+   * @generated from enum value: CATALOGUE_RUNNING_VERDICT_MATCHES = 1;
+   */
+  MATCHES = 1,
+
+  /**
+   * Something other than the declared execution is running — what cluster
+   * admission refuses.
+   *
+   * @generated from enum value: CATALOGUE_RUNNING_VERDICT_DIFFERS = 2;
+   */
+  DIFFERS = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.CatalogueRunningVerdict.
+ */
+export const CatalogueRunningVerdictSchema: GenEnum<CatalogueRunningVerdict> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_platform_admin, 2);
+
+/**
  * PlatformAdminService — cross-tenant operations for platform operators.
  * All RPCs require a platform_role in the JWT claims.
  *
@@ -1043,6 +1524,17 @@ export const PlatformAdminService: GenService<{
     methodKind: "unary";
     input: typeof ListEventSubscriptionsRequestSchema;
     output: typeof ListEventSubscriptionsResponseSchema;
+  },
+  /**
+   * ListPlatformCatalogue lists every composed module and solution with what
+   * it declares, what runs, and which organizations have it installed.
+   *
+   * @generated from rpc saas.accounts.v1.PlatformAdminService.ListPlatformCatalogue
+   */
+  listPlatformCatalogue: {
+    methodKind: "unary";
+    input: typeof ListPlatformCatalogueRequestSchema;
+    output: typeof ListPlatformCatalogueResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_platform_admin, 0);

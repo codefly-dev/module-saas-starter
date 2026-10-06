@@ -138,6 +138,43 @@ not to be a solution's. Otherwise mints are unchanged: a request with no
 verified solution must name its own `task_id`, exactly as the schema used to
 require.
 
+## The platform Catalogue is a projection, not a registry
+
+`PlatformAdminService.ListPlatformCatalogue` (super administrators, page
+`/admin/platform/catalogue`) lists every composed module and every solution
+with what it declares, what runs and where it is installed. It **adds no store**:
+modules come from the `MODULE_PRINCIPALS` registry (`Service.modulePrincipals`),
+solutions from `solution_registrations` (read with tombstones, so an
+installation of a deregistered solution sits beside its tombstone rather than
+reading as a solution nobody registered), and installations from
+`InstallationStore.ListCatalogueInstallations` — every organization's active
+installations under the control plane, with the organization's name, the
+`publisher/name:version` of the agent principal each was installed as, and the
+team grants at its authority root or above (the same labelled-grant query
+`ListCollectionAccess` reads). An installation names its solution by its free-text
+`solution_identifier`, so that is the join; an identifier no registration carries
+becomes a solution entry known only by its installations.
+
+**Absent facts are gaps, never values.** The declared release, build digest,
+generation, running incarnation, installation revision and build size each have
+a `oneof` of their value and a `CatalogueGap{reason, detail}`. Today no record on
+this host carries the declared release, build digest, generation or installation
+revision (they arrive with applied presence documents), nothing observes what
+runs, and build size is the presence document's `build_size` section
+(codefly-dev/core#708, computed by the CLI at build, codefly-dev/cli#901): the host
+counts no lines itself. So every entry reports those as `NOT_RECORDED`, and
+running as `NOT_OBSERVED`. A running verdict (`MATCHES` / `DIFFERS`) exists only
+when both a declared and an observed `{image_digest, build_incarnation}` are
+known (`setCatalogueRunning`); an unobserved deployment is never a match. When a
+record starts carrying a fact, `newCatalogueEntry` reads it and the value case of
+that `oneof` replaces the gap — build size gains its value field in the same
+`oneof`.
+
+**The registration it returns withholds topology**: `catalogueRegistrationProto`
+blanks the frontend manifest, backend upstream and service alias, as every other
+browser-facing projection of the registry does, and the runtime-boundary seed is
+withheld as on every response.
+
 ## The composed-module service principal
 
 A module consuming the module-facing capability surface

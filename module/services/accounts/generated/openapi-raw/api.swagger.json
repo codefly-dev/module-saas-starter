@@ -3211,6 +3211,38 @@
         ]
       }
     },
+    "/v1/platform/catalogue": {
+      "get": {
+        "summary": "ListPlatformCatalogue lists every composed module and solution with what\nit declares, what runs, and which organizations have it installed.",
+        "operationId": "PlatformAdminService_ListPlatformCatalogue",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPlatformCatalogueResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "includeTombstoned",
+            "description": "Include deregistered solutions. Their installations are listed either way.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
     "/v1/platform/events/operations": {
       "get": {
         "summary": "Domain-event platform operations (#494 P3). Payload bytes never leave the\ndurable event boundary through these methods — only counts, timings, and\ncontrol-plane subscription metadata do.",
@@ -6813,6 +6845,180 @@
         }
       }
     },
+    "v1CatalogueEntry": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/v1CatalogueEntryKind"
+        },
+        "name": {
+          "type": "string",
+          "description": "A module's principal prefix, or a solution's registry id — the identifier\nits installations name."
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "publisherGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "declaredRelease": {
+          "$ref": "#/definitions/v1CatalogueRelease"
+        },
+        "declaredReleaseGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "buildDigest": {
+          "type": "string"
+        },
+        "buildDigestGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "generation": {
+          "type": "string",
+          "format": "int64"
+        },
+        "generationGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "running": {
+          "$ref": "#/definitions/v1CatalogueRunning"
+        },
+        "runningGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "buildSizeGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "registration": {
+          "$ref": "#/definitions/v1SolutionRegistration",
+          "description": "The solution's registration, with deployment topology withheld: the\nfrontend manifest, backend upstream and service alias are always empty\nhere, as on every browser-facing projection of the registry. Absent for a\nmodule, which does not self-register, and for a solution known only from\nits installations."
+        },
+        "installations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CatalogueInstallation"
+          }
+        }
+      },
+      "description": "CatalogueEntry is one module or solution."
+    },
+    "v1CatalogueEntryKind": {
+      "type": "string",
+      "enum": [
+        "CATALOGUE_ENTRY_KIND_UNSPECIFIED",
+        "CATALOGUE_ENTRY_KIND_MODULE",
+        "CATALOGUE_ENTRY_KIND_SOLUTION"
+      ],
+      "default": "CATALOGUE_ENTRY_KIND_UNSPECIFIED",
+      "description": "CatalogueEntryKind distinguishes a composed module from a solution.\n\n - CATALOGUE_ENTRY_KIND_MODULE: A module composed into this deployment, known by its module principal.\n - CATALOGUE_ENTRY_KIND_SOLUTION: A solution, known by its registration, its installations, or both."
+    },
+    "v1CatalogueExecution": {
+      "type": "object",
+      "properties": {
+        "imageDigest": {
+          "type": "string"
+        },
+        "buildIncarnation": {
+          "type": "string",
+          "format": "uint64"
+        }
+      },
+      "description": "CatalogueExecution is what runs: an OCI image manifest digest and the build\nincarnation the host assigned to it, the same pair a Work Context seals."
+    },
+    "v1CatalogueGap": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "$ref": "#/definitions/v1CatalogueGapReason"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Operator-facing: names the record or producer that would supply the fact."
+        }
+      },
+      "description": "CatalogueGap is a Catalogue fact this host cannot state, with the reason."
+    },
+    "v1CatalogueGapReason": {
+      "type": "string",
+      "enum": [
+        "CATALOGUE_GAP_REASON_UNSPECIFIED",
+        "CATALOGUE_GAP_REASON_NOT_RECORDED",
+        "CATALOGUE_GAP_REASON_NOT_REPORTED",
+        "CATALOGUE_GAP_REASON_NOT_OBSERVED"
+      ],
+      "default": "CATALOGUE_GAP_REASON_UNSPECIFIED",
+      "description": "CatalogueGapReason says why a Catalogue fact has no value.\n\n - CATALOGUE_GAP_REASON_NOT_RECORDED: This host keeps no record that carries the fact.\n - CATALOGUE_GAP_REASON_NOT_REPORTED: The fact is a section of the producer's document, and the document this\nhost holds carries no such section (an older producer).\n - CATALOGUE_GAP_REASON_NOT_OBSERVED: The fact needs observed cluster state, and this host has none to read —\na local run with no cluster, or an observation that is missing or stale."
+    },
+    "v1CatalogueInstallation": {
+      "type": "object",
+      "properties": {
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "orgName": {
+          "type": "string"
+        },
+        "agentRelease": {
+          "$ref": "#/definitions/v1CatalogueRelease"
+        },
+        "agentReleaseGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "revisionGap": {
+          "$ref": "#/definitions/v1CatalogueGap"
+        },
+        "exposedTeams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionReadGrant"
+          },
+          "description": "Active team grants at the installation's authority root or above it, so\nevery team whose members the grant reaches inside this installation."
+        }
+      },
+      "description": "CatalogueInstallation is one organization's installation of a solution."
+    },
+    "v1CatalogueRelease": {
+      "type": "object",
+      "properties": {
+        "publisher": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "description": "CatalogueRelease is a declared release, publisher/name@version."
+    },
+    "v1CatalogueRunning": {
+      "type": "object",
+      "properties": {
+        "declared": {
+          "$ref": "#/definitions/v1CatalogueExecution"
+        },
+        "observed": {
+          "$ref": "#/definitions/v1CatalogueExecution"
+        },
+        "verdict": {
+          "$ref": "#/definitions/v1CatalogueRunningVerdict"
+        }
+      },
+      "description": "CatalogueRunning is the running incarnation beside the declared one."
+    },
+    "v1CatalogueRunningVerdict": {
+      "type": "string",
+      "enum": [
+        "CATALOGUE_RUNNING_VERDICT_UNSPECIFIED",
+        "CATALOGUE_RUNNING_VERDICT_MATCHES",
+        "CATALOGUE_RUNNING_VERDICT_DIFFERS"
+      ],
+      "default": "CATALOGUE_RUNNING_VERDICT_UNSPECIFIED",
+      "description": "CatalogueRunningVerdict compares the observed execution with the declared\none. It exists only when both are known; anything less is a CatalogueGap.\n\n - CATALOGUE_RUNNING_VERDICT_MATCHES: The observed image digest and incarnation are the declared ones.\n - CATALOGUE_RUNNING_VERDICT_DIFFERS: Something other than the declared execution is running — what cluster\nadmission refuses."
+    },
     "v1ClientAuthorizationRequest": {
       "type": "object",
       "properties": {
@@ -8806,6 +9012,24 @@
         }
       }
     },
+    "v1ListPlatformCatalogueResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CatalogueEntry"
+          },
+          "description": "Modules first, then solutions, each ordered by name."
+        },
+        "registryRevision": {
+          "type": "string",
+          "format": "int64",
+          "description": "The registry revision the solution entries were read at."
+        }
+      }
+    },
     "v1ListPrincipalsResponse": {
       "type": "object",
       "properties": {
@@ -10228,6 +10452,100 @@
           "$ref": "#/definitions/v1RecordShare"
         }
       }
+    },
+    "v1SolutionBackendBinding": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "upstream": {
+          "type": "string"
+        },
+        "serviceAlias": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "SolutionBackendBinding is the stored backend half: the upstream the gateway\nproxies to and the logical service alias it is addressed by."
+    },
+    "v1SolutionFrontendBinding": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "manifest": {
+          "type": "string"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validated before handing it over; this service persists it\nverbatim and never reinterprets it, so the host keeps sole ownership of what\na manifest may contain."
+    },
+    "v1SolutionRegistration": {
+      "type": "object",
+      "properties": {
+        "solutionId": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Owner of record. First claim binds it; a registration naming a different\npublisher is refused rather than overwriting."
+        },
+        "revision": {
+          "type": "string",
+          "format": "int64"
+        },
+        "status": {
+          "$ref": "#/definitions/v1SolutionRegistrationStatus"
+        },
+        "frontend": {
+          "$ref": "#/definitions/v1SolutionFrontendBinding"
+        },
+        "backend": {
+          "$ref": "#/definitions/v1SolutionBackendBinding"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tombstonedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "runtimeBoundary": {
+          "type": "string",
+          "description": "The seed a solution's runtime boundary is derived from (issue #1015).\n\nALWAYS EMPTY on the wire, on every response, deliberately. The seed is\nassigned by this service when the record is created and never again, and it\nis the only input to the per-organization boundary every Work Context\nminted for that solution is sealed under — so it is what stands between one\nsolution's runs and another's. No registrant needs it: accounts derives and\nseals the boundary from the credential the solution already presents.\n\nThe field is kept rather than removed so this promise is testable: a change\nthat starts populating it fails a test instead of shipping."
+        }
+      },
+      "description": "SolutionRegistration is the canonical record. revision is drawn from one\nregistry-wide sequence, so revisions are comparable across records and a\nconsumer can order two snapshots without a wall clock."
+    },
+    "v1SolutionRegistrationStatus": {
+      "type": "string",
+      "enum": [
+        "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
+        "SOLUTION_REGISTRATION_STATUS_ACTIVE",
+        "SOLUTION_REGISTRATION_STATUS_PENDING",
+        "SOLUTION_REGISTRATION_STATUS_EXPIRED",
+        "SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE",
+        "SOLUTION_REGISTRATION_STATUS_TOMBSTONED"
+      ],
+      "default": "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
+      "description": "SolutionRegistrationStatus is derived at read time from the stored record; it\nis never a stored column. It is what lets an operator tell a registration\nthat was never completed from one whose publisher stopped renewing, and both\nfrom one that was deliberately removed.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present, their leases are live, and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has never registered. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_EXPIRED: Both halves registered, but at least one lease lapsed: the deployment that\nowns it stopped renewing. The intent survives; the endpoint is not live.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: The registration was deregistered. The row survives as a tombstone so a\ndelayed heartbeat from a retiring deployment cannot recreate it."
     },
     "v1StartChildSessionWorkContextRequest": {
       "type": "object",

@@ -656,4 +656,81 @@ func installationScopeAllowed(ctx context.Context, executor QueryExecutor, orgID
 	return allowed, err
 }
 
+// ListCatalogueInstallations lists every active installation in every
+// organization for the platform Catalogue, with the organization's name, the
+// identifier of the agent principal it was installed as, and the active team
+// grants at its authority root or above it. It must run under the control plane:
+// it reads across tenants.
+func (s *PostgresStore) ListCatalogueInstallations(ctx context.Context) ([]*business.CatalogueInstallationRecord, error) {
+	executor := s.getQueryExecutor(ctx)
+	rows, err := executor.Query(ctx, `SELECT `+installationColumns+`, org_name, agent_identifier
+		FROM (SELECT i.*, o.name AS org_name, COALESCE(p.agent_identifier, '') AS agent_identifier
+		        FROM installations i
+		        JOIN organizations o ON o.id = i.org_id
+		        LEFT JOIN principals p ON p.id = i.agent_principal_id
+		       WHERE i.status = 'active') installations
+		ORDER BY solution_identifier, org_name, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list catalogue installations: %w", err)
+	}
+	var records []*business.CatalogueInstallationRecord
+	byID := make(map[string]*business.CatalogueInstallationRecord)
+	for rows.Next() {
+		record := &business.CatalogueInstallationRecord{}
+		installation, err := scanInstallation(trailingColumns{rows, []any{&record.OrgName, &record.AgentIdentifier}})
+		if err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan catalogue installation: %w", err)
+		}
+		record.Installation = installation
+		records = append(records, record)
+		byID[installation.Id] = record
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("list catalogue installations: %w", err)
+	}
+
+	grants, err := executor.Query(ctx, `SELECT i.id::text, i.org_id::text, `+labelledGrantColumns+`
+		FROM installations i
+		JOIN scope_nodes root ON root.id = i.root_scope_node_id
+		JOIN scope_grants g ON g.org_id = i.org_id AND g.subject_kind = 'team'
+		 AND g.scope_path @> root.scope_path
+		 AND (g.expires_at IS NULL OR g.expires_at > NOW())
+		`+labelledGrantJoins+`
+		WHERE i.status = 'active'
+		ORDER BY i.id, g.created_at, g.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list catalogue installation teams: %w", err)
+	}
+	defer grants.Close()
+	for grants.Next() {
+		var installationID, orgID string
+		view, err := scanLabelledGrant(grants, "", &installationID, &orgID)
+		if err != nil {
+			return nil, fmt.Errorf("scan catalogue installation team: %w", err)
+		}
+		view.Grant.OrgId = orgID
+		if record, ok := byID[installationID]; ok {
+			record.ExposedTeams = append(record.ExposedTeams, view)
+		}
+	}
+	if err := grants.Err(); err != nil {
+		return nil, fmt.Errorf("list catalogue installation teams: %w", err)
+	}
+	return records, nil
+}
+
+// trailingColumns scans columns a query selects after a canonical column list
+// into extra destinations, so the canonical scanner stays the only reader of it.
+type trailingColumns struct {
+	rowScanner
+	extra []any
+}
+
+func (t trailingColumns) Scan(dest ...any) error {
+	return t.rowScanner.Scan(append(dest, t.extra...)...)
+}
+
 var _ business.InstallationStore = (*PostgresStore)(nil)
