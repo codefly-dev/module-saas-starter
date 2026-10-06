@@ -362,3 +362,27 @@ end of the returned qualified name). It looks up that retained row directly,
 checks its original activation permission against the current parent and current
 administrator, and revokes it even if its installation or policy is now disabled.
 It does not require the old content graph to remain executable.
+
+## Current installation identity for a module
+
+`ModuleCapabilitiesService/GetCurrentInstallation` is an internal authority-port
+read. Its only selector is `installation_id`; `parent_work_context_token` is
+proof, not a source or tenant selector. The module presents its own Work Context
+and the internal transport credential independently. The host verifies the
+parent signature, issuer, expiry, current owner/actor authority revision and
+live delegation revocation, then requires its audience to match the authenticated
+module's installed prefix and its tenant to fit that module's grant.
+
+This preserves `GetInstallation`'s organization-member metadata-read rule.
+It introduces no permission vocabulary, operation binding, scope alias or token
+mint. The owner must still be a current member. The tenant and owner come only
+from the verified parent. The tenant-scoped store must return the exact requested
+installation and tenant, ACTIVE with no revocation timestamp. Success contains
+only `installation_id`, `tenant_id` and the exact host `solution_identifier`.
+Absent, inactive, revoked or mismatched rows are refused. No requested source,
+configuration, graph, grant or model identity is accepted or returned.
+
+A success is a current observation, not a durable liveness proof or approval to
+execute anything. Consumers retain their own operation authorization and re-read
+on subsequent requests. This read neither consumes nor extends a parent replay
+witness and never substitutes a viewer bearer or remints missing authority.

@@ -35,6 +35,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{
 		"/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+		"/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
 		"/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
 		"/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
 		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",

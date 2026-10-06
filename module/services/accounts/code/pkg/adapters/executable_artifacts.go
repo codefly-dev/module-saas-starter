@@ -1,12 +1,10 @@
 package adapters
 
 import (
-	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"connectrpc.com/connect"
 	"context"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -23,7 +21,7 @@ func (s *ModuleCapabilitiesServer) RevokeExecutableArtifact(ctx context.Context,
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	a, err := authenticateArtifactParent(ctx, req.ParentWorkContextToken)
+	a, err := authenticateModuleParent(ctx, req.ParentWorkContextToken)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +44,7 @@ func (s *ModuleCapabilitiesServer) decideExecutableArtifact(ctx context.Context,
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authn, err := authenticateArtifactParent(ctx, req.ParentWorkContextToken)
+	authn, err := authenticateModuleParent(ctx, req.ParentWorkContextToken)
 	if err != nil {
 		return nil, err
 	}
@@ -113,46 +111,4 @@ func (h *moduleCapabilitiesConnectHandler) RevokeExecutableArtifact(ctx context.
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(out), nil
-}
-
-type artifactAuthentication struct {
-	ctx    context.Context
-	caller business.ModuleCaller
-	parent *basev0.WorkContextV1
-	actor  *business.Principal
-}
-
-func authenticateArtifactParent(ctx context.Context, encoded string) (artifactAuthentication, error) {
-	if err := requireInternalCredential(ctx); err != nil {
-		return artifactAuthentication{}, err
-	}
-	md, _ := metadata.FromIncomingContext(ctx)
-	if len(md.Get(workcontext.WorkContextHeaderName)) != 1 {
-		return artifactAuthentication{}, status.Error(codes.Unauthenticated, "one module Work Context required")
-	}
-	authority := WorkContextSingleton()
-	if service == nil || authority == nil || authority.verifier == nil || authority.configureErr != nil || authority.authority == nil {
-		return artifactAuthentication{}, status.Error(codes.Unavailable, "artifact authority unavailable")
-	}
-	caller, err := moduleCaller(ctx)
-	if err != nil {
-		return artifactAuthentication{}, err
-	}
-	token, err := workcontext.ParseWorkContextToken(encoded)
-	if err != nil {
-		return artifactAuthentication{}, status.Error(codes.PermissionDenied, "invalid artifact parent")
-	}
-	verified, err := authority.verifier.Verify(token, workcontext.WorkContextExpectations{Issuer: authority.issuer})
-	if err != nil || verified.TenantId == "" || verified.OwnerPrincipalId == "" {
-		return artifactAuthentication{}, status.Error(codes.PermissionDenied, "invalid artifact parent")
-	}
-	ctx = auth.WithVerifiedDatabaseIdentity(ctx, verified.OwnerPrincipalId, verified.TenantId)
-	if len(verified.ActorChain) > 0 && authority.journal == nil {
-		return artifactAuthentication{}, status.Error(codes.Unavailable, "delegation journal unavailable")
-	}
-	_, parent, actor, err := authority.verifyParent(ctx, verified.TenantId, verified.OwnerPrincipalId, encoded)
-	if err != nil {
-		return artifactAuthentication{}, err
-	}
-	return artifactAuthentication{ctx, caller, parent, actor}, nil
 }

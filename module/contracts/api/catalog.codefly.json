@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:1af0a70b864962f6ce9bbb6e03bab51e4819647710b66cb51d96914138cef9be",
+      "digest": "sha256:54cb486f38f377a71fec1a6bbfc8f05fcb86a00054dd00cf1dd7b76a38aaac29",
       "services": [
         {
           "name": "APIKeyService",
@@ -229,6 +229,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
@@ -480,7 +481,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:1af0a70b864962f6ce9bbb6e03bab51e4819647710b66cb51d96914138cef9be",
+      "digest": "sha256:54cb486f38f377a71fec1a6bbfc8f05fcb86a00054dd00cf1dd7b76a38aaac29",
       "services": [
         {
           "name": "APIKeyService",
@@ -699,6 +700,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",

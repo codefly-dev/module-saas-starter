@@ -45,6 +45,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob
               - /saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceFiles
               - /saas.accounts.v1.ModuleCapabilitiesService/GetApproval
+              - /saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation
               - /saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob
               - /saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections
               - /saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility

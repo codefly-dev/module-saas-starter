@@ -21,6 +21,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation"
 	ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact"
 	ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact"
 	ModuleCapabilitiesService_RevokeExecutableArtifact_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact"
@@ -60,6 +61,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(ctx context.Context, in *ModuleCurrentInstallationRequest, opts ...grpc.CallOption) (*ModuleCurrentInstallationResponse, error)
 	// Explicit current-admin consent, never inferred from an execution request.
 	ApproveExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error)
 	// Read existing exact approval; check live authority and revocation each time.
@@ -180,6 +184,16 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) GetCurrentInstallation(ctx context.Context, in *ModuleCurrentInstallationRequest, opts ...grpc.CallOption) (*ModuleCurrentInstallationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleCurrentInstallationResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) ApproveExecutableArtifact(ctx context.Context, in *ModuleExecutableArtifactRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactResponse, error) {
@@ -535,6 +549,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
+	// Organization-member metadata read, not executable consent or a durable
+	// liveness proof. Returns only a currently active, non-revoked installation.
+	GetCurrentInstallation(context.Context, *ModuleCurrentInstallationRequest) (*ModuleCurrentInstallationResponse, error)
 	// Explicit current-admin consent, never inferred from an execution request.
 	ApproveExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error)
 	// Read existing exact approval; check live authority and revocation each time.
@@ -657,6 +674,9 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) GetCurrentInstallation(context.Context, *ModuleCurrentInstallationRequest) (*ModuleCurrentInstallationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCurrentInstallation not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) ApproveExecutableArtifact(context.Context, *ModuleExecutableArtifactRequest) (*ModuleExecutableArtifactResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ApproveExecutableArtifact not implemented")
 }
@@ -776,6 +796,24 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_GetCurrentInstallation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleCurrentInstallationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).GetCurrentInstallation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).GetCurrentInstallation(ctx, req.(*ModuleCurrentInstallationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_ApproveExecutableArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1365,6 +1403,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetCurrentInstallation",
+			Handler:    _ModuleCapabilitiesService_GetCurrentInstallation_Handler,
+		},
 		{
 			MethodName: "ApproveExecutableArtifact",
 			Handler:    _ModuleCapabilitiesService_ApproveExecutableArtifact_Handler,

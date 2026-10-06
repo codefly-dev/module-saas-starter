@@ -88,6 +88,7 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 // entry to the rules above.
 var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
+	"/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
 	"/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",
 	"/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
 	"/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
