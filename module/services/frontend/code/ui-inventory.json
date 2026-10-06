@@ -416,6 +416,25 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/accordion.tsx",
+      "imports": [
+        "@base-ui/react/accordion",
+        "lucide-react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Coordinated disclosure groups using Base UI behavior.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Disclosures"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/alert-dialog.tsx",
       "imports": [
         "@base-ui/react/alert-dialog",
@@ -502,6 +521,25 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify interactive accessibility and rendering under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/breadcrumb.tsx",
+      "imports": [
+        "react",
+        "./button.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "An accessible trail with inert current page and injected navigation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Breadcrumbs"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
     },
     {
       "source": "packages/codefly-ui/src/layout/button.tsx",
@@ -692,6 +730,26 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/disclosure.tsx",
+      "imports": [
+        "@base-ui/react/collapsible",
+        "lucide-react",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "An expandable data-in section with shared heading and focus semantics.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Disclosures"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
     },
     {
       "source": "packages/codefly-ui/src/layout/dropdown-menu.tsx",
@@ -985,6 +1043,25 @@
       "remaining": "Verify explorer rendering and the tone fills under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/radio-group.tsx",
+      "imports": [
+        "@base-ui/react/radio",
+        "@base-ui/react/radio-group",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Form radio selection using Base UI focus and validation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Radios"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/segmented-control.tsx",
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
@@ -1132,6 +1209,24 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/surface.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "A bordered surface without imposed layout or padding.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "BareSurface"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/switch.tsx",
       "imports": [
         "@base-ui/react/switch",
@@ -1231,6 +1326,24 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/timeline.tsx",
+      "imports": [
+        "react",
+        "./list.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Caller-ordered entries whose missing timestamps remain absent.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Timelines"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/tooltip.tsx",
       "imports": [
         "@base-ui/react/tooltip",
@@ -1247,6 +1360,41 @@
       ],
       "coverage": "owner stories; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/tree.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "./delayed-loading.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Keyboard hierarchy navigation, lazy children and bounded rendering with retained active focus.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Trees"
+        }
+      ],
+      "coverage": "owner stories and interaction tests; browser verification recorded separately",
+      "remaining": "Qualify actual consuming screens under their installed skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/viewport-overlay.tsx",
+      "imports": [],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Decorations in caller-owned CSS-pixel coordinates.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/navigation.stories.tsx",
+          "export": "Overlays"
+        }
+      ],
+      "coverage": "owner story and browser rendering across two external skins, light/dark and narrow/wide",
+      "remaining": "Qualify native viewer geometry in owning consumers."
     },
     {
       "source": "packages/codefly-ui/src/table/data-table.tsx",
@@ -3696,27 +3844,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/platform-catalogue/ui/platform-catalogue-page.tsx",
-      "imports": [
-        "@bufbuild/protobuf/wkt",
-        "lucide-react",
-        "react",
-        "@/gen/saas/accounts/v1/authorization_pb",
-        "@/gen/saas/accounts/v1/platform_admin_pb",
-        "@/shared/lib/read-outcome",
-        "@/shared/lib/utils",
-        "@/shared/ui",
-        "../model/facts",
-        "../service/queries"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Owns the platform Catalogue workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/features/event-operations/ui/event-operations-page.tsx",
       "imports": [
         "@bufbuild/protobuf/wkt",
@@ -4356,6 +4483,27 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the permissions workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform-catalogue/ui/platform-catalogue-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/gen/saas/accounts/v1/authorization_pb",
+        "@/gen/saas/accounts/v1/platform_admin_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/facts",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform Catalogue workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
