@@ -331,6 +331,7 @@
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+            "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
             "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
             "/saas.accounts.v1.PlatformAdminService/ReplayJob",
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",

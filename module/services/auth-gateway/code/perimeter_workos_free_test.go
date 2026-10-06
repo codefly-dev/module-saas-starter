@@ -46,6 +46,14 @@ func serviceConfigPath(t *testing.T) string {
 // means a WorkOS config group added under a different name still trips the test;
 // a legitimate new dependency forces a human to add it here and eyeball it.
 var allowedPerimeterConfigDeps = map[string]bool{
+	// application carries APP_BASE_URL — this host's own public origin — and the
+	// bootstrap admin address. Reviewed for #1003: no external-IdP material, and
+	// nothing a provider could be configured through. The gateway needs the
+	// origin to publish an RFC 9728 document for a solution's MCP endpoint and
+	// to require a token's resource audience to name it, so the origin a client
+	// is sent to and the origin a token is accepted at are one operator-pinned
+	// value rather than two headers that can disagree.
+	"application":   true,
 	"gateway":       true,
 	"gateway-trust": true,
 	"internal-auth": true,
@@ -159,10 +167,16 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// decides from the registry snapshot and from the client id the ext_authz
 	// check already resolved from a locally verified token; it makes no network
 	// call of its own and reaches no external IdP.
-	"gateway_cors.go":      true,
-	"main.go":              true,
-	"ratelimit.go":         true,
-	"telemetry_metrics.go": true,
+	"gateway_cors.go": true,
+	// gateway_mcp_resource.go serves the RFC 9728 document for a solution's MCP
+	// endpoint and decides whether a token's resource audience admits a request.
+	// It makes NO network call of its own — not to an IdP, not anywhere: it reads
+	// the request path, a configured origin, and claims the ext_authz check has
+	// already verified with local Ed25519 crypto.
+	"gateway_mcp_resource.go": true,
+	"main.go":                 true,
+	"ratelimit.go":            true,
+	"telemetry_metrics.go":    true,
 	// work_context.go and access_keys.go verify against the cluster's own
 	// published key set, never an external IdP: both read the same accounts
 	// JWKS the ext_authz check has always loaded, through jwks_cache.go, whose origin

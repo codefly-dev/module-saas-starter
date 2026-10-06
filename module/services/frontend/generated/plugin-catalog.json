@@ -102,6 +102,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/catalogue",
+      "source_path": "src/app/admin/platform/catalogue/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/events",
       "source_path": "src/app/admin/platform/events/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -272,6 +278,12 @@
     {
       "path": "/notifications",
       "source_path": "src/app/(dashboard)/notifications/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
+    },
+    {
+      "path": "/oauth2/consent",
+      "source_path": "src/app/(dashboard)/oauth2/consent/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_AUTHENTICATED"
     },
@@ -600,6 +612,21 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 235
+    },
+    {
+      "id": "admin-catalogue",
+      "plugin": "platform-admin",
+      "label": "Catalogue",
+      "path": "/admin/platform/catalogue",
+      "icon": "Layers",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 236
     },
     {
       "id": "admin-audit-log",

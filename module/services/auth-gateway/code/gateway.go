@@ -235,6 +235,16 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Which registered solution is minting a Work Context, read BEFORE the
+	// strip below removes the credential it is proved from. A refused
+	// credential never becomes an ordinary mint (verifiedSolutionMint).
+	solution, solutionPublisher, solutionRefused := g.verifiedSolutionMint(r, entry)
+	if solutionRefused {
+		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_solution_registration_credential", r.Method, r.URL.Path)
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	// Identity and trust credentials are never accepted from the public side
 	// of the gateway. ExtAuthz.Check only sees the caller's real credential
 	// (Authorization); successful checks re-stamp canonical headers below.
@@ -314,6 +324,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
+		// Stamped after the identity projection, so it joins the headers
+		// accounts reads beside the gateway credential rather than being
+		// replaced by it. Set, never Add: a second value of a forwarded
+		// identity field is refused by accounts as ambiguous.
+		if solution != "" {
+			r.Header.Set(solutionIdentityHeader, solution)
+			r.Header.Set(solutionPublisherHeader, solutionPublisher)
+		}
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "mfa_pending":
@@ -644,6 +662,13 @@ var untrustedAuthHeaders = []string{
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
+	// This gateway's assertion of which registered solution is minting a Work
+	// Context, and of its publisher. They select the runtime boundary accounts
+	// seals, so a caller that could set them would mint under another solution's
+	// boundary; both are stripped here and restamped only from a verified
+	// solution credential.
+	solutionIdentityHeader,
+	solutionPublisherHeader,
 	clientIDHeader,
 }
 

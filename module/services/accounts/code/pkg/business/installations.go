@@ -69,6 +69,10 @@ type InstallationStore interface {
 	// caller wants PLUS one: the extra row is how the caller detects a further page
 	// without a second count query, exactly as ListAccessibleScopes does.
 	ListInstallations(ctx context.Context, orgID string, status gen.InstallationStatus, pageToken string, limit int) ([]*gen.InstallationSummary, error)
+	// ListCatalogueInstallations reads every organization's active
+	// installations for the platform Catalogue (platform_catalogue.go). Unlike
+	// the methods above it runs under the control plane, not an org transaction.
+	ListCatalogueInstallations(ctx context.Context) ([]*CatalogueInstallationRecord, error)
 }
 
 func (s *Service) installationStore() InstallationStore {

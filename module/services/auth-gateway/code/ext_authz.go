@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -79,9 +81,26 @@ type ExtAuthz struct {
 	// `kid`, so tokens signed by either half of an overlapping key pair verify
 	// without restarting the gateway. Nil means verification is unconfigured
 	// and every JWT is refused 503.
-	keys          accessKeys
-	issuer        string
-	audience      string
+	keys accessKeys
+	// issuer is the `iss` accounts mints today. acceptedIssuers is that value
+	// plus any still accepted for a migration window, which is how the move from
+	// the pre-metadata literal to the host's own URL does not refuse every token
+	// already in flight at the moment of deploy.
+	issuer          string
+	acceptedIssuers []string
+	audience        string
+	// publicBase is this host's configured public origin, resolved ONCE at
+	// construction like issuer and acceptedIssuers above.
+	//
+	// Not read per request. workspaceEnv falls back to os.Getenv when the SDK
+	// read fails, so a deployment that supplies APP_BASE_URL through the
+	// `application` configuration group and not as a process variable would, on
+	// a transient read failure, see "" for one request — and with exact
+	// identifier comparison that refuses every resource-bound token for exactly
+	// that request, with nothing logged and no state changed. Configuration
+	// cannot change after process start, so reading it once is both correct and
+	// the pattern this struct already follows.
+	publicBase    string
 	internalToken string
 	// previousInternalToken stays accepted alongside internalToken during an
 	// overlapping rotation window. Outbound calls always present the current
@@ -124,10 +143,17 @@ func constantTimeMatch(candidate, expected string) bool {
 // backend minter config.
 func NewExtAuthz(backendConn *grpc.ClientConn, keys accessKeys) *ExtAuthz {
 	return &ExtAuthz{
-		apiKey:                apigen.NewAPIKeyServiceClient(backendConn),
-		backendConn:           backendConn,
-		keys:                  keys,
-		issuer:                "saas-starter",
+		apiKey:      apigen.NewAPIKeyServiceClient(backendConn),
+		backendConn: backendConn,
+		keys:        keys,
+		// RFC 8414 §2 requires the authorization server's issuer to be an https
+		// URL, and accounts mints the configured public base URL when it has one
+		// (accounts work.go configuredTokenIssuer). This verifier must accept the
+		// same value, and the pre-metadata literal alongside it while tokens
+		// minted under the literal are still unexpired.
+		issuer:                gatewayTokenIssuer(),
+		acceptedIssuers:       gatewayAcceptedIssuers(),
+		publicBase:            publicBaseURL(),
 		audience:              "saas-starter",
 		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
 		previousInternalToken: workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"),
@@ -164,8 +190,19 @@ func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3
 		}
 	}
 
-	// No credentials — deny. The gateway decides whether to enforce
-	// or skip based on the route's auth requirement.
+	// No credential this perimeter accepts. It verifies a bearer — this host's
+	// own access token, or an API key — and nothing else; a session cookie is
+	// the frontend's way of holding a session for its own pages, never a
+	// credential presented here, so a caller that sent one is told that rather
+	// than being left to read "authentication required" while holding what
+	// looks to them like a credential.
+	//
+	// Stated only when a cookie was actually sent, so the ordinary
+	// no-credential answer is unchanged for every caller that sent nothing.
+	if headers["cookie"] != "" {
+		return deny(401, "a session cookie is not a credential at this surface; "+
+			"present an access token as `Authorization: Bearer`"), nil
+	}
 	return deny(401, "authentication required"), nil
 }
 
@@ -200,9 +237,13 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 	}
 
 	claims := &accessClaims{}
+	// The issuer is checked after the parse rather than by jwt.WithIssuer, which
+	// takes a single value: a deployment mid-migration accepts two. Dropping the
+	// option without replacing the check would accept ANY issuer, so the
+	// explicit comparison below is the whole of it and runs before any claim is
+	// projected onto a header.
 	parser := jwt.NewParser(
 		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithIssuer(s.issuer),
 		jwt.WithAudience(s.audience),
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(tokenClockSkewLeeway),
@@ -235,6 +276,10 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		recordJWTRejection(ctx, jwtRejectionAmbiguousKeyID)
 		return deny(401, "invalid or expired token"), nil
 	case err != nil || !token.Valid:
+		recordJWTRejection(ctx, jwtRejectionInvalidToken)
+		return deny(401, "invalid or expired token"), nil
+	}
+	if !s.acceptsIssuer(claims.Issuer) {
 		recordJWTRejection(ctx, jwtRejectionInvalidToken)
 		return deny(401, "invalid or expired token"), nil
 	}
@@ -286,6 +331,80 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 			return deny(401, "session revoked"), nil
 		}
 	}
+
+	// RFC 8707 resource binding, with the tool endpoint held to a stricter rule
+	// than the rest of a solution's surface.
+	//
+	// Every refusal here answers 401 rather than 403: RFC 6750 §3.1 classes a
+	// token that is not valid for this resource as `invalid_token`, and an MCP
+	// client answers a 401 by re-reading the challenge and authorizing for the
+	// right resource. A 403 would read as "you may not", which is not what
+	// happened — and would leave the client with nothing to do.
+	binding, resource := classifyResourceAudience(claims.Audience, s.audience)
+	if binding == resourceInvalid {
+		// Refused on EVERY path, not only a solution's.
+		//
+		// An audience set this cannot read as one resource is not a credential
+		// whose scope is known, and the earlier shape — collapsing it to an
+		// empty string — made it indistinguishable from a token bound to
+		// nothing, which is the one classification that is admitted most
+		// widely. No issuance path produces this; a token carrying it did not
+		// come from this host's authorization endpoint.
+		recordJWTRejection(ctx, jwtRejectionInvalidAudience)
+		return deny(401, "the token's audience does not name a single valid resource"), nil
+	}
+	if solutionID, isSolutionPath := solutionIDFromPath(path); isSolutionPath {
+		base := s.publicBase
+		switch {
+		case isSolutionToolRequestPath(path):
+			// SP-SOL-07 (register finding SA-F-MCPAUD): a solution's tool
+			// endpoint is an OAuth protected resource in its own right, so it
+			// admits only a token ISSUED FOR it. A token naming just the host
+			// audience is a credential for the host's own API, and the whole
+			// point of the resource indicator is that one audience is not the
+			// other: a client, a solution or an intermediary holding a host
+			// token must not be able to act at a tool endpoint with it.
+			//
+			// This is deliberately stricter than issue #1003's original wording,
+			// which also admitted the session-kind token. The register's
+			// invariant wins: nothing that is not addressed to this endpoint
+			// reaches it.
+			if base == "" {
+				// Fail closed, by name. Without a configured public address this
+				// process cannot state which resource it requires, so it cannot
+				// judge a token against it — and the challenge it would emit
+				// would carry no absolute URL for a client to follow.
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, "this host has no configured public address, "+
+					"so it cannot state the resource this endpoint requires"), nil
+			}
+			if binding == resourceUnbound {
+				recordJWTRejection(ctx, jwtRejectionGenericAudience)
+				return deny(401, "this endpoint requires a token issued for its own "+
+					"resource; the token presented names only the host. Authorize for "+
+					"this resource and retry"), nil
+			}
+			if !resourceAudienceAdmits(resource, solutionID, base) {
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, "the token presented was issued for a different "+
+					"resource than this endpoint"), nil
+			}
+		case binding == resourceBound:
+			// A solution's other routes are the product's own API surface,
+			// reached with an ordinary session. A resource-bound token is still
+			// confined to the solution it names, so one minted for solution A
+			// cannot read solution B's data either.
+			if !resourceAudienceAdmits(resource, solutionID, base) {
+				recordJWTRejection(ctx, jwtRejectionWrongResource)
+				return deny(401, "the token presented was issued for a different "+
+					"resource than this endpoint"), nil
+			}
+		}
+	}
+	// A resource-bound token still reaches the host's own API, which is not a
+	// solution path: the host is where a solution's runtime resolves the
+	// caller's authority, and the token names the host audience too for exactly
+	// that reason (see the minter's two-audience comment).
 
 	hdrs := []*corev3.HeaderValueOption{
 		hdr("x-user-id", claims.Subject),
@@ -341,6 +460,94 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		hdrs = append(hdrs, hdr("x-scoped-roles-truncated", "true"))
 	}
 	return s.allow(hdrs), nil
+}
+
+// acceptsIssuer reports whether an `iss` is one this gateway trusts. An empty
+// candidate never matches, so a token carrying no issuer is refused rather than
+// matching an unset slot.
+func (s *ExtAuthz) acceptsIssuer(candidate string) bool {
+	if candidate == "" {
+		return false
+	}
+	for _, accepted := range s.acceptedIssuers {
+		if candidate == accepted {
+			return true
+		}
+	}
+	return candidate == s.issuer
+}
+
+// resourceAudience returns the one audience value that is not this host's own —
+// the RFC 8707 resource the token is bound to — or empty when the token names
+// only the host. More than one such value is read as none, matching the
+// minter: a token this host produced carries at most one resource, so a second
+// is a token it did not produce and must not be treated as a binding.
+func classifyResourceAudience(audience jwt.ClaimStrings, hostAudience string) (resourceBindingKind, string) {
+	var resources []string
+	for _, value := range audience {
+		if value == hostAudience {
+			continue
+		}
+		resources = append(resources, value)
+	}
+	switch len(resources) {
+	case 0:
+		return resourceUnbound, ""
+	case 1:
+		if !wellFormedResourceIdentifier(resources[0]) {
+			return resourceInvalid, ""
+		}
+		return resourceBound, resources[0]
+	default:
+		// Two or more. There is no single resource this token is bound to, so
+		// no answer to "is it bound to THIS one" is true of it.
+		return resourceInvalid, ""
+	}
+}
+
+// wellFormedResourceIdentifier reports whether a single audience value is
+// shaped like a resource identifier at all.
+//
+// It mirrors what the authorization endpoint accepts when it ISSUES one
+// (accounts' auth.ParseResourceIndicator): an absolute http or https URL with a
+// host, no userinfo, no query, no fragment and no opaque part, with plain http
+// confined to loopback for local development. The two must agree, because a
+// verifier looser than the issuer admits a token no issuance path would have
+// produced — and the identifier is supposed to be byte-exact with the URL a
+// client dialled, so a query or a fragment in it means the audience names
+// something other than the resource it appears to name.
+func wellFormedResourceIdentifier(candidate string) bool {
+	if candidate == "" || len(candidate) > 2048 || candidate != strings.TrimSpace(candidate) {
+		return false
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
+		return false
+	}
+	if parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" ||
+		parsed.ForceQuery || parsed.Opaque != "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return isLoopbackResourceHost(parsed.Hostname())
+	default:
+		return false
+	}
+}
+
+// isLoopbackResourceHost matches the issuer's own loopback rule, for the local
+// development origin that is not https.
+func isLoopbackResourceHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if address, err := netip.ParseAddr(host); err == nil {
+		return address.IsLoopback()
+	}
+	return false
 }
 
 // checkAPIKey delegates to the backend for api-key validation.

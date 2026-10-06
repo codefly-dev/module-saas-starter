@@ -15,7 +15,7 @@ import (
 // therefore assume the caller opened a WithControlPlane transaction, which
 // getQueryExecutor picks up from ctx.
 
-const solutionRegistrationColumns = `solution_id, publisher, revision, tombstoned_at,
+const solutionRegistrationColumns = `solution_id, publisher, revision, runtime_boundary, tombstoned_at,
 	frontend_revision, frontend_manifest, frontend_contract_version,
 	backend_revision, backend_upstream, backend_service_alias, backend_contract_version,
 	declared_binding_id, declared_generation, declared_release, declared_target_id::text,
@@ -38,7 +38,7 @@ func scanSolutionRegistration(row pgx.Row) (*business.SolutionRegistration, erro
 		declaredRelease *string
 	)
 	if err := row.Scan(
-		&record.SolutionID, &record.Publisher, &record.Revision, &tombstonedAt,
+		&record.SolutionID, &record.Publisher, &record.Revision, &record.RuntimeBoundary, &tombstonedAt,
 		&frontRevision, &frontManifest, &frontContract,
 		&backendRevision, &backendUpstream, &backendAlias, &backendContract,
 		&declaredBinding, &declaredGen, &declaredRelease, &declaredTarget,
@@ -119,6 +119,25 @@ func (s *PostgresStore) NextSolutionRegistryRevision(ctx context.Context) (int64
 // SaveSolutionRegistration writes the whole record. Every half column is
 // written on every save, so tombstoning — which passes a record with no halves
 // — clears the endpoints in the same statement that records the deletion.
+// runtime_boundary is the one column this statement will not write, and that
+// property moved here from the runtime self-registration writer this branch
+// deletes (main's #1015/#1017). It is absent from the INSERT, so a new row takes
+// the column's gen_random_uuid() default; absent from the ON CONFLICT DO UPDATE,
+// so an existing row keeps what it was given — through a replaced half, a
+// tombstone and a reactivation alike; and RETURNING reports whichever happened,
+// so the caller's record is corrected from the database rather than the reverse.
+//
+// THE POINT IS THAT NOTHING ABOVE HERE MAY CHOOSE ONE. A boundary a caller
+// could name would let one solution mint for another's and read, answer and
+// recover its runs. A value invented above this statement is discarded rather
+// than stored, and that is a property of the SQL rather than of any check — the
+// column simply never appears on a write path.
+//
+// It is load-bearing that this survived the deletion. Resolving a
+// modify-vs-delete by taking the delete leaves no compiler error and no failing
+// test behind it, so the regression would have been silent;
+// TestRuntimeBoundaryIsAssignedByTheDatabaseAndSurvivesEveryDeclaredWrite is
+// what catches it.
 func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *business.SolutionRegistration) error {
 	var (
 		frontRevision   *int64
@@ -146,7 +165,8 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 		backendRevision, backendUpstream = &half.Revision, &half.Upstream
 		backendAlias, backendContract = &half.ServiceAlias, &half.ContractVersion
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+	var boundary string
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		INSERT INTO public.solution_registrations (
 			solution_id, publisher, revision, tombstoned_at,
 			frontend_revision, frontend_manifest, frontend_contract_version,
@@ -169,13 +189,18 @@ func (s *PostgresStore) SaveSolutionRegistration(ctx context.Context, record *bu
 			declared_generation = EXCLUDED.declared_generation,
 			declared_release = EXCLUDED.declared_release,
 			declared_target_id = EXCLUDED.declared_target_id,
-			updated_at = EXCLUDED.updated_at`,
+			updated_at = EXCLUDED.updated_at
+		RETURNING runtime_boundary`,
 		record.SolutionID, record.Publisher, record.Revision, record.TombstonedAt,
 		frontRevision, frontManifest, frontContract,
 		backendRevision, backendUpstream, backendAlias, backendContract,
 		declaredBinding, declaredGen, declaredRelease, declaredTarget,
-		record.UpdatedAt)
-	return err
+		record.UpdatedAt).Scan(&boundary)
+	if err != nil {
+		return err
+	}
+	record.RuntimeBoundary = boundary
+	return nil
 }
 
 // ListSolutionRegistrations returns the registry snapshot ordered by solution

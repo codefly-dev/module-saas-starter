@@ -53,7 +53,7 @@ func (s *SessionStore) AuthorizeClientSession(
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id
+				email, display_name, acting_as_user_id, client_id, resource
 			FROM sessions
 			WHERE id = $1 AND user_id = $2
 			LIMIT 1

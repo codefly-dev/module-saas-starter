@@ -24,6 +24,12 @@ service-dependencies:
       endpoints:
         - name: grpc
 workspace-configuration-dependencies:
+    # APP_BASE_URL: this host's own public origin. The gateway publishes it in
+    # the RFC 9728 document for a solution's MCP endpoint and requires a token's
+    # resource audience to name it, so the origin a client was sent to and the
+    # origin a token is accepted at are one operator-pinned value rather than
+    # two headers that can disagree.
+    - application
     - gateway
     - gateway-trust
     - internal-auth

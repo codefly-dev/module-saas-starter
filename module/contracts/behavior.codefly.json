@@ -166,6 +166,7 @@
             "@codefly-dev/ui/skin",
             "@codefly-dev/ui/table",
             "@codefly-dev/ui/content",
+            "@codefly-dev/ui/board",
             "@codefly-dev/ui/plugin-host",
             "@codefly-dev/ui/plugin-host/runtime",
             "@codefly-dev/ui/plugin-host/ui",

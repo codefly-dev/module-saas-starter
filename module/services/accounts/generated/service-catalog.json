@@ -326,6 +326,7 @@
         "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
         "/saas.accounts.v1.PlatformAdminService/ListJobs",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
+        "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
         "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement",
         "/saas.accounts.v1.PlatformAdminService/ReplayJob",
         "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
@@ -9605,6 +9606,57 @@
       },
       "policy_tier": "platform_admin",
       "description": "List the platform administrators and their granted roles.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "ListPlatformCatalogue",
+      "input_type": "saas.accounts.v1.ListPlatformCatalogueRequest",
+      "output_type": "saas.accounts.v1.ListPlatformCatalogueResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/catalogue",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "platform_admin",
+      "description": "List every composed module and solution with its declared, running and installed state.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

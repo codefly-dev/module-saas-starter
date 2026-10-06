@@ -1,0 +1,608 @@
+import { generateKeyPairSync, sign } from "node:crypto";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+// The route reads the cluster-internal secret via the Codefly SDK, and the
+// registry reaches the gateway through service discovery. vi.mock is hoisted
+// above module init, so the stubs must be created with vi.hoisted.
+const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
+	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
+}));
+vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
+
+import { DELETE, GET, POST } from "@/app/api/solutions/register/route";
+import {
+	findSolution,
+	navProjection,
+	type SolutionManifest,
+} from "@/solutions/registry";
+
+const TOKEN = "internal-test-token";
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+const KEY_ID = "test-key";
+const JWKS = JSON.stringify({
+	keys: [
+		{
+			...publicKey.export({ format: "jwk" }),
+			alg: "EdDSA",
+			use: "sig",
+			kid: KEY_ID,
+		},
+	],
+});
+
+let jtiCounter = 0;
+
+function base64url(value: object): string {
+	return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+/** A credential accounts would mint: EdDSA, bound to one id and one publisher. */
+function credential(
+	solution = "audit",
+	subject = `solution:${solution}`,
+): string {
+	const now = Math.floor(Date.now() / 1000);
+	const head = base64url({ alg: "EdDSA", typ: "JWT", kid: KEY_ID });
+	const payload = base64url({
+		iss: "saas-starter",
+		sub: subject,
+		aud: ["solution-registration"],
+		solution,
+		iat: now,
+		exp: now + 300,
+		jti: `jti-${jtiCounter++}`,
+	});
+	const signature = sign(
+		null,
+		Buffer.from(`${head}.${payload}`, "utf8"),
+		privateKey,
+	).toString("base64url");
+	return `${head}.${payload}.${signature}`;
+}
+const GATEWAY = "http://gateway.internal:8080";
+
+// A stand-in for the durable registry behind the gateway: enough of the wire
+// contract for the route to be exercised end to end, with the revision counter
+// that makes a write observable.
+function fakeGateway() {
+	const stored = new Map<string, string>();
+	let revision = 0;
+	const respond = (body: unknown, status = 200) =>
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { "content-type": "application/json" },
+		});
+	return vi.fn(async (input: string | URL, init?: RequestInit) => {
+		const url = new URL(String(input));
+		if (url.pathname === "/v1/auth/.well-known/jwks.json") {
+			return new Response(JWKS, { status: 200 });
+		}
+		if (url.pathname === "/solutions/_frontend") {
+			const body = JSON.parse(String(init?.body ?? "{}"));
+			stored.set(body.id, body.manifest);
+			revision += 1;
+			return respond({ ok: true, id: body.id, revision, status: "active" });
+		}
+		if (url.pathname === "/solutions/_register" && init?.method === "DELETE") {
+			stored.delete(url.searchParams.get("id") ?? "");
+			revision += 1;
+			return respond({ ok: true, revision });
+		}
+		if (url.pathname === "/solutions/_registry") {
+			return respond({
+				revision,
+				leaseSeconds: 120,
+				solutions: [...stored].map(([id, manifest]) => ({
+					id,
+					status: "active",
+					manifest,
+				})),
+			});
+		}
+		return respond({ error: "unexpected" }, 500);
+	});
+}
+
+/**
+ * A fetch stub that answers the JWKS lookup normally and drives every registry
+ * call to one outcome. The credential check and the registry write share a
+ * fetch, so a stub that only models the registry refuses the credential first
+ * and the test would pass for the wrong reason.
+ */
+function registryAnswering(response?: Response, onRegistry?: () => never) {
+	return vi.fn(async (input: string | URL) => {
+		if (new URL(String(input)).pathname === "/v1/auth/.well-known/jwks.json") {
+			return new Response(JWKS, { status: 200 });
+		}
+		if (onRegistry) onRegistry();
+		return response!.clone();
+	});
+}
+
+// registry.ts caches its snapshot on globalThis so every Next module graph in a
+// process shares one; drop it between tests or a stale snapshot leaks across.
+function resetRegistryCache() {
+	const g = globalThis as Record<string, unknown>;
+	g.__solutionSnapshot = null;
+	g.__solutionSnapshotInFlight = null;
+}
+
+function manifestBody(id = "audit") {
+	return {
+		id,
+		nav: { title: "Audit", path: `/s/${id}` },
+		frontend: {
+			type: "module-federation",
+			manifestUrl: "https://audit.internal/mf-manifest.json",
+			exposedModule: "./Page",
+		},
+	};
+}
+
+function postRequest(body: unknown, token?: string): Request {
+	const headers: Record<string, string> = {
+		"content-type": "application/json",
+	};
+	if (token !== undefined) {
+		headers["x-codefly-internal-token"] = token;
+		const id =
+			typeof body === "object" && body !== null
+				? String((body as { id?: unknown }).id ?? "audit")
+				: "audit";
+		headers["x-codefly-solution-registration"] = credential(id);
+	}
+	return new Request("http://frontend/api/solutions/register", {
+		method: "POST",
+		headers,
+		body: JSON.stringify(body),
+	});
+}
+
+describe("solutions register route auth", () => {
+	beforeEach(() => {
+		resetRegistryCache();
+		const g = globalThis as Record<string, unknown>;
+		g.__solutionRegistrationJwks = undefined;
+		g.__solutionRegistrationJtis = undefined;
+		getEndpoints.mockReturnValue([
+			{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
+		]);
+		vi.stubGlobal("fetch", fakeGateway());
+	});
+
+	afterEach(async () => {
+		getWorkspaceSecret.mockReset();
+		// Clean any registration this suite added.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		await DELETE(
+			new Request("http://frontend/api/solutions/register?id=audit", {
+				method: "DELETE",
+				headers: { "x-codefly-internal-token": TOKEN },
+			}),
+		);
+		getWorkspaceSecret.mockReset();
+		vi.unstubAllGlobals();
+		resetRegistryCache();
+	});
+
+	it("rejects a POST with no internal token", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const res = await POST(postRequest(manifestBody()));
+		expect(res.status).toBe(401);
+	});
+
+	it("refuses a POST carrying the cluster-internal token but no credential", async () => {
+		// The shared token attests to no particular publisher, which is why it is
+		// no longer sufficient here: it is exactly what let any holder claim any id.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const res = await POST(
+			new Request("http://frontend/api/solutions/register", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-codefly-internal-token": TOKEN,
+				},
+				body: JSON.stringify(manifestBody()),
+			}),
+		);
+		expect(res.status).toBe(401);
+	});
+
+	it("refuses a POST whose credential names another solution", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const res = await POST(
+			new Request("http://frontend/api/solutions/register", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-codefly-solution-registration": credential("example-other"),
+				},
+				body: JSON.stringify(manifestBody()),
+			}),
+		);
+		expect(res.status).toBe(403);
+	});
+
+	it("accepts a POST with the correct internal token", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const res = await POST(postRequest(manifestBody(), TOKEN));
+		expect(res.status).toBe(200);
+		// The revision the write landed at comes back, so a registrant can hold
+		// it and drive its own compare-and-swap next time.
+		await expect(res.json()).resolves.toMatchObject({
+			ok: true,
+			id: "audit",
+			status: "active",
+			revision: 1,
+		});
+	});
+
+	it("logs a heartbeat's state changes, never each beat", async () => {
+		// A registrant beats every few seconds for as long as it runs. The route
+		// says when the registration starts, is refused, and recovers — the beats
+		// in between are counted, not printed.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		(globalThis as Record<string, unknown>).__solutionRegistrationLog =
+			undefined;
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const renewing = vi.fn(async (input: string | URL) => {
+			if (
+				new URL(String(input)).pathname === "/v1/auth/.well-known/jwks.json"
+			) {
+				return new Response(JWKS, { status: 200 });
+			}
+			// A renewal keeps the record's revision, as the durable registry does.
+			return Response.json({
+				ok: true,
+				id: "audit",
+				revision: 4,
+				status: "active",
+			});
+		});
+		vi.stubGlobal("fetch", renewing);
+		for (let beat = 0; beat < 20; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+		}
+		expect(info).toHaveBeenCalledTimes(1);
+		expect(String(info.mock.calls[0]?.[0])).toContain(
+			'"audit" registered (revision 4, active)',
+		);
+
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("down", { status: 503 })),
+		);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		for (let beat = 0; beat < 5; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+		}
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(String(warn.mock.calls[0]?.[0])).toContain(
+			'"audit" refused 503 registry unavailable — was registered at revision 4 after 20 beats',
+		);
+
+		vi.stubGlobal("fetch", renewing);
+		await POST(postRequest(manifestBody(), TOKEN));
+		expect(info).toHaveBeenCalledTimes(2);
+		expect(String(info.mock.calls[1]?.[0])).toContain(
+			"recovered from 503 registry unavailable after 5 beats",
+		);
+	});
+
+	it("reports a key set outage and its end, not one line per beat and not silence", async () => {
+		// An unverified beat names no registrant, so holding it under a stand-in
+		// one could never recover: nothing unverified ever succeeds. The outage
+		// was one line, an hour ago, while every solution's own entry still read
+		// "registered" — and a refused credential arriving during the same
+		// outage alternated with it and printed on every beat.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const scope = globalThis as Record<string, unknown>;
+		scope.__solutionRegistrationLog = undefined;
+		scope.__solutionRegistrationAuthority = undefined;
+		const info = vi.spyOn(console, "info").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("upstream restarting", { status: 502 })),
+		);
+		for (let beat = 0; beat < 5; beat++) {
+			expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+			// A beat carrying no credential is judged without reaching the key
+			// set, so it is refused 401 inside the same window. Sharing one slot
+			// with the outage, the two alternated and printed on every beat.
+			expect((await POST(postRequest(manifestBody()))).status).toBe(401);
+		}
+		expect(warn).toHaveBeenCalledTimes(2);
+		expect(String(warn.mock.calls[0]?.[0])).toContain(
+			"the registration key set is unreachable",
+		);
+		expect(String(warn.mock.calls[1]?.[0])).toContain(
+			"a beat presented a credential this host does not accept",
+		);
+
+		// The key set is probed on a backoff, so the recovering beat is the
+		// first one past that window rather than the first after the gateway
+		// returns.
+		vi.stubGlobal("fetch", fakeGateway());
+		(globalThis as Record<string, unknown>).__solutionRegistrationJwks =
+			undefined;
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+		expect(String(info.mock.calls[0]?.[0])).toContain(
+			"the registration key set is reachable again; it answered 503 for 5 beats",
+		);
+	});
+
+	it("answers 503, not a refusal, when the key set it verifies against is unreachable", async () => {
+		// A restarting gateway is not a wrong credential. Told 401, a registrant
+		// goes looking for a provisioning or ownership fault that does not exist.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("upstream restarting", { status: 502 })),
+		);
+		const res = await POST(postRequest(manifestBody(), TOKEN));
+		expect(res.status).toBe(503);
+		expect(res.headers.get("retry-after")).toBeTruthy();
+		await expect(res.json()).resolves.toEqual({
+			error: "registration_authority_unavailable",
+		});
+	});
+
+	it("still refuses a credential signed by a key the readable key set lacks", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const { privateKey: stranger } = generateKeyPairSync("ed25519");
+		const now = Math.floor(Date.now() / 1000);
+		const head = base64url({ alg: "EdDSA", typ: "JWT", kid: "unknown-key" });
+		const payload = base64url({
+			iss: "saas-starter",
+			sub: "solution:audit",
+			aud: ["solution-registration"],
+			solution: "audit",
+			exp: now + 300,
+			jti: "jti-stranger",
+		});
+		const signature = sign(
+			null,
+			Buffer.from(`${head}.${payload}`, "utf8"),
+			stranger,
+		).toString("base64url");
+		const res = await POST(
+			new Request("http://frontend/api/solutions/register", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-codefly-solution-registration": `${head}.${payload}.${signature}`,
+				},
+				body: JSON.stringify(manifestBody()),
+			}),
+		);
+		expect(res.status).toBe(401);
+	});
+
+	it("relays a registry conflict rather than reporting success", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("conflict", { status: 409 })),
+		);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(409);
+	});
+
+	it("relays a foreign-publisher refusal", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(new Response("forbidden", { status: 403 })),
+		);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(403);
+	});
+
+	it("relays a refused declaration as a manifest to change, not an outage", async () => {
+		// The gateway answers 422 registration_rejected only when accounts
+		// attached the structured declaration-rejection reason — a namespace not
+		// bound to this solution or held by another, a field an earlier
+		// declaration admitted and this one drops. Retrying the same manifest
+		// can never succeed, so it is 422, never 503, and the rule is relayed.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(
+				Response.json(
+					{
+						error: "registration_rejected",
+						detail: 'namespace "acme" is not bound to solution "acme"',
+					},
+					{ status: 422 },
+				),
+			),
+		);
+		const res = await POST(postRequest(manifestBody(), TOKEN));
+		expect(res.status).toBe(422);
+		await expect(res.json()).resolves.toEqual({
+			error: "registration_rejected",
+			detail: 'namespace "acme" is not bound to solution "acme"',
+		});
+	});
+
+	it("keeps any other registry refusal an outage, not a rejected manifest", async () => {
+		// A plain 400 is a malformed write this host produced, and a 422 without
+		// the structured error is not the declaration refusal: neither tells the
+		// registrant to change its manifest.
+		for (const answer of [
+			new Response("invalid registration", { status: 400 }),
+			Response.json({ error: "something_else" }, { status: 422 }),
+		]) {
+			getWorkspaceSecret.mockReturnValue(TOKEN);
+			vi.stubGlobal("fetch", registryAnswering(answer));
+			const res = await POST(postRequest(manifestBody(), TOKEN));
+			expect(res.status).toBe(503);
+			await expect(res.json()).resolves.toEqual({
+				error: "registry_unavailable",
+			});
+		}
+	});
+
+	it("forwards declared audit event types verbatim for the registry to admit", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const gateway = fakeGateway();
+		vi.stubGlobal("fetch", gateway);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [
+				{
+					name: "item_created",
+					type: "acme.item.created",
+					fields: [
+						{ name: "score", kind: "number" },
+						{ name: "stage", kind: "enum", values: ["draft", "final"] },
+					],
+				},
+			],
+			metrics: [],
+			dashboards: [],
+		};
+		const res = await POST(postRequest(body, TOKEN));
+		expect(res.status).toBe(200);
+		const write = gateway.mock.calls.find(
+			([input]) => new URL(String(input)).pathname === "/solutions/_frontend",
+		);
+		const sent = JSON.parse(String(write?.[1]?.body));
+		expect(JSON.parse(sent.manifest).dashboard.events[0].fields).toEqual([
+			{ name: "score", kind: "number" },
+			{ name: "stage", kind: "enum", values: ["draft", "final"] },
+		]);
+	});
+
+	it("refuses a malformed declaration before any registry write", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const gateway = fakeGateway();
+		vi.stubGlobal("fetch", gateway);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [{ name: "e", type: "saas.item.created", fields: [] }],
+			metrics: [],
+			dashboards: [],
+		};
+		const res = await POST(postRequest(body, TOKEN));
+		expect(res.status).toBe(422);
+		expect(
+			gateway.mock.calls.some(
+				([input]) => new URL(String(input)).pathname === "/solutions/_frontend",
+			),
+		).toBe(false);
+	});
+
+	it("reports a registry outage instead of a phantom success", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			registryAnswering(undefined, () => {
+				throw new Error("gateway unreachable");
+			}),
+		);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+	});
+
+	it("answers 503, not an empty list, when the registry cannot be read", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("gateway unreachable");
+			}),
+		);
+		resetRegistryCache();
+		expect((await GET()).status).toBe(503);
+	});
+
+	it("rejects an authenticated POST carrying an unsafe manifest", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const bad = manifestBody("evil");
+		(bad.frontend as Record<string, unknown>).manifestUrl =
+			"javascript:alert(1)";
+		const res = await POST(postRequest(bad, TOKEN));
+		expect(res.status).toBe(422);
+	});
+
+	it("lets the browser GET the nav list without a token", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const res = await GET();
+		expect(res.status).toBe(200);
+		await expect(res.json()).resolves.toHaveProperty("solutions");
+	});
+
+	it("projects the public nav list down to id and nav", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const body = manifestBody() as Record<string, unknown>;
+		body.dashboard = {
+			events: [{ name: "login", type: "auth.login.v1" }],
+			metrics: [
+				{
+					id: "logins",
+					kind: "source",
+					filter: { event: "login" },
+					groupBy: "time",
+					bucket: "day",
+					aggregation: "count",
+				},
+			],
+			dashboards: [
+				{
+					id: "activity",
+					layout: "grid",
+					widgets: [{ id: "logins", metric: "logins", visualization: "line" }],
+				},
+			],
+		};
+		expect((await POST(postRequest(body, TOKEN))).status).toBe(200);
+
+		const listed = (await GET().then((r) => r.json())) as {
+			solutions: Array<Record<string, unknown>>;
+		};
+		const audit = listed.solutions.find((s) => s.id === "audit");
+		expect(audit).toBeDefined();
+		expect(audit?.nav).toMatchObject({ title: "Audit", path: "/s/audit" });
+		// Everything the manifest carries beyond the nav entry is deployment
+		// topology: where the solution's code is served from, which backend
+		// fronts it, and its dashboard declaration. This response is readable by
+		// every signed-in browser, so it must carry none of it.
+		expect(Object.keys(audit ?? {}).sort()).toEqual(["id", "nav"]);
+	});
+
+	it("keeps a mutated nav projection out of the stored manifest", async () => {
+		// The projection copies the nav object rather than aliasing it, so a
+		// caller that mutates a projected value cannot reach the registry.
+		//
+		// This asserts against navProjection's own return value, NOT against a
+		// parsed GET body: `await response.json()` is a fresh object, so mutating
+		// it could never reach the registry however navProjection was written,
+		// and a test framed that way passes with the aliasing bug in place.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+
+		const stored = await findSolution("audit");
+		expect(stored).not.toBeNull();
+		expect(stored).not.toBe("unavailable");
+		const projected = navProjection(stored as SolutionManifest);
+		projected.nav.title = "Tampered";
+
+		expect((await findSolution("audit")) as SolutionManifest).toMatchObject({
+			nav: { title: "Audit" },
+		});
+		const listed = (await GET().then((r) => r.json())) as {
+			solutions: Array<{ id: string; nav: { title: string } }>;
+		};
+		expect(listed.solutions.find((s) => s.id === "audit")?.nav.title).toBe(
+			"Audit",
+		);
+	});
+});

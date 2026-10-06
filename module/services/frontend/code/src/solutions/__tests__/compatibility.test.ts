@@ -96,6 +96,7 @@ describe("checkRuntimeCompatibility", () => {
 						"@codefly-dev/ui": `^${CODEFLY_KIT_VERSION}`,
 						"@codefly-dev/ui/layout": `^${CODEFLY_KIT_VERSION}`,
 						"@codefly-dev/ui/table": `^${CODEFLY_KIT_VERSION}`,
+						"@codefly-dev/ui/board": `^${CODEFLY_KIT_VERSION}`,
 						"@codefly-dev/saas-sdk": `^${CODEFLY_SAAS_SDK_VERSION}`,
 					},
 				},

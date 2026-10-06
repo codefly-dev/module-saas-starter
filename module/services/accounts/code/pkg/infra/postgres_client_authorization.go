@@ -18,9 +18,10 @@ func (s *PostgresStore) CreateClientAuthorizationCode(ctx context.Context, code 
 	_, err := q.Exec(ctx, `
 		INSERT INTO client_authorization_codes (
 			id, code_hash, client_id, redirect_uri, code_challenge,
-			user_id, session_id, expires_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			resource, scope, user_id, session_id, expires_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		code.ID, code.CodeHash, code.ClientID, code.RedirectURI, code.CodeChallenge,
+		nilIfEmpty(code.Resource), nilIfEmpty(code.Scope),
 		code.UserID, code.SessionID, code.ExpiresAt, code.CreatedAt,
 	)
 	return err
@@ -45,16 +46,19 @@ func (s *PostgresStore) ConsumeClientAuthorizationCode(
 	err := s.WithControlPlane(ctx, func(txCtx context.Context) error {
 		q := s.getQueryExecutor(txCtx)
 		var code business.ClientAuthorizationCode
-		err := q.QueryRow(txCtx, `
+		row := q.QueryRow(txCtx, `
 			UPDATE client_authorization_codes
 			   SET consumed_at = $2
 			 WHERE code_hash = $1
 			   AND consumed_at IS NULL
 			   AND expires_at > $2
 			RETURNING id, code_hash, client_id, redirect_uri, code_challenge,
-			          user_id, session_id, expires_at, consumed_at, created_at`,
-			codeHash, now).Scan(
+			          resource, scope, user_id, session_id, expires_at, consumed_at, created_at`,
+			codeHash, now)
+		var resource, scope *string
+		err := row.Scan(
 			&code.ID, &code.CodeHash, &code.ClientID, &code.RedirectURI, &code.CodeChallenge,
+			&resource, &scope,
 			&code.UserID, &code.SessionID, &code.ExpiresAt, &code.ConsumedAt, &code.CreatedAt,
 		)
 		if err != nil {
@@ -62,6 +66,12 @@ func (s *PostgresStore) ConsumeClientAuthorizationCode(
 				return auth.ErrClientAuthorizationRejected
 			}
 			return err
+		}
+		if resource != nil {
+			code.Resource = *resource
+		}
+		if scope != nil {
+			code.Scope = *scope
 		}
 		if err := redeem(txCtx, &code); err != nil {
 			if errors.Is(err, auth.ErrClientAuthorizationRejected) {

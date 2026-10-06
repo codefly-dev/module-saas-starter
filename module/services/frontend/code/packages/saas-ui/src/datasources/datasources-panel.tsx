@@ -13,6 +13,7 @@ import {
 	Input,
 	Label,
 	Spinner,
+	type StatusTone,
 	Table,
 	TableBody,
 	TableCell,
@@ -552,7 +553,10 @@ function DatasourcesPanelView({
 					</div>
 				) : null}
 				{appSetupUnredeemed && (
-					<Banner title="Repositories are waiting to be connected">
+					<Banner
+						tone="warning"
+						title="Repositories are waiting to be connected"
+					>
 						The GitHub App installation finished, but only an organization
 						administrator can connect the repositories it granted. Ask one to
 						connect them in Admin → Data sources; the installation itself is
@@ -592,6 +596,7 @@ function DatasourcesPanelView({
 				    it announced. */}
 				{syncNotice && (
 					<Banner
+						tone="info"
 						title="Sync queued"
 						onDismiss={() => setSyncNotice(null)}
 						dismissLabel="Dismiss the sync notice"
@@ -600,22 +605,12 @@ function DatasourcesPanelView({
 					</Banner>
 				)}
 				{actionError && (
-					<Card className="border-destructive/40 bg-destructive/10">
-						<div
-							role="alert"
-							className="flex items-center justify-between gap-3 type-body text-destructive"
-						>
-							<span>{actionError}</span>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={() => setActionError(null)}
-							>
-								Dismiss
-							</Button>
-						</div>
-					</Card>
+					<Banner
+						tone="danger"
+						title={actionError}
+						onDismiss={() => setActionError(null)}
+						dismissLabel="Dismiss the error"
+					/>
 				)}
 
 				{/* One card per source whose sync is worth watching, above the table so
@@ -754,13 +749,13 @@ function DatasourcesPanelView({
 														Read permission unresolved
 													</span>
 												) : readable ? (
-													<Badge variant="secondary">
+													<Badge tone="success">
 														{asPlatformAdministrator
 															? "You can read this collection (platform administrator)"
 															: "You can read this collection"}
 													</Badge>
 												) : (
-													<Badge variant="outline">
+													<Badge tone="neutral">
 														You do not have read access
 													</Badge>
 												)}
@@ -972,15 +967,16 @@ function LiveDeliveryCell({ source }: { source: DatasourceView }) {
  * How each status that is not `active` presents. Active is deliberately absent:
  * it is the state of nearly every row, so badging it too would bury the states
  * that need a reader under a column of noise — and it and `unknown` would then
- * differ by their label alone.
+ * differ by their label alone. Paused waits on someone and is not a fault, so
+ * it is a warning, not the destructive red of a degraded source.
  */
 const statusPresentation: Record<
 	Exclude<DatasourceStatusName, "active">,
-	{ label: string; variant: "outline" | "secondary" | "destructive" }
+	{ label: string; tone: StatusTone }
 > = {
-	paused: { label: "Paused", variant: "secondary" },
-	degraded: { label: "Degraded", variant: "destructive" },
-	unknown: { label: "Unknown", variant: "outline" },
+	paused: { label: "Paused", tone: "warning" },
+	degraded: { label: "Degraded", tone: "danger" },
+	unknown: { label: "Unknown", tone: "neutral" },
 };
 
 /**
@@ -1009,18 +1005,22 @@ function StatusCell({ source }: { source: DatasourceView }) {
 	return (
 		<div className="space-y-0.5">
 			{presentation && (
-				<Badge variant={presentation.variant}>{presentation.label}</Badge>
+				<Badge tone={presentation.tone} dot>
+					{presentation.label}
+				</Badge>
 			)}
-			{source.statusReason && <p className="text-xs">{source.statusReason}</p>}
+			{source.statusReason && (
+				<p className="type-caption-plain">{source.statusReason}</p>
+			)}
 			{source.status === "degraded" && (
-				<p className="text-xs text-muted-foreground">
+				<p className="type-caption-plain text-muted-foreground">
 					Scheduled pulls have stopped; use Sync to retry once the cause is
 					fixed. Content already ingested stays readable.
 				</p>
 			)}
 			{source.conformant === false && (
 				<>
-					<Badge variant="outline">Non-conformant provider</Badge>
+					<Badge tone="warning">Non-conformant provider</Badge>
 					<p className="type-caption-plain text-muted-foreground">
 						This source keeps syncing, but new sources of its provider cannot be
 						connected until it meets the datasource connector requirements.

@@ -71,6 +71,16 @@ func testRouteEntries() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/datasource/github/app/webhook", Protected: false, RateLimitClass: edgeRateLimitClassWebhook},
 		// Public status surface (GET, no auth)
 		{Service: "accounts", Method: "GET", Path: "/v1/status", Protected: false},
+		// The Work Context mint. It carries a Procedure because that is what
+		// decides whether a solution's registration credential means anything on
+		// a request (issue #1015).
+		{
+			Service:   "accounts",
+			Method:    "POST",
+			Path:      "/saas.accounts.v1.WorkContextService/StartTask",
+			Procedure: "/saas.accounts.v1.WorkContextService/StartTask",
+			Protected: true,
+		},
 		// Health checks
 		{Service: "self", Method: "GET", Path: "/health", Protected: false},
 		{Service: "self", Method: "GET", Path: "/healthz", Protected: false},
@@ -90,12 +100,21 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	require.NoError(t, err)
 
 	authz := &ExtAuthz{
-		keys:          staticAccessKeys(pub),
-		issuer:        "saas-starter",
-		audience:      "saas-starter",
-		internalToken: "test-internal-token",
-		gatewayToken:  "test-gateway-token",
-		revoker:       noopRevoker{},
+		keys: staticAccessKeys(pub),
+		// Resolved the way production resolves it, so a test that pins
+		// APP_BASE_URL exercises the real issuer rather than a constant the
+		// harness chose. Both halves: what is minted now, and the legacy literal
+		// still accepted while tokens carrying it are unexpired.
+		issuer: gatewayTokenIssuer(),
+		// Resolved the same way production resolves it, from the same
+		// APP_BASE_URL the test sets — not a constant, so the harness exercises
+		// the real resolution rather than agreeing with itself.
+		publicBase:      publicBaseURL(),
+		acceptedIssuers: gatewayAcceptedIssuers(),
+		audience:        "saas-starter",
+		internalToken:   "test-internal-token",
+		gatewayToken:    "test-gateway-token",
+		revoker:         noopRevoker{},
 	}
 
 	apiFake := &fakeUpstream{body: "api-response"}

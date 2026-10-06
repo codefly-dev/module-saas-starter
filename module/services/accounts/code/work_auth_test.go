@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,29 @@ func clearAuthProviderEnvironment(t *testing.T) {
 	} {
 		t.Setenv(key, "")
 	}
+}
+
+// clearVaultBinding blanks every carrier of every key the Vault binding reads,
+// so a signing-key test observes the binding the case constructs rather than one
+// the runtime supplied. Both forms matter: workspaceEnv and the connection's own
+// readers prefer the group over the plain process variable, and under `codefly
+// ci run` the group is populated from this module's own local defaults —
+// including the placeholder AppRole credential in vault.secret.env. Proven by
+// running this package with every carrier set to garbage.
+func clearVaultBinding(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"VAULT_ADDR", "VAULT_AUTH_METHOD", "VAULT_APPROLE_MOUNT",
+		"VAULT_APPROLE_ROLE_ID", "VAULT_APPROLE_SECRET_ID", "VAULT_KEY_CUSTODY",
+	} {
+		t.Setenv(key, "")
+		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__"+key, "")
+		t.Setenv("CODEFLY__WORKSPACE_SECRET_CONFIGURATION__VAULT__"+key, "")
+	}
+	t.Setenv("MESH_PROTECTED", "")
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL_TRANSPORT__MESH_PROTECTED", "")
+	t.Setenv("CODEFLY__SERVICE_CONFIGURATION__SAAS_STARTER__VAULT___VAULT__ADDRESS", "")
+	t.Setenv("CODEFLY__SERVICE_SECRET_CONFIGURATION__SAAS_STARTER__VAULT___VAULT__TOKEN", "")
 }
 
 func setIdentityConfiguration(t *testing.T, key, value string) {
@@ -352,16 +376,88 @@ func TestDevFixtureAuthProvider(t *testing.T) {
 // With no Vault configured, a real identity provider must fail closed at boot
 // rather than sign with an ephemeral key that differs per replica and breaks
 // existing sessions. Dev/fixture mode may still generate a key offline.
+//
+// The refusal must also name the custody verb and the KV path: the incident this
+// guards against ended with an operator generating a fresh keypair by hand
+// because nothing on the failure path said where the key was supposed to come
+// from, which invalidated every live session.
 func TestLoadSigningKeyFailsClosedOutsideDevFixture(t *testing.T) {
 	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
 
-	_, err := loadSigningKey(context.Background(), false)
+	_, err := loadSigningKey(context.Background(), false, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Vault")
+	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
+	require.Contains(t, err.Error(), "durable identity seed")
+	require.Contains(t, err.Error(), "KEY_ROTATION.md")
 
-	priv, err := loadSigningKey(context.Background(), true)
+	priv, err := loadSigningKey(context.Background(), true, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, priv)
+}
+
+// keyCustody sets the custody command on both carriers, because workspaceEnv
+// prefers the group over the plain process variable: setting only the latter
+// leaves the test reading whatever the group carries, and under `codefly ci
+// run` the group is populated from this module's own local defaults. Proven by
+// running this package with every carrier set to garbage.
+func keyCustody(t *testing.T, value string) {
+	t.Helper()
+	t.Setenv("VAULT_KEY_CUSTODY", value)
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", value)
+}
+
+// A diagnostic that is present only when somebody remembered to configure it is
+// absent exactly when the incident happens, so a hosted profile refuses to boot
+// without it — at a moment the deployment can still be fixed, rather than during
+// a crash loop.
+func TestKeyCustodyIsRequiredOutsideLocal(t *testing.T) {
+	clearVaultBinding(t)
+	keyCustody(t, "")
+	err := requireKeyCustody(false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "VAULT_KEY_CUSTODY is required outside the local environment")
+	require.Contains(t, err.Error(), "secret/data/jwt-signing-key")
+
+	require.NoError(t, requireKeyCustody(true), "a local run has no cell and no seeding command")
+
+	keyCustody(t, "platform-cli seed-identity example-cell")
+	require.NoError(t, requireKeyCustody(false))
+}
+
+// The cell's own seeding command reaches the operator through the `vault`
+// group, because this module names nothing above it. The value is operator free
+// text that lands in a log line, so it is collapsed to one line and bounded —
+// otherwise whoever writes the group could forge entries around the refusal.
+func TestSigningKeyRefusalQuotesTheCellsCustodyCommand(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	keyCustody(t, "  platform-cli seed-identity\n  FORGED log line\t<coordinate>  ")
+
+	_, err := loadSigningKey(context.Background(), false, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "platform-cli seed-identity FORGED log line <coordinate>")
+	require.NotContains(t, err.Error(), "\n")
+
+	keyCustody(t, strings.Repeat("x", 500))
+	_, err = loadSigningKey(context.Background(), false, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), strings.Repeat("x", 200)+"…")
+	require.NotContains(t, err.Error(), strings.Repeat("x", 201))
+}
+
+// A self-minted key outside the local environment would diverge from the cell's
+// durable seed, so the ephemeral fallback is refused there even when the
+// dev/fixture provider asks for it — the two conditions live in different
+// functions and only this asserts that both are enforced.
+func TestLoadSigningKeyNeverSelfMintsOutsideLocal(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+
+	_, err := loadSigningKey(context.Background(), true, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "durable identity seed")
 }
 
 // The dev and fixture identity providers accept unauthenticated identities, so
@@ -451,5 +547,33 @@ func TestConfigureModuleIdentity(t *testing.T) {
 				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
 			}
 		})
+	}
+}
+
+// The call site, not just the helper. The helper's own test stays green when
+// somebody deletes the call from startup, which is how a guard becomes
+// decorative — so this drives doWork itself with hosted carriers and no custody
+// command, and the refusal has to come back from the real boot path.
+//
+// It is reachable without a database only because the check runs before any
+// dependency is acquired. If a future edit moves it back down, this test starts
+// failing on a connection error instead, which is the right kind of noisy.
+func TestStartupRefusesAHostedBootWithNoCustodyCommand(t *testing.T) {
+	clearAuthProviderEnvironment(t)
+	clearVaultBinding(t)
+	t.Setenv("CODEFLY__ENVIRONMENT", "hosted")
+
+	_, err := doWork(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "VAULT_KEY_CUSTODY is required outside the local environment",
+		"doWork must refuse a hosted boot with no custody command, from the startup path and not only from the helper")
+
+	// With it set, startup gets past this check — so the assertion above is
+	// about the custody requirement and not about doWork failing for any reason.
+	keyCustody(t, "platform-cli seed-identity example-cell")
+	_, err = doWork(context.Background())
+	if err != nil {
+		require.NotContains(t, err.Error(), "VAULT_KEY_CUSTODY is required",
+			"a supplied custody command must satisfy the check")
 	}
 }

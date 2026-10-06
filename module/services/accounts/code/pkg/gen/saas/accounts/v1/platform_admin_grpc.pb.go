@@ -45,6 +45,7 @@ const (
 	PlatformAdminService_ReplayJob_FullMethodName              = "/saas.accounts.v1.PlatformAdminService/ReplayJob"
 	PlatformAdminService_GetEventOperations_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetEventOperations"
 	PlatformAdminService_ListEventSubscriptions_FullMethodName = "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"
+	PlatformAdminService_ListPlatformCatalogue_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/ListPlatformCatalogue"
 )
 
 // PlatformAdminServiceClient is the client API for PlatformAdminService service.
@@ -101,6 +102,9 @@ type PlatformAdminServiceClient interface {
 	// control-plane subscription metadata do.
 	GetEventOperations(ctx context.Context, in *v11.GetEventOperationsRequest, opts ...grpc.CallOption) (*v11.GetEventOperationsResponse, error)
 	ListEventSubscriptions(ctx context.Context, in *v11.ListEventSubscriptionsRequest, opts ...grpc.CallOption) (*v11.ListEventSubscriptionsResponse, error)
+	// ListPlatformCatalogue lists every composed module and solution with what
+	// it declares, what runs, and which organizations have it installed.
+	ListPlatformCatalogue(ctx context.Context, in *ListPlatformCatalogueRequest, opts ...grpc.CallOption) (*ListPlatformCatalogueResponse, error)
 }
 
 type platformAdminServiceClient struct {
@@ -332,6 +336,16 @@ func (c *platformAdminServiceClient) ListEventSubscriptions(ctx context.Context,
 	return out, nil
 }
 
+func (c *platformAdminServiceClient) ListPlatformCatalogue(ctx context.Context, in *ListPlatformCatalogueRequest, opts ...grpc.CallOption) (*ListPlatformCatalogueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPlatformCatalogueResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_ListPlatformCatalogue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PlatformAdminServiceServer is the server API for PlatformAdminService service.
 // All implementations must embed UnimplementedPlatformAdminServiceServer
 // for forward compatibility.
@@ -386,6 +400,9 @@ type PlatformAdminServiceServer interface {
 	// control-plane subscription metadata do.
 	GetEventOperations(context.Context, *v11.GetEventOperationsRequest) (*v11.GetEventOperationsResponse, error)
 	ListEventSubscriptions(context.Context, *v11.ListEventSubscriptionsRequest) (*v11.ListEventSubscriptionsResponse, error)
+	// ListPlatformCatalogue lists every composed module and solution with what
+	// it declares, what runs, and which organizations have it installed.
+	ListPlatformCatalogue(context.Context, *ListPlatformCatalogueRequest) (*ListPlatformCatalogueResponse, error)
 	mustEmbedUnimplementedPlatformAdminServiceServer()
 }
 
@@ -461,6 +478,9 @@ func (UnimplementedPlatformAdminServiceServer) GetEventOperations(context.Contex
 }
 func (UnimplementedPlatformAdminServiceServer) ListEventSubscriptions(context.Context, *v11.ListEventSubscriptionsRequest) (*v11.ListEventSubscriptionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListEventSubscriptions not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) ListPlatformCatalogue(context.Context, *ListPlatformCatalogueRequest) (*ListPlatformCatalogueResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPlatformCatalogue not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) mustEmbedUnimplementedPlatformAdminServiceServer() {}
 func (UnimplementedPlatformAdminServiceServer) testEmbeddedByValue()                              {}
@@ -879,6 +899,24 @@ func _PlatformAdminService_ListEventSubscriptions_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformAdminService_ListPlatformCatalogue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPlatformCatalogueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).ListPlatformCatalogue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_ListPlatformCatalogue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).ListPlatformCatalogue(ctx, req.(*ListPlatformCatalogueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PlatformAdminService_ServiceDesc is the grpc.ServiceDesc for PlatformAdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -973,6 +1011,10 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListEventSubscriptions",
 			Handler:    _PlatformAdminService_ListEventSubscriptions_Handler,
+		},
+		{
+			MethodName: "ListPlatformCatalogue",
+			Handler:    _PlatformAdminService_ListPlatformCatalogue_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

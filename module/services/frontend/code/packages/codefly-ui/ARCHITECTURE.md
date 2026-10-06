@@ -17,6 +17,7 @@ content     Markdown · JsonView · CodeBlock · TextBlock → Content     (text
 dashboard   composes layout + charts
 chat        composes layout atoms + SDK stream hook
 table/form  composes layout atoms (DataTable takes an injected TanStack table)
+board       composes layout atoms (one collection, in columns by a field)
    ↓
 Page.tsx    full freedom: composes any of the above + solution-specific code
 ```
@@ -24,8 +25,9 @@ Page.tsx    full freedom: composes any of the above + solution-specific code
 `content` sits at the rank of `charts`: it composes layout atoms, and the
 composites compose it (`<Chat>` renders a markdown answer through it).
 `charts` currently lives inside `dashboard/` and is extracted to its own tier by
-#403. `chat`, `table`, and `form` are composite tiers that sit at the same rank
-as `dashboard` (they compose `layout`/`charts`, not each other). `plugin-host`
+#403. `chat`, `table`, `board`, and `form` are composite tiers that sit at the
+same rank as `dashboard` (they compose `layout`/`charts`, not each other).
+`plugin-host`
 is not a presentational tier — it is the host-facing plugin-runtime surface and
 sits outside this stack.
 

@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { createServer, type Server, type RequestListener } from "node:http";
+
 import { once } from "node:events";
-import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
+import { createServer, type RequestListener, type Server } from "node:http";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const { getEndpoints, findSolution } = vi.hoisted(() => ({
@@ -15,7 +16,9 @@ vi.mock("codefly", () => ({
 	getWorkspaceSecret: () => "fixture-internal",
 }));
 vi.mock("@/solutions/registry", () => ({ findSolution }));
+
 import { server as mockServer } from "@/test/setup";
+
 // Exercise native fetch/socket cancellation without MSW response cloning.
 beforeAll(() => mockServer.close());
 

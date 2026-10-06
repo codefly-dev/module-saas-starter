@@ -97,10 +97,9 @@ pkg/business/platform_admin.go: (*Service).SearchUsers: WithControlPlane
 pkg/business/platform_admin.go: (*Service).StopImpersonation: WithControlPlane
 pkg/business/platform_admin.go: (*Service).SuspendUser: WithControlPlane
 pkg/business/platform_admin.go: (*Service).UnsuspendUser: WithControlPlane
+pkg/business/platform_catalogue.go: (*Service).ListPlatformCatalogue: WithControlPlane
 pkg/business/policy_log.go: (*Service).MayServe: WithControlPlane
 pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
-pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
-pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/principals.go: (*Service).GetPrincipal: As(System())
 pkg/business/principals.go: (*Service).principalOrgID: As(System())
@@ -175,6 +174,9 @@ pkg/infra/postgres_permissions.go: (*PostgresStore).CreateRole: txbind.BindReque
 pkg/infra/postgres_permissions.go: (*PostgresStore).ResolveIdentity: controlPlane.Begin
 pkg/infra/postgres_role_catalog.go: (*PostgresStore).ImportRoleCatalog: WithControlPlane
 pkg/infra/postgres_solution_audit_events.go: (*PostgresStore).GetDeclaredAuditEventType: withControlPlaneTx
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).ForceSolutionRuntimeBoundarySeedForTest: WithControlPlane
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeed: WithControlPlane
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeeds: WithControlPlane
 pkg/infra/postgres_webhook_relay.go: (*PostgresWebhookRelay).Deliver: txbind.BindWorker
 pkg/infra/postgres_webhook_secrets.go: (*PostgresStore).MigrateLegacyWebhookSecrets: WithControlPlane
 pkg/infra/scoped.go: (*Scoped).Within: WithControlPlane

@@ -45,7 +45,15 @@ func seedSubscriptions(t *testing.T, subscriptions []events.Subscription) {
 }
 
 func TestPostgresEventTransportConformance(t *testing.T) {
-	const lease = 300 * time.Millisecond
+	// 300ms was enough to prove expiry and not enough to survive the steps
+	// after it: LeaseExpiry sleeps past expiry, reclaims the row under a FRESH
+	// lease, then Acks it -- and on a loaded runner the claim-then-ack tail
+	// outlived 300ms, so the Ack hit "events: lease lost" against a lease the
+	// test itself had just taken. The expiry sleep is proportional
+	// (1.5 x lease + 100ms), so a longer lease still proves expiry; it only
+	// stops proving it against the test's own tail. Production leases are a
+	// minute (see the job tests); this value is this harness's alone.
+	const lease = 2 * time.Second
 	pool, err := infra.NewJobWorkerPool(testCtx)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
