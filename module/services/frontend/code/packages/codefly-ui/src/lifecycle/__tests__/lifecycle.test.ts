@@ -94,7 +94,7 @@ describe("mountIsolated", () => {
 		const mount = mountIsolated(
 			host(),
 			() =>
-				new Promise((_, fail) => {
+				new Promise<never>((_, fail) => {
 					reject = fail;
 				}),
 			{ onReady: vi.fn(), onError: error },
